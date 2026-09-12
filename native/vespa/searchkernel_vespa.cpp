@@ -369,6 +369,17 @@ public:
         if (state_result.hasError()) {
             throw std::runtime_error(state_result.getErrorMessage());
         }
+        auto buckets = _persistence.listBuckets(bucket_space());
+        if (buckets.hasError()) {
+            throw std::runtime_error(buckets.getErrorMessage());
+        }
+        for (const auto &bucket_id : buckets.getList()) {
+            auto active = _persistence.setActiveState(
+                Bucket(document::Bucket(bucket_space(), bucket_id)), BucketInfo::ACTIVE);
+            if (active.hasError()) {
+                throw std::runtime_error(active.getErrorMessage());
+            }
+        }
     }
 
     ~EmbeddedEngine() noexcept {
