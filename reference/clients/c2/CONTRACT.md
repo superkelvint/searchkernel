@@ -1,22 +1,22 @@
 # C2 semantic-core contract
 
 This verifier covers the standalone Search Kernel semantic core. It accepts the
-portable C1 protobuf model, validates it against an index definition, and
-produces fully resolved Rust semantic values.
+portable FlatBuffers contract, validates it against an index definition, and
+produces fully validated owned Search Kernel IR values.
 
 The C2 acceptance path must not require Vespa, the native SDK, Java, Docker, or
 any native search library. `Describe` and `InspectQuery` are semantic-only
-operations. The `Backend` trait receives resolved requests and is not an
+operations. The `Backend` trait receives IR requests and is not an
 execution engine.
 
-The Rust implementation must preserve C1 presence semantics, apply the stable
-defaults from `implementation-plan/C2 — High-Level Semantic Core.md`, reject
+The Rust implementation must preserve FlatBuffers presence semantics, apply
+the stable defaults from `implementation-plan/C2 — High-Level Semantic Core.md`, reject
 unsupported type/capability combinations, and report portable errors with
 stable detail codes and paths.
 
-The current C1 contract also carries typed `QueryExpr` values for structured
-query builders. When supplied, C2 resolves those expressions strictly and
-rejects simultaneous legacy query text; legacy empty/whitespace and text-query
+The portable contract also carries typed `QueryExpr` values for structured
+query builders. When supplied, API → IR conversion validates those expressions
+strictly and rejects simultaneous legacy query text; legacy empty/whitespace and text-query
 semantics remain unchanged.
 
 The scenario names under `scenarios/` and the canonical expectations under

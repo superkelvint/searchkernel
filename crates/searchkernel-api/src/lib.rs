@@ -1,9 +1,12 @@
-//! Generated Rust representation of the portable Search Kernel C1 contract.
+//! Generated Rust representation of the portable Search Kernel FlatBuffers contract.
 
-/// Versioned C1 messages and enums.
-pub mod v1 {
-    include!(concat!(env!("OUT_DIR"), "/searchkernel.v1.rs"));
+#[allow(warnings)]
+mod generated {
+    include!("generated/mod.rs");
 }
+
+/// Versioned Search Kernel messages and enums.
+pub use generated::search_kernel::v1;
 
 /// Generated-package-compatible spelling for consumers that mirror the
 /// protobuf package hierarchy.

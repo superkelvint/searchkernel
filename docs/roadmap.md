@@ -4,20 +4,22 @@ Search Kernel is a Rust interface to Vespa's local C++ search engine.
 
 The project does not reimplement Vespa's search engine. It wraps the existing C++ engine and replaces only the parts of Vespa's Java request/configuration plane that are required to use that engine as an embedded library.
 
-The runtime target is:
+The final runtime architecture is:
 
 ```text
-Rust API
-   │
-   ├── document preparation
-   ├── query preparation
-   └── configuration generation
+Portable API (FlatBuffers contract)
    │
    ▼
-native boundary
+searchkernel-core (*_to_ir)
    │
    ▼
-Vespa C++
+owned Search Kernel IR
+   │
+   ▼
+backend interface / lower_*
+   │
+   ▼
+Vespa model and runtime
    │
    ├── persistence
    ├── indexing
@@ -27,6 +29,12 @@ Vespa C++
 ```
 
 The roadmap is ordered primarily by integration risk.
+
+Milestone names below describe project history and verification sequencing;
+they are not architectural layers. The portable API describes what the caller
+expressed. Search Kernel IR describes the fully validated, explicit meaning of
+that request. Backend lowering describes how that meaning is represented by the
+execution engine.
 
 ## Scope boundary
 

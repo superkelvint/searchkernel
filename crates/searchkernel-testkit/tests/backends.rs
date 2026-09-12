@@ -12,56 +12,48 @@ fn id(value: &str) -> DocumentId {
     DocumentId::parse(value).unwrap()
 }
 fn insert() -> InsertRequestIr {
-    InsertRequestIr {
-        document: searchkernel_core::DocumentIr {
-            id: id("a"),
-            fields: Default::default(),
-        },
-    }
+    InsertRequestIr::new(searchkernel_core::DocumentIr::new(
+        id("a"),
+        Default::default(),
+    ))
 }
 fn upsert() -> UpsertRequestIr {
-    UpsertRequestIr {
-        document: insert().document,
-    }
+    UpsertRequestIr::new(insert().document().clone())
 }
 fn patch() -> PatchRequestIr {
-    PatchRequestIr {
-        id: id("a"),
-        operations: vec![],
-    }
+    PatchRequestIr::from_parts(
+        id("a"),
+        vec![searchkernel_core::PatchOperationIr::unset(
+            searchkernel_core::FieldName::parse("field").unwrap(),
+        )],
+    )
+    .unwrap()
 }
 fn delete() -> DeleteRequestIr {
-    DeleteRequestIr { id: id("a") }
+    DeleteRequestIr::new(id("a"))
 }
 fn get() -> GetRequestIr {
-    GetRequestIr {
-        id: id("a"),
-        projection: ProjectionIr { fields: vec![] },
-    }
+    GetRequestIr::from_parts(id("a"), ProjectionIr::new(vec![]))
 }
 fn search() -> SearchRequestIr {
-    SearchRequestIr {
-        query: searchkernel_core::QueryIr::MatchAll,
-        search_fields: vec![],
-        filter: None,
-        sort: vec![],
-        facets: vec![],
-        ranking: searchkernel_core::RankingPolicyIr::DefaultRelevanceV1,
-        limit: 1,
-        offset: 0,
-        projection: ProjectionIr { fields: vec![] },
-        highlighting: searchkernel_core::HighlightingIr::Disabled,
-        language: None,
-        prefix_policy: searchkernel_core::PrefixPolicy::Disabled,
-        typo_policy: searchkernel_core::TypoPolicy::Disabled,
-    }
+    SearchRequestIr::from_parts(
+        searchkernel_core::QueryIr::MatchAll,
+        vec![],
+        None,
+        vec![],
+        vec![],
+        searchkernel_core::RankingPolicyIr::DefaultRelevanceV1,
+        1,
+        0,
+        ProjectionIr::new(vec![]),
+        searchkernel_core::HighlightingIr::Disabled,
+        None,
+        searchkernel_core::PrefixPolicy::Disabled,
+        searchkernel_core::TypoPolicy::Disabled,
+    )
 }
 fn analyze() -> AnalyzeRequestIr {
-    AnalyzeRequestIr {
-        analyzer: AnalyzerIdentity::StandardV1,
-        text: "text".to_owned(),
-        language: None,
-    }
+    AnalyzeRequestIr::new(AnalyzerIdentity::StandardV1, "text".to_owned(), None)
 }
 
 #[test]
@@ -154,7 +146,7 @@ fn scripted_backend_reports_request_mismatch_and_unused_entries() {
         ScriptedResult::Patch(PatchResult { id: "a".to_owned() }),
     )]);
     let mut different = patch();
-    different.id = id("b");
+    different = PatchRequestIr::from_parts(id("b"), different.operations().to_vec()).unwrap();
     assert!(matches!(
         backend.call_patch(different),
         Err(ScriptedCallError::Misuse(error))

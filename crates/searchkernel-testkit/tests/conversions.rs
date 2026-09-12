@@ -156,7 +156,7 @@ fn representative_converters_are_direct_core_calls() {
     };
     let definition = root::<api::IndexDefinition>(&definition_bytes).unwrap();
     let field = definition.fields().unwrap().get(0);
-    assert_eq!(field_to_ir(field).unwrap().name.as_str(), "title");
+    assert_eq!(field_to_ir(field).unwrap().name().as_str(), "title");
 
     let context = IndexContext::from_api(definition).unwrap();
     let query = context

@@ -11,8 +11,8 @@ searchkernel public API
     -> Vespa PersistenceEngine / DocumentDB / Matcher
 ```
 
-The protobuf in `api/searchkernel.proto` is private, language-neutral plumbing
-for later client and runtime layers. It is not used by the M0–M2 execution
+The FlatBuffers contract in `api/searchkernel.fbs` is private, language-neutral
+plumbing for later client and runtime layers. It is not used by the M0–M2 execution
 path. Structured query expressions are represented by `QueryExpr` when those
 layers begin compiling public query builders; the existing `query` string is
 reserved for text-query syntax.

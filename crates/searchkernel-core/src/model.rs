@@ -1,5 +1,6 @@
+//! Owned, backend-independent Search Kernel IR and result values.
+
 use crate::error::{PortableError, Result};
-use searchkernel_api::v1 as api;
 use std::fmt;
 
 macro_rules! validated_string_type {
@@ -133,20 +134,96 @@ pub enum AnalyzerIdentity {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FieldCapabilities {
-    pub stored: bool,
-    pub searchable: bool,
-    pub filterable: bool,
-    pub sortable: bool,
-    pub facetable: bool,
+    pub(crate) stored: bool,
+    pub(crate) searchable: bool,
+    pub(crate) filterable: bool,
+    pub(crate) sortable: bool,
+    pub(crate) facetable: bool,
+}
+
+impl FieldCapabilities {
+    pub fn new(
+        stored: bool,
+        searchable: bool,
+        filterable: bool,
+        sortable: bool,
+        facetable: bool,
+    ) -> Self {
+        Self {
+            stored,
+            searchable,
+            filterable,
+            sortable,
+            facetable,
+        }
+    }
+
+    pub fn stored(&self) -> bool {
+        self.stored
+    }
+
+    pub fn searchable(&self) -> bool {
+        self.searchable
+    }
+
+    pub fn filterable(&self) -> bool {
+        self.filterable
+    }
+
+    pub fn sortable(&self) -> bool {
+        self.sortable
+    }
+
+    pub fn facetable(&self) -> bool {
+        self.facetable
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedField {
-    pub name: FieldName,
-    pub kind: FieldKind,
-    pub cardinality: FieldCardinality,
-    pub analyzer: Option<AnalyzerIdentity>,
-    pub capabilities: FieldCapabilities,
+pub struct FieldIr {
+    pub(crate) name: FieldName,
+    pub(crate) kind: FieldKind,
+    pub(crate) cardinality: FieldCardinality,
+    pub(crate) analyzer: Option<AnalyzerIdentity>,
+    pub(crate) capabilities: FieldCapabilities,
+}
+
+impl FieldIr {
+    pub fn new(
+        name: FieldName,
+        kind: FieldKind,
+        cardinality: FieldCardinality,
+        analyzer: Option<AnalyzerIdentity>,
+        capabilities: FieldCapabilities,
+    ) -> Self {
+        Self {
+            name,
+            kind,
+            cardinality,
+            analyzer,
+            capabilities,
+        }
+    }
+
+    pub fn name(&self) -> &FieldName {
+        &self.name
+    }
+
+    pub fn kind(&self) -> FieldKind {
+        self.kind
+    }
+
+    pub fn cardinality(&self) -> FieldCardinality {
+        self.cardinality
+    }
+
+    pub fn analyzer(&self) -> Option<AnalyzerIdentity> {
+        self.analyzer
+    }
+
+    pub fn capabilities(&self) -> &FieldCapabilities {
+        &self.capabilities
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -170,75 +247,200 @@ impl SearchFieldWeight {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedSearchField {
-    pub field: FieldName,
-    pub weight: SearchFieldWeight,
+pub struct SearchFieldIr {
+    pub(crate) field: FieldName,
+    pub(crate) weight: SearchFieldWeight,
+}
+
+impl SearchFieldIr {
+    pub fn new(field: FieldName, weight: SearchFieldWeight) -> Self {
+        Self { field, weight }
+    }
+
+    pub fn field(&self) -> &FieldName {
+        &self.field
+    }
+
+    pub fn weight(&self) -> SearchFieldWeight {
+        self.weight
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedScalarValue {
+pub enum ScalarValueIr {
     Bool(bool),
     Int64(i64),
     Float64(f64),
     String(String),
 }
 
-pub type OwnedScalarValue = ResolvedScalarValue;
-pub type ResolvedScalar = ResolvedScalarValue;
-
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedFieldValue {
-    Single(OwnedScalarValue),
-    Multi(Vec<OwnedScalarValue>),
+pub enum FieldValueIr {
+    Single(ScalarValueIr),
+    Multi(Vec<ScalarValueIr>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedDocument {
-    pub id: DocumentId,
-    pub fields: std::collections::BTreeMap<FieldName, ResolvedFieldValue>,
+pub struct DocumentIr {
+    pub(crate) id: DocumentId,
+    pub(crate) fields: std::collections::BTreeMap<FieldName, FieldValueIr>,
+}
+
+impl DocumentIr {
+    pub fn new(
+        id: DocumentId,
+        fields: std::collections::BTreeMap<FieldName, FieldValueIr>,
+    ) -> Self {
+        Self { id, fields }
+    }
+
+    pub fn id(&self) -> &DocumentId {
+        &self.id
+    }
+
+    pub fn fields(&self) -> &std::collections::BTreeMap<FieldName, FieldValueIr> {
+        &self.fields
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedInsertRequest {
-    pub document: ResolvedDocument,
+pub struct InsertRequestIr {
+    pub(crate) document: DocumentIr,
+}
+
+impl InsertRequestIr {
+    pub fn new(document: DocumentIr) -> Self {
+        Self { document }
+    }
+
+    pub fn document(&self) -> &DocumentIr {
+        &self.document
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedUpsertRequest {
-    pub document: ResolvedDocument,
+pub struct UpsertRequestIr {
+    pub(crate) document: DocumentIr,
+}
+
+impl UpsertRequestIr {
+    pub fn new(document: DocumentIr) -> Self {
+        Self { document }
+    }
+
+    pub fn document(&self) -> &DocumentIr {
+        &self.document
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedPatchOperation {
+pub enum PatchOperationIr {
     Set {
         field: FieldName,
-        value: ResolvedFieldValue,
+        value: FieldValueIr,
     },
     Unset {
         field: FieldName,
     },
 }
 
+impl PatchOperationIr {
+    pub fn unset(field: FieldName) -> Self {
+        Self::Unset { field }
+    }
+    pub fn set(field: FieldName, value: FieldValueIr) -> Self {
+        Self::Set { field, value }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedPatchRequest {
-    pub id: DocumentId,
-    pub operations: Vec<ResolvedPatchOperation>,
+pub struct PatchRequestIr {
+    pub(crate) id: DocumentId,
+    pub(crate) operations: Vec<PatchOperationIr>,
+}
+
+impl PatchRequestIr {
+    pub fn new(id: DocumentId, operations: Vec<PatchOperationIr>) -> Result<Self> {
+        if operations.is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_patch",
+                None::<String>,
+                "patch must contain at least one operation",
+            ));
+        }
+        Ok(Self { id, operations })
+    }
+
+    pub fn from_parts(id: DocumentId, operations: Vec<PatchOperationIr>) -> Result<Self> {
+        if operations.is_empty() {
+            return Err(PortableError::invalid(
+                "empty_patch",
+                Some("operations"),
+                "patch must contain at least one operation",
+            ));
+        }
+        Ok(Self { id, operations })
+    }
+    pub fn id(&self) -> &DocumentId {
+        &self.id
+    }
+
+    pub fn operations(&self) -> &[PatchOperationIr] {
+        &self.operations
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedDeleteRequest {
-    pub id: DocumentId,
+pub struct DeleteRequestIr {
+    pub(crate) id: DocumentId,
+}
+
+impl DeleteRequestIr {
+    pub fn new(id: DocumentId) -> Self {
+        Self { id }
+    }
+
+    pub fn id(&self) -> &DocumentId {
+        &self.id
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedProjection {
-    pub fields: Vec<FieldName>,
+pub struct ProjectionIr {
+    pub(crate) fields: Vec<FieldName>,
+}
+
+impl ProjectionIr {
+    pub fn new(fields: Vec<FieldName>) -> Self {
+        Self { fields }
+    }
+
+    pub fn fields(&self) -> &[FieldName] {
+        &self.fields
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedGetRequest {
-    pub id: DocumentId,
-    pub projection: ResolvedProjection,
+pub struct GetRequestIr {
+    pub(crate) id: DocumentId,
+    pub(crate) projection: ProjectionIr,
+}
+
+impl GetRequestIr {
+    pub fn new(id: DocumentId, projection: ProjectionIr) -> Self {
+        Self { id, projection }
+    }
+
+    pub fn from_parts(id: DocumentId, projection: ProjectionIr) -> Self {
+        Self { id, projection }
+    }
+    pub fn id(&self) -> &DocumentId {
+        &self.id
+    }
+
+    pub fn projection(&self) -> &ProjectionIr {
+        &self.projection
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -252,28 +454,84 @@ pub enum ComparisonOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedComparison {
-    pub field: FieldName,
-    pub op: ComparisonOp,
-    pub value: OwnedScalarValue,
+pub struct ComparisonIr {
+    pub(crate) field: FieldName,
+    pub(crate) op: ComparisonOp,
+    pub(crate) value: ScalarValueIr,
+}
+
+impl ComparisonIr {
+    pub fn new(field: FieldName, op: ComparisonOp, value: ScalarValueIr) -> Self {
+        Self { field, op, value }
+    }
+
+    pub fn field(&self) -> &FieldName {
+        &self.field
+    }
+
+    pub fn op(&self) -> ComparisonOp {
+        self.op
+    }
+
+    pub fn value(&self) -> &ScalarValueIr {
+        &self.value
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedRange {
-    pub field: FieldName,
-    pub lower: Option<OwnedScalarValue>,
-    pub upper: Option<OwnedScalarValue>,
-    pub include_lower: bool,
-    pub include_upper: bool,
+pub struct RangeIr {
+    pub(crate) field: FieldName,
+    pub(crate) lower: Option<ScalarValueIr>,
+    pub(crate) upper: Option<ScalarValueIr>,
+    pub(crate) include_lower: bool,
+    pub(crate) include_upper: bool,
+}
+
+impl RangeIr {
+    pub fn new(
+        field: FieldName,
+        lower: Option<ScalarValueIr>,
+        upper: Option<ScalarValueIr>,
+        include_lower: bool,
+        include_upper: bool,
+    ) -> Self {
+        Self {
+            field,
+            lower,
+            upper,
+            include_lower,
+            include_upper,
+        }
+    }
+
+    pub fn field(&self) -> &FieldName {
+        &self.field
+    }
+
+    pub fn lower(&self) -> Option<&ScalarValueIr> {
+        self.lower.as_ref()
+    }
+
+    pub fn upper(&self) -> Option<&ScalarValueIr> {
+        self.upper.as_ref()
+    }
+
+    pub fn include_lower(&self) -> bool {
+        self.include_lower
+    }
+
+    pub fn include_upper(&self) -> bool {
+        self.include_upper
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedFilterExpr {
-    And(Vec<ResolvedFilterExpr>),
-    Or(Vec<ResolvedFilterExpr>),
-    Not(Box<ResolvedFilterExpr>),
-    Comparison(ResolvedComparison),
-    Range(ResolvedRange),
+pub enum FilterIr {
+    And(Vec<FilterIr>),
+    Or(Vec<FilterIr>),
+    Not(Box<FilterIr>),
+    Comparison(ComparisonIr),
+    Range(RangeIr),
     Exists { field: FieldName },
 }
 
@@ -290,10 +548,32 @@ pub enum MissingPlacement {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedSortExpr {
-    pub field: FieldName,
-    pub direction: SortDirection,
-    pub missing: MissingPlacement,
+pub struct SortIr {
+    pub(crate) field: FieldName,
+    pub(crate) direction: SortDirection,
+    pub(crate) missing: MissingPlacement,
+}
+
+impl SortIr {
+    pub fn new(field: FieldName, direction: SortDirection, missing: MissingPlacement) -> Self {
+        Self {
+            field,
+            direction,
+            missing,
+        }
+    }
+
+    pub fn field(&self) -> &FieldName {
+        &self.field
+    }
+
+    pub fn direction(&self) -> SortDirection {
+        self.direction
+    }
+
+    pub fn missing(&self) -> MissingPlacement {
+        self.missing
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -305,14 +585,32 @@ pub enum FacetSort {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedFacetRequest {
-    pub field: FieldName,
-    pub limit: u32,
-    pub sort: FacetSort,
+pub struct FacetIr {
+    pub(crate) field: FieldName,
+    pub(crate) limit: u32,
+    pub(crate) sort: FacetSort,
+}
+
+impl FacetIr {
+    pub fn new(field: FieldName, limit: u32, sort: FacetSort) -> Self {
+        Self { field, limit, sort }
+    }
+
+    pub fn field(&self) -> &FieldName {
+        &self.field
+    }
+
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    pub fn sort(&self) -> FacetSort {
+        self.sort
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ResolvedRankingPolicy {
+pub enum RankingPolicyIr {
     DefaultRelevanceV1,
     Bm25,
 }
@@ -328,70 +626,384 @@ pub enum TypoPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedQuery {
+pub enum QueryIr {
     MatchAll,
     Text(String),
     Term {
         field: FieldName,
-        value: OwnedScalarValue,
+        value: ScalarValueIr,
     },
-    And(Vec<ResolvedQuery>),
-    Or(Vec<ResolvedQuery>),
-    Not(Box<ResolvedQuery>),
+    And(Vec<QueryIr>),
+    Or(Vec<QueryIr>),
+    Not(Box<QueryIr>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResolvedHighlighting {
+pub enum HighlightingIr {
     Disabled,
     Requested { fields: Vec<FieldName> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedIndexDefinition {
-    pub name: Option<IndexName>,
-    pub fields: Vec<ResolvedField>,
-    pub default_search_fields: Vec<ResolvedSearchField>,
-    pub default_ranking: ResolvedRankingPolicy,
-    pub default_prefix_policy: PrefixPolicy,
-    pub default_typo_policy: TypoPolicy,
+pub struct IndexDefinitionIr {
+    pub(crate) name: Option<IndexName>,
+    pub(crate) fields: Vec<FieldIr>,
+    pub(crate) default_search_fields: Vec<SearchFieldIr>,
+    pub(crate) default_ranking: RankingPolicyIr,
+    pub(crate) default_prefix_policy: PrefixPolicy,
+    pub(crate) default_typo_policy: TypoPolicy,
+}
+
+impl IndexDefinitionIr {
+    pub fn new(
+        name: Option<IndexName>,
+        fields: Vec<FieldIr>,
+        default_search_fields: Vec<SearchFieldIr>,
+        default_ranking: RankingPolicyIr,
+        default_prefix_policy: PrefixPolicy,
+        default_typo_policy: TypoPolicy,
+    ) -> Result<Self> {
+        if fields.is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_schema",
+                Some("fields"),
+                "an index must define at least one field",
+            ));
+        }
+        Ok(Self {
+            name,
+            fields,
+            default_search_fields,
+            default_ranking,
+            default_prefix_policy,
+            default_typo_policy,
+        })
+    }
+
+    pub fn name(&self) -> Option<&IndexName> {
+        self.name.as_ref()
+    }
+
+    pub fn fields(&self) -> &[FieldIr] {
+        &self.fields
+    }
+
+    pub fn default_search_fields(&self) -> &[SearchFieldIr] {
+        &self.default_search_fields
+    }
+
+    pub fn default_ranking(&self) -> RankingPolicyIr {
+        self.default_ranking
+    }
+
+    pub fn default_prefix_policy(&self) -> PrefixPolicy {
+        self.default_prefix_policy
+    }
+
+    pub fn default_typo_policy(&self) -> TypoPolicy {
+        self.default_typo_policy
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ResolvedSearchRequest {
-    pub query: ResolvedQuery,
-    pub search_fields: Vec<ResolvedSearchField>,
-    pub filter: Option<ResolvedFilterExpr>,
-    pub sort: Vec<ResolvedSortExpr>,
-    pub facets: Vec<ResolvedFacetRequest>,
-    pub ranking: ResolvedRankingPolicy,
-    pub limit: u32,
-    pub offset: u32,
-    pub projection: ResolvedProjection,
-    pub highlighting: ResolvedHighlighting,
-    pub language: Option<LanguageHint>,
-    pub prefix_policy: PrefixPolicy,
-    pub typo_policy: TypoPolicy,
+pub struct SearchRequestIr {
+    pub(crate) query: QueryIr,
+    pub(crate) search_fields: Vec<SearchFieldIr>,
+    pub(crate) filter: Option<FilterIr>,
+    pub(crate) sort: Vec<SortIr>,
+    pub(crate) facets: Vec<FacetIr>,
+    pub(crate) ranking: RankingPolicyIr,
+    pub(crate) limit: u32,
+    pub(crate) offset: u32,
+    pub(crate) projection: ProjectionIr,
+    pub(crate) highlighting: HighlightingIr,
+    pub(crate) language: Option<LanguageHint>,
+    pub(crate) prefix_policy: PrefixPolicy,
+    pub(crate) typo_policy: TypoPolicy,
+}
+
+impl SearchRequestIr {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        query: QueryIr,
+        search_fields: Vec<SearchFieldIr>,
+        filter: Option<FilterIr>,
+        sort: Vec<SortIr>,
+        facets: Vec<FacetIr>,
+        ranking: RankingPolicyIr,
+        limit: u32,
+        offset: u32,
+        projection: ProjectionIr,
+        highlighting: HighlightingIr,
+        language: Option<LanguageHint>,
+        prefix_policy: PrefixPolicy,
+        typo_policy: TypoPolicy,
+    ) -> Self {
+        Self {
+            query,
+            search_fields,
+            filter,
+            sort,
+            facets,
+            ranking,
+            limit,
+            offset,
+            projection,
+            highlighting,
+            language,
+            prefix_policy,
+            typo_policy,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        query: QueryIr,
+        search_fields: Vec<SearchFieldIr>,
+        filter: Option<FilterIr>,
+        sort: Vec<SortIr>,
+        facets: Vec<FacetIr>,
+        ranking: RankingPolicyIr,
+        limit: u32,
+        offset: u32,
+        projection: ProjectionIr,
+        highlighting: HighlightingIr,
+        language: Option<LanguageHint>,
+        prefix_policy: PrefixPolicy,
+        typo_policy: TypoPolicy,
+    ) -> Self {
+        Self {
+            query,
+            search_fields,
+            filter,
+            sort,
+            facets,
+            ranking,
+            limit,
+            offset,
+            projection,
+            highlighting,
+            language,
+            prefix_policy,
+            typo_policy,
+        }
+    }
+    pub fn query(&self) -> &QueryIr {
+        &self.query
+    }
+
+    pub fn search_fields(&self) -> &[SearchFieldIr] {
+        &self.search_fields
+    }
+
+    pub fn filter(&self) -> Option<&FilterIr> {
+        self.filter.as_ref()
+    }
+
+    pub fn sort(&self) -> &[SortIr] {
+        &self.sort
+    }
+
+    pub fn facets(&self) -> &[FacetIr] {
+        &self.facets
+    }
+
+    pub fn ranking(&self) -> RankingPolicyIr {
+        self.ranking
+    }
+
+    pub fn limit(&self) -> u32 {
+        self.limit
+    }
+
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    pub fn projection(&self) -> &ProjectionIr {
+        &self.projection
+    }
+
+    pub fn highlighting(&self) -> &HighlightingIr {
+        &self.highlighting
+    }
+
+    pub fn language(&self) -> Option<&LanguageHint> {
+        self.language.as_ref()
+    }
+
+    pub fn prefix_policy(&self) -> PrefixPolicy {
+        self.prefix_policy
+    }
+
+    pub fn typo_policy(&self) -> TypoPolicy {
+        self.typo_policy
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedAnalyzeRequest {
-    pub analyzer: AnalyzerIdentity,
-    pub text: String,
-    pub language: Option<LanguageHint>,
+pub struct AnalyzeRequestIr {
+    pub(crate) analyzer: AnalyzerIdentity,
+    pub(crate) text: String,
+    pub(crate) language: Option<LanguageHint>,
 }
 
-// This is the canonical semantic operation shape from C2. Keeping each
-// operation inline makes the enum pleasant for recording backends to inspect.
+impl AnalyzeRequestIr {
+    pub fn new(analyzer: AnalyzerIdentity, text: String, language: Option<LanguageHint>) -> Self {
+        Self {
+            analyzer,
+            text,
+            language,
+        }
+    }
+    pub fn analyzer(&self) -> AnalyzerIdentity {
+        self.analyzer
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn language(&self) -> Option<&LanguageHint> {
+        self.language.as_ref()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum WriteRequestIr {
+    Insert(InsertRequestIr),
+    Upsert(UpsertRequestIr),
+    Patch(PatchRequestIr),
+    Delete(DeleteRequestIr),
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum ResolvedOperation {
-    Insert(ResolvedInsertRequest),
-    Upsert(ResolvedUpsertRequest),
-    Patch(ResolvedPatchRequest),
-    Delete(ResolvedDeleteRequest),
-    Get(ResolvedGetRequest),
-    Search(ResolvedSearchRequest),
-    Analyze(ResolvedAnalyzeRequest),
+pub enum OperationIr {
+    Insert(InsertRequestIr),
+    Upsert(UpsertRequestIr),
+    Patch(PatchRequestIr),
+    Delete(DeleteRequestIr),
+    Get(GetRequestIr),
+    Search(SearchRequestIr),
+    Analyze(AnalyzeRequestIr),
+}
+
+/// Complete value representation used by owned backend results.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Value {
+    Null,
+    Bool(bool),
+    Int64(i64),
+    UInt64(u64),
+    Float64(f64),
+    String(String),
+    Bytes(Vec<u8>),
+    List(Vec<Value>),
+    Object(std::collections::BTreeMap<String, Value>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentResult {
+    pub id: String,
+    pub fields: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InsertResult {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpsertResult {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatchResult {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteResult {
+    pub id: String,
+    pub deleted: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GetResult {
+    pub document: Option<DocumentResult>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TotalHitsRelation {
+    Exact,
+    LowerBound,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TotalHits {
+    pub value: u64,
+    pub relation: TotalHitsRelation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HighlightSpan {
+    pub start_byte: u32,
+    pub end_byte: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HighlightFragment {
+    pub text: String,
+    pub matches: Vec<HighlightSpan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HighlightResult {
+    pub field: String,
+    pub fragments: Vec<HighlightFragment>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Hit {
+    pub id: String,
+    pub score: Option<f64>,
+    pub fields: std::collections::BTreeMap<String, Value>,
+    pub highlights: Vec<HighlightResult>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FacetValue {
+    pub value: Value,
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FacetResult {
+    pub field: String,
+    pub values: Vec<FacetValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchResult {
+    pub hits: Vec<Hit>,
+    pub total_hits: TotalHits,
+    pub facets: Vec<FacetResult>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnalyzedToken {
+    pub surface: String,
+    pub term: String,
+    pub position: u32,
+    pub start_byte: u32,
+    pub end_byte: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnalyzeResult {
+    pub tokens: Vec<AnalyzedToken>,
 }
 
 impl fmt::Display for FieldName {
@@ -409,17 +1021,5 @@ impl fmt::Display for DocumentId {
 impl fmt::Display for IndexName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
-    }
-}
-
-impl From<OwnedScalarValue> for api::Value {
-    fn from(value: OwnedScalarValue) -> Self {
-        let kind = match value {
-            OwnedScalarValue::Bool(value) => api::value::Kind::BoolValue(value),
-            OwnedScalarValue::Int64(value) => api::value::Kind::Int64Value(value),
-            OwnedScalarValue::Float64(value) => api::value::Kind::Float64Value(value),
-            OwnedScalarValue::String(value) => api::value::Kind::StringValue(value),
-        };
-        Self { kind: Some(kind) }
     }
 }

@@ -4,53 +4,38 @@ use searchkernel_core::*;
 struct CompileOnlyBackend;
 
 impl Backend for CompileOnlyBackend {
-    fn insert(&self, _: ResolvedInsertRequest) -> Result<api::InsertResult> {
+    fn insert(&self, _: InsertRequestIr) -> Result<InsertResult> {
         unimplemented!()
     }
-
-    fn upsert(&self, _: ResolvedUpsertRequest) -> Result<api::UpsertResult> {
+    fn upsert(&self, _: UpsertRequestIr) -> Result<UpsertResult> {
         unimplemented!()
     }
-
-    fn patch(&self, _: ResolvedPatchRequest) -> Result<api::PatchResult> {
+    fn patch(&self, _: PatchRequestIr) -> Result<PatchResult> {
         unimplemented!()
     }
-
-    fn delete(&self, _: ResolvedDeleteRequest) -> Result<api::DeleteResult> {
+    fn delete(&self, _: DeleteRequestIr) -> Result<DeleteResult> {
         unimplemented!()
     }
-
-    fn get(&self, _: ResolvedGetRequest) -> Result<api::GetResult> {
+    fn get(&self, _: GetRequestIr) -> Result<GetResult> {
         unimplemented!()
     }
-
-    fn search(&self, _: ResolvedSearchRequest) -> Result<api::SearchResult> {
+    fn search(&self, _: SearchRequestIr) -> Result<SearchResult> {
         unimplemented!()
     }
-
-    fn analyze(&self, _: ResolvedAnalyzeRequest) -> Result<api::AnalyzeResult> {
+    fn analyze(&self, _: AnalyzeRequestIr) -> Result<AnalyzeResult> {
         unimplemented!()
     }
 }
 
-fn compile_contract() {
-    let definition = api::IndexDefinition {
-        fields: vec![api::FieldDefinition {
-            name: "title".to_owned(),
-            kind: api::FieldKind::Text as i32,
-            ..Default::default()
-        }],
-        ..Default::default()
-    };
-    let semantics = IndexSemantics::new(&definition).expect("valid definition");
-    let _resolved = semantics.resolve_search(&api::SearchRequest::default());
-    let _description = semantics.describe();
-    let _inspection = semantics.inspect_query(&api::InspectQueryRequest {
-        request: Some(api::SearchRequest::default()),
-    });
+fn compile_contract<'a>(definition: api::IndexDefinition<'a>, request: api::SearchRequest<'a>) {
+    let context = IndexContext::from_api(definition).expect("valid definition");
+    let _request_ir = context.search_to_ir(request);
+    let _description = context.describe();
+    let _inspection = context.inspect_query(request);
+    let _ = context.definition();
     let _: Option<CompileOnlyBackend> = None;
 }
 
 fn main() {
-    let _ = compile_contract as fn();
+    let _ = compile_contract as for<'a> fn(api::IndexDefinition<'a>, api::SearchRequest<'a>);
 }

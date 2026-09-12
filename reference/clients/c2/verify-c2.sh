@@ -7,11 +7,12 @@ REPO_ROOT=$(CDPATH= cd -- "$ROOT/../../.." && pwd)
 cargo check --quiet --manifest-path "$ROOT/api-contract/Cargo.toml" --bin c2
 rustfmt --edition 2021 --check \
     "$REPO_ROOT/crates/searchkernel-api/src/lib.rs" \
-    "$REPO_ROOT/crates/searchkernel-api/build.rs" \
     "$REPO_ROOT/crates/searchkernel-core/src/lib.rs" \
     "$REPO_ROOT/crates/searchkernel-core/src/error.rs" \
     "$REPO_ROOT/crates/searchkernel-core/src/model.rs" \
-    "$REPO_ROOT/crates/searchkernel-core/src/resolve.rs" \
+    "$REPO_ROOT/crates/searchkernel-core/src/backend.rs" \
+    "$REPO_ROOT/crates/searchkernel-core/src/api_to_ir.rs" \
+    "$REPO_ROOT/crates/searchkernel-core/src/ir_to_api.rs" \
     "$REPO_ROOT/crates/searchkernel-core/tests/semantics.rs" \
     "$ROOT/api-contract/src/bin/c2.rs" \
     "$ROOT/api-contract/tests/semantics.rs"

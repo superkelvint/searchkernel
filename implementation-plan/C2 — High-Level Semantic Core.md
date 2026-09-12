@@ -1,5 +1,10 @@
 # C2 — Search Kernel IR
 
+This document records milestone history. The final architectural names are
+`*Ir` for owned Search Kernel IR types, `IndexContext` for compiled schema
+context, and `*_to_ir` for API conversion. Legacy names in older examples are
+not part of the final architecture.
+
 Implement:
 
 ```text

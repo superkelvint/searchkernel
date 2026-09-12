@@ -2,6 +2,11 @@
 
 Search Kernel is a Rust interface to Vespa's local C++ search engine.
 
+The final API architecture is Portable API (FlatBuffers) → `*_to_ir` in
+`searchkernel-core` → owned Search Kernel IR → backend interface → `lower_*`
+Vespa representation → execution. Milestone labels in this document are
+verification history, not architectural layers.
+
 The implementation is deliberately incremental:
 
 ```text
