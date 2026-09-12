@@ -8,15 +8,15 @@ PROBE=$ROOT/reference/vespa/m0/native-probe/probe.c
 
 mkdir -p "$BUILD"
 rm -f "$BUILD"/*.gcda "$BUILD"/*.gcov "$BUILD"/probe-real "$BUILD"/probe-fake \
-    "$BUILD"/probe.o "$BUILD"/m0-probe-fake.o
+    "$BUILD"/probe.o "$BUILD"/m0-probe-abi-double.o
 
 CFLAGS="-std=c11 -O0 -g -Wall -Wextra -Werror --coverage"
 
 cc $CFLAGS -I"$SDK/include" -c "$PROBE" -o "$BUILD/probe.o"
-cc $CFLAGS -I"$SDK/include" -c "$ROOT/tools/m0-probe-fake.c" \
-    -o "$BUILD/m0-probe-fake.o"
+cc $CFLAGS -I"$SDK/include" -c "$ROOT/tools/m0-probe-abi-double.c" \
+    -o "$BUILD/m0-probe-abi-double.o"
 
-cc $CFLAGS "$BUILD/probe.o" "$BUILD/m0-probe-fake.o" \
+cc $CFLAGS "$BUILD/probe.o" "$BUILD/m0-probe-abi-double.o" \
     -o "$BUILD/probe-fake"
 cc $CFLAGS "$BUILD/probe.o" -L"$SDK/lib" -lsearchkernel_vespa \
     -Wl,-rpath,"$SDK/lib" -o "$BUILD/probe-real"
