@@ -1,5 +1,12 @@
 //! Safe Vespa-specific adapter for the private Search Kernel ABI.
 
+mod linguistics;
+
+pub use linguistics::{
+    DocumentAnalysis, DocumentTerm, Language, Linguistics, LinguisticsOptions, QueryAnalysis,
+    QueryTerm, StemMode,
+};
+
 use searchkernel_sys as sys;
 use std::ffi::{CStr, CString, NulError};
 use std::path::Path;
