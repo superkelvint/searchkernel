@@ -8,6 +8,7 @@ members = [
     "crates/searchkernel-testkit",
 ]
 resolver = "2"
+exclude = ["reference/vespa/m4/rust-driver"]
 
 [workspace.package]
 edition = "2021"
