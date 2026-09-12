@@ -17,10 +17,14 @@ if grep -nE 'searchkernel-core|searchkernel_core' "$PROD/Cargo.toml" >/dev/null 
   exit 1
 fi
 
-# High-signal fixture-specific shortcuts. Scenario ids must never occur in production source.
+# High-signal fixture-specific shortcuts. Scenario ids must never occur as
+# hard-coded string values in production source. Match quoted literals rather
+# than arbitrary substrings, since ids such as "empty" are ordinary words in
+# legitimate error messages and test names.
 while IFS= read -r id; do
   [[ -z "$id" ]] && continue
-  if grep -RInF --exclude-dir=target -- "$id" "$PROD/src" >/dev/null 2>&1; then
+  if grep -RInF --exclude-dir=target -- "\"$id\"" "$PROD/src" >/dev/null 2>&1 ||
+     grep -RInF --exclude-dir=target -- "'$id'" "$PROD/src" >/dev/null 2>&1; then
     echo "fixture scenario id '$id' appears in production source" >&2
     exit 1
   fi
