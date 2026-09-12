@@ -1,0 +1,21 @@
+{
+  "category": "composition",
+  "description": "Named preset lookup fails deterministically when the preset does not exist.",
+  "id": "composition.unknown-preset",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "presets": {}
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "preset": "missing",
+          "query": "wire"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

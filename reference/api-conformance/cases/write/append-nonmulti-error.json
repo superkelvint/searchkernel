@@ -1,0 +1,21 @@
+{
+  "category": "write",
+  "description": "Append requires multi-valued field.",
+  "id": "write.append-nonmulti-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": "sku-42",
+    "kind": "patch",
+    "patch": {
+      "operations": [
+        {
+          "append": {
+            "field": "brand",
+            "value": "Sony"
+          }
+        }
+      ]
+    }
+  },
+  "operation": "resolve_write"
+}

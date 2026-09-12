@@ -1,0 +1,15 @@
+{
+  "category": "schema",
+  "description": "Default semantics for f64.",
+  "id": "schema.f64-defaults",
+  "input": {
+    "fields": [
+      {
+        "kind": "f64",
+        "name": "value"
+      }
+    ],
+    "name": "f64_default"
+  },
+  "operation": "resolve_index_definition"
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_synonym",
+    "details": {
+      "reason": "equivalent_requires_two_terms"
+    }
+  }
+}

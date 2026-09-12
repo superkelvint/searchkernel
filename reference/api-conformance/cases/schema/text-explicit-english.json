@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Explicit English analyzer is preserved.",
+  "id": "schema.text-explicit-english",
+  "input": {
+    "fields": [
+      {
+        "analyzer": "english/v1",
+        "kind": "text",
+        "name": "body"
+      }
+    ],
+    "name": "text-english"
+  },
+  "operation": "resolve_index_definition"
+}

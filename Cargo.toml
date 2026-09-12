@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/searchkernel", "crates/searchkernel-sys"]
+members = [
+    "crates/searchkernel-api",
+    "crates/searchkernel-core",
+    "crates/searchkernel",
+    "crates/searchkernel-sys",
+    "crates/searchkernel-vespa",
+]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,35 @@
+{
+  "fields": [
+    {
+      "kind": "keyword",
+      "name": "sku",
+      "prefix": true,
+      "searchable": true,
+      "typo_tolerance": "disabled"
+    },
+    {
+      "facet": true,
+      "kind": "keyword",
+      "name": "warehouse"
+    },
+    {
+      "kind": "i64",
+      "name": "quantity"
+    },
+    {
+      "kind": "f64",
+      "name": "price"
+    },
+    {
+      "kind": "bool",
+      "name": "active"
+    }
+  ],
+  "name": "inventory",
+  "search_fields": [
+    {
+      "field": "sku",
+      "weight": 1.0
+    }
+  ]
+}

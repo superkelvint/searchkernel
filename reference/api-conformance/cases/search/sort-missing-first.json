@@ -1,0 +1,17 @@
+{
+  "category": "search",
+  "description": "Hard sorting may explicitly place missing values first.",
+  "id": "search.sort-missing-first",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "sort": [
+      {
+        "direction": "asc",
+        "field": "price",
+        "missing": "first"
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

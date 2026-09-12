@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Text fields may facet on their original value through a generated exact representation.",
+  "id": "schema.text-facet",
+  "input": {
+    "fields": [
+      {
+        "facet": true,
+        "kind": "text",
+        "name": "author"
+      }
+    ],
+    "name": "authors"
+  },
+  "operation": "resolve_index_definition"
+}

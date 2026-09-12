@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Numeric filters reject strings.",
+  "id": "filter.numeric-type-mismatch",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "lte": {
+        "field": "price",
+        "value": "500"
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

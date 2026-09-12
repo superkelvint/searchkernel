@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Stored-only string cannot facet unless declared as keyword/text facetable capability.",
+  "id": "schema.facet-stored-string",
+  "input": {
+    "fields": [
+      {
+        "facet": true,
+        "kind": "string",
+        "name": "url"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

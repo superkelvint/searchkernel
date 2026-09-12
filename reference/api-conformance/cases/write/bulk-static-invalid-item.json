@@ -1,0 +1,22 @@
+{
+  "category": "write",
+  "description": "Static bulk validation is all-or-nothing before backend execution.",
+  "id": "write.bulk-static-invalid-item",
+  "index_fixture": "product-v1",
+  "input": {
+    "operations": [
+      {
+        "id": "a",
+        "kind": "delete"
+      },
+      {
+        "document": {
+          "title": "missing required fields"
+        },
+        "id": "b",
+        "kind": "insert"
+      }
+    ]
+  },
+  "operation": "resolve_bulk_write"
+}

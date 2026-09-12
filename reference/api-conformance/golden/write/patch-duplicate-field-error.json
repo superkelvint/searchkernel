@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "duplicate_patch_field",
+    "details": {
+      "field": "price"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "error": null,
+      "id": "a",
+      "index": 0,
+      "ok": true
+    },
+    {
+      "error": null,
+      "id": "b",
+      "index": 1,
+      "ok": true
+    }
+  ]
+}

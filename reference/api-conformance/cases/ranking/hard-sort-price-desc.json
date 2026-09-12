@@ -1,0 +1,16 @@
+{
+  "category": "ranking",
+  "description": "Descending hard sort still gets the deterministic document-id tie breaker.",
+  "id": "ranking.hard-sort-price-desc",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "sort": [
+      {
+        "direction": "desc",
+        "field": "price"
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

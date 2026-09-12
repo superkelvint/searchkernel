@@ -1,0 +1,24 @@
+{
+  "fields": [
+    {
+      "kind": "text",
+      "name": "title"
+    },
+    {
+      "facet": true,
+      "kind": "text",
+      "name": "author"
+    }
+  ],
+  "name": "articles",
+  "search_fields": [
+    {
+      "field": "title",
+      "weight": 1.0
+    },
+    {
+      "field": "author",
+      "weight": 1.0
+    }
+  ]
+}

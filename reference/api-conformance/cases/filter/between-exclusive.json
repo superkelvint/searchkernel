@@ -1,0 +1,19 @@
+{
+  "category": "filter",
+  "description": "Numeric ranges preserve exclusive endpoint semantics.",
+  "id": "filter.between-exclusive",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "between": {
+        "field": "price",
+        "lower": 100.0,
+        "lower_inclusive": false,
+        "upper": 500.0,
+        "upper_inclusive": false
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

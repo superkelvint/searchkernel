@@ -1,0 +1,16 @@
+{
+  "ok": {
+    "actions": [
+      {
+        "hide": {
+          "id": "sku-old"
+        }
+      }
+    ],
+    "name": "hide-old",
+    "priority": 0,
+    "when": {
+      "query_exact": "headphones"
+    }
+  }
+}

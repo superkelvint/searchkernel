@@ -1,0 +1,15 @@
+{
+  "category": "schema",
+  "description": "Leading underscore names are reserved.",
+  "id": "schema.reserved-field",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "_internal"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

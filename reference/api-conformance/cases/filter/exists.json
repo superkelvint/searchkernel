@@ -1,0 +1,15 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: exists.",
+  "id": "filter.exists",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "exists": {
+        "field": "tags"
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

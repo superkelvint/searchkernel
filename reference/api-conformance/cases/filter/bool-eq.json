@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: bool-eq.",
+  "id": "filter.bool-eq",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "eq": {
+        "field": "in_stock",
+        "value": true
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

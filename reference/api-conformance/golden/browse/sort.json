@@ -1,0 +1,27 @@
+{
+  "ok": {
+    "facets": [],
+    "filter": null,
+    "highlights": [],
+    "kind": "browse",
+    "pagination": {
+      "limit": 20,
+      "offset": 0
+    },
+    "projection": {
+      "kind": "all_stored"
+    },
+    "snippets": [],
+    "sort": [
+      {
+        "direction": "asc",
+        "field": "price",
+        "kind": "field"
+      },
+      {
+        "direction": "asc",
+        "kind": "document_id"
+      }
+    ]
+  }
+}

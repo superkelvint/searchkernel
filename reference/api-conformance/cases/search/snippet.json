@@ -1,0 +1,16 @@
+{
+  "category": "search",
+  "description": "Snippet request is structured.",
+  "id": "search.snippet",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "wireless headphones",
+    "snippets": [
+      {
+        "field": "description",
+        "max_chars": 180
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

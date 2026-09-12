@@ -1,0 +1,18 @@
+{
+  "category": "facet",
+  "description": "Range facet requires at least one range.",
+  "id": "facet.range-empty-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "ranges": {
+          "field": "price",
+          "ranges": []
+        }
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

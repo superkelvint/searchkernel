@@ -1,0 +1,10 @@
+{
+  "category": "response",
+  "description": "Idempotent delete of missing document returns existed=false.",
+  "id": "response.delete-missing",
+  "index_fixture": "product-v1",
+  "input": {
+    "backend_response_fixture": "delete-missing"
+  },
+  "operation": "map_delete_response"
+}

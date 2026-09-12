@@ -1,0 +1,15 @@
+{
+  "category": "browse",
+  "description": "Explicit browse sort retains DocumentId final tie-break.",
+  "id": "browse.sort",
+  "index_fixture": "product-v1",
+  "input": {
+    "sort": [
+      {
+        "direction": "asc",
+        "field": "price"
+      }
+    ]
+  },
+  "operation": "resolve_browse"
+}

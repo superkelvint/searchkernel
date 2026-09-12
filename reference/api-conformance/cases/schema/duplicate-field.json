@@ -1,0 +1,19 @@
+{
+  "category": "schema",
+  "description": "Duplicate field names are rejected.",
+  "id": "schema.duplicate-field",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      },
+      {
+        "kind": "keyword",
+        "name": "title"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

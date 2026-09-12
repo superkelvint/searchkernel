@@ -1,0 +1,10 @@
+{
+  "category": "analyze",
+  "description": "Standard analyzer owns case folding and punctuation tokenization.",
+  "id": "analyze.standard-semantics",
+  "input": {
+    "analyzer": "standard/v1",
+    "text": "Running, WOLVES 123!"
+  },
+  "operation": "analyze_text"
+}

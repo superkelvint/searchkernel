@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "type_mismatch",
+    "details": {
+      "actual": "i64",
+      "expected": "bool",
+      "field": "in_stock"
+    }
+  }
+}

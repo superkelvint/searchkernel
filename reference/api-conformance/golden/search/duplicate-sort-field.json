@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "duplicate_sort_field",
+    "details": {
+      "field": "price"
+    }
+  }
+}

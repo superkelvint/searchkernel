@@ -1,0 +1,21 @@
+{
+  "category": "write",
+  "description": "Numeric increment is atomic semantic operation.",
+  "id": "write.patch-increment",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": "sku-42",
+    "kind": "patch",
+    "patch": {
+      "operations": [
+        {
+          "increment": {
+            "by": 1,
+            "field": "popularity"
+          }
+        }
+      ]
+    }
+  },
+  "operation": "resolve_write"
+}

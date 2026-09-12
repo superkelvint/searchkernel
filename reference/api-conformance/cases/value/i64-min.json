@@ -1,0 +1,12 @@
+{
+  "category": "value",
+  "description": "Full signed 64-bit minimum round-trips.",
+  "id": "value.i64-min",
+  "input": {
+    "kind": "i64",
+    "value": {
+      "$i64": "-9223372036854775808"
+    }
+  },
+  "operation": "normalize_value"
+}

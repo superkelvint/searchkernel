@@ -1,0 +1,21 @@
+{
+  "category": "schema",
+  "description": "Stored-only fields cannot be default search fields.",
+  "id": "schema.nonsearchable-search-field",
+  "input": {
+    "fields": [
+      {
+        "kind": "string",
+        "name": "url"
+      }
+    ],
+    "name": "bad",
+    "search_fields": [
+      {
+        "field": "url",
+        "weight": 1.0
+      }
+    ]
+  },
+  "operation": "resolve_index_definition"
+}

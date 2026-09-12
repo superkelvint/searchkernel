@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: number-lt.",
+  "id": "filter.number-lt",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "lt": {
+        "field": "price",
+        "value": 500.0
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

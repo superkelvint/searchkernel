@@ -1,0 +1,14 @@
+{
+  "category": "search",
+  "description": "Highlight fields are explicit.",
+  "id": "search.highlights",
+  "index_fixture": "product-v1",
+  "input": {
+    "highlight": [
+      "title",
+      "description"
+    ],
+    "query": "wireless headphones"
+  },
+  "operation": "resolve_search"
+}

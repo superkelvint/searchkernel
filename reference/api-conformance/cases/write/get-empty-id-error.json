@@ -1,0 +1,10 @@
+{
+  "category": "write",
+  "description": "Get uses the same non-empty document-id contract as writes.",
+  "id": "write.get-empty-id-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": ""
+  },
+  "operation": "resolve_get"
+}

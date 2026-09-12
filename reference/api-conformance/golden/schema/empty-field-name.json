@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_field_name",
+    "details": {
+      "field": ""
+    }
+  }
+}

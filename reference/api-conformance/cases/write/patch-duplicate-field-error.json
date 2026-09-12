@@ -1,0 +1,25 @@
+{
+  "category": "write",
+  "description": "One patch request may target a field only once.",
+  "id": "write.patch-duplicate-field-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": "1",
+    "kind": "patch",
+    "operations": [
+      {
+        "set": {
+          "field": "price",
+          "value": 100.0
+        }
+      },
+      {
+        "increment": {
+          "field": "price",
+          "value": 1.0
+        }
+      }
+    ]
+  },
+  "operation": "resolve_write"
+}

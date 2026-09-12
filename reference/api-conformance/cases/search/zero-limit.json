@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Limit must be at least one.",
+  "id": "search.zero-limit",
+  "index_fixture": "product-v1",
+  "input": {
+    "limit": 0,
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

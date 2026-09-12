@@ -1,0 +1,10 @@
+{
+  "category": "value",
+  "description": "Keyword values are preserved exactly; no implicit Unicode normalization.",
+  "id": "value.keyword-unicode-preserved",
+  "input": {
+    "kind": "keyword",
+    "value": "Ångström"
+  },
+  "operation": "normalize_value"
+}

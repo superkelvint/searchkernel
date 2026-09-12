@@ -1,0 +1,38 @@
+{
+  "category": "preset",
+  "description": "Preset supplies query-time options.",
+  "id": "preset.apply",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "presets": {
+        "autocomplete": {
+          "limit": 8,
+          "name": "autocomplete",
+          "prefix": "last_term",
+          "search_fields": [
+            {
+              "field": "title",
+              "weight": 4.0
+            },
+            {
+              "field": "brand",
+              "weight": 2.0
+            }
+          ],
+          "typo_tolerance": "standard/v1"
+        }
+      }
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "preset": "autocomplete",
+          "query": "wire"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "A multivalue text field retains text analysis/search defaults for each value.",
+  "id": "schema.multi-text",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "multi": true,
+        "name": "value"
+      }
+    ],
+    "name": "multi_text"
+  },
+  "operation": "resolve_index_definition"
+}

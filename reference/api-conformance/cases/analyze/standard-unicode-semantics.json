@@ -1,0 +1,10 @@
+{
+  "category": "analyze",
+  "description": "Standard analyzer applies NFKC and Unicode case folding before tokenization.",
+  "id": "analyze.standard-unicode-semantics",
+  "input": {
+    "analyzer": "standard/v1",
+    "text": "Ｃａｆé 東京"
+  },
+  "operation": "analyze_text"
+}

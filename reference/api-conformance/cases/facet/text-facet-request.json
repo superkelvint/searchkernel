@@ -1,0 +1,13 @@
+{
+  "category": "facet",
+  "description": "Facetable text counts original field values.",
+  "id": "facet.text-facet-request",
+  "index_fixture": "text-facet",
+  "input": {
+    "facets": [
+      "author"
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

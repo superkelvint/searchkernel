@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "one_of requires at least one value.",
+  "id": "filter.empty-one-of-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "one_of": {
+        "field": "brand",
+        "values": []
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

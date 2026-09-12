@@ -1,0 +1,10 @@
+{
+  "category": "analyze",
+  "description": "Keyword analyzer normalizes the entire value as one token and does not split punctuation or spaces.",
+  "id": "analyze.keyword-semantics",
+  "input": {
+    "analyzer": "keyword/v1",
+    "text": "Sony WH-1000XM6"
+  },
+  "operation": "analyze_text"
+}

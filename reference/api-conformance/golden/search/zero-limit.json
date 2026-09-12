@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "invalid_limit",
+    "details": {
+      "limit": 0,
+      "max": 1000,
+      "min": 1
+    }
+  }
+}

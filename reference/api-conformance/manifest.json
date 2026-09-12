@@ -1,0 +1,27 @@
+{
+  "adapter_protocol": "sk-conformance/v2",
+  "case_count": 260,
+  "categories": {
+    "analyze": 10,
+    "browse": 4,
+    "composition": 12,
+    "curation": 6,
+    "facet": 19,
+    "filter": 34,
+    "group": 7,
+    "introspection": 4,
+    "lifecycle": 7,
+    "management": 6,
+    "preset": 4,
+    "ranking": 11,
+    "response": 16,
+    "schema": 34,
+    "search": 40,
+    "synonym": 5,
+    "value": 7,
+    "write": 34
+  },
+  "semantics_version": "high-level/v1",
+  "suite": "searchkernel-high-level-conformance",
+  "version": "0.4.0"
+}

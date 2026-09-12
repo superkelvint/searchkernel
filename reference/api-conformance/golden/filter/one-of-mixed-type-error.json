@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "type_mismatch",
+    "details": {
+      "actual": "mixed",
+      "expected": "f64",
+      "field": "price"
+    }
+  }
+}

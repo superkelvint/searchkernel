@@ -1,0 +1,19 @@
+{
+  "category": "filter",
+  "description": "All one_of candidates must conform to the target field type.",
+  "id": "filter.one-of-mixed-type-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "one_of": {
+        "field": "price",
+        "values": [
+          100.0,
+          "cheap"
+        ]
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

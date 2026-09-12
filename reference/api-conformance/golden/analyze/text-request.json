@@ -1,0 +1,7 @@
+{
+  "ok": {
+    "analyzer": "standard/v1",
+    "field": "title",
+    "text": "Running with the Wolves"
+  }
+}

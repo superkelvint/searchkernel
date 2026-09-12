@@ -1,0 +1,22 @@
+{
+  "ok": {
+    "facets": [],
+    "filter": null,
+    "highlights": [],
+    "kind": "browse",
+    "pagination": {
+      "limit": 50,
+      "offset": 100
+    },
+    "projection": {
+      "kind": "all_stored"
+    },
+    "snippets": [],
+    "sort": [
+      {
+        "direction": "asc",
+        "kind": "document_id"
+      }
+    ]
+  }
+}

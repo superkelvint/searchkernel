@@ -1,0 +1,9 @@
+{
+  "category": "analyze",
+  "description": "Analyze response mapping preserves Unicode token text exactly.",
+  "id": "analyze.unicode-map-response",
+  "input": {
+    "backend_response_fixture": "analyze-unicode"
+  },
+  "operation": "map_analyze_response"
+}

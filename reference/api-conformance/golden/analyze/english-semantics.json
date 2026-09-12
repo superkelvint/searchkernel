@@ -1,0 +1,27 @@
+{
+  "ok": {
+    "analyzer": "english/v1",
+    "field": null,
+    "input": "Running jumped cars",
+    "tokens": [
+      {
+        "indexed": "run",
+        "normalized": "running",
+        "original": "Running",
+        "position": 0
+      },
+      {
+        "indexed": "jump",
+        "normalized": "jumped",
+        "original": "jumped",
+        "position": 1
+      },
+      {
+        "indexed": "car",
+        "normalized": "cars",
+        "original": "cars",
+        "position": 2
+      }
+    ]
+  }
+}

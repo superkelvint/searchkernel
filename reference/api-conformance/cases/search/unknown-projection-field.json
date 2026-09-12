@@ -1,0 +1,14 @@
+{
+  "category": "search",
+  "description": "Projection fields must exist.",
+  "id": "search.unknown-projection-field",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "select": [
+      "title",
+      "bogus"
+    ]
+  },
+  "operation": "resolve_search"
+}

@@ -1,0 +1,19 @@
+{
+  "ok": {
+    "actions": [
+      {
+        "add_filter": {
+          "eq": {
+            "field": "in_stock",
+            "value": true
+          }
+        }
+      }
+    ],
+    "name": "filter-stock",
+    "priority": 0,
+    "when": {
+      "query_exact": "headphones"
+    }
+  }
+}

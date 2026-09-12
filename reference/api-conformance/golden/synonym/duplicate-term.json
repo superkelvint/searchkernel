@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "duplicate_synonym_term",
+    "details": {
+      "term": "pants"
+    }
+  }
+}

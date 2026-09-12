@@ -1,0 +1,15 @@
+{
+  "category": "schema",
+  "description": "Default semantics for keyword.",
+  "id": "schema.keyword-defaults",
+  "input": {
+    "fields": [
+      {
+        "kind": "keyword",
+        "name": "value"
+      }
+    ],
+    "name": "keyword_default"
+  },
+  "operation": "resolve_index_definition"
+}

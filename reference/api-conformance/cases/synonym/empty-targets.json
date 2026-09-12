@@ -1,0 +1,12 @@
+{
+  "category": "synonym",
+  "description": "One-way synonym requires at least one target.",
+  "id": "synonym.empty-targets",
+  "input": {
+    "kind": "one_way",
+    "name": "bad",
+    "source": "phone",
+    "targets": []
+  },
+  "operation": "resolve_synonym"
+}

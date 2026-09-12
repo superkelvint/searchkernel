@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Offset is explicit and zero-based.",
+  "id": "search.offset",
+  "index_fixture": "product-v1",
+  "input": {
+    "offset": 40,
+    "query": "wireless headphones"
+  },
+  "operation": "resolve_search"
+}

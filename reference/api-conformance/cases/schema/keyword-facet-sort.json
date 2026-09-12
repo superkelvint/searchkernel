@@ -1,0 +1,17 @@
+{
+  "category": "schema",
+  "description": "Keyword may opt into facet and sort.",
+  "id": "schema.keyword-facet-sort",
+  "input": {
+    "fields": [
+      {
+        "facet": true,
+        "kind": "keyword",
+        "name": "brand",
+        "sortable": true
+      }
+    ],
+    "name": "brand"
+  },
+  "operation": "resolve_index_definition"
+}

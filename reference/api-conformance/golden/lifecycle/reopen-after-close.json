@@ -1,0 +1,18 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "handle": "h1",
+        "open": true
+      },
+      {
+        "closed": true,
+        "handle": "h1"
+      },
+      {
+        "handle": "h2",
+        "open": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "non_finite_number",
+    "details": {
+      "kind": "f64",
+      "value": "inf"
+    }
+  }
+}

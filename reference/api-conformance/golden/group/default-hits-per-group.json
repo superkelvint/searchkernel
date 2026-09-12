@@ -1,0 +1,65 @@
+{
+  "ok": {
+    "curation": {
+      "added_filters": [],
+      "applied": [],
+      "hidden_ids": [],
+      "pins": [],
+      "query_replacement": null
+    },
+    "facets": [],
+    "filter": null,
+    "grouping": {
+      "field": "category",
+      "hits_per_group": 3
+    },
+    "highlights": [],
+    "include_ranking_info": false,
+    "kind": "search",
+    "pagination": {
+      "limit": 20,
+      "offset": 0
+    },
+    "prefix": "last_term",
+    "projection": {
+      "kind": "all_stored"
+    },
+    "query": {
+      "original_text": "shirt",
+      "parsed": null,
+      "syntax": "literal",
+      "text": "shirt"
+    },
+    "ranking": {
+      "relevance": "default/v1",
+      "then": [
+        {
+          "direction": "desc",
+          "field": "popularity"
+        }
+      ]
+    },
+    "search_fields": [
+      {
+        "field": "title",
+        "infix": false,
+        "prefix": true,
+        "typo_tolerance": "standard/v1",
+        "weight": 4.0
+      },
+      {
+        "field": "description",
+        "infix": false,
+        "prefix": true,
+        "typo_tolerance": "standard/v1",
+        "weight": 1.0
+      }
+    ],
+    "snippets": [],
+    "sort": [],
+    "synonym_expansions": [],
+    "synonyms": true,
+    "term_match": "all",
+    "typo_tolerance": "standard/v1"
+  }
+}

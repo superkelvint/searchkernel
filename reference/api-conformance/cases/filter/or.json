@@ -1,0 +1,26 @@
+{
+  "category": "filter",
+  "description": "OR composition.",
+  "id": "filter.or",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "any": [
+        {
+          "eq": {
+            "field": "brand",
+            "value": "Sony"
+          }
+        },
+        {
+          "eq": {
+            "field": "brand",
+            "value": "Bose"
+          }
+        }
+      ]
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

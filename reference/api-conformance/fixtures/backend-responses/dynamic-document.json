@@ -1,0 +1,28 @@
+{
+  "facets": {},
+  "hits": [
+    {
+      "document": {
+        "brand": "Acme",
+        "extra": {
+          "nested": true
+        },
+        "price": 12.5,
+        "tags": [
+          "a",
+          "b"
+        ],
+        "title": "Caf\u00e9 \u2615"
+      },
+      "highlights": {},
+      "id": "sku-dyn",
+      "ranking_info": null,
+      "snippets": {}
+    }
+  ],
+  "took_micros": 42,
+  "total": {
+    "relation": "exact",
+    "value": 1
+  }
+}

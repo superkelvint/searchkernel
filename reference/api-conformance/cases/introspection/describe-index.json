@@ -1,0 +1,8 @@
+{
+  "category": "introspection",
+  "description": "Describe returns the resolved Search Kernel model, not backend config.",
+  "id": "introspection.describe-index",
+  "index_fixture": "product-v1",
+  "input": {},
+  "operation": "describe_index"
+}

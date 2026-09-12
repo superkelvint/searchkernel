@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "unsupported_field_capability",
+    "details": {
+      "capability": "facet",
+      "field": "url",
+      "kind": "string"
+    }
+  }
+}

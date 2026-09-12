@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "type_mismatch",
+    "details": {
+      "actual": "f64",
+      "expected": "i64",
+      "field": "popularity"
+    }
+  }
+}

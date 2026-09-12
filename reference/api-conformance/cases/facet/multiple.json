@@ -1,0 +1,18 @@
+{
+  "category": "facet",
+  "description": "Multiple facets.",
+  "id": "facet.multiple",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "brand"
+      },
+      {
+        "field": "category"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

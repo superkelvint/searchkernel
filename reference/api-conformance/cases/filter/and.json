@@ -1,0 +1,26 @@
+{
+  "category": "filter",
+  "description": "AND composition preserves order.",
+  "id": "filter.and",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "all": [
+        {
+          "eq": {
+            "field": "in_stock",
+            "value": true
+          }
+        },
+        {
+          "lte": {
+            "field": "price",
+            "value": 500.0
+          }
+        }
+      ]
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

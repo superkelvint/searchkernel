@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "kind": "patch",
+    "patch": {
+      "operations": [
+        {
+          "unset": {
+            "field": "image_url"
+          }
+        }
+      ]
+    }
+  }
+}

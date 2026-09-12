@@ -1,0 +1,10 @@
+{
+  "category": "schema",
+  "description": "An index requires at least one field.",
+  "id": "schema.empty-schema",
+  "input": {
+    "fields": [],
+    "name": "empty"
+  },
+  "operation": "resolve_index_definition"
+}

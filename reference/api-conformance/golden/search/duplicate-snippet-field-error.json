@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "duplicate_snippet_field",
+    "details": {
+      "field": "description"
+    }
+  }
+}

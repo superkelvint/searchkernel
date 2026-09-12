@@ -1,0 +1,15 @@
+{
+  "category": "ranking",
+  "description": "Explicit relevance sorting is legal and remains deterministically tied by document id.",
+  "id": "ranking.relevance-only-sort",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "sort": [
+      {
+        "relevance": "desc"
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

@@ -1,0 +1,21 @@
+{
+  "category": "schema",
+  "description": "Search weights must be finite and greater than zero.",
+  "id": "schema.negative-weight",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "bad",
+    "search_fields": [
+      {
+        "field": "title",
+        "weight": -1.0
+      }
+    ]
+  },
+  "operation": "resolve_index_definition"
+}

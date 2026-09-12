@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Linguistic analyzers apply only to text fields.",
+  "id": "schema.analyzer-on-keyword",
+  "input": {
+    "fields": [
+      {
+        "analyzer": "english/v1",
+        "kind": "keyword",
+        "name": "brand"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

@@ -1,0 +1,20 @@
+{
+  "category": "search",
+  "description": "A request cannot select the same search field twice.",
+  "id": "search.duplicate-request-search-field",
+  "index_fixture": "product-v1",
+  "input": {
+    "fields": [
+      {
+        "field": "title",
+        "weight": 1.0
+      },
+      {
+        "field": "title",
+        "weight": 2.0
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

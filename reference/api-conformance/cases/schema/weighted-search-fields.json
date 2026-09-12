@@ -1,0 +1,29 @@
+{
+  "category": "schema",
+  "description": "Explicit search field weights are preserved.",
+  "id": "schema.weighted-search-fields",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      },
+      {
+        "kind": "text",
+        "name": "body"
+      }
+    ],
+    "name": "explicit-search",
+    "search_fields": [
+      {
+        "field": "title",
+        "weight": 4.0
+      },
+      {
+        "field": "body",
+        "weight": 1.0
+      }
+    ]
+  },
+  "operation": "resolve_index_definition"
+}

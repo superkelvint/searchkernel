@@ -1,0 +1,16 @@
+{
+  "category": "ranking",
+  "description": "Hard sort replaces normal relevance ordering.",
+  "id": "ranking.hard-sort-price",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "sort": [
+      {
+        "direction": "asc",
+        "field": "price"
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

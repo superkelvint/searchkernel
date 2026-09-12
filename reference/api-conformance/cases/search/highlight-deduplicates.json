@@ -1,0 +1,15 @@
+{
+  "category": "search",
+  "description": "Highlight fields are an ordered set and duplicate names are removed.",
+  "id": "search.highlight-deduplicates",
+  "index_fixture": "product-v1",
+  "input": {
+    "highlight": [
+      "title",
+      "description",
+      "title"
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

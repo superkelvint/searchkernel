@@ -1,0 +1,7 @@
+{
+  "ok": {
+    "field": "brand",
+    "limit": 10,
+    "query": "son"
+  }
+}

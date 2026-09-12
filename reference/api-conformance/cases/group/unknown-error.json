@@ -1,0 +1,11 @@
+{
+  "category": "group",
+  "description": "Unknown grouping field is rejected.",
+  "id": "group.unknown-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "group_by": "missing",
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

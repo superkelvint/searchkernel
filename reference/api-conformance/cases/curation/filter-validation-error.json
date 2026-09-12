@@ -1,0 +1,24 @@
+{
+  "category": "curation",
+  "description": "Curation filters use normal filter validation.",
+  "id": "curation.filter-validation-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "actions": [
+      {
+        "add_filter": {
+          "eq": {
+            "field": "title",
+            "value": "x"
+          }
+        }
+      }
+    ],
+    "name": "bad-filter",
+    "priority": 0,
+    "when": {
+      "query_exact": "x"
+    }
+  },
+  "operation": "resolve_curation"
+}

@@ -1,0 +1,21 @@
+{
+  "ok": {
+    "analyzer": "standard/v1",
+    "field": null,
+    "input": "Ｃａｆé 東京",
+    "tokens": [
+      {
+        "indexed": "café",
+        "normalized": "café",
+        "original": "Ｃａｆé",
+        "position": 0
+      },
+      {
+        "indexed": "東京",
+        "normalized": "東京",
+        "original": "東京",
+        "position": 1
+      }
+    ]
+  }
+}

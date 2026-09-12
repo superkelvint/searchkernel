@@ -1,0 +1,15 @@
+{
+  "category": "synonym",
+  "description": "Equivalent synonym set normalization.",
+  "id": "synonym.equivalent",
+  "input": {
+    "kind": "equivalent",
+    "name": "pants",
+    "terms": [
+      "pants",
+      "trousers",
+      "slacks"
+    ]
+  },
+  "operation": "resolve_synonym"
+}

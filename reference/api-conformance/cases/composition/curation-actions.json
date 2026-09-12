@@ -1,0 +1,48 @@
+{
+  "category": "composition",
+  "description": "Matching curations may pin, hide, and add a filter in one deterministic effect set.",
+  "id": "composition.curation-actions",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "curations": {
+        "sale": {
+          "actions": [
+            {
+              "pin": {
+                "id": "sku-42",
+                "position": 1
+              }
+            },
+            {
+              "hide": {
+                "id": "sku-old"
+              }
+            },
+            {
+              "add_filter": {
+                "eq": {
+                  "field": "in_stock",
+                  "value": true
+                }
+              }
+            }
+          ],
+          "priority": 10,
+          "when": {
+            "query_exact": "headphones"
+          }
+        }
+      }
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "query": "headphones"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

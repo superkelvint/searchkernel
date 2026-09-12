@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "NOT composition.",
+  "id": "filter.not",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "not": {
+        "eq": {
+          "field": "brand",
+          "value": "Sony"
+        }
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

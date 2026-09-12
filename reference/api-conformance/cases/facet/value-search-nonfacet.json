@@ -1,0 +1,12 @@
+{
+  "category": "facet",
+  "description": "Facet value search requires facetable field.",
+  "id": "facet.value-search-nonfacet",
+  "index_fixture": "product-v1",
+  "input": {
+    "field": "price",
+    "limit": 20,
+    "query": "10"
+  },
+  "operation": "resolve_facet_values"
+}

@@ -1,0 +1,10 @@
+{
+  "category": "response",
+  "description": "Snippet response uses matched/unmatched segments, not encoding-dependent offsets.",
+  "id": "response.snippet",
+  "index_fixture": "product-v1",
+  "input": {
+    "backend_response_fixture": "snippet-product"
+  },
+  "operation": "map_search_response"
+}

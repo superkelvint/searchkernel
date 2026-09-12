@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: keyword-ne.",
+  "id": "filter.keyword-ne",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "ne": {
+        "field": "brand",
+        "value": "Sony"
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

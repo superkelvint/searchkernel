@@ -1,0 +1,17 @@
+{
+  "category": "facet",
+  "description": "Facet limit and ordering.",
+  "id": "facet.brand-options",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "brand",
+        "limit": 5,
+        "sort": "value_asc"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

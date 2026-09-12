@@ -1,0 +1,31 @@
+{
+  "category": "lifecycle",
+  "description": "Closing one handle does not prevent the logical index from being reopened.",
+  "id": "lifecycle.reopen-after-close",
+  "input": {
+    "state": {
+      "indexes": {
+        "products": {
+          "definition": "product-v1"
+        }
+      }
+    },
+    "steps": [
+      {
+        "handle": "h1",
+        "name": "products",
+        "op": "index_open"
+      },
+      {
+        "handle": "h1",
+        "op": "index_close"
+      },
+      {
+        "handle": "h2",
+        "name": "products",
+        "op": "index_open"
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

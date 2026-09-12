@@ -1,0 +1,23 @@
+{
+  "category": "ranking",
+  "description": "Ordered business tie-breaks.",
+  "id": "ranking.business-tiebreaks",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "ranking": {
+      "relevance": "default/v1",
+      "then": [
+        {
+          "direction": "desc",
+          "field": "popularity"
+        },
+        {
+          "direction": "asc",
+          "field": "price"
+        }
+      ]
+    }
+  },
+  "operation": "resolve_search"
+}

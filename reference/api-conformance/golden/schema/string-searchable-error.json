@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "unsupported_field_capability",
+    "details": {
+      "capability": "searchable",
+      "field": "value",
+      "kind": "string"
+    }
+  }
+}

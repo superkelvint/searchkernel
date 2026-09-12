@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "preset_cannot_change_schema",
+    "details": {
+      "field": "title"
+    }
+  }
+}

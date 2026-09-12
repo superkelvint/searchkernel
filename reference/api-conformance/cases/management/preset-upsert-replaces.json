@@ -1,0 +1,31 @@
+{
+  "category": "management",
+  "description": "Upserting the same preset name replaces its prior value.",
+  "id": "management.preset-upsert-replaces",
+  "input": {
+    "state": {
+      "presets": {}
+    },
+    "steps": [
+      {
+        "name": "p",
+        "op": "preset_upsert",
+        "value": {
+          "limit": 5
+        }
+      },
+      {
+        "name": "p",
+        "op": "preset_upsert",
+        "value": {
+          "limit": 9
+        }
+      },
+      {
+        "name": "p",
+        "op": "preset_get"
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

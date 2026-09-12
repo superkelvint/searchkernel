@@ -1,0 +1,97 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "stored": true
+      },
+      {
+        "found": true,
+        "value": {
+          "limit": 8,
+          "name": "autocomplete",
+          "prefix": "last_term",
+          "search_fields": [
+            {
+              "field": "title",
+              "weight": 4.0
+            },
+            {
+              "field": "brand",
+              "weight": 2.0
+            }
+          ],
+          "typo_tolerance": "standard/v1"
+        }
+      },
+      {
+        "resolved": {
+          "curation": {
+            "added_filters": [],
+            "applied": [],
+            "hidden_ids": [],
+            "pins": [],
+            "query_replacement": null
+          },
+          "facets": [],
+          "filter": null,
+          "grouping": null,
+          "highlights": [],
+          "include_ranking_info": false,
+          "kind": "search",
+          "pagination": {
+            "limit": 8,
+            "offset": 0
+          },
+          "prefix": "last_term",
+          "projection": {
+            "kind": "all_stored"
+          },
+          "query": {
+            "original_text": "wire",
+            "parsed": null,
+            "syntax": "literal",
+            "text": "wire"
+          },
+          "ranking": {
+            "relevance": "default/v1",
+            "then": [
+              {
+                "direction": "desc",
+                "field": "popularity"
+              }
+            ]
+          },
+          "search_fields": [
+            {
+              "field": "title",
+              "infix": false,
+              "prefix": true,
+              "typo_tolerance": "standard/v1",
+              "weight": 4.0
+            },
+            {
+              "field": "brand",
+              "infix": false,
+              "prefix": true,
+              "typo_tolerance": "disabled",
+              "weight": 2.0
+            }
+          ],
+          "snippets": [],
+          "sort": [],
+          "synonym_expansions": [],
+          "synonyms": true,
+          "term_match": "all",
+          "typo_tolerance": "standard/v1"
+        }
+      },
+      {
+        "deleted": true
+      },
+      {
+        "found": false,
+        "value": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "stored": true
+      },
+      {
+        "stored": true
+      },
+      {
+        "found": true,
+        "value": {
+          "limit": 9
+        }
+      }
+    ]
+  }
+}

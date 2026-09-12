@@ -1,0 +1,15 @@
+{
+  "category": "schema",
+  "description": "Default semantics for text.",
+  "id": "schema.text-defaults",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "value"
+      }
+    ],
+    "name": "text_default"
+  },
+  "operation": "resolve_index_definition"
+}

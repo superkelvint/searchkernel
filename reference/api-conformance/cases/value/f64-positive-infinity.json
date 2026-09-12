@@ -1,0 +1,12 @@
+{
+  "category": "value",
+  "description": "Infinity is rejected.",
+  "id": "value.f64-positive-infinity",
+  "input": {
+    "kind": "f64",
+    "value": {
+      "$f64": "inf"
+    }
+  },
+  "operation": "normalize_value"
+}

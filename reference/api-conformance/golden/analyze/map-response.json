@@ -1,0 +1,33 @@
+{
+  "ok": {
+    "analyzer": "standard/v1",
+    "field": "title",
+    "input": "Running with the Wolves",
+    "tokens": [
+      {
+        "indexed": "running",
+        "normalized": "running",
+        "original": "Running",
+        "position": 0
+      },
+      {
+        "indexed": "with",
+        "normalized": "with",
+        "original": "with",
+        "position": 1
+      },
+      {
+        "indexed": "the",
+        "normalized": "the",
+        "original": "the",
+        "position": 2
+      },
+      {
+        "indexed": "wolves",
+        "normalized": "wolves",
+        "original": "Wolves",
+        "position": 3
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "ok": {
+    "fields": [
+      {
+        "analyzer": "keyword/v1",
+        "capabilities": {
+          "facetable": false,
+          "filterable": true,
+          "infix": true,
+          "prefix": false,
+          "searchable": true,
+          "sortable": false,
+          "typo_tolerance": "disabled"
+        },
+        "kind": "keyword",
+        "multi": false,
+        "name": "part_number",
+        "optional": false,
+        "stored": true
+      }
+    ],
+    "name": "infix",
+    "ranking": {
+      "relevance": "default/v1",
+      "then": []
+    },
+    "search_defaults": {
+      "limit": 20,
+      "prefix": "last_term",
+      "term_match": "all",
+      "typo_tolerance": "standard/v1"
+    },
+    "search_fields": [],
+    "semantics_version": "high-level/v1"
+  }
+}

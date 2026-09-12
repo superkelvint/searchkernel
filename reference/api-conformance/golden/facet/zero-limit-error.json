@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_facet_limit",
+    "details": {
+      "limit": 0
+    }
+  }
+}

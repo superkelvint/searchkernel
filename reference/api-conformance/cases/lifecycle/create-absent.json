@@ -1,0 +1,18 @@
+{
+  "category": "lifecycle",
+  "description": "Creating a missing logical index succeeds and returns an open handle.",
+  "id": "lifecycle.create-absent",
+  "input": {
+    "state": {
+      "indexes": {}
+    },
+    "steps": [
+      {
+        "handle": "h1",
+        "name": "products",
+        "op": "index_create"
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

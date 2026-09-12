@@ -1,0 +1,12 @@
+{
+  "category": "value",
+  "description": "Full signed 64-bit maximum round-trips without IEEE-754 loss.",
+  "id": "value.i64-max",
+  "input": {
+    "kind": "i64",
+    "value": {
+      "$i64": "9223372036854775807"
+    }
+  },
+  "operation": "normalize_value"
+}

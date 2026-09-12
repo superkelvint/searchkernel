@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: keyword-eq.",
+  "id": "filter.keyword-eq",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "eq": {
+        "field": "brand",
+        "value": "Sony"
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

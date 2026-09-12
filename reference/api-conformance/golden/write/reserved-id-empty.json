@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_document_id",
+    "details": {
+      "reason": "empty"
+    }
+  }
+}

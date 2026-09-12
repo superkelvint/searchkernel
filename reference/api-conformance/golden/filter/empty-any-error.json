@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "empty_filter_group",
+    "details": {
+      "kind": "any"
+    }
+  }
+}

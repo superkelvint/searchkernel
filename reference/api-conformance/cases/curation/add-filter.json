@@ -1,0 +1,24 @@
+{
+  "category": "curation",
+  "description": "Curation may add a validated filter.",
+  "id": "curation.add-filter",
+  "index_fixture": "product-v1",
+  "input": {
+    "actions": [
+      {
+        "add_filter": {
+          "eq": {
+            "field": "in_stock",
+            "value": true
+          }
+        }
+      }
+    ],
+    "name": "filter-stock",
+    "priority": 0,
+    "when": {
+      "query_exact": "headphones"
+    }
+  },
+  "operation": "resolve_curation"
+}

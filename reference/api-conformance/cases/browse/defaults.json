@@ -1,0 +1,8 @@
+{
+  "category": "browse",
+  "description": "Browse is filter-only search with deterministic ID ordering.",
+  "id": "browse.defaults",
+  "index_fixture": "product-v1",
+  "input": {},
+  "operation": "resolve_browse"
+}

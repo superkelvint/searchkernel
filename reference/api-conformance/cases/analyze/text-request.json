@@ -1,0 +1,11 @@
+{
+  "category": "analyze",
+  "description": "Analyze resolves the field analyzer without executing it.",
+  "id": "analyze.text-request",
+  "index_fixture": "product-v1",
+  "input": {
+    "field": "title",
+    "text": "Running with the Wolves"
+  },
+  "operation": "resolve_analyze"
+}

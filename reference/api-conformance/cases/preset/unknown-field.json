@@ -1,0 +1,16 @@
+{
+  "category": "preset",
+  "description": "Preset search fields are validated against index.",
+  "id": "preset.unknown-field",
+  "index_fixture": "product-v1",
+  "input": {
+    "name": "bad",
+    "search_fields": [
+      {
+        "field": "nope",
+        "weight": 1.0
+      }
+    ]
+  },
+  "operation": "resolve_preset"
+}

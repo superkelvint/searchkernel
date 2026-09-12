@@ -1,0 +1,11 @@
+{
+  "category": "group",
+  "description": "group_by defaults to three hits per group.",
+  "id": "group.default-hits-per-group",
+  "index_fixture": "product-v1",
+  "input": {
+    "group_by": "category",
+    "query": "shirt"
+  },
+  "operation": "resolve_search"
+}

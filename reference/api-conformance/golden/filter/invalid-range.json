@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "invalid_range",
+    "details": {
+      "field": "price",
+      "lower": 500.0,
+      "reason": "lower_gt_upper",
+      "upper": 100.0
+    }
+  }
+}

@@ -1,10 +1,8 @@
 # Search Kernel
 
-Search Kernel is an embedded search engine.
+Search Kernel is a Rust interface to Vespa's native search engine, packaged so it can be embedded directly in an application instead of run as a separate service.
 
-The goal is to provide high-quality full-text search, structured filtering, ranking, and live updates without requiring a separate search service.
-
-Search Kernel is designed to be used like a database library:
+Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API, and on top of that, bindings for JavaScript, PHP, Go, and Python — so you can add a search dependency in whichever of those you're already using instead of standing up a cluster.
 
 ```python
 from searchkernel import Index
@@ -13,46 +11,75 @@ index = Index.open("./search")
 
 index.put({
     "_id": "1",
-    "title": "The quick brown fox"
+    "title": "The quick brown fox",
 })
 
 results = index.search("brown fox")
+
+index.update("1", {"title": "The slow brown fox"})
+index.delete("1")
 ```
 
-## Goals
+The same operations in Rust:
 
-Search Kernel is built around a few ideas:
+```rust
+let engine = Engine::open(path, config)?;
 
-- **Embedded.** Search runs with the application, not as a separate cluster.
-- **Simple to operate.** An index should be a directory, not infrastructure.
-- **Mutable.** Inserts, updates, and deletes are normal operations.
-- **Durable.** Indexes survive restarts and recover cleanly.
-- **Efficient.** Large indexes should make good use of SSD and bounded memory.
-- **Evolvable.** Schemas and index representations should be able to change over time.
-- **Extensible ranking.** Ranking should support both conventional relevance and application-specific signals.
-- **Good APIs.** Rust is the primary interface, with first-class Python support.
+engine.put(document)?;
+engine.update(update)?;
+engine.remove(id)?;
 
-## Scope
+let result = engine.search(request)?;
+```
 
-Search Kernel is focused on single-node application search.
+## Why
 
-It is not a distributed search engine and does not intend to become one.
+Running a search cluster to get full-text search, filtering, and ranking is a lot of infrastructure for most applications. Most applications don't need a cluster. They need an index that lives next to their data and behaves like any other embedded store.
 
-For workloads that require clustering, replication, or distributed query execution, existing distributed search systems are a better fit.
+Vespa already solves the hard problems here — ranking, tensors, vector search, index fusion, durability — at a level of maturity that would take years to reproduce. Search Kernel doesn't try. It makes that engine usable as a library.
+
+## What it is
+
+- **Embedded.** The engine runs in your process. An index is a directory, not a service.
+- **Mutable.** Put, update, and delete are normal operations, not workarounds.
+- **Durable.** Indexes survive restarts and recover on reopen.
+- **Rust-first.** The Rust API is the primary interface. JavaScript, PHP, Go, and Python are built on top of it, not alongside it — a capability shows up in a binding because it exists in the Rust API first, not the other way around.
+- **A thin wrapper.** Whatever Vespa can do, Search Kernel can expose. Whatever Vespa doesn't do, Search Kernel doesn't invent. See [architecture.md](./architecture.md) for the reasoning behind that rule and where the boundary sits.
+
+## What it is not
+
+Search Kernel is not a distributed search engine and isn't going to become one. No replication, no clustering, no distributed query execution. If you need those, use Vespa directly, or another distributed search system — that's a better fit than asking a single-node wrapper to grow into one.
+
+It also doesn't have its own ranking language, storage engine, or schema migration model. Those are Vespa's, and Search Kernel exposes them rather than replacing them.
+
+## Installing
+
+Search Kernel links against Vespa's native libraries at build time. None of the bindings are pure-language packages.
+
+*(Installation instructions — supported platforms, native dependencies, build steps, per language — go here.)*
+
+## Language bindings
+
+| Language   | Status |
+|------------|--------|
+| Rust       | *(status)* |
+| Python     | *(status)* |
+| JavaScript | *(status)* |
+| Go         | *(status)* |
+| PHP        | *(status)* |
+
+All bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
 
 ## Status
 
-Search Kernel is under active development.
+Under active development. The core workflow — open, index, search, update, delete, reopen — is the current focus, in Rust first. Performance, memory use, and durability are being measured, not assumed.
 
-The current focus is the core embedded workflow:
+The API will change before it stabilizes.
 
-```text
-open
-index
-search
-update
-delete
-reopen
-```
+## License
 
-Performance, memory use, durability, and operational simplicity are treated as things to measure, not assumptions.
+Apache License 2.0, matching Vespa's license. See [LICENSE](./LICENSE).
+
+## Contributing
+
+*(contributing guidelines, or a pointer to them)*

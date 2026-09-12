@@ -1,0 +1,16 @@
+{
+  "category": "facet",
+  "description": "Value facets can order buckets by descending facet value.",
+  "id": "facet.value-descending",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "brand",
+        "sort": "value_desc"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

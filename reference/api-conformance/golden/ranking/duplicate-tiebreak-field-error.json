@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "duplicate_rank_field",
+    "details": {
+      "field": "popularity"
+    }
+  }
+}

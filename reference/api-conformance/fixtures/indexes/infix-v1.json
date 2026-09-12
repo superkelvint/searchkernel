@@ -1,0 +1,37 @@
+{
+  "fields": [
+    {
+      "infix": true,
+      "kind": "keyword",
+      "name": "part_number",
+      "prefix": true,
+      "searchable": true,
+      "typo_tolerance": "disabled"
+    },
+    {
+      "kind": "text",
+      "name": "description"
+    }
+  ],
+  "name": "parts",
+  "ranking": {
+    "relevance": "default/v1",
+    "then": []
+  },
+  "search_defaults": {
+    "limit": 20,
+    "prefix": "last_term",
+    "term_match": "all",
+    "typo_tolerance": "standard/v1"
+  },
+  "search_fields": [
+    {
+      "field": "part_number",
+      "weight": 5.0
+    },
+    {
+      "field": "description",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "category": "search",
+  "description": "Page convenience cannot be combined with limit.",
+  "id": "search.page-with-limit-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "limit": 10,
+    "page": {
+      "number": 2,
+      "size": 20
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

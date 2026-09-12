@@ -1,0 +1,16 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "kind": "patch",
+    "patch": {
+      "operations": [
+        {
+          "append": {
+            "field": "tags",
+            "value": "sale"
+          }
+        }
+      ]
+    }
+  }
+}

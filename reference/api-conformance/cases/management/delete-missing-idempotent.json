@@ -1,0 +1,17 @@
+{
+  "category": "management",
+  "description": "Deleting a missing management object is idempotent and reports deleted=false.",
+  "id": "management.delete-missing-idempotent",
+  "input": {
+    "state": {
+      "presets": {}
+    },
+    "steps": [
+      {
+        "name": "missing",
+        "op": "preset_delete"
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

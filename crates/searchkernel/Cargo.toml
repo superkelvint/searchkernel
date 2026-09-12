@@ -5,4 +5,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-searchkernel-sys = { path = "../searchkernel-sys" }
+searchkernel-vespa = { path = "../searchkernel-vespa" }

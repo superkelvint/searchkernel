@@ -1,0 +1,15 @@
+{
+  "category": "search",
+  "description": "Projection replaces all-stored projection.",
+  "id": "search.projection",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "wireless headphones",
+    "select": [
+      "title",
+      "price",
+      "image_url"
+    ]
+  },
+  "operation": "resolve_search"
+}

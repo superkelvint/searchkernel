@@ -1,0 +1,10 @@
+{
+  "category": "introspection",
+  "description": "Describe one field.",
+  "id": "introspection.describe-field",
+  "index_fixture": "product-v1",
+  "input": {
+    "field": "title"
+  },
+  "operation": "describe_field"
+}

@@ -1,0 +1,11 @@
+{
+  "category": "browse",
+  "description": "Browse pagination.",
+  "id": "browse.pagination",
+  "index_fixture": "product-v1",
+  "input": {
+    "limit": 50,
+    "offset": 100
+  },
+  "operation": "resolve_browse"
+}

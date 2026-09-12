@@ -1,0 +1,17 @@
+{
+  "category": "facet",
+  "description": "Range facet requires numeric field.",
+  "id": "facet.range-text-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "brand",
+        "kind": "ranges",
+        "ranges": []
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

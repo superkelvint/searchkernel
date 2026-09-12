@@ -1,0 +1,15 @@
+{
+  "category": "schema",
+  "description": "Field names cannot be empty.",
+  "id": "schema.empty-field-name",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": ""
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

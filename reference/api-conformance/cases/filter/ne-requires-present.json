@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "ne is a value comparison and requires field presence.",
+  "id": "filter.ne-requires-present",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "ne": {
+        "field": "image_url",
+        "value": "x"
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

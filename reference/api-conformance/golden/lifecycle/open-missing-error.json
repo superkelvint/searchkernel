@@ -1,0 +1,14 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "error": {
+          "code": "index_not_found",
+          "details": {
+            "name": "missing"
+          }
+        }
+      }
+    ]
+  }
+}

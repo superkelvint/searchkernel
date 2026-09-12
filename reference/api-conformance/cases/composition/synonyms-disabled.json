@@ -1,0 +1,30 @@
+{
+  "category": "composition",
+  "description": "Request-level synonyms=false suppresses installed synonym state.",
+  "id": "composition.synonyms-disabled",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "synonyms": {
+        "pants": {
+          "kind": "equivalent",
+          "terms": [
+            "pants",
+            "slacks",
+            "trousers"
+          ]
+        }
+      }
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "query": "pants",
+          "synonyms": false
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

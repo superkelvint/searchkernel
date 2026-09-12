@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Prefix can be disabled per query.",
+  "id": "search.prefix-disabled",
+  "index_fixture": "product-v1",
+  "input": {
+    "prefix": "none",
+    "query": "wireless headphones"
+  },
+  "operation": "resolve_search"
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "null_required_field",
+    "details": {
+      "field": "title"
+    }
+  }
+}

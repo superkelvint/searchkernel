@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_offset",
+    "details": {
+      "offset": -1
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "category": "response",
+  "description": "Successful writes map to a stable WriteReceipt.",
+  "id": "response.write-receipt",
+  "index_fixture": "product-v1",
+  "input": {
+    "backend_response_fixture": "write-ok"
+  },
+  "operation": "map_write_response"
+}

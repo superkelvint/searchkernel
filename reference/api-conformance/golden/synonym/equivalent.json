@@ -1,0 +1,11 @@
+{
+  "ok": {
+    "kind": "equivalent",
+    "name": "pants",
+    "terms": [
+      "pants",
+      "trousers",
+      "slacks"
+    ]
+  }
+}

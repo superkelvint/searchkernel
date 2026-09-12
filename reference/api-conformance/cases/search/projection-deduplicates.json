@@ -1,0 +1,15 @@
+{
+  "category": "search",
+  "description": "Projection is an ordered set: duplicates are removed while first occurrence order is preserved.",
+  "id": "search.projection-deduplicates",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "select": [
+      "title",
+      "price",
+      "title"
+    ]
+  },
+  "operation": "resolve_search"
+}

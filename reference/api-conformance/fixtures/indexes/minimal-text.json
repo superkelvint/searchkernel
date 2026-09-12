@@ -1,0 +1,9 @@
+{
+  "fields": [
+    {
+      "kind": "text",
+      "name": "title"
+    }
+  ],
+  "name": "docs"
+}

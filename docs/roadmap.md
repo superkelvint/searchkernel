@@ -136,6 +136,69 @@ M0–M2 are already defined by the existing verifier harness and should not be r
 
 ---
 
+# Development split after M2
+
+M0–M2 establish the native foundation. From this point onward the project deliberately splits into **two orthogonal milestone series**:
+
+```text
+M-series — embedded Vespa capability
+
+    M3, M4, M5, ...
+
+C-series — high-level client/API platform
+
+    C1, C2, C3, ...
+```
+
+Neither numbering sequence implies an ordering relationship with the other.
+
+For example:
+
+```text
+C4 does not depend on M4.
+M7 does not depend on C7.
+```
+
+Each series has its own dependency chain and verifier suite.
+
+They meet only through a third, narrow integration series:
+
+```text
+             C-series
+                │
+                ▼
+             I-series
+                ▲
+                │
+             M-series
+```
+
+The architectural rule is:
+
+```text
+client/high-level work can compile and verify without Vespa
+
+Vespa-wrapper work can compile and verify without the high-level client
+
+only the integration layer depends on both
+```
+
+This allows both sides to be developed in parallel without building a second search engine.
+
+---
+
+# M-series — Embedded Vespa capability
+
+The M-series continues the work already started by M0–M2.
+
+Its product is:
+
+```text
+searchkernel-vespa
+```
+
+This is a safe, relatively faithful Rust interface to the embedded Vespa C++ search engine. It uses Vespa terminology where appropriate and does not try to provide the Algolia/Typesense-style product API.
+
 ## M3 — Linguistics compatibility
 
 Replace the minimum Java linguistics functionality required by the embedded engine.
@@ -238,13 +301,13 @@ Search Kernel does not invent different durability semantics; it documents and v
 
 ---
 
-## M6 — Schema to Proton configuration
+## M6 — Vespa schema/configuration
 
-Remove the dependency on pre-generated Java configuration for the supported schema subset.
+Remove the dependency on pre-generated Java configuration for the supported low-level schema subset.
 
-Introduce a small Rust schema representation.
+This milestone defines the configuration model required by `searchkernel-vespa`; it does **not** define the high-level Search Kernel product schema.
 
-Initial field capabilities:
+Initial capabilities:
 
 ```text
 text
@@ -263,26 +326,24 @@ Compile this representation into the configuration required to construct and run
 Conceptually:
 
 ```text
-Rust Schema
-    ↓
-Search Kernel config compiler
-    ↓
+searchkernel-vespa schema/config
+        ↓
+embedded configuration compiler
+        ↓
 Proton configuration
-    ↓
+        ↓
 DocumentDB
 ```
 
-Do not port Vespa's `.sd` language or Java config model wholesale.
-
-Use Vespa's Java config-model output as the oracle for carefully selected fixtures, comparing canonical semantic configuration and resulting behavior rather than requiring identical implementation internals.
+Use Vespa's Java config-model output as the oracle for selected fixtures, comparing semantic configuration and resulting behavior rather than implementation details.
 
 ---
 
-## M7 — Query compilation
+## M7 — Vespa query compilation
 
 Replace the minimum Java query-preparation path.
 
-Expose a typed Rust query representation.
+Expose a typed **low-level Vespa query representation**.
 
 Initial operators:
 
@@ -302,7 +363,7 @@ exists
 Compilation is:
 
 ```text
-Rust Query
+searchkernel-vespa query
     ↓
 field-aware query analysis
     ↓
@@ -313,15 +374,15 @@ Matcher
 
 M3 linguistics is reused for text terms.
 
-There is no YQL or Vespa textual-query compatibility requirement.
+There is no YQL compatibility requirement.
 
-Where possible, compare the resulting normalized query representation against equivalent queries produced by the normal Vespa request path.
+This API is distinct from the C-series high-level `index.search(...).filter(...)` API.
 
 ---
 
-## M8 — Search request and result integration
+## M8 — Local search request and results
 
-Expose the remainder of the ordinary local search request.
+Expose the remainder of the ordinary local Vespa request/result path.
 
 Initial targets:
 
@@ -335,9 +396,9 @@ scores
 total-hit information available from the engine
 ```
 
-Support structured filtering through the M7 query representation.
+Support structured filtering through M7.
 
-Wrap the local summary/docsums path where required to return stored document fields.
+Wrap the local summary/docsums path where required.
 
 Do not reproduce distributed search dispatch or distributed result merging.
 
@@ -358,7 +419,7 @@ facet/group counts
 basic aggregations where practical
 ```
 
-Expose Vespa capabilities rather than designing a separate aggregation engine.
+Expose Vespa capabilities rather than designing a second aggregation engine.
 
 ---
 
@@ -381,37 +442,561 @@ feature inspection
 
 Ranking execution remains entirely in Vespa C++.
 
-Search Kernel does not implement RankScript or another ranking VM here.
-
-For ranking assets such as constants or models, embedded operation should use explicit local resources rather than recreating Vespa's file-distribution service.
+For ranking assets such as constants or models, embedded operation uses explicit local resources rather than recreating Vespa's file-distribution service.
 
 ---
 
-## M11 — Python
+## M11 — Low-level wrapper hardening
 
-Expose the established Rust API through PyO3.
+Harden `searchkernel-vespa` independently of the high-level product.
 
-The dependency direction remains:
+Cover:
+
+- lifecycle races;
+- malformed inputs;
+- native failures;
+- repeated reopen;
+- supported concurrency;
+- memory safety;
+- resource leaks;
+- native sanitizers;
+- long-running mutation/search workloads.
+
+This milestone does not require C-series clients.
+
+---
+
+# C-series — High-level API and language clients
+
+The C-series is orthogonal to the M-series.
+
+Its product is the portable Search Kernel application API and its language clients:
 
 ```text
-Python
-   ↓
-PyO3
-   ↓
+searchkernel-core
 searchkernel
-   ↓
-native engine
+searchkernel-ffi
+language bindings
 ```
 
-Python does not call the native ABI directly.
+The C-series must remain runnable and verifiable without linking `searchkernel-vespa`.
 
-Rust and Python fixtures must produce equivalent results.
+It may use recording and scripted test backends, but must never grow a fake production search engine.
+
+## C1 — Portable API contract
+
+Define the canonical language-neutral API model.
+
+Primary artifact:
+
+```text
+api/searchkernel.proto
+```
+
+Initial model includes:
+
+```text
+IndexDefinition
+FieldDefinition
+Analyzer
+SearchField
+
+InsertRequest
+UpsertRequest
+PatchRequest
+DeleteRequest
+GetRequest
+
+SearchRequest
+FilterExpr
+SortExpr
+FacetRequest
+RankingPolicy
+
+SearchResult
+Hit
+FacetResult
+HighlightResult
+
+AnalyzeRequest
+DescribeRequest
+InspectQueryRequest
+
+portable errors
+```
+
+The protobuf is internal plumbing, not the syntax application developers use directly.
+
+Every public client operation must be representable losslessly in this model.
 
 ---
 
-## M12 — Packaging
+## C2 — High-level semantic core
 
-Make Search Kernel installable on a machine without:
+Implement:
+
+```text
+searchkernel-core
+```
+
+This crate owns Search Kernel semantics:
+
+```text
+stable defaults
+schema validation
+request normalization
+field capabilities
+analyzer identities
+filter validation
+ranking policies
+facet requests
+prefix/typo policy
+portable errors
+resolved requests
+```
+
+For example:
+
+```rust
+Field::text("title")
+```
+
+must resolve to an explicit backend-independent semantic value such as:
+
+```text
+ResolvedField {
+    kind: Text,
+    analyzer: StandardV1,
+    stored: true,
+    searchable: true,
+    ...
+}
+```
+
+No Vespa crate may be a dependency.
+
+---
+
+## C3 — Standalone conformance testkit
+
+Implement:
+
+```text
+searchkernel-testkit
+```
+
+with two deliberately non-searching test backends:
+
+```text
+RecordingBackend
+    records canonical resolved operations
+
+ScriptedBackend
+    returns predetermined canonical responses
+```
+
+This verifies:
+
+```text
+public API
+    ↓
+resolved portable request
+```
+
+and:
+
+```text
+portable response
+    ↓
+public result/error
+```
+
+Do not implement BM25, fuzzy matching, faceting, prefix matching, ranking, or another search engine in the testkit.
+
+---
+
+## C4 — Rust high-level client
+
+Implement the ergonomic Rust product API.
+
+Target vocabulary:
+
+```text
+Index
+IndexDefinition
+Field
+Analyzer
+SearchField
+DocumentId
+Patch
+Filter
+Ranking
+Sort
+Facet
+SearchResult<T>
+Hit<T>
+```
+
+Target feel:
+
+```rust
+let index = Index::open("./products")?;
+
+index.upsert("sku-42", &product)?;
+
+let results = index
+    .search("wireless headphones")
+    .filter(field("in_stock").eq(true))
+    .filter(field("price").lte(500.0))
+    .facets(["brand", "category"])
+    .limit(20)
+    .execute::<Product>()?;
+```
+
+Verification uses C3 only.
+
+---
+
+## C5 — Portable native ABI
+
+Implement:
+
+```text
+searchkernel-ffi
+```
+
+with a deliberately tiny language-neutral ABI based on:
+
+```text
+opaque handles
+request bytes
+response bytes
+status/error codes
+explicit buffer ownership
+close/free
+```
+
+Do not mirror every high-level object as a C function.
+
+The FFI transports the canonical C1 request/response model.
+
+---
+
+## C6 — Binding generator
+
+Implement:
+
+```text
+tools/searchkernel-bindgen
+```
+
+Generate mechanical language-client code from the portable API contract:
+
+```text
+request/response models
+enums/tagged unions
+errors
+serialization
+API documentation stubs
+conformance fixtures
+```
+
+Language-specific facades remain small and idiomatic.
+
+---
+
+## C7 — Python client
+
+Provide an idiomatic Python API over the portable runtime.
+
+Example shape:
+
+```python
+results = index.search(
+    "wireless headphones",
+    filters=[
+        field("in_stock") == True,
+        field("price") <= 500,
+    ],
+    facets=["brand", "category"],
+    limit=20,
+)
+```
+
+Its acceptance suite proves semantic equivalence with the canonical C1 contract, not real Vespa search yet.
+
+---
+
+## C8 — Node.js / TypeScript client
+
+Provide an idiomatic Node/TypeScript API with generated types and native packaging plumbing.
+
+Example shape:
+
+```typescript
+const results = await index.search("wireless headphones", {
+  filter: all(
+    field("in_stock").eq(true),
+    field("price").lte(500),
+  ),
+  facets: ["brand", "category"],
+  limit: 20,
+});
+```
+
+Verify against the same portable conformance suite.
+
+---
+
+## C9 — PHP client
+
+Provide an idiomatic PHP API.
+
+Example shape:
+
+```php
+$results = $index
+    ->search("wireless headphones")
+    ->filter(field("in_stock")->eq(true))
+    ->filter(field("price")->lte(500))
+    ->facets(["brand", "category"])
+    ->limit(20)
+    ->get();
+```
+
+Use a native extension for first-class packaging; PHP FFI may be useful for development but is not the production semantic boundary.
+
+---
+
+## C10 — Go client
+
+Provide an idiomatic Go API rather than transliterating the Rust builder syntax.
+
+Example shape:
+
+```go
+results, err := index.Search(
+    ctx,
+    "wireless headphones",
+    searchkernel.WithFilter(
+        searchkernel.All(
+            searchkernel.Field("in_stock").Eq(true),
+            searchkernel.Field("price").LTE(500),
+        ),
+    ),
+    searchkernel.WithFacets("brand", "category"),
+    searchkernel.WithLimit(20),
+)
+```
+
+The embedded implementation may require cgo, but the public semantics remain the same portable C1 contract.
+
+---
+
+# I-series — Integration
+
+The I-series is the only place the two orthogonal tracks meet.
+
+Its core implementation is:
+
+```text
+searchkernel-vespa-backend
+```
+
+which may depend on both:
+
+```text
+searchkernel-core
+searchkernel-vespa
+```
+
+No other crate should need to understand both public object models.
+
+Integration may begin incrementally as matching C- and M-series capabilities become available. It does not need to wait for C10 or M11.
+
+## I1 — Adapter skeleton and dependency firewall
+
+Create the integration crate and freeze the backend boundary.
+
+Prove:
+
+```text
+C-series crates do not import searchkernel-vespa
+M-series crates do not import searchkernel-core
+integration crate imports both
+```
+
+No meaningful search capability is required yet.
+
+---
+
+## I2 — Index lifecycle and schema
+
+Compile:
+
+```text
+ResolvedIndexDefinition
+    ↓
+searchkernel-vespa configuration
+```
+
+Map high-level index creation/opening onto the low-level engine lifecycle.
+
+This is the first real implementation of `Index::create` / `Index::open` against Vespa.
+
+---
+
+## I3 — Document operations
+
+Map:
+
+```text
+insert
+upsert
+patch
+get
+delete
+bulk writes
+```
+
+onto the already-verified low-level mutation path.
+
+Verify high-level mutation semantics end-to-end through real Vespa.
+
+---
+
+## I4 — Lexical search and filters
+
+Map canonical high-level search requests onto M3/M4/M7 primitives.
+
+Cover:
+
+```text
+search text
+search fields and weights
+term analysis
+phrases
+boolean filters
+exact filters
+range filters
+```
+
+The high-level API does not expose low-level Vespa query types.
+
+---
+
+## I5 — Results, sorting, projection, pagination, highlighting
+
+Map the C-series result contract onto M8 capabilities.
+
+Cover:
+
+```text
+hits
+total hits
+stored fields
+projection
+sorting
+limit/offset
+highlighting/snippets where supported
+```
+
+---
+
+## I6 — Facets and grouping
+
+Compile high-level facet/group requests onto M9 grouping capabilities.
+
+Examples:
+
+```rust
+.facets(["brand", "category"])
+.group_by("product_id")
+```
+
+High-level facet semantics remain owned by the C-series.
+
+---
+
+## I7 — Ranking
+
+Compile high-level ranking policies onto M10 ranking capabilities.
+
+Initial mappings include:
+
+```text
+DefaultRelevanceV1
+BM25
+search-field weights
+business-field tie breakers
+explicit hard sort
+```
+
+The high-level API does not expose arbitrary Vespa rank expressions.
+
+---
+
+## I8 — Higher-level search behavior
+
+Integrate Search Kernel-owned semantics that compose several native capabilities:
+
+```text
+prefix search
+typo tolerance
+synonyms
+presets
+curations
+facet-value search
+```
+
+Some compile into query rewrites.
+
+Some may require generated companion representations.
+
+Some may use native ranking features.
+
+All remain high-level Search Kernel semantics.
+
+---
+
+## I9 — Cross-language real-engine conformance
+
+Run the same product scenarios through every first-class client against real Vespa:
+
+```text
+Rust
+Python
+Node.js / TypeScript
+PHP
+Go
+```
+
+A representative fixture should cover:
+
+```text
+create index
+bulk insert
+search
+filter
+facet
+sort
+update
+search
+delete
+close
+reopen
+search
+```
+
+All clients must produce equivalent canonical outcomes.
+
+---
+
+## I10 — Packaging and product hardening
+
+Produce clean-machine packages for supported platforms and languages.
+
+Test without:
 
 ```text
 Vespa source
@@ -420,81 +1005,142 @@ Vespa build tools
 Java runtime
 ```
 
-Produce the first supported native bundle and Python wheel.
-
 Record:
 
 ```text
 Search Kernel version
+portable API version
 native ABI version
 pinned Vespa revision
 target platform
 ```
 
-Package size should be measured before aggressively optimizing it.
+Then harden the complete product for:
+
+```text
+lifecycle races
+malformed requests
+native failures
+crash/recovery
+concurrency
+resource leaks
+long-running workloads
+package size
+startup time
+RSS/PSS
+indexing throughput
+query latency
+```
 
 ---
 
-## M13 — Hardening
+# Parallel execution
 
-Once the capability path is complete, harden it.
+The intended development shape after M2 is not:
 
-Test:
+```text
+M3 -> M4 -> ... -> M10 -> C1 -> C2 -> ...
+```
 
-- concurrent operations;
-- lifecycle races;
-- malformed input;
-- native failures;
-- crash/recovery;
-- repeated reopen;
-- long-running mutation/search workloads;
-- memory safety;
-- resource leaks.
+It is:
 
-Measure:
+```text
+M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11
 
-- startup time;
-- RSS/PSS;
-- thread count;
-- file descriptors;
-- package size;
-- indexing throughput;
-- query latency.
+C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 -> C9 -> C10
+```
 
-Run native sanitizers routinely.
+running independently.
+
+Integration trails whichever capabilities are ready:
+
+```text
+C1/C2 + M6
+    -> I2 schema mapping can begin
+
+C4 + M2/M5
+    -> I3 writes can begin
+
+C4 + M3/M4/M7
+    -> I4 lexical search can begin
+
+C4 + M8
+    -> I5 result integration can begin
+
+C4 + M9
+    -> I6 facets can begin
+
+C4 + M10
+    -> I7 ranking can begin
+```
+
+There is deliberately no statement such as:
+
+```text
+C6 requires M6
+```
+
+unless an integration milestone explicitly says so.
 
 ---
 
-## Verification strategy
+# Verification strategy
 
-Different milestones have different authorities.
+## M-series
+
+Authority remains the existing verifier/oracle model:
 
 ```text
 M0–M2    direct Vespa C++ behavior
-
 M3       Vespa Java linguistics
-
 M4–M5    direct embedded C++ engine
-
 M6       Vespa Java config-model + C++ behavior
-
 M7       Vespa query preparation / canonical query behavior
-
 M8–M10   direct C++ behavior, with Java oracle where Java currently
           defines request/config preparation
 ```
 
-Java may therefore remain a **test/oracle dependency**.
+Java may remain a test/oracle dependency.
 
-It must not become a Search Kernel runtime dependency.
+It must not become a runtime dependency.
+
+## C-series
+
+Authority is the frozen portable API contract and canonical high-level semantics.
+
+Verification asks:
+
+```text
+did this public language operation produce the correct canonical request?
+
+did this canonical response produce the correct language-level result/error?
+```
+
+No real search engine is required for C-series acceptance.
+
+## I-series
+
+Authority is the combination of:
+
+```text
+frozen C-series semantics
++
+verified M-series capability
++
+end-to-end product scenarios
+```
+
+The integration layer may translate semantics.
+
+It may not redefine either side.
 
 ---
 
-## Checkpoints
+# Checkpoints
 
-### After M4
+## After M4
 
-We have proven:
+The low-level track has proven:
 
 ```text
 Rust
@@ -508,29 +1154,37 @@ Vespa text indexing + matching
 
 using a pre-generated configuration fixture.
 
-This is the first major architecture checkpoint.
+## After C4
 
-### After M8
+The high-level Rust product API is usable and testable without Vespa.
 
-We have:
+This is the first API/product checkpoint.
 
-```text
-Rust schema
-Rust document preparation
-Rust query preparation
-        ↓
-Vespa C++ engine
-```
+## After C6
 
-for the supported subset.
+The portable client-generation architecture is proven.
 
-At this point an application should be able to create and search an index without requiring the Vespa Java runtime or configuration platform.
+Adding a language no longer means independently redefining Search Kernel semantics.
 
-This is the second major checkpoint.
+## After M8
+
+The low-level wrapper can construct schemas/queries and execute useful local searches without the Vespa Java runtime.
+
+## After I4/I5
+
+The high-level Rust API performs real lexical search through Vespa.
+
+This is the first integrated product checkpoint.
+
+## After I9
+
+All first-class language clients pass the same real-engine conformance scenarios.
+
+This is the multi-language product checkpoint.
 
 ---
 
-## Vespa upgrades
+# Vespa upgrades
 
 Vespa remains pinned.
 
@@ -548,20 +1202,19 @@ Remaining on the current revision is always a valid outcome.
 
 ---
 
-## Later
+# Later
 
 Possible later work includes:
 
 - richer linguistics;
 - automatic language detection;
-- synonyms;
-- textual query parsing;
 - vectors and HNSW;
 - tensors;
 - ONNX/model ranking;
 - richer grouping;
-- RankScript;
-- additional language bindings;
+- Java and C# first-class clients;
+- Ruby and Swift clients;
+- optional `searchkerneld` protocol transport;
 - dependency/runtime slimming.
 
-None are required to establish the initial embedded wrapper.
+These extend the M-, C-, or I-series according to ownership. They do not collapse the tracks into one milestone sequence.

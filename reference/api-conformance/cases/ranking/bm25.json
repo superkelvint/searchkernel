@@ -1,0 +1,14 @@
+{
+  "category": "ranking",
+  "description": "Explicit BM25 ranking policy.",
+  "id": "ranking.bm25",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "ranking": {
+      "relevance": "bm25/v1",
+      "then": []
+    }
+  },
+  "operation": "resolve_search"
+}

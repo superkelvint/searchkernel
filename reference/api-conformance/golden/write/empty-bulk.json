@@ -1,0 +1,8 @@
+{
+  "ok": {
+    "atomic": false,
+    "kind": "batch",
+    "operations": [],
+    "ordered": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "category": "composition",
+  "description": "An infix-enabled searchable keyword participates with infix matching while other fields do not.",
+  "id": "composition.infix-field",
+  "index_fixture": "infix-v1",
+  "input": {
+    "state": {},
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "query": "1000x"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

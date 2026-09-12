@@ -1,0 +1,15 @@
+{
+  "category": "facet",
+  "description": "Value facet.",
+  "id": "facet.brand",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "brand"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

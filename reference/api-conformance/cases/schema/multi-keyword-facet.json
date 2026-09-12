@@ -1,0 +1,17 @@
+{
+  "category": "schema",
+  "description": "Multi-valued facetable keyword.",
+  "id": "schema.multi-keyword-facet",
+  "input": {
+    "fields": [
+      {
+        "facet": true,
+        "kind": "keyword",
+        "multi": true,
+        "name": "tags"
+      }
+    ],
+    "name": "tags"
+  },
+  "operation": "resolve_index_definition"
+}

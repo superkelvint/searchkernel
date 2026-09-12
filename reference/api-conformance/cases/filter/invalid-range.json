@@ -1,0 +1,19 @@
+{
+  "category": "filter",
+  "description": "Invalid numeric range is rejected.",
+  "id": "filter.invalid-range",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "between": {
+        "field": "price",
+        "lower": 500.0,
+        "lower_inclusive": true,
+        "upper": 100.0,
+        "upper_inclusive": true
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

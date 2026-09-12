@@ -1,0 +1,10 @@
+{
+  "category": "response",
+  "description": "Get found maps to an optional document.",
+  "id": "response.get-found",
+  "index_fixture": "product-v1",
+  "input": {
+    "backend_response_fixture": "get-found"
+  },
+  "operation": "map_get_response"
+}

@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "Only text/searchable string-like fields may be highlighted.",
+  "id": "search.highlight-nontext",
+  "index_fixture": "product-v1",
+  "input": {
+    "highlight": [
+      "price"
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

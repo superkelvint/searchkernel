@@ -1,0 +1,20 @@
+{
+  "category": "search",
+  "description": "A field can have at most one snippet configuration in a request.",
+  "id": "search.duplicate-snippet-field-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "x",
+    "snippets": [
+      {
+        "field": "description",
+        "max_chars": 120
+      },
+      {
+        "field": "description",
+        "max_chars": 180
+      }
+    ]
+  },
+  "operation": "resolve_search"
+}

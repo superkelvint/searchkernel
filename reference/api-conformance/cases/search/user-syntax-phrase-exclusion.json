@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "User syntax parses into a small portable AST.",
+  "id": "search.user-syntax-phrase-exclusion",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "\"electric car\" -tesla",
+    "syntax": "user"
+  },
+  "operation": "resolve_search"
+}

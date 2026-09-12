@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "reserved_field_name",
+    "details": {
+      "field": "_internal"
+    }
+  }
+}

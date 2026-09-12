@@ -410,19 +410,172 @@ M0–M2 remain governed by the verifier package already created.
 
 ---
 
-# 7. M3 — Linguistics compatibility
+# 7. Development model after M2
 
-## Goal
+M0–M2 are complete and retain their existing contracts and numbering.
+
+From M2 onward, work is split into three milestone namespaces:
+
+```text
+M1, M2, M3, ...
+    Embedded Vespa capability
+
+C1, C2, C3, ...
+    High-level/client platform
+
+I1, I2, I3, ...
+    Integration between the two
+```
+
+The important property is that the **M-series and C-series are orthogonal**.
+
+Their numbers are local to their own series:
+
+```text
+C4 has no dependency on M4 merely because both contain 4.
+M8 may complete before C5.
+C8 may complete while M6 is still being implemented.
+```
+
+Each track is cumulative only within itself.
+
+The I-series explicitly names cross-track dependencies when integration requires them.
+
+## 7.1 Repository shape
+
+```text
+searchkernel2/
+├── api/
+│   └── searchkernel.proto
+├── crates/
+│   ├── searchkernel-api/
+│   ├── searchkernel-core/
+│   ├── searchkernel/
+│   ├── searchkernel-ffi/
+│   ├── searchkernel-testkit/
+│   ├── searchkernel-vespa/
+│   ├── searchkernel-vespa-sys/
+│   └── searchkernel-vespa-backend/
+├── bindings/
+│   ├── python/
+│   ├── node/
+│   ├── php/
+│   ├── go/
+│   └── ...
+├── native/
+│   ├── vespa/
+│   └── sdk/
+├── upstream/
+│   └── vespa/
+├── reference/
+│   ├── vespa/
+│   ├── clients/
+│   └── integration/
+├── tools/
+│   └── searchkernel-bindgen/
+├── docs/
+├── AGENTS.md
+├── implementation-plan.md
+└── roadmap.md
+```
+
+## 7.2 Dependency firewall
+
+During standalone development:
+
+```text
+C-series
+
+searchkernel
+    ↓
+searchkernel-core
+    ↓
+searchkernel-api
+
+NO dependency on searchkernel-vespa
+```
+
+and:
+
+```text
+M-series
+
+searchkernel-vespa
+    ↓
+searchkernel-vespa-sys
+    ↓
+native ABI / Vespa C++
+
+NO dependency on searchkernel-core
+```
+
+Only:
+
+```text
+searchkernel-vespa-backend
+```
+
+may depend on both.
+
+## 7.3 Two public APIs remain separate
+
+The C-series owns Search Kernel product concepts:
+
+```text
+Index
+IndexDefinition
+Field
+Analyzer
+SearchField
+Patch
+Filter
+Ranking
+Sort
+Facet
+SearchResult
+```
+
+The M-series owns the lower-level Vespa-facing interface:
+
+```text
+Engine
+Vespa configuration/schema representation
+native documents and updates
+Vespa query representation
+rank profiles
+query features
+native search results
+```
+
+Do not expose an `index.vespa()` escape hatch from the product API.
+
+Applications that deliberately want the low-level API use `searchkernel-vespa` directly.
+
+---
+
+# 8. M-series — Embedded Vespa Wrapper
+
+M3 onward continues the low-level sequence established by M0–M2.
+
+Its acceptance harness remains under:
+
+```text
+reference/vespa/mN/
+```
+
+and remains cumulative with M0–M2.
+
+## M3 — Linguistics compatibility
+
+### Goal
 
 Implement the minimum linguistic preprocessing currently supplied outside the C++ search core.
 
 This applies to both documents and queries.
 
-## Initial scope
+### Initial scope
 
-Start with a deliberately small supported configuration.
-
-For that configuration record:
+Record and reproduce:
 
 ```text
 input string
@@ -437,31 +590,11 @@ Index-time output must be sufficient to construct the linguistic annotations con
 
 Query-time output must produce compatible terms.
 
-## Oracle
+### Oracle
 
 Use the pinned Vespa Java linguistics implementation.
 
-Golden generation should run Java directly and emit a small canonical JSON representation.
-
-Example:
-
-```json
-{
-  "input": "Running cafés",
-  "language": "en",
-  "terms": [
-    {
-      "term": "...",
-      "start": 0,
-      "end": 7
-    }
-  ]
-}
-```
-
-The exact representation is established by the oracle before implementation.
-
-## Scenarios
+### Verify
 
 Cover at least:
 
@@ -477,38 +610,25 @@ repeated terms
 positions
 ```
 
-Add languages only when intentionally supported.
+Then verify that real indexing/query integration consumes those results in the following milestones.
 
-## Verify
+### Forbidden shortcuts
 
-Run the Rust analyzer against the same fixtures and compare canonical output.
-
-Then compile the API-contract fixture.
-
-## Forbidden shortcuts
-
-- retaining the toy ASCII tokenizer as production behavior;
-- calling Java from the Rust runtime;
-- using different analysis for query and document without an explicit Vespa-equivalent reason;
-- implementing extra synonym/spelling behavior.
-
-## Risk retired
-
-Can Search Kernel produce the linguistic representation Proton expects without the Java runtime?
+- toy ASCII tokenizer as production behavior;
+- calling Java from the runtime;
+- divergent index/query analysis without an explicit Vespa-equivalent reason.
 
 ---
 
-# 8. M4 — Text indexing and matching
+## M4 — Text indexing and matching
 
-## Goal
+### Goal
 
-Connect M3 to the real C++ text index and matcher.
+Connect M3 to the real C++ text index and Matcher.
 
 Continue using the known precompiled text configuration fixture.
 
-## Scenario
-
-Use the proven text sequence:
+### Scenario
 
 ```text
 doc1 = "The quick brown fox"
@@ -526,13 +646,7 @@ verify its postings disappear
 
 Include BM25.
 
-## Oracle
-
-Direct embedded C++ behavior plus M3 Java linguistics goldens.
-
-## Verify
-
-The acceptance path must be:
+### Acceptance path
 
 ```text
 Rust document
@@ -548,28 +662,22 @@ M3 query analysis
 Vespa Matcher
 ```
 
-Compare hits, phrase behavior and ranking where deterministic.
+### Forbidden shortcuts
 
-## Forbidden shortcuts
-
-- manually computing matches in Rust;
-- manually computing BM25;
+- Rust-side matching;
+- Rust-side BM25;
 - bypassing M3;
-- using the original hard-coded spike tokenizer.
-
-## Risk retired
-
-Can the full Java-free text-processing path drive real Vespa indexing and matching?
+- retaining the spike tokenizer.
 
 ---
 
-# 9. M5 — Persistence and reopen
+## M5 — Persistence and reopen
 
-## Goal
+### Goal
 
 Verify the wrapped engine as durable local state.
 
-## Scenarios
+### Scenarios
 
 Process A:
 
@@ -594,11 +702,7 @@ close
 
 Add controlled abrupt termination where practical.
 
-## Oracle
-
-Direct embedded Vespa persistence behavior.
-
-## Persistent compatibility fixture
+### Persistent compatibility fixture
 
 Record:
 
@@ -610,109 +714,60 @@ fixture definition
 expected results
 ```
 
-Preserve selected index directories for future upgrade testing.
-
-## Risk retired
-
-Can the embedded wrapper reliably reuse its persisted state?
+Preserve selected data directories for future upgrade testing.
 
 ---
 
-# 10. M6 — Schema to Proton configuration
+## M6 — Vespa schema/configuration
 
-## Goal
+### Goal
 
-Stop depending on precompiled configuration fixtures for ordinary supported schemas.
+Stop depending on precompiled configuration fixtures for the supported low-level schema subset.
 
-## API first
+This milestone defines the representation needed by `searchkernel-vespa`, not the C-series product schema.
 
-Freeze a minimal schema API.
-
-Do not design every future Vespa field capability.
-
-Initial concepts are only those required for:
+### Initial concepts
 
 ```text
 text
 keyword/string
 integer
 floating point
-boolean if straightforward
+boolean where straightforward
 
 index
 attribute
 stored/summary
 ```
 
-## Implementation boundary
-
-Conceptually:
+### Implementation boundary
 
 ```text
-Rust schema
+searchkernel-vespa config model
     ↓
-small Search Kernel compiler
+embedded compiler
     ↓
-configuration consumed by native adapter / Proton
+configuration consumed by Proton
 ```
 
-The implementation may construct native configuration objects directly if that is cleaner than reproducing Vespa's textual generated-config format.
+Use Vespa Java config-model as an oracle for selected schemas and validate resulting engine behavior.
 
-## Oracle
+### Forbidden shortcuts
 
-For a set of simple schemas:
-
-```text
-same logical schema
-    ↓
-Vespa Java config-model
-        vs
-Search Kernel compiler
-```
-
-Canonicalize the comparison around configuration meaning.
-
-Do not require byte-for-byte equality for irrelevant generated details.
-
-Also instantiate `DocumentDB` from both and run behavioral fixtures.
-
-## Scenarios
-
-At minimum:
-
-```text
-one text field
-one attribute field
-text + attribute
-multiple scalar types
-stored/summary field
-invalid configuration
-```
-
-## Forbidden shortcuts
-
-- invoking Java config-model at runtime;
-- shipping pre-generated config for each fixture as the production implementation;
-- implementing `.sd` parsing;
-- exposing Vespa generated-config classes through the Rust API.
-
-## Risk retired
-
-Can a Rust application define an index without the Vespa Java configuration platform?
+- Java config-model at runtime;
+- shipping fixture-specific generated config as production behavior;
+- `.sd` parser;
+- high-level product semantics in this crate.
 
 ---
 
-# 11. M7 — Query compilation
+## M7 — Vespa query compilation
 
-## Goal
+### Goal
 
-Compile typed Rust queries into the representation consumed by the C++ matcher.
+Compile typed low-level queries into the representation consumed by the C++ Matcher.
 
-## API first
-
-Freeze the typed query API before implementation.
-
-Initial operators:
+### Operators
 
 ```text
 Term
@@ -725,33 +780,19 @@ Range
 Exists
 ```
 
-Do not add a textual query parser.
-
-## Processing
-
-For text operators:
+### Processing
 
 ```text
-Rust query
+searchkernel-vespa Query
     ↓
-field metadata from M6
+M6 field metadata
     ↓
-M3 linguistic analysis
+M3 text analysis where required
     ↓
 Vespa query representation
 ```
 
-Numeric and exact operators bypass linguistic analysis as appropriate.
-
-## Oracle
-
-For representative queries, run the equivalent supported query through Vespa's normal preparation path and capture a canonicalized final query representation.
-
-Compare structure and semantics, not Java object identity.
-
-Direct C++ query-builder fixtures may also be used where they provide a clearer oracle.
-
-## Verify
+### Verify
 
 Cover:
 
@@ -766,81 +807,49 @@ unknown field
 wrong value type
 ```
 
-Then execute the compiled query through the real matcher.
+Then execute through the real Matcher.
 
-## Forbidden shortcuts
+### Forbidden shortcuts
 
 - YQL parser;
 - generic query language;
 - Rust-side matching;
-- treating every field as text;
-- bypassing M3/M6 metadata.
-
-## Risk retired
-
-Can Search Kernel replace the Java query-preparation boundary for its supported typed query API?
+- treating every field as text.
 
 ---
 
-# 12. M8 — Search request and results
+## M8 — Local search request and results
 
-## Goal
+### Goal
 
 Complete the ordinary local request/result path.
 
-## Initial surface
-
-Expose:
+### Scope
 
 ```text
 limit
-offset if supported cleanly
+offset where supported
 sorting
-requested stored fields / summary
+stored/summary fields
 scores
-total-hit information
+total hits available from the engine
 ```
 
 Use M7 for matching/filtering.
 
-## Summary retrieval
+Wrap the native docsums/summary path where needed.
 
-If Vespa's native path separates matching from summary/document retrieval, wrap that native behavior rather than reimplementing it.
-
-There is no distributed fill phase.
-
-## Oracle
-
-Direct C++ local search behavior, with normal Vespa request behavior used when the semantics are prepared outside C++.
-
-## Verify
-
-Deterministic fixtures for:
-
-```text
-sort ascending/descending
-limit
-stored fields
-multiple hits
-missing values where supported
-text + filter + sort
-```
-
-## Risk retired
-
-Do we have a complete useful single-node search request without the Java request container?
+No distributed fill phase exists in this embedded scope.
 
 ---
 
-# 13. M9 — Attributes and facets
+## M9 — Attributes, grouping, and facets
 
-## Goal
+### Goal
 
 Broaden mutable attribute functionality.
 
-## Scope
-
-Expose practical:
+### Scope
 
 ```text
 attribute field types
@@ -852,29 +861,17 @@ group/facet counts
 basic aggregation
 ```
 
-Do not expose the entirety of Vespa grouping in one milestone.
-
-## Oracle
-
-Direct C++ engine behavior.
-
-## Verify
-
-Include updates without rewriting unrelated text and reopen persistence.
+Use real Vespa capabilities rather than a Rust aggregation engine.
 
 ---
 
-# 14. M10 — Ranking integration
+## M10 — Ranking integration
 
-## Goal
+### Goal
 
-Expose Vespa ranking configuration and request inputs.
+Expose the Vespa ranking capabilities needed by the embedded low-level API.
 
-Ranking evaluation remains C++.
-
-## Scope
-
-Initial targets:
+### Initial scope
 
 ```text
 BM25
@@ -886,187 +883,843 @@ ranking expressions
 feature output
 ```
 
-## Configuration
+Ranking evaluation remains C++.
 
-M6 supplies the configuration route.
-
-Rank assets required by supported profiles must resolve from local files/resources.
-
-Do not recreate Vespa file distribution.
-
-## Oracle
-
-Use Vespa Java/config-model for configuration preparation where relevant and C++ Matcher results for actual evaluation.
-
-## Verify
-
-Fixed documents and queries with:
-
-```text
-expected hit order
-selected feature values
-ranking expressions
-query-feature influence
-```
-
-Use tolerances for floating-point values where necessary.
-
-## Forbidden shortcuts
+### Forbidden shortcuts
 
 - Rust scoring engine;
 - RankScript;
-- manually computing expected BM25/ranking results.
+- manually computed production BM25/ranking.
 
 ---
 
-# 15. M11 — Python
+## M11 — Low-level hardening
 
-## Goal
+### Goal
 
-Expose the established Rust API through PyO3.
+Harden `searchkernel-vespa` independently.
 
-Python never talks directly to the native ABI.
-
-## Verify
-
-Run equivalent Rust and Python scenarios and compare canonical results.
-
-No Python-specific search semantics.
-
----
-
-# 16. M12 — Packaging
-
-## Goal
-
-Install and run Search Kernel without a Vespa or Java development environment.
-
-## Required clean-machine test
-
-The test environment contains no:
+Exercise:
 
 ```text
-Vespa source checkout
-Vespa development container
-Vespa Java services
-Vespa build tools
-```
-
-Install the package and run:
-
-```text
-create schema
-open
-put
-search
-close
-reopen
-search
-```
-
-Record package metadata and native dependencies.
-
----
-
-# 17. M13 — Hardening
-
-## Native safety
-
-Run:
-
-```text
-ASan
-UBSan
-```
-
-plus appropriate Rust checks.
-
-## State-machine testing
-
-Generate deterministic randomized operation streams:
-
-```text
-put
-update
-delete
-search
-close
-reopen
-```
-
-Dump the seed and minimized failing trace.
-
-## Concurrency
-
-Exercise only concurrency actually supported by the underlying engine/API.
-
-Do not invent stronger guarantees.
-
-## Soak tests
-
-Measure:
-
-```text
+ASan / UBSan
+lifecycle races
+malformed input
+native failure
+repeated reopen
+supported concurrency
+long-running mutation/search traces
 RSS/PSS
 threads
 file descriptors
 disk growth
-latency
 native errors
 ```
 
+M11 has no dependency on completion of the C-series.
+
 ---
 
-# 18. Definition of done
+# 9. C-series — High-Level API and Clients
 
-Milestone `N` is complete only when:
+The C-series has its own verifier hierarchy:
 
 ```text
-API contract frozen
-        +
+reference/clients/cN/
+    CONTRACT.md
+    scenarios/
+    expected/
+    verify-cN.sh
+```
+
+Where API-shape compilation is relevant, also maintain language-specific compile/typecheck fixtures.
+
+C-series acceptance never requires a working Vespa engine.
+
+## C1 — Portable API contract
+
+### Goal
+
+Freeze the language-neutral semantic request/response model.
+
+### Artifact
+
+```text
+api/searchkernel.proto
+```
+
+### Initial messages
+
+```text
+IndexDefinition
+FieldDefinition
+Analyzer
+SearchField
+
+InsertRequest
+UpsertRequest
+PatchRequest
+DeleteRequest
+GetRequest
+
+SearchRequest
+FilterExpr
+SortExpr
+FacetRequest
+RankingPolicy
+
+SearchResult
+Hit
+FacetResult
+HighlightResult
+
+AnalyzeRequest
+DescribeRequest
+InspectQueryRequest
+
+Error
+```
+
+### Rules
+
+The protobuf is canonical plumbing, not user-facing style.
+
+It must not encode Rust-only concepts such as:
+
+```text
+lifetimes
+trait bounds
+AsRef<Path>
+Rust enum memory layout
+```
+
+Every C-series public API operation must be representable losslessly in C1.
+
+### Verify
+
+- schema evolution compatibility tests;
+- encode/decode round trips;
+- canonical representation fixtures;
+- stable field/tag numbering checks.
+
+---
+
+## C2 — High-level semantic core
+
+### Goal
+
+Implement Search Kernel product semantics without a backend.
+
+### Crate
+
+```text
+searchkernel-core
+```
+
+### Responsibilities
+
+```text
+stable defaults
+schema validation
+normalization
+resolved field definitions
+analyzer identity/version
+filter type checking
+ranking policies
+facet semantics
+prefix/typo policies
+portable errors
+resolved requests
+```
+
+### Critical rule
+
+Defaults are resolved here, not in individual SDKs or the Vespa adapter.
+
+For example:
+
+```text
+Field::text("title")
+```
+
+resolves to a complete `ResolvedField` before reaching any backend.
+
+### Verify
+
+Golden inputs -> canonical resolved values.
+
+No Vespa dependency is allowed.
+
+---
+
+## C3 — Standalone conformance testkit
+
+### Goal
+
+Allow the complete high-level/client surface to be developed without real search.
+
+### Crate
+
+```text
+searchkernel-testkit
+```
+
+### RecordingBackend
+
+Receives resolved operations and records them exactly.
+
+It is used to prove:
+
+```text
+language API call
+    ↓
+correct portable/resolved request
+```
+
+### ScriptedBackend
+
+Returns predefined responses/errors.
+
+It is used to prove:
+
+```text
+portable response
+    ↓
+correct language result/error
+```
+
+### Forbidden behavior
+
+The testkit must not implement:
+
+```text
+BM25
+prefix matching
+fuzzy matching
+faceting
+ranking
+search execution
+```
+
+It is infrastructure for API verification, not another backend.
+
+---
+
+## C4 — Rust high-level API
+
+### Goal
+
+Implement the product-facing Rust API.
+
+### Target surface
+
+```text
+Index
+IndexDefinition
+Field
+Analyzer
+SearchField
+DocumentId
+Patch
+Filter
+Ranking
+Sort
+Facet
+SearchResult<T>
+Hit<T>
+```
+
+### Example
+
+```rust
+let index = Index::open("./products")?;
+
+index.upsert("sku-42", &product)?;
+
+let results = index
+    .search("wireless headphones")
+    .filter(field("in_stock").eq(true))
+    .filter(field("price").lte(500.0))
+    .facets(["brand", "category"])
+    .limit(20)
+    .execute::<Product>()?;
+```
+
+### Verify
+
+Compile fixtures plus C3 canonical-request/result scenarios.
+
+The Rust package must still build without `searchkernel-vespa`.
+
+---
+
+## C5 — Portable native ABI
+
+### Goal
+
+Create the universal in-process transport used by non-Rust clients.
+
+### Crate
+
+```text
+searchkernel-ffi
+```
+
+### ABI shape
+
+Prefer a small surface around:
+
+```text
+ABI version
+open/create handle
+call with request bytes
+receive response bytes
+close handle
+free returned buffer
+```
+
+Only portable primitives cross the boundary:
+
+```text
+opaque handles
+pointer + length byte buffers
+integer status codes
+explicit ownership
+```
+
+Do not expose Rust strings, Vecs, trait objects, callbacks, or language-GC objects through the universal ABI.
+
+---
+
+## C6 — Binding generator
+
+### Goal
+
+Automate the mechanical portions of language-client maintenance.
+
+### Tool
+
+```text
+tools/searchkernel-bindgen
+```
+
+### Generate
+
+```text
+request/response models
+enums/tagged unions
+serialization glue
+error mappings
+documentation stubs
+conformance fixtures
+```
+
+The generator must not force every language to mimic Rust method-chaining syntax.
+
+Handwritten facades should remain small.
+
+---
+
+## C7 — Python client
+
+### Goal
+
+Deliver an idiomatic Python frontend to the C1 semantics.
+
+### Verify
+
+The canonical Python scenarios must produce the same resolved requests and response meanings as the Rust C4 client.
+
+No Python-specific search semantics are allowed.
+
+Real Vespa execution is deferred to I-series verification.
+
+---
+
+## C8 — Node.js / TypeScript client
+
+### Goal
+
+Deliver an idiomatic Node/TypeScript frontend.
+
+TypeScript types should be generated or mechanically synchronized with C1.
+
+### Verify
+
+Run the same portable conformance scenarios as C4/C7.
+
+No real Vespa dependency is required.
+
+---
+
+## C9 — PHP client
+
+### Goal
+
+Deliver an idiomatic PHP frontend.
+
+The public API may use fluent PHP conventions, while request meaning remains C1.
+
+A production package should prefer a normal extension/native package; raw PHP FFI is acceptable as a development path but not the semantic contract.
+
+### Verify
+
+Run the same portable conformance scenarios.
+
+---
+
+## C10 — Go client
+
+### Goal
+
+Deliver an idiomatic Go frontend.
+
+Use Go conventions such as `context.Context`, explicit errors, and functional options where appropriate rather than mechanically reproducing Rust builders.
+
+Embedded operation may rely on cgo.
+
+### Verify
+
+Run the same portable conformance scenarios.
+
+---
+
+# 10. I-series — Integration
+
+The I-series is the only series that depends on both M and C artifacts.
+
+Its harness lives under:
+
+```text
+reference/integration/iN/
+```
+
+The integration implementation belongs in:
+
+```text
+searchkernel-vespa-backend
+```
+
+## I1 — Adapter skeleton and firewall
+
+### Goal
+
+Create the composition boundary without yet mapping significant functionality.
+
+### Verify
+
+Enforce the dependency rule:
+
+```text
+C-series crates -> no searchkernel-vespa dependency
+M-series crates -> no searchkernel-core dependency
+integration crate -> may depend on both
+```
+
+Also verify that no low-level Vespa types leak into the public high-level API.
+
+---
+
+## I2 — Index lifecycle and schema
+
+### Dependencies
+
+At minimum:
+
+```text
+C1/C2
+M1/M6
+```
+
+### Goal
+
+Compile `ResolvedIndexDefinition` into the low-level Vespa configuration and wire real `Index::create/open`.
+
+### Verify
+
+For canonical schemas, inspect both:
+
+```text
+resolved high-level semantics
+compiled Vespa configuration
+```
+
+then instantiate the real engine.
+
+---
+
+## I3 — Document operations
+
+### Dependencies
+
+At minimum:
+
+```text
+C1-C4
+M2/M5
+```
+
+### Goal
+
+Map:
+
+```text
+insert
+upsert
+patch
+get
+delete
+bulk
+```
+
+onto the real low-level engine.
+
+### Verify
+
+Use high-level operations and confirm real Vespa state/search behavior.
+
+No scripted backend is allowed in I-series acceptance.
+
+---
+
+## I4 — Lexical search and filters
+
+### Dependencies
+
+At minimum:
+
+```text
+C1-C4
+M3/M4/M7
+```
+
+### Goal
+
+Compile resolved high-level queries into low-level Vespa queries.
+
+Cover:
+
+```text
+search text
+search-field selection/weights
+analysis
+terms
+phrases
+AND/OR/NOT
+exact filters
+range filters
+exists
+```
+
+### Verify
+
+High-level request -> real Matcher -> high-level result.
+
+---
+
+## I5 — Results, sorting, projection, pagination, highlighting
+
+### Dependencies
+
+```text
+C1-C4
+M8
+```
+
+### Goal
+
+Map the high-level result contract onto local Vespa search/docsums.
+
+Cover:
+
+```text
+hits
+totals
+projection
+sorting
+limit/offset
+highlighting/snippets where supported
+```
+
+---
+
+## I6 — Facets and grouping
+
+### Dependencies
+
+```text
+C1-C4
+M9
+```
+
+### Goal
+
+Compile high-level facet/group operations onto native grouping.
+
+Keep facet semantics owned by `searchkernel-core`.
+
+---
+
+## I7 — Ranking
+
+### Dependencies
+
+```text
+C1-C4
+M10
+```
+
+### Goal
+
+Compile high-level ranking policies into supported Vespa ranking configuration/request inputs.
+
+Initial policies:
+
+```text
+DefaultRelevanceV1
+BM25
+search-field weights
+business tie-break fields
+hard sorts
+```
+
+---
+
+## I8 — Higher-level search semantics
+
+### Goal
+
+Integrate semantic conveniences that may compile into multiple Vespa primitives:
+
+```text
+prefix
+fuzzy/typo tolerance
+synonyms
+presets
+curations
+facet-value search
+```
+
+The C-series specifies their behavior.
+
+The M-series supplies the underlying capabilities.
+
+The I-series owns only the translation.
+
+---
+
+## I9 — Cross-language real-engine conformance
+
+### Dependencies
+
+First-class C-series clients plus the required integrated product surface.
+
+### Goal
+
+Run one scenario corpus through:
+
+```text
+Rust
+Python
+Node.js / TypeScript
+PHP
+Go
+```
+
+against the real embedded engine.
+
+### Canonical scenario
+
+At minimum:
+
+```text
+create product index
+bulk insert documents
+search text
+filter
+facet
+sort
+patch document
+search again
+delete
+close
+reopen
+search
+```
+
+All clients must have equivalent semantic outcomes.
+
+---
+
+## I10 — Packaging and full-product hardening
+
+### Goal
+
+Produce supported clean-machine packages and exercise the complete system.
+
+The target machine must not require:
+
+```text
+Vespa source checkout
+Vespa development container
+Vespa build tools
+Vespa Java runtime/services
+```
+
+Package at least the first-class clients selected for release.
+
+Then run:
+
+```text
+sanitizers
+state-machine tests
+crash/recovery
+supported concurrency
+long-running workloads
+resource/leak tests
+package-size measurements
+startup measurements
+```
+
+---
+
+# 11. Orthogonal sequencing rules
+
+The intended post-M2 implementation schedule is:
+
+```text
+M TRACK
+
+M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11
+
+
+C TRACK
+
+C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 -> C9 -> C10
+```
+
+These arrows mean dependencies **inside the track only**.
+
+There are no implicit diagonal dependencies.
+
+For example, all of the following are valid states:
+
+```text
+M5 complete, C2 complete
+M8 complete, C4 complete
+M4 complete, C9 complete
+C10 complete, M6 complete
+```
+
+Integration milestones are the only place where cross-track prerequisites are declared.
+
+This is important for both human teams and coding agents: an M-series task should not start editing C-series code merely because it needs a convenient abstraction, and a C-series task should not import Vespa merely to make a standalone test pass.
+
+---
+
+# 12. Client parity rule
+
+Once a client becomes first-class, a change to the portable API is not complete until:
+
+```text
+C1 contract updated
++
+C2 semantics updated
++
+generated bindings refreshed
++
+all affected client conformance suites pass
+```
+
+Language syntax may differ idiomatically.
+
+Semantic meaning may not drift.
+
+Examples:
+
+```text
+Rust builder
+Python kwargs/operators
+TypeScript options
+PHP fluent methods
+Go functional options
+```
+
+may all represent the same C1 request.
+
+Defaults and validation are never independently redefined by each SDK.
+
+---
+
+# 13. Definition of done
+
+## M-series milestone N
+
+Complete only when:
+
+```text
+M-series API contract frozen where relevant
 oracle frozen
-        +
 expected outputs frozen
-        +
 implementation complete
-        +
 native build succeeds
-        +
-cargo fmt --check
-        +
-cargo clippy --workspace --all-targets -- -D warnings
-        +
-cargo test --workspace
-        +
+fmt/clippy/tests pass
 verify M0 ... verify MN pass
 ```
 
-The implementation agent must not change earlier contracts or verifiers to make new work pass.
+The implementing agent must not modify earlier M-series contracts or verifiers to make new work pass.
 
-Intentional contract changes are separate changes.
+## C-series milestone N
+
+Complete only when:
+
+```text
+portable/client contract frozen
+canonical expected request/result behavior frozen
+implementation complete
+all affected language compile/type checks pass
+C-series conformance tests through CN pass
+no Vespa dependency has leaked into standalone C-series crates
+```
+
+C-series completion does not require real search.
+
+## I-series milestone N
+
+Complete only when:
+
+```text
+required C-series prerequisites pass independently
+required M-series prerequisites pass independently
+adapter implementation complete
+real Vespa path exercised
+integration verifier passes
+no scripted/recording backend participates in acceptance
+```
 
 ---
 
-# 19. Agent workflow
+# 14. Agent workflow
 
-For every milestone:
+## M-series
+
+For every M milestone:
 
 ```text
 1. inspect pinned upstream source
-2. define public Rust API
+2. define/freeze low-level API
 3. build upstream oracle
 4. define scenarios
 5. generate expected outputs
 6. build verifier
-7. commit/freeze harness
-
+7. freeze harness
 8. implementation agent
 9. shortcut-focused reviewer
 10. fixer
 11. independent verifier
 ```
 
-The reviewer specifically looks for:
+Reviewer focus:
 
 ```text
 fake backend
@@ -1075,52 +1728,75 @@ Rust reimplementation of Vespa behavior
 Java runtime dependency sneaking into production
 native library linked but not actually used
 API-contract bypass
-swallowed errors
 unsafe ownership shortcuts
 modified verifier/goldens
-unnecessary abstractions
 ```
+
+## C-series
+
+For every C milestone:
+
+```text
+1. freeze portable/high-level semantics
+2. define canonical request/response fixtures
+3. define language compile/type fixtures where relevant
+4. freeze verifier
+5. implementation agent
+6. parity reviewer
+7. fixer
+8. independent verifier
+```
+
+Reviewer focus:
+
+```text
+language-specific semantic drift
+defaults duplicated in SDK
+validation duplicated inconsistently
+Rust-specific assumptions in portable API
+Vespa dependency leakage
+fake search implementation in testkit
+handwritten generated-code divergence
+```
+
+## I-series
+
+For every I milestone:
+
+```text
+1. identify already-frozen C semantics
+2. identify already-verified M capability
+3. define translation contract
+4. freeze end-to-end scenarios
+5. implement adapter
+6. review for semantic loss/leakage
+7. run real-engine verifier
+```
+
+The integration agent does not redesign either public API.
 
 ---
 
-# 20. Immediate work
+# 15. Immediate work
 
-The existing M0–M2 harness remains valid.
+M0–M2 are complete and remain unchanged.
 
-The next harness to design is therefore:
+The project can now start **two independent next milestones in parallel**:
 
 ```text
 M3 — Linguistics compatibility
 ```
 
-Its oracle should come from the pinned Vespa Java linguistics implementation.
-
-Only after M3 is frozen should an agent implement Rust linguistics.
-
-Then:
+and:
 
 ```text
-M4 — real text indexing/matching
-M5 — persistence
-M6 — schema/config compiler
-M7 — query compiler
-M8 — complete local search request
+C1 — Portable API contract
 ```
 
-After M8, stop and reassess.
+M3's oracle comes from the pinned Vespa Java linguistics implementation.
 
-At that point the supported path should be:
+C1 freezes the language-neutral product contract, including the protobuf representation required for later Rust/Python/Node/PHP/Go clients.
 
-```text
-Rust API
-    ↓
-Rust schema/config preparation
-Rust document linguistics
-Rust query preparation
-    ↓
-native boundary
-    ↓
-Vespa C++ persistence/index/match/rank
-```
+Neither task should depend on the other.
 
-with no production dependency on Vespa's Java request or configuration platform.
+The first useful integration work can begin once its named prerequisites exist; there is no need to wait for either entire track to finish.

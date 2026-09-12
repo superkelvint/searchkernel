@@ -1,0 +1,43 @@
+{
+  "category": "composition",
+  "description": "Curation filters are ANDed after the caller filter, preserving caller filter first.",
+  "id": "composition.curation-filter-and-user-filter",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "curations": {
+        "stock": {
+          "actions": [
+            {
+              "add_filter": {
+                "eq": {
+                  "field": "in_stock",
+                  "value": true
+                }
+              }
+            }
+          ],
+          "priority": 0,
+          "when": {
+            "query_exact": "headphones"
+          }
+        }
+      }
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "filter": {
+            "lte": {
+              "field": "price",
+              "value": 500.0
+            }
+          },
+          "query": "headphones"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

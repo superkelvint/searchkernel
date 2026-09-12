@@ -1,0 +1,12 @@
+{
+  "category": "group",
+  "description": "hits_per_group must be positive.",
+  "id": "group.invalid-hits-per-group",
+  "index_fixture": "product-v1",
+  "input": {
+    "group_by": "category",
+    "hits_per_group": 0,
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

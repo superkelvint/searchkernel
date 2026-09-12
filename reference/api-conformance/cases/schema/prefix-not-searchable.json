@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Prefix requires a searchable field.",
+  "id": "schema.prefix-not-searchable",
+  "input": {
+    "fields": [
+      {
+        "kind": "keyword",
+        "name": "sku",
+        "prefix": true
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "resolve_index_definition"
+}

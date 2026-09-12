@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Offsets must be non-negative.",
+  "id": "search.negative-offset-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "offset": -1,
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

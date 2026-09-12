@@ -1,0 +1,21 @@
+{
+  "category": "schema",
+  "description": "Search fields must exist.",
+  "id": "schema.unknown-search-field",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "bad",
+    "search_fields": [
+      {
+        "field": "body",
+        "weight": 1.0
+      }
+    ]
+  },
+  "operation": "resolve_index_definition"
+}

@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "AtLeast requires n >= 1.",
+  "id": "search.term-match-at-least-zero",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "wireless",
+    "term_match": {
+      "at_least": 0
+    }
+  },
+  "operation": "resolve_search"
+}

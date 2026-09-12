@@ -1,0 +1,39 @@
+{
+  "category": "facet",
+  "description": "Numeric range facets use inclusive lower / exclusive upper bounds.",
+  "id": "facet.price-ranges",
+  "index_fixture": "product-v1",
+  "input": {
+    "facets": [
+      {
+        "field": "price",
+        "kind": "ranges",
+        "ranges": [
+          {
+            "from": null,
+            "from_inclusive": true,
+            "name": "budget",
+            "to": 500.0,
+            "to_inclusive": false
+          },
+          {
+            "from": 500.0,
+            "from_inclusive": true,
+            "name": "mid",
+            "to": 1500.0,
+            "to_inclusive": false
+          },
+          {
+            "from": 1500.0,
+            "from_inclusive": true,
+            "name": "premium",
+            "to": null,
+            "to_inclusive": false
+          }
+        ]
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

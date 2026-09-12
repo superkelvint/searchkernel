@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Term matching can be relaxed explicitly.",
+  "id": "search.term-match-any",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "wireless headphones",
+    "term_match": "any"
+  },
+  "operation": "resolve_search"
+}

@@ -1,0 +1,36 @@
+{
+  "ok": {
+    "fields": [
+      {
+        "analyzer": null,
+        "capabilities": {
+          "facetable": false,
+          "filterable": false,
+          "infix": false,
+          "prefix": false,
+          "searchable": false,
+          "sortable": false,
+          "typo_tolerance": null
+        },
+        "kind": "string",
+        "multi": false,
+        "name": "value",
+        "optional": false,
+        "stored": true
+      }
+    ],
+    "name": "string_default",
+    "ranking": {
+      "relevance": "default/v1",
+      "then": []
+    },
+    "search_defaults": {
+      "limit": 20,
+      "prefix": "last_term",
+      "term_match": "all",
+      "typo_tolerance": "standard/v1"
+    },
+    "search_fields": [],
+    "semantics_version": "high-level/v1"
+  }
+}

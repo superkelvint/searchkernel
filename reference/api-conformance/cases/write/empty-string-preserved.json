@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "Empty string is a real value, not missing.",
+  "id": "write.empty-string-preserved",
+  "index_fixture": "product-v1",
+  "input": {
+    "document": {
+      "brand": "Sony",
+      "category": "Headphones",
+      "in_stock": true,
+      "popularity": 1,
+      "price": 100.0,
+      "sku": "SKU",
+      "title": ""
+    },
+    "id": "1",
+    "kind": "upsert"
+  },
+  "operation": "resolve_write"
+}

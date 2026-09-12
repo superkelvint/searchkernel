@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "operation_requires_multivalue",
+    "details": {
+      "field": "brand",
+      "operation": "append"
+    }
+  }
+}

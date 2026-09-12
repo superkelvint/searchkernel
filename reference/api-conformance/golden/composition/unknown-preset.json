@@ -1,0 +1,14 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "error": {
+          "code": "unknown_preset",
+          "details": {
+            "name": "missing"
+          }
+        }
+      }
+    ]
+  }
+}

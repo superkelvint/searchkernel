@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "field_not_sortable",
+    "details": {
+      "field": "title"
+    }
+  }
+}

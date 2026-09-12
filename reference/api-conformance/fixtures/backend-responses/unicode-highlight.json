@@ -1,0 +1,37 @@
+{
+  "facets": {},
+  "hits": [
+    {
+      "document": {
+        "title": "Caf\u00e9 \u2615 \u6771\u4eac"
+      },
+      "highlights": {
+        "title": {
+          "segments": [
+            {
+              "matched": true,
+              "text": "Caf\u00e9"
+            },
+            {
+              "matched": false,
+              "text": " \u2615 "
+            },
+            {
+              "matched": true,
+              "text": "\u6771\u4eac"
+            }
+          ],
+          "text": "Caf\u00e9 \u2615 \u6771\u4eac"
+        }
+      },
+      "id": "u1",
+      "ranking_info": null,
+      "snippets": {}
+    }
+  ],
+  "took_micros": 7,
+  "total": {
+    "relation": "exact",
+    "value": 1
+  }
+}

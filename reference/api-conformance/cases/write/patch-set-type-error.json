@@ -1,0 +1,19 @@
+{
+  "category": "write",
+  "description": "Patch set validates target field type.",
+  "id": "write.patch-set-type-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": "1",
+    "kind": "patch",
+    "operations": [
+      {
+        "set": {
+          "field": "price",
+          "value": "cheap"
+        }
+      }
+    ]
+  },
+  "operation": "resolve_write"
+}

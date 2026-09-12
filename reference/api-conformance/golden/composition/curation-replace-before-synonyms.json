@@ -1,0 +1,88 @@
+{
+  "ok": {
+    "steps": [
+      {
+        "resolved": {
+          "curation": {
+            "added_filters": [],
+            "applied": [
+              "replace"
+            ],
+            "hidden_ids": [],
+            "pins": [],
+            "query_replacement": "mobile phone"
+          },
+          "facets": [],
+          "filter": null,
+          "grouping": null,
+          "highlights": [],
+          "include_ranking_info": false,
+          "kind": "search",
+          "pagination": {
+            "limit": 20,
+            "offset": 0
+          },
+          "prefix": "last_term",
+          "projection": {
+            "kind": "all_stored"
+          },
+          "query": {
+            "original_text": "cellphone",
+            "parsed": null,
+            "syntax": "literal",
+            "text": "mobile phone"
+          },
+          "ranking": {
+            "relevance": "default/v1",
+            "then": [
+              {
+                "direction": "desc",
+                "field": "popularity"
+              }
+            ]
+          },
+          "search_fields": [
+            {
+              "field": "title",
+              "infix": false,
+              "prefix": true,
+              "typo_tolerance": "standard/v1",
+              "weight": 4.0
+            },
+            {
+              "field": "description",
+              "infix": false,
+              "prefix": true,
+              "typo_tolerance": "standard/v1",
+              "weight": 1.0
+            }
+          ],
+          "snippets": [],
+          "sort": [],
+          "synonym_expansions": [
+            {
+              "alternatives": [
+                [
+                  "cell",
+                  "phone"
+                ],
+                [
+                  "smartphone"
+                ]
+              ],
+              "kind": "one_way",
+              "name": "mobile-phone",
+              "source": [
+                "mobile",
+                "phone"
+              ]
+            }
+          ],
+          "synonyms": true,
+          "term_match": "all",
+          "typo_tolerance": "standard/v1"
+        }
+      }
+    ]
+  }
+}

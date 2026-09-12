@@ -1,0 +1,66 @@
+{
+  "ok": {
+    "facets": {
+      "brand": {
+        "exhaustive": true,
+        "values": [
+          {
+            "count": 1,
+            "value": "Sony"
+          },
+          {
+            "count": 1,
+            "value": "Bose"
+          }
+        ]
+      }
+    },
+    "hits": [
+      {
+        "document": {
+          "brand": "Sony",
+          "in_stock": true,
+          "popularity": 9234,
+          "price": 449.99,
+          "title": "Sony WH-1000XM6"
+        },
+        "highlights": {
+          "title": {
+            "segments": [
+              {
+                "matched": true,
+                "text": "Sony"
+              },
+              {
+                "matched": false,
+                "text": " WH-1000XM6"
+              }
+            ],
+            "text": "Sony WH-1000XM6"
+          }
+        },
+        "id": "sku-42",
+        "ranking_info": null,
+        "snippets": {}
+      },
+      {
+        "document": {
+          "brand": "Bose",
+          "in_stock": true,
+          "popularity": 8111,
+          "price": 429.0,
+          "title": "Bose QuietComfort Ultra"
+        },
+        "highlights": {},
+        "id": "sku-7",
+        "ranking_info": null,
+        "snippets": {}
+      }
+    ],
+    "took_micros": 1830,
+    "total": {
+      "relation": "exact",
+      "value": 2
+    }
+  }
+}

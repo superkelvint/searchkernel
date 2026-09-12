@@ -1,0 +1,11 @@
+{
+  "category": "group",
+  "description": "distinct_by is grouping with one hit per group.",
+  "id": "group.distinct-category",
+  "index_fixture": "product-v1",
+  "input": {
+    "distinct_by": "category",
+    "query": "shirt"
+  },
+  "operation": "resolve_search"
+}

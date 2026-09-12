@@ -1,0 +1,10 @@
+{
+  "category": "search",
+  "description": "Exact-only index fixture exercises searchable keyword defaults.",
+  "id": "search.exact-index-default",
+  "index_fixture": "exact-index",
+  "input": {
+    "query": "WH-1000"
+  },
+  "operation": "resolve_search"
+}

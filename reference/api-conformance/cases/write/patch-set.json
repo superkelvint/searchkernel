@@ -1,0 +1,27 @@
+{
+  "category": "write",
+  "description": "Patch set operations.",
+  "id": "write.patch-set",
+  "index_fixture": "product-v1",
+  "input": {
+    "id": "sku-42",
+    "kind": "patch",
+    "patch": {
+      "operations": [
+        {
+          "set": {
+            "field": "price",
+            "value": 399.99
+          }
+        },
+        {
+          "set": {
+            "field": "in_stock",
+            "value": true
+          }
+        }
+      ]
+    }
+  },
+  "operation": "resolve_write"
+}

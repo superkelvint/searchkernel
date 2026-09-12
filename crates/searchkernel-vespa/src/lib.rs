@@ -1,0 +1,283 @@
+//! Safe Vespa-specific adapter for the private Search Kernel ABI.
+
+use searchkernel_sys as sys;
+use std::ffi::{CStr, CString, NulError};
+use std::path::Path;
+use std::ptr;
+
+const EXPECTED_ABI: u32 = 1;
+
+#[derive(Debug)]
+pub struct Error {
+    code: i32,
+    message: String,
+}
+
+impl Error {
+    fn message(message: impl Into<String>) -> Self {
+        Self {
+            code: 0,
+            message: message.into(),
+        }
+    }
+
+    fn native(code: i32, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    fn from_nul(error: NulError) -> Self {
+        Self::message(format!("string contains an interior NUL: {error}"))
+    }
+
+    /// Returns the native Search Kernel error code, or zero for an adapter-side error.
+    pub fn code(&self) -> i32 {
+        self.code
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Error {}
+
+fn native_error(error: &mut sys::sk_error, status: i32) -> Error {
+    let code = error.code;
+    let message = if error.message.is_null() {
+        format!("native operation failed with status {status}")
+    } else {
+        unsafe { CStr::from_ptr(error.message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    unsafe { sys::sk_error_destroy(error) };
+    Error::native(code, message)
+}
+
+fn check(status: i32, error: &mut sys::sk_error) -> Result<(), Error> {
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(native_error(error, status))
+    }
+}
+
+fn cstring(value: &str) -> Result<CString, Error> {
+    CString::new(value).map_err(Error::from_nul)
+}
+
+fn path_cstring(path: &Path) -> Result<CString, Error> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        CString::new(path.as_os_str().as_bytes()).map_err(Error::from_nul)
+    }
+    #[cfg(not(unix))]
+    {
+        cstring(&path.to_string_lossy())
+    }
+}
+
+fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<*mut T, Error> {
+    if pointer.is_null() {
+        Err(Error::message(format!(
+            "native operation returned a null {name}"
+        )))
+    } else {
+        Ok(pointer)
+    }
+}
+
+pub struct Engine {
+    handle: *mut sys::sk_engine,
+}
+
+impl Engine {
+    pub fn open(data_dir: &Path, config_dir: &Path) -> Result<Self, Error> {
+        let actual_abi = unsafe { sys::sk_native_abi_version() };
+        if actual_abi != EXPECTED_ABI {
+            return Err(Error::message(format!(
+                "unsupported native ABI version {actual_abi}; expected {EXPECTED_ABI}"
+            )));
+        }
+
+        let data_dir = path_cstring(data_dir)?;
+        let config_dir = path_cstring(config_dir)?;
+        let mut handle = ptr::null_mut();
+        let mut error = empty_error();
+        let status = unsafe {
+            sys::sk_engine_open(
+                data_dir.as_ptr(),
+                config_dir.as_ptr(),
+                &mut handle,
+                &mut error,
+            )
+        };
+        check(status, &mut error)?;
+        Ok(Self {
+            handle: require_ptr(handle, "engine")?,
+        })
+    }
+
+    pub fn put(&mut self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
+        let document_id = cstring(document_id)?;
+        let field = cstring(field)?;
+        let mut document = ptr::null_mut();
+        let mut error = empty_error();
+        let status = unsafe {
+            sys::sk_document_create(
+                document_id.as_ptr(),
+                field.as_ptr(),
+                value,
+                &mut document,
+                &mut error,
+            )
+        };
+        check(status, &mut error)?;
+        let document = NativeDocument(require_ptr(document, "document")?);
+        let mut error = empty_error();
+        let status = unsafe { sys::sk_engine_put(self.handle, document.0, &mut error) };
+        check(status, &mut error)
+    }
+
+    pub fn update(&mut self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
+        let document_id = cstring(document_id)?;
+        let field = cstring(field)?;
+        let mut update = ptr::null_mut();
+        let mut error = empty_error();
+        let status = unsafe {
+            sys::sk_document_update_create(
+                document_id.as_ptr(),
+                field.as_ptr(),
+                value,
+                &mut update,
+                &mut error,
+            )
+        };
+        check(status, &mut error)?;
+        let update = NativeUpdate(require_ptr(update, "document update")?);
+        let mut error = empty_error();
+        let status = unsafe { sys::sk_engine_update(self.handle, update.0, &mut error) };
+        check(status, &mut error)
+    }
+
+    pub fn remove(&mut self, document_id: &str) -> Result<bool, Error> {
+        let document_id = cstring(document_id)?;
+        let mut was_found = 0;
+        let mut error = empty_error();
+        let status = unsafe {
+            sys::sk_engine_remove(
+                self.handle,
+                document_id.as_ptr(),
+                &mut was_found,
+                &mut error,
+            )
+        };
+        check(status, &mut error)?;
+        Ok(was_found != 0)
+    }
+
+    pub fn search(&self, field: &str, value: i32, limit: u32) -> Result<Vec<String>, Error> {
+        let field = cstring(field)?;
+        let mut request = ptr::null_mut();
+        let mut error = empty_error();
+        let status = unsafe {
+            sys::sk_search_request_create(field.as_ptr(), value, limit, &mut request, &mut error)
+        };
+        check(status, &mut error)?;
+        let request = NativeRequest(require_ptr(request, "search request")?);
+
+        let mut result = ptr::null_mut();
+        let mut error = empty_error();
+        let status =
+            unsafe { sys::sk_engine_search(self.handle, request.0, &mut result, &mut error) };
+        check(status, &mut error)?;
+        let result = NativeResult(require_ptr(result, "search result")?);
+        let size = unsafe { sys::sk_search_result_size(result.0) } as usize;
+        let mut ids = Vec::with_capacity(size);
+        for index in 0..size {
+            let mut id_ptr = ptr::null();
+            let mut id_length = 0;
+            let mut error = empty_error();
+            let status = unsafe {
+                sys::sk_search_result_id(
+                    result.0,
+                    index as u32,
+                    &mut id_ptr,
+                    &mut id_length,
+                    &mut error,
+                )
+            };
+            check(status, &mut error)?;
+            let id_ptr = if id_ptr.is_null() {
+                return Err(Error::message("native result returned a null document ID"));
+            } else {
+                id_ptr
+            };
+            let bytes =
+                unsafe { std::slice::from_raw_parts(id_ptr.cast::<u8>(), id_length as usize) };
+            ids.push(
+                String::from_utf8(bytes.to_vec())
+                    .map_err(|_| Error::message("native result returned invalid UTF-8"))?,
+            );
+        }
+        Ok(ids)
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        if !self.handle.is_null() {
+            unsafe { sys::sk_engine_destroy(self.handle) };
+            self.handle = ptr::null_mut();
+        }
+    }
+}
+
+fn empty_error() -> sys::sk_error {
+    sys::sk_error {
+        code: 0,
+        message: ptr::null_mut(),
+    }
+}
+
+struct NativeDocument(*mut sys::sk_document);
+impl Drop for NativeDocument {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { sys::sk_document_destroy(self.0) };
+        }
+    }
+}
+
+struct NativeUpdate(*mut sys::sk_document_update);
+impl Drop for NativeUpdate {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { sys::sk_document_update_destroy(self.0) };
+        }
+    }
+}
+
+struct NativeRequest(*mut sys::sk_search_request);
+impl Drop for NativeRequest {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { sys::sk_search_request_destroy(self.0) };
+        }
+    }
+}
+
+struct NativeResult(*mut sys::sk_search_result);
+impl Drop for NativeResult {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { sys::sk_search_result_destroy(self.0) };
+        }
+    }
+}

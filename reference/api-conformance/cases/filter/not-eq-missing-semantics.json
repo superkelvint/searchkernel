@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "not(eq) is boolean complement and therefore includes missing optional values.",
+  "id": "filter.not-eq-missing-semantics",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "not": {
+        "eq": {
+          "field": "image_url",
+          "value": "x"
+        }
+      }
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

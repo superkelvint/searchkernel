@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_hits_per_group",
+    "details": {
+      "value": 0
+    }
+  }
+}

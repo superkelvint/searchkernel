@@ -1,0 +1,12 @@
+{
+  "category": "value",
+  "description": "NaN is not part of the portable numeric value model.",
+  "id": "value.f64-nan",
+  "input": {
+    "kind": "f64",
+    "value": {
+      "$f64": "nan"
+    }
+  },
+  "operation": "normalize_value"
+}

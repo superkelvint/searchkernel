@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Initial max page size is 1000.",
+  "id": "search.over-limit",
+  "index_fixture": "product-v1",
+  "input": {
+    "limit": 1001,
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

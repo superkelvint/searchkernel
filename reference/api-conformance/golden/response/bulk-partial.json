@@ -1,0 +1,25 @@
+{
+  "ok": {
+    "failed": 1,
+    "items": [
+      {
+        "error": null,
+        "id": "sku-1",
+        "index": 0,
+        "ok": true
+      },
+      {
+        "error": {
+          "code": "document_not_found",
+          "details": {
+            "id": "sku-2"
+          }
+        },
+        "id": "sku-2",
+        "index": 1,
+        "ok": false
+      }
+    ],
+    "succeeded": 1
+  }
+}

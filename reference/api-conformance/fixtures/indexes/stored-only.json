@@ -1,0 +1,14 @@
+{
+  "fields": [
+    {
+      "kind": "string",
+      "name": "url"
+    },
+    {
+      "kind": "string",
+      "name": "caption",
+      "optional": true
+    }
+  ],
+  "name": "assets"
+}

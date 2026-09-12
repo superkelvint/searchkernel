@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Filter normalization: number-gte.",
+  "id": "filter.number-gte",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "gte": {
+        "field": "popularity",
+        "value": 1000
+      }
+    },
+    "query": "headphones"
+  },
+  "operation": "resolve_search"
+}

@@ -1,0 +1,29 @@
+{
+  "category": "composition",
+  "description": "A one-way synonym target does not rewrite back to its source.",
+  "id": "composition.synonym-one-way-no-reverse",
+  "index_fixture": "product-v1",
+  "input": {
+    "state": {
+      "synonyms": {
+        "mobile-phone": {
+          "kind": "one_way",
+          "source": "mobile phone",
+          "targets": [
+            "cell phone",
+            "smartphone"
+          ]
+        }
+      }
+    },
+    "steps": [
+      {
+        "op": "search_resolve",
+        "request": {
+          "query": "smartphone"
+        }
+      }
+    ]
+  },
+  "operation": "run_stateful_scenario"
+}

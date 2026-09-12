@@ -1,0 +1,11 @@
+{
+  "ok": {
+    "kind": "one_way",
+    "name": "mobile-phone",
+    "source": "mobile phone",
+    "targets": [
+      "cell phone",
+      "smartphone"
+    ]
+  }
+}

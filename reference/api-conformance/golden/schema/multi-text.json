@@ -1,0 +1,41 @@
+{
+  "ok": {
+    "fields": [
+      {
+        "analyzer": "standard/v1",
+        "capabilities": {
+          "facetable": false,
+          "filterable": false,
+          "infix": false,
+          "prefix": true,
+          "searchable": true,
+          "sortable": false,
+          "typo_tolerance": "standard/v1"
+        },
+        "kind": "text",
+        "multi": true,
+        "name": "value",
+        "optional": false,
+        "stored": true
+      }
+    ],
+    "name": "multi_text",
+    "ranking": {
+      "relevance": "default/v1",
+      "then": []
+    },
+    "search_defaults": {
+      "limit": 20,
+      "prefix": "last_term",
+      "term_match": "all",
+      "typo_tolerance": "standard/v1"
+    },
+    "search_fields": [
+      {
+        "field": "value",
+        "weight": 1.0
+      }
+    ],
+    "semantics_version": "high-level/v1"
+  }
+}

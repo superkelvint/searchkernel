@@ -1,0 +1,27 @@
+{
+  "ok": {
+    "facets": [],
+    "filter": {
+      "eq": {
+        "field": "brand",
+        "value": "Sony"
+      }
+    },
+    "highlights": [],
+    "kind": "browse",
+    "pagination": {
+      "limit": 20,
+      "offset": 0
+    },
+    "projection": {
+      "kind": "all_stored"
+    },
+    "snippets": [],
+    "sort": [
+      {
+        "direction": "asc",
+        "kind": "document_id"
+      }
+    ]
+  }
+}

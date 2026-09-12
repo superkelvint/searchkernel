@@ -1,0 +1,11 @@
+{
+  "category": "analyze",
+  "description": "Analyze requires a searchable field.",
+  "id": "analyze.nonsearchable-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "field": "category",
+    "text": "Headphones"
+  },
+  "operation": "resolve_analyze"
+}

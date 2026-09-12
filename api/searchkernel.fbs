@@ -1,0 +1,571 @@
+// Search Kernel portable API model, translated from api/searchkernel.proto.
+//
+// This schema is internal plumbing. Application developers should use idiomatic
+// language clients rather than generated FlatBuffers APIs directly.
+//
+// Compatibility rules for this FlatBuffers schema:
+//   * existing table fields must not be reordered or removed;
+//   * new table fields are appended at the end;
+//   * removed fields are retained and may be marked deprecated;
+//   * enum numeric values are permanent once released;
+//   * binary FlatBuffers are the interchange format; JSON is not the durable
+//     compatibility contract.
+//
+// No root_type is declared intentionally. Requests are scoped to an already-open
+// Index handle, and transport framing belongs to the later native ABI layer.
+
+namespace SearchKernel.V1;
+
+// -----------------------------------------------------------------------------
+// Presence helpers
+// -----------------------------------------------------------------------------
+//
+// These single-field structs preserve proto3 optional-scalar presence without
+// relying on FlatBuffers optional-scalar support in every target language.
+// A null struct means "absent"; a present struct may contain the scalar's normal
+// default value (false/0/Unspecified) explicitly.
+
+struct OptionalBool {
+  value:bool;
+}
+
+struct OptionalDouble {
+  value:double;
+}
+
+struct OptionalUInt32 {
+  value:uint;
+}
+
+// -----------------------------------------------------------------------------
+// Common values
+// -----------------------------------------------------------------------------
+
+enum NullValue:ubyte {
+  Unspecified = 0,
+  Null = 1
+}
+
+table NullValueValue {
+  value:NullValue = Unspecified;
+}
+
+table BoolValue {
+  value:bool;
+}
+
+table Int64Value {
+  value:long;
+}
+
+table UInt64Value {
+  value:ulong;
+}
+
+table Float64Value {
+  value:double;
+}
+
+table StringValue {
+  value:string;
+}
+
+table BytesValue {
+  value:[ubyte];
+}
+
+// Forward references are intentional: ValueList and ValueObject contain Value,
+// while Value's union can in turn contain ValueList and ValueObject.
+table ValueList {
+  values:[Value];
+}
+
+table ValueEntry {
+  key:string (key);
+  value:Value;
+}
+
+table ValueObject {
+  // Protobuf map<string, Value>. Producers should sort by key when they want
+  // generated LookupByKey-style zero-copy lookup.
+  fields:[ValueEntry];
+}
+
+union ValueKind {
+  NullValueValue,
+  BoolValue,
+  Int64Value,
+  UInt64Value,
+  Float64Value,
+  StringValue,
+  BytesValue,
+  ValueList,
+  ValueObject
+}
+
+table Value {
+  kind:ValueKind;
+}
+
+table Document {
+  id:string;
+  // Protobuf map<string, Value>.
+  fields:[ValueEntry];
+}
+
+// -----------------------------------------------------------------------------
+// Index definition
+// -----------------------------------------------------------------------------
+
+enum FieldKind:ubyte {
+  Unspecified = 0,
+  Text = 1,
+  Keyword = 2,
+  Int64 = 3,
+  Float64 = 4,
+  Bool = 5
+}
+
+enum FieldCardinality:ubyte {
+  Unspecified = 0,
+  Single = 1,
+  Multi = 2
+}
+
+table Analyzer {
+  name:string;
+  version:uint;
+  // Protobuf map<string, Value>.
+  options:[ValueEntry];
+}
+
+table FieldDefinition {
+  name:string;
+  kind:FieldKind = Unspecified;
+  cardinality:FieldCardinality = Unspecified;
+
+  // Null means "not supplied". A present OptionalBool may explicitly contain
+  // false, preserving proto3 optional-bool semantics.
+  stored:OptionalBool;
+  searchable:OptionalBool;
+  filterable:OptionalBool;
+  sortable:OptionalBool;
+  facetable:OptionalBool;
+
+  // Valid only for field kinds whose analysis is configurable.
+  analyzer:Analyzer;
+}
+
+table SearchField {
+  field:string;
+
+  // Null means "not supplied"; present 0.0 is an explicit zero weight.
+  weight:OptionalDouble;
+}
+
+table SearchFieldSelection {
+  fields:[SearchField];
+}
+
+table FieldProjection {
+  fields:[string];
+}
+
+table HighlightRequest {
+  fields:[string];
+}
+
+table IndexDefinition {
+  // Null means absent; empty string remains distinguishable as present-empty.
+  name:string;
+  fields:[FieldDefinition];
+
+  // Null wrapper => absent. Present wrapper with zero fields => explicitly empty.
+  default_search_fields:SearchFieldSelection;
+}
+
+// -----------------------------------------------------------------------------
+// Document operations
+// -----------------------------------------------------------------------------
+
+table InsertRequest {
+  document:Document;
+}
+
+table UpsertRequest {
+  document:Document;
+}
+
+table SetField {
+  field:string;
+  value:Value;
+}
+
+table UnsetField {
+  field:string;
+}
+
+union PatchOperationKind {
+  SetField,
+  UnsetField
+}
+
+table PatchOperation {
+  operation:PatchOperationKind;
+}
+
+table PatchRequest {
+  id:string;
+  operations:[PatchOperation];
+}
+
+table DeleteRequest {
+  id:string;
+}
+
+table GetRequest {
+  id:string;
+
+  // Null => normal/default projection. Present-empty => explicitly no fields.
+  projection:FieldProjection;
+}
+
+table InsertResult {
+  id:string;
+}
+
+table UpsertResult {
+  id:string;
+}
+
+table PatchResult {
+  id:string;
+}
+
+table DeleteResult {
+  id:string;
+  deleted:bool;
+}
+
+table GetResult {
+  // Null represents a missing document; this is not a transport failure.
+  document:Document;
+}
+
+// -----------------------------------------------------------------------------
+// Search
+// -----------------------------------------------------------------------------
+
+enum ComparisonOp:ubyte {
+  Unspecified = 0,
+  Eq = 1,
+  Ne = 2,
+  Lt = 3,
+  Lte = 4,
+  Gt = 5,
+  Gte = 6
+}
+
+table FilterAnd {
+  clauses:[FilterExpr];
+}
+
+table FilterOr {
+  clauses:[FilterExpr];
+}
+
+table FilterNot {
+  clause:FilterExpr;
+}
+
+table FilterComparison {
+  field:string;
+  op:ComparisonOp = Unspecified;
+  value:Value;
+}
+
+table FilterRange {
+  field:string;
+  lower:Value;
+  upper:Value;
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
+table FilterExists {
+  field:string;
+}
+
+union FilterExprKind {
+  FilterAnd,
+  FilterOr,
+  FilterNot,
+  FilterComparison,
+  FilterRange,
+  FilterExists
+}
+
+table FilterExpr {
+  expr:FilterExprKind;
+}
+
+enum SortDirection:ubyte {
+  Unspecified = 0,
+  Asc = 1,
+  Desc = 2
+}
+
+enum MissingPlacement:ubyte {
+  Unspecified = 0,
+  First = 1,
+  Last = 2
+}
+
+struct OptionalMissingPlacement {
+  value:MissingPlacement;
+}
+
+table SortExpr {
+  field:string;
+  direction:SortDirection = Unspecified;
+  missing:OptionalMissingPlacement;
+}
+
+enum FacetSort:ubyte {
+  Unspecified = 0,
+  CountDesc = 1,
+  CountAsc = 2,
+  ValueAsc = 3,
+  ValueDesc = 4
+}
+
+struct OptionalFacetSort {
+  value:FacetSort;
+}
+
+table FacetRequest {
+  field:string;
+  limit:OptionalUInt32;
+  sort:OptionalFacetSort;
+}
+
+table DefaultRelevanceV1 {
+}
+
+table Bm25Ranking {
+}
+
+union RankingPolicyKind {
+  DefaultRelevanceV1,
+  Bm25Ranking
+}
+
+table RankingPolicy {
+  policy:RankingPolicyKind;
+}
+
+// Typed query expressions preserve public query-builder semantics.
+table TermQuery {
+  field:string;
+  value:Value;
+}
+
+table QueryAnd {
+  clauses:[QueryExpr];
+}
+
+table QueryOr {
+  clauses:[QueryExpr];
+}
+
+table QueryNot {
+  clause:QueryExpr;
+}
+
+union QueryExprKind {
+  TermQuery,
+  QueryAnd,
+  QueryOr,
+  QueryNot
+}
+
+table QueryExpr {
+  expr:QueryExprKind;
+}
+
+table SearchRequest {
+  // Empty string retains the current text-query semantics.
+  query:string;
+
+  // Null => use index defaults; present-empty => explicitly no search fields.
+  search_fields:SearchFieldSelection;
+
+  filter:FilterExpr;
+  sort:[SortExpr];
+  facets:[FacetRequest];
+  ranking:RankingPolicy;
+
+  limit:OptionalUInt32;
+  offset:OptionalUInt32;
+
+  // Null => normal/default projection; present-empty => explicitly no fields.
+  projection:FieldProjection;
+
+  // Null => highlighting disabled; present-empty remains explicitly requested.
+  highlighting:HighlightRequest;
+
+  // Null => absent; empty string remains distinguishable as explicitly empty.
+  language:string;
+
+  // Kept last so future schema evolution follows FlatBuffers append-only rules.
+  // This corresponds to protobuf SearchRequest.query_expr (field number 15).
+  query_expr:QueryExpr;
+}
+
+enum TotalHitsRelation:ubyte {
+  Unspecified = 0,
+  Exact = 1,
+  LowerBound = 2
+}
+
+table TotalHits {
+  value:ulong;
+  relation:TotalHitsRelation = Unspecified;
+}
+
+table HighlightSpan {
+  // UTF-8 byte offsets into HighlightFragment.text: [start_byte, end_byte).
+  start_byte:uint;
+  end_byte:uint;
+}
+
+table HighlightFragment {
+  text:string;
+  matches:[HighlightSpan];
+}
+
+table HighlightResult {
+  field:string;
+  fragments:[HighlightFragment];
+}
+
+table Hit {
+  id:string;
+  score:OptionalDouble;
+  // Protobuf map<string, Value>.
+  fields:[ValueEntry];
+  highlights:[HighlightResult];
+}
+
+table FacetValue {
+  value:Value;
+  count:ulong;
+}
+
+table FacetResult {
+  field:string;
+  values:[FacetValue];
+}
+
+table SearchResult {
+  hits:[Hit];
+  total_hits:TotalHits;
+  facets:[FacetResult];
+}
+
+// -----------------------------------------------------------------------------
+// Introspection
+// -----------------------------------------------------------------------------
+
+// FlatBuffers unions do not portably include raw strings across all target
+// languages, so the protobuf oneof string field is wrapped in a table.
+table AnalyzeFieldTarget {
+  field:string;
+}
+
+union AnalyzeTarget {
+  Analyzer,
+  AnalyzeFieldTarget
+}
+
+table AnalyzeRequest {
+  target:AnalyzeTarget;
+  text:string;
+  language:string;
+}
+
+table AnalyzedToken {
+  surface:string;
+  term:string;
+  position:uint;
+  start_byte:uint;
+  end_byte:uint;
+}
+
+table AnalyzeResult {
+  tokens:[AnalyzedToken];
+}
+
+table DescribeRequest {
+}
+
+table DescribeResult {
+  index:IndexDefinition;
+}
+
+table InspectQueryRequest {
+  request:SearchRequest;
+}
+
+table InspectQueryResult {
+  // Fully normalized request after defaults and validation, still expressed
+  // entirely in Search Kernel semantics.
+  resolved_request:SearchRequest;
+}
+
+// -----------------------------------------------------------------------------
+// Portable errors
+// -----------------------------------------------------------------------------
+
+enum ErrorCode:ubyte {
+  Unspecified = 0,
+  InvalidArgument = 1,
+  NotFound = 2,
+  AlreadyExists = 3,
+  FailedPrecondition = 4,
+  Conflict = 5,
+  Unsupported = 6,
+  ResourceExhausted = 7,
+  Internal = 8,
+  Unavailable = 9
+}
+
+table StringEntry {
+  key:string (key);
+  value:string;
+}
+
+table ErrorDetail {
+  // Stable machine-readable detail code, e.g. "unknown_field".
+  code:string;
+
+  // Null means absent.
+  path:string;
+
+  // Human-readable explanation. Clients must not branch on this text.
+  message:string;
+
+  // Protobuf map<string, string>.
+  metadata:[StringEntry];
+}
+
+table Error {
+  code:ErrorCode = Unspecified;
+  message:string;
+  details:[ErrorDetail];
+  retryable:bool;
+}
+
+// Transport framing deliberately does not live in this schema. A later native
+// ABI layer may add an operation envelope or per-operation root schemas once the
+// create/open/call lifecycle is frozen.

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_synonym",
+    "details": {
+      "reason": "one_way_requires_target"
+    }
+  }
+}

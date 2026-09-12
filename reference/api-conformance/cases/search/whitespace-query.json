@@ -1,0 +1,10 @@
+{
+  "category": "search",
+  "description": "Whitespace-only search is empty and invalid.",
+  "id": "search.whitespace-query",
+  "index_fixture": "product-v1",
+  "input": {
+    "query": "   \t  "
+  },
+  "operation": "resolve_search"
+}

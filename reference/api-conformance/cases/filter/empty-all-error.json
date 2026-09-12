@@ -1,0 +1,13 @@
+{
+  "category": "filter",
+  "description": "Empty conjunctions are rejected rather than hidden constants.",
+  "id": "filter.empty-all-error",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "all": []
+    },
+    "query": "x"
+  },
+  "operation": "resolve_search"
+}

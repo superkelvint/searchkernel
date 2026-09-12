@@ -1,0 +1,16 @@
+{
+  "category": "introspection",
+  "description": "Inspect search exposes the same canonical resolved request used for execution.",
+  "id": "introspection.inspect-query",
+  "index_fixture": "product-v1",
+  "input": {
+    "filter": {
+      "eq": {
+        "field": "brand",
+        "value": "Sony"
+      }
+    },
+    "query": "wireless headphones"
+  },
+  "operation": "inspect_search"
+}
