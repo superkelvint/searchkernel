@@ -1,0 +1,10 @@
+[package]
+name = "searchkernel-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+links = "searchkernel_vespa"
+build = "build.rs"
+
+[lib]
+name = "searchkernel_sys"
