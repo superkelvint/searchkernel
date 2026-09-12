@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Maintainer command: creates the immutable KStem corpus + Vespa golden output.
+# Maintainer command: creates the frozen KStem corpus + Vespa golden output.
 # Do NOT call this from verify-kstem.sh.
 set -euo pipefail
 

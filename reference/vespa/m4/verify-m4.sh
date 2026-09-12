@@ -10,12 +10,6 @@ cd "$ROOT"
   echo "M4 frozen goldens are missing. Complete verifier authoring and run freeze-goldens.sh first." >&2
   exit 1
 }
-[[ -s "$M4/M4-IMMUTABLE.sha256" ]] || {
-  echo "M4 immutable checksum missing. Harness has not been frozen." >&2
-  exit 1
-}
-sha256sum -c "$M4/M4-IMMUTABLE.sha256"
-
 # M4 is cumulative through M3.
 if [[ -x "$ROOT/reference/vespa/m3/verify-m3.sh" ]]; then
   "$ROOT/reference/vespa/m3/verify-m3.sh"

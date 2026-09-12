@@ -15,8 +15,8 @@ actual="$(git -C "$VESPA" rev-parse HEAD)"
   exit 1
 }
 
-# Once created, this directory becomes part of M4-IMMUTABLE.sha256. Do not
-# regenerate it during implementation/acceptance.
+# Once created, this directory is part of the checked-in M4 verifier fixture.
+# Do not regenerate it during implementation/acceptance.
 if [[ -f "$OUT/.m4-text-fixture" ]]; then
   exit 0
 fi

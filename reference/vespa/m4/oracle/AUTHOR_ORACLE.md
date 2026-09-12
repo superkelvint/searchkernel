@@ -55,6 +55,8 @@ Set `VESPA_BUILD_DIR` if the build tree is not under `upstream/vespa`, then run:
 
 This first validates frozen M3, prepares the M4 fixture, builds/runs the direct
 C++ oracle, validates semantic invariants, writes `expected/results.jsonl`, and
-finally writes `M4-IMMUTABLE.sha256`.
+finishes the verifier-authoring inputs. Review and commit the complete verifier
+specification before handing M4 to an implementation agent.
 
-Review `expected/results.jsonl` before handing M4 to an implementation agent.
+The commit containing the reviewed verifier and expected output is the M4
+specification freeze boundary.

@@ -16,7 +16,9 @@ define expected behavior
     ↓
 build oracle
     ↓
-freeze verifier
+review verifier
+    ↓
+commit specification
     ↓
 implement
     ↓
@@ -77,9 +79,11 @@ unless a later milestone explicitly changes scope.
 
 ---
 
-## 1.3 Freeze the Rust API before implementation
+## 1.3 Check in the Rust API before implementation
 
-Every milestone that adds public API must update the immutable API contract first.
+Every milestone that adds public API must update the checked-in API contract
+first. The verifier-authoring commit containing that contract is the
+specification freeze boundary.
 
 The harness contains compile-only programs such as:
 
@@ -110,6 +114,9 @@ verify-mN.sh
 Expected behavior is created before implementation starts.
 
 The implementing agent must not regenerate expected data.
+
+Review the verifier and expected outputs, then commit them as the frozen
+specification before implementation begins. Git review protects that boundary.
 
 ---
 
@@ -269,7 +276,7 @@ Where appropriate:
 - reject Vespa headers outside the native adapter;
 - reject raw FFI outside the sys crate;
 - compile the frozen API fixture;
-- verify `reference/vespa/` is unchanged;
+- review `reference/vespa/` changes against the verifier/specification commit;
 - run a separate reviewer looking specifically for bypasses.
 
 For Java-replacement milestones, acceptance must prove the Rust implementation itself produced the required normalized representation.
@@ -339,7 +346,7 @@ Own the M0 engine safely from Rust.
 
 ## API
 
-Use the already frozen M1 API.
+Use the checked-in M1 API.
 
 ## Verify
 
@@ -1717,7 +1724,7 @@ For every M milestone:
 4. define scenarios
 5. generate expected outputs
 6. build verifier
-7. freeze harness
+7. review verifier and commit specification
 8. implementation agent
 9. shortcut-focused reviewer
 10. fixer
@@ -1745,7 +1752,7 @@ For every C milestone:
 1. freeze portable/high-level semantics
 2. define canonical request/response fixtures
 3. define language compile/type fixtures where relevant
-4. freeze verifier
+4. review verifier and commit specification
 5. implementation agent
 6. parity reviewer
 7. fixer
@@ -1769,7 +1776,7 @@ handwritten generated-code divergence
 For every I milestone:
 
 ```text
-1. identify already-frozen C semantics
+1. identify previously committed C semantics
 2. identify already-verified M capability
 3. define translation contract
 4. freeze end-to-end scenarios

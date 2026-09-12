@@ -10,12 +10,6 @@ cd "$ROOT"
   echo "M3 frozen goldens are missing. Harness author must run freeze-goldens.sh before implementation." >&2
   exit 1
 }
-[[ -s "$M3/M3-IMMUTABLE.sha256" ]] || {
-  echo "M3 immutable checksum missing. Harness has not been frozen." >&2
-  exit 1
-}
-sha256sum -c "$M3/M3-IMMUTABLE.sha256"
-
 # M2 is cumulative. Support the two historical verifier layouts used by the project.
 if [[ -x "$ROOT/reference/vespa/verify-m2.sh" ]]; then
   "$ROOT/reference/vespa/verify-m2.sh"

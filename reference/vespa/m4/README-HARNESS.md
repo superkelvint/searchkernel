@@ -16,11 +16,11 @@ Before handing M4 to an implementation agent:
    ```
 
 4. Review `reference/vespa/m4/expected/results.jsonl`.
-5. Confirm `M4-IMMUTABLE.sha256` exists and passes with `sha256sum -c`.
-6. Commit the complete frozen harness.
+5. Review the complete verifier and expected output.
+6. Commit the complete frozen verifier specification.
 
 Only after those steps should the M4 implementation agent receive
-`verify-m4.sh` as immutable acceptance.
+`verify-m4.sh` as checked-in acceptance.
 
 M4's behavioral authority is the direct embedded Vespa C++ engine. M3's Java
 oracle is used only by verifier tooling to supply authoritative analyzed terms

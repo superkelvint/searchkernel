@@ -9,7 +9,9 @@ Acceptance command:
 
     ./reference/vespa/verify-through.sh m0
 
-The entire reference/vespa directory is immutable. Do not modify it.
+The checked-in verifier specification is frozen by its verifier-authoring
+commit. Do not modify contracts, scenarios, expected outputs, oracle sources,
+or verifier scripts during implementation.
 
 Goal:
 Package the pinned embedded Vespa engine as the native SDK defined by
@@ -31,7 +33,9 @@ Acceptance command:
     ./reference/vespa/verify-through.sh m1
 
 M0 is complete and must not regress.
-The entire reference/vespa directory is immutable. Do not modify it.
+The checked-in verifier specification is frozen by its verifier-authoring
+commit. Do not modify contracts, scenarios, expected outputs, oracle sources,
+or verifier scripts during implementation.
 
 Implement the exact Rust API frozen in reference/vespa/API_CONTRACT.md.
 Safely own the M0 native engine from Rust.
@@ -52,7 +56,9 @@ Acceptance command:
     ./reference/vespa/verify-through.sh m2
 
 M0-M1 are complete and must not regress.
-The entire reference/vespa directory is immutable. Do not modify it.
+The checked-in verifier specification is frozen by its verifier-authoring
+commit. Do not modify contracts, scenarios, expected outputs, oracle sources,
+or verifier scripts during implementation.
 
 Implement the exact M2 Rust API frozen in reference/vespa/API_CONTRACT.md.
 Reproduce the behavior in reference/vespa/m2/CONTRACT.md through the real

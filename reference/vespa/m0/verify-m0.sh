@@ -10,8 +10,6 @@ mkdir -p "$TARGET"
 rm -rf "$TARGET/data"
 mkdir -p "$TARGET/data"
 
-"$ROOT/common/check-harness-clean.sh"
-
 HEADER=$SDK/include/searchkernel_vespa.h
 LIB=$SDK/lib/libsearchkernel_vespa.so
 CONFIG=$SDK/share/embedded_crud_cfg

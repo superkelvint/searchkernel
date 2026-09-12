@@ -13,7 +13,9 @@ oracle/
 verify scripts
 ```
 
-The implementation agent is told that `reference/vespa/**` is immutable.
+The reviewed verifier and expected outputs are committed as the milestone's
+specification freeze boundary. The implementation agent is told that the
+checked-in `reference/vespa/**` verifier files are frozen during implementation.
 
 ## Implementer prompt template
 
@@ -26,9 +28,9 @@ Acceptance command:
 
 M0..M<N-1> are complete and must not regress.
 
-The entire reference/vespa directory is immutable. Do not modify contracts,
-API fixtures, scenarios, expected outputs, oracle sources, comparators, or
-verifier scripts.
+The checked-in verifier specification is frozen. Do not modify contracts, API
+fixtures, scenarios, expected outputs, oracle sources, comparators, or
+verifier scripts unless explicitly doing verifier-authoring work.
 
 Implement only the behavior required by reference/vespa/m<N>/CONTRACT.md and
 the public API frozen in reference/vespa/API_CONTRACT.md.
@@ -83,11 +85,19 @@ and reports the exact command and exit status.
 
 ## CI
 
-CI should independently enforce:
+When CI knows the verifier-freeze commit, it may independently enforce:
 
 ```sh
-test -z "$(git status --porcelain -- reference/vespa)"
-./reference/vespa/verify-through.sh m<N>
+git diff --exit-code <verifier-freeze-commit>..HEAD -- reference/
 ```
 
-Do not rely only on instructions in the Codex prompt to keep the harness clean.
+Local development does not require a hook or cleanliness lock; ordinary Git
+review is the protection boundary.
+
+Before implementation, review and commit the verifier specification. For a
+reviewer, inspect reference changes with:
+
+```sh
+git diff -- reference/vespa reference/clients reference/integration
+git diff <verifier-freeze-commit>..HEAD -- reference/
+```

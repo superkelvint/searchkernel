@@ -19,7 +19,7 @@ fi
 
 # Production may not depend on verifier/oracle/goldens.
 if grep -RInE --exclude-dir=target --exclude='*.md' \
-    'reference/vespa/m4|M4-IMMUTABLE|m4_text_oracle|expected/results\.jsonl' \
+    'reference/vespa/m4|m4_text_oracle|expected/results\.jsonl' \
     "$RUST/src" "$SYS/src" "$NATIVE" 2>/dev/null; then
   echo "M4 production code appears to depend on acceptance artifacts" >&2
   exit 1

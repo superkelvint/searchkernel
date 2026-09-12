@@ -1116,6 +1116,11 @@ Java may remain a test/oracle dependency.
 
 It must not become a runtime dependency.
 
+For every series, the checked-in verifier, contracts, scenarios, and expected
+outputs define the frozen specification. Review those files and commit the
+verifier-authoring changes before implementation; use Git diff to review any
+later reference-file changes.
+
 ## C-series
 
 Authority is the frozen Portable API contract and canonical Search Kernel IR.

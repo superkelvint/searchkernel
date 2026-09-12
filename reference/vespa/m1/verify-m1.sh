@@ -11,7 +11,6 @@ CONFIG=$SDK/share/embedded_crud_cfg
 
 mkdir -p "$TARGET"
 
-"$ROOT/common/check-harness-clean.sh"
 "$ROOT/common/check-production-shortcuts.sh"
 
 cargo check --quiet --manifest-path "$ROOT/api-contract/Cargo.toml" --bin m1

@@ -18,7 +18,7 @@ fn from_hex(hex: &str) -> String {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The frozen M4 text fixture path is supplied by the verifier. Keep engine
-    // creation aligned with the already-frozen Engine::open M1 API in the real
+    // creation aligned with the previously committed Engine::open M1 API in the real
     // repository. If M1's syntax differs, update this driver *before* freezing
     // the M4 harness; the implementation agent may not change it afterwards.
     let root = std::env::var("M4_INDEX_DIR")?;

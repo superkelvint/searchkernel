@@ -164,7 +164,7 @@ Engine::update_text(...)
 Engine::search_text(...)
 ```
 
-Deletion reuses the already-frozen M2 mutation API rather than creating a
+Deletion reuses the previously committed M2 mutation API rather than creating a
 text-specific delete subsystem.
 
 The compile fixture is normative if syntax differs from this prose.

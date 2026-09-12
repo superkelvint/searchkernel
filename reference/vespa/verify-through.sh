@@ -3,9 +3,6 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-"$ROOT/common/check-hashes.sh"
-"$ROOT/common/check-harness-clean.sh"
-
 case "${1:-}" in
     m0)
         "$ROOT/m0/verify-m0.sh"

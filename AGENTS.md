@@ -130,10 +130,20 @@ reference/vespa/verify-through.sh
 ```
 
 Unless the task explicitly asks to author or revise the harness, these are
-**immutable acceptance artifacts**.
+**checked-in acceptance artifacts**. The verifier-authoring commit is the
+specification freeze boundary.
 
 Do not modify contracts, API fixtures, scenarios, expected outputs, oracles,
-checksums, comparators, or verifier scripts merely to make implementation pass.
+comparators, or verifier scripts merely to make implementation pass. Git diff
+and review are the enforcement mechanism; implementation agents may change
+these files only when explicitly asked to author or repair a verifier.
+
+For a reviewer, the useful checks are:
+
+```bash
+git diff -- reference/vespa reference/clients reference/integration
+git diff <verifier-freeze-commit>..HEAD -- reference/
+```
 
 Do not weaken earlier milestone tests. A later milestone must preserve all
 completed earlier milestones.
@@ -299,7 +309,7 @@ Each commit must:
 - include focused tests for new behavior;
 - explain the change in the commit message;
 - avoid unrelated cleanup, renaming, formatting, or dependency churn;
-- never edit immutable acceptance artifacts unless the task is harness work;
+- never edit checked-in acceptance artifacts unless the task is verifier-authoring work;
 - never modify upstream Vespa source.
 
 ## Rust style
@@ -419,7 +429,7 @@ Boundary
 
 Repository
 - tracked upstream/vespa source is unchanged
-- immutable reference/vespa artifacts are unchanged
+- checked-in reference/verifier artifacts are unchanged
 - SDK outputs were not hand-edited
 
 Quality

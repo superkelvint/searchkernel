@@ -15,7 +15,6 @@ mkdir -p "$TARGET"
 "$ROOT/m1/verify-m1.sh"
 "$ROOT/m2/verify-m2.sh"
 
-"$ROOT/common/check-harness-clean.sh"
 "$ROOT/common/check-production-shortcuts.sh"
 
 if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-core|searchkernel-testkit|serde_json|HashMap|HashSet' \

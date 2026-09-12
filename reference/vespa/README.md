@@ -1,7 +1,7 @@
 # Search Kernel Vespa verifier harness — M0–M2
 
-This package defines the immutable contracts and acceptance harness for the first
-three Search Kernel milestones.
+This package defines the checked-in contracts and acceptance harness for the
+first three Search Kernel milestones.
 
 The guiding rule is simple:
 
@@ -29,8 +29,8 @@ Copy this directory to:
 reference/vespa/
 ```
 
-Then commit it **before** giving an implementation milestone to an agent.
-The verifier rejects a dirty `reference/vespa/` tree by default.
+Then review and commit it **before** giving an implementation milestone to an
+agent. That verifier-authoring commit is the specification freeze boundary.
 
 Expected repository shape:
 
@@ -72,7 +72,7 @@ container.
 
 ## Verify milestones
 
-After the harness is committed:
+After the verifier specification is committed:
 
 ```sh
 ./reference/vespa/verify-through.sh m0
@@ -173,8 +173,8 @@ Implementation agents must **not** regenerate goldens.
 
 For M2, the direct C++ oracle is the authority. If a maintainer intentionally
 changes the pinned Vespa revision or milestone contract, first rebuild and run
-the direct C++ oracle, then deliberately update the expected JSON and immutable
-hash manifest in a separate change.
+the direct C++ oracle, then deliberately update the expected JSON in a separate
+verifier-authoring commit.
 
 Do not make `verify-mN.sh` regenerate expected output.
 
@@ -188,7 +188,9 @@ The harness uses several layers:
 4. **Native linkage checks** — M1/M2 executables must dynamically link the Search Kernel native library.
 5. **Symbol checks** — the M2 executable must reference the native CRUD/search ABI symbols.
 6. **Production-source fixture scan** — known golden document IDs/values may not appear in production Rust code.
-7. **Harness cleanliness check** — committed files under `reference/vespa/` must remain unchanged.
+7. **Git review** — the checked-in verifier and expected outputs define the
+   milestone contract; reference-file changes are reviewed against the
+   verifier-authoring commit.
 8. **Reviewer pass** — see `AGENT_WORKFLOW.md`; a separate reviewer is explicitly tasked with finding bypasses and reimplementations.
 
 No finite harness can prove that an implementation contains no malicious
