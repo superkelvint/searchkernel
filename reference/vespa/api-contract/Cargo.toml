@@ -5,6 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-searchkernel = { path = "../../../crates/searchkernel" }
+searchkernel-vespa = { path = "../../../crates/searchkernel-vespa" }
 
 [workspace]

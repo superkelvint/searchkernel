@@ -1,4 +1,6 @@
-use searchkernel::{Engine, EngineConfig, Error, Result};
+use searchkernel_vespa::{Engine, Error};
+use std::path::Path;
+type Result<T> = std::result::Result<T, Error>;
 
 fn assert_error_traits<T>()
 where
@@ -8,8 +10,7 @@ where
 
 fn compile_contract() -> Result<()> {
     assert_error_traits::<Error>();
-    let config = EngineConfig::from_directory("config")?;
-    let engine = Engine::open("data", config)?;
+    let engine = Engine::open(Path::new("data"), Path::new("config"))?;
     drop(engine);
     Ok(())
 }

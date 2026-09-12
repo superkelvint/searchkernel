@@ -1,5 +1,6 @@
-use searchkernel::{Engine, EngineConfig, Result};
+use searchkernel_vespa::Engine;
 use std::path::PathBuf;
+type Result<T> = std::result::Result<T, searchkernel_vespa::Error>;
 
 fn run() -> Result<()> {
     let mut args = std::env::args_os().skip(1);
@@ -8,13 +9,9 @@ fn run() -> Result<()> {
     assert!(args.next().is_none(), "unexpected extra arguments");
 
     let _ = std::fs::remove_dir_all(&data_dir);
-
-    let config = EngineConfig::from_directory(&config_dir)?;
-    let engine = Engine::open(&data_dir, config)?;
+    let engine = Engine::open(&data_dir, &config_dir)?;
     drop(engine);
-
-    let config = EngineConfig::from_directory(&config_dir)?;
-    let engine = Engine::open(&data_dir, config)?;
+    let engine = Engine::open(&data_dir, &config_dir)?;
     drop(engine);
 
     println!(r#"{{"scenario":"rust-open-close","open_count":2,"status":"ok"}}"#);

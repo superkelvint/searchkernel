@@ -1,17 +1,9 @@
-use searchkernel::{
-    Document, DocumentId, DocumentUpdate, Engine, EngineConfig, Query, Result,
-    SearchRequest, Value,
-};
+use searchkernel_vespa::Engine;
 use std::path::PathBuf;
+type Result<T> = std::result::Result<T, searchkernel_vespa::Error>;
 
 fn search_ids(engine: &Engine, value: i32) -> Result<Vec<String>> {
-    let request = SearchRequest::new(Query::term("attr1", Value::I32(value))).limit(10);
-    let result = engine.search(request)?;
-    let mut ids: Vec<String> = result
-        .hits()
-        .iter()
-        .map(|hit| hit.id().as_str().to_owned())
-        .collect();
+    let mut ids = engine.search("attr1", value, 10)?;
     ids.sort();
     Ok(ids)
 }
@@ -19,7 +11,7 @@ fn search_ids(engine: &Engine, value: i32) -> Result<Vec<String>> {
 fn json_string_array(values: &[String]) -> String {
     let body = values
         .iter()
-        .map(|v| format!("\"{}\"", v.replace('\\', "\\\\").replace('\"', "\\\"")))
+        .map(|v| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\"")))
         .collect::<Vec<_>>()
         .join(",");
     format!("[{body}]")
@@ -32,29 +24,14 @@ fn run() -> Result<()> {
     assert!(args.next().is_none(), "unexpected extra arguments");
 
     let _ = std::fs::remove_dir_all(&data_dir);
+    let mut engine = Engine::open(&data_dir, &config_dir)?;
 
-    let config = EngineConfig::from_directory(&config_dir)?;
-    let mut engine = Engine::open(&data_dir, config)?;
-
-    let doc1 = DocumentId::parse("id:test:typea::1")?;
-    let doc2 = DocumentId::parse("id:test:typea::2")?;
-
-    let mut d1 = Document::new(doc1.clone());
-    d1.set_field("attr1", Value::I32(10));
-    engine.put(d1)?;
-
-    let mut d2 = Document::new(doc2.clone());
-    d2.set_field("attr1", Value::I32(20));
-    engine.put(d2)?;
-
+    engine.put("id:test:typea::1", "attr1", 10)?;
+    engine.put("id:test:typea::2", "attr1", 20)?;
     let s1 = search_ids(&engine, 10)?;
-
-    let mut update = DocumentUpdate::new(doc2.clone());
-    update.assign("attr1", Value::I32(10));
-    engine.update(update)?;
-
+    engine.update("id:test:typea::2", "attr1", 10)?;
     let s2 = search_ids(&engine, 10)?;
-    let removed = engine.remove(&doc1)?;
+    let removed = engine.remove("id:test:typea::1")?;
     let s3 = search_ids(&engine, 10)?;
     let s4 = search_ids(&engine, 20)?;
 
@@ -74,7 +51,6 @@ fn run() -> Result<()> {
         json_string_array(&s3),
         json_string_array(&s4),
     );
-
     Ok(())
 }
 

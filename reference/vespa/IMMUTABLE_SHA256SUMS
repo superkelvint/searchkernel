@@ -4,9 +4,9 @@ ff7f908f810439c53e439280a6afe8bca6dfb48fb4993d0bc38924fba8760e8b  ./API_CONTRACT
 7089b76e763c19dd22697f29e59e8759d045b465930f111428f5c402cbd0186c  ./NATIVE_ABI_CONTRACT.h
 1c420e95109358c303957f952795beb15d2c028c40a39ba06700f7dc9ff5c2c9  ./PINNED_VESPA.json
 a4bda8965e1867abc867f2aa4ad3176d0abe40e642725b6c06fce2733a9dfaf9  ./README.md
-8f264fbaaec9ac3daf760e9c27e4a6bd65d45b549dab8ff13d618bd6c840f2e2  ./api-contract/Cargo.toml
-8b5b1e634cb9c6bc235402405c20332ced306d5bc9c19a14ce25cc7c273aedee  ./api-contract/src/bin/m1.rs
-2040357f2275a4ae7d5b826a4661f0b68cb9d4f90c8da3da122d83b58cb2e077  ./api-contract/src/bin/m2.rs
+99d419a7a9c2dcaa3914710f7942b8d7d52e33f948c8db95b4ccf4433b66c625  ./api-contract/Cargo.toml
+95c0ff70a5d6c8cf5ed848785d15e713a7e25ac9474c09b59d7c8f7cd881e5ea  ./api-contract/src/bin/m1.rs
+bcba186631af6f969de92e5123ed48078c3cf7e33ed08cb9ff6375dd85e4145d  ./api-contract/src/bin/m2.rs
 6a8c24057830fa65c379b7691c6e0e4e2b4bd0dd0e0c81f30ce24653fddfb6e4  ./common/check-harness-clean.sh
 900721df14785a4c0375f333ba37b753331cf3d4802325b56839b6c388eefc60  ./common/check-hashes.sh
 58799a7baae2110bea108505e0e3142829f1ecf438bc39533df4f10845e92ac9  ./common/check-production-shortcuts.sh
@@ -19,8 +19,8 @@ f6a2d2675b55afde609cdddbeb4ce0acd831e89bf9db1e60e5697ee39756d6d7  ./m0/expected/
 fc2d4577d46b6693e366d8b08b7e8fb2448694f363a223b07c7cd30cb53b9b90  ./m0/verify-m0.sh
 14ea1410efa41b153ef438a451f71608bb209c5ce589db414c89a19457aa15c1  ./m1/CONTRACT.md
 009a6b28aca1847f919e7bd42f653b3f62e2f3f8e4daf100eede92c6b81104cb  ./m1/expected/01-rust-open-close.json
-28f9dd39711e7cd16033e0c947f78f1cd8fb81df46fe01decfa7e8a428bf1a67  ./m1/rust-driver/Cargo.toml
-3d7280fd1d3cea780e481bf5ea936b98070e8db2e75fac9bc9785a435922ab24  ./m1/rust-driver/src/main.rs
+8ca41e31120678e79eddc93b97be6c6b4e96e7740dbd8b747637e97c8b47e7e4  ./m1/rust-driver/Cargo.toml
+2689885c79f68838f0d72c9bf8a929bccfc0cee918118b897dea44bb40c1bbd7  ./m1/rust-driver/src/main.rs
 beb824d9e94c7469e51ac10f4778cfa3a49aae877e96ada236501ffadc119925  ./m1/scenarios/01-rust-open-close.json
 7df5dc6ede8655612e03bbcba7b8d1cf79c3ba35901d89efb1f136b219ac89fd  ./m1/verify-m1.sh
 440601490a788c5ebe326668dfc840780e071c1214adc6998b01acd6a3104d25  ./m2/CONTRACT.md
@@ -28,8 +28,8 @@ beb824d9e94c7469e51ac10f4778cfa3a49aae877e96ada236501ffadc119925  ./m1/scenarios
 93dc30bea88a5859a1885505a5d5a95bf0cc10af1aca080da8772142c48ce9f3  ./m2/expected/01-crud-attribute-search.json
 cc218e59ebb1eec5d194fb4f61b7ea0900c918880e2300d60d6040c982180eb9  ./m2/oracle/PROVENANCE.md
 5e01f384f20bae2219a41286803dc3d1f71fe36990a8a28aa19dac5344222889  ./m2/oracle/embedded_crud_spike.cpp
-2628cd48eaf63ada542bc51a7a60d41cb4757c757a6764ce993c9f22255d9a4d  ./m2/rust-driver/Cargo.toml
-6f312a4f61472926a917a1508eb8db91ea46a3b822dd2827b2a8ee5e13dfb1b6  ./m2/rust-driver/src/main.rs
+ce2a89983f734c5321b1aa67a8111fe062b7d87dca931582d2f50243dc26ba0c  ./m2/rust-driver/Cargo.toml
+d627b090beb802fe5281e9d06e5226b71cab91ac654d4367cbcf353ef36be937  ./m2/rust-driver/src/main.rs
 93a2fdccce5b6bd5b582dcc458fdee500c28ccdb55eaf9f756526e778402aeaa  ./m2/scenarios/01-crud-attribute-search.json
 18157eb8a6235b859d446e6a011071b683b0072cd87e594f91f083ec12559eb7  ./m2/verify-m2.sh
 4ce4efdb72dd8be3100deea736080ec9184c7922f8114e5ce72f2e483eaceaf0  ./verify-through.sh
