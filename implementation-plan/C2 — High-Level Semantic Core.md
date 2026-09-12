@@ -1,4 +1,4 @@
-# C2 — High-Level Semantic Core
+# C2 — Search Kernel IR
 
 Implement:
 
@@ -6,7 +6,8 @@ Implement:
 searchkernel-core
 ```
 
-`searchkernel-core` defines the canonical, backend-independent meaning of the C1 protobuf contract.
+`searchkernel-core` performs API → IR conversion from the Portable API's
+FlatBuffers contract into the canonical Search Kernel IR.
 
 It owns:
 
@@ -29,9 +30,9 @@ ranking policies
 language hints
 prefix/typo policy
 portable errors
-resolved requests
+explicit IR requests
 backend contract
-semantic introspection
+IR introspection
 ```
 
 It does **not** implement search.
@@ -42,45 +43,41 @@ It does **not** know about Vespa.
 
 # 1. Architecture
 
-The semantic pipeline is:
+The final architecture is:
 
 ```text
-idiomatic client API
+Portable API
         │
         ▼
-C1 protobuf
+FlatBuffers contract
         │
         ▼
+API → IR conversion
 searchkernel-core
-        │
-        ├── validate
-        ├── apply defaults
-        ├── type-check
-        ├── normalize
-        └── resolve
+*_to_ir
         │
         ▼
-Resolved* Rust semantic IR
+Search Kernel IR
+owned backend-independent Rust model
         │
         ▼
-Backend
+Backend interface
+        │
+        ▼
+Vespa lowering
+lower_*
+        │
+        ▼
+Vespa model / runtime
 ```
 
-Later:
+The architectural rule is:
 
-```text
-Resolved* Rust semantic IR
-        │
-        ▼
-searchkernel-vespa-backend
-        │
-        ▼
-searchkernel-vespa
-```
+> The portable API describes what the caller expressed. The Search Kernel IR describes the fully validated and explicit meaning of that request. Backend lowering describes how that meaning is represented by the execution engine.
 
 The core invariant is:
 
-> Once an operation crosses the `Backend` boundary, no Search Kernel semantic decision remains to be made.
+> Once an operation crosses the `Backend` boundary, no Search Kernel meaning decision remains to be made.
 
 The backend decides **how** to execute an operation.
 
@@ -118,16 +115,18 @@ No Vespa type or term may appear in the C2 public API.
 
 ---
 
-# 3. C1 versus C2
+# 3. Portable API and Search Kernel IR
 
-C1 protobuf is the portable semantic input/output contract.
+The FlatBuffers contract is the Portable API's language-neutral input/output
+contract.
 
-C2 Rust types are the fully resolved semantic IR.
+Search Kernel IR types are the fully validated and explicit backend-independent
+Rust representation.
 
 For example:
 
 ```text
-C1
+FlatBuffers contract
 
 FieldDefinition {
     name: "title",
@@ -157,9 +156,9 @@ ResolvedField {
 }
 ```
 
-`ResolvedField` is Rust.
+`ResolvedField` is an implementation name for a Search Kernel IR value.
 
-It is not a protobuf message.
+It is not part of the FlatBuffers contract.
 
 ---
 
@@ -1861,9 +1860,9 @@ It:
 
 ```text
 takes request.request
-resolves it through normal C2 resolution
-converts the resolved meaning back to C1
-returns it as resolved_request
+converts it through the normal API → IR path
+converts the Search Kernel IR back to the FlatBuffers contract
+returns it as the normalized request
 ```
 
 It does not invoke `Backend`.
@@ -2372,7 +2371,7 @@ C5 owns the native ABI lifecycle and operation framing once that design is froze
 
 # 61. Deterministic canonicalization
 
-C2 resolved output must be deterministic.
+Search Kernel IR output must be deterministic.
 
 ```text
 schema fields
@@ -2416,7 +2415,8 @@ Never depend on protobuf map iteration order.
 
 # 62. Conformance serialization
 
-Resolved Rust types may use deterministic `serde` serialization for golden tests.
+Search Kernel IR Rust types may use deterministic `serde` serialization for
+golden tests.
 
 For example:
 
@@ -2429,7 +2429,7 @@ This is a C2 conformance format only.
 
 It is **not** a public protocol.
 
-C1 protobuf remains the interchange model.
+The FlatBuffers contract remains the interchange format.
 
 Conformance must compare semantic values, not protobuf byte serialization order.
 
@@ -2509,13 +2509,13 @@ Field::text("title")
 
         ↓
 
-C1 protobuf semantics
+FlatBuffers contract meaning
 
 FieldDefinition
 
         ↓
 
-C2 semantic IR
+Search Kernel IR
 
 ResolvedField
 
@@ -3021,7 +3021,7 @@ for the standalone C-series workspace.
 C2 is complete only when:
 
 ```text
-the updated C1 protobuf is the sole portable contract
+the FlatBuffers contract is the sole Portable API contract
 
 presence semantics are implemented exactly
 
@@ -3112,11 +3112,11 @@ ResolvedAnalyzeRequest
 
 # 78. Fundamental separation
 
-C1 answers:
+The Portable API answers:
 
 > What did the caller express?
 
-C2 answers:
+The Search Kernel IR answers:
 
 > What does that mean in Search Kernel?
 

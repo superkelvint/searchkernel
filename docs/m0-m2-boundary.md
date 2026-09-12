@@ -17,5 +17,6 @@ path. Structured query expressions are represented by `QueryExpr` when those
 layers begin compiling public query builders; the existing `query` string is
 reserved for text-query syntax.
 
-`searchkernel-core` is the backend-independent semantic layer for the C2
-milestone. It remains independent of the Vespa-specific crates.
+`searchkernel-core` performs API → IR conversion and owns the backend-
+independent Search Kernel IR. It remains independent of the Vespa-specific
+crates.

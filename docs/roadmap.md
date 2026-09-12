@@ -531,7 +531,7 @@ Every public client operation must be representable losslessly in this model.
 
 ---
 
-## C2 — High-level semantic core
+## C2 — Search Kernel IR
 
 Implement:
 
@@ -539,7 +539,7 @@ Implement:
 searchkernel-core
 ```
 
-This crate owns Search Kernel semantics:
+This crate performs API → IR conversion and owns the Search Kernel IR:
 
 ```text
 stable defaults
@@ -552,7 +552,7 @@ ranking policies
 facet requests
 prefix/typo policy
 portable errors
-resolved requests
+explicit IR requests
 ```
 
 For example:
@@ -561,7 +561,7 @@ For example:
 Field::text("title")
 ```
 
-must resolve to an explicit backend-independent semantic value such as:
+must convert to an explicit backend-independent Search Kernel IR value such as:
 
 ```text
 ResolvedField {
@@ -574,6 +574,10 @@ ResolvedField {
 ```
 
 No Vespa crate may be a dependency.
+
+The architectural rule is:
+
+> The portable API describes what the caller expressed. The Search Kernel IR describes the fully validated and explicit meaning of that request. Backend lowering describes how that meaning is represented by the execution engine.
 
 ---
 
@@ -589,7 +593,7 @@ with two deliberately non-searching test backends:
 
 ```text
 RecordingBackend
-    records canonical resolved operations
+    records canonical Search Kernel IR operations
 
 ScriptedBackend
     returns predetermined canonical responses
@@ -598,9 +602,9 @@ ScriptedBackend
 This verifies:
 
 ```text
-public API
+Portable API
     ↓
-resolved portable request
+Search Kernel IR
 ```
 
 and:
@@ -678,7 +682,7 @@ close/free
 
 Do not mirror every high-level object as a C function.
 
-The FFI transports the canonical C1 request/response model.
+The FFI transports the FlatBuffers request/response contract.
 
 ---
 
@@ -723,7 +727,7 @@ results = index.search(
 )
 ```
 
-Its acceptance suite proves semantic equivalence with the canonical C1 contract, not real Vespa search yet.
+Its acceptance suite proves semantic equivalence with the FlatBuffers contract, not real Vespa search yet.
 
 ---
 
@@ -789,7 +793,7 @@ results, err := index.Search(
 )
 ```
 
-The embedded implementation may require cgo, but the public semantics remain the same portable C1 contract.
+The embedded implementation may require cgo, but the public semantics remain the same Portable API contract.
 
 ---
 
@@ -1106,7 +1110,7 @@ It must not become a runtime dependency.
 
 ## C-series
 
-Authority is the frozen portable API contract and canonical high-level semantics.
+Authority is the frozen Portable API contract and canonical Search Kernel IR.
 
 Verification asks:
 
