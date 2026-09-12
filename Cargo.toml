@@ -3,7 +3,7 @@ members = [
     "crates/searchkernel-api",
     "crates/searchkernel-core",
     "crates/searchkernel",
-    "crates/searchkernel-sys",
+    "crates/searchkernel-vespa-sys",
     "crates/searchkernel-vespa",
     "crates/searchkernel-testkit",
 ]

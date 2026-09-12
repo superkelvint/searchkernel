@@ -85,10 +85,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkernel-sys"
-version = "0.1.0"
-
-[[package]]
 name = "searchkernel-testkit"
 version = "0.1.0"
 dependencies = [
@@ -101,10 +97,14 @@ dependencies = [
 name = "searchkernel-vespa"
 version = "0.1.0"
 dependencies = [
- "searchkernel-sys",
+ "searchkernel-vespa-sys",
  "unicode-general-category",
  "unicode-normalization",
 ]
+
+[[package]]
+name = "searchkernel-vespa-sys"
+version = "0.1.0"
 
 [[package]]
 name = "semver"

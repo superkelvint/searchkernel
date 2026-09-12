@@ -28,6 +28,42 @@ pub struct sk_search_result {
 }
 
 #[repr(C)]
+pub struct sk_text_document {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct sk_text_update {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct sk_text_request {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct sk_text_result {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct sk_text_occurrence {
+    pub term: *const u8,
+    pub term_length: u32,
+    pub byte_start: u32,
+    pub byte_length: u32,
+    pub position: u32,
+}
+
+#[repr(C)]
+pub struct sk_text_query_term {
+    pub term: *const u8,
+    pub term_length: u32,
+    pub position: u32,
+}
+
+#[repr(C)]
 pub struct sk_error {
     pub code: c_int,
     pub message: *mut c_char,
@@ -104,4 +140,67 @@ unsafe extern "C" {
         out_error: *mut sk_error,
     ) -> c_int;
     pub fn sk_search_result_destroy(result: *mut sk_search_result);
+
+    pub fn sk_text_document_create(
+        document_id: *const c_char,
+        field: *const c_char,
+        text: *const u8,
+        text_length: u32,
+        occurrences: *const sk_text_occurrence,
+        occurrence_count: u32,
+        out_document: *mut *mut sk_text_document,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_text_document_destroy(document: *mut sk_text_document);
+
+    pub fn sk_text_update_create(
+        document_id: *const c_char,
+        field: *const c_char,
+        text: *const u8,
+        text_length: u32,
+        occurrences: *const sk_text_occurrence,
+        occurrence_count: u32,
+        out_update: *mut *mut sk_text_update,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_text_update_destroy(update: *mut sk_text_update);
+
+    pub fn sk_text_request_create(
+        kind: u32,
+        field: *const c_char,
+        terms: *const sk_text_query_term,
+        term_count: u32,
+        rank_profile: *const c_char,
+        out_request: *mut *mut sk_text_request,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_text_request_destroy(request: *mut sk_text_request);
+
+    pub fn sk_engine_put_text(
+        engine: *mut sk_engine,
+        document: *const sk_text_document,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_engine_update_text(
+        engine: *mut sk_engine,
+        update: *const sk_text_update,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_engine_search_text(
+        engine: *const sk_engine,
+        request: *const sk_text_request,
+        out_result: *mut *mut sk_text_result,
+        out_error: *mut sk_error,
+    ) -> c_int;
+
+    pub fn sk_text_result_size(result: *const sk_text_result) -> u32;
+    pub fn sk_text_result_hit(
+        result: *const sk_text_result,
+        index: u32,
+        out_id: *mut *const c_char,
+        out_length: *mut u32,
+        out_score: *mut f64,
+        out_error: *mut sk_error,
+    ) -> c_int;
+    pub fn sk_text_result_destroy(result: *mut sk_text_result);
 }

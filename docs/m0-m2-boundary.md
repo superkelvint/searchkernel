@@ -6,7 +6,7 @@ The Rust call path is:
 ```text
 searchkernel public API
     -> searchkernel-vespa safe adapter
-    -> searchkernel-sys raw ABI
+    -> searchkernel-vespa-sys raw ABI
     -> native/vespa Search Kernel adapter
     -> Vespa PersistenceEngine / DocumentDB / Matcher
 ```

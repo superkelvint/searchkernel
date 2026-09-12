@@ -7,7 +7,7 @@ pub use linguistics::{
     QueryTerm, StemMode,
 };
 
-use searchkernel_sys as sys;
+use searchkernel_vespa_sys as sys;
 use std::ffi::{CStr, CString, NulError};
 use std::path::Path;
 use std::ptr::{self, NonNull};
@@ -125,7 +125,7 @@ impl Engine {
         })
     }
 
-    pub fn put(&mut self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
+    pub fn put(&self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
         let document_id = cstring(document_id)?;
         let field = cstring(field)?;
         let mut document = ptr::null_mut();
@@ -152,7 +152,7 @@ impl Engine {
         check(status, &error)
     }
 
-    pub fn update(&mut self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
+    pub fn update(&self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
         let document_id = cstring(document_id)?;
         let field = cstring(field)?;
         let mut update = ptr::null_mut();
