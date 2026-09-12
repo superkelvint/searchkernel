@@ -1,30 +1,37 @@
-# Adapter protocol — `sk-conformance/v2`
+# Adapter protocol — `sk-ir-conformance/v1`
 
 The verifier starts the adapter once per case. The adapter reads one JSON object from stdin and writes exactly one JSON object to stdout.
 
+Input:
+
 ```json
 {
-  "protocol":"sk-conformance/v2",
-  "case_id":"search.defaults",
-  "operation":"resolve_search",
-  "index":{},
-  "input":{},
-  "fixtures":{}
+  "protocol": "sk-ir-conformance/v1",
+  "case_id": "search.defaults",
+  "operation": "search_to_ir",
+  "index": {},
+  "input": {}
 }
 ```
 
-Output is either:
+The adapter must construct the corresponding FlatBuffers wire representation **without pre-normalizing away the case's omission/null/empty distinctions**, then invoke the named `*_to_ir` pass. Harness-only composition operations such as `write_to_ir` dispatch to one of the existing concrete FlatBuffers write requests; they do not imply a new wire envelope or backend method.
+
+Successful output:
 
 ```json
-{"ok":{}}
+{"ok": {}}
 ```
 
-or:
+Error output is the stable comparison projection only:
 
 ```json
-{"error":{"code":"unknown_field","details":{"field":"x"}}}
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [{"code": "unknown_field", "path": "filter.comparison.field"}],
+    "retryable": false
+  }
+}
 ```
 
-`run_stateful_scenario` is still one adapter invocation: its input contains explicit initial state plus an ordered list of steps. No external persistence or backend is required.
-
-Object key order is ignored. Array order is semantic unless the relevant canonical contract explicitly defines a set and normalization sorts it.
+Human-readable error messages are intentionally excluded from golden equality. Object key order is ignored. Array order is semantic.

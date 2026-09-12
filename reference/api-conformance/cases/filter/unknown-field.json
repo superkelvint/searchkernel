@@ -2,15 +2,15 @@
   "category": "filter",
   "description": "Unknown filter field is rejected.",
   "id": "filter.unknown-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "nope",
-        "value": 1
+    "comparison": {
+      "field": "missing",
+      "op": "eq",
+      "value": {
+        "string": "x"
       }
-    },
-    "query": "x"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

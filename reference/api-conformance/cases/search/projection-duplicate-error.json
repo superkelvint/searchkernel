@@ -1,0 +1,16 @@
+{
+  "category": "search",
+  "description": "Duplicate projection fields are rejected.",
+  "id": "search.projection-duplicate-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": {
+      "fields": [
+        "title",
+        "title"
+      ]
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

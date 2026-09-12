@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "invalid_pin_position",
-    "details": {
-      "position": 0
-    }
-  }
-}

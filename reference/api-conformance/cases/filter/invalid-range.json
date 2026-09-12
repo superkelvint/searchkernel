@@ -1,19 +1,18 @@
 {
   "category": "filter",
-  "description": "Invalid numeric range is rejected.",
+  "description": "Numeric lower bound greater than upper is invalid.",
   "id": "filter.invalid-range",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "between": {
-        "field": "price",
-        "lower": 500.0,
-        "lower_inclusive": true,
-        "upper": 100.0,
-        "upper_inclusive": true
+    "range": {
+      "field": "price",
+      "lower": {
+        "float64": 20.0
+      },
+      "upper": {
+        "float64": 10.0
       }
-    },
-    "query": "x"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

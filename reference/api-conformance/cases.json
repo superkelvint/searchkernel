@@ -1,1564 +1,1228 @@
 {
   "cases": [
     {
-      "case": "cases/analyze/english-semantics.json",
-      "golden": "golden/analyze/english-semantics.json",
-      "id": "analyze.english-semantics",
-      "operation": "analyze_text"
+      "case": "cases/analyze/empty-text.json",
+      "golden": "golden/analyze/empty-text.json",
+      "id": "analyze.empty-text",
+      "operation": "analyze_to_ir"
     },
     {
-      "case": "cases/analyze/keyword-request.json",
-      "golden": "golden/analyze/keyword-request.json",
-      "id": "analyze.keyword-request",
-      "operation": "resolve_analyze"
+      "case": "cases/analyze/explicit-standard.json",
+      "golden": "golden/analyze/explicit-standard.json",
+      "id": "analyze.explicit-standard",
+      "operation": "analyze_to_ir"
     },
     {
-      "case": "cases/analyze/keyword-semantics.json",
-      "golden": "golden/analyze/keyword-semantics.json",
-      "id": "analyze.keyword-semantics",
-      "operation": "analyze_text"
+      "case": "cases/analyze/language.json",
+      "golden": "golden/analyze/language.json",
+      "id": "analyze.language",
+      "operation": "analyze_to_ir"
     },
     {
-      "case": "cases/analyze/map-response.json",
-      "golden": "golden/analyze/map-response.json",
-      "id": "analyze.map-response",
-      "operation": "map_analyze_response"
+      "case": "cases/analyze/none-target-error.json",
+      "golden": "golden/analyze/none-target-error.json",
+      "id": "analyze.none-target-error",
+      "operation": "analyze_to_ir"
     },
     {
-      "case": "cases/analyze/nonsearchable-error.json",
-      "golden": "golden/analyze/nonsearchable-error.json",
-      "id": "analyze.nonsearchable-error",
-      "operation": "resolve_analyze"
-    },
-    {
-      "case": "cases/analyze/standard-semantics.json",
-      "golden": "golden/analyze/standard-semantics.json",
-      "id": "analyze.standard-semantics",
-      "operation": "analyze_text"
-    },
-    {
-      "case": "cases/analyze/standard-unicode-semantics.json",
-      "golden": "golden/analyze/standard-unicode-semantics.json",
-      "id": "analyze.standard-unicode-semantics",
-      "operation": "analyze_text"
+      "case": "cases/analyze/nontext-error.json",
+      "golden": "golden/analyze/nontext-error.json",
+      "id": "analyze.nontext-error",
+      "operation": "analyze_to_ir"
     },
     {
       "case": "cases/analyze/text-request.json",
       "golden": "golden/analyze/text-request.json",
       "id": "analyze.text-request",
-      "operation": "resolve_analyze"
-    },
-    {
-      "case": "cases/analyze/unicode-map-response.json",
-      "golden": "golden/analyze/unicode-map-response.json",
-      "id": "analyze.unicode-map-response",
-      "operation": "map_analyze_response"
+      "operation": "analyze_to_ir"
     },
     {
       "case": "cases/analyze/unknown-error.json",
       "golden": "golden/analyze/unknown-error.json",
       "id": "analyze.unknown-error",
-      "operation": "resolve_analyze"
+      "operation": "analyze_to_ir"
     },
     {
-      "case": "cases/browse/defaults.json",
-      "golden": "golden/browse/defaults.json",
-      "id": "browse.defaults",
-      "operation": "resolve_browse"
+      "case": "cases/component/analyzer-default.json",
+      "golden": "golden/component/analyzer-default.json",
+      "id": "component.analyzer-default",
+      "operation": "analyzer_to_ir"
     },
     {
-      "case": "cases/browse/filter.json",
-      "golden": "golden/browse/filter.json",
-      "id": "browse.filter",
-      "operation": "resolve_browse"
+      "case": "cases/component/analyzer-explicit.json",
+      "golden": "golden/component/analyzer-explicit.json",
+      "id": "component.analyzer-explicit",
+      "operation": "analyzer_to_ir"
     },
     {
-      "case": "cases/browse/pagination.json",
-      "golden": "golden/browse/pagination.json",
-      "id": "browse.pagination",
-      "operation": "resolve_browse"
+      "case": "cases/component/analyzer-unsupported.json",
+      "golden": "golden/component/analyzer-unsupported.json",
+      "id": "component.analyzer-unsupported",
+      "operation": "analyzer_to_ir"
     },
     {
-      "case": "cases/browse/sort.json",
-      "golden": "golden/browse/sort.json",
-      "id": "browse.sort",
-      "operation": "resolve_browse"
+      "case": "cases/component/comparison.json",
+      "golden": "golden/component/comparison.json",
+      "id": "component.comparison",
+      "operation": "comparison_to_ir"
     },
     {
-      "case": "cases/composition/curation-actions.json",
-      "golden": "golden/composition/curation-actions.json",
-      "id": "composition.curation-actions",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/document-empty-fields.json",
+      "golden": "golden/component/document-empty-fields.json",
+      "id": "component.document-empty-fields",
+      "operation": "document_to_ir"
     },
     {
-      "case": "cases/composition/curation-filter-and-user-filter.json",
-      "golden": "golden/composition/curation-filter-and-user-filter.json",
-      "id": "composition.curation-filter-and-user-filter",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/document.json",
+      "golden": "golden/component/document.json",
+      "id": "component.document",
+      "operation": "document_to_ir"
     },
     {
-      "case": "cases/composition/curation-priority-hide-wins.json",
-      "golden": "golden/composition/curation-priority-hide-wins.json",
-      "id": "composition.curation-priority-hide-wins",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/field-keyword.json",
+      "golden": "golden/component/field-keyword.json",
+      "id": "component.field-keyword",
+      "operation": "field_to_ir"
     },
     {
-      "case": "cases/composition/curation-replace-before-synonyms.json",
-      "golden": "golden/composition/curation-replace-before-synonyms.json",
-      "id": "composition.curation-replace-before-synonyms",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/field-text.json",
+      "golden": "golden/component/field-text.json",
+      "id": "component.field-text",
+      "operation": "field_to_ir"
     },
     {
-      "case": "cases/composition/infix-field.json",
-      "golden": "golden/composition/infix-field.json",
-      "id": "composition.infix-field",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/highlighting-disabled.json",
+      "golden": "golden/component/highlighting-disabled.json",
+      "id": "component.highlighting-disabled",
+      "operation": "highlighting_to_ir"
     },
     {
-      "case": "cases/composition/settings-apply.json",
-      "golden": "golden/composition/settings-apply.json",
-      "id": "composition.settings-apply",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/highlighting-empty.json",
+      "golden": "golden/component/highlighting-empty.json",
+      "id": "component.highlighting-empty",
+      "operation": "highlighting_to_ir"
     },
     {
-      "case": "cases/composition/settings-explicit-override.json",
-      "golden": "golden/composition/settings-explicit-override.json",
-      "id": "composition.settings-explicit-override",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/projection-default.json",
+      "golden": "golden/component/projection-default.json",
+      "id": "component.projection-default",
+      "operation": "projection_to_ir"
     },
     {
-      "case": "cases/composition/synonym-equivalent.json",
-      "golden": "golden/composition/synonym-equivalent.json",
-      "id": "composition.synonym-equivalent",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/projection-present-empty.json",
+      "golden": "golden/component/projection-present-empty.json",
+      "id": "component.projection-present-empty",
+      "operation": "projection_to_ir"
     },
     {
-      "case": "cases/composition/synonym-one-way-no-reverse.json",
-      "golden": "golden/composition/synonym-one-way-no-reverse.json",
-      "id": "composition.synonym-one-way-no-reverse",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/range.json",
+      "golden": "golden/component/range.json",
+      "id": "component.range",
+      "operation": "range_to_ir"
     },
     {
-      "case": "cases/composition/synonym-one-way.json",
-      "golden": "golden/composition/synonym-one-way.json",
-      "id": "composition.synonym-one-way",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/search-fields-default.json",
+      "golden": "golden/component/search-fields-default.json",
+      "id": "component.search-fields-default",
+      "operation": "search_fields_to_ir"
     },
     {
-      "case": "cases/composition/synonyms-disabled.json",
-      "golden": "golden/composition/synonyms-disabled.json",
-      "id": "composition.synonyms-disabled",
-      "operation": "run_stateful_scenario"
+      "case": "cases/component/search-fields-present-empty.json",
+      "golden": "golden/component/search-fields-present-empty.json",
+      "id": "component.search-fields-present-empty",
+      "operation": "search_fields_to_ir"
     },
     {
-      "case": "cases/composition/unknown-preset.json",
-      "golden": "golden/composition/unknown-preset.json",
-      "id": "composition.unknown-preset",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/curation/add-filter.json",
-      "golden": "golden/curation/add-filter.json",
-      "id": "curation.add-filter",
-      "operation": "resolve_curation"
-    },
-    {
-      "case": "cases/curation/filter-validation-error.json",
-      "golden": "golden/curation/filter-validation-error.json",
-      "id": "curation.filter-validation-error",
-      "operation": "resolve_curation"
-    },
-    {
-      "case": "cases/curation/hide.json",
-      "golden": "golden/curation/hide.json",
-      "id": "curation.hide",
-      "operation": "resolve_curation"
-    },
-    {
-      "case": "cases/curation/pin-zero-error.json",
-      "golden": "golden/curation/pin-zero-error.json",
-      "id": "curation.pin-zero-error",
-      "operation": "resolve_curation"
-    },
-    {
-      "case": "cases/curation/pin.json",
-      "golden": "golden/curation/pin.json",
-      "id": "curation.pin",
-      "operation": "resolve_curation"
-    },
-    {
-      "case": "cases/curation/replace-query.json",
-      "golden": "golden/curation/replace-query.json",
-      "id": "curation.replace-query",
-      "operation": "resolve_curation"
+      "case": "cases/facet/bool.json",
+      "golden": "golden/facet/bool.json",
+      "id": "facet.bool",
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/brand-options.json",
       "golden": "golden/facet/brand-options.json",
       "id": "facet.brand-options",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/brand.json",
       "golden": "golden/facet/brand.json",
       "id": "facet.brand",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/count-ascending.json",
       "golden": "golden/facet/count-ascending.json",
       "id": "facet.count-ascending",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
-      "case": "cases/facet/duplicate-field-error.json",
-      "golden": "golden/facet/duplicate-field-error.json",
-      "id": "facet.duplicate-field-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/multiple.json",
-      "golden": "golden/facet/multiple.json",
-      "id": "facet.multiple",
-      "operation": "resolve_search"
+      "case": "cases/facet/multi-keyword.json",
+      "golden": "golden/facet/multi-keyword.json",
+      "id": "facet.multi-keyword",
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/nonfacetable-error.json",
       "golden": "golden/facet/nonfacetable-error.json",
       "id": "facet.nonfacetable-error",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
-      "case": "cases/facet/price-ranges.json",
-      "golden": "golden/facet/price-ranges.json",
-      "id": "facet.price-ranges",
-      "operation": "resolve_search"
+      "case": "cases/facet/numeric-explicit.json",
+      "golden": "golden/facet/numeric-explicit.json",
+      "id": "facet.numeric-explicit",
+      "operation": "facet_to_ir"
     },
     {
-      "case": "cases/facet/range-duplicate-name-error.json",
-      "golden": "golden/facet/range-duplicate-name-error.json",
-      "id": "facet.range-duplicate-name-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/range-empty-error.json",
-      "golden": "golden/facet/range-empty-error.json",
-      "id": "facet.range-empty-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/range-invalid-bounds.json",
-      "golden": "golden/facet/range-invalid-bounds.json",
-      "id": "facet.range-invalid-bounds",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/range-overlap-allowed.json",
-      "golden": "golden/facet/range-overlap-allowed.json",
-      "id": "facet.range-overlap-allowed",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/range-text-error.json",
-      "golden": "golden/facet/range-text-error.json",
-      "id": "facet.range-text-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/facet/text-facet-request.json",
-      "golden": "golden/facet/text-facet-request.json",
-      "id": "facet.text-facet-request",
-      "operation": "resolve_search"
+      "case": "cases/facet/sort-unspecified-error.json",
+      "golden": "golden/facet/sort-unspecified-error.json",
+      "id": "facet.sort-unspecified-error",
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/unknown-error.json",
       "golden": "golden/facet/unknown-error.json",
       "id": "facet.unknown-error",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/facet/value-descending.json",
       "golden": "golden/facet/value-descending.json",
       "id": "facet.value-descending",
-      "operation": "resolve_search"
+      "operation": "facet_to_ir"
     },
     {
-      "case": "cases/facet/value-search-default-limit.json",
-      "golden": "golden/facet/value-search-default-limit.json",
-      "id": "facet.value-search-default-limit",
-      "operation": "resolve_facet_values"
-    },
-    {
-      "case": "cases/facet/value-search-nonfacet.json",
-      "golden": "golden/facet/value-search-nonfacet.json",
-      "id": "facet.value-search-nonfacet",
-      "operation": "resolve_facet_values"
-    },
-    {
-      "case": "cases/facet/value-search.json",
-      "golden": "golden/facet/value-search.json",
-      "id": "facet.value-search",
-      "operation": "resolve_facet_values"
-    },
-    {
-      "case": "cases/facet/zero-limit-error.json",
-      "golden": "golden/facet/zero-limit-error.json",
-      "id": "facet.zero-limit-error",
-      "operation": "resolve_search"
+      "case": "cases/facet/zero-limit-valid.json",
+      "golden": "golden/facet/zero-limit-valid.json",
+      "id": "facet.zero-limit-valid",
+      "operation": "facet_to_ir"
     },
     {
       "case": "cases/filter/and.json",
       "golden": "golden/filter/and.json",
       "id": "filter.and",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/between-exclusive.json",
-      "golden": "golden/filter/between-exclusive.json",
-      "id": "filter.between-exclusive",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/bool-eq.json",
       "golden": "golden/filter/bool-eq.json",
       "id": "filter.bool-eq",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/filter/bool-range-error.json",
+      "golden": "golden/filter/bool-range-error.json",
+      "id": "filter.bool-range-error",
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/bool-type-mismatch.json",
       "golden": "golden/filter/bool-type-mismatch.json",
       "id": "filter.bool-type-mismatch",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/contains-nonmulti.json",
-      "golden": "golden/filter/contains-nonmulti.json",
-      "id": "filter.contains-nonmulti",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/empty-all-error.json",
       "golden": "golden/filter/empty-all-error.json",
       "id": "filter.empty-all-error",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/empty-any-error.json",
       "golden": "golden/filter/empty-any-error.json",
       "id": "filter.empty-any-error",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/empty-one-of-error.json",
-      "golden": "golden/filter/empty-one-of-error.json",
-      "id": "filter.empty-one-of-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/empty-point-range-error.json",
-      "golden": "golden/filter/empty-point-range-error.json",
-      "id": "filter.empty-point-range-error",
-      "operation": "resolve_search"
+      "case": "cases/filter/equal-exclusive-valid.json",
+      "golden": "golden/filter/equal-exclusive-valid.json",
+      "id": "filter.equal-exclusive-valid",
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/exists.json",
       "golden": "golden/filter/exists.json",
       "id": "filter.exists",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/invalid-range.json",
       "golden": "golden/filter/invalid-range.json",
       "id": "filter.invalid-range",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/keyword-eq.json",
       "golden": "golden/filter/keyword-eq.json",
       "id": "filter.keyword-eq",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/keyword-ne.json",
       "golden": "golden/filter/keyword-ne.json",
       "id": "filter.keyword-ne",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/keyword-one-of.json",
-      "golden": "golden/filter/keyword-one-of.json",
-      "id": "filter.keyword-one-of",
-      "operation": "resolve_search"
+      "case": "cases/filter/keyword-range-error.json",
+      "golden": "golden/filter/keyword-range-error.json",
+      "id": "filter.keyword-range-error",
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/missing.json",
-      "golden": "golden/filter/missing.json",
-      "id": "filter.missing",
-      "operation": "resolve_search"
+      "case": "cases/filter/multi-eq.json",
+      "golden": "golden/filter/multi-eq.json",
+      "id": "filter.multi-eq",
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/multi-contains.json",
-      "golden": "golden/filter/multi-contains.json",
-      "id": "filter.multi-contains",
-      "operation": "resolve_search"
+      "case": "cases/filter/multi-range.json",
+      "golden": "golden/filter/multi-range.json",
+      "id": "filter.multi-range",
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/multi-numeric-contains.json",
-      "golden": "golden/filter/multi-numeric-contains.json",
-      "id": "filter.multi-numeric-contains",
-      "operation": "resolve_search"
+      "case": "cases/filter/nested-flatten.json",
+      "golden": "golden/filter/nested-flatten.json",
+      "id": "filter.nested-flatten",
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/ne-requires-present.json",
-      "golden": "golden/filter/ne-requires-present.json",
-      "id": "filter.ne-requires-present",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/nested.json",
-      "golden": "golden/filter/nested.json",
-      "id": "filter.nested",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/not-eq-missing-semantics.json",
-      "golden": "golden/filter/not-eq-missing-semantics.json",
-      "id": "filter.not-eq-missing-semantics",
-      "operation": "resolve_search"
+      "case": "cases/filter/none-union-error.json",
+      "golden": "golden/filter/none-union-error.json",
+      "id": "filter.none-union-error",
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/not.json",
       "golden": "golden/filter/not.json",
       "id": "filter.not",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/number-between.json",
-      "golden": "golden/filter/number-between.json",
-      "id": "filter.number-between",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/number-gt.json",
       "golden": "golden/filter/number-gt.json",
       "id": "filter.number-gt",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/number-gte.json",
       "golden": "golden/filter/number-gte.json",
       "id": "filter.number-gte",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/number-lt.json",
       "golden": "golden/filter/number-lt.json",
       "id": "filter.number-lt",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/number-lte.json",
       "golden": "golden/filter/number-lte.json",
       "id": "filter.number-lte",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/numeric-one-of.json",
-      "golden": "golden/filter/numeric-one-of.json",
-      "id": "filter.numeric-one-of",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/numeric-type-mismatch.json",
-      "golden": "golden/filter/numeric-type-mismatch.json",
-      "id": "filter.numeric-type-mismatch",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/one-of-dedup-sort.json",
-      "golden": "golden/filter/one-of-dedup-sort.json",
-      "id": "filter.one-of-dedup-sort",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/filter/one-of-mixed-type-error.json",
-      "golden": "golden/filter/one-of-mixed-type-error.json",
-      "id": "filter.one-of-mixed-type-error",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/or.json",
       "golden": "golden/filter/or.json",
       "id": "filter.or",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
-      "case": "cases/filter/point-range.json",
-      "golden": "golden/filter/point-range.json",
-      "id": "filter.point-range",
-      "operation": "resolve_search"
+      "case": "cases/filter/range-default-inclusive.json",
+      "golden": "golden/filter/range-default-inclusive.json",
+      "id": "filter.range-default-inclusive",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/filter/range-exclusive.json",
+      "golden": "golden/filter/range-exclusive.json",
+      "id": "filter.range-exclusive",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/filter/range-lower-only.json",
+      "golden": "golden/filter/range-lower-only.json",
+      "id": "filter.range-lower-only",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/filter/range-no-bounds-error.json",
+      "golden": "golden/filter/range-no-bounds-error.json",
+      "id": "filter.range-no-bounds-error",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/filter/single-and-flatten.json",
+      "golden": "golden/filter/single-and-flatten.json",
+      "id": "filter.single-and-flatten",
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/text-not-filterable.json",
       "golden": "golden/filter/text-not-filterable.json",
       "id": "filter.text-not-filterable",
-      "operation": "resolve_search"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/filter/unknown-field.json",
       "golden": "golden/filter/unknown-field.json",
       "id": "filter.unknown-field",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/category.json",
-      "golden": "golden/group/category.json",
-      "id": "group.category",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/default-hits-per-group.json",
-      "golden": "golden/group/default-hits-per-group.json",
-      "id": "group.default-hits-per-group",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/distinct-category.json",
-      "golden": "golden/group/distinct-category.json",
-      "id": "group.distinct-category",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/group-and-distinct-conflict.json",
-      "golden": "golden/group/group-and-distinct-conflict.json",
-      "id": "group.group-and-distinct-conflict",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/invalid-hits-per-group.json",
-      "golden": "golden/group/invalid-hits-per-group.json",
-      "id": "group.invalid-hits-per-group",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/nonfacetable-error.json",
-      "golden": "golden/group/nonfacetable-error.json",
-      "id": "group.nonfacetable-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/group/unknown-error.json",
-      "golden": "golden/group/unknown-error.json",
-      "id": "group.unknown-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/introspection/describe-field-unknown.json",
-      "golden": "golden/introspection/describe-field-unknown.json",
-      "id": "introspection.describe-field-unknown",
-      "operation": "describe_field"
-    },
-    {
-      "case": "cases/introspection/describe-field.json",
-      "golden": "golden/introspection/describe-field.json",
-      "id": "introspection.describe-field",
-      "operation": "describe_field"
+      "operation": "filter_to_ir"
     },
     {
       "case": "cases/introspection/describe-index.json",
       "golden": "golden/introspection/describe-index.json",
       "id": "introspection.describe-index",
-      "operation": "describe_index"
+      "operation": "describe"
     },
     {
       "case": "cases/introspection/inspect-query.json",
       "golden": "golden/introspection/inspect-query.json",
       "id": "introspection.inspect-query",
-      "operation": "inspect_search"
+      "operation": "inspect_query"
     },
     {
-      "case": "cases/lifecycle/close.json",
-      "golden": "golden/lifecycle/close.json",
-      "id": "lifecycle.close",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/and.json",
+      "golden": "golden/query/and.json",
+      "id": "query.and",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/create-absent.json",
-      "golden": "golden/lifecycle/create-absent.json",
-      "id": "lifecycle.create-absent",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/both-text-and-expr-error.json",
+      "golden": "golden/query/both-text-and-expr-error.json",
+      "id": "query.both-text-and-expr-error",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/create-existing-error.json",
-      "golden": "golden/lifecycle/create-existing-error.json",
-      "id": "lifecycle.create-existing-error",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/empty-all-error.json",
+      "golden": "golden/query/empty-all-error.json",
+      "id": "query.empty-all-error",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/open-existing.json",
-      "golden": "golden/lifecycle/open-existing.json",
-      "id": "lifecycle.open-existing",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/empty.json",
+      "golden": "golden/query/empty.json",
+      "id": "query.empty",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/open-missing-error.json",
-      "golden": "golden/lifecycle/open-missing-error.json",
-      "id": "lifecycle.open-missing-error",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/nested-and-flatten.json",
+      "golden": "golden/query/nested-and-flatten.json",
+      "id": "query.nested-and-flatten",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/reopen-after-close.json",
-      "golden": "golden/lifecycle/reopen-after-close.json",
-      "id": "lifecycle.reopen-after-close",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/none-union-error.json",
+      "golden": "golden/query/none-union-error.json",
+      "id": "query.none-union-error",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/lifecycle/use-after-close-error.json",
-      "golden": "golden/lifecycle/use-after-close-error.json",
-      "id": "lifecycle.use-after-close-error",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/not.json",
+      "golden": "golden/query/not.json",
+      "id": "query.not",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/management/curation-crud.json",
-      "golden": "golden/management/curation-crud.json",
-      "id": "management.curation-crud",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/term-nonsearchable-error.json",
+      "golden": "golden/query/term-nonsearchable-error.json",
+      "id": "query.term-nonsearchable-error",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/management/delete-missing-idempotent.json",
-      "golden": "golden/management/delete-missing-idempotent.json",
-      "id": "management.delete-missing-idempotent",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/term.json",
+      "golden": "golden/query/term.json",
+      "id": "query.term",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/management/preset-crud.json",
-      "golden": "golden/management/preset-crud.json",
-      "id": "management.preset-crud",
-      "operation": "run_stateful_scenario"
+      "case": "cases/query/text.json",
+      "golden": "golden/query/text.json",
+      "id": "query.text",
+      "operation": "query_to_ir"
     },
     {
-      "case": "cases/management/preset-upsert-replaces.json",
-      "golden": "golden/management/preset-upsert-replaces.json",
-      "id": "management.preset-upsert-replaces",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/management/search-settings.json",
-      "golden": "golden/management/search-settings.json",
-      "id": "management.search-settings",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/management/synonym-crud.json",
-      "golden": "golden/management/synonym-crud.json",
-      "id": "management.synonym-crud",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/preset/apply.json",
-      "golden": "golden/preset/apply.json",
-      "id": "preset.apply",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/preset/explicit-overrides.json",
-      "golden": "golden/preset/explicit-overrides.json",
-      "id": "preset.explicit-overrides",
-      "operation": "run_stateful_scenario"
-    },
-    {
-      "case": "cases/preset/schema-change-forbidden.json",
-      "golden": "golden/preset/schema-change-forbidden.json",
-      "id": "preset.schema-change-forbidden",
-      "operation": "resolve_preset"
-    },
-    {
-      "case": "cases/preset/unknown-field.json",
-      "golden": "golden/preset/unknown-field.json",
-      "id": "preset.unknown-field",
-      "operation": "resolve_preset"
+      "case": "cases/query/whitespace.json",
+      "golden": "golden/query/whitespace.json",
+      "id": "query.whitespace",
+      "operation": "query_to_ir"
     },
     {
       "case": "cases/ranking/bm25.json",
       "golden": "golden/ranking/bm25.json",
       "id": "ranking.bm25",
-      "operation": "resolve_search"
+      "operation": "ranking_to_ir"
     },
     {
-      "case": "cases/ranking/business-tiebreaks.json",
-      "golden": "golden/ranking/business-tiebreaks.json",
-      "id": "ranking.business-tiebreaks",
-      "operation": "resolve_search"
+      "case": "cases/ranking/default.json",
+      "golden": "golden/ranking/default.json",
+      "id": "ranking.default",
+      "operation": "ranking_to_ir"
     },
     {
-      "case": "cases/ranking/duplicate-tiebreak-field-error.json",
-      "golden": "golden/ranking/duplicate-tiebreak-field-error.json",
-      "id": "ranking.duplicate-tiebreak-field-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/hard-sort-price-desc.json",
-      "golden": "golden/ranking/hard-sort-price-desc.json",
-      "id": "ranking.hard-sort-price-desc",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/hard-sort-price.json",
-      "golden": "golden/ranking/hard-sort-price.json",
-      "id": "ranking.hard-sort-price",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/hard-sort-then-relevance.json",
-      "golden": "golden/ranking/hard-sort-then-relevance.json",
-      "id": "ranking.hard-sort-then-relevance",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/missing-first-desc.json",
-      "golden": "golden/ranking/missing-first-desc.json",
-      "id": "ranking.missing-first-desc",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/rank-on-text-error.json",
-      "golden": "golden/ranking/rank-on-text-error.json",
-      "id": "ranking.rank-on-text-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/relevance-only-sort.json",
-      "golden": "golden/ranking/relevance-only-sort.json",
-      "id": "ranking.relevance-only-sort",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/sort-text-error.json",
-      "golden": "golden/ranking/sort-text-error.json",
-      "id": "ranking.sort-text-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/ranking/unknown-rank-field.json",
-      "golden": "golden/ranking/unknown-rank-field.json",
-      "id": "ranking.unknown-rank-field",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/response/bulk-partial.json",
-      "golden": "golden/response/bulk-partial.json",
-      "id": "response.bulk-partial",
-      "operation": "map_bulk_response"
-    },
-    {
-      "case": "cases/response/bulk-success.json",
-      "golden": "golden/response/bulk-success.json",
-      "id": "response.bulk-success",
-      "operation": "map_bulk_response"
-    },
-    {
-      "case": "cases/response/delete-found.json",
-      "golden": "golden/response/delete-found.json",
-      "id": "response.delete-found",
-      "operation": "map_delete_response"
-    },
-    {
-      "case": "cases/response/delete-missing.json",
-      "golden": "golden/response/delete-missing.json",
-      "id": "response.delete-missing",
-      "operation": "map_delete_response"
-    },
-    {
-      "case": "cases/response/dynamic-document.json",
-      "golden": "golden/response/dynamic-document.json",
-      "id": "response.dynamic-document",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/empty.json",
-      "golden": "golden/response/empty.json",
-      "id": "response.empty",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/get-found.json",
-      "golden": "golden/response/get-found.json",
-      "id": "response.get-found",
-      "operation": "map_get_response"
-    },
-    {
-      "case": "cases/response/get-missing.json",
-      "golden": "golden/response/get-missing.json",
-      "id": "response.get-missing",
-      "operation": "map_get_response"
-    },
-    {
-      "case": "cases/response/grouped-empty.json",
-      "golden": "golden/response/grouped-empty.json",
-      "id": "response.grouped-empty",
-      "operation": "map_grouped_response"
-    },
-    {
-      "case": "cases/response/grouped.json",
-      "golden": "golden/response/grouped.json",
-      "id": "response.grouped",
-      "operation": "map_grouped_response"
-    },
-    {
-      "case": "cases/response/lower-bound-total.json",
-      "golden": "golden/response/lower-bound-total.json",
-      "id": "response.lower-bound-total",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/ranking-info.json",
-      "golden": "golden/response/ranking-info.json",
-      "id": "response.ranking-info",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/search-basic.json",
-      "golden": "golden/response/search-basic.json",
-      "id": "response.search-basic",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/snippet.json",
-      "golden": "golden/response/snippet.json",
-      "id": "response.snippet",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/unicode-highlight.json",
-      "golden": "golden/response/unicode-highlight.json",
-      "id": "response.unicode-highlight",
-      "operation": "map_search_response"
-    },
-    {
-      "case": "cases/response/write-receipt.json",
-      "golden": "golden/response/write-receipt.json",
-      "id": "response.write-receipt",
-      "operation": "map_write_response"
+      "case": "cases/ranking/none-union-error.json",
+      "golden": "golden/ranking/none-union-error.json",
+      "id": "ranking.none-union-error",
+      "operation": "ranking_to_ir"
     },
     {
       "case": "cases/schema/analyzer-on-keyword.json",
       "golden": "golden/schema/analyzer-on-keyword.json",
       "id": "schema.analyzer-on-keyword",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/bool-defaults.json",
       "golden": "golden/schema/bool-defaults.json",
       "id": "schema.bool-defaults",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/duplicate-field.json",
       "golden": "golden/schema/duplicate-field.json",
       "id": "schema.duplicate-field",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/duplicate-search-field.json",
       "golden": "golden/schema/duplicate-search-field.json",
       "id": "schema.duplicate-search-field",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/empty-field-name.json",
       "golden": "golden/schema/empty-field-name.json",
       "id": "schema.empty-field-name",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/empty-schema.json",
       "golden": "golden/schema/empty-schema.json",
       "id": "schema.empty-schema",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/schema/explicit-empty-search-fields.json",
+      "golden": "golden/schema/explicit-empty-search-fields.json",
+      "id": "schema.explicit-empty-search-fields",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/schema/explicit-standard-analyzer.json",
+      "golden": "golden/schema/explicit-standard-analyzer.json",
+      "id": "schema.explicit-standard-analyzer",
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/f64-defaults.json",
       "golden": "golden/schema/f64-defaults.json",
       "id": "schema.f64-defaults",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/facet-stored-string.json",
-      "golden": "golden/schema/facet-stored-string.json",
-      "id": "schema.facet-stored-string",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/i64-defaults.json",
       "golden": "golden/schema/i64-defaults.json",
       "id": "schema.i64-defaults",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/implicit-search-fields.json",
       "golden": "golden/schema/implicit-search-fields.json",
       "id": "schema.implicit-search-fields",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/infix-not-searchable.json",
-      "golden": "golden/schema/infix-not-searchable.json",
-      "id": "schema.infix-not-searchable",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/invalid-zero-weight.json",
-      "golden": "golden/schema/invalid-zero-weight.json",
-      "id": "schema.invalid-zero-weight",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/keyword-defaults.json",
       "golden": "golden/schema/keyword-defaults.json",
       "id": "schema.keyword-defaults",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
-      "case": "cases/schema/keyword-facet-sort.json",
-      "golden": "golden/schema/keyword-facet-sort.json",
-      "id": "schema.keyword-facet-sort",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/keyword-infix.json",
-      "golden": "golden/schema/keyword-infix.json",
-      "id": "schema.keyword-infix",
-      "operation": "resolve_index_definition"
+      "case": "cases/schema/keyword-searchable-error.json",
+      "golden": "golden/schema/keyword-searchable-error.json",
+      "id": "schema.keyword-searchable-error",
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/multi-keyword-facet.json",
       "golden": "golden/schema/multi-keyword-facet.json",
       "id": "schema.multi-keyword-facet",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/schema/multi-sortable-error.json",
+      "golden": "golden/schema/multi-sortable-error.json",
+      "id": "schema.multi-sortable-error",
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/multi-text.json",
       "golden": "golden/schema/multi-text.json",
       "id": "schema.multi-text",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/negative-weight.json",
       "golden": "golden/schema/negative-weight.json",
       "id": "schema.negative-weight",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/nonsearchable-search-field.json",
       "golden": "golden/schema/nonsearchable-search-field.json",
       "id": "schema.nonsearchable-search-field",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/optional-text.json",
-      "golden": "golden/schema/optional-text.json",
-      "id": "schema.optional-text",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/prefix-not-searchable.json",
-      "golden": "golden/schema/prefix-not-searchable.json",
-      "id": "schema.prefix-not-searchable",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/ranking-tiebreak.json",
-      "golden": "golden/schema/ranking-tiebreak.json",
-      "id": "schema.ranking-tiebreak",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/reserved-field.json",
       "golden": "golden/schema/reserved-field.json",
       "id": "schema.reserved-field",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/search-default-overrides.json",
-      "golden": "golden/schema/search-default-overrides.json",
-      "id": "schema.search-default-overrides",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/searchable-keyword-prefix.json",
-      "golden": "golden/schema/searchable-keyword-prefix.json",
-      "id": "schema.searchable-keyword-prefix",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/searchable-keyword-search-field.json",
-      "golden": "golden/schema/searchable-keyword-search-field.json",
-      "id": "schema.searchable-keyword-search-field",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/string-defaults.json",
-      "golden": "golden/schema/string-defaults.json",
-      "id": "schema.string-defaults",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/string-searchable-error.json",
-      "golden": "golden/schema/string-searchable-error.json",
-      "id": "schema.string-searchable-error",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/text-defaults.json",
       "golden": "golden/schema/text-defaults.json",
       "id": "schema.text-defaults",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
-      "case": "cases/schema/text-explicit-english.json",
-      "golden": "golden/schema/text-explicit-english.json",
-      "id": "schema.text-explicit-english",
-      "operation": "resolve_index_definition"
-    },
-    {
-      "case": "cases/schema/text-facet.json",
-      "golden": "golden/schema/text-facet.json",
-      "id": "schema.text-facet",
-      "operation": "resolve_index_definition"
+      "case": "cases/schema/text-filterable-error.json",
+      "golden": "golden/schema/text-filterable-error.json",
+      "id": "schema.text-filterable-error",
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/unknown-search-field.json",
       "golden": "golden/schema/unknown-search-field.json",
       "id": "schema.unknown-search-field",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/schema/unsupported-analyzer.json",
+      "golden": "golden/schema/unsupported-analyzer.json",
+      "id": "schema.unsupported-analyzer",
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/weighted-search-fields.json",
       "golden": "golden/schema/weighted-search-fields.json",
       "id": "schema.weighted-search-fields",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
       "case": "cases/schema/whitespace-field-name.json",
       "golden": "golden/schema/whitespace-field-name.json",
       "id": "schema.whitespace-field-name",
-      "operation": "resolve_index_definition"
+      "operation": "index_definition_to_ir"
     },
     {
-      "case": "cases/search/custom-typo-policy.json",
-      "golden": "golden/search/custom-typo-policy.json",
-      "id": "search.custom-typo-policy",
-      "operation": "resolve_search"
+      "case": "cases/schema/zero-weight-valid.json",
+      "golden": "golden/schema/zero-weight-valid.json",
+      "id": "schema.zero-weight-valid",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/search/bm25.json",
+      "golden": "golden/search/bm25.json",
+      "id": "search.bm25",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/defaults.json",
       "golden": "golden/search/defaults.json",
       "id": "search.defaults",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/duplicate-facet-field.json",
+      "golden": "golden/search/duplicate-facet-field.json",
+      "id": "search.duplicate-facet-field",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/duplicate-request-search-field.json",
       "golden": "golden/search/duplicate-request-search-field.json",
       "id": "search.duplicate-request-search-field",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/duplicate-snippet-field-error.json",
-      "golden": "golden/search/duplicate-snippet-field-error.json",
-      "id": "search.duplicate-snippet-field-error",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/duplicate-sort-field.json",
       "golden": "golden/search/duplicate-sort-field.json",
       "id": "search.duplicate-sort-field",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/empty-query.json",
       "golden": "golden/search/empty-query.json",
       "id": "search.empty-query",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/exact-index-default.json",
-      "golden": "golden/search/exact-index-default.json",
-      "id": "search.exact-index-default",
-      "operation": "resolve_search"
+      "case": "cases/search/explicit-empty-fields-match-all.json",
+      "golden": "golden/search/explicit-empty-fields-match-all.json",
+      "id": "search.explicit-empty-fields-match-all",
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/highlight-deduplicates.json",
-      "golden": "golden/search/highlight-deduplicates.json",
-      "id": "search.highlight-deduplicates",
-      "operation": "resolve_search"
+      "case": "cases/search/explicit-empty-fields-text-error.json",
+      "golden": "golden/search/explicit-empty-fields-text-error.json",
+      "id": "search.explicit-empty-fields-text-error",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/facet.json",
+      "golden": "golden/search/facet.json",
+      "id": "search.facet",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/highlight-duplicate-error.json",
+      "golden": "golden/search/highlight-duplicate-error.json",
+      "id": "search.highlight-duplicate-error",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/highlight-nontext.json",
       "golden": "golden/search/highlight-nontext.json",
       "id": "search.highlight-nontext",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/highlight-present-empty.json",
+      "golden": "golden/search/highlight-present-empty.json",
+      "id": "search.highlight-present-empty",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/highlights.json",
       "golden": "golden/search/highlights.json",
       "id": "search.highlights",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/limit-max.json",
-      "golden": "golden/search/limit-max.json",
-      "id": "search.limit-max",
-      "operation": "resolve_search"
+      "case": "cases/search/language-empty-error.json",
+      "golden": "golden/search/language-empty-error.json",
+      "id": "search.language-empty-error",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/language-normalization.json",
+      "golden": "golden/search/language-normalization.json",
+      "id": "search.language-normalization",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/limit.json",
       "golden": "golden/search/limit.json",
       "id": "search.limit",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/minimal-text-default.json",
-      "golden": "golden/search/minimal-text-default.json",
-      "id": "search.minimal-text-default",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/negative-offset-error.json",
-      "golden": "golden/search/negative-offset-error.json",
-      "id": "search.negative-offset-error",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/offset.json",
       "golden": "golden/search/offset.json",
       "id": "search.offset",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/over-limit.json",
-      "golden": "golden/search/over-limit.json",
-      "id": "search.over-limit",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/override-fields.json",
       "golden": "golden/search/override-fields.json",
       "id": "search.override-fields",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/page-three.json",
-      "golden": "golden/search/page-three.json",
-      "id": "search.page-three",
-      "operation": "resolve_search"
+      "case": "cases/search/projection-duplicate-error.json",
+      "golden": "golden/search/projection-duplicate-error.json",
+      "id": "search.projection-duplicate-error",
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/page-with-limit-error.json",
-      "golden": "golden/search/page-with-limit-error.json",
-      "id": "search.page-with-limit-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/page-with-offset-error.json",
-      "golden": "golden/search/page-with-offset-error.json",
-      "id": "search.page-with-offset-error",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/page-zero.json",
-      "golden": "golden/search/page-zero.json",
-      "id": "search.page-zero",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/per-field-policies.json",
-      "golden": "golden/search/per-field-policies.json",
-      "id": "search.per-field-policies",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/prefix-all-terms.json",
-      "golden": "golden/search/prefix-all-terms.json",
-      "id": "search.prefix-all-terms",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/prefix-disabled.json",
-      "golden": "golden/search/prefix-disabled.json",
-      "id": "search.prefix-disabled",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/projection-deduplicates.json",
-      "golden": "golden/search/projection-deduplicates.json",
-      "id": "search.projection-deduplicates",
-      "operation": "resolve_search"
+      "case": "cases/search/projection-empty.json",
+      "golden": "golden/search/projection-empty.json",
+      "id": "search.projection-empty",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/projection.json",
       "golden": "golden/search/projection.json",
       "id": "search.projection",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/ranking-info.json",
-      "golden": "golden/search/ranking-info.json",
-      "id": "search.ranking-info",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/snippet.json",
-      "golden": "golden/search/snippet.json",
-      "id": "search.snippet",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/sort-missing-first.json",
       "golden": "golden/search/sort-missing-first.json",
       "id": "search.sort-missing-first",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/search/stored-only-no-default-fields.json",
-      "golden": "golden/search/stored-only-no-default-fields.json",
-      "id": "search.stored-only-no-default-fields",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/synonyms-disabled.json",
-      "golden": "golden/search/synonyms-disabled.json",
-      "id": "search.synonyms-disabled",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/term-match-any.json",
-      "golden": "golden/search/term-match-any.json",
-      "id": "search.term-match-any",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/term-match-at-least-zero.json",
-      "golden": "golden/search/term-match-at-least-zero.json",
-      "id": "search.term-match-at-least-zero",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/term-match-at-least.json",
-      "golden": "golden/search/term-match-at-least.json",
-      "id": "search.term-match-at-least",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/typos-disabled.json",
-      "golden": "golden/search/typos-disabled.json",
-      "id": "search.typos-disabled",
-      "operation": "resolve_search"
+      "case": "cases/search/stored-only-no-searchable-fields.json",
+      "golden": "golden/search/stored-only-no-searchable-fields.json",
+      "id": "search.stored-only-no-searchable-fields",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/unknown-projection-field.json",
       "golden": "golden/search/unknown-projection-field.json",
       "id": "search.unknown-projection-field",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/user-syntax-phrase-exclusion.json",
-      "golden": "golden/search/user-syntax-phrase-exclusion.json",
-      "id": "search.user-syntax-phrase-exclusion",
-      "operation": "resolve_search"
-    },
-    {
-      "case": "cases/search/user-syntax.json",
-      "golden": "golden/search/user-syntax.json",
-      "id": "search.user-syntax",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/whitespace-query.json",
       "golden": "golden/search/whitespace-query.json",
       "id": "search.whitespace-query",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/search/zero-limit.json",
       "golden": "golden/search/zero-limit.json",
       "id": "search.zero-limit",
-      "operation": "resolve_search"
+      "operation": "search_to_ir"
     },
     {
-      "case": "cases/synonym/duplicate-term.json",
-      "golden": "golden/synonym/duplicate-term.json",
-      "id": "synonym.duplicate-term",
-      "operation": "resolve_synonym"
+      "case": "cases/sort/asc.json",
+      "golden": "golden/sort/asc.json",
+      "id": "sort.asc",
+      "operation": "sort_to_ir"
     },
     {
-      "case": "cases/synonym/empty-targets.json",
-      "golden": "golden/synonym/empty-targets.json",
-      "id": "synonym.empty-targets",
-      "operation": "resolve_synonym"
+      "case": "cases/sort/default-direction.json",
+      "golden": "golden/sort/default-direction.json",
+      "id": "sort.default-direction",
+      "operation": "sort_to_ir"
     },
     {
-      "case": "cases/synonym/equivalent.json",
-      "golden": "golden/synonym/equivalent.json",
-      "id": "synonym.equivalent",
-      "operation": "resolve_synonym"
+      "case": "cases/sort/desc.json",
+      "golden": "golden/sort/desc.json",
+      "id": "sort.desc",
+      "operation": "sort_to_ir"
     },
     {
-      "case": "cases/synonym/one-way.json",
-      "golden": "golden/synonym/one-way.json",
-      "id": "synonym.one-way",
-      "operation": "resolve_synonym"
+      "case": "cases/sort/missing-default.json",
+      "golden": "golden/sort/missing-default.json",
+      "id": "sort.missing-default",
+      "operation": "sort_to_ir"
     },
     {
-      "case": "cases/synonym/too-few.json",
-      "golden": "golden/synonym/too-few.json",
-      "id": "synonym.too-few",
-      "operation": "resolve_synonym"
+      "case": "cases/sort/missing-first.json",
+      "golden": "golden/sort/missing-first.json",
+      "id": "sort.missing-first",
+      "operation": "sort_to_ir"
+    },
+    {
+      "case": "cases/sort/missing-unspecified-error.json",
+      "golden": "golden/sort/missing-unspecified-error.json",
+      "id": "sort.missing-unspecified-error",
+      "operation": "sort_to_ir"
+    },
+    {
+      "case": "cases/sort/multi-error.json",
+      "golden": "golden/sort/multi-error.json",
+      "id": "sort.multi-error",
+      "operation": "sort_to_ir"
+    },
+    {
+      "case": "cases/sort/text-error.json",
+      "golden": "golden/sort/text-error.json",
+      "id": "sort.text-error",
+      "operation": "sort_to_ir"
+    },
+    {
+      "case": "cases/sort/unknown-error.json",
+      "golden": "golden/sort/unknown-error.json",
+      "id": "sort.unknown-error",
+      "operation": "sort_to_ir"
     },
     {
       "case": "cases/value/f64-nan.json",
       "golden": "golden/value/f64-nan.json",
       "id": "value.f64-nan",
-      "operation": "normalize_value"
-    },
-    {
-      "case": "cases/value/f64-negative-zero.json",
-      "golden": "golden/value/f64-negative-zero.json",
-      "id": "value.f64-negative-zero",
-      "operation": "normalize_value"
+      "operation": "value_to_ir"
     },
     {
       "case": "cases/value/f64-positive-infinity.json",
       "golden": "golden/value/f64-positive-infinity.json",
       "id": "value.f64-positive-infinity",
-      "operation": "normalize_value"
+      "operation": "value_to_ir"
     },
     {
       "case": "cases/value/i64-max.json",
       "golden": "golden/value/i64-max.json",
       "id": "value.i64-max",
-      "operation": "normalize_value"
+      "operation": "value_to_ir"
     },
     {
       "case": "cases/value/i64-min.json",
       "golden": "golden/value/i64-min.json",
       "id": "value.i64-min",
-      "operation": "normalize_value"
-    },
-    {
-      "case": "cases/value/i64-overflow.json",
-      "golden": "golden/value/i64-overflow.json",
-      "id": "value.i64-overflow",
-      "operation": "normalize_value"
+      "operation": "value_to_ir"
     },
     {
       "case": "cases/value/keyword-unicode-preserved.json",
       "golden": "golden/value/keyword-unicode-preserved.json",
       "id": "value.keyword-unicode-preserved",
-      "operation": "normalize_value"
+      "operation": "value_to_ir"
     },
     {
-      "case": "cases/write/append-nonmulti-error.json",
-      "golden": "golden/write/append-nonmulti-error.json",
-      "id": "write.append-nonmulti-error",
-      "operation": "resolve_write"
+      "case": "cases/value/multi-keyword.json",
+      "golden": "golden/value/multi-keyword.json",
+      "id": "value.multi-keyword",
+      "operation": "value_to_ir"
     },
     {
-      "case": "cases/write/batch-mixed.json",
-      "golden": "golden/write/batch-mixed.json",
-      "id": "write.batch-mixed",
-      "operation": "resolve_bulk_write"
+      "case": "cases/value/multi-scalar-error.json",
+      "golden": "golden/value/multi-scalar-error.json",
+      "id": "value.multi-scalar-error",
+      "operation": "value_to_ir"
     },
     {
-      "case": "cases/write/bulk-same-id-ordered.json",
-      "golden": "golden/write/bulk-same-id-ordered.json",
-      "id": "write.bulk-same-id-ordered",
-      "operation": "resolve_bulk_write"
+      "case": "cases/value/none-union-error.json",
+      "golden": "golden/value/none-union-error.json",
+      "id": "value.none-union-error",
+      "operation": "value_to_ir"
     },
     {
-      "case": "cases/write/bulk-static-invalid-item.json",
-      "golden": "golden/write/bulk-static-invalid-item.json",
-      "id": "write.bulk-static-invalid-item",
-      "operation": "resolve_bulk_write"
+      "case": "cases/value/null-error.json",
+      "golden": "golden/value/null-error.json",
+      "id": "value.null-error",
+      "operation": "value_to_ir"
+    },
+    {
+      "case": "cases/value/single-list-error.json",
+      "golden": "golden/value/single-list-error.json",
+      "id": "value.single-list-error",
+      "operation": "value_to_ir"
+    },
+    {
+      "case": "cases/value/string.json",
+      "golden": "golden/value/string.json",
+      "id": "value.string",
+      "operation": "value_to_ir"
+    },
+    {
+      "case": "cases/wire/analyzer-options-absent.json",
+      "golden": "golden/wire/analyzer-options-absent.json",
+      "id": "wire.analyzer-options-absent",
+      "operation": "analyzer_to_ir"
+    },
+    {
+      "case": "cases/wire/analyzer-options-empty.json",
+      "golden": "golden/wire/analyzer-options-empty.json",
+      "id": "wire.analyzer-options-empty",
+      "operation": "analyzer_to_ir"
+    },
+    {
+      "case": "cases/wire/default-search-wrapper-absent.json",
+      "golden": "golden/wire/default-search-wrapper-absent.json",
+      "id": "wire.default-search-wrapper-absent",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/wire/default-search-wrapper-empty.json",
+      "golden": "golden/wire/default-search-wrapper-empty.json",
+      "id": "wire.default-search-wrapper-empty",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/wire/default-search-wrapper-inner-absent.json",
+      "golden": "golden/wire/default-search-wrapper-inner-absent.json",
+      "id": "wire.default-search-wrapper-inner-absent",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/wire/document-fields-null-equals-empty.json",
+      "golden": "golden/wire/document-fields-null-equals-empty.json",
+      "id": "wire.document-fields-null-equals-empty",
+      "operation": "document_to_ir"
+    },
+    {
+      "case": "cases/wire/facet-limit-absent.json",
+      "golden": "golden/wire/facet-limit-absent.json",
+      "id": "wire.facet-limit-absent",
+      "operation": "facet_to_ir"
+    },
+    {
+      "case": "cases/wire/facet-limit-zero.json",
+      "golden": "golden/wire/facet-limit-zero.json",
+      "id": "wire.facet-limit-zero",
+      "operation": "facet_to_ir"
+    },
+    {
+      "case": "cases/wire/facets-null-equals-empty.json",
+      "golden": "golden/wire/facets-null-equals-empty.json",
+      "id": "wire.facets-null-equals-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/highlight-wrapper-absent.json",
+      "golden": "golden/wire/highlight-wrapper-absent.json",
+      "id": "wire.highlight-wrapper-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/highlight-wrapper-empty.json",
+      "golden": "golden/wire/highlight-wrapper-empty.json",
+      "id": "wire.highlight-wrapper-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/highlight-wrapper-inner-absent.json",
+      "golden": "golden/wire/highlight-wrapper-inner-absent.json",
+      "id": "wire.highlight-wrapper-inner-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/index-name-absent.json",
+      "golden": "golden/wire/index-name-absent.json",
+      "id": "wire.index-name-absent",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/wire/index-name-empty-error.json",
+      "golden": "golden/wire/index-name-empty-error.json",
+      "id": "wire.index-name-empty-error",
+      "operation": "index_definition_to_ir"
+    },
+    {
+      "case": "cases/wire/language-absent.json",
+      "golden": "golden/wire/language-absent.json",
+      "id": "wire.language-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/language-empty-error.json",
+      "golden": "golden/wire/language-empty-error.json",
+      "id": "wire.language-empty-error",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/limit-absent.json",
+      "golden": "golden/wire/limit-absent.json",
+      "id": "wire.limit-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/limit-explicit-zero.json",
+      "golden": "golden/wire/limit-explicit-zero.json",
+      "id": "wire.limit-explicit-zero",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/offset-absent.json",
+      "golden": "golden/wire/offset-absent.json",
+      "id": "wire.offset-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/offset-explicit-zero.json",
+      "golden": "golden/wire/offset-explicit-zero.json",
+      "id": "wire.offset-explicit-zero",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/patch-operations-null-equals-empty.json",
+      "golden": "golden/wire/patch-operations-null-equals-empty.json",
+      "id": "wire.patch-operations-null-equals-empty",
+      "operation": "patch_to_ir"
+    },
+    {
+      "case": "cases/wire/projection-wrapper-absent.json",
+      "golden": "golden/wire/projection-wrapper-absent.json",
+      "id": "wire.projection-wrapper-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/projection-wrapper-empty.json",
+      "golden": "golden/wire/projection-wrapper-empty.json",
+      "id": "wire.projection-wrapper-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/projection-wrapper-inner-absent.json",
+      "golden": "golden/wire/projection-wrapper-inner-absent.json",
+      "id": "wire.projection-wrapper-inner-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/query-null-equals-empty.json",
+      "golden": "golden/wire/query-null-equals-empty.json",
+      "id": "wire.query-null-equals-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/range-include-lower-absent.json",
+      "golden": "golden/wire/range-include-lower-absent.json",
+      "id": "wire.range-include-lower-absent",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/wire/range-include-lower-false.json",
+      "golden": "golden/wire/range-include-lower-false.json",
+      "id": "wire.range-include-lower-false",
+      "operation": "filter_to_ir"
+    },
+    {
+      "case": "cases/wire/search-fields-wrapper-absent.json",
+      "golden": "golden/wire/search-fields-wrapper-absent.json",
+      "id": "wire.search-fields-wrapper-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/search-fields-wrapper-empty.json",
+      "golden": "golden/wire/search-fields-wrapper-empty.json",
+      "id": "wire.search-fields-wrapper-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/search-fields-wrapper-inner-absent.json",
+      "golden": "golden/wire/search-fields-wrapper-inner-absent.json",
+      "id": "wire.search-fields-wrapper-inner-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/sort-null-equals-empty.json",
+      "golden": "golden/wire/sort-null-equals-empty.json",
+      "id": "wire.sort-null-equals-empty",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/weight-absent.json",
+      "golden": "golden/wire/weight-absent.json",
+      "id": "wire.weight-absent",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/wire/weight-explicit-zero.json",
+      "golden": "golden/wire/weight-explicit-zero.json",
+      "id": "wire.weight-explicit-zero",
+      "operation": "search_to_ir"
     },
     {
       "case": "cases/write/delete.json",
       "golden": "golden/write/delete.json",
       "id": "write.delete",
-      "operation": "resolve_write"
+      "operation": "delete_to_ir"
     },
     {
       "case": "cases/write/empty-array-preserved.json",
       "golden": "golden/write/empty-array-preserved.json",
       "id": "write.empty-array-preserved",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/empty-bulk.json",
-      "golden": "golden/write/empty-bulk.json",
-      "id": "write.empty-bulk",
-      "operation": "resolve_bulk_write"
+      "operation": "insert_to_ir"
     },
     {
       "case": "cases/write/empty-string-preserved.json",
       "golden": "golden/write/empty-string-preserved.json",
       "id": "write.empty-string-preserved",
-      "operation": "resolve_write"
+      "operation": "insert_to_ir"
     },
     {
       "case": "cases/write/get-empty-id-error.json",
       "golden": "golden/write/get-empty-id-error.json",
       "id": "write.get-empty-id-error",
-      "operation": "resolve_get"
+      "operation": "get_to_ir"
+    },
+    {
+      "case": "cases/write/get-empty-projection.json",
+      "golden": "golden/write/get-empty-projection.json",
+      "id": "write.get-empty-projection",
+      "operation": "get_to_ir"
+    },
+    {
+      "case": "cases/write/get-explicit-projection.json",
+      "golden": "golden/write/get-explicit-projection.json",
+      "id": "write.get-explicit-projection",
+      "operation": "get_to_ir"
     },
     {
       "case": "cases/write/get.json",
       "golden": "golden/write/get.json",
       "id": "write.get",
-      "operation": "resolve_get"
-    },
-    {
-      "case": "cases/write/id-control-error.json",
-      "golden": "golden/write/id-control-error.json",
-      "id": "write.id-control-error",
-      "operation": "resolve_get"
-    },
-    {
-      "case": "cases/write/id-too-long-error.json",
-      "golden": "golden/write/id-too-long-error.json",
-      "id": "write.id-too-long-error",
-      "operation": "resolve_get"
+      "operation": "get_to_ir"
     },
     {
       "case": "cases/write/id-unicode-preserved.json",
       "golden": "golden/write/id-unicode-preserved.json",
       "id": "write.id-unicode-preserved",
-      "operation": "resolve_get"
-    },
-    {
-      "case": "cases/write/id-whitespace-error.json",
-      "golden": "golden/write/id-whitespace-error.json",
-      "id": "write.id-whitespace-error",
-      "operation": "resolve_get"
-    },
-    {
-      "case": "cases/write/increment-i64-fraction-error.json",
-      "golden": "golden/write/increment-i64-fraction-error.json",
-      "id": "write.increment-i64-fraction-error",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/increment-nonnumeric-error.json",
-      "golden": "golden/write/increment-nonnumeric-error.json",
-      "id": "write.increment-nonnumeric-error",
-      "operation": "resolve_write"
+      "operation": "get_to_ir"
     },
     {
       "case": "cases/write/insert.json",
       "golden": "golden/write/insert.json",
       "id": "write.insert",
-      "operation": "resolve_write"
+      "operation": "insert_to_ir"
     },
     {
-      "case": "cases/write/missing-required.json",
-      "golden": "golden/write/missing-required.json",
-      "id": "write.missing-required",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/optional-null-is-missing.json",
-      "golden": "golden/write/optional-null-is-missing.json",
-      "id": "write.optional-null-is-missing",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/optional-omitted.json",
-      "golden": "golden/write/optional-omitted.json",
-      "id": "write.optional-omitted",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/patch-append.json",
-      "golden": "golden/write/patch-append.json",
-      "id": "write.patch-append",
-      "operation": "resolve_write"
+      "case": "cases/write/null-value-error.json",
+      "golden": "golden/write/null-value-error.json",
+      "id": "write.null-value-error",
+      "operation": "insert_to_ir"
     },
     {
       "case": "cases/write/patch-duplicate-field-error.json",
       "golden": "golden/write/patch-duplicate-field-error.json",
       "id": "write.patch-duplicate-field-error",
-      "operation": "resolve_write"
+      "operation": "patch_to_ir"
     },
     {
-      "case": "cases/write/patch-increment.json",
-      "golden": "golden/write/patch-increment.json",
-      "id": "write.patch-increment",
-      "operation": "resolve_write"
+      "case": "cases/write/patch-empty-error.json",
+      "golden": "golden/write/patch-empty-error.json",
+      "id": "write.patch-empty-error",
+      "operation": "patch_to_ir"
     },
     {
-      "case": "cases/write/patch-remove-value.json",
-      "golden": "golden/write/patch-remove-value.json",
-      "id": "write.patch-remove-value",
-      "operation": "resolve_write"
+      "case": "cases/write/patch-none-operation.json",
+      "golden": "golden/write/patch-none-operation.json",
+      "id": "write.patch-none-operation",
+      "operation": "patch_to_ir"
     },
     {
       "case": "cases/write/patch-set-type-error.json",
       "golden": "golden/write/patch-set-type-error.json",
       "id": "write.patch-set-type-error",
-      "operation": "resolve_write"
+      "operation": "patch_to_ir"
     },
     {
       "case": "cases/write/patch-set.json",
       "golden": "golden/write/patch-set.json",
       "id": "write.patch-set",
-      "operation": "resolve_write"
+      "operation": "patch_to_ir"
     },
     {
       "case": "cases/write/patch-unknown-field.json",
       "golden": "golden/write/patch-unknown-field.json",
       "id": "write.patch-unknown-field",
-      "operation": "resolve_write"
+      "operation": "patch_to_ir"
     },
     {
-      "case": "cases/write/patch-unset-optional.json",
-      "golden": "golden/write/patch-unset-optional.json",
-      "id": "write.patch-unset-optional",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/required-null-error.json",
-      "golden": "golden/write/required-null-error.json",
-      "id": "write.required-null-error",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/reserved-id-empty.json",
-      "golden": "golden/write/reserved-id-empty.json",
-      "id": "write.reserved-id-empty",
-      "operation": "resolve_write"
+      "case": "cases/write/patch-unset.json",
+      "golden": "golden/write/patch-unset.json",
+      "id": "write.patch-unset",
+      "operation": "patch_to_ir"
     },
     {
       "case": "cases/write/unknown-field.json",
       "golden": "golden/write/unknown-field.json",
       "id": "write.unknown-field",
-      "operation": "resolve_write"
-    },
-    {
-      "case": "cases/write/unset-required-error.json",
-      "golden": "golden/write/unset-required-error.json",
-      "id": "write.unset-required-error",
-      "operation": "resolve_write"
+      "operation": "insert_to_ir"
     },
     {
       "case": "cases/write/upsert.json",
       "golden": "golden/write/upsert.json",
       "id": "write.upsert",
-      "operation": "resolve_write"
+      "operation": "upsert_to_ir"
+    },
+    {
+      "case": "cases/write/write-dispatch-insert.json",
+      "golden": "golden/write/write-dispatch-insert.json",
+      "id": "write.write-dispatch-insert",
+      "operation": "write_to_ir"
     },
     {
       "case": "cases/write/wrong-type.json",
       "golden": "golden/write/wrong-type.json",
       "id": "write.wrong-type",
-      "operation": "resolve_write"
+      "operation": "insert_to_ir"
     }
   ]
 }

@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Keyword cannot opt into full-text searchable capability in v1.",
+  "id": "schema.keyword-searchable-error",
+  "input": {
+    "fields": [
+      {
+        "kind": "keyword",
+        "name": "brand",
+        "searchable": true
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "index_definition_to_ir"
+}

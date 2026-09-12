@@ -1,0 +1,11 @@
+{
+  "category": "sort",
+  "description": "Unspecified direction defaults to Asc.",
+  "id": "sort.default-direction",
+  "index_fixture": "product-v2",
+  "input": {
+    "direction": "unspecified",
+    "field": "price"
+  },
+  "operation": "sort_to_ir"
+}

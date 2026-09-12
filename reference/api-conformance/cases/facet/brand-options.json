@@ -1,17 +1,12 @@
 {
   "category": "facet",
-  "description": "Facet limit and ordering.",
+  "description": "Explicit facet options are preserved.",
   "id": "facet.brand-options",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "facets": [
-      {
-        "field": "brand",
-        "limit": 5,
-        "sort": "value_asc"
-      }
-    ],
-    "query": "x"
+    "field": "brand",
+    "limit": 5,
+    "sort": "value_asc"
   },
-  "operation": "resolve_search"
+  "operation": "facet_to_ir"
 }

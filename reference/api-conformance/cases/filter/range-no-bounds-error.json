@@ -1,0 +1,12 @@
+{
+  "category": "filter",
+  "description": "Range requires at least one bound.",
+  "id": "filter.range-no-bounds-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price"
+    }
+  },
+  "operation": "filter_to_ir"
+}

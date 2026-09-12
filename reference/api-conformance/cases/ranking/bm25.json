@@ -1,14 +1,10 @@
 {
   "category": "ranking",
-  "description": "Explicit BM25 ranking policy.",
+  "description": "Explicit BM25 becomes Bm25 IR.",
   "id": "ranking.bm25",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "query": "x",
-    "ranking": {
-      "relevance": "bm25/v1",
-      "then": []
-    }
+    "bm25": {}
   },
-  "operation": "resolve_search"
+  "operation": "ranking_to_ir"
 }

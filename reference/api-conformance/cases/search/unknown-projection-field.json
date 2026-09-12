@@ -1,14 +1,15 @@
 {
   "category": "search",
-  "description": "Projection fields must exist.",
+  "description": "Unknown projection field is rejected.",
   "id": "search.unknown-projection-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "query": "x",
-    "select": [
-      "title",
-      "bogus"
-    ]
+    "projection": {
+      "fields": [
+        "missing"
+      ]
+    },
+    "query": "x"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

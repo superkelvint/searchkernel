@@ -1,17 +1,17 @@
 {
   "category": "search",
-  "description": "Hard sorting may explicitly place missing values first.",
+  "description": "Search sort composes resolved sort IR.",
   "id": "search.sort-missing-first",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "query": "x",
     "sort": [
       {
-        "direction": "asc",
+        "direction": "desc",
         "field": "price",
         "missing": "first"
       }
     ]
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

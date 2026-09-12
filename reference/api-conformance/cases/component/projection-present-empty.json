@@ -1,0 +1,12 @@
+{
+  "category": "component",
+  "description": "Present-empty projection becomes an explicit empty field list.",
+  "id": "component.projection-present-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": {
+      "fields": []
+    }
+  },
+  "operation": "projection_to_ir"
+}

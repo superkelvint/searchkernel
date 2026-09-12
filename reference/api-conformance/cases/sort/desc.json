@@ -1,0 +1,11 @@
+{
+  "category": "sort",
+  "description": "Explicit Desc is preserved.",
+  "id": "sort.desc",
+  "index_fixture": "product-v2",
+  "input": {
+    "direction": "desc",
+    "field": "price"
+  },
+  "operation": "sort_to_ir"
+}

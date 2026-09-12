@@ -1,0 +1,10 @@
+{
+  "category": "component",
+  "description": "Absent projection expands to all stored fields.",
+  "id": "component.projection-default",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": null
+  },
+  "operation": "projection_to_ir"
+}

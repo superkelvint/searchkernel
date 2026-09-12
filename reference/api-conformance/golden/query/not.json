@@ -1,0 +1,12 @@
+{
+  "ok": {
+    "not": {
+      "term": {
+        "field": "title",
+        "value": {
+          "string": "a"
+        }
+      }
+    }
+  }
+}

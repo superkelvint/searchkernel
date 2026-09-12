@@ -1,0 +1,10 @@
+{
+  "category": "facet",
+  "description": "Bool fields are facetable by default.",
+  "id": "facet.bool",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "in_stock"
+  },
+  "operation": "facet_to_ir"
+}

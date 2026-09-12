@@ -1,0 +1,13 @@
+{
+  "category": "wire",
+  "description": "Absent analyzer options normalize to the ordinary empty options map.",
+  "id": "wire.analyzer-options-absent",
+  "input": {
+    "analyzer": {
+      "name": "standard",
+      "version": 1
+    },
+    "field_kind": "text"
+  },
+  "operation": "analyzer_to_ir"
+}

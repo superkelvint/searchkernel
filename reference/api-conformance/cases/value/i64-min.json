@@ -1,12 +1,13 @@
 {
   "category": "value",
-  "description": "Full signed 64-bit minimum round-trips.",
+  "description": "Signed 64-bit minimum is preserved.",
   "id": "value.i64-min",
+  "index_fixture": "product-v2",
   "input": {
-    "kind": "i64",
+    "field": "popularity",
     "value": {
-      "$i64": "-9223372036854775808"
+      "int64": -9223372036854775808
     }
   },
-  "operation": "normalize_value"
+  "operation": "value_to_ir"
 }

@@ -1,13 +1,10 @@
 {
   "category": "filter",
-  "description": "Empty disjunctions are rejected.",
+  "description": "Empty OR is invalid.",
   "id": "filter.empty-any-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "any": []
-    },
-    "query": "x"
+    "any": []
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

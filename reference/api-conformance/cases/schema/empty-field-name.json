@@ -1,6 +1,6 @@
 {
   "category": "schema",
-  "description": "Field names cannot be empty.",
+  "description": "Empty field name is invalid.",
   "id": "schema.empty-field-name",
   "input": {
     "fields": [
@@ -11,5 +11,5 @@
     ],
     "name": "bad"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

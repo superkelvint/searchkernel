@@ -1,10 +1,10 @@
 {
   "category": "write",
-  "description": "Get addresses a document by logical ID.",
+  "description": "Get defaults projection to all stored fields.",
   "id": "write.get",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "id": "sku-42"
   },
-  "operation": "resolve_get"
+  "operation": "get_to_ir"
 }

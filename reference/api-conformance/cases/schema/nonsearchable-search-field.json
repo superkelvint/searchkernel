@@ -1,21 +1,22 @@
 {
   "category": "schema",
-  "description": "Stored-only fields cannot be default search fields.",
+  "description": "Default search field must be searchable.",
   "id": "schema.nonsearchable-search-field",
   "input": {
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "brand"
+        }
+      ]
+    },
     "fields": [
       {
-        "kind": "string",
-        "name": "url"
+        "kind": "keyword",
+        "name": "brand"
       }
     ],
-    "name": "bad",
-    "search_fields": [
-      {
-        "field": "url",
-        "weight": 1.0
-      }
-    ]
+    "name": "bad"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

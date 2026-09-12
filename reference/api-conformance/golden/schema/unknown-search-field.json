@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "unknown_field",
-    "details": {
-      "field": "body"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "unknown_field",
+        "path": "default_search_fields.fields[0].field"
+      }
+    ],
+    "retryable": false
   }
 }

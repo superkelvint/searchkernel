@@ -1,12 +1,13 @@
 {
   "category": "value",
-  "description": "NaN is not part of the portable numeric value model.",
+  "description": "NaN is rejected.",
   "id": "value.f64-nan",
+  "index_fixture": "product-v2",
   "input": {
-    "kind": "f64",
+    "field": "price",
     "value": {
-      "$f64": "nan"
+      "float64": "NaN"
     }
   },
-  "operation": "normalize_value"
+  "operation": "value_to_ir"
 }

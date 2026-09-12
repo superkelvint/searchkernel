@@ -1,0 +1,15 @@
+{
+  "category": "filter",
+  "description": "Lower-only range is valid.",
+  "id": "filter.range-lower-only",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "lower": {
+        "float64": 10.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

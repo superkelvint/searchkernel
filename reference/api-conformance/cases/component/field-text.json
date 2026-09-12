@@ -1,0 +1,12 @@
+{
+  "category": "component",
+  "description": "field_to_ir applies text defaults.",
+  "id": "component.field-text",
+  "input": {
+    "field": {
+      "kind": "text",
+      "name": "title"
+    }
+  },
+  "operation": "field_to_ir"
+}

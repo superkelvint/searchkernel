@@ -1,0 +1,10 @@
+{
+  "category": "facet",
+  "description": "Multi-valued keyword facet is accepted.",
+  "id": "facet.multi-keyword",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "tags"
+  },
+  "operation": "facet_to_ir"
+}

@@ -1,0 +1,12 @@
+{
+  "category": "query",
+  "description": "Empty structured AND is invalid.",
+  "id": "query.empty-all-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "all": []
+    }
+  },
+  "operation": "query_to_ir"
+}

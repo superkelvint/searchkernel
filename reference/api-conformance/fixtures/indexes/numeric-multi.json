@@ -1,32 +1,31 @@
 {
+  "default_search_fields": {
+    "fields": [
+      {
+        "field": "title",
+        "weight": 1.0
+      }
+    ]
+  },
   "fields": [
     {
       "kind": "text",
       "name": "title"
     },
     {
-      "kind": "i64",
-      "multi": true,
-      "name": "ratings",
-      "optional": true
+      "cardinality": "multi",
+      "kind": "int64",
+      "name": "ratings"
     },
     {
-      "kind": "f64",
-      "multi": true,
-      "name": "scores",
-      "optional": true
+      "cardinality": "multi",
+      "kind": "float64",
+      "name": "scores"
     },
     {
-      "facet": true,
       "kind": "keyword",
       "name": "group"
     }
   ],
-  "name": "measurements",
-  "search_fields": [
-    {
-      "field": "title",
-      "weight": 1.0
-    }
-  ]
+  "name": "measurements"
 }

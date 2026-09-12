@@ -1,0 +1,13 @@
+{
+  "category": "value",
+  "description": "Multi field rejects scalar wire value.",
+  "id": "value.multi-scalar-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "tags",
+    "value": {
+      "string": "sale"
+    }
+  },
+  "operation": "value_to_ir"
+}

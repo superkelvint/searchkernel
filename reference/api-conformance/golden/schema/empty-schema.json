@@ -1,6 +1,12 @@
 {
   "error": {
-    "code": "empty_schema",
-    "details": {}
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_schema",
+        "path": "fields"
+      }
+    ],
+    "retryable": false
   }
 }

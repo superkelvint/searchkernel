@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "invalid_term_match",
-    "details": {
-      "at_least": 0
-    }
-  }
-}

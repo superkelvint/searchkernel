@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "conflicting_pagination",
-    "details": {
-      "left": "page",
-      "right": "limit"
-    }
-  }
-}

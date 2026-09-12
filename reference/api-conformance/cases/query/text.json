@@ -1,0 +1,10 @@
+{
+  "category": "query",
+  "description": "Non-empty query text is preserved.",
+  "id": "query.text",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "wireless headphones"
+  },
+  "operation": "query_to_ir"
+}

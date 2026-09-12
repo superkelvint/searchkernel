@@ -1,0 +1,10 @@
+{
+  "category": "filter",
+  "description": "FlatBuffers FilterExprKind NONE is invalid.",
+  "id": "filter.none-union-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "_union": "NONE"
+  },
+  "operation": "filter_to_ir"
+}

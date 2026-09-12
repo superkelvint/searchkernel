@@ -1,26 +1,51 @@
 {
   "category": "write",
-  "description": "Insert is create-only.",
+  "description": "Insert converts document to owned IR.",
   "id": "write.insert",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "document": {
-      "brand": "Sony",
-      "category": "Headphones",
-      "description": "Wireless noise-cancelling headphones",
-      "image_url": "/images/42.jpg",
-      "in_stock": true,
-      "popularity": 9234,
-      "price": 449.99,
-      "sku": "WH-1000XM6",
-      "tags": [
-        "wireless",
-        "premium"
-      ],
-      "title": "Sony WH-1000XM6"
-    },
-    "id": "sku-42",
-    "kind": "insert"
+      "fields": {
+        "brand": {
+          "string": "Sony"
+        },
+        "category": {
+          "string": "Headphones"
+        },
+        "description": {
+          "string": "Wireless headphones"
+        },
+        "image_url": {
+          "string": "/images/42.jpg"
+        },
+        "in_stock": {
+          "bool": true
+        },
+        "popularity": {
+          "int64": 9234
+        },
+        "price": {
+          "float64": 449.99
+        },
+        "sku": {
+          "string": "WH-1000XM6"
+        },
+        "tags": {
+          "list": [
+            {
+              "string": "wireless"
+            },
+            {
+              "string": "premium"
+            }
+          ]
+        },
+        "title": {
+          "string": "Sony WH-1000XM6"
+        }
+      },
+      "id": "sku-42"
+    }
   },
-  "operation": "resolve_write"
+  "operation": "insert_to_ir"
 }

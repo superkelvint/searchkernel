@@ -1,13 +1,21 @@
 {
+  "default_search_fields": {
+    "fields": []
+  },
   "fields": [
     {
-      "kind": "string",
-      "name": "url"
+      "facetable": false,
+      "filterable": false,
+      "kind": "keyword",
+      "name": "url",
+      "sortable": false
     },
     {
-      "kind": "string",
+      "facetable": false,
+      "filterable": false,
+      "kind": "keyword",
       "name": "caption",
-      "optional": true
+      "sortable": false
     }
   ],
   "name": "assets"

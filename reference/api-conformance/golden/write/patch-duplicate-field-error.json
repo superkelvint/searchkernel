@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "duplicate_patch_field",
-    "details": {
-      "field": "price"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "duplicate_patch_field",
+        "path": "operations[1]"
+      }
+    ],
+    "retryable": false
   }
 }

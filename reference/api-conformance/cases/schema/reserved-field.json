@@ -6,10 +6,10 @@
     "fields": [
       {
         "kind": "text",
-        "name": "_internal"
+        "name": "_score"
       }
     ],
     "name": "bad"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

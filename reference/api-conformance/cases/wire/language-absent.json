@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent optional language remains None.",
+  "id": "wire.language-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

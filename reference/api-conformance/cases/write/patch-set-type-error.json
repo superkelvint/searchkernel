@@ -1,19 +1,20 @@
 {
   "category": "write",
-  "description": "Patch set validates target field type.",
+  "description": "Patch Set type-checks values.",
   "id": "write.patch-set-type-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "id": "1",
-    "kind": "patch",
+    "id": "sku-42",
     "operations": [
       {
         "set": {
           "field": "price",
-          "value": "cheap"
+          "value": {
+            "string": "oops"
+          }
         }
       }
     ]
   },
-  "operation": "resolve_write"
+  "operation": "patch_to_ir"
 }

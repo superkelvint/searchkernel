@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_capability",
+        "path": "fields[0].filterable"
+      }
+    ],
+    "retryable": false
+  }
+}

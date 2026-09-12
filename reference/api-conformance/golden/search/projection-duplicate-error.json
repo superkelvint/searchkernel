@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "duplicate_projection_field",
+        "path": "projection.fields[1]"
+      }
+    ],
+    "retryable": false
+  }
+}

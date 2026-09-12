@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present OptionalUInt32 offset zero remains explicit zero.",
+  "id": "wire.offset-explicit-zero",
+  "index_fixture": "product-v2",
+  "input": {
+    "offset": 0,
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

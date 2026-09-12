@@ -1,0 +1,23 @@
+{
+  "category": "value",
+  "description": "Multi keyword requires list and preserves order/duplicates.",
+  "id": "value.multi-keyword",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "tags",
+    "value": {
+      "list": [
+        {
+          "string": "sale"
+        },
+        {
+          "string": "sale"
+        },
+        {
+          "string": "audio"
+        }
+      ]
+    }
+  },
+  "operation": "value_to_ir"
+}

@@ -1,0 +1,10 @@
+{
+  "ok": {
+    "term": {
+      "field": "title",
+      "value": {
+        "string": "headphones"
+      }
+    }
+  }
+}

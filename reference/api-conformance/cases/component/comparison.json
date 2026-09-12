@@ -1,0 +1,16 @@
+{
+  "category": "component",
+  "description": "comparison_to_ir validates operator/value/field together.",
+  "id": "component.comparison",
+  "index_fixture": "product-v2",
+  "input": {
+    "comparison": {
+      "field": "price",
+      "op": "lte",
+      "value": {
+        "float64": 500.0
+      }
+    }
+  },
+  "operation": "comparison_to_ir"
+}

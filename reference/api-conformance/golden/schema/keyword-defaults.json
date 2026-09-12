@@ -1,36 +1,24 @@
 {
   "ok": {
+    "default_prefix_policy": "disabled",
+    "default_ranking": "default_relevance_v1",
+    "default_search_fields": [],
+    "default_typo_policy": "disabled",
     "fields": [
       {
-        "analyzer": "keyword/v1",
+        "analyzer": null,
         "capabilities": {
-          "facetable": false,
+          "facetable": true,
           "filterable": true,
-          "infix": false,
-          "prefix": false,
           "searchable": false,
-          "sortable": false,
-          "typo_tolerance": null
+          "sortable": true,
+          "stored": true
         },
+        "cardinality": "single",
         "kind": "keyword",
-        "multi": false,
-        "name": "value",
-        "optional": false,
-        "stored": true
+        "name": "value"
       }
     ],
-    "name": "keyword_default",
-    "ranking": {
-      "relevance": "default/v1",
-      "then": []
-    },
-    "search_defaults": {
-      "limit": 20,
-      "prefix": "last_term",
-      "term_match": "all",
-      "typo_tolerance": "standard/v1"
-    },
-    "search_fields": [],
-    "semantics_version": "high-level/v1"
+    "name": "keyword_default"
   }
 }

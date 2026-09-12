@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "Range inclusivity defaults to true.",
+  "id": "filter.range-default-inclusive",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "lower": {
+        "float64": 10.0
+      },
+      "upper": {
+        "float64": 20.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

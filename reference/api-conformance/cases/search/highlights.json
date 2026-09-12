@@ -1,14 +1,15 @@
 {
   "category": "search",
-  "description": "Highlight fields are explicit.",
+  "description": "Highlight request is explicit IR state.",
   "id": "search.highlights",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "highlight": [
-      "title",
-      "description"
-    ],
-    "query": "wireless headphones"
+    "highlighting": {
+      "fields": [
+        "title"
+      ]
+    },
+    "query": "x"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

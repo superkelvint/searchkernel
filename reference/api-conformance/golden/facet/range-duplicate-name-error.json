@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "duplicate_facet_range_name",
-    "details": {
-      "field": "price",
-      "name": "x"
-    }
-  }
-}

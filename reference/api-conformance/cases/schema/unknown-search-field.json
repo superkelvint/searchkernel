@@ -1,21 +1,22 @@
 {
   "category": "schema",
-  "description": "Search fields must exist.",
+  "description": "Default search field must exist.",
   "id": "schema.unknown-search-field",
   "input": {
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "missing"
+        }
+      ]
+    },
     "fields": [
       {
         "kind": "text",
         "name": "title"
       }
     ],
-    "name": "bad",
-    "search_fields": [
-      {
-        "field": "body",
-        "weight": 1.0
-      }
-    ]
+    "name": "bad"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

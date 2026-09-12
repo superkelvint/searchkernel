@@ -1,0 +1,34 @@
+{
+  "ok": {
+    "facets": [],
+    "filter": null,
+    "highlighting": {
+      "kind": "disabled"
+    },
+    "language": null,
+    "limit": 20,
+    "offset": 0,
+    "prefix_policy": "disabled",
+    "projection": {
+      "fields": [
+        "title",
+        "description",
+        "brand",
+        "category",
+        "price",
+        "in_stock",
+        "popularity",
+        "tags",
+        "sku",
+        "image_url"
+      ]
+    },
+    "query": {
+      "match_all": {}
+    },
+    "ranking": "default_relevance_v1",
+    "search_fields": [],
+    "sort": [],
+    "typo_policy": "disabled"
+  }
+}

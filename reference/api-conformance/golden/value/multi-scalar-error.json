@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "cardinality_mismatch",
+        "path": "value"
+      }
+    ],
+    "retryable": false
+  }
+}

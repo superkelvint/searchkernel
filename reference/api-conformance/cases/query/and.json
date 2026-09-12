@@ -1,0 +1,29 @@
+{
+  "category": "query",
+  "description": "Structured AND resolves children.",
+  "id": "query.and",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "all": [
+        {
+          "term": {
+            "field": "title",
+            "value": {
+              "string": "a"
+            }
+          }
+        },
+        {
+          "term": {
+            "field": "description",
+            "value": {
+              "string": "b"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "operation": "query_to_ir"
+}

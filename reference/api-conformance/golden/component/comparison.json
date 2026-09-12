@@ -1,0 +1,9 @@
+{
+  "ok": {
+    "field": "price",
+    "op": "lte",
+    "value": {
+      "float64": 500.0
+    }
+  }
+}

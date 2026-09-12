@@ -1,0 +1,12 @@
+{
+  "category": "analyze",
+  "description": "Analyze language hint normalizes.",
+  "id": "analyze.language",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "title",
+    "language": "EN-US",
+    "text": "Text"
+  },
+  "operation": "analyze_to_ir"
+}

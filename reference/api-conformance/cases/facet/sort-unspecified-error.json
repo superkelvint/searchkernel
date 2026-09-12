@@ -1,0 +1,11 @@
+{
+  "category": "facet",
+  "description": "Present-but-unspecified facet sort is invalid.",
+  "id": "facet.sort-unspecified-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "sort": "unspecified"
+  },
+  "operation": "facet_to_ir"
+}

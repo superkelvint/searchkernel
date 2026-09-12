@@ -1,10 +1,43 @@
 {
-  "error": {
-    "code": "invalid_limit",
-    "details": {
-      "limit": 0,
-      "max": 1000,
-      "min": 1
-    }
+  "ok": {
+    "facets": [],
+    "filter": null,
+    "highlighting": {
+      "kind": "disabled"
+    },
+    "language": null,
+    "limit": 0,
+    "offset": 0,
+    "prefix_policy": "disabled",
+    "projection": {
+      "fields": [
+        "title",
+        "description",
+        "brand",
+        "category",
+        "price",
+        "in_stock",
+        "popularity",
+        "tags",
+        "sku",
+        "image_url"
+      ]
+    },
+    "query": {
+      "text": "x"
+    },
+    "ranking": "default_relevance_v1",
+    "search_fields": [
+      {
+        "field": "title",
+        "weight": 4.0
+      },
+      {
+        "field": "description",
+        "weight": 1.0
+      }
+    ],
+    "sort": [],
+    "typo_policy": "disabled"
   }
 }

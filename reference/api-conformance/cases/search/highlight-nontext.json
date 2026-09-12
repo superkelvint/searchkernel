@@ -1,13 +1,15 @@
 {
   "category": "search",
-  "description": "Only text/searchable string-like fields may be highlighted.",
+  "description": "Highlighting requires stored searchable text field.",
   "id": "search.highlight-nontext",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "highlight": [
-      "price"
-    ],
+    "highlighting": {
+      "fields": [
+        "brand"
+      ]
+    },
     "query": "x"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

@@ -1,0 +1,11 @@
+{
+  "category": "sort",
+  "description": "Present-but-unspecified missing placement is invalid.",
+  "id": "sort.missing-unspecified-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "price",
+    "missing": "unspecified"
+  },
+  "operation": "sort_to_ir"
+}

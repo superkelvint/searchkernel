@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present OptionalUInt32 facet limit zero remains zero.",
+  "id": "wire.facet-limit-zero",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "limit": 0
+  },
+  "operation": "facet_to_ir"
+}

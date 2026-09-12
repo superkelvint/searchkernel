@@ -2,11 +2,12 @@
   "category": "value",
   "description": "Infinity is rejected.",
   "id": "value.f64-positive-infinity",
+  "index_fixture": "product-v2",
   "input": {
-    "kind": "f64",
+    "field": "price",
     "value": {
-      "$f64": "inf"
+      "float64": "Infinity"
     }
   },
-  "operation": "normalize_value"
+  "operation": "value_to_ir"
 }

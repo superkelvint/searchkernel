@@ -1,0 +1,10 @@
+{
+  "category": "facet",
+  "description": "Explicitly facetable numeric field is accepted.",
+  "id": "facet.numeric-explicit",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "price"
+  },
+  "operation": "facet_to_ir"
+}

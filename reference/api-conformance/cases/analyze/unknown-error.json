@@ -2,10 +2,10 @@
   "category": "analyze",
   "description": "Unknown analyze field is rejected.",
   "id": "analyze.unknown-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "field": "missing",
     "text": "x"
   },
-  "operation": "resolve_analyze"
+  "operation": "analyze_to_ir"
 }

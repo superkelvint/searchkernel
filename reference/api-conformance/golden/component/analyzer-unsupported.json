@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "unsupported",
+    "details": [
+      {
+        "code": "unsupported_analyzer",
+        "path": "analyzer"
+      }
+    ],
+    "retryable": false
+  }
+}

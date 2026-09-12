@@ -1,9 +1,12 @@
 {
   "error": {
-    "code": "invalid_weight",
-    "details": {
-      "field": "title",
-      "weight": -1.0
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_search_weight",
+        "path": "default_search_fields.fields[0].weight"
+      }
+    ],
+    "retryable": false
   }
 }

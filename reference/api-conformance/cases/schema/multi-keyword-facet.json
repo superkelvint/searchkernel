@@ -1,17 +1,16 @@
 {
   "category": "schema",
-  "description": "Multi-valued facetable keyword.",
+  "description": "Multi keyword remains facetable and filterable but not sortable.",
   "id": "schema.multi-keyword-facet",
   "input": {
     "fields": [
       {
-        "facet": true,
+        "cardinality": "multi",
         "kind": "keyword",
-        "multi": true,
         "name": "tags"
       }
     ],
-    "name": "tags"
+    "name": "multi_kw"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

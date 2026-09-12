@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent OptionalUInt32 limit gets stable default.",
+  "id": "wire.limit-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

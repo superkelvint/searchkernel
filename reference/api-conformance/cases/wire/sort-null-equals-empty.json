@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Ordinary absent/null sort vector normalizes to empty.",
+  "id": "wire.sort-null-equals-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "sort": null
+  },
+  "operation": "search_to_ir"
+}

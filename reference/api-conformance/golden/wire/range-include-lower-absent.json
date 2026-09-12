@@ -1,0 +1,13 @@
+{
+  "ok": {
+    "range": {
+      "field": "price",
+      "include_lower": true,
+      "include_upper": true,
+      "lower": {
+        "float64": 1.0
+      },
+      "upper": null
+    }
+  }
+}

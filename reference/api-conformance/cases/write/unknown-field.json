@@ -2,26 +2,16 @@
   "category": "write",
   "description": "Unknown document fields are rejected.",
   "id": "write.unknown-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "document": {
-      "brand": "Sony",
-      "category": "Headphones",
-      "description": "Wireless noise-cancelling headphones",
-      "image_url": "/images/42.jpg",
-      "in_stock": true,
-      "mystery": "x",
-      "popularity": 9234,
-      "price": 449.99,
-      "sku": "WH-1000XM6",
-      "tags": [
-        "wireless",
-        "premium"
-      ],
-      "title": "Sony WH-1000XM6"
-    },
-    "id": "sku-42",
-    "kind": "insert"
+      "fields": {
+        "unknown": {
+          "string": "x"
+        }
+      },
+      "id": "x"
+    }
   },
-  "operation": "resolve_write"
+  "operation": "insert_to_ir"
 }

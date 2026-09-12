@@ -1,0 +1,16 @@
+{
+  "category": "wire",
+  "description": "Present default-search wrapper with absent vector canonicalizes to present-empty.",
+  "id": "wire.default-search-wrapper-inner-absent",
+  "input": {
+    "default_search_fields": {},
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "x"
+  },
+  "operation": "index_definition_to_ir"
+}

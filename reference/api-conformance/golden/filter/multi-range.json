@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "range": {
+      "field": "ratings",
+      "include_lower": true,
+      "include_upper": true,
+      "lower": {
+        "int64": 3
+      },
+      "upper": {
+        "int64": 5
+      }
+    }
+  }
+}

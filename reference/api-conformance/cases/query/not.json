@@ -1,0 +1,21 @@
+{
+  "category": "query",
+  "description": "Structured NOT resolves child.",
+  "id": "query.not",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "negation": {
+        "clause": {
+          "term": {
+            "field": "title",
+            "value": {
+              "string": "a"
+            }
+          }
+        }
+      }
+    }
+  },
+  "operation": "query_to_ir"
+}

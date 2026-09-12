@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "type_mismatch",
+        "path": "document.fields.brand"
+      }
+    ],
+    "retryable": false
+  }
+}

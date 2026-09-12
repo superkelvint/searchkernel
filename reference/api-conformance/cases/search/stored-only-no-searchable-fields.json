@@ -1,0 +1,10 @@
+{
+  "category": "search",
+  "description": "Text search against index with no effective searchable fields fails precondition.",
+  "id": "search.stored-only-no-searchable-fields",
+  "index_fixture": "stored-only",
+  "input": {
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

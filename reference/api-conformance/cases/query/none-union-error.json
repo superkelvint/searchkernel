@@ -1,0 +1,12 @@
+{
+  "category": "query",
+  "description": "FlatBuffers QueryExprKind NONE is invalid when query_expr is present.",
+  "id": "query.none-union-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "_union": "NONE"
+    }
+  },
+  "operation": "query_to_ir"
+}

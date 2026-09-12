@@ -1,0 +1,16 @@
+{
+  "category": "wire",
+  "description": "Present OptionalBool false remains false.",
+  "id": "wire.range-include-lower-false",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "include_lower": false,
+      "lower": {
+        "float64": 1.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

@@ -1,0 +1,10 @@
+{
+  "category": "sort",
+  "description": "Non-sortable field is rejected.",
+  "id": "sort.text-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "title"
+  },
+  "operation": "sort_to_ir"
+}

@@ -1,0 +1,15 @@
+{
+  "category": "search",
+  "description": "Search composes facet IR.",
+  "id": "search.facet",
+  "index_fixture": "product-v2",
+  "input": {
+    "facets": [
+      {
+        "field": "brand"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

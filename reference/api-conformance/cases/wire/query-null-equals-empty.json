@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Ordinary nullable query string null normalizes to empty/MatchAll.",
+  "id": "wire.query-null-equals-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": null
+  },
+  "operation": "search_to_ir"
+}

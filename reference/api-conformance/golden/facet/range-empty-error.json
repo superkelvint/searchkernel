@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "empty_facet_ranges",
-    "details": {
-      "field": "price"
-    }
-  }
-}

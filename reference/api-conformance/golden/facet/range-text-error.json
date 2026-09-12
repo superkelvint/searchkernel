@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "facet_requires_numeric",
-    "details": {
-      "field": "brand"
-    }
-  }
-}

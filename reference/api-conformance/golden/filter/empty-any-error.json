@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "empty_filter_group",
-    "details": {
-      "kind": "any"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "empty_boolean_filter",
+        "path": "filter.any"
+      }
+    ],
+    "retryable": false
   }
 }

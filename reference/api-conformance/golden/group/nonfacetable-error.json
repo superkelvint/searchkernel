@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "field_not_groupable",
-    "details": {
-      "field": "price"
-    }
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "cannot_unset_required_field",
-    "details": {
-      "field": "title"
-    }
-  }
-}

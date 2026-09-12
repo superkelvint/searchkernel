@@ -1,15 +1,10 @@
 {
   "category": "facet",
-  "description": "Unknown facet field rejected.",
+  "description": "Unknown facet field is rejected.",
   "id": "facet.unknown-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "facets": [
-      {
-        "field": "manufacturer"
-      }
-    ],
-    "query": "x"
+    "field": "missing"
   },
-  "operation": "resolve_search"
+  "operation": "facet_to_ir"
 }

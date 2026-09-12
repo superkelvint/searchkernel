@@ -1,0 +1,12 @@
+{
+  "category": "component",
+  "description": "Present-empty request search-field selection stays empty.",
+  "id": "component.search-fields-present-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "selection": {
+      "fields": []
+    }
+  },
+  "operation": "search_fields_to_ir"
+}

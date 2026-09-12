@@ -1,11 +1,12 @@
 {
   "error": {
-    "code": "invalid_range",
-    "details": {
-      "field": "price",
-      "lower": 500.0,
-      "reason": "lower_gt_upper",
-      "upper": 100.0
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_range",
+        "path": "filter.range"
+      }
+    ],
+    "retryable": false
   }
 }

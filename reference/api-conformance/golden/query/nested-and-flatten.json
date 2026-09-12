@@ -1,0 +1,22 @@
+{
+  "ok": {
+    "and": [
+      {
+        "term": {
+          "field": "title",
+          "value": {
+            "string": "a"
+          }
+        }
+      },
+      {
+        "term": {
+          "field": "description",
+          "value": {
+            "string": "b"
+          }
+        }
+      }
+    ]
+  }
+}

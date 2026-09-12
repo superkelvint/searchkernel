@@ -1,0 +1,7 @@
+{
+  "ok": {
+    "field": "price",
+    "limit": 10,
+    "sort": "count_desc"
+  }
+}

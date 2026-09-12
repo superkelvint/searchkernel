@@ -1,11 +1,11 @@
 {
   "category": "search",
-  "description": "Limit must be at least one.",
+  "description": "Explicit search limit zero is valid.",
   "id": "search.zero-limit",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "limit": 0,
     "query": "x"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

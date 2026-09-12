@@ -1,0 +1,12 @@
+{
+  "category": "component",
+  "description": "field_to_ir applies keyword defaults.",
+  "id": "component.field-keyword",
+  "input": {
+    "field": {
+      "kind": "keyword",
+      "name": "brand"
+    }
+  },
+  "operation": "field_to_ir"
+}

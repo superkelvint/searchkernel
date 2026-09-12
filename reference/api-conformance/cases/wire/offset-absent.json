@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent OptionalUInt32 offset gets stable zero default.",
+  "id": "wire.offset-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

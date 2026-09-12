@@ -1,0 +1,10 @@
+{
+  "category": "sort",
+  "description": "Multi-valued sort is rejected.",
+  "id": "sort.multi-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "tags"
+  },
+  "operation": "sort_to_ir"
+}

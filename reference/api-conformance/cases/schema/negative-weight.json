@@ -1,21 +1,23 @@
 {
   "category": "schema",
-  "description": "Search weights must be finite and greater than zero.",
+  "description": "Negative search weight is invalid.",
   "id": "schema.negative-weight",
   "input": {
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "title",
+          "weight": -1.0
+        }
+      ]
+    },
     "fields": [
       {
         "kind": "text",
         "name": "title"
       }
     ],
-    "name": "bad",
-    "search_fields": [
-      {
-        "field": "title",
-        "weight": -1.0
-      }
-    ]
+    "name": "bad_weight"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

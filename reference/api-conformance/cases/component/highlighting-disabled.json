@@ -1,0 +1,10 @@
+{
+  "category": "component",
+  "description": "Absent highlighting becomes Disabled.",
+  "id": "component.highlighting-disabled",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": null
+  },
+  "operation": "highlighting_to_ir"
+}

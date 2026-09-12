@@ -1,0 +1,11 @@
+{
+  "category": "sort",
+  "description": "Explicit Asc is preserved.",
+  "id": "sort.asc",
+  "index_fixture": "product-v2",
+  "input": {
+    "direction": "asc",
+    "field": "price"
+  },
+  "operation": "sort_to_ir"
+}

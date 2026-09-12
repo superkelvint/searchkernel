@@ -1,0 +1,10 @@
+{
+  "category": "component",
+  "description": "Absent request search-field selection uses index defaults.",
+  "id": "component.search-fields-default",
+  "index_fixture": "product-v2",
+  "input": {
+    "selection": null
+  },
+  "operation": "search_fields_to_ir"
+}

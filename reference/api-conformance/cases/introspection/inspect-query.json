@@ -1,16 +1,12 @@
 {
   "category": "introspection",
-  "description": "Inspect search exposes the same canonical resolved request used for execution.",
+  "description": "InspectQuery exposes normalized API meaning after IR conversion.",
   "id": "introspection.inspect-query",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "brand",
-        "value": "Sony"
-      }
-    },
-    "query": "wireless headphones"
+    "request": {
+      "query": "x"
+    }
   },
-  "operation": "inspect_search"
+  "operation": "inspect_query"
 }

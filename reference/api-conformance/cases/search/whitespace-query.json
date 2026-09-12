@@ -1,10 +1,10 @@
 {
   "category": "search",
-  "description": "Whitespace-only search is empty and invalid.",
+  "description": "Whitespace text query resolves to MatchAll.",
   "id": "search.whitespace-query",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "query": "   \t  "
+    "query": "   "
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

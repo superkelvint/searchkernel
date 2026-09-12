@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present projection wrapper with absent vector canonicalizes to present-empty.",
+  "id": "wire.projection-wrapper-inner-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": {},
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

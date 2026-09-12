@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "invalid_bulk_item",
-    "details": {
-      "cause": "missing_required_field",
-      "index": 1
-    }
-  }
-}

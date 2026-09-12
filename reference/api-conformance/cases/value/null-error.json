@@ -1,0 +1,13 @@
+{
+  "category": "value",
+  "description": "Null is not a v1 field value.",
+  "id": "value.null-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "value": {
+      "null": true
+    }
+  },
+  "operation": "value_to_ir"
+}

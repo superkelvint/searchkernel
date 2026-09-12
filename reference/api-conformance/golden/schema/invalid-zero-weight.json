@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "invalid_weight",
-    "details": {
-      "field": "title",
-      "weight": 0.0
-    }
-  }
-}

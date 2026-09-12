@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "invalid_facet_range",
-    "details": {
-      "field": "price",
-      "name": "bad"
-    }
-  }
-}

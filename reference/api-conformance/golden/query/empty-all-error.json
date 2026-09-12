@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_query",
+        "path": "query_expr.all"
+      }
+    ],
+    "retryable": false
+  }
+}

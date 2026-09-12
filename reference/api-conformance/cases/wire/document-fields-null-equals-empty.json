@@ -1,0 +1,13 @@
+{
+  "category": "wire",
+  "description": "Ordinary null document field collection normalizes to empty.",
+  "id": "wire.document-fields-null-equals-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "document": {
+      "fields": null,
+      "id": "x"
+    }
+  },
+  "operation": "document_to_ir"
+}

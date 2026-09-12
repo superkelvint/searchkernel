@@ -1,0 +1,10 @@
+{
+  "category": "component",
+  "description": "Absent analyzer for text resolves to StandardV1.",
+  "id": "component.analyzer-default",
+  "input": {
+    "analyzer": null,
+    "field_kind": "text"
+  },
+  "operation": "analyzer_to_ir"
+}

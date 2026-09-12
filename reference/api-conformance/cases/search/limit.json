@@ -1,11 +1,11 @@
 {
   "category": "search",
-  "description": "Limit overrides default.",
+  "description": "Explicit search limit is preserved.",
   "id": "search.limit",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "limit": 10,
-    "query": "wireless headphones"
+    "limit": 5,
+    "query": "x"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

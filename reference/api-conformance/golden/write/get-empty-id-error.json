@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "invalid_document_id",
-    "details": {
-      "reason": "empty"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_document_id",
+        "path": "id"
+      }
+    ],
+    "retryable": false
   }
 }

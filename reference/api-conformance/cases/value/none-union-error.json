@@ -1,0 +1,13 @@
+{
+  "category": "value",
+  "description": "FlatBuffers ValueKind NONE is rejected at the wire→IR boundary.",
+  "id": "value.none-union-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "value": {
+      "_union": "NONE"
+    }
+  },
+  "operation": "value_to_ir"
+}

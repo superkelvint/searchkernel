@@ -1,7 +1,0 @@
-{
-  "ok": {
-    "analyzer": "keyword/v1",
-    "field": "sku",
-    "text": "WH-1000XM6"
-  }
-}

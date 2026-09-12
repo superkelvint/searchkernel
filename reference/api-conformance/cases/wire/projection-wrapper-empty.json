@@ -1,0 +1,13 @@
+{
+  "category": "wire",
+  "description": "Present projection wrapper with empty vector canonicalizes to present-empty.",
+  "id": "wire.projection-wrapper-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": {
+      "fields": []
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

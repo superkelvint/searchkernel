@@ -1,16 +1,11 @@
 {
   "category": "facet",
-  "description": "Value facets can order buckets by ascending count.",
+  "description": "Count ascending is preserved.",
   "id": "facet.count-ascending",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "facets": [
-      {
-        "field": "brand",
-        "sort": "count_asc"
-      }
-    ],
-    "query": "x"
+    "field": "brand",
+    "sort": "count_asc"
   },
-  "operation": "resolve_search"
+  "operation": "facet_to_ir"
 }

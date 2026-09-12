@@ -1,0 +1,24 @@
+{
+  "ok": {
+    "default_prefix_policy": "disabled",
+    "default_ranking": "default_relevance_v1",
+    "default_search_fields": [],
+    "default_typo_policy": "disabled",
+    "fields": [
+      {
+        "analyzer": "standard_v1",
+        "capabilities": {
+          "facetable": false,
+          "filterable": false,
+          "searchable": true,
+          "sortable": false,
+          "stored": true
+        },
+        "cardinality": "single",
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "none"
+  }
+}

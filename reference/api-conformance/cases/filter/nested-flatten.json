@@ -1,0 +1,38 @@
+{
+  "category": "filter",
+  "description": "Nested equivalent boolean operators flatten while preserving order.",
+  "id": "filter.nested-flatten",
+  "index_fixture": "product-v2",
+  "input": {
+    "all": [
+      {
+        "comparison": {
+          "field": "brand",
+          "op": "eq",
+          "value": {
+            "string": "Sony"
+          }
+        }
+      },
+      {
+        "all": [
+          {
+            "comparison": {
+              "field": "price",
+              "op": "lte",
+              "value": {
+                "float64": 500.0
+              }
+            }
+          },
+          {
+            "exists": {
+              "field": "in_stock"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "operation": "filter_to_ir"
+}

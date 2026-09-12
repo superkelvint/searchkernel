@@ -1,67 +1,11 @@
 {
   "ok": {
-    "curation": {
-      "added_filters": [],
-      "applied": [],
-      "hidden_ids": [],
-      "pins": [],
-      "query_replacement": null
-    },
-    "facets": [],
-    "filter": {
-      "gt": {
-        "field": "popularity",
-        "value": 1000
+    "comparison": {
+      "field": "price",
+      "op": "gt",
+      "value": {
+        "float64": 500.0
       }
-    },
-    "grouping": null,
-    "highlights": [],
-    "include_ranking_info": false,
-    "kind": "search",
-    "pagination": {
-      "limit": 20,
-      "offset": 0
-    },
-    "prefix": "last_term",
-    "projection": {
-      "kind": "all_stored"
-    },
-    "query": {
-      "original_text": "headphones",
-      "parsed": null,
-      "syntax": "literal",
-      "text": "headphones"
-    },
-    "ranking": {
-      "relevance": "default/v1",
-      "then": [
-        {
-          "direction": "desc",
-          "field": "popularity"
-        }
-      ]
-    },
-    "search_fields": [
-      {
-        "field": "title",
-        "infix": false,
-        "prefix": true,
-        "typo_tolerance": "standard/v1",
-        "weight": 4.0
-      },
-      {
-        "field": "description",
-        "infix": false,
-        "prefix": true,
-        "typo_tolerance": "standard/v1",
-        "weight": 1.0
-      }
-    ],
-    "snippets": [],
-    "sort": [],
-    "synonym_expansions": [],
-    "synonyms": true,
-    "term_match": "all",
-    "typo_tolerance": "standard/v1"
+    }
   }
 }

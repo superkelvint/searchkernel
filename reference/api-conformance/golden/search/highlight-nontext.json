@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "field_not_highlightable",
-    "details": {
-      "field": "price"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_highlight",
+        "path": "highlighting.fields[0]"
+      }
+    ],
+    "retryable": false
   }
 }

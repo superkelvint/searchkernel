@@ -1,0 +1,18 @@
+{
+  "category": "wire",
+  "description": "Present OptionalDouble zero remains explicit zero.",
+  "id": "wire.weight-explicit-zero",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "search_fields": {
+      "fields": [
+        {
+          "field": "title",
+          "weight": 0.0
+        }
+      ]
+    }
+  },
+  "operation": "search_to_ir"
+}

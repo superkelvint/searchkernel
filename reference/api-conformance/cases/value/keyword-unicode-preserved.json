@@ -1,10 +1,13 @@
 {
   "category": "value",
-  "description": "Keyword values are preserved exactly; no implicit Unicode normalization.",
+  "description": "Keyword value preserves Unicode exactly.",
   "id": "value.keyword-unicode-preserved",
+  "index_fixture": "product-v2",
   "input": {
-    "kind": "keyword",
-    "value": "Ångström"
+    "field": "brand",
+    "value": {
+      "string": "Ångström"
+    }
   },
-  "operation": "normalize_value"
+  "operation": "value_to_ir"
 }

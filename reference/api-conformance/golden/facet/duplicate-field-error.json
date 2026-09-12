@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "duplicate_facet",
-    "details": {
-      "field": "brand"
-    }
-  }
-}

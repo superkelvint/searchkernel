@@ -1,0 +1,13 @@
+{
+  "category": "analyze",
+  "description": "FlatBuffers AnalyzeTarget NONE is invalid.",
+  "id": "analyze.none-target-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "target": {
+      "_union": "NONE"
+    },
+    "text": "x"
+  },
+  "operation": "analyze_to_ir"
+}

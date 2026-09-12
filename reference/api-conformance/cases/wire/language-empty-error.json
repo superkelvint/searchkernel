@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present empty optional language is invalid.",
+  "id": "wire.language-empty-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "language": "",
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

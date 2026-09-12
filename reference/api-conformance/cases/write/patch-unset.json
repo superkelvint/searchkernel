@@ -1,0 +1,17 @@
+{
+  "category": "write",
+  "description": "Patch Unset removes a named field.",
+  "id": "write.patch-unset",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "unset": {
+          "field": "image_url"
+        }
+      }
+    ]
+  },
+  "operation": "patch_to_ir"
+}

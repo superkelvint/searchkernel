@@ -1,0 +1,20 @@
+{
+  "category": "filter",
+  "description": "Explicit false inclusivity survives conversion.",
+  "id": "filter.range-exclusive",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "include_lower": false,
+      "include_upper": false,
+      "lower": {
+        "float64": 10.0
+      },
+      "upper": {
+        "float64": 20.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "unknown_field",
-    "details": {
-      "field": "nope"
-    }
-  }
-}

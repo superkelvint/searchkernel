@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present highlight wrapper with absent vector canonicalizes to requested-empty.",
+  "id": "wire.highlight-wrapper-inner-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": {},
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

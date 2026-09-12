@@ -1,0 +1,20 @@
+{
+  "category": "schema",
+  "description": "Explicit StandardV1 analyzer resolves to analyzer identity.",
+  "id": "schema.explicit-standard-analyzer",
+  "input": {
+    "fields": [
+      {
+        "analyzer": {
+          "name": "standard",
+          "options": {},
+          "version": 1
+        },
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "std"
+  },
+  "operation": "index_definition_to_ir"
+}

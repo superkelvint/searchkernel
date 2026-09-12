@@ -1,10 +1,10 @@
 {
   "category": "write",
-  "description": "Get uses the same non-empty document-id contract as writes.",
+  "description": "Document IDs must be non-empty.",
   "id": "write.get-empty-id-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "id": ""
   },
-  "operation": "resolve_get"
+  "operation": "get_to_ir"
 }

@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "MatchAll is valid with explicitly no search fields.",
+  "id": "search.explicit-empty-fields-match-all",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "",
+    "search_fields": {
+      "fields": []
+    }
+  },
+  "operation": "search_to_ir"
+}

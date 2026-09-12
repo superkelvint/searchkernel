@@ -1,0 +1,20 @@
+{
+  "category": "schema",
+  "description": "Unsupported analyzer identity is rejected.",
+  "id": "schema.unsupported-analyzer",
+  "input": {
+    "fields": [
+      {
+        "analyzer": {
+          "name": "english",
+          "options": {},
+          "version": 1
+        },
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "index_definition_to_ir"
+}

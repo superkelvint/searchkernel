@@ -1,10 +1,10 @@
 {
   "category": "search",
-  "description": "Minimal search resolves all index defaults.",
+  "description": "Minimal text search materializes all defaults.",
   "id": "search.defaults",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "query": "wireless headphones"
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

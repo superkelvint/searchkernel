@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent facet limit gets stable 10 default.",
+  "id": "wire.facet-limit-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand"
+  },
+  "operation": "facet_to_ir"
+}

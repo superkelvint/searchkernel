@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: number-lte.",
+  "description": "Numeric lte comparison is valid.",
   "id": "filter.number-lte",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "lte": {
-        "field": "price",
-        "value": 500.0
+    "comparison": {
+      "field": "price",
+      "op": "lte",
+      "value": {
+        "float64": 500.0
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

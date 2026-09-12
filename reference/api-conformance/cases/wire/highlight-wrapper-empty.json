@@ -1,0 +1,13 @@
+{
+  "category": "wire",
+  "description": "Present highlight wrapper with empty vector canonicalizes to requested-empty.",
+  "id": "wire.highlight-wrapper-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": {
+      "fields": []
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

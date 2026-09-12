@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: keyword-eq.",
+  "description": "Keyword equality is valid.",
   "id": "filter.keyword-eq",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "brand",
-        "value": "Sony"
+    "comparison": {
+      "field": "brand",
+      "op": "eq",
+      "value": {
+        "string": "Sony"
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

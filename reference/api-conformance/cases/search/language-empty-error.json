@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Present empty language is invalid.",
+  "id": "search.language-empty-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "language": "",
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

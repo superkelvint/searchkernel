@@ -1,22 +1,64 @@
 {
   "ok": {
     "document": {
-      "brand": "Sony",
-      "category": "Headphones",
-      "description": "Wireless noise-cancelling headphones",
-      "image_url": "/images/42.jpg",
-      "in_stock": true,
-      "popularity": 9234,
-      "price": 449.99,
-      "sku": "WH-1000XM6",
-      "tags": [
-        "wireless",
-        "premium"
-      ],
-      "title": "Sony WH-1000XM6"
-    },
-    "id": "sku-42",
-    "kind": "upsert",
-    "mode": "replace"
+      "fields": {
+        "brand": {
+          "single": {
+            "string": "Sony"
+          }
+        },
+        "category": {
+          "single": {
+            "string": "Headphones"
+          }
+        },
+        "description": {
+          "single": {
+            "string": "Wireless headphones"
+          }
+        },
+        "image_url": {
+          "single": {
+            "string": "/images/42.jpg"
+          }
+        },
+        "in_stock": {
+          "single": {
+            "bool": true
+          }
+        },
+        "popularity": {
+          "single": {
+            "int64": 9234
+          }
+        },
+        "price": {
+          "single": {
+            "float64": 449.99
+          }
+        },
+        "sku": {
+          "single": {
+            "string": "WH-1000XM6"
+          }
+        },
+        "tags": {
+          "multi": [
+            {
+              "string": "wireless"
+            },
+            {
+              "string": "premium"
+            }
+          ]
+        },
+        "title": {
+          "single": {
+            "string": "Sony WH-1000XM6"
+          }
+        }
+      },
+      "id": "sku-42"
+    }
   }
 }

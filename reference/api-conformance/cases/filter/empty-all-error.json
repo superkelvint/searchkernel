@@ -1,13 +1,10 @@
 {
   "category": "filter",
-  "description": "Empty conjunctions are rejected rather than hidden constants.",
+  "description": "Empty AND is invalid.",
   "id": "filter.empty-all-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "all": []
-    },
-    "query": "x"
+    "all": []
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

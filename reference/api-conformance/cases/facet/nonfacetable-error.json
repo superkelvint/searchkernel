@@ -1,15 +1,10 @@
 {
   "category": "facet",
-  "description": "Non-facetable field rejected.",
+  "description": "Non-facetable field is rejected.",
   "id": "facet.nonfacetable-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "facets": [
-      {
-        "field": "price"
-      }
-    ],
-    "query": "x"
+    "field": "popularity"
   },
-  "operation": "resolve_search"
+  "operation": "facet_to_ir"
 }

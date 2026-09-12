@@ -1,0 +1,13 @@
+{
+  "category": "write",
+  "description": "Present-empty projection requests no stored fields.",
+  "id": "write.get-empty-projection",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "projection": {
+      "fields": []
+    }
+  },
+  "operation": "get_to_ir"
+}

@@ -1,0 +1,1566 @@
+{
+  "cases": [
+    {
+      "disposition": "deferred",
+      "id": "analyze.english-semantics",
+      "old_operation": "analyze_text",
+      "reason": "Executes analyzer behavior; *_to_ir only selects analyzer identity and does not tokenize."
+    },
+    {
+      "disposition": "superseded",
+      "id": "analyze.keyword-request",
+      "old_operation": "resolve_analyze",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "deferred",
+      "id": "analyze.keyword-semantics",
+      "old_operation": "analyze_text",
+      "reason": "Executes analyzer behavior; *_to_ir only selects analyzer identity and does not tokenize."
+    },
+    {
+      "disposition": "deferred",
+      "id": "analyze.map-response",
+      "old_operation": "map_analyze_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "superseded",
+      "id": "analyze.nonsearchable-error",
+      "old_operation": "resolve_analyze",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "deferred",
+      "id": "analyze.standard-semantics",
+      "old_operation": "analyze_text",
+      "reason": "Executes analyzer behavior; *_to_ir only selects analyzer identity and does not tokenize."
+    },
+    {
+      "disposition": "deferred",
+      "id": "analyze.standard-unicode-semantics",
+      "old_operation": "analyze_text",
+      "reason": "Executes analyzer behavior; *_to_ir only selects analyzer identity and does not tokenize."
+    },
+    {
+      "disposition": "migrated",
+      "id": "analyze.text-request",
+      "old_operation": "resolve_analyze",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "analyze.unicode-map-response",
+      "old_operation": "map_analyze_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "migrated",
+      "id": "analyze.unknown-error",
+      "old_operation": "resolve_analyze",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "browse.defaults",
+      "old_operation": "resolve_browse",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "browse.filter",
+      "old_operation": "resolve_browse",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "browse.pagination",
+      "old_operation": "resolve_browse",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "browse.sort",
+      "old_operation": "resolve_browse",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.curation-actions",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.curation-filter-and-user-filter",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.curation-priority-hide-wins",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.curation-replace-before-synonyms",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.infix-field",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.settings-apply",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.settings-explicit-override",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.synonym-equivalent",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.synonym-one-way-no-reverse",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.synonym-one-way",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.synonyms-disabled",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "composition.unknown-preset",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.add-filter",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.filter-validation-error",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.hide",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.pin-zero-error",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.pin",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "curation.replace-query",
+      "old_operation": "resolve_curation",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.brand-options",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.brand",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.count-ascending",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.duplicate-field-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.multiple",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.nonfacetable-error",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.price-ranges",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.range-duplicate-name-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.range-empty-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.range-invalid-bounds",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.range-overlap-allowed",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.range-text-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.text-facet-request",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.unknown-error",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "facet.value-descending",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "facet.value-search-default-limit",
+      "old_operation": "resolve_facet_values",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "facet.value-search-nonfacet",
+      "old_operation": "resolve_facet_values",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "facet.value-search",
+      "old_operation": "resolve_facet_values",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "superseded",
+      "id": "facet.zero-limit-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.and",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.between-exclusive",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.bool-eq",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.bool-type-mismatch",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.contains-nonmulti",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.empty-all-error",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.empty-any-error",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.empty-one-of-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.empty-point-range-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.exists",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.invalid-range",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.keyword-eq",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.keyword-ne",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.keyword-one-of",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.missing",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.multi-contains",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.multi-numeric-contains",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.ne-requires-present",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.nested",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.not-eq-missing-semantics",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.not",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.number-between",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.number-gt",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.number-gte",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.number-lt",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.number-lte",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.numeric-one-of",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.numeric-type-mismatch",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.one-of-dedup-sort",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.one-of-mixed-type-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.or",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "filter.point-range",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.text-not-filterable",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "filter.unknown-field",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.category",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.default-hits-per-group",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.distinct-category",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.group-and-distinct-conflict",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.invalid-hits-per-group",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.nonfacetable-error",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "group.unknown-error",
+      "old_operation": "resolve_search",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "superseded",
+      "id": "introspection.describe-field-unknown",
+      "old_operation": "describe_field",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "introspection.describe-field",
+      "old_operation": "describe_field",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "introspection.describe-index",
+      "old_operation": "describe_index",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "introspection.inspect-query",
+      "old_operation": "inspect_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.close",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.create-absent",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.create-existing-error",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.open-existing",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.open-missing-error",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.reopen-after-close",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "lifecycle.use-after-close-error",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.curation-crud",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.delete-missing-idempotent",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.preset-crud",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.preset-upsert-replaces",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.search-settings",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "management.synonym-crud",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "preset.apply",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "preset.explicit-overrides",
+      "old_operation": "run_stateful_scenario",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "preset.schema-change-forbidden",
+      "old_operation": "resolve_preset",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "preset.unknown-field",
+      "old_operation": "resolve_preset",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "migrated",
+      "id": "ranking.bm25",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.business-tiebreaks",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.duplicate-tiebreak-field-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.hard-sort-price-desc",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.hard-sort-price",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.hard-sort-then-relevance",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.missing-first-desc",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.rank-on-text-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.relevance-only-sort",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.sort-text-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "ranking.unknown-rank-field",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.bulk-partial",
+      "old_operation": "map_bulk_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.bulk-success",
+      "old_operation": "map_bulk_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.delete-found",
+      "old_operation": "map_delete_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.delete-missing",
+      "old_operation": "map_delete_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.dynamic-document",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.empty",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.get-found",
+      "old_operation": "map_get_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.get-missing",
+      "old_operation": "map_get_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.grouped-empty",
+      "old_operation": "map_grouped_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.grouped",
+      "old_operation": "map_grouped_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.lower-bound-total",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.ranking-info",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.search-basic",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.snippet",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.unicode-highlight",
+      "old_operation": "map_search_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "response.write-receipt",
+      "old_operation": "map_write_response",
+      "reason": "Result-side owned-model→API mapping is not frozen by this IR corpus."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.analyzer-on-keyword",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.bool-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.duplicate-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.duplicate-search-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.empty-field-name",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.empty-schema",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.f64-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.facet-stored-string",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.i64-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.implicit-search-fields",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.infix-not-searchable",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.invalid-zero-weight",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.keyword-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.keyword-facet-sort",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.keyword-infix",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.multi-keyword-facet",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.multi-text",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.negative-weight",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.nonsearchable-search-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.optional-text",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.prefix-not-searchable",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.ranking-tiebreak",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.reserved-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.search-default-overrides",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.searchable-keyword-prefix",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.searchable-keyword-search-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.string-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.string-searchable-error",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.text-defaults",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.text-explicit-english",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "schema.text-facet",
+      "old_operation": "resolve_index_definition",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.unknown-search-field",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.weighted-search-fields",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "schema.whitespace-field-name",
+      "old_operation": "resolve_index_definition",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.custom-typo-policy",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.defaults",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.duplicate-request-search-field",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.duplicate-snippet-field-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.duplicate-sort-field",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.empty-query",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.exact-index-default",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.highlight-deduplicates",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.highlight-nontext",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.highlights",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.limit-max",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.limit",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.minimal-text-default",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.negative-offset-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.offset",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.over-limit",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.override-fields",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.page-three",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.page-with-limit-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.page-with-offset-error",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.page-zero",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.per-field-policies",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.prefix-all-terms",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.prefix-disabled",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.projection-deduplicates",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.projection",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.ranking-info",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.snippet",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.sort-missing-first",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.stored-only-no-default-fields",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.synonyms-disabled",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.term-match-any",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.term-match-at-least-zero",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.term-match-at-least",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.typos-disabled",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.unknown-projection-field",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.user-syntax-phrase-exclusion",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "search.user-syntax",
+      "old_operation": "resolve_search",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.whitespace-query",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "search.zero-limit",
+      "old_operation": "resolve_search",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "synonym.duplicate-term",
+      "old_operation": "resolve_synonym",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "synonym.empty-targets",
+      "old_operation": "resolve_synonym",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "synonym.equivalent",
+      "old_operation": "resolve_synonym",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "synonym.one-way",
+      "old_operation": "resolve_synonym",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "deferred",
+      "id": "synonym.too-few",
+      "old_operation": "resolve_synonym",
+      "reason": "Outside current Search Kernel IR contract (future product/runtime semantics)."
+    },
+    {
+      "disposition": "migrated",
+      "id": "value.f64-nan",
+      "old_operation": "normalize_value",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "value.f64-negative-zero",
+      "old_operation": "normalize_value",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "value.f64-positive-infinity",
+      "old_operation": "normalize_value",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "value.i64-max",
+      "old_operation": "normalize_value",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "value.i64-min",
+      "old_operation": "normalize_value",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "value.i64-overflow",
+      "old_operation": "normalize_value",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "value.keyword-unicode-preserved",
+      "old_operation": "normalize_value",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.append-nonmulti-error",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "deferred",
+      "id": "write.batch-mixed",
+      "old_operation": "resolve_bulk_write",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "write.bulk-same-id-ordered",
+      "old_operation": "resolve_bulk_write",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "deferred",
+      "id": "write.bulk-static-invalid-item",
+      "old_operation": "resolve_bulk_write",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.delete",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.empty-array-preserved",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "deferred",
+      "id": "write.empty-bulk",
+      "old_operation": "resolve_bulk_write",
+      "reason": "No current portable API→IR operation; do not invent semantics from the old corpus."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.empty-string-preserved",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.get-empty-id-error",
+      "old_operation": "resolve_get",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.get",
+      "old_operation": "resolve_get",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.id-control-error",
+      "old_operation": "resolve_get",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.id-too-long-error",
+      "old_operation": "resolve_get",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.id-unicode-preserved",
+      "old_operation": "resolve_get",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.id-whitespace-error",
+      "old_operation": "resolve_get",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.increment-i64-fraction-error",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.increment-nonnumeric-error",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.insert",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.missing-required",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.optional-null-is-missing",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.optional-omitted",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.patch-append",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.patch-duplicate-field-error",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.patch-increment",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.patch-remove-value",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.patch-set-type-error",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.patch-set",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.patch-unknown-field",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.patch-unset-optional",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.required-null-error",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.reserved-id-empty",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.unknown-field",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "superseded",
+      "id": "write.unset-required-error",
+      "old_operation": "resolve_write",
+      "reason": "Legacy v0.4 semantic shape conflicts with the frozen IR contract or is covered by a replacement case."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.upsert",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    },
+    {
+      "disposition": "migrated",
+      "id": "write.wrong-type",
+      "old_operation": "resolve_write",
+      "reason": "Retained under the API→IR contract; operation/golden semantics updated for *Ir and FlatBuffers."
+    }
+  ],
+  "source_version": "0.4.0",
+  "target_version": "0.5.0"
+}

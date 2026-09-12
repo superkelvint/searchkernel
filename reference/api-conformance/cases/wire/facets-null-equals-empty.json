@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Ordinary absent/null facets vector normalizes to empty.",
+  "id": "wire.facets-null-equals-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "facets": null,
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

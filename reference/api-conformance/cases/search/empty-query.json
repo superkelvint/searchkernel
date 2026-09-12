@@ -1,10 +1,10 @@
 {
   "category": "search",
-  "description": "Empty search text is rejected; use browse for filter-only access.",
+  "description": "Empty text query resolves to MatchAll.",
   "id": "search.empty-query",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "query": ""
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

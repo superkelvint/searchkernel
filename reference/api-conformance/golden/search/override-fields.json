@@ -1,62 +1,39 @@
 {
   "ok": {
-    "curation": {
-      "added_filters": [],
-      "applied": [],
-      "hidden_ids": [],
-      "pins": [],
-      "query_replacement": null
-    },
     "facets": [],
     "filter": null,
-    "grouping": null,
-    "highlights": [],
-    "include_ranking_info": false,
-    "kind": "search",
-    "pagination": {
-      "limit": 20,
-      "offset": 0
+    "highlighting": {
+      "kind": "disabled"
     },
-    "prefix": "last_term",
+    "language": null,
+    "limit": 20,
+    "offset": 0,
+    "prefix_policy": "disabled",
     "projection": {
-      "kind": "all_stored"
-    },
-    "query": {
-      "original_text": "WH-1000XM6",
-      "parsed": null,
-      "syntax": "literal",
-      "text": "WH-1000XM6"
-    },
-    "ranking": {
-      "relevance": "default/v1",
-      "then": [
-        {
-          "direction": "desc",
-          "field": "popularity"
-        }
+      "fields": [
+        "title",
+        "description",
+        "brand",
+        "category",
+        "price",
+        "in_stock",
+        "popularity",
+        "tags",
+        "sku",
+        "image_url"
       ]
     },
+    "query": {
+      "text": "x"
+    },
+    "ranking": "default_relevance_v1",
     "search_fields": [
       {
-        "field": "sku",
-        "infix": false,
-        "prefix": true,
-        "typo_tolerance": "disabled",
-        "weight": 5.0
-      },
-      {
-        "field": "title",
-        "infix": false,
-        "prefix": true,
-        "typo_tolerance": "standard/v1",
-        "weight": 1.0
+        "field": "description",
+        "weight": 2.0
       }
     ],
-    "snippets": [],
     "sort": [],
-    "synonym_expansions": [],
-    "synonyms": true,
-    "term_match": "all",
-    "typo_tolerance": "standard/v1"
+    "typo_policy": "disabled"
   }
 }

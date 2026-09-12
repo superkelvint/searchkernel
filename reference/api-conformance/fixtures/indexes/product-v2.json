@@ -1,0 +1,59 @@
+{
+  "default_search_fields": {
+    "fields": [
+      {
+        "field": "title",
+        "weight": 4.0
+      },
+      {
+        "field": "description",
+        "weight": 1.0
+      }
+    ]
+  },
+  "fields": [
+    {
+      "kind": "text",
+      "name": "title"
+    },
+    {
+      "kind": "text",
+      "name": "description"
+    },
+    {
+      "kind": "keyword",
+      "name": "brand"
+    },
+    {
+      "kind": "keyword",
+      "name": "category"
+    },
+    {
+      "facetable": true,
+      "kind": "float64",
+      "name": "price"
+    },
+    {
+      "kind": "bool",
+      "name": "in_stock"
+    },
+    {
+      "kind": "int64",
+      "name": "popularity"
+    },
+    {
+      "cardinality": "multi",
+      "kind": "keyword",
+      "name": "tags"
+    },
+    {
+      "kind": "keyword",
+      "name": "sku"
+    },
+    {
+      "kind": "keyword",
+      "name": "image_url"
+    }
+  ],
+  "name": "products"
+}

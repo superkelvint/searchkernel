@@ -1,21 +1,17 @@
 {
   "category": "write",
-  "description": "Empty multivalue array is a real value.",
+  "description": "Empty list is a valid multi-valued field value.",
   "id": "write.empty-array-preserved",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "document": {
-      "brand": "Sony",
-      "category": "Headphones",
-      "in_stock": true,
-      "popularity": 1,
-      "price": 100.0,
-      "sku": "SKU",
-      "tags": [],
-      "title": "Sony"
-    },
-    "id": "1",
-    "kind": "upsert"
+      "fields": {
+        "tags": {
+          "list": []
+        }
+      },
+      "id": "x"
+    }
   },
-  "operation": "resolve_write"
+  "operation": "insert_to_ir"
 }

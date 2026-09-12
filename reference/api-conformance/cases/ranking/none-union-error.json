@@ -1,0 +1,10 @@
+{
+  "category": "ranking",
+  "description": "Present RankingPolicyKind NONE is invalid.",
+  "id": "ranking.none-union-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "_union": "NONE"
+  },
+  "operation": "ranking_to_ir"
+}

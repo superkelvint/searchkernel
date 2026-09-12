@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present OptionalUInt32 zero remains explicit zero.",
+  "id": "wire.limit-explicit-zero",
+  "index_fixture": "product-v2",
+  "input": {
+    "limit": 0,
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

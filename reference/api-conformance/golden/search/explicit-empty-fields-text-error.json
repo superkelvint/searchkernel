@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "failed_precondition",
+    "details": [
+      {
+        "code": "no_searchable_fields",
+        "path": "search_fields"
+      }
+    ],
+    "retryable": false
+  }
+}

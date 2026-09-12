@@ -1,0 +1,17 @@
+{
+  "category": "query",
+  "description": "Structured term validates explicit searchable field.",
+  "id": "query.term",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "term": {
+        "field": "title",
+        "value": {
+          "string": "headphones"
+        }
+      }
+    }
+  },
+  "operation": "query_to_ir"
+}

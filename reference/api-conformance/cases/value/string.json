@@ -1,0 +1,13 @@
+{
+  "category": "value",
+  "description": "String value converts to scalar IR.",
+  "id": "value.string",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "value": {
+      "string": "Sony"
+    }
+  },
+  "operation": "value_to_ir"
+}

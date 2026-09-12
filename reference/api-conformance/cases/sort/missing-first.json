@@ -1,0 +1,12 @@
+{
+  "category": "sort",
+  "description": "Explicit MissingFirst is preserved.",
+  "id": "sort.missing-first",
+  "index_fixture": "product-v2",
+  "input": {
+    "direction": "desc",
+    "field": "price",
+    "missing": "first"
+  },
+  "operation": "sort_to_ir"
+}

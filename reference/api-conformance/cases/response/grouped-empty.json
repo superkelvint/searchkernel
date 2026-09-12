@@ -1,9 +1,0 @@
-{
-  "category": "response",
-  "description": "An empty grouped response has zero groups rather than a null grouping result.",
-  "id": "response.grouped-empty",
-  "input": {
-    "backend_response_fixture": "grouped-empty"
-  },
-  "operation": "map_grouped_response"
-}

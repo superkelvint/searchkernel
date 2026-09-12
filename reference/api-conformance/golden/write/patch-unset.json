@@ -1,0 +1,12 @@
+{
+  "ok": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "unset": {
+          "field": "image_url"
+        }
+      }
+    ]
+  }
+}

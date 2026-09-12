@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "Search composes explicit BM25 ranking.",
+  "id": "search.bm25",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "ranking": {
+      "bm25": {}
+    }
+  },
+  "operation": "search_to_ir"
+}

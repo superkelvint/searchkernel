@@ -1,0 +1,11 @@
+{
+  "category": "search",
+  "description": "Language tags canonicalize to lowercase ASCII.",
+  "id": "search.language-normalization",
+  "index_fixture": "product-v2",
+  "input": {
+    "language": "EN-US",
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

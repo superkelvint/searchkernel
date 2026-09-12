@@ -1,6 +1,6 @@
 {
   "category": "schema",
-  "description": "When search_fields is omitted, all text fields are default search fields at weight 1.",
+  "description": "Absent default_search_fields derives all searchable fields in declaration order.",
   "id": "schema.implicit-search-fields",
   "input": {
     "fields": [
@@ -17,7 +17,7 @@
         "name": "brand"
       }
     ],
-    "name": "implicit-search"
+    "name": "implicit"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

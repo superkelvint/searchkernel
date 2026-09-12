@@ -1,6 +1,7 @@
 {
   "ok": {
-    "kind": "keyword",
-    "value": "Ångström"
+    "single": {
+      "string": "Ångström"
+    }
   }
 }

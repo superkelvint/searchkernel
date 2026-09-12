@@ -1,0 +1,15 @@
+{
+  "category": "wire",
+  "description": "Absent default-search wrapper derives defaults.",
+  "id": "wire.default-search-wrapper-absent",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "x"
+  },
+  "operation": "index_definition_to_ir"
+}

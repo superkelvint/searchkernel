@@ -1,6 +1,6 @@
 {
   "category": "schema",
-  "description": "Default semantics for text.",
+  "description": "Text field defaults become explicit IR.",
   "id": "schema.text-defaults",
   "input": {
     "fields": [
@@ -11,5 +11,5 @@
     ],
     "name": "text_default"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

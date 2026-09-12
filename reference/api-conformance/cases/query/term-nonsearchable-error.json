@@ -1,0 +1,17 @@
+{
+  "category": "query",
+  "description": "Structured term requires searchable field.",
+  "id": "query.term-nonsearchable-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "query_expr": {
+      "term": {
+        "field": "brand",
+        "value": {
+          "string": "Sony"
+        }
+      }
+    }
+  },
+  "operation": "query_to_ir"
+}

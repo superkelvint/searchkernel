@@ -1,27 +1,28 @@
 {
   "category": "write",
-  "description": "Patch set operations.",
+  "description": "Patch Set validates fields and values.",
   "id": "write.patch-set",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "id": "sku-42",
-    "kind": "patch",
-    "patch": {
-      "operations": [
-        {
-          "set": {
-            "field": "price",
-            "value": 399.99
-          }
-        },
-        {
-          "set": {
-            "field": "in_stock",
-            "value": true
+    "operations": [
+      {
+        "set": {
+          "field": "price",
+          "value": {
+            "float64": 399.99
           }
         }
-      ]
-    }
+      },
+      {
+        "set": {
+          "field": "in_stock",
+          "value": {
+            "bool": true
+          }
+        }
+      }
+    ]
   },
-  "operation": "resolve_write"
+  "operation": "patch_to_ir"
 }

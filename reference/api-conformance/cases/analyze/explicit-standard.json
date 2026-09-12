@@ -1,0 +1,15 @@
+{
+  "category": "analyze",
+  "description": "Explicit StandardV1 analyzer converts to analyzer identity.",
+  "id": "analyze.explicit-standard",
+  "index_fixture": "product-v2",
+  "input": {
+    "analyzer": {
+      "name": "standard",
+      "options": {},
+      "version": 1
+    },
+    "text": "Text"
+  },
+  "operation": "analyze_to_ir"
+}

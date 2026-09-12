@@ -1,10 +1,12 @@
 {
   "error": {
-    "code": "unsupported_field_capability",
-    "details": {
-      "capability": "analyzer",
-      "field": "brand",
-      "kind": "keyword"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_analyzer",
+        "path": "fields[0].analyzer"
+      }
+    ],
+    "retryable": false
   }
 }

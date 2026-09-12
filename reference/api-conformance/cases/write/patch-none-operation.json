@@ -1,0 +1,15 @@
+{
+  "category": "write",
+  "description": "FlatBuffers PatchOperationKind NONE is rejected.",
+  "id": "write.patch-none-operation",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": [
+      {
+        "_union": "NONE"
+      }
+    ]
+  },
+  "operation": "patch_to_ir"
+}

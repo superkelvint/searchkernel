@@ -1,11 +1,10 @@
 {
   "category": "write",
-  "description": "Delete is idempotent at public API level.",
+  "description": "Delete validates document ID only.",
   "id": "write.delete",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "id": "sku-42",
-    "kind": "delete"
+    "id": "sku-42"
   },
-  "operation": "resolve_write"
+  "operation": "delete_to_ir"
 }

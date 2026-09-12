@@ -1,20 +1,20 @@
 {
   "category": "search",
-  "description": "A request cannot select the same search field twice.",
+  "description": "Duplicate request search field is rejected.",
   "id": "search.duplicate-request-search-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "fields": [
-      {
-        "field": "title",
-        "weight": 1.0
-      },
-      {
-        "field": "title",
-        "weight": 2.0
-      }
-    ],
-    "query": "x"
+    "query": "x",
+    "search_fields": {
+      "fields": [
+        {
+          "field": "title"
+        },
+        {
+          "field": "title"
+        }
+      ]
+    }
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

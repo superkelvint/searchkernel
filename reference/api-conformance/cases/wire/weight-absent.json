@@ -1,0 +1,17 @@
+{
+  "category": "wire",
+  "description": "Absent OptionalDouble weight gets stable default.",
+  "id": "wire.weight-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "search_fields": {
+      "fields": [
+        {
+          "field": "title"
+        }
+      ]
+    }
+  },
+  "operation": "search_to_ir"
+}

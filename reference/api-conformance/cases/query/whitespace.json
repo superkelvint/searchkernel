@@ -1,0 +1,10 @@
+{
+  "category": "query",
+  "description": "Whitespace-only query text becomes MatchAll.",
+  "id": "query.whitespace",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "  \t "
+  },
+  "operation": "query_to_ir"
+}

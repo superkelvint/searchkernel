@@ -1,10 +1,10 @@
 {
   "category": "write",
-  "description": "Document IDs are opaque Unicode and are not normalized.",
+  "description": "Document IDs are opaque Unicode.",
   "id": "write.id-unicode-preserved",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "id": "café-東京"
+    "id": "商品-42"
   },
-  "operation": "resolve_get"
+  "operation": "get_to_ir"
 }

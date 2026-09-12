@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Text field is not filterable by default.",
+  "description": "Text is not filterable by default.",
   "id": "filter.text-not-filterable",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "title",
-        "value": "Sony"
+    "comparison": {
+      "field": "title",
+      "op": "eq",
+      "value": {
+        "string": "x"
       }
-    },
-    "query": "x"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

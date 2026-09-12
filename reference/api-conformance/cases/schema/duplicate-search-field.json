@@ -1,25 +1,25 @@
 {
   "category": "schema",
-  "description": "A default search field may appear only once.",
+  "description": "Default search fields must be unique.",
   "id": "schema.duplicate-search-field",
   "input": {
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "title"
+        },
+        {
+          "field": "title"
+        }
+      ]
+    },
     "fields": [
       {
         "kind": "text",
         "name": "title"
       }
     ],
-    "name": "bad",
-    "search_fields": [
-      {
-        "field": "title",
-        "weight": 1.0
-      },
-      {
-        "field": "title",
-        "weight": 2.0
-      }
-    ]
+    "name": "dup_sf"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

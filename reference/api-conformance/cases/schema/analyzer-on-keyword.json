@@ -1,16 +1,20 @@
 {
   "category": "schema",
-  "description": "Linguistic analyzers apply only to text fields.",
+  "description": "Analyzers are valid only on text fields.",
   "id": "schema.analyzer-on-keyword",
   "input": {
     "fields": [
       {
-        "analyzer": "english/v1",
+        "analyzer": {
+          "name": "standard",
+          "options": {},
+          "version": 1
+        },
         "kind": "keyword",
         "name": "brand"
       }
     ],
     "name": "bad"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

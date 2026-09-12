@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "reserved_field_name",
-    "details": {
-      "field": "_internal"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_field_name",
+        "path": "fields[0].name"
+      }
+    ],
+    "retryable": false
   }
 }

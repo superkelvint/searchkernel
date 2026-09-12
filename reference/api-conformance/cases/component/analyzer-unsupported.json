@@ -1,0 +1,14 @@
+{
+  "category": "component",
+  "description": "Unsupported analyzer identity is rejected.",
+  "id": "component.analyzer-unsupported",
+  "input": {
+    "analyzer": {
+      "name": "english",
+      "options": {},
+      "version": 1
+    },
+    "field_kind": "text"
+  },
+  "operation": "analyzer_to_ir"
+}

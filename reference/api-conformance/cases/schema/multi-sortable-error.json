@@ -1,0 +1,17 @@
+{
+  "category": "schema",
+  "description": "Multi-valued fields cannot be sortable in v1.",
+  "id": "schema.multi-sortable-error",
+  "input": {
+    "fields": [
+      {
+        "cardinality": "multi",
+        "kind": "keyword",
+        "name": "tags",
+        "sortable": true
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "index_definition_to_ir"
+}

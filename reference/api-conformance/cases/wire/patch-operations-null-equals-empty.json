@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Ordinary null patch operations vector normalizes to empty then triggers the normal empty-patch rule.",
+  "id": "wire.patch-operations-null-equals-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "x",
+    "operations": null
+  },
+  "operation": "patch_to_ir"
+}

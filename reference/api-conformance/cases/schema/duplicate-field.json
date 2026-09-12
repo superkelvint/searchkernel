@@ -9,11 +9,11 @@
         "name": "title"
       },
       {
-        "kind": "keyword",
+        "kind": "text",
         "name": "title"
       }
     ],
-    "name": "bad"
+    "name": "dup"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

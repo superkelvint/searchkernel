@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Bool filters reject numeric values.",
+  "description": "Bool comparison rejects numeric values.",
   "id": "filter.bool-type-mismatch",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "in_stock",
-        "value": 1
+    "comparison": {
+      "field": "in_stock",
+      "op": "eq",
+      "value": {
+        "int64": 1
       }
-    },
-    "query": "x"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

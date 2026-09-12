@@ -1,0 +1,16 @@
+{
+  "category": "write",
+  "description": "Explicit projection preserves caller order.",
+  "id": "write.get-explicit-projection",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "projection": {
+      "fields": [
+        "price",
+        "title"
+      ]
+    }
+  },
+  "operation": "get_to_ir"
+}

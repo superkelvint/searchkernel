@@ -1,0 +1,16 @@
+{
+  "category": "search",
+  "description": "Duplicate highlight fields are rejected.",
+  "id": "search.highlight-duplicate-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": {
+      "fields": [
+        "title",
+        "title"
+      ]
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

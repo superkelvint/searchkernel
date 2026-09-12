@@ -1,0 +1,14 @@
+{
+  "category": "wire",
+  "description": "Absent optional index name remains None.",
+  "id": "wire.index-name-absent",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ]
+  },
+  "operation": "index_definition_to_ir"
+}

@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "capability_requires_searchable",
-    "details": {
-      "capability": "prefix",
-      "field": "sku"
-    }
-  }
-}

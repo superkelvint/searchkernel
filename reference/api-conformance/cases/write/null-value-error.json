@@ -1,0 +1,17 @@
+{
+  "category": "write",
+  "description": "Explicit null does not mean field absence.",
+  "id": "write.null-value-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "document": {
+      "fields": {
+        "brand": {
+          "null": true
+        }
+      },
+      "id": "x"
+    }
+  },
+  "operation": "insert_to_ir"
+}

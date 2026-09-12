@@ -1,26 +1,25 @@
 {
   "category": "filter",
-  "description": "OR composition.",
+  "description": "OR preserves child order.",
   "id": "filter.or",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "any": [
-        {
-          "eq": {
-            "field": "brand",
-            "value": "Sony"
-          }
-        },
-        {
-          "eq": {
-            "field": "brand",
-            "value": "Bose"
+    "any": [
+      {
+        "comparison": {
+          "field": "brand",
+          "op": "eq",
+          "value": {
+            "string": "Sony"
           }
         }
-      ]
-    },
-    "query": "headphones"
+      },
+      {
+        "exists": {
+          "field": "in_stock"
+        }
+      }
+    ]
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

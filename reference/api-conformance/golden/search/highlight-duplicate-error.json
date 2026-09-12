@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "duplicate_highlight_field",
+        "path": "highlighting.fields[1]"
+      }
+    ],
+    "retryable": false
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "category": "ranking",
+  "description": "Absent ranking becomes DefaultRelevanceV1.",
+  "id": "ranking.default",
+  "index_fixture": "product-v2",
+  "input": {},
+  "operation": "ranking_to_ir"
+}

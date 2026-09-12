@@ -6,5 +6,5 @@
     "fields": [],
     "name": "empty"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

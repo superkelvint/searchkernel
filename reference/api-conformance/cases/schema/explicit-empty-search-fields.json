@@ -1,0 +1,18 @@
+{
+  "category": "schema",
+  "description": "Present-empty default_search_fields means deliberately no defaults.",
+  "id": "schema.explicit-empty-search-fields",
+  "input": {
+    "default_search_fields": {
+      "fields": []
+    },
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "none"
+  },
+  "operation": "index_definition_to_ir"
+}

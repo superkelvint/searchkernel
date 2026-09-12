@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: bool-eq.",
+  "description": "Bool equality is valid.",
   "id": "filter.bool-eq",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "eq": {
-        "field": "in_stock",
-        "value": true
+    "comparison": {
+      "field": "in_stock",
+      "op": "eq",
+      "value": {
+        "bool": true
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

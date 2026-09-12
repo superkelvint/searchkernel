@@ -1,20 +1,18 @@
 {
   "category": "search",
-  "description": "Per-search fields replace index defaults.",
+  "description": "Explicit request search fields replace index defaults.",
   "id": "search.override-fields",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "fields": [
-      {
-        "field": "sku",
-        "weight": 5.0
-      },
-      {
-        "field": "title",
-        "weight": 1.0
-      }
-    ],
-    "query": "WH-1000XM6"
+    "query": "x",
+    "search_fields": {
+      "fields": [
+        {
+          "field": "description",
+          "weight": 2.0
+        }
+      ]
+    }
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

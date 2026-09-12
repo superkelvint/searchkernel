@@ -1,5 +1,19 @@
 {
   "ok": {
-    "id": "sku-42"
+    "id": "sku-42",
+    "projection": {
+      "fields": [
+        "title",
+        "description",
+        "brand",
+        "category",
+        "price",
+        "in_stock",
+        "popularity",
+        "tags",
+        "sku",
+        "image_url"
+      ]
+    }
   }
 }

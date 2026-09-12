@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "multi": [
+      {
+        "string": "sale"
+      },
+      {
+        "string": "sale"
+      },
+      {
+        "string": "audio"
+      }
+    ]
+  }
+}

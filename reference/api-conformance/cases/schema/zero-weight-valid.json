@@ -1,0 +1,23 @@
+{
+  "category": "schema",
+  "description": "Explicit zero search weight is distinct from absence and is valid.",
+  "id": "schema.zero-weight-valid",
+  "input": {
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "title",
+          "weight": 0.0
+        }
+      ]
+    },
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "zero_weight"
+  },
+  "operation": "index_definition_to_ir"
+}

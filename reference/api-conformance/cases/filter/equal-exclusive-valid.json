@@ -1,0 +1,20 @@
+{
+  "category": "filter",
+  "description": "Equal numeric bounds with an exclusive endpoint are valid and represent an empty range.",
+  "id": "filter.equal-exclusive-valid",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "include_lower": false,
+      "include_upper": true,
+      "lower": {
+        "float64": 10.0
+      },
+      "upper": {
+        "float64": 10.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

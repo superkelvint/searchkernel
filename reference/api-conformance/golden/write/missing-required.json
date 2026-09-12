@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": "missing_required_field",
-    "details": {
-      "field": "title"
-    }
-  }
-}

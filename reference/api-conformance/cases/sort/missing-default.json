@@ -1,0 +1,11 @@
+{
+  "category": "sort",
+  "description": "Absent missing placement defaults to Last.",
+  "id": "sort.missing-default",
+  "index_fixture": "product-v2",
+  "input": {
+    "direction": "desc",
+    "field": "price"
+  },
+  "operation": "sort_to_ir"
+}

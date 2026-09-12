@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "Text query with explicit-empty search fields fails precondition.",
+  "id": "search.explicit-empty-fields-text-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "search_fields": {
+      "fields": []
+    }
+  },
+  "operation": "search_to_ir"
+}

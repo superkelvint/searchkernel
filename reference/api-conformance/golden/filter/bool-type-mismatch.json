@@ -1,10 +1,12 @@
 {
   "error": {
-    "code": "type_mismatch",
-    "details": {
-      "actual": "i64",
-      "expected": "bool",
-      "field": "in_stock"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "type_mismatch",
+        "path": "filter.comparison.value"
+      }
+    ],
+    "retryable": false
   }
 }

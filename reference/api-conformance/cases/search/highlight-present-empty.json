@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "Present-empty highlighting is distinct from disabled.",
+  "id": "search.highlight-present-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": {
+      "fields": []
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

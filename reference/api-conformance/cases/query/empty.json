@@ -1,0 +1,10 @@
+{
+  "category": "query",
+  "description": "Empty query text becomes MatchAll.",
+  "id": "query.empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": ""
+  },
+  "operation": "query_to_ir"
+}

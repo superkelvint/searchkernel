@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: keyword-ne.",
+  "description": "Keyword inequality is valid.",
   "id": "filter.keyword-ne",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "ne": {
-        "field": "brand",
-        "value": "Sony"
+    "comparison": {
+      "field": "brand",
+      "op": "ne",
+      "value": {
+        "string": "Sony"
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

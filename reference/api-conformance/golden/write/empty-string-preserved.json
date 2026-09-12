@@ -1,16 +1,14 @@
 {
   "ok": {
     "document": {
-      "brand": "Sony",
-      "category": "Headphones",
-      "in_stock": true,
-      "popularity": 1,
-      "price": 100.0,
-      "sku": "SKU",
-      "title": ""
-    },
-    "id": "1",
-    "kind": "upsert",
-    "mode": "replace"
+      "fields": {
+        "brand": {
+          "single": {
+            "string": ""
+          }
+        }
+      },
+      "id": "x"
+    }
   }
 }

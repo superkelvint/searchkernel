@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent SearchFieldSelection uses index defaults.",
+  "id": "wire.search-fields-wrapper-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": ""
+  },
+  "operation": "search_to_ir"
+}

@@ -1,15 +1,15 @@
 {
   "category": "schema",
-  "description": "Default semantics for i64.",
+  "description": "Int64 defaults become explicit IR.",
   "id": "schema.i64-defaults",
   "input": {
     "fields": [
       {
-        "kind": "i64",
+        "kind": "int64",
         "name": "value"
       }
     ],
     "name": "i64_default"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

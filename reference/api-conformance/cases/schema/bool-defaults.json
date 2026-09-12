@@ -1,6 +1,6 @@
 {
   "category": "schema",
-  "description": "Default semantics for bool.",
+  "description": "Bool defaults become explicit IR.",
   "id": "schema.bool-defaults",
   "input": {
     "fields": [
@@ -11,5 +11,5 @@
     ],
     "name": "bool_default"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

@@ -1,9 +1,0 @@
-{
-  "category": "response",
-  "description": "A successful bulk response preserves per-item order and success identity.",
-  "id": "response.bulk-success",
-  "input": {
-    "backend_response_fixture": "bulk-success"
-  },
-  "operation": "map_bulk_response"
-}

@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: number-gte.",
+  "description": "Numeric gte comparison is valid.",
   "id": "filter.number-gte",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "gte": {
-        "field": "popularity",
-        "value": 1000
+    "comparison": {
+      "field": "price",
+      "op": "gte",
+      "value": {
+        "float64": 500.0
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

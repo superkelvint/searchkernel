@@ -1,0 +1,16 @@
+{
+  "category": "filter",
+  "description": "Comparison against multi-valued keyword field is valid; backend applies any-element semantics.",
+  "id": "filter.multi-eq",
+  "index_fixture": "product-v2",
+  "input": {
+    "comparison": {
+      "field": "tags",
+      "op": "eq",
+      "value": {
+        "string": "sale"
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

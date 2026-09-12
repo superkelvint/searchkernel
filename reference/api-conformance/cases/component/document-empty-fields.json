@@ -1,0 +1,13 @@
+{
+  "category": "component",
+  "description": "Absent/empty ordinary document fields normalize to the same empty map.",
+  "id": "component.document-empty-fields",
+  "index_fixture": "product-v2",
+  "input": {
+    "document": {
+      "fields": null,
+      "id": "x"
+    }
+  },
+  "operation": "document_to_ir"
+}

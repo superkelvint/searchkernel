@@ -1,0 +1,10 @@
+{
+  "category": "wire",
+  "description": "Absent projection resolves to all stored fields.",
+  "id": "wire.projection-wrapper-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

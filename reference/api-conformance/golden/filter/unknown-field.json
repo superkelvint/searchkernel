@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "unknown_field",
-    "details": {
-      "field": "nope"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "unknown_field",
+        "path": "filter.comparison.field"
+      }
+    ],
+    "retryable": false
   }
 }

@@ -1,0 +1,15 @@
+{
+  "category": "wire",
+  "description": "Absent OptionalBool include_lower gets stable true default.",
+  "id": "wire.range-include-lower-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "price",
+      "lower": {
+        "float64": 1.0
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

@@ -1,0 +1,11 @@
+{
+  "ok": {
+    "comparison": {
+      "field": "brand",
+      "op": "eq",
+      "value": {
+        "string": "Sony"
+      }
+    }
+  }
+}

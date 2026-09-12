@@ -1,0 +1,11 @@
+{
+  "category": "facet",
+  "description": "Explicit zero facet limit is valid.",
+  "id": "facet.zero-limit-valid",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "limit": 0
+  },
+  "operation": "facet_to_ir"
+}

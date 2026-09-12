@@ -1,0 +1,15 @@
+{
+  "category": "wire",
+  "description": "Present empty optional index name is invalid.",
+  "id": "wire.index-name-empty-error",
+  "input": {
+    "fields": [
+      {
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": ""
+  },
+  "operation": "index_definition_to_ir"
+}

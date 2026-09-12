@@ -1,203 +1,139 @@
 {
   "ok": {
-    "fields": [
-      {
-        "analyzer": "standard/v1",
-        "capabilities": {
-          "facetable": false,
-          "filterable": false,
-          "infix": false,
-          "prefix": true,
-          "searchable": true,
-          "sortable": false,
-          "typo_tolerance": "standard/v1"
-        },
-        "kind": "text",
-        "multi": false,
-        "name": "title",
-        "optional": false,
-        "stored": true
+    "index": {
+      "default_search_fields": {
+        "fields": [
+          {
+            "field": "title",
+            "weight": 4.0
+          },
+          {
+            "field": "description",
+            "weight": 1.0
+          }
+        ]
       },
-      {
-        "analyzer": "english/v1",
-        "capabilities": {
-          "facetable": false,
-          "filterable": false,
-          "infix": false,
-          "prefix": true,
-          "searchable": true,
-          "sortable": false,
-          "typo_tolerance": "standard/v1"
-        },
-        "kind": "text",
-        "multi": false,
-        "name": "description",
-        "optional": true,
-        "stored": true
-      },
-      {
-        "analyzer": "keyword/v1",
-        "capabilities": {
-          "facetable": true,
-          "filterable": true,
-          "infix": false,
-          "prefix": true,
-          "searchable": true,
-          "sortable": false,
-          "typo_tolerance": "disabled"
-        },
-        "kind": "keyword",
-        "multi": false,
-        "name": "brand",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": "keyword/v1",
-        "capabilities": {
-          "facetable": true,
-          "filterable": true,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": false,
-          "typo_tolerance": null
-        },
-        "kind": "keyword",
-        "multi": false,
-        "name": "category",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": null,
-        "capabilities": {
-          "facetable": false,
-          "filterable": true,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": true,
-          "typo_tolerance": null
-        },
-        "kind": "f64",
-        "multi": false,
-        "name": "price",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": null,
-        "capabilities": {
-          "facetable": false,
-          "filterable": true,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": true,
-          "typo_tolerance": null
-        },
-        "kind": "bool",
-        "multi": false,
-        "name": "in_stock",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": null,
-        "capabilities": {
-          "facetable": false,
-          "filterable": true,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": true,
-          "typo_tolerance": null
-        },
-        "kind": "i64",
-        "multi": false,
-        "name": "popularity",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": "keyword/v1",
-        "capabilities": {
-          "facetable": true,
-          "filterable": true,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": false,
-          "typo_tolerance": null
-        },
-        "kind": "keyword",
-        "multi": true,
-        "name": "tags",
-        "optional": true,
-        "stored": true
-      },
-      {
-        "analyzer": "keyword/v1",
-        "capabilities": {
-          "facetable": false,
-          "filterable": true,
-          "infix": false,
-          "prefix": true,
-          "searchable": true,
-          "sortable": false,
-          "typo_tolerance": "disabled"
-        },
-        "kind": "keyword",
-        "multi": false,
-        "name": "sku",
-        "optional": false,
-        "stored": true
-      },
-      {
-        "analyzer": null,
-        "capabilities": {
-          "facetable": false,
-          "filterable": false,
-          "infix": false,
-          "prefix": false,
-          "searchable": false,
-          "sortable": false,
-          "typo_tolerance": null
-        },
-        "kind": "string",
-        "multi": false,
-        "name": "image_url",
-        "optional": true,
-        "stored": true
-      }
-    ],
-    "name": "products",
-    "ranking": {
-      "relevance": "default/v1",
-      "then": [
+      "fields": [
         {
-          "direction": "desc",
-          "field": "popularity"
+          "analyzer": {
+            "name": "standard",
+            "options": {},
+            "version": 1
+          },
+          "cardinality": "single",
+          "facetable": false,
+          "filterable": false,
+          "kind": "text",
+          "name": "title",
+          "searchable": true,
+          "sortable": false,
+          "stored": true
+        },
+        {
+          "analyzer": {
+            "name": "standard",
+            "options": {},
+            "version": 1
+          },
+          "cardinality": "single",
+          "facetable": false,
+          "filterable": false,
+          "kind": "text",
+          "name": "description",
+          "searchable": true,
+          "sortable": false,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "keyword",
+          "name": "brand",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "keyword",
+          "name": "category",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "float64",
+          "name": "price",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "bool",
+          "name": "in_stock",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": false,
+          "filterable": true,
+          "kind": "int64",
+          "name": "popularity",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "multi",
+          "facetable": true,
+          "filterable": true,
+          "kind": "keyword",
+          "name": "tags",
+          "searchable": false,
+          "sortable": false,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "keyword",
+          "name": "sku",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
+        },
+        {
+          "analyzer": null,
+          "cardinality": "single",
+          "facetable": true,
+          "filterable": true,
+          "kind": "keyword",
+          "name": "image_url",
+          "searchable": false,
+          "sortable": true,
+          "stored": true
         }
-      ]
-    },
-    "search_defaults": {
-      "limit": 20,
-      "prefix": "last_term",
-      "term_match": "all",
-      "typo_tolerance": "standard/v1"
-    },
-    "search_fields": [
-      {
-        "field": "title",
-        "weight": 4.0
-      },
-      {
-        "field": "description",
-        "weight": 1.0
-      }
-    ],
-    "semantics_version": "high-level/v1"
+      ],
+      "name": "products"
+    }
   }
 }

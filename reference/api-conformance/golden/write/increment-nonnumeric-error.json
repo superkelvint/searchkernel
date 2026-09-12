@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "operation_requires_numeric",
-    "details": {
-      "field": "brand",
-      "operation": "increment"
-    }
-  }
-}

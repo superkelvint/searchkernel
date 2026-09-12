@@ -1,0 +1,20 @@
+{
+  "category": "component",
+  "description": "document_to_ir validates fields and returns deterministic owned IR.",
+  "id": "component.document",
+  "index_fixture": "product-v2",
+  "input": {
+    "document": {
+      "fields": {
+        "price": {
+          "float64": 1.5
+        },
+        "title": {
+          "string": "x"
+        }
+      },
+      "id": "x"
+    }
+  },
+  "operation": "document_to_ir"
+}

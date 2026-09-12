@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "duplicate_field",
-    "details": {
-      "field": "title"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "duplicate_field",
+        "path": "fields[1].name"
+      }
+    ],
+    "retryable": false
   }
 }

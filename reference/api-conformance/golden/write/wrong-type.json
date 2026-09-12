@@ -1,10 +1,12 @@
 {
   "error": {
-    "code": "type_mismatch",
-    "details": {
-      "actual": "string",
-      "expected": "f64",
-      "field": "price"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "type_mismatch",
+        "path": "document.fields.price"
+      }
+    ],
+    "retryable": false
   }
 }

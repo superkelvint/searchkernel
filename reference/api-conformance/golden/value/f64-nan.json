@@ -1,9 +1,12 @@
 {
   "error": {
-    "code": "non_finite_number",
-    "details": {
-      "kind": "f64",
-      "value": "nan"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "non_finite_number",
+        "path": "value"
+      }
+    ],
+    "retryable": false
   }
 }

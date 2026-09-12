@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "Bool range comparisons are unsupported in v1.",
+  "id": "filter.bool-range-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "in_stock",
+      "lower": {
+        "bool": false
+      },
+      "upper": {
+        "bool": true
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

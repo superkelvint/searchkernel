@@ -1,0 +1,7 @@
+{
+  "ok": {
+    "field": "in_stock",
+    "limit": 10,
+    "sort": "count_desc"
+  }
+}

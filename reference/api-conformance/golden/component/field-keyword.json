@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "analyzer": null,
+    "capabilities": {
+      "facetable": true,
+      "filterable": true,
+      "searchable": false,
+      "sortable": true,
+      "stored": true
+    },
+    "cardinality": "single",
+    "kind": "keyword",
+    "name": "brand"
+  }
+}

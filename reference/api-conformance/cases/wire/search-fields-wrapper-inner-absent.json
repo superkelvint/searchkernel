@@ -1,0 +1,11 @@
+{
+  "category": "wire",
+  "description": "Present SearchFieldSelection with absent inner vector canonicalizes to present-empty.",
+  "id": "wire.search-fields-wrapper-inner-absent",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "",
+    "search_fields": {}
+  },
+  "operation": "search_to_ir"
+}

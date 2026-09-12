@@ -1,19 +1,26 @@
-# Search Kernel high-level conformance suite v0.4
+# Search Kernel IR conformance suite v0.5
 
-Executable, backend-free specification for the high-level Search Kernel semantics.
+Executable, backend-free specification of the **Portable API → Search Kernel IR** boundary.
 
-**v0.4 contains 260 cases across 18 categories.**
+**v0.5 contains 204 active cases across 13 categories.**
 
-This suite does **not** test Vespa matching or persistence. It tests:
+The naming grammar is final:
 
-- schema/default normalization;
-- validation and stable portable error payloads;
-- resolved search/write/facet/ranking requests;
-- exact Search Kernel analyzer semantics;
-- portable response mapping;
-- managed presets, search settings, synonyms and curations applied to searches;
-- field capability versus effective query policy;
-- cross-language value and DocumentId portability.
+```text
+FlatBuffers API  -- *_to_ir -->  Search Kernel IR  -- lower_* --> backend/Vespa
+```
+
+This suite tests:
+
+- stable defaults, schema validation, field capabilities and analyzer identity;
+- typed values, documents, writes and patches;
+- queries, filters, sorting, facets and ranking;
+- projection, highlighting, language and request defaults;
+- FlatBuffers presence/null/union normalization at the wire→IR boundary;
+- stable machine-readable portable errors;
+- Describe/InspectQuery behavior that does not require a backend.
+
+This suite deliberately does **not** freeze bulk execution, browse, grouping, presets, synonyms, curations, lifecycle/management state, analyzer execution, or backend result mapping. Those v0.4 cases are classified in `migration/v0.4-classification.json`.
 
 Run:
 
@@ -22,4 +29,4 @@ Run:
 ./verify-adapter.sh /path/to/conformance-adapter
 ```
 
-An implementation is conformant only when it passes the canonical suite without modifying `cases/`, `golden/`, `fixtures/`, `model/`, the semantic docs, or the error registry.
+Goldens are semantic truth. Do not regenerate them from the implementation under test.

@@ -1,0 +1,51 @@
+{
+  "principles": [
+    "FlatBuffers generated types terminate at *_to_ir.",
+    "IR is owned Rust and contains no wire lifetimes/unions.",
+    "Goldens encode product meaning, not FlatBuffers bytes.",
+    "Human-readable error messages are not golden-stable."
+  ],
+  "types": {
+    "AnalyzeRequestIr": [
+      "analyzer",
+      "text",
+      "language"
+    ],
+    "FieldIr": [
+      "name",
+      "kind",
+      "cardinality",
+      "analyzer",
+      "capabilities"
+    ],
+    "IndexDefinitionIr": [
+      "name",
+      "fields",
+      "default_search_fields",
+      "default_ranking",
+      "default_prefix_policy",
+      "default_typo_policy"
+    ],
+    "PortableErrorStableProjection": [
+      "code",
+      "details",
+      "retryable"
+    ],
+    "SearchRequestIr": [
+      "query",
+      "search_fields",
+      "filter",
+      "sort",
+      "facets",
+      "ranking",
+      "limit",
+      "offset",
+      "projection",
+      "highlighting",
+      "language",
+      "prefix_policy",
+      "typo_policy"
+    ]
+  },
+  "version": "searchkernel-ir/v1"
+}

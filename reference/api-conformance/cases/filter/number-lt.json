@@ -1,16 +1,16 @@
 {
   "category": "filter",
-  "description": "Filter normalization: number-lt.",
+  "description": "Numeric lt comparison is valid.",
   "id": "filter.number-lt",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "filter": {
-      "lt": {
-        "field": "price",
-        "value": 500.0
+    "comparison": {
+      "field": "price",
+      "op": "lt",
+      "value": {
+        "float64": 500.0
       }
-    },
-    "query": "headphones"
+    }
   },
-  "operation": "resolve_search"
+  "operation": "filter_to_ir"
 }

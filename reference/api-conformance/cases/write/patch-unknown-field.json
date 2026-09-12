@@ -1,21 +1,17 @@
 {
   "category": "write",
-  "description": "Patch field must exist.",
+  "description": "Patch fields must exist.",
   "id": "write.patch-unknown-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "id": "sku-42",
-    "kind": "patch",
-    "patch": {
-      "operations": [
-        {
-          "set": {
-            "field": "bogus",
-            "value": 1
-          }
+    "operations": [
+      {
+        "unset": {
+          "field": "missing"
         }
-      ]
-    }
+      }
+    ]
   },
-  "operation": "resolve_write"
+  "operation": "patch_to_ir"
 }

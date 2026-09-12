@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "field_not_filterable",
-    "details": {
-      "field": "title"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "field_not_filterable",
+        "path": "filter.comparison.field"
+      }
+    ],
+    "retryable": false
   }
 }

@@ -1,0 +1,18 @@
+{
+  "category": "search",
+  "description": "A search may not request the same facet field twice.",
+  "id": "search.duplicate-facet-field",
+  "index_fixture": "product-v2",
+  "input": {
+    "facets": [
+      {
+        "field": "brand"
+      },
+      {
+        "field": "brand"
+      }
+    ],
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

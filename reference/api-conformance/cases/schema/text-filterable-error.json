@@ -1,0 +1,16 @@
+{
+  "category": "schema",
+  "description": "Text cannot opt into filtering in v1.",
+  "id": "schema.text-filterable-error",
+  "input": {
+    "fields": [
+      {
+        "filterable": true,
+        "kind": "text",
+        "name": "title"
+      }
+    ],
+    "name": "bad"
+  },
+  "operation": "index_definition_to_ir"
+}

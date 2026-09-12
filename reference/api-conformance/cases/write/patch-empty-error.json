@@ -1,0 +1,11 @@
+{
+  "category": "write",
+  "description": "Patch requires at least one operation.",
+  "id": "write.patch-empty-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "id": "sku-42",
+    "operations": []
+  },
+  "operation": "patch_to_ir"
+}

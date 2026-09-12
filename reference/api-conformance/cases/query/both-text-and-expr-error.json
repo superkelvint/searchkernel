@@ -1,0 +1,18 @@
+{
+  "category": "query",
+  "description": "Text and structured query cannot both be present.",
+  "id": "query.both-text-and-expr-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "x",
+    "query_expr": {
+      "term": {
+        "field": "title",
+        "value": {
+          "string": "x"
+        }
+      }
+    }
+  },
+  "operation": "query_to_ir"
+}

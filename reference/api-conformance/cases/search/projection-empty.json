@@ -1,0 +1,13 @@
+{
+  "category": "search",
+  "description": "Present-empty projection selects zero fields.",
+  "id": "search.projection-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "projection": {
+      "fields": []
+    },
+    "query": "x"
+  },
+  "operation": "search_to_ir"
+}

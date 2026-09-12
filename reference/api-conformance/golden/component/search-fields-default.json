@@ -1,0 +1,12 @@
+{
+  "ok": [
+    {
+      "field": "title",
+      "weight": 4.0
+    },
+    {
+      "field": "description",
+      "weight": 1.0
+    }
+  ]
+}

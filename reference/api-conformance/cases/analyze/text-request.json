@@ -1,11 +1,11 @@
 {
   "category": "analyze",
-  "description": "Analyze resolves the field analyzer without executing it.",
+  "description": "Field target resolves to field analyzer without executing analysis.",
   "id": "analyze.text-request",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "field": "title",
     "text": "Running with the Wolves"
   },
-  "operation": "resolve_analyze"
+  "operation": "analyze_to_ir"
 }

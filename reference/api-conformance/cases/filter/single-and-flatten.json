@@ -1,0 +1,20 @@
+{
+  "category": "filter",
+  "description": "Single-child AND normalizes to the child.",
+  "id": "filter.single-and-flatten",
+  "index_fixture": "product-v2",
+  "input": {
+    "all": [
+      {
+        "comparison": {
+          "field": "brand",
+          "op": "eq",
+          "value": {
+            "string": "Sony"
+          }
+        }
+      }
+    ]
+  },
+  "operation": "filter_to_ir"
+}

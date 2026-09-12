@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "Range against multi-valued numeric field is valid.",
+  "id": "filter.multi-range",
+  "index_fixture": "numeric-multi",
+  "input": {
+    "range": {
+      "field": "ratings",
+      "lower": {
+        "int64": 3
+      },
+      "upper": {
+        "int64": 5
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}

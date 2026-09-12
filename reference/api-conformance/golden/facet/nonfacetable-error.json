@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "field_not_facetable",
-    "details": {
-      "field": "price"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "field_not_facetable",
+        "path": "facet.field"
+      }
+    ],
+    "retryable": false
   }
 }

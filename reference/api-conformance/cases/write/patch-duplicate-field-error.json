@@ -1,25 +1,25 @@
 {
   "category": "write",
-  "description": "One patch request may target a field only once.",
+  "description": "A patch may target each field at most once.",
   "id": "write.patch-duplicate-field-error",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
-    "id": "1",
-    "kind": "patch",
+    "id": "sku-42",
     "operations": [
       {
         "set": {
           "field": "price",
-          "value": 100.0
+          "value": {
+            "float64": 1.0
+          }
         }
       },
       {
-        "increment": {
-          "field": "price",
-          "value": 1.0
+        "unset": {
+          "field": "price"
         }
       }
     ]
   },
-  "operation": "resolve_write"
+  "operation": "patch_to_ir"
 }

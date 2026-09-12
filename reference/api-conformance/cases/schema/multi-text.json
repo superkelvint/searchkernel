@@ -1,16 +1,16 @@
 {
   "category": "schema",
-  "description": "A multivalue text field retains text analysis/search defaults for each value.",
+  "description": "Multi text retains text defaults but is never sortable.",
   "id": "schema.multi-text",
   "input": {
     "fields": [
       {
+        "cardinality": "multi",
         "kind": "text",
-        "multi": true,
         "name": "value"
       }
     ],
     "name": "multi_text"
   },
-  "operation": "resolve_index_definition"
+  "operation": "index_definition_to_ir"
 }

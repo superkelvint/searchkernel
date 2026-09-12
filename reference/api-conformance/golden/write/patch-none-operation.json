@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_patch_operation",
+        "path": "operations[0]"
+      }
+    ],
+    "retryable": false
+  }
+}

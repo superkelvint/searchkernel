@@ -2,33 +2,26 @@
 from __future__ import annotations
 import json, subprocess, sys
 from pathlib import Path
-if len(sys.argv)<2: raise SystemExit('usage: verify_adapter.py ADAPTER [CASE_PREFIX ...]')
-root=Path(__file__).resolve().parents[1]; adapter=sys.argv[1]; prefixes=sys.argv[2:]
-def load(p): return json.loads(p.read_text())
-case_files=sorted((root/'cases').glob('*/*.json'))
-if prefixes: case_files=[p for p in case_files if any(load(p)['id'].startswith(x) for x in prefixes)]
-passed=0
-for p in case_files:
-    c=load(p); cid=c['id']; cat=c['category']
-    req={'protocol':'sk-conformance/v2','case_id':cid,'operation':c['operation'],'input':c['input'],'fixtures':{}}
-    if c.get('index_fixture'): req['index']=load(root/'fixtures/indexes'/f"{c['index_fixture']}.json")
-    def scan(v):
-        if isinstance(v,dict):
-            for k,x in v.items():
-                if k=='backend_response_fixture': req['fixtures'][f'backend_response:{x}']=load(root/'fixtures/backend-responses'/f'{x}.json')
-                elif k=='preset_fixture': req['fixtures'][f'preset:{x}']=load(root/'fixtures/presets'/f'{x}.json')
-                scan(x)
-        elif isinstance(v,list):
-            for x in v: scan(x)
-    scan(c['input'])
-    expected=load(root/'golden'/cat/(p.stem+'.json'))
-    proc=subprocess.run([adapter],input=json.dumps(req,ensure_ascii=False).encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    if proc.returncode!=0:
-        print(f'FAIL {cid}: adapter exit {proc.returncode}',file=sys.stderr); print(proc.stderr.decode(errors='replace'),file=sys.stderr); raise SystemExit(1)
-    try: actual=json.loads(proc.stdout)
+root=Path(__file__).resolve().parents[1]
+if len(sys.argv)!=2:
+    print('usage: verify_adapter.py /path/to/adapter',file=sys.stderr); raise SystemExit(2)
+adapter=sys.argv[1]
+manifest=json.loads((root/'manifest.json').read_text())
+for ent in json.loads((root/'cases.json').read_text())['cases']:
+    c=json.loads((root/ent['case']).read_text()); g=json.loads((root/ent['golden']).read_text())
+    idx={}
+    if 'index_fixture' in c:
+        idx=json.loads((root/'fixtures/indexes'/f"{c['index_fixture']}.json").read_text())
+    payload={'protocol':manifest['adapter_protocol'],'case_id':c['id'],'operation':c['operation'],'index':idx,'input':c.get('input',{})}
+    p=subprocess.run([adapter],input=json.dumps(payload)+'\n',text=True,capture_output=True)
+    if p.returncode!=0:
+        print(f"{c['id']}: adapter exit {p.returncode}: {p.stderr}",file=sys.stderr); raise SystemExit(1)
+    try: got=json.loads(p.stdout)
     except Exception as e:
-        print(f'FAIL {cid}: invalid adapter JSON: {e}',file=sys.stderr); raise SystemExit(1)
-    if actual!=expected:
-        print(f'FAIL {cid}',file=sys.stderr); print('EXPECTED',json.dumps(expected,indent=2,sort_keys=True,ensure_ascii=False),file=sys.stderr); print('ACTUAL',json.dumps(actual,indent=2,sort_keys=True,ensure_ascii=False),file=sys.stderr); raise SystemExit(1)
-    passed+=1
-print(f'PASS: {passed} conformance cases')
+        print(f"{c['id']}: invalid adapter JSON: {e}: {p.stdout!r}",file=sys.stderr); raise SystemExit(1)
+    if got!=g:
+        print(f"{c['id']}: mismatch",file=sys.stderr)
+        print('expected '+json.dumps(g,sort_keys=True),file=sys.stderr)
+        print('got      '+json.dumps(got,sort_keys=True),file=sys.stderr)
+        raise SystemExit(1)
+print(f"PASS: {manifest['case_count']} IR conformance cases")

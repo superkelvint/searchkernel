@@ -1,0 +1,17 @@
+{
+  "category": "value",
+  "description": "Single field rejects list wire value.",
+  "id": "value.single-list-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "value": {
+      "list": [
+        {
+          "string": "Sony"
+        }
+      ]
+    }
+  },
+  "operation": "value_to_ir"
+}

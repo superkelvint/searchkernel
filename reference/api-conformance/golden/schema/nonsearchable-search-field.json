@@ -1,8 +1,12 @@
 {
   "error": {
-    "code": "field_not_searchable",
-    "details": {
-      "field": "url"
-    }
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "field_not_searchable",
+        "path": "default_search_fields.fields[0].field"
+      }
+    ],
+    "retryable": false
   }
 }

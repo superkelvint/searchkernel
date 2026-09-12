@@ -1,0 +1,11 @@
+{
+  "category": "analyze",
+  "description": "Field analyze requires text field with analyzer.",
+  "id": "analyze.nontext-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "brand",
+    "text": "Sony"
+  },
+  "operation": "analyze_to_ir"
+}

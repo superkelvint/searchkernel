@@ -1,0 +1,20 @@
+{
+  "category": "write",
+  "description": "write_to_ir dispatches to insert IR without adding backend semantics.",
+  "id": "write.write-dispatch-insert",
+  "index_fixture": "product-v2",
+  "input": {
+    "kind": "insert",
+    "request": {
+      "document": {
+        "fields": {
+          "title": {
+            "string": "x"
+          }
+        },
+        "id": "x"
+      }
+    }
+  },
+  "operation": "write_to_ir"
+}

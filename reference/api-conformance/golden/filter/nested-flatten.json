@@ -1,0 +1,29 @@
+{
+  "ok": {
+    "and": [
+      {
+        "comparison": {
+          "field": "brand",
+          "op": "eq",
+          "value": {
+            "string": "Sony"
+          }
+        }
+      },
+      {
+        "comparison": {
+          "field": "price",
+          "op": "lte",
+          "value": {
+            "float64": 500.0
+          }
+        }
+      },
+      {
+        "exists": {
+          "field": "in_stock"
+        }
+      }
+    ]
+  }
+}

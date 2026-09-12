@@ -1,0 +1,15 @@
+{
+  "ok": {
+    "analyzer": "standard_v1",
+    "capabilities": {
+      "facetable": false,
+      "filterable": false,
+      "searchable": true,
+      "sortable": false,
+      "stored": true
+    },
+    "cardinality": "single",
+    "kind": "text",
+    "name": "title"
+  }
+}

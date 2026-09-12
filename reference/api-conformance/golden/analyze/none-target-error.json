@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_analyze_target",
+        "path": "target"
+      }
+    ],
+    "retryable": false
+  }
+}

@@ -1,20 +1,18 @@
 {
   "category": "search",
-  "description": "A hard-sort field may appear only once.",
+  "description": "A search may not sort the same field twice.",
   "id": "search.duplicate-sort-field",
-  "index_fixture": "product-v1",
+  "index_fixture": "product-v2",
   "input": {
     "query": "x",
     "sort": [
       {
-        "direction": "asc",
         "field": "price"
       },
       {
-        "direction": "desc",
         "field": "price"
       }
     ]
   },
-  "operation": "resolve_search"
+  "operation": "search_to_ir"
 }

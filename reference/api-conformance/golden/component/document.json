@@ -1,0 +1,17 @@
+{
+  "ok": {
+    "fields": {
+      "price": {
+        "single": {
+          "float64": 1.5
+        }
+      },
+      "title": {
+        "single": {
+          "string": "x"
+        }
+      }
+    },
+    "id": "x"
+  }
+}

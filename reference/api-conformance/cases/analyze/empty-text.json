@@ -1,0 +1,11 @@
+{
+  "category": "analyze",
+  "description": "Empty analysis text is valid; execution may return zero tokens.",
+  "id": "analyze.empty-text",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "title",
+    "text": ""
+  },
+  "operation": "analyze_to_ir"
+}

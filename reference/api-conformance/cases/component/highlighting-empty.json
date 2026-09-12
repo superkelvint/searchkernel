@@ -1,0 +1,12 @@
+{
+  "category": "component",
+  "description": "Present-empty highlighting remains a requested-empty state.",
+  "id": "component.highlighting-empty",
+  "index_fixture": "product-v2",
+  "input": {
+    "highlighting": {
+      "fields": []
+    }
+  },
+  "operation": "highlighting_to_ir"
+}

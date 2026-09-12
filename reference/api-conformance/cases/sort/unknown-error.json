@@ -1,0 +1,10 @@
+{
+  "category": "sort",
+  "description": "Unknown sort field is rejected.",
+  "id": "sort.unknown-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "field": "missing"
+  },
+  "operation": "sort_to_ir"
+}

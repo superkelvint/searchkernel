@@ -1,0 +1,18 @@
+{
+  "category": "filter",
+  "description": "Keyword range comparisons are unsupported in v1.",
+  "id": "filter.keyword-range-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "range": {
+      "field": "brand",
+      "lower": {
+        "string": "A"
+      },
+      "upper": {
+        "string": "Z"
+      }
+    }
+  },
+  "operation": "filter_to_ir"
+}
