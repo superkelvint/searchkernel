@@ -15,6 +15,7 @@
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
+#include <vespa/document/repo/newconfigbuilder.h>
 #include <vespa/document/update/assignvalueupdate.h>
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/update/fieldupdate.h>
@@ -57,6 +58,7 @@
 #include <vespa/vespalib/util/hw_info.h>
 #include <vespa/vespalib/util/threadstackexecutor.h>
 #include <vespa/vespalib/data/fileheader.h>
+#include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/util/host_name.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
@@ -67,8 +69,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
+#include <map>
 #include <memory>
+#include <new>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -105,7 +111,130 @@ using cloud::config::filedistribution::FiledistributorrpcConfig;
 namespace {
 
 constexpr int TLS_PORT = 9014;
-constexpr const char *DOC_TYPE = "typea";
+constexpr char LEGACY_DOC_TYPE[] = {'t', 'y', 'p', 'e', 'a', '\0'};
+constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
+constexpr size_t MAX_FIELD_NAME_BYTES = 256;
+constexpr size_t MAX_RANK_PROFILE_BYTES = 256;
+constexpr size_t MAX_TEXT_BYTES = 16 * 1024 * 1024;
+constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
+constexpr size_t MAX_TEXT_TERMS = 65536;
+constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
+
+bool is_utf8_continuation(uint8_t byte) noexcept {
+    return (byte & 0xc0) == 0x80;
+}
+
+bool is_valid_utf8(std::string_view value) noexcept {
+    for (size_t index = 0; index < value.size();) {
+        const auto byte = static_cast<uint8_t>(value[index]);
+        if (byte <= 0x7f) {
+            ++index;
+            continue;
+        }
+        if (byte >= 0xc2 && byte <= 0xdf) {
+            if (index + 1 >= value.size() ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 1]))) {
+                return false;
+            }
+            index += 2;
+            continue;
+        }
+        if (byte == 0xe0) {
+            if (index + 2 >= value.size() || value[index + 1] < static_cast<char>(0xa0) ||
+                value[index + 1] > static_cast<char>(0xbf) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2]))) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+        if ((byte >= 0xe1 && byte <= 0xec) || (byte >= 0xee && byte <= 0xef)) {
+            if (index + 2 >= value.size() ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 1])) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2]))) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+        if (byte == 0xed) {
+            if (index + 2 >= value.size() || value[index + 1] < static_cast<char>(0x80) ||
+                value[index + 1] > static_cast<char>(0x9f) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2]))) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+        if (byte == 0xf0) {
+            if (index + 3 >= value.size() || value[index + 1] < static_cast<char>(0x90) ||
+                value[index + 1] > static_cast<char>(0xbf) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2])) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+        if (byte >= 0xf1 && byte <= 0xf3) {
+            if (index + 3 >= value.size() ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 1])) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2])) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+        if (byte == 0xf4) {
+            if (index + 3 >= value.size() || value[index + 1] < static_cast<char>(0x80) ||
+                value[index + 1] > static_cast<char>(0x8f) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 2])) ||
+                !is_utf8_continuation(static_cast<uint8_t>(value[index + 3]))) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+bool is_utf8_boundary(std::string_view value, size_t offset) noexcept {
+    return offset == 0 || offset == value.size() ||
+           !is_utf8_continuation(static_cast<uint8_t>(value[offset]));
+}
+
+size_t bounded_string_length(const char *value, size_t maximum) noexcept {
+    for (size_t length = 0; length <= maximum; ++length) {
+        if (value[length] == '\0') {
+            return length;
+        }
+    }
+    return maximum + 1;
+}
+
+void validate_string_size(const char *value, size_t maximum, const char *what) {
+    if (value == nullptr) {
+        throw std::invalid_argument(std::string(what) + " must not be null");
+    }
+    if (bounded_string_length(value, maximum) > maximum) {
+        throw std::invalid_argument(std::string(what) + " is too long");
+    }
+}
+
+void validate_document_id(const char *value) {
+    validate_string_size(value, MAX_DOCUMENT_ID_BYTES, "document ID");
+}
+
+void validate_field_name(const char *value) {
+    validate_string_size(value, MAX_FIELD_NAME_BYTES, "field name");
+}
+
+void validate_rank_profile(const char *value) {
+    validate_string_size(value, MAX_RANK_PROFILE_BYTES, "rank profile");
+}
 
 constexpr document::BucketSpace bucket_space() noexcept {
     return document::BucketSpace(1);
@@ -194,6 +323,21 @@ document::BucketId bucket_id_for(const document::DocumentId &id) {
 
 storage::spi::Bucket bucket_for(const document::DocumentId &id) {
     return storage::spi::Bucket(document::Bucket(bucket_space(), bucket_id_for(id)));
+}
+
+std::string internal_document_id(std::string_view id, std::string_view document_type) {
+    if (id.starts_with("id:")) {
+        return std::string(id);
+    }
+    return "id:searchkernel:" + std::string(document_type) + "::" + std::string(id);
+}
+
+std::string external_document_id(std::string_view id, std::string_view document_type) {
+    const std::string prefix = "id:searchkernel:" + std::string(document_type) + "::";
+    if (id.starts_with(prefix)) {
+        return std::string(id.substr(prefix.size()));
+    }
+    return std::string(id);
 }
 
 class PersistenceOwner final : public proton::IPersistenceEngineOwner {
@@ -289,8 +433,21 @@ class EmbeddedEngine {
     std::string _tls_dir;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
-    DocumentType _doc_type;
+    struct ManifestField {
+        std::string name;
+        std::string type;
+    };
+    struct SchemaManifest {
+        std::string document_type;
+        std::vector<ManifestField> fields;
+        bool generated = false;
+    };
+
+    SchemaManifest _manifest;
+    std::string _document_type;
+    std::shared_ptr<const DocumenttypesConfig> _document_types;
     std::shared_ptr<DocumentTypeRepo> _repo;
+    const DocumentType *_doc_type;
     DocumentDB::SP _db;
     PersistenceOwner _persistence_owner;
     AcceptAllWrites _write_filter;
@@ -299,6 +456,7 @@ class EmbeddedEngine {
     std::shared_ptr<PersistenceHandlerProxy> _handler;
     std::vector<uint64_t> _prepared_buckets;
     uint64_t _next_timestamp = 1;
+    bool _closed = false;
 
     uint64_t next_timestamp() {
         if (_next_timestamp == std::numeric_limits<uint64_t>::max()) {
@@ -307,10 +465,203 @@ class EmbeddedEngine {
         return _next_timestamp++;
     }
 
-    static DocumentType make_document_type() {
-        DocumentType type(DOC_TYPE, 0);
-        type.addField(document::Field("attr1", 1, *document::DataType::INT));
-        type.addField(document::Field("title", 2, *document::DataType::STRING));
+    static std::map<std::string, std::string> read_config(const std::filesystem::path &path) {
+        std::ifstream input(path);
+        if (!input) {
+            return {};
+        }
+        std::map<std::string, std::string> values;
+        std::string line;
+        while (std::getline(input, line)) {
+            const auto first = line.find_first_not_of(" \t");
+            if (first == std::string::npos || line[first] == '#') {
+                continue;
+            }
+            const auto separator = line.find_first_of(" \t", first);
+            if (separator == std::string::npos) {
+                continue;
+            }
+            const auto key = line.substr(first, separator - first);
+            const auto value_start = line.find_first_not_of(" \t", separator);
+            if (value_start == std::string::npos) {
+                continue;
+            }
+            auto value = line.substr(value_start);
+            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                value = value.substr(1, value.size() - 2);
+            }
+            values[key] = value;
+        }
+        return values;
+    }
+
+    static SchemaManifest read_schema_manifest(const std::string &config_dir) {
+        const auto path = std::filesystem::path(config_dir) / "searchkernel-schema.json";
+        if (!std::filesystem::is_regular_file(path)) {
+            return {LEGACY_DOC_TYPE, {}, false};
+        }
+        std::ifstream input(path);
+        if (!input) {
+            throw std::runtime_error("could not read generated schema manifest: " + path.string());
+        }
+        const std::string json((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        vespalib::Slime slime;
+        if (vespalib::slime::JsonFormat::decode(vespalib::Memory(json), slime) == 0) {
+            throw std::invalid_argument("generated schema manifest is not valid JSON");
+        }
+        const auto &root = slime.get();
+        if (!root.valid() || root["version"].asLong() != 1 ||
+            !root["document_type"].valid() || !root["fields"].valid()) {
+            throw std::invalid_argument("generated schema manifest is incomplete");
+        }
+        SchemaManifest manifest{root["document_type"].asString().make_string(), {}, true};
+        const auto &fields = root["fields"];
+        manifest.fields.reserve(fields.children());
+        for (size_t index = 0; index < fields.children(); ++index) {
+            const auto &field = fields[index];
+            if (!field["name"].valid() || !field["type"].valid() ||
+                !field["index"].valid() || !field["attribute"].valid() ||
+                !field["summary"].valid()) {
+                throw std::invalid_argument("generated schema manifest field is incomplete");
+            }
+            (void)field["index"].asBool();
+            (void)field["attribute"].asBool();
+            (void)field["summary"].asBool();
+            manifest.fields.push_back({field["name"].asString().make_string(),
+                                       field["type"].asString().make_string()});
+        }
+        return manifest;
+    }
+
+    static const document::DataType *manifest_type(const std::string &type) {
+        if (type == "text" || type == "string") return document::DataType::STRING;
+        if (type == "integer") return document::DataType::INT;
+        if (type == "float") return document::DataType::DOUBLE;
+        if (type == "boolean") return document::DataType::BOOL;
+        throw std::invalid_argument("unsupported generated schema field type: " + type);
+    }
+
+    static std::shared_ptr<const DocumenttypesConfig>
+    make_documenttypes_config(const SchemaManifest &manifest) {
+        if (!manifest.generated) {
+            return std::make_shared<DocumenttypesConfig>();
+        }
+        document::new_config_builder::NewConfigBuilder builder;
+        auto &document_type = builder.document(manifest.document_type);
+        for (const auto &field : manifest.fields) {
+            if (field.type == "text" || field.type == "string") {
+                document_type.addField(field.name, builder.stringTypeRef());
+            } else if (field.type == "integer") {
+                document_type.addField(field.name, builder.intTypeRef());
+            } else if (field.type == "float") {
+                document_type.addField(field.name, builder.doubleTypeRef());
+            } else if (field.type == "boolean") {
+                document_type.addField(field.name, builder.boolTypeRef());
+            } else {
+                throw std::invalid_argument("unsupported generated schema field type: " + field.type);
+            }
+        }
+        return std::make_shared<DocumenttypesConfig>(builder.config());
+    }
+
+    static const document::DataType *attribute_type(const std::string &type) {
+        if (type == "STRING") return document::DataType::STRING;
+        if (type == "INT32") return document::DataType::INT;
+        if (type == "DOUBLE") return document::DataType::DOUBLE;
+        if (type == "BOOL") return document::DataType::BOOL;
+        throw std::invalid_argument("unsupported generated attribute datatype: " + type);
+    }
+
+    static void add_document_field(std::map<std::string, const document::DataType *> &fields,
+                                   const std::string &name, const document::DataType *type) {
+        const auto [it, inserted] = fields.emplace(name, type);
+        if (!inserted && it->second->getId() != type->getId()) {
+            throw std::invalid_argument("generated configuration assigns conflicting types to field " + name);
+        }
+    }
+
+    static void add_attribute_fields(std::map<std::string, const document::DataType *> &fields,
+                                     const std::filesystem::path &config_dir) {
+        const auto values = read_config(config_dir / "attributes.cfg");
+        for (size_t index = 0; ; ++index) {
+            const auto name_it = values.find("attribute[" + std::to_string(index) + "].name");
+            if (name_it == values.end()) {
+                break;
+            }
+            const auto type_it = values.find("attribute[" + std::to_string(index) + "].datatype");
+            if (type_it == values.end()) {
+                throw std::invalid_argument("generated attribute is missing datatype: " + name_it->second);
+            }
+            add_document_field(fields, name_it->second, attribute_type(type_it->second));
+        }
+    }
+
+    static void add_index_fields(std::map<std::string, const document::DataType *> &fields,
+                                 const std::filesystem::path &config_dir) {
+        const auto values = read_config(config_dir / "indexschema.cfg");
+        for (size_t index = 0; ; ++index) {
+            const auto name_it = values.find("indexfield[" + std::to_string(index) + "].name");
+            if (name_it == values.end()) break;
+            add_document_field(fields, name_it->second, document::DataType::STRING);
+        }
+    }
+
+    static void add_summary_fields(std::map<std::string, const document::DataType *> &fields,
+                                   const std::filesystem::path &config_dir) {
+        const auto values = read_config(config_dir / "summary.cfg");
+        size_t default_class = 0;
+        bool found_default = false;
+        for (size_t index = 0; ; ++index) {
+            const auto name_it = values.find("classes[" + std::to_string(index) + "].name");
+            if (name_it == values.end()) break;
+            if (name_it->second == "default") {
+                default_class = index;
+                found_default = true;
+                break;
+            }
+        }
+        if (!found_default) return;
+        const std::string prefix = "classes[" + std::to_string(default_class) + "].fields[";
+        for (size_t index = 0; ; ++index) {
+            const auto field_prefix = prefix + std::to_string(index) + "]";
+            const auto name_it = values.find(field_prefix + ".name");
+            if (name_it == values.end()) break;
+            const auto command_it = values.find(field_prefix + ".command");
+            if (command_it != values.end() && command_it->second.empty()) {
+                if (name_it->second != "documentid" && name_it->second != "rankfeatures" &&
+                    name_it->second != "summaryfeatures") {
+                    add_document_field(fields, name_it->second, document::DataType::STRING);
+                }
+            }
+        }
+    }
+
+    static DocumentType make_document_type(const SchemaManifest &manifest,
+                                           const std::string &config_dir) {
+        DocumentType type(manifest.document_type, 0);
+        std::map<std::string, const document::DataType *> fields;
+        const auto config_path = std::filesystem::path(config_dir);
+        if (manifest.generated) {
+            for (const auto &field : manifest.fields) {
+                add_document_field(fields, field.name, manifest_type(field.type));
+            }
+        } else {
+            add_attribute_fields(fields, config_path);
+            add_index_fields(fields, config_path);
+            add_summary_fields(fields, config_path);
+            // Keep the historical M0-M5 fixture fields available when opening
+            // an old hand-written fixture.
+            if (!fields.contains("attr1")) {
+                fields.emplace("attr1", document::DataType::INT);
+            }
+            if (!fields.contains("title")) {
+                fields.emplace("title", document::DataType::STRING);
+            }
+        }
+        int32_t field_id = 1;
+        for (const auto &[name, data_type] : fields) {
+            type.addField(document::Field(name, field_id++, *data_type));
+        }
         return type;
     }
 
@@ -330,17 +681,24 @@ class EmbeddedEngine {
         }
     }
 
-    std::shared_ptr<Document> make_document(const DocumentId &id, int32_t value) const {
-        auto document = std::make_shared<Document>(*_repo, _doc_type, id);
-        const auto &field = _doc_type.getField("attr1");
+    std::shared_ptr<Document> make_document(const DocumentId &id, const std::string &field_name,
+                                            int32_t value) const {
+        auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
+        const auto &field = _doc_type->getField(field_name);
+        if (field.getDataType().getId() != document::DataType::T_INT) {
+            throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+        }
         document->setFieldValue(field, std::make_unique<document::IntFieldValue>(value));
         return document;
     }
 
     std::shared_ptr<document::DocumentUpdate>
-    make_update(const DocumentId &id, int32_t value) const {
-        auto update = std::make_shared<document::DocumentUpdate>(*_repo, _doc_type, id);
-        const auto &field = _doc_type.getField("attr1");
+    make_update(const DocumentId &id, const std::string &field_name, int32_t value) const {
+        auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
+        const auto &field = _doc_type->getField(field_name);
+        if (field.getDataType().getId() != document::DataType::T_INT) {
+            throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+        }
         document::FieldUpdate field_update(field);
         field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
             std::make_unique<document::IntFieldValue>(value)));
@@ -360,8 +718,14 @@ public:
           _tls(_shared_service.transport(), _tls_dir,
                TLS_PORT, data_dir, _file_header_context),
           _query_limiter(),
-          _doc_type(make_document_type()),
-          _repo(std::make_shared<DocumentTypeRepo>(_doc_type)),
+          _manifest(read_schema_manifest(config_dir)),
+          _document_type(_manifest.document_type),
+          _document_types(make_documenttypes_config(_manifest)),
+          _repo(_manifest.generated
+                    ? std::make_shared<DocumentTypeRepo>(*_document_types)
+                    : std::make_shared<DocumentTypeRepo>(
+                          make_document_type(_manifest, config_dir))),
+          _doc_type(_repo->getDocumentType(_document_type)),
           _db(),
           _persistence_owner(),
           _write_filter(),
@@ -371,20 +735,23 @@ public:
           _handler(),
           _prepared_buckets() {
         std::filesystem::create_directories(data_dir);
-        std::filesystem::create_directories(data_dir + "/" + DOC_TYPE);
+        if (_doc_type == nullptr) {
+            throw std::runtime_error("generated document type was not added to DocumentTypeRepo: " +
+                                     _document_type);
+        }
+        std::filesystem::create_directories(data_dir + "/" + _document_type);
 
         config::DirSpec spec(config_dir);
-        DocumentDBConfigHelper config(spec, DOC_TYPE);
-        auto document_types = std::make_shared<DocumenttypesConfig>();
+        DocumentDBConfigHelper config(spec, _document_type);
         auto proton_config = std::make_shared<ProtonConfigBuilder>();
         proton_config->documentdb.emplace_back();
-        proton_config->documentdb.back().inputdoctypename = DOC_TYPE;
+        proton_config->documentdb.back().inputdoctypename = _document_type;
         proton_config->documentdb.back().documentIdAttribute = true;
         auto file_distribution = std::make_shared<FiledistributorrpcConfig>();
         auto bucket_spaces = std::make_shared<BucketspacesConfig>();
         auto tune = std::make_shared<search::TuneFileDocumentDB>();
         auto bootstrap = std::make_shared<proton::BootstrapConfig>(
-            1, document_types, _repo, proton_config, file_distribution,
+            1, _document_types, _repo, proton_config, file_distribution,
             bucket_spaces, tune, _hw_info);
         config.forwardConfig(bootstrap);
         config.nextGeneration(_shared_service.transport(), 0ms);
@@ -392,7 +759,7 @@ public:
         proton::ConfigStore::UP config_store;
         if (std::filesystem::exists(std::filesystem::path(config_dir) / "proton.cfg")) {
             auto file_config_store = std::make_unique<proton::FileConfigManager>(
-                _shared_service.transport(), data_dir + "/" + DOC_TYPE + "/config", "", DOC_TYPE);
+                _shared_service.transport(), data_dir + "/" + _document_type + "/config", "", _document_type);
             file_config_store->setProtonConfig(proton_config);
             config_store = std::move(file_config_store);
         } else {
@@ -402,7 +769,7 @@ public:
         _db = DocumentDB::create(
             data_dir, config.getConfig(),
             vespalib::SocketSpec::from_host_port("localhost", TLS_PORT).spec(),
-            _query_limiter, DocTypeName(DOC_TYPE), bucket_space(),
+            _query_limiter, DocTypeName(_document_type), bucket_space(),
             *proton_config, _db_owner, _shared_service, _tls, _wire_service,
             _file_header_context,
             std::make_shared<search::attribute::Interlock>(),
@@ -422,7 +789,7 @@ public:
 
         _handler = std::make_shared<PersistenceHandlerProxy>(_db);
         _persistence.putHandler(_persistence.getWLock(), bucket_space(),
-                                DocTypeName(DOC_TYPE), _handler);
+                                DocTypeName(_document_type), _handler);
         auto initialized = _persistence.initialize();
         if (initialized.hasError()) {
             throw std::runtime_error(initialized.getErrorMessage());
@@ -445,10 +812,27 @@ public:
         }
     }
 
+    void close() {
+        if (_closed) {
+            return;
+        }
+        _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
+                                      DocTypeName(_document_type));
+        _handler.reset();
+        if (_db) {
+            _db->close();
+            _db.reset();
+        }
+        _shared_service.transport().ShutDown(true);
+        _closed = true;
+    }
+
+    bool closed() const noexcept { return _closed; }
+
     ~EmbeddedEngine() noexcept {
         try {
-            _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
-                                      DocTypeName(DOC_TYPE));
+            close();
+            return;
         } catch (...) {
         }
         _handler.reset();
@@ -466,29 +850,29 @@ public:
         }
     }
 
-    void put(const std::string &id, int32_t value) {
-        DocumentId document_id(id);
+    void put(const std::string &id, const std::string &field, int32_t value) {
+        DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
         prepare_bucket(bucket);
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
-                                       make_document(document_id, value));
+                                       make_document(document_id, field, value));
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
-    void update(const std::string &id, int32_t value) {
-        DocumentId document_id(id);
+    void update(const std::string &id, const std::string &field, int32_t value) {
+        DocumentId document_id(internal_document_id(id, _document_type));
         auto result = _persistence.update(
             bucket_for(document_id), Timestamp(next_timestamp()),
-            make_update(document_id, value));
+            make_update(document_id, field, value));
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
     bool remove(const std::string &id) {
-        DocumentId document_id(id);
+        DocumentId document_id(internal_document_id(id, _document_type));
         auto result = _persistence.remove(
             bucket_for(document_id), Timestamp(next_timestamp()),
             document_id);
@@ -526,7 +910,7 @@ public:
             if (meta_store_guard->get().getLid(hit.gid, lid)) {
                 auto document_id = document_id_provider->get_document_id_string_view(lid);
                 if (!document_id.empty()) {
-                    ids.emplace_back(document_id);
+                    ids.emplace_back(external_document_id(document_id, _document_type));
                 }
             }
         }
@@ -535,7 +919,7 @@ public:
 
     std::unique_ptr<document::StringFieldValue>
     make_text_value(const TextDocument &document) const {
-        const document::FixedTypeRepo fixed_repo(*_repo, _doc_type);
+        const document::FixedTypeRepo fixed_repo(*_repo, *_doc_type);
         auto value = std::make_unique<document::StringFieldValue>(document.text);
         auto spans = std::make_unique<document::SpanList>();
         auto *spans_ptr = spans.get();
@@ -572,22 +956,23 @@ public:
     }
 
     std::shared_ptr<Document> make_text_document(const TextDocument &text) const {
-        const auto &field = _doc_type.getField(text.field);
+        const auto &field = _doc_type->getField(text.field);
         if (field.getDataType().getId() != document::DataType::T_STRING) {
             throw std::invalid_argument("text field is not a string field");
         }
-        auto document = std::make_shared<Document>(*_repo, _doc_type, DocumentId(text.id));
+        auto document = std::make_shared<Document>(*_repo, *_doc_type,
+                                                   DocumentId(internal_document_id(text.id, _document_type)));
         document->setFieldValue(field, make_text_value(text));
         return document;
     }
 
     std::shared_ptr<document::DocumentUpdate> make_text_update(const TextUpdate &text) const {
-        const auto &field = _doc_type.getField(text.field);
+        const auto &field = _doc_type->getField(text.field);
         if (field.getDataType().getId() != document::DataType::T_STRING) {
             throw std::invalid_argument("text field is not a string field");
         }
         auto update = std::make_shared<document::DocumentUpdate>(
-            *_repo, _doc_type, DocumentId(text.id));
+            *_repo, *_doc_type, DocumentId(internal_document_id(text.id, _document_type)));
         document::FieldUpdate field_update(field);
         field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
             make_text_value(text)));
@@ -596,7 +981,7 @@ public:
     }
 
     void put_text(const TextDocument &text) {
-        const DocumentId id(text.id);
+        const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
         prepare_bucket(bucket);
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
@@ -607,7 +992,7 @@ public:
     }
 
     void update_text(const TextUpdate &text) {
-        const DocumentId id(text.id);
+        const DocumentId id(internal_document_id(text.id, _document_type));
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
                                           make_text_update(text));
         if (result.hasError()) {
@@ -667,7 +1052,7 @@ public:
             if (meta_store_guard->get().getLid(hit.gid, lid)) {
                 auto id = document_id_provider->get_document_id_string_view(lid);
                 if (!id.empty()) {
-                    hits.push_back({std::string(id), hit.metric});
+                    hits.push_back({external_document_id(id, _document_type), hit.metric});
                 }
             }
         }
@@ -697,24 +1082,42 @@ struct ErrorResult {
     std::vector<std::string> ids;
 };
 
-void clear_error(sk_error *error) {
-    if (error) {
-        sk_error_destroy(error);
-    }
-}
-
-void set_error(sk_error *error, int32_t code, const std::string &message) {
+void destroy_error(sk_error *error) noexcept {
     if (!error) {
         return;
     }
-    sk_error_destroy(error);
-    error->code = code;
-    error->message = static_cast<char *>(std::malloc(message.size() + 1));
-    if (error->message) {
-        std::memcpy(error->message, message.c_str(), message.size() + 1);
-    } else {
-        error->code = 3;
+    std::free(error->message);
+    error->message = nullptr;
+    error->code = 0;
+}
+
+void clear_error(sk_error *error) noexcept {
+    destroy_error(error);
+}
+
+int32_t set_error(sk_error *error, int32_t code, const char *message) noexcept {
+    if (!error) {
+        return code;
     }
+    destroy_error(error);
+    error->code = code;
+    if (!message) {
+        error->code = SK_STATUS_OUT_OF_MEMORY;
+        return error->code;
+    }
+    const size_t length = std::strlen(message);
+    if (length == std::numeric_limits<size_t>::max()) {
+        error->code = SK_STATUS_OUT_OF_MEMORY;
+        return error->code;
+    }
+    error->message = static_cast<char *>(std::malloc(length + 1));
+    if (!error->message) {
+        error->code = SK_STATUS_OUT_OF_MEMORY;
+        return error->code;
+    }
+    std::memcpy(error->message, message, length);
+    error->message[length] = '\0';
+    return error->code;
 }
 
 std::filesystem::path resolve_config_directory(const std::filesystem::path &path) {
@@ -739,13 +1142,15 @@ int32_t invoke(sk_error *error, Function &&function) noexcept {
     clear_error(error);
     try {
         function();
-        return 0;
+        return SK_STATUS_OK;
+    } catch (const std::bad_alloc &) {
+        return set_error(error, SK_STATUS_OUT_OF_MEMORY, nullptr);
+    } catch (const std::invalid_argument &exception) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
-        set_error(error, 2, exception.what());
-        return 2;
+        return set_error(error, SK_STATUS_INTERNAL, exception.what());
     } catch (...) {
-        set_error(error, 2, "unknown native exception");
-        return 2;
+        return set_error(error, SK_STATUS_INTERNAL, "unknown native exception");
     }
 }
 
@@ -763,15 +1168,16 @@ struct sk_text_update : TextUpdate {};
 struct sk_text_request : TextRequest {};
 struct sk_text_result : TextResult {};
 
-extern "C" uint32_t sk_native_abi_version(void) { return 1; }
+extern "C" uint32_t sk_native_abi_version(void) { return SK_NATIVE_ABI_VERSION; }
 
 extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
                                    sk_engine **out_engine, sk_error *error) {
-    if (!out_engine || !data_dir || !config_dir) {
-        set_error(error, 1, "engine open arguments must not be null");
-        return 1;
+    if (out_engine) {
+        *out_engine = nullptr;
     }
-    *out_engine = nullptr;
+    if (!out_engine || !data_dir || !config_dir) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine open arguments must not be null");
+    }
     return invoke(error, [&] {
         std::error_code filesystem_error;
         const std::filesystem::path data_path(data_dir);
@@ -799,6 +1205,13 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
     });
 }
 
+extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) {
+    if (!engine || !engine->impl || engine->impl->closed()) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine close arguments are invalid");
+    }
+    return invoke(error, [&] { engine->impl->close(); });
+}
+
 extern "C" void sk_engine_destroy(sk_engine *engine) {
     try {
         delete engine;
@@ -807,21 +1220,18 @@ extern "C" void sk_engine_destroy(sk_engine *engine) {
 }
 
 extern "C" void sk_error_destroy(sk_error *error) {
-    if (error) {
-        std::free(error->message);
-        error->message = nullptr;
-        error->code = 0;
-    }
+    destroy_error(error);
 }
 
 extern "C" int32_t sk_document_create(const char *id, const char *field,
                                         int32_t value, sk_document **out,
                                         sk_error *error) {
-    if (!out || !id || !field) {
-        set_error(error, 1, "document arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !id || !field) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "document arguments must not be null");
+    }
     return invoke(error, [&] {
         if (*id == '\0' || *field == '\0') {
             throw std::invalid_argument("document ID and field must not be empty");
@@ -840,11 +1250,12 @@ extern "C" int32_t sk_document_update_create(const char *id, const char *field,
                                                int32_t value,
                                                sk_document_update **out,
                                                sk_error *error) {
-    if (!out || !id || !field) {
-        set_error(error, 1, "update arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !id || !field) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments must not be null");
+    }
     return invoke(error, [&] {
         if (*id == '\0' || *field == '\0') {
             throw std::invalid_argument("document ID and field must not be empty");
@@ -865,11 +1276,12 @@ extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
                                               uint32_t limit,
                                               sk_search_request **out,
                                               sk_error *error) {
-    if (!out || !field) {
-        set_error(error, 1, "search arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !field) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments must not be null");
+    }
     return invoke(error, [&] {
         if (*field == '\0') {
             throw std::invalid_argument("search field must not be empty");
@@ -888,38 +1300,32 @@ extern "C" void sk_search_request_destroy(sk_search_request *request) {
 
 extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
                                   sk_error *error) {
-    if (!engine || !engine->impl || !document) {
-        set_error(error, 1, "put arguments are invalid");
-        return 1;
+    if (!engine || !engine->impl || engine->impl->closed() || !document) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "put arguments are invalid");
     }
     return invoke(error, [&] {
-        if (document->field != "attr1") {
-            throw std::invalid_argument("the configured document type has no such field");
-        }
-        engine->impl->put(document->id, document->value);
+        engine->impl->put(document->id, document->field, document->value);
     });
 }
 
 extern "C" int32_t sk_engine_update(sk_engine *engine,
                                      const sk_document_update *update,
                                      sk_error *error) {
-    if (!engine || !engine->impl || !update) {
-        set_error(error, 1, "update arguments are invalid");
-        return 1;
+    if (!engine || !engine->impl || engine->impl->closed() || !update) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments are invalid");
     }
     return invoke(error, [&] {
-        if (update->field != "attr1") {
-            throw std::invalid_argument("the configured document type has no such field");
-        }
-        engine->impl->update(update->id, update->value);
+        engine->impl->update(update->id, update->field, update->value);
     });
 }
 
 extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
                                      int32_t *out_was_found, sk_error *error) {
-    if (!engine || !engine->impl || !id || !out_was_found) {
-        set_error(error, 1, "remove arguments are invalid");
-        return 1;
+    if (out_was_found) {
+        *out_was_found = 0;
+    }
+    if (!engine || !engine->impl || engine->impl->closed() || !id || !out_was_found) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "remove arguments are invalid");
     }
     return invoke(error, [&] { *out_was_found = engine->impl->remove(id) ? 1 : 0; });
 }
@@ -928,11 +1334,12 @@ extern "C" int32_t sk_engine_search(const sk_engine *engine,
                                      const sk_search_request *request,
                                      sk_search_result **out_result,
                                      sk_error *error) {
-    if (!engine || !engine->impl || !request || !out_result) {
-        set_error(error, 1, "search arguments are invalid");
-        return 1;
+    if (out_result) {
+        *out_result = nullptr;
     }
-    *out_result = nullptr;
+    if (!engine || !engine->impl || engine->impl->closed() || !request || !out_result) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments are invalid");
+    }
     return invoke(error, [&] {
         if (request->limit == 0) {
             throw std::invalid_argument("search limit must be greater than zero");
@@ -951,18 +1358,22 @@ extern "C" uint32_t sk_search_result_size(const sk_search_result *result) {
 extern "C" int32_t sk_search_result_id(const sk_search_result *result,
                                         uint32_t index, const char **out_id,
                                         uint32_t *out_length, sk_error *error) {
+    if (out_id) {
+        *out_id = nullptr;
+    }
+    if (out_length) {
+        *out_length = 0;
+    }
     if (!result || !out_id || !out_length) {
-        set_error(error, 1, "result arguments are invalid");
-        return 1;
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "result arguments are invalid");
     }
     if (index >= result->ids.size()) {
-        set_error(error, 1, "result index is out of bounds");
-        return 1;
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "result index is out of bounds");
     }
     clear_error(error);
     *out_id = result->ids[index].data();
     *out_length = static_cast<uint32_t>(result->ids[index].size());
-    return 0;
+    return SK_STATUS_OK;
 }
 
 extern "C" void sk_search_result_destroy(sk_search_result *result) {
@@ -972,26 +1383,41 @@ extern "C" void sk_search_result_destroy(sk_search_result *result) {
 namespace {
 
 std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
-                            const char *what) {
-    if (length != 0 && bytes == nullptr) {
+                            size_t maximum, const char *what) {
+    if (length > maximum) {
+        throw std::invalid_argument(std::string(what) + " is too long");
+    }
+    if (length == 0) {
+        return {};
+    }
+    if (bytes == nullptr) {
         throw std::invalid_argument(std::string(what) + " must not be null");
     }
-    return std::string(reinterpret_cast<const char *>(bytes), length);
+    std::string result(reinterpret_cast<const char *>(bytes), length);
+    if (!is_valid_utf8(result)) {
+        throw std::invalid_argument(std::string(what) + " must be valid UTF-8");
+    }
+    return result;
 }
 
 void fill_text_document(TextDocument &document, const char *id, const char *field,
                         const uint8_t *text, uint32_t text_length,
                         const sk_text_occurrence *occurrences,
                         uint32_t occurrence_count) {
+    validate_document_id(id);
+    validate_field_name(field);
     if (*id == '\0' || *field == '\0') {
         throw std::invalid_argument("text document ID and field must not be empty");
+    }
+    if (occurrence_count > MAX_TEXT_OCCURRENCES) {
+        throw std::invalid_argument("text occurrence count is too large");
     }
     if (occurrence_count != 0 && occurrences == nullptr) {
         throw std::invalid_argument("text occurrences must not be null");
     }
     document.id = id;
     document.field = field;
-    document.text = copy_text_bytes(text, text_length, "text");
+    document.text = copy_text_bytes(text, text_length, MAX_TEXT_BYTES, "text");
     document.occurrences.reserve(occurrence_count);
     for (uint32_t index = 0; index < occurrence_count; ++index) {
         const auto &input = occurrences[index];
@@ -1001,8 +1427,15 @@ void fill_text_document(TextDocument &document, const char *id, const char *fiel
         if (input.position != index) {
             throw std::invalid_argument("text occurrence positions must be contiguous");
         }
+        if (input.byte_start > document.text.size() ||
+            input.byte_length > document.text.size() - input.byte_start ||
+            !is_utf8_boundary(document.text, input.byte_start) ||
+            !is_utf8_boundary(document.text, input.byte_start + input.byte_length)) {
+            throw std::invalid_argument("text occurrence span is not on UTF-8 boundaries");
+        }
         document.occurrences.push_back({
-            copy_text_bytes(input.term, input.term_length, "text occurrence term"),
+            copy_text_bytes(input.term, input.term_length, MAX_TEXT_TERM_BYTES,
+                            "text occurrence term"),
             input.byte_start,
             input.byte_length,
             input.position
@@ -1013,6 +1446,8 @@ void fill_text_document(TextDocument &document, const char *id, const char *fiel
 void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
                        const sk_text_query_term *terms, uint32_t term_count,
                        const char *rank_profile) {
+    validate_field_name(field);
+    validate_rank_profile(rank_profile);
     if (*field == '\0' || *rank_profile == '\0') {
         throw std::invalid_argument("text query field and rank profile must not be empty");
     }
@@ -1021,6 +1456,9 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
     }
     if ((kind == 1 && term_count != 1) || (kind == 2 && term_count == 0)) {
         throw std::invalid_argument("invalid number of terms for text query kind");
+    }
+    if (term_count > MAX_TEXT_TERMS) {
+        throw std::invalid_argument("text term count is too large");
     }
     if (term_count != 0 && terms == nullptr) {
         throw std::invalid_argument("text query terms must not be null");
@@ -1039,6 +1477,7 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
             throw std::invalid_argument("text query positions must be contiguous");
         }
         request.terms.push_back(copy_text_bytes(input.term, input.term_length,
+                                                 MAX_TEXT_TERM_BYTES,
                                                  "text query term"));
         request.positions.push_back(input.position);
     }
@@ -1050,11 +1489,12 @@ extern "C" int32_t sk_text_document_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
     const sk_text_occurrence *occurrences, uint32_t occurrence_count,
     sk_text_document **out, sk_error *error) {
-    if (!out || !id || !field) {
-        set_error(error, 1, "text document arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !id || !field) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text document arguments must not be null");
+    }
     return invoke(error, [&] {
         auto document = std::make_unique<sk_text_document>();
         fill_text_document(*document, id, field, text, text_length,
@@ -1071,11 +1511,12 @@ extern "C" int32_t sk_text_update_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
     const sk_text_occurrence *occurrences, uint32_t occurrence_count,
     sk_text_update **out, sk_error *error) {
-    if (!out || !id || !field) {
-        set_error(error, 1, "text update arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !id || !field) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments must not be null");
+    }
     return invoke(error, [&] {
         auto update = std::make_unique<sk_text_update>();
         fill_text_document(*update, id, field, text, text_length,
@@ -1092,11 +1533,12 @@ extern "C" int32_t sk_text_request_create(
     uint32_t kind, const char *field, const sk_text_query_term *terms,
     uint32_t term_count, const char *rank_profile, sk_text_request **out,
     sk_error *error) {
-    if (!out || !field || !rank_profile) {
-        set_error(error, 1, "text request arguments must not be null");
-        return 1;
+    if (out) {
+        *out = nullptr;
     }
-    *out = nullptr;
+    if (!out || !field || !rank_profile) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text request arguments must not be null");
+    }
     return invoke(error, [&] {
         auto request = std::make_unique<sk_text_request>();
         fill_text_request(*request, kind, field, terms, term_count, rank_profile);
@@ -1111,9 +1553,8 @@ extern "C" void sk_text_request_destroy(sk_text_request *request) {
 extern "C" int32_t sk_engine_put_text(sk_engine *engine,
                                         const sk_text_document *document,
                                         sk_error *error) {
-    if (!engine || !engine->impl || !document) {
-        set_error(error, 1, "text put arguments are invalid");
-        return 1;
+    if (!engine || !engine->impl || engine->impl->closed() || !document) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text put arguments are invalid");
     }
     return invoke(error, [&] { engine->impl->put_text(*document); });
 }
@@ -1121,9 +1562,8 @@ extern "C" int32_t sk_engine_put_text(sk_engine *engine,
 extern "C" int32_t sk_engine_update_text(sk_engine *engine,
                                            const sk_text_update *update,
                                            sk_error *error) {
-    if (!engine || !engine->impl || !update) {
-        set_error(error, 1, "text update arguments are invalid");
-        return 1;
+    if (!engine || !engine->impl || engine->impl->closed() || !update) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments are invalid");
     }
     return invoke(error, [&] { engine->impl->update_text(*update); });
 }
@@ -1132,11 +1572,12 @@ extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
                                            const sk_text_request *request,
                                            sk_text_result **out_result,
                                            sk_error *error) {
-    if (!engine || !engine->impl || !request || !out_result) {
-        set_error(error, 1, "text search arguments are invalid");
-        return 1;
+    if (out_result) {
+        *out_result = nullptr;
     }
-    *out_result = nullptr;
+    if (!engine || !engine->impl || engine->impl->closed() || !request || !out_result) {
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text search arguments are invalid");
+    }
     return invoke(error, [&] {
         auto result = std::make_unique<sk_text_result>();
         result->hits = engine->impl->search_text(*request);
@@ -1152,19 +1593,26 @@ extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
                                        uint32_t index, const char **out_id,
                                        uint32_t *out_length, double *out_score,
                                        sk_error *error) {
+    if (out_id) {
+        *out_id = nullptr;
+    }
+    if (out_length) {
+        *out_length = 0;
+    }
+    if (out_score) {
+        *out_score = 0.0;
+    }
     if (!result || !out_id || !out_length || !out_score) {
-        set_error(error, 1, "text result arguments are invalid");
-        return 1;
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text result arguments are invalid");
     }
     if (index >= result->hits.size()) {
-        set_error(error, 1, "text result index is out of bounds");
-        return 1;
+        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text result index is out of bounds");
     }
     clear_error(error);
     *out_id = result->hits[index].id.data();
     *out_length = static_cast<uint32_t>(result->hits[index].id.size());
     *out_score = result->hits[index].score;
-    return 0;
+    return SK_STATUS_OK;
 }
 
 extern "C" void sk_text_result_destroy(sk_text_result *result) {

@@ -1,0 +1,16 @@
+{
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "price",
+      "summary": true,
+      "type": "float"
+    }
+  ],
+  "id": "float",
+  "schema": "typea",
+  "smoke": {
+    "kind": "open"
+  }
+}

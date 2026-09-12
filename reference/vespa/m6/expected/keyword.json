@@ -1,0 +1,1 @@
+{"attributes":[{"collection":"SINGLE","datatype":"STRING","name":"sku"}],"id":"keyword","index_fields":[],"schema":"typea","summary_fields":[{"command":"documentid","name":"documentid","source":""},{"command":"rankfeatures","name":"rankfeatures","source":""},{"command":"attribute","name":"sku","source":"sku"},{"command":"summaryfeatures","name":"summaryfeatures","source":""}]}

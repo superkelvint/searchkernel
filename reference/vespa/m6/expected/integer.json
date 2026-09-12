@@ -1,0 +1,1 @@
+{"attributes":[{"collection":"SINGLE","datatype":"INT32","name":"qty"}],"id":"integer","index_fields":[],"schema":"typea","summary_fields":[{"command":"documentid","name":"documentid","source":""},{"command":"attribute","name":"qty","source":"qty"},{"command":"rankfeatures","name":"rankfeatures","source":""},{"command":"summaryfeatures","name":"summaryfeatures","source":""}]}

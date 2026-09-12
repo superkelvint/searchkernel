@@ -1,0 +1,19 @@
+{
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "body",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "text-index-only",
+  "schema": "typea",
+  "smoke": {
+    "field": "body",
+    "kind": "text",
+    "query": "beta",
+    "text": "alpha beta gamma"
+  }
+}

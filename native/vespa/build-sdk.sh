@@ -17,7 +17,8 @@ if [ ! -f "$LINK_FILE" ] || [ ! -f "$FLAGS_FILE" ]; then
 fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
-rm -f "$BUILD/searchkernel_vespa.o" "$SDK/lib/libsearchkernel_vespa.so"
+rm -f "$BUILD/searchkernel_vespa.o" \
+    "$SDK/lib/libsearchkernel_vespa.so" "$SDK/lib/libsearchkernel_vespa.so.1"
 
 INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE" | sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g")
 DEFINES=$(sed -n 's/^CXX_DEFINES = //p' "$FLAGS_FILE")
@@ -25,21 +26,27 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # The compiler used for the pinned Vespa artifacts is not required to be
 # installed at the consumer.  The public SDK only contains the ABI library.
 $CXX $DEFINES $INCLUDES $CXX_FLAGS -Wno-inline -std=gnu++23 -fPIC \
+    -fvisibility=hidden \
     -I"$ROOT/native/vespa" -c "$ROOT/native/vespa/searchkernel_vespa.cpp" \
     -o "$BUILD/searchkernel_vespa.o"
 
 LINK_LINE=$(sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g" "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
-     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so#")
+     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.1 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.1#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
+# The harvested command targets an executable and requests a complete dynamic
+# symbol table.  The adapter is a shared library, so do not publish its C++
+# implementation symbols.
+LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 # Use an old-style RPATH so the SDK's bundled libraries remain discoverable
 # for transitive dependencies when the standalone native library is inspected
 # or loaded without LD_LIBRARY_PATH.  Keep the SDK relocatable.
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
     "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'\$ORIGIN'|g")
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
+LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$ROOT/native/vespa/searchkernel_vespa.map"
 # The source link command belongs to a Vespa unit-test executable.  The
 # adapter-owned replacements below do not need its test-only libraries.
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
@@ -51,6 +58,16 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
     -e 's#[^ ]*libgtest\.so[^ ]*##g')
 cd "$(dirname "$(dirname "$(dirname "$LINK_FILE")")")"
 eval "$CXX $LINK_ARGS"
+
+ln -sf libsearchkernel_vespa.so.1 "$SDK/lib/libsearchkernel_vespa.so"
+
+UNEXPECTED_SYMBOLS=$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.1" |
+    awk '$2 ~ /^[A-Z]$/ { name = $3; sub(/@@.*/, "", name); if (name != "SEARCHKERNEL_1" && name !~ /^sk_/) print name }')
+if [ -n "$UNEXPECTED_SYMBOLS" ]; then
+    echo "unexpected global symbols in Search Kernel ABI library:" >&2
+    printf '%s\n' "$UNEXPECTED_SYMBOLS" >&2
+    exit 1
+fi
 
 cp "$ROOT/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
 cp "$ROOT/native/vespa/manifest.json" "$SDK/manifest.json"
@@ -76,7 +93,7 @@ if command -v patchelf >/dev/null 2>&1; then
     # Keep the bundled upstream binaries byte-for-byte intact.  The adapter's
     # legacy RPATH is sufficient for transitive dependencies in this private
     # SDK and avoids rewriting unusual upstream ELF layouts.
-    patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so"
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.1"
 fi
 
 echo "built SDK at $SDK"

@@ -1,0 +1,19 @@
+{
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": true,
+      "type": "text"
+    }
+  ],
+  "id": "text-summary",
+  "schema": "typea",
+  "smoke": {
+    "field": "title",
+    "kind": "text",
+    "query": "brown",
+    "text": "The quick brown fox"
+  }
+}

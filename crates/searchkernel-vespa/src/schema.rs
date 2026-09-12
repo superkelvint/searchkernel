@@ -1,0 +1,559 @@
+use crate::{Error, Result};
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+const NAME_ERROR: &str = "names must match [A-Za-z_][A-Za-z0-9_]*";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldType {
+    Text,
+    String,
+    Integer,
+    Float,
+    Boolean,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    name: String,
+    field_type: FieldType,
+    indexed: bool,
+    attribute: bool,
+    summary: bool,
+}
+
+impl Field {
+    pub fn new(name: impl Into<String>, field_type: FieldType) -> Self {
+        Self {
+            name: name.into(),
+            field_type,
+            indexed: false,
+            attribute: false,
+            summary: false,
+        }
+    }
+
+    pub fn indexed(mut self) -> Self {
+        self.indexed = true;
+        self
+    }
+
+    pub fn attribute(mut self) -> Self {
+        self.attribute = true;
+        self
+    }
+
+    pub fn summary(mut self) -> Self {
+        self.summary = true;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Schema {
+    document_type: String,
+    fields: Vec<Field>,
+}
+
+impl Schema {
+    pub fn new(document_type: impl Into<String>) -> Self {
+        Self {
+            document_type: document_type.into(),
+            fields: Vec::new(),
+        }
+    }
+
+    pub fn field(mut self, field: Field) -> Self {
+        self.fields.push(field);
+        self
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ConfigCompiler;
+
+impl ConfigCompiler {
+    pub fn compile_to(&self, schema: &Schema, directory: impl AsRef<Path>) -> Result<()> {
+        let output = directory.as_ref();
+        let derived = DerivedConfig::from_schema(schema)?;
+        let output_state = OutputState::inspect(output)?;
+        let temporary = TemporaryDirectory::create(output)?;
+
+        (|| {
+            write_config(
+                &temporary.path,
+                "searchkernel-schema.json",
+                &derived.manifest(),
+            )?;
+            write_config(&temporary.path, "indexschema.cfg", &derived.indexschema())?;
+            write_config(&temporary.path, "attributes.cfg", &derived.attributes())?;
+            write_config(&temporary.path, "summary.cfg", &derived.summary())?;
+            write_config(&temporary.path, "rank-profiles.cfg", rank_profiles())?;
+            write_config(&temporary.path, "juniperrc.cfg", "")?;
+            temporary.install(output, output_state)
+        })()
+    }
+}
+
+#[derive(Debug)]
+struct DerivedConfig<'a> {
+    schema: &'a Schema,
+}
+
+impl<'a> DerivedConfig<'a> {
+    fn from_schema(schema: &'a Schema) -> Result<Self> {
+        validate_schema(schema)?;
+        Ok(Self { schema })
+    }
+
+    fn fields(&self) -> &[Field] {
+        &self.schema.fields
+    }
+
+    fn manifest(&self) -> String {
+        let mut output = format!(
+            "{{\"version\":1,\"document_type\":{},\"fields\":[",
+            quoted(&self.schema.document_type)
+        );
+        for (index, field) in self.fields().iter().enumerate() {
+            if index != 0 {
+                output.push(',');
+            }
+            output.push_str(&format!(
+                "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
+                quoted(&field.name),
+                quoted(match field.field_type {
+                    FieldType::Text => "text",
+                    FieldType::String => "string",
+                    FieldType::Integer => "integer",
+                    FieldType::Float => "float",
+                    FieldType::Boolean => "boolean",
+                }),
+                field.indexed,
+                field.attribute,
+                field.summary,
+            ));
+        }
+        output.push_str("]}\n");
+        output
+    }
+
+    fn indexschema(&self) -> String {
+        let indexed: Vec<&Field> = self.fields().iter().filter(|field| field.indexed).collect();
+        let mut output = format!("indexfield[{}]\n", indexed.len());
+        for (index, field) in indexed.iter().enumerate() {
+            output.push_str(&format!(
+                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
+                quoted(&field.name)
+            ));
+        }
+        output
+    }
+
+    fn attributes(&self) -> String {
+        let attributes: Vec<&Field> = self
+            .fields()
+            .iter()
+            .filter(|field| field.attribute)
+            .collect();
+        let mut output = format!("attribute[{}]\n", attributes.len());
+        for (index, field) in attributes.iter().enumerate() {
+            output.push_str(&format!(
+                "attribute[{index}].name {}\nattribute[{index}].datatype {}\nattribute[{index}].collectiontype SINGLE\n",
+                quoted(&field.name),
+                field.field_type.attribute_type()
+            ));
+        }
+        output
+    }
+
+    fn summary(&self) -> String {
+        let mut fields = vec![SummaryField::implicit(
+            "documentid",
+            "documentid",
+            "",
+            "longstring",
+        )];
+        fields.push(SummaryField::implicit(
+            "rankfeatures",
+            "rankfeatures",
+            "",
+            "featuredata",
+        ));
+        fields.push(SummaryField::implicit(
+            "summaryfeatures",
+            "summaryfeatures",
+            "",
+            "featuredata",
+        ));
+
+        for field in self.fields().iter().filter(|field| field.summary) {
+            let (command, source) = if field.attribute {
+                ("attribute", field.name.as_str())
+            } else {
+                ("", "")
+            };
+            fields.push(SummaryField::implicit(
+                &field.name,
+                command,
+                source,
+                field.field_type.summary_type(),
+            ));
+        }
+
+        let mut output = String::from(
+            "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\n",
+        );
+        output.push_str(&format!("classes[0].fields[{}]\n", fields.len()));
+        for (index, field) in fields.iter().enumerate() {
+            output.push_str(&format!(
+                "classes[0].fields[{index}].name {}\nclasses[0].fields[{index}].type {}\nclasses[0].fields[{index}].command {}\nclasses[0].fields[{index}].source {}\n",
+                quoted(&field.name),
+                quoted(&field.data_type),
+                quoted(&field.command),
+                quoted(&field.source)
+            ));
+        }
+        output
+    }
+}
+
+#[derive(Debug)]
+struct SummaryField {
+    name: String,
+    command: String,
+    source: String,
+    data_type: String,
+}
+
+impl SummaryField {
+    fn implicit(name: &str, command: &str, source: &str, data_type: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            command: command.to_owned(),
+            source: source.to_owned(),
+            data_type: data_type.to_owned(),
+        }
+    }
+}
+
+impl FieldType {
+    fn attribute_type(self) -> &'static str {
+        match self {
+            Self::Text | Self::String => "STRING",
+            Self::Integer => "INT32",
+            Self::Float => "DOUBLE",
+            Self::Boolean => "BOOL",
+        }
+    }
+
+    fn summary_type(self) -> &'static str {
+        match self {
+            Self::Text | Self::String => "longstring",
+            Self::Integer => "integer",
+            Self::Float => "double",
+            Self::Boolean => "bool",
+        }
+    }
+}
+
+fn validate_schema(schema: &Schema) -> Result<()> {
+    validate_name(&schema.document_type, "document type")?;
+    for (index, field) in schema.fields.iter().enumerate() {
+        validate_name(&field.name, &format!("field at index {index}"))?;
+        if schema
+            .fields
+            .iter()
+            .take(index)
+            .any(|previous| previous.name == field.name)
+        {
+            return Err(Error::message(format!(
+                "duplicate field name '{}'",
+                field.name
+            )));
+        }
+
+        match field.field_type {
+            FieldType::Text if !field.indexed => {
+                return Err(Error::message(format!(
+                    "text field '{}' must be indexed",
+                    field.name
+                )))
+            }
+            FieldType::Text => {}
+            _ if field.indexed => {
+                return Err(Error::message(format!(
+                    "non-text field '{}' may not be indexed",
+                    field.name
+                )))
+            }
+            _ if !field.attribute => {
+                return Err(Error::message(format!(
+                    "non-text field '{}' must be an attribute",
+                    field.name
+                )))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_name(value: &str, kind: &str) -> Result<()> {
+    let mut characters = value.chars();
+    let valid_first = characters
+        .next()
+        .map(|character| character == '_' || character.is_ascii_alphabetic())
+        .unwrap_or(false);
+    if !valid_first
+        || !characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    {
+        return Err(Error::message(format!(
+            "invalid {kind} name '{value}': {NAME_ERROR}"
+        )));
+    }
+    Ok(())
+}
+
+fn quoted(value: &str) -> String {
+    let mut output = String::with_capacity(value.len() + 2);
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '\\' => output.push_str("\\\\"),
+            '"' => output.push_str("\\\""),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character => output.push(character),
+        }
+    }
+    output.push('"');
+    output
+}
+
+fn rank_profiles() -> &'static str {
+    "rankprofile[1]\nrankprofile[0].name \"default\"\n"
+}
+
+fn write_config(directory: &Path, name: &str, content: &str) -> Result<()> {
+    let path = directory.join(name);
+    let mut file = File::create(&path).map_err(|error| {
+        Error::message(format!("could not create '{}': {error}", path.display()))
+    })?;
+    file.write_all(content.as_bytes())
+        .map_err(|error| Error::message(format!("could not write '{}': {error}", path.display())))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OutputState {
+    Absent,
+    Empty,
+}
+
+impl OutputState {
+    fn inspect(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Self::Absent);
+        }
+        if !path.is_dir() {
+            return Err(Error::message(format!(
+                "configuration output is not a directory: {}",
+                path.display()
+            )));
+        }
+        let mut entries = fs::read_dir(path).map_err(|error| {
+            Error::message(format!(
+                "could not inspect configuration output '{}': {error}",
+                path.display()
+            ))
+        })?;
+        if entries.next().is_some() {
+            return Err(Error::message(format!(
+                "configuration output directory is not empty: {}",
+                path.display()
+            )));
+        }
+        Ok(Self::Empty)
+    }
+}
+
+#[derive(Debug)]
+struct TemporaryDirectory {
+    path: PathBuf,
+    installed: bool,
+}
+
+impl TemporaryDirectory {
+    fn create(output: &Path) -> Result<Self> {
+        let parent = output.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent).map_err(|error| {
+            Error::message(format!(
+                "could not create configuration parent '{}': {error}",
+                parent.display()
+            ))
+        })?;
+        let name = output
+            .file_name()
+            .ok_or_else(|| Error::message("configuration output must have a directory name"))?
+            .to_string_lossy();
+
+        for attempt in 0..100u32 {
+            let candidate = parent.join(format!(".{name}.searchkernel-{attempt}"));
+            match fs::create_dir(&candidate) {
+                Ok(()) => {
+                    return Ok(Self {
+                        path: candidate,
+                        installed: false,
+                    })
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(Error::message(format!(
+                        "could not create temporary configuration directory '{}': {error}",
+                        candidate.display()
+                    )))
+                }
+            }
+        }
+        Err(Error::message(format!(
+            "could not allocate a temporary configuration directory beside '{}'",
+            output.display()
+        )))
+    }
+
+    fn install(mut self, output: &Path, state: OutputState) -> Result<()> {
+        if matches!(state, OutputState::Empty) {
+            fs::remove_dir(output).map_err(|error| {
+                Error::message(format!(
+                    "could not replace empty configuration output '{}': {error}",
+                    output.display()
+                ))
+            })?;
+        }
+        fs::rename(&self.path, output).map_err(|error| {
+            Error::message(format!(
+                "could not install generated configuration '{}': {error}",
+                output.display()
+            ))
+        })?;
+        self.installed = true;
+        Ok(())
+    }
+
+    fn remove(&self) {
+        if !self.installed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        self.remove();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("searchkernel-m6-{label}-{nonce}"))
+    }
+
+    fn compile(schema: Schema, label: &str) -> PathBuf {
+        let path = temporary_path(label);
+        ConfigCompiler
+            .compile_to(&schema, &path)
+            .expect("compile schema");
+        path
+    }
+
+    #[test]
+    fn validates_names_and_capabilities() {
+        let invalid = [
+            Schema::new(""),
+            Schema::new("typea").field(Field::new("bad-name", FieldType::Text).indexed()),
+            Schema::new("typea").field(Field::new("title", FieldType::Text)),
+            Schema::new("typea").field(Field::new("sku", FieldType::String)),
+            Schema::new("typea").field(Field::new("sku", FieldType::String).indexed().attribute()),
+            Schema::new("typea").field(Field::new("qty", FieldType::Integer).summary()),
+        ];
+        for schema in invalid {
+            assert!(ConfigCompiler
+                .compile_to(&schema, temporary_path("invalid"))
+                .is_err());
+        }
+
+        let duplicate = Schema::new("typea")
+            .field(Field::new("title", FieldType::Text).indexed())
+            .field(Field::new("title", FieldType::Text).indexed());
+        assert!(ConfigCompiler
+            .compile_to(&duplicate, temporary_path("duplicate"))
+            .is_err());
+    }
+
+    #[test]
+    fn derives_each_supported_type() {
+        let path = compile(
+            Schema::new("typea")
+                .field(Field::new("title", FieldType::Text).indexed().summary())
+                .field(Field::new("sku", FieldType::String).attribute().summary())
+                .field(Field::new("qty", FieldType::Integer).attribute().summary())
+                .field(Field::new("price", FieldType::Float).attribute().summary())
+                .field(
+                    Field::new("active", FieldType::Boolean)
+                        .attribute()
+                        .summary(),
+                ),
+            "types",
+        );
+        let index = fs::read_to_string(path.join("indexschema.cfg")).expect("index config");
+        let attributes = fs::read_to_string(path.join("attributes.cfg")).expect("attribute config");
+        let summary = fs::read_to_string(path.join("summary.cfg")).expect("summary config");
+        assert!(index.contains("indexfield[0].name \"title\""));
+        assert!(index.contains("indexfield[0].positions true"));
+        assert!(attributes.contains("attribute[0].datatype STRING"));
+        assert!(attributes.contains("attribute[1].datatype INT32"));
+        assert!(attributes.contains("attribute[2].datatype DOUBLE"));
+        assert!(attributes.contains("attribute[3].datatype BOOL"));
+        assert!(summary.contains("classes[0].fields[0].name \"documentid\""));
+        assert!(summary.contains("classes[0].fields[7].name \"active\""));
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn output_is_deterministic_and_rejects_non_empty_directories() {
+        let schema = Schema::new("typea")
+            .field(Field::new("title", FieldType::Text).indexed().summary())
+            .field(Field::new("qty", FieldType::Integer).attribute());
+        let first = compile(schema.clone(), "deterministic-a");
+        let second = compile(schema, "deterministic-b");
+        for name in [
+            "indexschema.cfg",
+            "attributes.cfg",
+            "summary.cfg",
+            "rank-profiles.cfg",
+            "juniperrc.cfg",
+            "searchkernel-schema.json",
+        ] {
+            assert_eq!(
+                fs::read(first.join(name)).expect("first config"),
+                fs::read(second.join(name)).expect("second config")
+            );
+        }
+        fs::write(first.join("stale"), "stale").expect("stale marker");
+        assert!(ConfigCompiler
+            .compile_to(&Schema::new("typea"), &first)
+            .is_err());
+        let _ = fs::remove_dir_all(first);
+        let _ = fs::remove_dir_all(second);
+    }
+}

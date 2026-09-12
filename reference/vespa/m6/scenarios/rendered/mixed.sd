@@ -1,0 +1,20 @@
+schema typea {
+
+  document typea {
+    field title type string {
+      indexing: index | summary
+    }
+    field sku type string {
+      indexing: attribute | summary
+    }
+    field qty type int {
+      indexing: attribute | summary
+    }
+    field price type double {
+      indexing: attribute | summary
+    }
+    field active type bool {
+      indexing: attribute | summary
+    }
+  }
+}

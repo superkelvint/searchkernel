@@ -1,0 +1,16 @@
+{
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "sku",
+      "summary": true,
+      "type": "string"
+    }
+  ],
+  "id": "keyword",
+  "schema": "typea",
+  "smoke": {
+    "kind": "open"
+  }
+}

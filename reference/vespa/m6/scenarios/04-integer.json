@@ -1,0 +1,18 @@
+{
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": true,
+      "type": "integer"
+    }
+  ],
+  "id": "integer",
+  "schema": "typea",
+  "smoke": {
+    "field": "qty",
+    "kind": "integer",
+    "value": 42
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "active",
+      "summary": true,
+      "type": "boolean"
+    }
+  ],
+  "id": "boolean",
+  "schema": "typea",
+  "smoke": {
+    "kind": "open"
+  }
+}

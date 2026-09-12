@@ -1,0 +1,19 @@
+{
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": true,
+      "type": "text"
+    }
+  ],
+  "id": "products-text-summary",
+  "schema": "products",
+  "smoke": {
+    "field": "title",
+    "kind": "text",
+    "query": "brown",
+    "text": "The quick brown fox"
+  }
+}

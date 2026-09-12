@@ -1,0 +1,8 @@
+schema typea {
+
+  document typea {
+    field qty type int {
+      indexing: attribute | summary
+    }
+  }
+}

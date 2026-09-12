@@ -1,0 +1,19 @@
+{
+  "fields": [
+    {
+      "attribute": true,
+      "index": true,
+      "name": "title",
+      "summary": true,
+      "type": "text"
+    }
+  ],
+  "id": "text-index-attribute-summary",
+  "schema": "typea",
+  "smoke": {
+    "field": "title",
+    "kind": "text",
+    "query": "running",
+    "text": "Running foxes"
+  }
+}
