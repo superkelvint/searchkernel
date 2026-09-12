@@ -5,6 +5,7 @@ members = [
     "crates/searchkernel",
     "crates/searchkernel-sys",
     "crates/searchkernel-vespa",
+    "crates/searchkernel-testkit",
 ]
 resolver = "2"
 
