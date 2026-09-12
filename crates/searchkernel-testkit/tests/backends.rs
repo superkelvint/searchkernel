@@ -1,59 +1,191 @@
+use searchkernel_core::__flatbuffers::{root, FlatBufferBuilder};
 use searchkernel_core::{
-    AnalyzeRequestIr, AnalyzerIdentity, DeleteRequestIr, DeleteResult, DocumentId, GetRequestIr,
-    GetResult, InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult,
-    ProjectionIr, SearchRequestIr, SearchResult, UpsertRequestIr, UpsertResult,
+    api, AnalyzeRequestIr, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, IndexContext,
+    InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult, SearchRequestIr,
+    SearchResult, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_testkit::{
     Backend, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedCallError, ScriptedResult,
     TestkitError,
 };
 
-fn id(value: &str) -> DocumentId {
-    DocumentId::parse(value).unwrap()
+fn context() -> IndexContext {
+    let mut builder = FlatBufferBuilder::new();
+    let name = builder.create_string("title");
+    let stored = api::OptionalBool::new(true);
+    let searchable = api::OptionalBool::new(true);
+    let analyzer_name = builder.create_string("standard");
+    let analyzer = api::Analyzer::create(
+        &mut builder,
+        &api::AnalyzerArgs {
+            name: Some(analyzer_name),
+            version: 1,
+            options: None,
+        },
+    );
+    let field = api::FieldDefinition::create(
+        &mut builder,
+        &api::FieldDefinitionArgs {
+            name: Some(name),
+            kind: api::FieldKind::Text,
+            cardinality: api::FieldCardinality::Single,
+            stored: Some(&stored),
+            searchable: Some(&searchable),
+            analyzer: Some(analyzer),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(definition, None);
+    let bytes = builder.finished_data().to_vec();
+    IndexContext::from_api(root::<api::IndexDefinition>(&bytes).unwrap()).unwrap()
 }
+
 fn insert() -> InsertRequestIr {
-    InsertRequestIr::new(searchkernel_core::DocumentIr::new(
-        id("a"),
-        Default::default(),
-    ))
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let document = api::Document::create(
+        &mut builder,
+        &api::DocumentArgs {
+            id: Some(id),
+            ..Default::default()
+        },
+    );
+    let request = api::InsertRequest::create(
+        &mut builder,
+        &api::InsertRequestArgs {
+            document: Some(document),
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .insert_to_ir(root::<api::InsertRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn upsert() -> UpsertRequestIr {
-    UpsertRequestIr::new(insert().document().clone())
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let document = api::Document::create(
+        &mut builder,
+        &api::DocumentArgs {
+            id: Some(id),
+            ..Default::default()
+        },
+    );
+    let request = api::UpsertRequest::create(
+        &mut builder,
+        &api::UpsertRequestArgs {
+            document: Some(document),
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .upsert_to_ir(root::<api::UpsertRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn patch() -> PatchRequestIr {
-    PatchRequestIr::from_parts(
-        id("a"),
-        vec![searchkernel_core::PatchOperationIr::unset(
-            searchkernel_core::FieldName::parse("field").unwrap(),
-        )],
-    )
-    .unwrap()
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let field = builder.create_string("title");
+    let unset = api::UnsetField::create(&mut builder, &api::UnsetFieldArgs { field: Some(field) });
+    let operation = api::PatchOperation::create(
+        &mut builder,
+        &api::PatchOperationArgs {
+            operation_type: api::PatchOperationKind::UnsetField,
+            operation: Some(unset.as_union_value()),
+        },
+    );
+    let operations = builder.create_vector(&[operation]);
+    let request = api::PatchRequest::create(
+        &mut builder,
+        &api::PatchRequestArgs {
+            id: Some(id),
+            operations: Some(operations),
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .patch_to_ir(root::<api::PatchRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn delete() -> DeleteRequestIr {
-    DeleteRequestIr::new(id("a"))
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let request =
+        api::DeleteRequest::create(&mut builder, &api::DeleteRequestArgs { id: Some(id) });
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .delete_to_ir(root::<api::DeleteRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn get() -> GetRequestIr {
-    GetRequestIr::from_parts(id("a"), ProjectionIr::new(vec![]))
+    let mut builder = FlatBufferBuilder::new();
+    let id = builder.create_string("a");
+    let request = api::GetRequest::create(
+        &mut builder,
+        &api::GetRequestArgs {
+            id: Some(id),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .get_to_ir(root::<api::GetRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn search() -> SearchRequestIr {
-    SearchRequestIr::from_parts(
-        searchkernel_core::QueryIr::MatchAll,
-        vec![],
-        None,
-        vec![],
-        vec![],
-        searchkernel_core::RankingPolicyIr::DefaultRelevanceV1,
-        1,
-        0,
-        ProjectionIr::new(vec![]),
-        searchkernel_core::HighlightingIr::Disabled,
-        None,
-        searchkernel_core::PrefixPolicy::Disabled,
-        searchkernel_core::TypoPolicy::Disabled,
-    )
+    let mut builder = FlatBufferBuilder::new();
+    let request = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .search_to_ir(root::<api::SearchRequest>(&bytes).unwrap())
+        .unwrap()
 }
+
 fn analyze() -> AnalyzeRequestIr {
-    AnalyzeRequestIr::new(AnalyzerIdentity::StandardV1, "text".to_owned(), None)
+    let mut builder = FlatBufferBuilder::new();
+    let name = builder.create_string("standard");
+    let analyzer = api::Analyzer::create(
+        &mut builder,
+        &api::AnalyzerArgs {
+            name: Some(name),
+            version: 1,
+            options: None,
+        },
+    );
+    let text = builder.create_string("text");
+    let request = api::AnalyzeRequest::create(
+        &mut builder,
+        &api::AnalyzeRequestArgs {
+            target_type: api::AnalyzeTarget::Analyzer,
+            target: Some(analyzer.as_union_value()),
+            text: Some(text),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let bytes = builder.finished_data().to_vec();
+    context()
+        .analyze_to_ir(root::<api::AnalyzeRequest>(&bytes).unwrap())
+        .unwrap()
 }
 
 #[test]
@@ -145,8 +277,33 @@ fn scripted_backend_reports_request_mismatch_and_unused_entries() {
         OperationIr::Patch(patch()),
         ScriptedResult::Patch(PatchResult { id: "a".to_owned() }),
     )]);
-    let mut different = patch();
-    different = PatchRequestIr::from_parts(id("b"), different.operations().to_vec()).unwrap();
+    let different = {
+        let mut builder = FlatBufferBuilder::new();
+        let id = builder.create_string("b");
+        let field = builder.create_string("title");
+        let unset =
+            api::UnsetField::create(&mut builder, &api::UnsetFieldArgs { field: Some(field) });
+        let operation = api::PatchOperation::create(
+            &mut builder,
+            &api::PatchOperationArgs {
+                operation_type: api::PatchOperationKind::UnsetField,
+                operation: Some(unset.as_union_value()),
+            },
+        );
+        let operations = builder.create_vector(&[operation]);
+        let request = api::PatchRequest::create(
+            &mut builder,
+            &api::PatchRequestArgs {
+                id: Some(id),
+                operations: Some(operations),
+            },
+        );
+        builder.finish(request, None);
+        let bytes = builder.finished_data().to_vec();
+        context()
+            .patch_to_ir(root::<api::PatchRequest>(&bytes).unwrap())
+            .unwrap()
+    };
     assert!(matches!(
         backend.call_patch(different),
         Err(ScriptedCallError::Misuse(error))

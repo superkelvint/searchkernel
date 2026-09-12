@@ -142,6 +142,7 @@ pub struct FieldCapabilities {
 }
 
 impl FieldCapabilities {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(
         stored: bool,
         searchable: bool,
@@ -189,6 +190,7 @@ pub struct FieldIr {
 }
 
 impl FieldIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(
         name: FieldName,
         kind: FieldKind,
@@ -253,6 +255,7 @@ pub struct SearchFieldIr {
 }
 
 impl SearchFieldIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(field: FieldName, weight: SearchFieldWeight) -> Self {
         Self { field, weight }
     }
@@ -287,13 +290,6 @@ pub struct DocumentIr {
 }
 
 impl DocumentIr {
-    pub fn new(
-        id: DocumentId,
-        fields: std::collections::BTreeMap<FieldName, FieldValueIr>,
-    ) -> Self {
-        Self { id, fields }
-    }
-
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -309,10 +305,6 @@ pub struct InsertRequestIr {
 }
 
 impl InsertRequestIr {
-    pub fn new(document: DocumentIr) -> Self {
-        Self { document }
-    }
-
     pub fn document(&self) -> &DocumentIr {
         &self.document
     }
@@ -324,10 +316,6 @@ pub struct UpsertRequestIr {
 }
 
 impl UpsertRequestIr {
-    pub fn new(document: DocumentIr) -> Self {
-        Self { document }
-    }
-
     pub fn document(&self) -> &DocumentIr {
         &self.document
     }
@@ -344,15 +332,6 @@ pub enum PatchOperationIr {
     },
 }
 
-impl PatchOperationIr {
-    pub fn unset(field: FieldName) -> Self {
-        Self::Unset { field }
-    }
-    pub fn set(field: FieldName, value: FieldValueIr) -> Self {
-        Self::Set { field, value }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PatchRequestIr {
     pub(crate) id: DocumentId,
@@ -360,27 +339,6 @@ pub struct PatchRequestIr {
 }
 
 impl PatchRequestIr {
-    pub fn new(id: DocumentId, operations: Vec<PatchOperationIr>) -> Result<Self> {
-        if operations.is_empty() {
-            return Err(PortableError::invalid(
-                "invalid_patch",
-                None::<String>,
-                "patch must contain at least one operation",
-            ));
-        }
-        Ok(Self { id, operations })
-    }
-
-    pub fn from_parts(id: DocumentId, operations: Vec<PatchOperationIr>) -> Result<Self> {
-        if operations.is_empty() {
-            return Err(PortableError::invalid(
-                "empty_patch",
-                Some("operations"),
-                "patch must contain at least one operation",
-            ));
-        }
-        Ok(Self { id, operations })
-    }
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -396,10 +354,6 @@ pub struct DeleteRequestIr {
 }
 
 impl DeleteRequestIr {
-    pub fn new(id: DocumentId) -> Self {
-        Self { id }
-    }
-
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -411,6 +365,7 @@ pub struct ProjectionIr {
 }
 
 impl ProjectionIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(fields: Vec<FieldName>) -> Self {
         Self { fields }
     }
@@ -427,13 +382,6 @@ pub struct GetRequestIr {
 }
 
 impl GetRequestIr {
-    pub fn new(id: DocumentId, projection: ProjectionIr) -> Self {
-        Self { id, projection }
-    }
-
-    pub fn from_parts(id: DocumentId, projection: ProjectionIr) -> Self {
-        Self { id, projection }
-    }
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -461,6 +409,7 @@ pub struct ComparisonIr {
 }
 
 impl ComparisonIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(field: FieldName, op: ComparisonOp, value: ScalarValueIr) -> Self {
         Self { field, op, value }
     }
@@ -488,6 +437,7 @@ pub struct RangeIr {
 }
 
 impl RangeIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(
         field: FieldName,
         lower: Option<ScalarValueIr>,
@@ -555,6 +505,7 @@ pub struct SortIr {
 }
 
 impl SortIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(field: FieldName, direction: SortDirection, missing: MissingPlacement) -> Self {
         Self {
             field,
@@ -592,6 +543,7 @@ pub struct FacetIr {
 }
 
 impl FacetIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(field: FieldName, limit: u32, sort: FacetSort) -> Self {
         Self { field, limit, sort }
     }
@@ -655,6 +607,7 @@ pub struct IndexDefinitionIr {
 }
 
 impl IndexDefinitionIr {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(
         name: Option<IndexName>,
         fields: Vec<FieldIr>,
@@ -723,6 +676,7 @@ pub struct SearchRequestIr {
 }
 
 impl SearchRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         query: QueryIr,
@@ -756,38 +710,6 @@ impl SearchRequestIr {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_parts(
-        query: QueryIr,
-        search_fields: Vec<SearchFieldIr>,
-        filter: Option<FilterIr>,
-        sort: Vec<SortIr>,
-        facets: Vec<FacetIr>,
-        ranking: RankingPolicyIr,
-        limit: u32,
-        offset: u32,
-        projection: ProjectionIr,
-        highlighting: HighlightingIr,
-        language: Option<LanguageHint>,
-        prefix_policy: PrefixPolicy,
-        typo_policy: TypoPolicy,
-    ) -> Self {
-        Self {
-            query,
-            search_fields,
-            filter,
-            sort,
-            facets,
-            ranking,
-            limit,
-            offset,
-            projection,
-            highlighting,
-            language,
-            prefix_policy,
-            typo_policy,
-        }
-    }
     pub fn query(&self) -> &QueryIr {
         &self.query
     }
@@ -849,13 +771,6 @@ pub struct AnalyzeRequestIr {
 }
 
 impl AnalyzeRequestIr {
-    pub fn new(analyzer: AnalyzerIdentity, text: String, language: Option<LanguageHint>) -> Self {
-        Self {
-            analyzer,
-            text,
-            language,
-        }
-    }
     pub fn analyzer(&self) -> AnalyzerIdentity {
         self.analyzer
     }

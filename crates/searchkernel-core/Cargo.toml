@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 autotests = false
 
+[features]
+test-support = []
+
 [dependencies]
 searchkernel-api = { path = "../searchkernel-api" }
 flatbuffers = "=25.12.19"

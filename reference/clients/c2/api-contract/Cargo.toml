@@ -6,6 +6,6 @@ publish = false
 
 [dependencies]
 searchkernel-api = { path = "../../../../crates/searchkernel-api" }
-searchkernel-core = { path = "../../../../crates/searchkernel-core" }
+searchkernel-core = { path = "../../../../crates/searchkernel-core", features = ["test-support"] }
 
 [workspace]
