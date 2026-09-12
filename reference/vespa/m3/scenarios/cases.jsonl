@@ -1,0 +1,20 @@
+{"id":"empty","input":"","stemming":"default","remove_accents":false}
+{"id":"whitespace-only","input":"  \t\n  ","stemming":"default","remove_accents":false}
+{"id":"case-normalization","input":"The QUICK Brown FOX","stemming":"default","remove_accents":false}
+{"id":"punctuation","input":"hello,world! foo.bar;baz:qux?","stemming":"default","remove_accents":false}
+{"id":"multiple-whitespace","input":"one   two\tthree\nfour","stemming":"default","remove_accents":false}
+{"id":"apostrophe-hyphen","input":"can't co-operate rock’n’roll","stemming":"default","remove_accents":false}
+{"id":"repeated-terms","input":"fox fox fox","stemming":"default","remove_accents":false}
+{"id":"numeric-boundaries","input":"abc123 123abc 42 3.14 1,000","stemming":"default","remove_accents":false}
+{"id":"stemming-default","input":"running runners foxes jumped relational organization generously","stemming":"default","remove_accents":false}
+{"id":"stemming-none","input":"running runners foxes jumped relational organization generously","stemming":"none","remove_accents":false}
+{"id":"accents-retained","input":"Café résumé naïve façade","stemming":"none","remove_accents":false}
+{"id":"accents-removed","input":"Café résumé naïve façade","stemming":"none","remove_accents":true}
+{"id":"decomposed-retained","input":"Café résumé naïve","stemming":"none","remove_accents":false}
+{"id":"decomposed-removed","input":"Café résumé naïve","stemming":"none","remove_accents":true}
+{"id":"compatibility-forms","input":"ＦＯＯ ﬁle ①test","stemming":"none","remove_accents":false}
+{"id":"non-bmp-offsets","input":"😀 foxes café 😀 running","stemming":"default","remove_accents":false}
+{"id":"symbols","input":"C++ foo_bar @home #tag $money 50%","stemming":"none","remove_accents":false}
+{"id":"dash-variants","input":"foo-bar foo–bar foo—bar","stemming":"none","remove_accents":false}
+{"id":"mixed-case-unicode","input":"ÅNGSTRÖM Straße İSTANBUL","stemming":"none","remove_accents":false}
+{"id":"mixed-case-unicode-accents","input":"ÅNGSTRÖM Straße İSTANBUL","stemming":"none","remove_accents":true}

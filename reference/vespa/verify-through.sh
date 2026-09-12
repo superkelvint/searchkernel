@@ -19,8 +19,11 @@ case "${1:-}" in
         "$ROOT/m1/verify-m1.sh"
         "$ROOT/m2/verify-m2.sh"
         ;;
+    m5)
+        "$ROOT/m5/verify-m5.sh"
+        ;;
     *)
-        echo "usage: $0 m0|m1|m2" >&2
+        echo "usage: $0 m0|m1|m2|m5" >&2
         exit 2
         ;;
 esac

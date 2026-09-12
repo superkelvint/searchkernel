@@ -1,0 +1,18 @@
+{
+  "scenario": "m5-graceful-reopen",
+  "processes": [
+    {"mode": "seed", "operations": [
+      {"op": "put", "id": "id:test:typea::1", "attr1": 10},
+      {"op": "put", "id": "id:test:typea::2", "attr1": 20},
+      {"op": "put", "id": "id:test:typea::3", "attr1": 30},
+      {"op": "update", "id": "id:test:typea::2", "attr1": 10},
+      {"op": "delete", "id": "id:test:typea::3"}
+    ]},
+    {"mode": "verify"},
+    {"mode": "mutate", "operations": [
+      {"op": "update", "id": "id:test:typea::1", "attr1": 40},
+      {"op": "put", "id": "id:test:typea::4", "attr1": 10}
+    ]},
+    {"mode": "verify-final"}
+  ]
+}

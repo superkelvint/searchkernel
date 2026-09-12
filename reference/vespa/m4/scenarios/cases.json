@@ -1,0 +1,36 @@
+{
+  "field": "title",
+  "linguistics": {
+    "language": "english",
+    "stemming": "default",
+    "remove_accents": false
+  },
+  "documents": {
+    "doc1": "The quick brown fox",
+    "doc2": "A slow red fox",
+    "doc3": "brown very fox",
+    "doc4": "fox fox fox fox",
+    "doc5": "Running foxes"
+  },
+  "steps": [
+    {"op": "put", "doc": "doc1"},
+    {"op": "put", "doc": "doc2"},
+    {"op": "put", "doc": "doc3"},
+    {"op": "put", "doc": "doc4"},
+    {"op": "put", "doc": "doc5"},
+
+    {"op": "search", "id": "term-brown-initial", "rank": "default", "query": {"kind": "term", "text": "brown"}},
+    {"op": "search", "id": "phrase-brown-fox-initial", "rank": "default", "query": {"kind": "phrase", "text": "brown fox"}},
+    {"op": "search", "id": "m3-running-uppercase", "rank": "default", "query": {"kind": "term", "text": "RUNNING"}},
+    {"op": "search", "id": "bm25-fox-initial", "rank": "bm25", "include_scores": true, "query": {"kind": "term", "text": "fox"}},
+
+    {"op": "update", "doc": "doc2", "text": "A slow brown fox"},
+    {"op": "search", "id": "term-red-after-update", "rank": "default", "query": {"kind": "term", "text": "red"}},
+    {"op": "search", "id": "phrase-brown-fox-after-update", "rank": "default", "query": {"kind": "phrase", "text": "brown fox"}},
+
+    {"op": "delete", "doc": "doc1"},
+    {"op": "search", "id": "phrase-brown-fox-after-delete", "rank": "default", "query": {"kind": "phrase", "text": "brown fox"}},
+    {"op": "search", "id": "term-quick-after-delete", "rank": "default", "query": {"kind": "term", "text": "quick"}},
+    {"op": "search", "id": "term-brown-after-delete", "rank": "default", "query": {"kind": "term", "text": "brown"}}
+  ]
+}

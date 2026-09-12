@@ -34,6 +34,11 @@ LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
      s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
+# Use an old-style RPATH so the SDK's bundled libraries remain discoverable
+# for transitive dependencies when the standalone native library is inspected
+# or loaded without LD_LIBRARY_PATH.  Keep the SDK relocatable.
+LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
+    "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'\$ORIGIN'|g")
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
 # The source link command belongs to a Vespa unit-test executable.  The
 # adapter-owned replacements below do not need its test-only libraries.

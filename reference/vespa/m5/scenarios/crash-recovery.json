@@ -1,0 +1,5 @@
+{
+  "scenario": "m5-crash-recovery",
+  "writer": "update id:test:typea::1 attr1 from 10 to 40, then abort without Engine drop",
+  "accepted_states": ["pre-update", "post-update"]
+}

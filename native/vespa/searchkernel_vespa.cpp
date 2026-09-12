@@ -23,6 +23,7 @@
 #include <vespa/searchcore/proton/server/documentdb.h>
 #include <vespa/searchcore/proton/server/documentdbconfigmanager.h>
 #include <vespa/searchcore/proton/server/fileconfigmanager.h>
+#include <vespa/searchcore/proton/server/feedhandler.h>
 #include <vespa/searchcore/proton/server/idocumentdbowner.h>
 #include <vespa/searchcore/proton/server/idocumentsubdb.h>
 #include <vespa/searchcore/proton/documentmetastore/i_document_meta_store_context.h>
@@ -60,6 +61,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -259,6 +261,13 @@ class EmbeddedEngine {
     std::vector<uint64_t> _prepared_buckets;
     uint64_t _next_timestamp = 1;
 
+    uint64_t next_timestamp() {
+        if (_next_timestamp == std::numeric_limits<uint64_t>::max()) {
+            throw std::runtime_error("mutation timestamp space exhausted");
+        }
+        return _next_timestamp++;
+    }
+
     static DocumentType make_document_type() {
         DocumentType type(DOC_TYPE, 0);
         type.addField(document::Field("attr1", 1, *document::DataType::INT));
@@ -356,6 +365,14 @@ public:
             _hw_info, std::shared_ptr<search::diskindex::IPostingListCache>());
         _db->start();
         _db->waitForOnlineState();
+        const auto replay_serial = _db->getFeedHandler().getSerialNum();
+        if (replay_serial == std::numeric_limits<uint64_t>::max()) {
+            throw std::runtime_error("native feed serial space exhausted");
+        }
+        // Mutation timestamps are owned by this adapter. Start after the
+        // recovered feed serial so a new engine lifetime cannot submit an
+        // older update than one already persisted for the same document.
+        _next_timestamp = replay_serial + 1;
 
         _handler = std::make_shared<PersistenceHandlerProxy>(_db);
         _persistence.putHandler(_persistence.getWLock(), bucket_space(),
@@ -407,7 +424,7 @@ public:
         DocumentId document_id(id);
         Bucket bucket = bucket_for(document_id);
         prepare_bucket(bucket);
-        auto result = _persistence.put(bucket, Timestamp(_next_timestamp++),
+        auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
                                        make_document(document_id, value));
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
@@ -417,7 +434,7 @@ public:
     void update(const std::string &id, int32_t value) {
         DocumentId document_id(id);
         auto result = _persistence.update(
-            bucket_for(document_id), Timestamp(_next_timestamp++),
+            bucket_for(document_id), Timestamp(next_timestamp()),
             make_update(document_id, value));
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
@@ -427,7 +444,7 @@ public:
     bool remove(const std::string &id) {
         DocumentId document_id(id);
         auto result = _persistence.remove(
-            bucket_for(document_id), Timestamp(_next_timestamp++),
+            bucket_for(document_id), Timestamp(next_timestamp()),
             document_id);
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
@@ -548,6 +565,24 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
     }
     *out_engine = nullptr;
     return invoke(error, [&] {
+        std::error_code filesystem_error;
+        const std::filesystem::path data_path(data_dir);
+        if (std::filesystem::exists(data_path, filesystem_error) &&
+            !std::filesystem::is_directory(data_path, filesystem_error)) {
+            throw std::invalid_argument("engine data path is not a directory: " + data_path.string());
+        }
+        if (filesystem_error) {
+            throw std::runtime_error("could not inspect engine data path '" + data_path.string() + "': " +
+                                     filesystem_error.message());
+        }
+        const std::filesystem::path config_path(config_dir);
+        if (!std::filesystem::is_directory(config_path, filesystem_error)) {
+            if (filesystem_error) {
+                throw std::runtime_error("could not inspect engine config path '" + config_path.string() + "': " +
+                                         filesystem_error.message());
+            }
+            throw std::invalid_argument("engine config path is not a directory: " + config_path.string());
+        }
         auto engine = std::make_unique<sk_engine>();
         engine->impl = std::make_unique<EmbeddedEngine>(data_dir, config_dir);
         *out_engine = engine.release();

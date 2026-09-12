@@ -1,0 +1,14 @@
+{
+  "scenario": "m5-graceful-seed",
+  "after_put": {
+    "search_10": ["id:test:typea::1"],
+    "search_20": ["id:test:typea::2"],
+    "search_30": ["id:test:typea::3"]
+  },
+  "remove_doc3": true,
+  "after_update_delete": {
+    "search_10": ["id:test:typea::1", "id:test:typea::2"],
+    "search_20": [],
+    "search_30": []
+  }
+}

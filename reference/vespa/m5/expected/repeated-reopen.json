@@ -1,0 +1,5 @@
+{
+  "scenario": "m5-repeated-reopen",
+  "cycles": 5,
+  "final_search": ["id:test:typea::repeat"]
+}

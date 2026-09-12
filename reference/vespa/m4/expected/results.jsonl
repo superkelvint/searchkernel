@@ -1,0 +1,9 @@
+{"id":"term-brown-initial","hits":[{"id":"doc3"},{"id":"doc1"}]}
+{"id":"phrase-brown-fox-initial","hits":[{"id":"doc1"}]}
+{"id":"m3-running-uppercase","hits":[{"id":"doc5"}]}
+{"id":"bm25-fox-initial","hits":[{"id":"doc4","score":0.14288586166463893},{"id":"doc5","score":0.10463747586534249},{"id":"doc3","score":0.0914108286351728},{"id":"doc1","score":0.081152755596313},{"id":"doc2","score":0.081152755596313}]}
+{"id":"term-red-after-update","hits":[]}
+{"id":"phrase-brown-fox-after-update","hits":[{"id":"doc1"},{"id":"doc2"}]}
+{"id":"phrase-brown-fox-after-delete","hits":[{"id":"doc2"}]}
+{"id":"term-quick-after-delete","hits":[]}
+{"id":"term-brown-after-delete","hits":[{"id":"doc3"},{"id":"doc2"}]}

@@ -1,0 +1,10 @@
+[package]
+name = "searchkernel-m5-driver"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+searchkernel-vespa = { path = "../../../../crates/searchkernel-vespa" }
+
+[workspace]

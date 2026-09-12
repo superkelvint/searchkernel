@@ -1,0 +1,6 @@
+{
+  "scenario": "m5-repeated-reopen",
+  "mode": "repeat",
+  "cycles": 5,
+  "operation": "update one document, search it, close, and reopen"
+}

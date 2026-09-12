@@ -1,0 +1,5 @@
+{
+  "scenario": "m5-graceful-mutate",
+  "search_10": ["id:test:typea::2", "id:test:typea::4"],
+  "search_40": ["id:test:typea::1"]
+}

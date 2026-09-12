@@ -1,0 +1,24 @@
+
+# Search Kernel M4 direct-C++ golden oracle. Installed temporarily by
+# reference/vespa/m4/oracle/build-cpp-oracle.sh and removed after build.
+vespa_add_executable(searchcore_m4_text_oracle_app TEST
+    SOURCES
+    m4_text_oracle.cpp
+    DEPENDS
+    searchcore_test
+    searchcore_server
+    searchcore_initializer
+    searchcore_reprocessing
+    searchcore_index
+    searchcore_docsummary
+    searchcore_persistenceengine
+    searchcore_feedoperation
+    searchcore_matching
+    searchcore_attribute
+    searchcore_documentmetastore
+    searchcore_bucketdb
+    searchcore_flushengine
+    searchcore_pcommon
+    searchcore_grouping
+    searchcore_proton_metrics
+)
