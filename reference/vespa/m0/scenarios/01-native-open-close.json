@@ -1,0 +1,6 @@
+{
+  "scenario": "native-open-close",
+  "opens": 2,
+  "same_data_directory": true,
+  "native_abi_version": 1
+}

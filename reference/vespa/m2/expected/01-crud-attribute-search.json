@@ -1,0 +1,25 @@
+{
+  "scenario": "m2-crud-attribute-search",
+  "steps": [
+    {
+      "name": "after_put_search_10",
+      "hits": ["id:test:typea::1"]
+    },
+    {
+      "name": "after_update_search_10",
+      "hits": ["id:test:typea::1", "id:test:typea::2"]
+    },
+    {
+      "name": "remove_doc1",
+      "was_found": true
+    },
+    {
+      "name": "after_remove_search_10",
+      "hits": ["id:test:typea::2"]
+    },
+    {
+      "name": "after_update_search_old_20",
+      "hits": []
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+[package]
+name = "searchkernel-api-contract"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+searchkernel = { path = "../../../crates/searchkernel" }
+
+[workspace]

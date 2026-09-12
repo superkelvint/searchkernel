@@ -1,0 +1,5 @@
+{
+  "scenario": "rust-open-close",
+  "opens": 2,
+  "same_data_directory": true
+}

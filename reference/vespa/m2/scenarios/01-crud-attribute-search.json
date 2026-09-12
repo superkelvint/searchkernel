@@ -1,0 +1,13 @@
+{
+  "scenario": "m2-crud-attribute-search",
+  "operations": [
+    {"op": "put", "id": "id:test:typea::1", "fields": {"attr1": 10}},
+    {"op": "put", "id": "id:test:typea::2", "fields": {"attr1": 20}},
+    {"op": "search_i32", "field": "attr1", "value": 10, "capture": "after_put_search_10"},
+    {"op": "assign_i32", "id": "id:test:typea::2", "field": "attr1", "value": 10},
+    {"op": "search_i32", "field": "attr1", "value": 10, "capture": "after_update_search_10"},
+    {"op": "remove", "id": "id:test:typea::1", "capture": "remove_doc1"},
+    {"op": "search_i32", "field": "attr1", "value": 10, "capture": "after_remove_search_10"},
+    {"op": "search_i32", "field": "attr1", "value": 20, "capture": "after_update_search_old_20"}
+  ]
+}
