@@ -138,3 +138,89 @@ impl Index {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Analyzer, Field, SearchField};
+    use searchkernel_core::{AnalyzerIdentity, FieldCardinality, FieldKind};
+    use searchkernel_testkit::RecordingBackend;
+
+    #[test]
+    fn schema_options_and_default_search_fields_reach_core() {
+        let definition = IndexDefinition::new()
+            .name("catalog")
+            .field(
+                Field::text("title")
+                    .stored(false)
+                    .searchable(true)
+                    .filterable(false)
+                    .sortable(false)
+                    .facetable(false)
+                    .analyzer(Analyzer::standard_v1()),
+            )
+            .field(
+                Field::keyword("brand")
+                    .stored(false)
+                    .searchable(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(
+                Field::int64("quantity")
+                    .stored(true)
+                    .searchable(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(
+                Field::float64("price")
+                    .stored(false)
+                    .searchable(false)
+                    .filterable(true)
+                    .sortable(false)
+                    .facetable(false),
+            )
+            .field(
+                Field::bool("enabled")
+                    .multi()
+                    .stored(true)
+                    .searchable(false)
+                    .filterable(true)
+                    .sortable(false)
+                    .facetable(true),
+            )
+            .default_search_fields([SearchField::new("title").weight(0.0)]);
+        let index = Index::from_backend(definition, Arc::new(RecordingBackend::new())).unwrap();
+        let description = index.context.describe();
+
+        assert_eq!(description.name().unwrap().as_str(), "catalog");
+        assert_eq!(description.fields().len(), 5);
+        assert_eq!(description.default_search_fields().len(), 1);
+        assert_eq!(description.default_search_fields()[0].weight().get(), 0.0);
+
+        let fields = description.fields();
+        assert_eq!(fields[0].name().as_str(), "title");
+        assert_eq!(fields[0].kind(), FieldKind::Text);
+        assert_eq!(fields[0].cardinality(), FieldCardinality::Single);
+        assert_eq!(fields[0].analyzer(), Some(AnalyzerIdentity::StandardV1));
+        assert!(!fields[0].capabilities().stored());
+        assert!(fields[0].capabilities().searchable());
+
+        assert_eq!(fields[1].kind(), FieldKind::Keyword);
+        assert!(!fields[1].capabilities().stored());
+        assert!(fields[1].capabilities().filterable());
+        assert!(fields[1].capabilities().sortable());
+        assert!(fields[1].capabilities().facetable());
+
+        assert_eq!(fields[2].kind(), FieldKind::Int64);
+        assert!(fields[2].capabilities().facetable());
+        assert_eq!(fields[3].kind(), FieldKind::Float64);
+        assert!(!fields[3].capabilities().stored());
+        assert_eq!(fields[4].kind(), FieldKind::Bool);
+        assert_eq!(fields[4].cardinality(), FieldCardinality::Multi);
+        assert!(!fields[4].capabilities().sortable());
+    }
+}
