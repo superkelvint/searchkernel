@@ -4,6 +4,10 @@
 //! `SimpleTransformer`, and `StemmerImpl` behavior.  In particular, source
 //! spans always refer to the unmodified input, while normalization is applied
 //! only to the token value.
+//!
+//! Vespa classifies characters through the pinned JDK's
+//! `Character.getType()`. The Rust category table is pinned independently, so
+//! the live Java oracle remains the authority when Unicode versions diverge.
 
 mod data;
 mod stemmer;
@@ -70,12 +74,13 @@ pub struct Linguistics;
 impl Linguistics {
     pub fn analyze_document(&self, text: &str, options: LinguisticsOptions) -> DocumentAnalysis {
         let mut terms = Vec::new();
+        let mut kstemmer = stemmer::KStemmer::default();
         for token in tokenize(text) {
             if !token.class.is_indexable() {
                 continue;
             }
             let original = &text[token.start..token.end];
-            let term = process_token(original, options, true);
+            let term = process_token(original, options, true, &mut kstemmer);
             if term.trim().chars().next().is_some() {
                 let position = terms.len() as u32;
                 terms.push(DocumentTerm {
@@ -92,6 +97,7 @@ impl Linguistics {
 
     pub fn analyze_query(&self, text: &str, options: LinguisticsOptions) -> QueryAnalysis {
         let mut terms = Vec::new();
+        let mut kstemmer = stemmer::KStemmer::default();
         for token in tokenize(text) {
             if !token.class.is_indexable() {
                 continue;
@@ -99,7 +105,7 @@ impl Linguistics {
 
             // Stemmer.stem(String, Language, StemMode, boolean) in the pinned
             // Vespa API delegates to the overload which uses removeAccents=false.
-            let term = process_token(&text[token.start..token.end], options, false);
+            let term = process_token(&text[token.start..token.end], options, false, &mut kstemmer);
             let position = terms.len() as u32;
             terms.push(QueryTerm {
                 stems: vec![term],
@@ -218,14 +224,19 @@ fn at_boundary(previous: TokenClass, next: TokenClass) -> bool {
         || !next.is_indexable()
 }
 
-fn process_token(original: &str, options: LinguisticsOptions, apply_accents: bool) -> String {
+fn process_token(
+    original: &str,
+    options: LinguisticsOptions,
+    apply_accents: bool,
+    kstemmer: &mut stemmer::KStemmer,
+) -> String {
     let mut token: String = original.nfkc().collect();
     token = lowercase(&token);
     if apply_accents && options.remove_accents {
         token = accent_drop(&token);
     }
     if options.stem_mode == StemMode::Default {
-        token = stemmer::stem(&token);
+        token = kstemmer.stem_word(&token);
     }
     token
 }

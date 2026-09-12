@@ -6,5 +6,7 @@ license.workspace = true
 
 [dependencies]
 searchkernel-sys = { path = "../searchkernel-sys" }
-unicode-general-category = "1.1"
+# Vespa uses the pinned JDK Character.getType(); the live Java oracle is the
+# compatibility authority if this independently pinned table ever diverges.
+unicode-general-category = "=1.1.0"
 unicode-normalization = "0.1.25"

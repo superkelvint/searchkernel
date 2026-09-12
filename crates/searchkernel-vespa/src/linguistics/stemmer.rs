@@ -153,7 +153,7 @@ fn dictionary() -> &'static HashMap<&'static str, Entry> {
 }
 
 #[derive(Default)]
-struct KStemmer {
+pub(super) struct KStemmer {
     word: Vec<u8>,
     original: Vec<u8>,
     j: isize,
@@ -957,7 +957,7 @@ impl KStemmer {
         }
     }
 
-    fn stem_word(&mut self, input: &str) -> String {
+    pub(super) fn stem_word(&mut self, input: &str) -> String {
         let bytes = input.as_bytes();
         self.k = bytes.len() as isize - 1;
         if self.k <= 1 || self.k >= MAX_WORD_LEN as isize - 1 {
@@ -1004,6 +1004,7 @@ impl KStemmer {
             self.al_endings();
         }
         if !self.matched() {
+            self.word_in_dict();
             self.ive_endings();
         }
         if !self.matched() {
@@ -1036,7 +1037,10 @@ impl KStemmer {
     }
 }
 
-pub fn stem(input: &str) -> String {
+// Kept as the standalone verifier entry point; production analysis reuses a
+// KStemmer through `stem_word` instead.
+#[allow(dead_code)]
+pub(super) fn stem(input: &str) -> String {
     KStemmer::default().stem_word(input)
 }
 
