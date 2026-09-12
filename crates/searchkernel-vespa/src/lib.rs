@@ -14,7 +14,7 @@ use std::ffi::{CStr, CString, NulError};
 use std::path::Path;
 use std::ptr::{self, NonNull};
 
-const EXPECTED_ABI: u32 = 1;
+const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TextDocument<'a> {
@@ -151,6 +151,17 @@ impl Engine {
         Ok(Self {
             handle: require_ptr(handle, "engine")?,
         })
+    }
+
+    /// Gracefully close the engine and report any native durability failure.
+    ///
+    /// Dropping an engine remains a best-effort cleanup operation because Rust
+    /// destructors cannot return errors. This consuming method makes graceful
+    /// close observable while ensuring the native handle is still destroyed.
+    pub fn close(self) -> Result<(), Error> {
+        let mut error = NativeError::new();
+        let status = unsafe { sys::sk_engine_close(self.handle.as_ptr(), error.as_mut_ptr()) };
+        check(status, &error)
     }
 
     pub fn put(&self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {

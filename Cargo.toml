@@ -6,6 +6,7 @@ members = [
     "crates/searchkernel-vespa-sys",
     "crates/searchkernel-vespa",
     "crates/searchkernel-testkit",
+    "crates/searchkernel-ffi",
 ]
 resolver = "2"
 exclude = ["reference/vespa/m4/rust-driver", "reference/vespa/m6/rust-driver"]

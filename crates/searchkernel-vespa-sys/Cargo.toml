@@ -8,3 +8,7 @@ build = "build.rs"
 
 [lib]
 name = "searchkernel_vespa_sys"
+
+[build-dependencies]
+bindgen = "0.71"
+cc = "1"

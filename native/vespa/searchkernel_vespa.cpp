@@ -140,8 +140,9 @@ bool is_valid_utf8(std::string_view value) noexcept {
             continue;
         }
         if (byte == 0xe0) {
-            if (index + 2 >= value.size() || value[index + 1] < static_cast<char>(0xa0) ||
-                value[index + 1] > static_cast<char>(0xbf) ||
+            if (index + 2 >= value.size() ||
+                static_cast<uint8_t>(value[index + 1]) < 0xa0 ||
+                static_cast<uint8_t>(value[index + 1]) > 0xbf ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 2]))) {
                 return false;
             }
@@ -158,8 +159,9 @@ bool is_valid_utf8(std::string_view value) noexcept {
             continue;
         }
         if (byte == 0xed) {
-            if (index + 2 >= value.size() || value[index + 1] < static_cast<char>(0x80) ||
-                value[index + 1] > static_cast<char>(0x9f) ||
+            if (index + 2 >= value.size() ||
+                static_cast<uint8_t>(value[index + 1]) < 0x80 ||
+                static_cast<uint8_t>(value[index + 1]) > 0x9f ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 2]))) {
                 return false;
             }
@@ -167,8 +169,9 @@ bool is_valid_utf8(std::string_view value) noexcept {
             continue;
         }
         if (byte == 0xf0) {
-            if (index + 3 >= value.size() || value[index + 1] < static_cast<char>(0x90) ||
-                value[index + 1] > static_cast<char>(0xbf) ||
+            if (index + 3 >= value.size() ||
+                static_cast<uint8_t>(value[index + 1]) < 0x90 ||
+                static_cast<uint8_t>(value[index + 1]) > 0xbf ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 2])) ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 3]))) {
                 return false;
@@ -187,8 +190,9 @@ bool is_valid_utf8(std::string_view value) noexcept {
             continue;
         }
         if (byte == 0xf4) {
-            if (index + 3 >= value.size() || value[index + 1] < static_cast<char>(0x80) ||
-                value[index + 1] > static_cast<char>(0x8f) ||
+            if (index + 3 >= value.size() ||
+                static_cast<uint8_t>(value[index + 1]) < 0x80 ||
+                static_cast<uint8_t>(value[index + 1]) > 0x8f ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 2])) ||
                 !is_utf8_continuation(static_cast<uint8_t>(value[index + 3]))) {
                 return false;
@@ -202,8 +206,9 @@ bool is_valid_utf8(std::string_view value) noexcept {
 }
 
 bool is_utf8_boundary(std::string_view value, size_t offset) noexcept {
-    return offset == 0 || offset == value.size() ||
-           !is_utf8_continuation(static_cast<uint8_t>(value[offset]));
+    return offset <= value.size() &&
+           (offset == 0 || offset == value.size() ||
+            !is_utf8_continuation(static_cast<uint8_t>(value[offset])));
 }
 
 size_t bounded_string_length(const char *value, size_t maximum) noexcept {
@@ -1001,6 +1006,10 @@ public:
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
+        if (text.terms.size() >
+            static_cast<size_t>(std::numeric_limits<int>::max() - 2)) {
+            throw std::invalid_argument("text term count cannot be represented by Vespa");
+        }
         QueryBuilder<proton::matching::ProtonNodeTypes> builder;
         if (text.kind == 1) {
             if (text.terms.size() != 1) {
@@ -1168,7 +1177,9 @@ struct sk_text_update : TextUpdate {};
 struct sk_text_request : TextRequest {};
 struct sk_text_result : TextResult {};
 
-extern "C" uint32_t sk_native_abi_version(void) { return SK_NATIVE_ABI_VERSION; }
+extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
+    return SK_NATIVE_ABI_VERSION;
+}
 
 extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
                                    sk_engine **out_engine, sk_error *error) {
@@ -1212,14 +1223,14 @@ extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) {
     return invoke(error, [&] { engine->impl->close(); });
 }
 
-extern "C" void sk_engine_destroy(sk_engine *engine) {
+extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
     try {
         delete engine;
     } catch (...) {
     }
 }
 
-extern "C" void sk_error_destroy(sk_error *error) {
+extern "C" void sk_error_destroy(sk_error *error) SK_NOEXCEPT {
     destroy_error(error);
 }
 
@@ -1233,6 +1244,8 @@ extern "C" int32_t sk_document_create(const char *id, const char *field,
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "document arguments must not be null");
     }
     return invoke(error, [&] {
+        validate_document_id(id);
+        validate_field_name(field);
         if (*id == '\0' || *field == '\0') {
             throw std::invalid_argument("document ID and field must not be empty");
         }
@@ -1244,7 +1257,7 @@ extern "C" int32_t sk_document_create(const char *id, const char *field,
     });
 }
 
-extern "C" void sk_document_destroy(sk_document *document) { delete document; }
+extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT { delete document; }
 
 extern "C" int32_t sk_document_update_create(const char *id, const char *field,
                                                int32_t value,
@@ -1257,6 +1270,8 @@ extern "C" int32_t sk_document_update_create(const char *id, const char *field,
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments must not be null");
     }
     return invoke(error, [&] {
+        validate_document_id(id);
+        validate_field_name(field);
         if (*id == '\0' || *field == '\0') {
             throw std::invalid_argument("document ID and field must not be empty");
         }
@@ -1268,7 +1283,7 @@ extern "C" int32_t sk_document_update_create(const char *id, const char *field,
     });
 }
 
-extern "C" void sk_document_update_destroy(sk_document_update *update) {
+extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCEPT {
     delete update;
 }
 
@@ -1283,6 +1298,7 @@ extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments must not be null");
     }
     return invoke(error, [&] {
+        validate_field_name(field);
         if (*field == '\0') {
             throw std::invalid_argument("search field must not be empty");
         }
@@ -1294,7 +1310,7 @@ extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
     });
 }
 
-extern "C" void sk_search_request_destroy(sk_search_request *request) {
+extern "C" void sk_search_request_destroy(sk_search_request *request) SK_NOEXCEPT {
     delete request;
 }
 
@@ -1327,7 +1343,10 @@ extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
     if (!engine || !engine->impl || engine->impl->closed() || !id || !out_was_found) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "remove arguments are invalid");
     }
-    return invoke(error, [&] { *out_was_found = engine->impl->remove(id) ? 1 : 0; });
+    return invoke(error, [&] {
+        validate_document_id(id);
+        *out_was_found = engine->impl->remove(id) ? 1 : 0;
+    });
 }
 
 extern "C" int32_t sk_engine_search(const sk_engine *engine,
@@ -1351,7 +1370,7 @@ extern "C" int32_t sk_engine_search(const sk_engine *engine,
     });
 }
 
-extern "C" uint32_t sk_search_result_size(const sk_search_result *result) {
+extern "C" uint32_t sk_search_result_size(const sk_search_result *result) SK_NOEXCEPT {
     return result ? static_cast<uint32_t>(result->ids.size()) : 0;
 }
 
@@ -1376,7 +1395,7 @@ extern "C" int32_t sk_search_result_id(const sk_search_result *result,
     return SK_STATUS_OK;
 }
 
-extern "C" void sk_search_result_destroy(sk_search_result *result) {
+extern "C" void sk_search_result_destroy(sk_search_result *result) SK_NOEXCEPT {
     delete result;
 }
 
@@ -1503,7 +1522,7 @@ extern "C" int32_t sk_text_document_create(
     });
 }
 
-extern "C" void sk_text_document_destroy(sk_text_document *document) {
+extern "C" void sk_text_document_destroy(sk_text_document *document) SK_NOEXCEPT {
     delete document;
 }
 
@@ -1525,7 +1544,7 @@ extern "C" int32_t sk_text_update_create(
     });
 }
 
-extern "C" void sk_text_update_destroy(sk_text_update *update) {
+extern "C" void sk_text_update_destroy(sk_text_update *update) SK_NOEXCEPT {
     delete update;
 }
 
@@ -1546,7 +1565,7 @@ extern "C" int32_t sk_text_request_create(
     });
 }
 
-extern "C" void sk_text_request_destroy(sk_text_request *request) {
+extern "C" void sk_text_request_destroy(sk_text_request *request) SK_NOEXCEPT {
     delete request;
 }
 
@@ -1585,7 +1604,7 @@ extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
     });
 }
 
-extern "C" uint32_t sk_text_result_size(const sk_text_result *result) {
+extern "C" uint32_t sk_text_result_size(const sk_text_result *result) SK_NOEXCEPT {
     return result ? static_cast<uint32_t>(result->hits.size()) : 0;
 }
 
@@ -1615,6 +1634,6 @@ extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
     return SK_STATUS_OK;
 }
 
-extern "C" void sk_text_result_destroy(sk_text_result *result) {
+extern "C" void sk_text_result_destroy(sk_text_result *result) SK_NOEXCEPT {
     delete result;
 }
