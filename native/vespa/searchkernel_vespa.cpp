@@ -629,6 +629,7 @@ class EmbeddedEngine {
     std::shared_ptr<PersistenceHandlerProxy> _handler;
     std::vector<uint64_t> _prepared_buckets;
     uint64_t _next_timestamp = 1;
+    bool _initialized = false;
     enum class State { Open, Closing, Closed, Failed };
     std::atomic<State> _state{State::Open};
     mutable std::mutex _operation_mutex;
@@ -1022,7 +1023,6 @@ class EmbeddedEngine {
         const uint64_t raw_id = bucket.getBucketId().getId();
         if (std::find(_prepared_buckets.begin(), _prepared_buckets.end(), raw_id) ==
             _prepared_buckets.end()) {
-            _prepared_buckets.push_back(raw_id);
             auto created = _persistence.createBucket(bucket);
             if (created.hasError()) {
                 throw std::runtime_error(created.getErrorMessage());
@@ -1031,6 +1031,7 @@ class EmbeddedEngine {
             if (active.hasError()) {
                 throw std::runtime_error(active.getErrorMessage());
             }
+            _prepared_buckets.push_back(raw_id);
         }
     }
 
@@ -1088,7 +1089,9 @@ public:
           _persistence(_persistence_owner, _write_filter,
                        _resource_usage_notifier, -1, false),
           _handler(),
-          _prepared_buckets() {
+          _prepared_buckets() {}
+
+    void initialize(const std::string &data_dir, const std::string &config_dir) {
         std::filesystem::create_directories(data_dir);
         if (_doc_type == nullptr) {
             throw std::runtime_error("generated document type was not added to DocumentTypeRepo: " +
@@ -1159,12 +1162,14 @@ public:
             throw std::runtime_error(buckets.getErrorMessage());
         }
         for (const auto &bucket_id : buckets.getList()) {
-            auto active = _persistence.setActiveState(
-                Bucket(document::Bucket(bucket_space(), bucket_id)), BucketInfo::ACTIVE);
+            const Bucket bucket(document::Bucket(bucket_space(), bucket_id));
+            auto active = _persistence.setActiveState(bucket, BucketInfo::ACTIVE);
             if (active.hasError()) {
                 throw std::runtime_error(active.getErrorMessage());
             }
+            _prepared_buckets.push_back(bucket_id.getId());
         }
+        _initialized = true;
     }
 
     void close() {
@@ -1225,7 +1230,7 @@ public:
     }
 
     ~EmbeddedEngine() noexcept {
-        if (_state.load(std::memory_order_acquire) == State::Open) {
+        if (_initialized && _state.load(std::memory_order_acquire) == State::Open) {
             try {
                 close();
             } catch (...) {
@@ -1583,6 +1588,7 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
         auto engine = std::make_unique<sk_engine>();
         engine->impl = std::make_unique<EmbeddedEngine>(data_dir,
                                                         config_path.string());
+        engine->impl->initialize(data_dir, config_path.string());
         *out_engine = engine.release();
     });
 }

@@ -353,3 +353,20 @@ fn native_rejects_invalid_manifest_values_at_the_boundary() {
         let _ = fs::remove_dir_all(data);
     }
 }
+
+#[test]
+fn failed_native_initialization_releases_the_data_directory_owner() {
+    let (config, data) = compile_config("failed-initialization", &text_schema());
+    fs::create_dir_all(&data).expect("create data directory");
+    fs::write(data.join("typea"), b"not a directory").expect("create conflicting document type");
+
+    assert!(Engine::open(&data, &config).is_err());
+
+    fs::remove_file(data.join("typea")).expect("remove conflicting document type");
+    let engine = Engine::open(&data, &config)
+        .expect("failed initialization must release its data-directory owner");
+    engine.close().expect("close recovered engine");
+
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}

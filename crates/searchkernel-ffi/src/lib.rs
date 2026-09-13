@@ -3,6 +3,9 @@
 mod abi;
 mod buffer;
 mod dispatch;
+mod abi_contract {
+    include!(concat!(env!("OUT_DIR"), "/abi_contract.rs"));
+}
 #[allow(warnings)]
 #[path = "../generated/mod.rs"]
 mod generated;
@@ -18,6 +21,18 @@ pub mod test_support;
 pub struct SkBuffer {
     pub data: *mut u8,
     pub len: usize,
+}
+
+#[cfg(test)]
+mod abi_layout_tests {
+    use super::SkBuffer;
+    use std::mem::{align_of, size_of};
+
+    #[test]
+    fn buffer_layout_is_two_native_pointer_sized_words() {
+        assert_eq!(size_of::<SkBuffer>(), size_of::<usize>() * 2);
+        assert_eq!(align_of::<SkBuffer>(), align_of::<usize>());
+    }
 }
 
 #[no_mangle]

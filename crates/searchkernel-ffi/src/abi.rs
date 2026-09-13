@@ -2,6 +2,8 @@ use crate::SkBuffer;
 use crate::{buffer, dispatch, handle, status};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub(crate) const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+
 pub(crate) unsafe fn call(
     handle_value: u64,
     request: *const u8,
@@ -38,6 +40,10 @@ unsafe fn call_inner(
     // structure as required by the C ABI.
     let output = unsafe { &mut *out_response };
     if !output.data.is_null() || output.len != 0 {
+        return status::INVALID_ARGUMENT;
+    }
+
+    if request_len > MAX_REQUEST_BYTES {
         return status::INVALID_ARGUMENT;
     }
 
@@ -82,5 +88,25 @@ pub(crate) unsafe fn buffer_free(buffer: *mut SkBuffer) {
 }
 
 pub(crate) fn abi_version() -> u32 {
-    1
+    crate::abi_contract::ABI_VERSION
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr;
+
+    #[test]
+    fn oversized_requests_are_rejected_before_handle_lookup_or_parsing() {
+        let mut output = crate::SkBuffer {
+            data: ptr::null_mut(),
+            len: 0,
+        };
+        // SAFETY: `output` is a valid empty buffer. The oversized request is
+        // rejected before its null pointer could be dereferenced.
+        let result = unsafe { call(0, ptr::null(), MAX_REQUEST_BYTES + 1, &mut output) };
+        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert!(output.data.is_null());
+        assert_eq!(output.len, 0);
+    }
 }
