@@ -928,6 +928,18 @@ pub(crate) fn request_operation(tag: u8) -> Option<&'static str> {
     }
 }
 
+pub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[
+    ("insert", 1),
+    ("upsert", 2),
+    ("patch", 3),
+    ("delete", 4),
+    ("get", 5),
+    ("search", 6),
+    ("analyze", 7),
+    ("describe", 8),
+    ("inspect_query", 9),
+];
+
 pub(crate) fn is_request_operation(name: &str) -> bool {
     matches!(
         name,
@@ -958,6 +970,19 @@ pub(crate) fn response_operation(tag: u8) -> Option<&'static str> {
         _ => None,
     }
 }
+
+pub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[
+    ("insert", 1),
+    ("upsert", 2),
+    ("patch", 3),
+    ("delete", 4),
+    ("get", 5),
+    ("search", 6),
+    ("analyze", 7),
+    ("error", 8),
+    ("describe", 9),
+    ("inspect_query", 10),
+];
 
 pub(crate) fn is_response_operation(name: &str) -> bool {
     matches!(

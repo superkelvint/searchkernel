@@ -532,6 +532,15 @@ fn generate_metadata(
         ));
     }
     output.push_str("        _ => None,\n    }\n}\n");
+    output.push_str("\npub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[\n");
+    for (index, name) in request_types.iter().enumerate() {
+        output.push_str(&format!(
+            "    ({:?}, {}),\n",
+            operation_name(name)?,
+            index + 1
+        ));
+    }
+    output.push_str("];\n");
     output.push_str("\npub(crate) fn is_request_operation(name: &str) -> bool {\n");
     output.push_str("    matches!(name, ");
     for (index, variant) in request_types.iter().enumerate() {
@@ -551,6 +560,15 @@ fn generate_metadata(
         ));
     }
     output.push_str("        _ => None,\n    }\n}\n");
+    output.push_str("\npub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[\n");
+    for (index, name) in response_types.iter().enumerate() {
+        output.push_str(&format!(
+            "    ({:?}, {}),\n",
+            operation_name(name)?,
+            index + 1
+        ));
+    }
+    output.push_str("];\n");
     output.push_str("\npub(crate) fn is_response_operation(name: &str) -> bool {\n");
     output.push_str("    matches!(name, ");
     for (index, variant) in response_types.iter().enumerate() {
