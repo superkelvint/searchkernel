@@ -187,12 +187,14 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
     }
     generate_metadata(
         root,
-        &request,
-        &response,
-        &request_types,
-        &response_types,
-        &request_tags,
-        &response_tags,
+        &MetadataInputs {
+            request: &request,
+            response: &response,
+            request_types: &request_types,
+            response_types: &response_types,
+            request_tags: &request_tags,
+            response_tags: &response_tags,
+        },
         check,
     )?;
     generate_dispatch(root, &request_types, &response_types, check)?;
@@ -574,19 +576,19 @@ fn json_variant_name(name: &str) -> String {
     }
 }
 
-fn generate_metadata(
-    root: &Path,
-    request: &Value,
-    response: &Value,
-    request_types: &[String],
-    response_types: &[String],
-    request_tags: &BTreeMap<String, u8>,
-    response_tags: &BTreeMap<String, u8>,
-    check: bool,
-) -> Result<(), String> {
+struct MetadataInputs<'a> {
+    request: &'a Value,
+    response: &'a Value,
+    request_types: &'a [String],
+    response_types: &'a [String],
+    request_tags: &'a BTreeMap<String, u8>,
+    response_tags: &'a BTreeMap<String, u8>,
+}
+
+fn generate_metadata(root: &Path, inputs: &MetadataInputs<'_>, check: bool) -> Result<(), String> {
     let mut definitions = BTreeMap::<String, (Vec<String>, BTreeMap<String, String>)>::new();
     let mut enums = BTreeMap::<String, Vec<String>>::new();
-    for schema in [request, response] {
+    for schema in [inputs.request, inputs.response] {
         let Some(items) = schema.get("definitions").and_then(Value::as_object) else {
             return Err("BFBS JSON schema has no definitions".to_owned());
         };
@@ -663,11 +665,12 @@ fn generate_metadata(
         "    REQUEST_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
     );
     output.push_str("\npub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[\n");
-    for name in request_types {
+    for name in inputs.request_types {
         output.push_str(&format!(
             "    ({:?}, {}),\n",
             operation_name(name)?,
-            request_tags
+            inputs
+                .request_tags
                 .get(name)
                 .ok_or_else(|| format!("missing generated tag for {name}"))?
         ));
@@ -675,7 +678,7 @@ fn generate_metadata(
     output.push_str("];\n");
     output.push_str("\npub(crate) fn is_request_operation(name: &str) -> bool {\n");
     output.push_str("    matches!(name, ");
-    for (index, variant) in request_types.iter().enumerate() {
+    for (index, variant) in inputs.request_types.iter().enumerate() {
         if index != 0 {
             output.push_str(" | ");
         }
@@ -687,11 +690,12 @@ fn generate_metadata(
         "    RESPONSE_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
     );
     output.push_str("\npub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[\n");
-    for name in response_types {
+    for name in inputs.response_types {
         output.push_str(&format!(
             "    ({:?}, {}),\n",
             operation_name(name)?,
-            response_tags
+            inputs
+                .response_tags
                 .get(name)
                 .ok_or_else(|| format!("missing generated tag for {name}"))?
         ));
@@ -699,7 +703,7 @@ fn generate_metadata(
     output.push_str("];\n");
     output.push_str("\npub(crate) fn is_response_operation(name: &str) -> bool {\n");
     output.push_str("    matches!(name, ");
-    for (index, variant) in response_types.iter().enumerate() {
+    for (index, variant) in inputs.response_types.iter().enumerate() {
         if index != 0 {
             output.push_str(" | ");
         }
