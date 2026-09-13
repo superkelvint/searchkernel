@@ -1,0 +1,14 @@
+[package]
+name = "searchkernel-ffi-conformance-verifier"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+searchkernel-ffi = { path = "../../../crates/searchkernel-ffi", features = ["ffi-test-support"] }
+searchkernel-core = { path = "../../../crates/searchkernel-core", features = ["test-support"] }
+searchkernel-testkit = { path = "../../../crates/searchkernel-testkit" }
+flatbuffers = "=25.12.19"
+libc = "0.2"

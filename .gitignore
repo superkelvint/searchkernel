@@ -6,3 +6,4 @@
 /reference/vespa/m1/rust-driver/Cargo.lock
 /reference/vespa/m2/rust-driver/Cargo.lock
 /reference/clients/c2/api-contract/Cargo.lock
+**/__pycache__/*
