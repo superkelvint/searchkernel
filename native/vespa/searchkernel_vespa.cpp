@@ -627,6 +627,9 @@ class EmbeddedEngine {
     EmbeddedResourceUsageNotifier _resource_usage_notifier;
     PersistenceEngine _persistence;
     std::shared_ptr<PersistenceHandlerProxy> _handler;
+    // A bucket can be created successfully while activation fails. Keep the
+    // successful creation separate so a retry only re-attempts activation.
+    std::vector<uint64_t> _created_buckets;
     std::vector<uint64_t> _prepared_buckets;
     uint64_t _next_timestamp = 1;
     bool _initialized = false;
@@ -1023,9 +1026,18 @@ class EmbeddedEngine {
         const uint64_t raw_id = bucket.getBucketId().getId();
         if (std::find(_prepared_buckets.begin(), _prepared_buckets.end(), raw_id) ==
             _prepared_buckets.end()) {
-            auto created = _persistence.createBucket(bucket);
-            if (created.hasError()) {
-                throw std::runtime_error(created.getErrorMessage());
+            if (std::find(_created_buckets.begin(), _created_buckets.end(), raw_id) ==
+                _created_buckets.end()) {
+                // PersistenceHandlerProxy::handleCreateBucket in the pinned
+                // Vespa source checks BucketHandler::hasBucket before
+                // creating. We still remember success locally so an
+                // activation failure does not depend on that idempotence on
+                // the retry path.
+                auto created = _persistence.createBucket(bucket);
+                if (created.hasError()) {
+                    throw std::runtime_error(created.getErrorMessage());
+                }
+                _created_buckets.push_back(raw_id);
             }
             auto active = _persistence.setActiveState(bucket, BucketInfo::ACTIVE);
             if (active.hasError()) {
@@ -1089,6 +1101,7 @@ public:
           _persistence(_persistence_owner, _write_filter,
                        _resource_usage_notifier, -1, false),
           _handler(),
+          _created_buckets(),
           _prepared_buckets() {}
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
@@ -1167,6 +1180,7 @@ public:
             if (active.hasError()) {
                 throw std::runtime_error(active.getErrorMessage());
             }
+            _created_buckets.push_back(bucket_id.getId());
             _prepared_buckets.push_back(bucket_id.getId());
         }
         _initialized = true;

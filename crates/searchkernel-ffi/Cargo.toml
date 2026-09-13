@@ -14,3 +14,6 @@ ffi-test-support = []
 [dependencies]
 flatbuffers = "=25.12.19"
 searchkernel-core = { path = "../searchkernel-core" }
+
+[build-dependencies]
+cbindgen = "0.29.4"

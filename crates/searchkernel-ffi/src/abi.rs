@@ -39,7 +39,7 @@ unsafe fn call_inner(
     // SAFETY: null was checked above; the caller must provide a valid output
     // structure as required by the C ABI.
     let output = unsafe { &mut *out_response };
-    if !output.data.is_null() || output.len != 0 {
+    if !output.data.is_null() || output.len != 0 || output.allocation_id != 0 {
         return status::INVALID_ARGUMENT;
     }
 
@@ -88,7 +88,7 @@ pub(crate) unsafe fn buffer_free(buffer: *mut SkBuffer) {
 }
 
 pub(crate) fn abi_version() -> u32 {
-    crate::abi_contract::ABI_VERSION
+    crate::SK_ABI_VERSION
 }
 
 #[cfg(test)]
@@ -101,6 +101,7 @@ mod tests {
         let mut output = crate::SkBuffer {
             data: ptr::null_mut(),
             len: 0,
+            allocation_id: 0,
         };
         // SAFETY: `output` is a valid empty buffer. The oversized request is
         // rejected before its null pointer could be dereferenced.
@@ -108,5 +109,20 @@ mod tests {
         assert_eq!(result, status::INVALID_ARGUMENT);
         assert!(output.data.is_null());
         assert_eq!(output.len, 0);
+    }
+
+    #[test]
+    fn nonzero_allocation_id_is_not_an_empty_output_buffer() {
+        let mut output = crate::SkBuffer {
+            data: ptr::null_mut(),
+            len: 0,
+            allocation_id: 42,
+        };
+        // SAFETY: `output` is a valid writable buffer descriptor.
+        let result = unsafe { call(0, ptr::null(), 0, &mut output) };
+        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert!(output.data.is_null());
+        assert_eq!(output.len, 0);
+        assert_eq!(output.allocation_id, 42);
     }
 }

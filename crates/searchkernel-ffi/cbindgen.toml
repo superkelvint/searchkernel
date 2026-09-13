@@ -1,0 +1,17 @@
+language = "C"
+include_guard = "SEARCHKERNEL_FFI_H"
+pragma_once = false
+style = "both"
+usize_is_size_t = true
+cpp_compat = true
+
+[export]
+include = ["SkBuffer", "SkHandle", "SkStatus", "sk_abi_version", "sk_call", "sk_close", "sk_buffer_free"]
+
+[export.rename]
+SkBuffer = "sk_buffer_t"
+SkHandle = "sk_handle_t"
+SkStatus = "sk_status_t"
+
+[fn]
+rename_args = "None"
