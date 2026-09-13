@@ -165,7 +165,7 @@ impl<'a> DerivedConfig<'a> {
         let mut output = format!("indexfield[{}]\n", indexed.len());
         for (index, field) in indexed.iter().enumerate() {
             output.push_str(&format!(
-                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
+                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures true\n",
                 quoted(&field.name)
             ));
         }
@@ -633,6 +633,7 @@ mod tests {
             fs::read_to_string(path.join("rank-profiles.cfg")).expect("rank profiles");
         assert!(index.contains("indexfield[0].name \"title\""));
         assert!(index.contains("indexfield[0].positions true"));
+        assert!(index.contains("indexfield[0].interleavedfeatures true"));
         assert!(attributes.contains("attribute[0].datatype STRING"));
         assert!(attributes.contains("attribute[1].datatype INT32"));
         assert!(attributes.contains("attribute[2].datatype DOUBLE"));

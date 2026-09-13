@@ -68,15 +68,18 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -84,6 +87,12 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+
+#include <netinet/in.h>
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 using namespace std::chrono_literals;
 using document::Document;
@@ -114,9 +123,6 @@ using cloud::config::filedistribution::FiledistributorrpcConfig;
 
 namespace {
 
-constexpr unsigned int FIRST_TLS_PORT = 9014;
-constexpr unsigned int LAST_TLS_PORT = 65535;
-std::atomic<unsigned int> NEXT_TLS_PORT{FIRST_TLS_PORT};
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
 constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
 constexpr size_t MAX_RANK_PROFILE_BYTES = 256;
@@ -377,18 +383,97 @@ storage::spi::Bucket bucket_for(const document::DocumentId &id) {
     return storage::spi::Bucket(document::Bucket(bucket_space(), bucket_id_for(id)));
 }
 
-unsigned int next_tls_port() {
-    auto port = NEXT_TLS_PORT.load(std::memory_order_relaxed);
-    for (;;) {
-        if (port > LAST_TLS_PORT) {
-            throw std::runtime_error("transaction log port space exhausted");
+std::mutex DATA_DIRECTORY_LOCK_MUTEX;
+std::set<std::string> DATA_DIRECTORY_LOCKS;
+
+class DataDirectoryLock {
+    int _fd = -1;
+    std::string _key;
+    bool _registered = false;
+
+    void unregister_path() noexcept {
+        if (!_registered) return;
+        try {
+            std::lock_guard<std::mutex> guard(DATA_DIRECTORY_LOCK_MUTEX);
+            DATA_DIRECTORY_LOCKS.erase(_key);
+        } catch (...) {
         }
-        if (NEXT_TLS_PORT.compare_exchange_weak(port, port + 1,
-                                                std::memory_order_relaxed,
-                                                std::memory_order_relaxed)) {
-            return port;
+        _registered = false;
+    }
+
+public:
+    explicit DataDirectoryLock(const std::string &data_dir) {
+        const auto path = std::filesystem::path(data_dir);
+        std::filesystem::create_directories(path);
+        _key = std::filesystem::weakly_canonical(path).string();
+        {
+            std::lock_guard<std::mutex> guard(DATA_DIRECTORY_LOCK_MUTEX);
+            if (!DATA_DIRECTORY_LOCKS.insert(_key).second) {
+                throw std::invalid_argument("index is already open");
+            }
+            _registered = true;
+        }
+
+        try {
+            const auto lock_path = path / ".searchkernel.lock";
+            _fd = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0600);
+            if (_fd < 0) {
+                throw std::runtime_error("could not open index lock '" + lock_path.string() + "': " +
+                                         std::strerror(errno));
+            }
+            if (::flock(_fd, LOCK_EX | LOCK_NB) != 0) {
+                const auto error = errno;
+                ::close(_fd);
+                _fd = -1;
+                if (error == EWOULDBLOCK || error == EAGAIN) {
+                    throw std::invalid_argument("index is already open");
+                }
+                throw std::runtime_error("could not lock index '" + path.string() + "': " +
+                                         std::strerror(error));
+            }
+        } catch (...) {
+            unregister_path();
+            throw;
         }
     }
+
+    DataDirectoryLock(const DataDirectoryLock &) = delete;
+    DataDirectoryLock &operator=(const DataDirectoryLock &) = delete;
+
+    ~DataDirectoryLock() noexcept {
+        if (_fd >= 0) {
+            ::flock(_fd, LOCK_UN);
+            ::close(_fd);
+        }
+        unregister_path();
+    }
+};
+
+unsigned int ephemeral_tls_port() {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        throw std::runtime_error("could not create transaction log port probe: " +
+                                 std::string(std::strerror(errno)));
+    }
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+    if (::bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0) {
+        const auto error = errno;
+        ::close(fd);
+        throw std::runtime_error("could not probe transaction log port: " +
+                                 std::string(std::strerror(error)));
+    }
+    socklen_t length = sizeof(address);
+    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&address), &length) != 0) {
+        const auto error = errno;
+        ::close(fd);
+        throw std::runtime_error("could not read transaction log port: " +
+                                 std::string(std::strerror(error)));
+    }
+    ::close(fd);
+    return ntohs(address.sin_port);
 }
 
 void validate_raw_document_id(std::string_view id, std::string_view document_type) {
@@ -520,6 +605,8 @@ class EmbeddedEngine {
     };
 
     SchemaManifest _manifest;
+    DataDirectoryLock _data_lock;
+    std::string _schema_identity;
     std::string _document_type;
     std::shared_ptr<const DocumenttypesConfig> _document_types;
     std::shared_ptr<DocumentTypeRepo> _repo;
@@ -546,9 +633,76 @@ class EmbeddedEngine {
     std::atomic<State> _state{State::Open};
     mutable std::mutex _operation_mutex;
 
+    static std::string schema_identity(const SchemaManifest &manifest) {
+        std::string identity = "version=1\ndocument_type=" + manifest.document_type + "\n";
+        for (const auto &field : manifest.fields) {
+            identity += "field=" + field.name + "\t" + field.type + "\t" +
+                        (field.index ? "1" : "0") + "\t" +
+                        (field.attribute ? "1" : "0") + "\t" +
+                        (field.summary ? "1" : "0") + "\n";
+        }
+        return identity;
+    }
+
+    static std::string validate_or_persist_schema_identity(
+        const std::string &data_dir, const SchemaManifest &manifest) {
+        const auto path = std::filesystem::path(data_dir) / ".searchkernel-schema";
+        const auto expected = schema_identity(manifest);
+        if (std::filesystem::exists(path)) {
+            if (!std::filesystem::is_regular_file(path)) {
+                throw std::invalid_argument("index schema identity is not a regular file");
+            }
+            std::ifstream input(path);
+            const std::string actual((std::istreambuf_iterator<char>(input)),
+                                     std::istreambuf_iterator<char>());
+            if (!input.good() && !input.eof()) {
+                throw std::runtime_error("could not read index schema identity: " + path.string());
+            }
+            if (actual != expected) {
+                throw std::invalid_argument(
+                    "index data was created with a different generated schema");
+            }
+            return expected;
+        }
+
+        std::ofstream output(path);
+        if (!output) {
+            throw std::runtime_error("could not create index schema identity: " + path.string());
+        }
+        output << expected;
+        if (!output) {
+            throw std::runtime_error("could not write index schema identity: " + path.string());
+        }
+        return expected;
+    }
+
     void require_open() const {
         if (_state.load(std::memory_order_acquire) != State::Open) {
             throw std::invalid_argument("engine is not open");
+        }
+    }
+
+    const ManifestField &require_manifest_field(const std::string &name) const {
+        const auto field = std::find_if(
+            _manifest.fields.begin(), _manifest.fields.end(),
+            [&name](const auto &candidate) { return candidate.name == name; });
+        if (field == _manifest.fields.end()) {
+            throw std::invalid_argument("unknown generated schema field: " + name);
+        }
+        return *field;
+    }
+
+    void require_integer_field(const std::string &name) const {
+        const auto &field = require_manifest_field(name);
+        if (field.type != "integer" || !field.attribute) {
+            throw std::invalid_argument("integer operation requires an integer attribute field: " + name);
+        }
+    }
+
+    void require_text_field(const std::string &name) const {
+        const auto &field = require_manifest_field(name);
+        if (field.type != "text" || !field.index) {
+            throw std::invalid_argument("text operation requires an indexed text field: " + name);
         }
     }
 
@@ -585,7 +739,9 @@ class EmbeddedEngine {
             if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
                 value = value.substr(1, value.size() - 2);
             }
-            values[key] = value;
+            if (!values.emplace(key, std::move(value)).second) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
         }
         return values;
     }
@@ -624,6 +780,13 @@ class EmbeddedEngine {
         return value->second;
     }
 
+    static void require_config_value(const std::map<std::string, std::string> &values,
+                                     const std::string &key, std::string_view expected) {
+        if (config_value(values, key) != expected) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+    }
+
     static std::string manifest_attribute_type(const std::string &type) {
         if (type == "text" || type == "string") return "STRING";
         if (type == "integer") return "INT32";
@@ -652,13 +815,17 @@ class EmbeddedEngine {
         for (const auto &field : manifest.fields) {
             if (!field.index) continue;
             const auto prefix = "indexfield[" + std::to_string(index) + "].";
-            if (config_value(values, prefix + "name") != field.name ||
-                config_value(values, prefix + "datatype") != "STRING") {
-                throw std::invalid_argument("inconsistent generated configuration");
-            }
             if (field.type != "text") {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
+            require_config_value(values, prefix + "name", field.name);
+            require_config_value(values, prefix + "datatype", "STRING");
+            require_config_value(values, prefix + "collectiontype", "SINGLE");
+            require_config_value(values, prefix + "prefix", "false");
+            require_config_value(values, prefix + "phrases", "false");
+            require_config_value(values, prefix + "positions", "true");
+            require_config_value(values, prefix + "averageelementlen", "512");
+            require_config_value(values, prefix + "interleavedfeatures", "true");
             ++index;
         }
     }
@@ -675,10 +842,9 @@ class EmbeddedEngine {
         for (const auto &field : manifest.fields) {
             if (!field.attribute) continue;
             const auto prefix = "attribute[" + std::to_string(index) + "].";
-            if (config_value(values, prefix + "name") != field.name ||
-                config_value(values, prefix + "datatype") != manifest_attribute_type(field.type)) {
-                throw std::invalid_argument("inconsistent generated configuration");
-            }
+            require_config_value(values, prefix + "name", field.name);
+            require_config_value(values, prefix + "datatype", manifest_attribute_type(field.type));
+            require_config_value(values, prefix + "collectiontype", "SINGLE");
             ++index;
         }
     }
@@ -686,9 +852,12 @@ class EmbeddedEngine {
     static void validate_summary_configuration(const SchemaManifest &manifest,
                                                const std::filesystem::path &config_path) {
         const auto values = read_config(config_path / "summary.cfg");
-        if (config_value(values, "classes[0].name") != "default") {
+        require_config_value(values, "defaultsummaryid", "1");
+        if (config_section_count(values, "classes") != 1) {
             throw std::invalid_argument("inconsistent generated configuration");
         }
+        require_config_value(values, "classes[0].id", "1");
+        require_config_value(values, "classes[0].name", "default");
         const auto count = config_section_count(values, "classes[0].fields");
         const std::vector<std::tuple<std::string, std::string, std::string, std::string>> implicit = {
             {"documentid", "longstring", "documentid", ""},
@@ -721,10 +890,35 @@ class EmbeddedEngine {
         }
     }
 
+    static void validate_rank_profile_configuration(const SchemaManifest &manifest,
+                                                    const std::filesystem::path &config_path) {
+        const auto values = read_config(config_path / "rank-profiles.cfg");
+        const auto text_field = std::find_if(
+            manifest.fields.begin(), manifest.fields.end(),
+            [](const auto &field) { return field.type == "text"; });
+        const size_t expected_profiles = text_field == manifest.fields.end() ? 1 : 2;
+        if (config_section_count(values, "rankprofile") != expected_profiles) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        require_config_value(values, "rankprofile[0].name", "default");
+        if (text_field != manifest.fields.end()) {
+            require_config_value(values, "rankprofile[1].name", "bm25");
+            if (config_section_count(values, "rankprofile[1].fef.property") != 1) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+            require_config_value(values, "rankprofile[1].fef.property[0].name",
+                                 "vespa.rank.firstphase");
+            require_config_value(
+                values, "rankprofile[1].fef.property[0].value",
+                "bm25(" + text_field->name + ")");
+        }
+    }
+
     static void validate_generated_configuration(const SchemaManifest &manifest,
                                                  const std::string &config_dir) {
         const auto config_path = std::filesystem::path(config_dir);
-        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg"}) {
+        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg",
+                                 "rank-profiles.cfg"}) {
             if (!std::filesystem::is_regular_file(config_path / name)) {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
@@ -732,6 +926,7 @@ class EmbeddedEngine {
         validate_index_configuration(manifest, config_path);
         validate_attribute_configuration(manifest, config_path);
         validate_summary_configuration(manifest, config_path);
+        validate_rank_profile_configuration(manifest, config_path);
     }
 
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
@@ -841,6 +1036,7 @@ class EmbeddedEngine {
 
     std::shared_ptr<Document> make_document(const DocumentId &id, const std::string &field_name,
                                             int32_t value) const {
+        require_integer_field(field_name);
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
         if (field.getDataType().getId() != document::DataType::T_INT) {
@@ -852,6 +1048,7 @@ class EmbeddedEngine {
 
     std::shared_ptr<document::DocumentUpdate>
     make_update(const DocumentId &id, const std::string &field_name, int32_t value) const {
+        require_integer_field(field_name);
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
         if (field.getDataType().getId() != document::DataType::T_INT) {
@@ -867,6 +1064,8 @@ class EmbeddedEngine {
 public:
     EmbeddedEngine(const std::string &data_dir, const std::string &config_dir)
         : _manifest(read_schema_manifest(config_dir)),
+          _data_lock(data_dir),
+          _schema_identity(validate_or_persist_schema_identity(data_dir, _manifest)),
           _document_type(_manifest.document_type),
           _document_types(make_documenttypes_config(_manifest)),
           _repo(std::make_shared<DocumentTypeRepo>(*_document_types)),
@@ -878,7 +1077,7 @@ public:
           _hw_info(),
           _file_header_context(),
           _tls_dir("tmp"),
-          _tls_port(next_tls_port()),
+          _tls_port(ephemeral_tls_port()),
           _tls(_shared_service.transport(), _tls_dir,
                static_cast<int>(_tls_port), data_dir, _file_header_context),
           _query_limiter(),
@@ -1079,6 +1278,7 @@ public:
                                     uint32_t limit) const {
         std::lock_guard<std::mutex> operation_lock(_operation_mutex);
         require_open();
+        require_integer_field(field);
         auto request = std::make_shared<SearchRequest>();
         request->setTimeout(60s);
         request->setSerializedQueryTree(SerializedQueryTree::fromStackDump(
@@ -1151,6 +1351,7 @@ public:
     }
 
     std::shared_ptr<Document> make_text_document(const TextDocument &text) const {
+        require_text_field(text.field);
         const auto &field = _doc_type->getField(text.field);
         if (field.getDataType().getId() != document::DataType::T_STRING) {
             throw std::invalid_argument("text field is not a string field");
@@ -1162,6 +1363,7 @@ public:
     }
 
     std::shared_ptr<document::DocumentUpdate> make_text_update(const TextUpdate &text) const {
+        require_text_field(text.field);
         const auto &field = _doc_type->getField(text.field);
         if (field.getDataType().getId() != document::DataType::T_STRING) {
             throw std::invalid_argument("text field is not a string field");
@@ -1202,6 +1404,7 @@ public:
     std::vector<TextHit> search_text(const TextRequest &text) const {
         std::lock_guard<std::mutex> operation_lock(_operation_mutex);
         require_open();
+        require_text_field(text.field);
         if (text.terms.size() >
             static_cast<size_t>(std::numeric_limits<int>::max() - 2)) {
             throw std::invalid_argument("text term count cannot be represented by Vespa");
