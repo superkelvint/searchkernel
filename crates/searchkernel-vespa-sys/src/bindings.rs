@@ -59,6 +59,21 @@ pub struct sk_text_occurrence {
     pub byte_length: u32,
     pub position: u32,
 }
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of sk_text_occurrence"][::std::mem::size_of::<sk_text_occurrence>() - 24usize];
+    ["Alignment of sk_text_occurrence"][::std::mem::align_of::<sk_text_occurrence>() - 8usize];
+    ["Offset of field: sk_text_occurrence::term"]
+        [::std::mem::offset_of!(sk_text_occurrence, term) - 0usize];
+    ["Offset of field: sk_text_occurrence::term_length"]
+        [::std::mem::offset_of!(sk_text_occurrence, term_length) - 8usize];
+    ["Offset of field: sk_text_occurrence::byte_start"]
+        [::std::mem::offset_of!(sk_text_occurrence, byte_start) - 12usize];
+    ["Offset of field: sk_text_occurrence::byte_length"]
+        [::std::mem::offset_of!(sk_text_occurrence, byte_length) - 16usize];
+    ["Offset of field: sk_text_occurrence::position"]
+        [::std::mem::offset_of!(sk_text_occurrence, position) - 20usize];
+};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_text_query_term {
@@ -66,12 +81,30 @@ pub struct sk_text_query_term {
     pub term_length: u32,
     pub position: u32,
 }
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of sk_text_query_term"][::std::mem::size_of::<sk_text_query_term>() - 16usize];
+    ["Alignment of sk_text_query_term"][::std::mem::align_of::<sk_text_query_term>() - 8usize];
+    ["Offset of field: sk_text_query_term::term"]
+        [::std::mem::offset_of!(sk_text_query_term, term) - 0usize];
+    ["Offset of field: sk_text_query_term::term_length"]
+        [::std::mem::offset_of!(sk_text_query_term, term_length) - 8usize];
+    ["Offset of field: sk_text_query_term::position"]
+        [::std::mem::offset_of!(sk_text_query_term, position) - 12usize];
+};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_error {
     pub code: i32,
-    pub message: *mut ::std::os::raw::c_char,
+    pub message: [::std::os::raw::c_char; 512usize],
 }
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of sk_error"][::std::mem::size_of::<sk_error>() - 516usize];
+    ["Alignment of sk_error"][::std::mem::align_of::<sk_error>() - 4usize];
+    ["Offset of field: sk_error::code"][::std::mem::offset_of!(sk_error, code) - 0usize];
+    ["Offset of field: sk_error::message"][::std::mem::offset_of!(sk_error, message) - 4usize];
+};
 unsafe extern "C" {
     pub fn sk_native_abi_version() -> u32;
 }

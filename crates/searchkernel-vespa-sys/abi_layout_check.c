@@ -7,11 +7,12 @@ _Static_assert(sizeof(((sk_error *)0)->code) == sizeof(int32_t),
                "sk_error.code must be int32_t");
 _Static_assert(offsetof(sk_error, code) == 0,
                "sk_error.code offset changed");
-_Static_assert(offsetof(sk_error, message) >= sizeof(int32_t),
-               "sk_error.message overlaps code");
-_Static_assert(sizeof(sk_error) ==
-                   offsetof(sk_error, message) + sizeof(((sk_error *)0)->message),
-               "sk_error has unexpected trailing padding");
+_Static_assert(offsetof(sk_error, message) == sizeof(int32_t),
+               "sk_error.message offset changed");
+_Static_assert(sizeof(((sk_error *)0)->message) == 512,
+               "sk_error.message capacity changed");
+_Static_assert(sizeof(sk_error) == sizeof(int32_t) + 512,
+               "sk_error has unexpected padding");
 
 _Static_assert(offsetof(sk_text_occurrence, term) == 0,
                "sk_text_occurrence.term offset changed");

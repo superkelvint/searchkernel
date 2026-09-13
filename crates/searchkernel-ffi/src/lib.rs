@@ -3,6 +3,9 @@
 mod abi;
 mod buffer;
 mod dispatch;
+#[allow(warnings)]
+#[path = "../generated/mod.rs"]
+mod generated;
 mod handle;
 mod status;
 mod transport;

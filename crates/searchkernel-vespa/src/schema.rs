@@ -4,6 +4,26 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const NAME_ERROR: &str = "names must match [A-Za-z_][A-Za-z0-9_]*";
+const RESERVED_FIELD_NAMES: &[&str] = &[
+    "index",
+    "index_url",
+    "summary",
+    "attribute",
+    "select_input",
+    "host",
+    "documentid",
+    "position",
+    "split_foreach",
+    "tokenize",
+    "if",
+    "else",
+    "switch",
+    "case",
+    "sddocname",
+    "relevancy",
+    "rankfeatures",
+    "summaryfeatures",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldType {
@@ -89,7 +109,7 @@ impl ConfigCompiler {
             write_config(&temporary.path, "indexschema.cfg", &derived.indexschema())?;
             write_config(&temporary.path, "attributes.cfg", &derived.attributes())?;
             write_config(&temporary.path, "summary.cfg", &derived.summary())?;
-            write_config(&temporary.path, "rank-profiles.cfg", rank_profiles())?;
+            write_config(&temporary.path, "rank-profiles.cfg", &rank_profiles(schema))?;
             write_config(&temporary.path, "juniperrc.cfg", "")?;
             temporary.install(output, output_state)
         })()
@@ -262,6 +282,12 @@ fn validate_schema(schema: &Schema) -> Result<()> {
     validate_name(&schema.document_type, "document type")?;
     for (index, field) in schema.fields.iter().enumerate() {
         validate_name(&field.name, &format!("field at index {index}"))?;
+        if RESERVED_FIELD_NAMES.contains(&field.name.as_str()) {
+            return Err(Error::message(format!(
+                "reserved field name '{}'",
+                field.name
+            )));
+        }
         if schema
             .fields
             .iter()
@@ -333,8 +359,18 @@ fn quoted(value: &str) -> String {
     output
 }
 
-fn rank_profiles() -> &'static str {
-    "rankprofile[1]\nrankprofile[0].name \"default\"\n"
+fn rank_profiles(schema: &Schema) -> String {
+    let text_field = schema
+        .fields
+        .iter()
+        .find(|field| field.field_type == FieldType::Text)
+        .map(|field| field.name.as_str());
+    match text_field {
+        Some(field) => format!(
+            "rankprofile[2]\nrankprofile[0].name \"default\"\nrankprofile[1].name \"bm25\"\nrankprofile[1].fef.property[1]\nrankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[1].fef.property[0].value \"bm25({field})\"\n"
+        ),
+        None => "rankprofile[1]\nrankprofile[0].name \"default\"\n".to_string(),
+    }
 }
 
 fn write_config(directory: &Path, name: &str, content: &str) -> Result<()> {
@@ -491,6 +527,14 @@ mod tests {
                 .compile_to(&schema, temporary_path("invalid"))
                 .is_err());
         }
+        for name in RESERVED_FIELD_NAMES {
+            assert!(ConfigCompiler
+                .compile_to(
+                    &Schema::new("typea").field(Field::new(*name, FieldType::Text).indexed()),
+                    temporary_path("reserved"),
+                )
+                .is_err());
+        }
 
         let duplicate = Schema::new("typea")
             .field(Field::new("title", FieldType::Text).indexed())
@@ -518,6 +562,8 @@ mod tests {
         let index = fs::read_to_string(path.join("indexschema.cfg")).expect("index config");
         let attributes = fs::read_to_string(path.join("attributes.cfg")).expect("attribute config");
         let summary = fs::read_to_string(path.join("summary.cfg")).expect("summary config");
+        let rank_profiles =
+            fs::read_to_string(path.join("rank-profiles.cfg")).expect("rank profiles");
         assert!(index.contains("indexfield[0].name \"title\""));
         assert!(index.contains("indexfield[0].positions true"));
         assert!(attributes.contains("attribute[0].datatype STRING"));
@@ -526,6 +572,8 @@ mod tests {
         assert!(attributes.contains("attribute[3].datatype BOOL"));
         assert!(summary.contains("classes[0].fields[0].name \"documentid\""));
         assert!(summary.contains("classes[0].fields[7].name \"active\""));
+        assert!(rank_profiles.contains("rankprofile[1].name \"bm25\""));
+        assert!(rank_profiles.contains("bm25(title)"));
         let _ = fs::remove_dir_all(path);
     }
 

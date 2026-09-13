@@ -66,6 +66,8 @@
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -73,11 +75,13 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -119,6 +123,46 @@ constexpr size_t MAX_TEXT_BYTES = 16 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;
 constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
+constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
+    "index",          "index_url",      "summary",       "attribute", "select_input",
+    "host",           "documentid",     "position",      "split_foreach", "tokenize",
+    "if",             "else",           "switch",        "case",      "sddocname",
+    "relevancy",      "rankfeatures",  "summaryfeatures"};
+
+bool is_identifier(std::string_view value) noexcept {
+    if (value.empty()) return false;
+    const auto first = static_cast<unsigned char>(value.front());
+    if (first != '_' && !(first >= 'A' && first <= 'Z') && !(first >= 'a' && first <= 'z')) {
+        return false;
+    }
+    for (const auto byte : value.substr(1)) {
+        const auto character = static_cast<unsigned char>(byte);
+        if (character != '_' && !(character >= 'A' && character <= 'Z') &&
+            !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_slime_type(const vespalib::slime::Inspector &value, uint32_t type) noexcept {
+    return value.valid() && value.type().getId() == type;
+}
+
+void validate_manifest_identifier(const std::string &value, const char *what) {
+    if (value.size() > MAX_FIELD_NAME_BYTES || !is_identifier(value)) {
+        throw std::invalid_argument(std::string("generated schema ") + what +
+                                    " is not a valid identifier");
+    }
+}
+
+void validate_manifest_field_name(const std::string &value) {
+    validate_manifest_identifier(value, "field name");
+    if (std::find(RESERVED_FIELD_NAMES.begin(), RESERVED_FIELD_NAMES.end(), value) !=
+        RESERVED_FIELD_NAMES.end()) {
+        throw std::invalid_argument("generated schema field name is reserved");
+    }
+}
 
 bool is_utf8_continuation(uint8_t byte) noexcept {
     return (byte & 0xc0) == 0x80;
@@ -441,6 +485,9 @@ class EmbeddedEngine {
     struct ManifestField {
         std::string name;
         std::string type;
+        bool index = false;
+        bool attribute = false;
+        bool summary = false;
     };
     struct SchemaManifest {
         std::string document_type;
@@ -461,7 +508,15 @@ class EmbeddedEngine {
     std::shared_ptr<PersistenceHandlerProxy> _handler;
     std::vector<uint64_t> _prepared_buckets;
     uint64_t _next_timestamp = 1;
-    bool _closed = false;
+    enum class State { Open, Closing, Closed, Failed };
+    std::atomic<State> _state{State::Open};
+    mutable std::mutex _operation_mutex;
+
+    void require_open() const {
+        if (_state.load(std::memory_order_acquire) != State::Open) {
+            throw std::invalid_argument("engine is not open");
+        }
+    }
 
     uint64_t next_timestamp() {
         if (_next_timestamp == std::numeric_limits<uint64_t>::max()) {
@@ -484,6 +539,7 @@ class EmbeddedEngine {
             }
             const auto separator = line.find_first_of(" \t", first);
             if (separator == std::string::npos) {
+                values[line.substr(first)] = "";
                 continue;
             }
             const auto key = line.substr(first, separator - first);
@@ -500,10 +556,161 @@ class EmbeddedEngine {
         return values;
     }
 
+    static size_t config_section_count(const std::map<std::string, std::string> &values,
+                                       const char *section) {
+        const std::string prefix = std::string(section) + "[";
+        const auto key = std::find_if(values.begin(), values.end(), [&](const auto &entry) {
+            if (!entry.first.starts_with(prefix) || !entry.first.ends_with("]")) {
+                return false;
+            }
+            return entry.first.find(']', prefix.size()) == entry.first.size() - 1;
+        });
+        if (key == values.end()) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        const auto digits = key->first.substr(prefix.size(), key->first.size() - prefix.size() - 1);
+        try {
+            size_t consumed = 0;
+            const auto count = std::stoull(digits, &consumed);
+            if (consumed != digits.size()) {
+                throw std::invalid_argument("invalid count");
+            }
+            return static_cast<size_t>(count);
+        } catch (const std::exception &) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+    }
+
+    static std::string config_value(const std::map<std::string, std::string> &values,
+                                    const std::string &key) {
+        const auto value = values.find(key);
+        if (value == values.end()) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        return value->second;
+    }
+
+    static std::string manifest_attribute_type(const std::string &type) {
+        if (type == "text" || type == "string") return "STRING";
+        if (type == "integer") return "INT32";
+        if (type == "float") return "DOUBLE";
+        if (type == "boolean") return "BOOL";
+        throw std::invalid_argument("inconsistent generated configuration");
+    }
+
+    static std::string manifest_summary_type(const std::string &type) {
+        if (type == "text" || type == "string") return "longstring";
+        if (type == "integer") return "integer";
+        if (type == "float") return "double";
+        if (type == "boolean") return "bool";
+        throw std::invalid_argument("inconsistent generated configuration");
+    }
+
+    static void validate_index_configuration(const SchemaManifest &manifest,
+                                             const std::filesystem::path &config_path) {
+        const auto values = read_config(config_path / "indexschema.cfg");
+        const auto expected = std::count_if(manifest.fields.begin(), manifest.fields.end(),
+                                            [](const auto &field) { return field.index; });
+        if (config_section_count(values, "indexfield") != static_cast<size_t>(expected)) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        size_t index = 0;
+        for (const auto &field : manifest.fields) {
+            if (!field.index) continue;
+            const auto prefix = "indexfield[" + std::to_string(index) + "].";
+            if (config_value(values, prefix + "name") != field.name ||
+                config_value(values, prefix + "datatype") != "STRING") {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+            if (field.type != "text") {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+            ++index;
+        }
+    }
+
+    static void validate_attribute_configuration(const SchemaManifest &manifest,
+                                                 const std::filesystem::path &config_path) {
+        const auto values = read_config(config_path / "attributes.cfg");
+        const auto expected = std::count_if(manifest.fields.begin(), manifest.fields.end(),
+                                            [](const auto &field) { return field.attribute; });
+        if (config_section_count(values, "attribute") != static_cast<size_t>(expected)) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        size_t index = 0;
+        for (const auto &field : manifest.fields) {
+            if (!field.attribute) continue;
+            const auto prefix = "attribute[" + std::to_string(index) + "].";
+            if (config_value(values, prefix + "name") != field.name ||
+                config_value(values, prefix + "datatype") != manifest_attribute_type(field.type)) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+            ++index;
+        }
+    }
+
+    static void validate_summary_configuration(const SchemaManifest &manifest,
+                                               const std::filesystem::path &config_path) {
+        const auto values = read_config(config_path / "summary.cfg");
+        if (config_value(values, "classes[0].name") != "default") {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        const auto count = config_section_count(values, "classes[0].fields");
+        const std::vector<std::tuple<std::string, std::string, std::string, std::string>> implicit = {
+            {"documentid", "longstring", "documentid", ""},
+            {"rankfeatures", "featuredata", "rankfeatures", ""},
+            {"summaryfeatures", "featuredata", "summaryfeatures", ""}};
+        size_t index = 0;
+        for (const auto &[name, type, command, source] : implicit) {
+            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
+            if (config_value(values, prefix + "name") != name ||
+                config_value(values, prefix + "type") != type ||
+                config_value(values, prefix + "command") != command ||
+                config_value(values, prefix + "source") != source) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+        }
+        for (const auto &field : manifest.fields) {
+            if (!field.summary) continue;
+            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
+            const auto command = field.attribute ? "attribute" : "";
+            const auto source = field.attribute ? field.name : "";
+            if (config_value(values, prefix + "name") != field.name ||
+                config_value(values, prefix + "type") != manifest_summary_type(field.type) ||
+                config_value(values, prefix + "command") != command ||
+                config_value(values, prefix + "source") != source) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+        }
+        if (count != index) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+    }
+
+    static void validate_generated_configuration(const SchemaManifest &manifest,
+                                                 const std::string &config_dir) {
+        const auto config_path = std::filesystem::path(config_dir);
+        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg"}) {
+            if (!std::filesystem::is_regular_file(config_path / name)) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+        }
+        validate_index_configuration(manifest, config_path);
+        validate_attribute_configuration(manifest, config_path);
+        validate_summary_configuration(manifest, config_path);
+    }
+
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
         const auto path = std::filesystem::path(config_dir) / "searchkernel-schema.json";
         if (!std::filesystem::is_regular_file(path)) {
-            return {LEGACY_DOC_TYPE, {}, false};
+            const auto config_path = std::filesystem::path(config_dir);
+            const bool legacy_config =
+                std::filesystem::is_regular_file(config_path / "proton.cfg") ||
+                std::filesystem::is_regular_file(config_path / ".m4-text-fixture");
+            if (legacy_config) {
+                return {LEGACY_DOC_TYPE, {}, false};
+            }
+            throw std::invalid_argument("generated schema manifest is missing");
         }
         std::ifstream input(path);
         if (!input) {
@@ -515,25 +722,48 @@ class EmbeddedEngine {
             throw std::invalid_argument("generated schema manifest is not valid JSON");
         }
         const auto &root = slime.get();
-        if (!root.valid() || root["version"].asLong() != 1 ||
-            !root["document_type"].valid() || !root["fields"].valid()) {
+        if (!is_slime_type(root, vespalib::slime::OBJECT::ID) ||
+            !is_slime_type(root["version"], vespalib::slime::LONG::ID) ||
+            root["version"].asLong() != 1 ||
+            !is_slime_type(root["document_type"], vespalib::slime::STRING::ID) ||
+            !is_slime_type(root["fields"], vespalib::slime::ARRAY::ID)) {
             throw std::invalid_argument("generated schema manifest is incomplete");
         }
         SchemaManifest manifest{root["document_type"].asString().make_string(), {}, true};
+        validate_manifest_identifier(manifest.document_type, "document type");
         const auto &fields = root["fields"];
         manifest.fields.reserve(fields.children());
+        std::vector<std::string> field_names;
+        field_names.reserve(fields.children());
         for (size_t index = 0; index < fields.children(); ++index) {
             const auto &field = fields[index];
-            if (!field["name"].valid() || !field["type"].valid() ||
-                !field["index"].valid() || !field["attribute"].valid() ||
-                !field["summary"].valid()) {
+            if (!is_slime_type(field, vespalib::slime::OBJECT::ID) ||
+                !is_slime_type(field["name"], vespalib::slime::STRING::ID) ||
+                !is_slime_type(field["type"], vespalib::slime::STRING::ID) ||
+                !is_slime_type(field["index"], vespalib::slime::BOOL::ID) ||
+                !is_slime_type(field["attribute"], vespalib::slime::BOOL::ID) ||
+                !is_slime_type(field["summary"], vespalib::slime::BOOL::ID)) {
                 throw std::invalid_argument("generated schema manifest field is incomplete");
             }
-            (void)field["index"].asBool();
-            (void)field["attribute"].asBool();
-            (void)field["summary"].asBool();
-            manifest.fields.push_back({field["name"].asString().make_string(),
-                                       field["type"].asString().make_string()});
+            auto name = field["name"].asString().make_string();
+            validate_manifest_field_name(name);
+            if (std::find(field_names.begin(), field_names.end(), name) != field_names.end()) {
+                throw std::invalid_argument("generated schema contains duplicate field name");
+            }
+            field_names.push_back(name);
+            auto type = field["type"].asString().make_string();
+            if (type != "text" && type != "string" && type != "integer" &&
+                type != "float" && type != "boolean") {
+                throw std::invalid_argument("unsupported generated schema field type: " + type);
+            }
+            const bool indexed = field["index"].asBool();
+            const bool attribute = field["attribute"].asBool();
+            const bool summary = field["summary"].asBool();
+            if ((type == "text" && !indexed) ||
+                (type != "text" && (indexed || !attribute))) {
+                throw std::invalid_argument("generated schema field capabilities are invalid");
+            }
+            manifest.fields.push_back({std::move(name), std::move(type), indexed, attribute, summary});
         }
         return manifest;
     }
@@ -739,6 +969,9 @@ public:
                        _resource_usage_notifier, -1, false),
           _handler(),
           _prepared_buckets() {
+        if (_manifest.generated) {
+            validate_generated_configuration(_manifest, config_dir);
+        }
         std::filesystem::create_directories(data_dir);
         if (_doc_type == nullptr) {
             throw std::runtime_error("generated document type was not added to DocumentTypeRepo: " +
@@ -818,26 +1051,42 @@ public:
     }
 
     void close() {
-        if (_closed) {
-            return;
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        const auto current = _state.load(std::memory_order_acquire);
+        if (current == State::Closed || current == State::Failed) {
+            throw std::invalid_argument("engine is already closed");
         }
-        _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
-                                      DocTypeName(_document_type));
-        _handler.reset();
-        if (_db) {
-            _db->close();
-            _db.reset();
+        auto expected = State::Open;
+        if (!_state.compare_exchange_strong(expected, State::Closing,
+                                            std::memory_order_acq_rel)) {
+            if (expected == State::Closed || expected == State::Failed) {
+                throw std::invalid_argument("engine is already closed");
+            }
+            throw std::runtime_error("engine is already closing");
         }
-        _shared_service.transport().ShutDown(true);
-        _closed = true;
+        try {
+            _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
+                                       DocTypeName(_document_type));
+            _handler.reset();
+            if (_db) {
+                _db->close();
+                _db.reset();
+            }
+            _shared_service.transport().ShutDown(true);
+            _state.store(State::Closed, std::memory_order_release);
+        } catch (...) {
+            _state.store(State::Failed, std::memory_order_release);
+            throw;
+        }
     }
 
-    bool closed() const noexcept { return _closed; }
-
-    ~EmbeddedEngine() noexcept {
+    void cleanup_noexcept() noexcept {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
         try {
-            close();
-            return;
+            if (_handler) {
+                _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
+                                           DocTypeName(_document_type));
+            }
         } catch (...) {
         }
         _handler.reset();
@@ -855,7 +1104,21 @@ public:
         }
     }
 
+    ~EmbeddedEngine() noexcept {
+        if (_state.load(std::memory_order_acquire) == State::Open) {
+            try {
+                close();
+            } catch (...) {
+            }
+        }
+        if (_state.load(std::memory_order_acquire) != State::Closed) {
+            cleanup_noexcept();
+        }
+    }
+
     void put(const std::string &id, const std::string &field, int32_t value) {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
         prepare_bucket(bucket);
@@ -867,6 +1130,8 @@ public:
     }
 
     void update(const std::string &id, const std::string &field, int32_t value) {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         auto result = _persistence.update(
             bucket_for(document_id), Timestamp(next_timestamp()),
@@ -877,6 +1142,8 @@ public:
     }
 
     bool remove(const std::string &id) {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         auto result = _persistence.remove(
             bucket_for(document_id), Timestamp(next_timestamp()),
@@ -889,6 +1156,8 @@ public:
 
     std::vector<std::string> search(const std::string &field, int32_t value,
                                     uint32_t limit) const {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         auto request = std::make_shared<SearchRequest>();
         request->setTimeout(60s);
         request->setSerializedQueryTree(SerializedQueryTree::fromStackDump(
@@ -986,6 +1255,8 @@ public:
     }
 
     void put_text(const TextDocument &text) {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
         prepare_bucket(bucket);
@@ -997,6 +1268,8 @@ public:
     }
 
     void update_text(const TextUpdate &text) {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
                                           make_text_update(text));
@@ -1006,6 +1279,8 @@ public:
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
         if (text.terms.size() >
             static_cast<size_t>(std::numeric_limits<int>::max() - 2)) {
             throw std::invalid_argument("text term count cannot be represented by Vespa");
@@ -1095,9 +1370,8 @@ void destroy_error(sk_error *error) noexcept {
     if (!error) {
         return;
     }
-    std::free(error->message);
-    error->message = nullptr;
     error->code = 0;
+    error->message[0] = '\0';
 }
 
 void clear_error(sk_error *error) noexcept {
@@ -1111,37 +1385,24 @@ int32_t set_error(sk_error *error, int32_t code, const char *message) noexcept {
     destroy_error(error);
     error->code = code;
     if (!message) {
-        error->code = SK_STATUS_OUT_OF_MEMORY;
-        return error->code;
+        return code;
     }
     const size_t length = std::strlen(message);
-    if (length == std::numeric_limits<size_t>::max()) {
-        error->code = SK_STATUS_OUT_OF_MEMORY;
-        return error->code;
-    }
-    error->message = static_cast<char *>(std::malloc(length + 1));
-    if (!error->message) {
-        error->code = SK_STATUS_OUT_OF_MEMORY;
-        return error->code;
-    }
-    std::memcpy(error->message, message, length);
-    error->message[length] = '\0';
+    const size_t copied = std::min(length, sizeof(error->message) - 1);
+    std::memcpy(error->message, message, copied);
+    error->message[copied] = '\0';
     return error->code;
 }
 
 std::filesystem::path resolve_config_directory(const std::filesystem::path &path) {
-    if (std::filesystem::is_regular_file(path / "indexschema.cfg")) {
-        return path;
-    }
+    // M4's frozen fixture predates ConfigCompiler and passes its fixture root.
+    // Keep this one named compatibility rule; all other callers must pass the
+    // actual configuration directory.
     const auto nested_config = path / "embedded_text_cfg";
-    if (std::filesystem::is_regular_file(nested_config / "indexschema.cfg")) {
+    if (path.filename() == "fixture" &&
+        std::filesystem::is_regular_file(nested_config / "indexschema.cfg") &&
+        std::filesystem::is_regular_file(nested_config / ".m4-text-fixture")) {
         return nested_config;
-    }
-    for (const auto &entry : std::filesystem::directory_iterator(path)) {
-        if (entry.is_directory() &&
-            std::filesystem::is_regular_file(entry.path() / "indexschema.cfg")) {
-            return entry.path();
-        }
     }
     return path;
 }
@@ -1217,7 +1478,7 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
 }
 
 extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) {
-    if (!engine || !engine->impl || engine->impl->closed()) {
+    if (!engine || !engine->impl) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine close arguments are invalid");
     }
     return invoke(error, [&] { engine->impl->close(); });
@@ -1316,7 +1577,7 @@ extern "C" void sk_search_request_destroy(sk_search_request *request) SK_NOEXCEP
 
 extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
                                   sk_error *error) {
-    if (!engine || !engine->impl || engine->impl->closed() || !document) {
+    if (!engine || !engine->impl || !document) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "put arguments are invalid");
     }
     return invoke(error, [&] {
@@ -1327,7 +1588,7 @@ extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
 extern "C" int32_t sk_engine_update(sk_engine *engine,
                                      const sk_document_update *update,
                                      sk_error *error) {
-    if (!engine || !engine->impl || engine->impl->closed() || !update) {
+    if (!engine || !engine->impl || !update) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments are invalid");
     }
     return invoke(error, [&] {
@@ -1340,7 +1601,7 @@ extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
     if (out_was_found) {
         *out_was_found = 0;
     }
-    if (!engine || !engine->impl || engine->impl->closed() || !id || !out_was_found) {
+    if (!engine || !engine->impl || !id || !out_was_found) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "remove arguments are invalid");
     }
     return invoke(error, [&] {
@@ -1356,7 +1617,7 @@ extern "C" int32_t sk_engine_search(const sk_engine *engine,
     if (out_result) {
         *out_result = nullptr;
     }
-    if (!engine || !engine->impl || engine->impl->closed() || !request || !out_result) {
+    if (!engine || !engine->impl || !request || !out_result) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments are invalid");
     }
     return invoke(error, [&] {
@@ -1572,7 +1833,7 @@ extern "C" void sk_text_request_destroy(sk_text_request *request) SK_NOEXCEPT {
 extern "C" int32_t sk_engine_put_text(sk_engine *engine,
                                         const sk_text_document *document,
                                         sk_error *error) {
-    if (!engine || !engine->impl || engine->impl->closed() || !document) {
+    if (!engine || !engine->impl || !document) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text put arguments are invalid");
     }
     return invoke(error, [&] { engine->impl->put_text(*document); });
@@ -1581,7 +1842,7 @@ extern "C" int32_t sk_engine_put_text(sk_engine *engine,
 extern "C" int32_t sk_engine_update_text(sk_engine *engine,
                                            const sk_text_update *update,
                                            sk_error *error) {
-    if (!engine || !engine->impl || engine->impl->closed() || !update) {
+    if (!engine || !engine->impl || !update) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments are invalid");
     }
     return invoke(error, [&] { engine->impl->update_text(*update); });
@@ -1594,7 +1855,7 @@ extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
     if (out_result) {
         *out_result = nullptr;
     }
-    if (!engine || !engine->impl || engine->impl->closed() || !request || !out_result) {
+    if (!engine || !engine->impl || !request || !out_result) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text search arguments are invalid");
     }
     return invoke(error, [&] {

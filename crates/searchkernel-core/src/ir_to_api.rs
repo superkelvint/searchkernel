@@ -7,6 +7,16 @@ use searchkernel_api::v1 as api;
 /// Encode a portable error as a standalone FlatBuffers `Error` table.
 pub fn error_to_api(error: &PortableError) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = error_offset(&mut builder, error);
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
+/// Encode a portable error into an existing FlatBuffers builder.
+pub fn error_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    error: &PortableError,
+) -> flatbuffers::WIPOffset<api::Error<'a>> {
     let message = builder.create_string(&error.message);
     let mut detail_offsets = Vec::with_capacity(error.details.len());
     for detail in &error.details {
@@ -21,7 +31,7 @@ pub fn error_to_api(error: &PortableError) -> Vec<u8> {
                 let key = builder.create_string(key);
                 let value = builder.create_string(value);
                 entries.push(api::StringEntry::create(
-                    &mut builder,
+                    builder,
                     &api::StringEntryArgs {
                         key: Some(key),
                         value: Some(value),
@@ -31,7 +41,7 @@ pub fn error_to_api(error: &PortableError) -> Vec<u8> {
             Some(builder.create_vector(&entries))
         };
         detail_offsets.push(api::ErrorDetail::create(
-            &mut builder,
+            builder,
             &api::ErrorDetailArgs {
                 code: Some(code),
                 path,
@@ -41,17 +51,15 @@ pub fn error_to_api(error: &PortableError) -> Vec<u8> {
         ));
     }
     let details = (!detail_offsets.is_empty()).then(|| builder.create_vector(&detail_offsets));
-    let root = api::Error::create(
-        &mut builder,
+    api::Error::create(
+        builder,
         &api::ErrorArgs {
             code: error_code(error.code),
             message: Some(message),
             details,
             retryable: error.retryable,
         },
-    );
-    builder.finish(root, None);
-    builder.finished_data().to_vec()
+    )
 }
 
 fn error_code(code: ErrorCode) -> api::ErrorCode {
@@ -619,63 +627,107 @@ fn ranking_offset<'a>(
 
 pub fn insert_result_to_api(result: &ir::InsertResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let id = builder.create_string(&result.id);
-    let root = api::InsertResult::create(&mut builder, &api::InsertResultArgs { id: Some(id) });
+    let root = insert_result_offset(&mut builder, result);
     builder.finish(root, None);
     builder.finished_data().to_vec()
+}
+
+pub fn insert_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::InsertResult,
+) -> flatbuffers::WIPOffset<api::InsertResult<'a>> {
+    let id = builder.create_string(&result.id);
+    api::InsertResult::create(builder, &api::InsertResultArgs { id: Some(id) })
 }
 
 pub fn upsert_result_to_api(result: &ir::UpsertResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let id = builder.create_string(&result.id);
-    let root = api::UpsertResult::create(&mut builder, &api::UpsertResultArgs { id: Some(id) });
+    let root = upsert_result_offset(&mut builder, result);
     builder.finish(root, None);
     builder.finished_data().to_vec()
+}
+
+pub fn upsert_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::UpsertResult,
+) -> flatbuffers::WIPOffset<api::UpsertResult<'a>> {
+    let id = builder.create_string(&result.id);
+    api::UpsertResult::create(builder, &api::UpsertResultArgs { id: Some(id) })
 }
 
 pub fn patch_result_to_api(result: &ir::PatchResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let id = builder.create_string(&result.id);
-    let root = api::PatchResult::create(&mut builder, &api::PatchResultArgs { id: Some(id) });
+    let root = patch_result_offset(&mut builder, result);
     builder.finish(root, None);
     builder.finished_data().to_vec()
+}
+
+pub fn patch_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::PatchResult,
+) -> flatbuffers::WIPOffset<api::PatchResult<'a>> {
+    let id = builder.create_string(&result.id);
+    api::PatchResult::create(builder, &api::PatchResultArgs { id: Some(id) })
 }
 
 pub fn delete_result_to_api(result: &ir::DeleteResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = delete_result_offset(&mut builder, result);
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
+pub fn delete_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::DeleteResult,
+) -> flatbuffers::WIPOffset<api::DeleteResult<'a>> {
     let id = builder.create_string(&result.id);
-    let root = api::DeleteResult::create(
-        &mut builder,
+    api::DeleteResult::create(
+        builder,
         &api::DeleteResultArgs {
             id: Some(id),
             deleted: result.deleted,
         },
-    );
-    builder.finish(root, None);
-    builder.finished_data().to_vec()
+    )
 }
 
 pub fn get_result_to_api(result: &ir::GetResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let document = result
-        .document
-        .as_ref()
-        .map(|document| document_offset(&mut builder, document));
-    let root = api::GetResult::create(&mut builder, &api::GetResultArgs { document });
+    let root = get_result_offset(&mut builder, result);
     builder.finish(root, None);
     builder.finished_data().to_vec()
 }
 
+pub fn get_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::GetResult,
+) -> flatbuffers::WIPOffset<api::GetResult<'a>> {
+    let document = result
+        .document
+        .as_ref()
+        .map(|document| document_offset(builder, document));
+    api::GetResult::create(builder, &api::GetResultArgs { document })
+}
+
 pub fn search_result_to_api(result: &ir::SearchResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = search_result_offset(&mut builder, result);
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
+pub fn search_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::SearchResult,
+) -> flatbuffers::WIPOffset<api::SearchResult<'a>> {
     let hits = result
         .hits
         .iter()
-        .map(|hit| hit_offset(&mut builder, hit))
+        .map(|hit| hit_offset(builder, hit))
         .collect::<Vec<_>>();
     let hits = builder.create_vector(&hits);
     let total_hits = api::TotalHits::create(
-        &mut builder,
+        builder,
         &api::TotalHitsArgs {
             value: result.total_hits.value,
             relation: match result.total_hits.relation {
@@ -687,23 +739,30 @@ pub fn search_result_to_api(result: &ir::SearchResult) -> Vec<u8> {
     let facets = result
         .facets
         .iter()
-        .map(|facet| facet_result_offset(&mut builder, facet))
+        .map(|facet| facet_result_offset(builder, facet))
         .collect::<Vec<_>>();
     let facets = builder.create_vector(&facets);
-    let root = api::SearchResult::create(
-        &mut builder,
+    api::SearchResult::create(
+        builder,
         &api::SearchResultArgs {
             hits: Some(hits),
             total_hits: Some(total_hits),
             facets: Some(facets),
         },
-    );
-    builder.finish(root, None);
-    builder.finished_data().to_vec()
+    )
 }
 
 pub fn analyze_result_to_api(result: &ir::AnalyzeResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let root = analyze_result_offset(&mut builder, result);
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
+pub fn analyze_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::AnalyzeResult,
+) -> flatbuffers::WIPOffset<api::AnalyzeResult<'a>> {
     let tokens = result
         .tokens
         .iter()
@@ -711,7 +770,7 @@ pub fn analyze_result_to_api(result: &ir::AnalyzeResult) -> Vec<u8> {
             let surface = builder.create_string(&token.surface);
             let term = builder.create_string(&token.term);
             api::AnalyzedToken::create(
-                &mut builder,
+                builder,
                 &api::AnalyzedTokenArgs {
                     surface: Some(surface),
                     term: Some(term),
@@ -723,14 +782,12 @@ pub fn analyze_result_to_api(result: &ir::AnalyzeResult) -> Vec<u8> {
         })
         .collect::<Vec<_>>();
     let tokens = builder.create_vector(&tokens);
-    let root = api::AnalyzeResult::create(
-        &mut builder,
+    api::AnalyzeResult::create(
+        builder,
         &api::AnalyzeResultArgs {
             tokens: Some(tokens),
         },
-    );
-    builder.finish(root, None);
-    builder.finished_data().to_vec()
+    )
 }
 
 fn value_offset<'a>(

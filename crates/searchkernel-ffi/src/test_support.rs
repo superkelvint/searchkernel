@@ -78,23 +78,38 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         return Err("unsupported response protocol version".to_owned());
     }
 
-    match envelope.payload_type() {
+    match envelope.payload_type().0 {
         transport::RESPONSE_INSERT => {
             Ok(DecodedResponse::Insert(searchkernel_core::InsertResult {
-                id: required(envelope.insert().and_then(|result| result.id()), "id")?,
+                id: required(
+                    envelope
+                        .payload_as_search_kernel_v1_insert_result()
+                        .and_then(|result| result.id()),
+                    "id",
+                )?,
             }))
         }
         transport::RESPONSE_UPSERT => {
             Ok(DecodedResponse::Upsert(searchkernel_core::UpsertResult {
-                id: required(envelope.upsert().and_then(|result| result.id()), "id")?,
+                id: required(
+                    envelope
+                        .payload_as_search_kernel_v1_upsert_result()
+                        .and_then(|result| result.id()),
+                    "id",
+                )?,
             }))
         }
         transport::RESPONSE_PATCH => Ok(DecodedResponse::Patch(searchkernel_core::PatchResult {
-            id: required(envelope.patch().and_then(|result| result.id()), "id")?,
+            id: required(
+                envelope
+                    .payload_as_search_kernel_v1_patch_result()
+                    .and_then(|result| result.id()),
+                "id",
+            )?,
         })),
         transport::RESPONSE_DELETE => {
             let result = envelope
-                .delete()
+                .payload_as_search_kernel_v1_delete_result()
                 .ok_or_else(|| "delete payload is missing".to_owned())?;
             Ok(DecodedResponse::Delete(searchkernel_core::DeleteResult {
                 id: required(result.id(), "id")?,
@@ -103,7 +118,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         }
         transport::RESPONSE_GET => {
             let result = envelope
-                .get()
+                .payload_as_search_kernel_v1_get_result()
                 .ok_or_else(|| "get payload is missing".to_owned())?;
             Ok(DecodedResponse::Get(searchkernel_core::GetResult {
                 document: result.document().map(decode_document).transpose()?,
@@ -111,7 +126,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         }
         transport::RESPONSE_SEARCH => {
             let result = envelope
-                .search()
+                .payload_as_search_kernel_v1_search_result()
                 .ok_or_else(|| "search payload is missing".to_owned())?;
             let total_hits = result
                 .total_hits()
@@ -142,7 +157,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         }
         transport::RESPONSE_ANALYZE => {
             let result = envelope
-                .analyze()
+                .payload_as_search_kernel_v1_analyze_result()
                 .ok_or_else(|| "analyze payload is missing".to_owned())?;
             let tokens = result
                 .tokens()
@@ -168,7 +183,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         }
         transport::RESPONSE_ERROR => Ok(DecodedResponse::Error(decode_error(
             envelope
-                .error()
+                .payload_as_search_kernel_v1_error()
                 .ok_or_else(|| "error payload is missing".to_owned())?,
         )?)),
         0 => Err("response payload is missing".to_owned()),
@@ -473,8 +488,9 @@ mod tests {
             Some("search"),
             "temporarily unavailable",
         );
-        let inner = searchkernel_core::error_to_api(&error);
-        let envelope = transport::frame_response(transport::RESPONSE_ERROR, &inner);
+        let envelope = transport::frame_response(transport::RESPONSE_ERROR, |builder| {
+            searchkernel_core::error_offset(builder, &error).as_union_value()
+        });
         assert_eq!(
             decode_response(&envelope),
             Ok(DecodedResponse::Error(error))

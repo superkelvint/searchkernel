@@ -37,7 +37,7 @@ fn main() {
             .allowlist_type("sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|text_occurrence|text_query_term|error)")
             .allowlist_function("sk_.*")
             .allowlist_var("SK_(NATIVE_ABI_VERSION|STATUS_.*)")
-            .layout_tests(false)
+            .layout_tests(true)
             .generate_comments(false)
             .generate()
             .expect("generate native ABI bindings");

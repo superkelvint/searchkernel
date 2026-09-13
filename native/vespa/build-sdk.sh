@@ -85,6 +85,13 @@ AWS_LIB_DIR=${VESPA_AWS_LIB_DIR:-$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
     cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
 fi
+
+# Keep the checked-in Rust declarations synchronized with the public native
+# header whenever the SDK is rebuilt. This is intentionally a hard failure:
+# the header is the ABI source of truth, while ordinary consumers use the
+# checked-in bindings and do not need libclang.
+SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-sys-bindings.sh"
+
 # The upstream build tree also contains unit-test support libraries. Keep
 # those out of the distributable SDK even when they share a directory with
 # production libraries.

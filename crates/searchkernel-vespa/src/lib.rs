@@ -83,12 +83,13 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 fn native_error(error: &NativeError, status: i32) -> Error {
     let code = error.0.code;
-    let message = if error.0.message.is_null() {
+    let message = unsafe { CStr::from_ptr(error.0.message.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+    let message = if message.is_empty() {
         format!("native operation failed with status {status}")
     } else {
-        unsafe { CStr::from_ptr(error.0.message) }
-            .to_string_lossy()
-            .into_owned()
+        message
     };
     Error::native(code, message)
 }
@@ -438,29 +439,19 @@ impl Drop for Engine {
     }
 }
 
-/// Owns the native message held by `sk_error` until the guard is dropped.
-///
-/// The native ABI requires the caller to initialize this value and destroy it
-/// before reuse or discard. Keeping that rule in `Drop` also covers successful
-/// calls and early returns, not only native failures.
+/// Owns the fixed-size native error value used for one operation.
 struct NativeError(sys::sk_error);
 
 impl NativeError {
     fn new() -> Self {
         Self(sys::sk_error {
             code: 0,
-            message: ptr::null_mut(),
+            message: [0; 512],
         })
     }
 
     fn as_mut_ptr(&mut self) -> *mut sys::sk_error {
         &mut self.0
-    }
-}
-
-impl Drop for NativeError {
-    fn drop(&mut self) {
-        unsafe { sys::sk_error_destroy(&mut self.0) };
     }
 }
 

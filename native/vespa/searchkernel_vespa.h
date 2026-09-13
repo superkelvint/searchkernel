@@ -51,10 +51,11 @@ typedef struct sk_text_query_term {
 } sk_text_query_term;
 
 typedef struct sk_error {
-    /* Initialize to {0, NULL} before the first call. The caller owns message
-       and must call sk_error_destroy before reusing or discarding the value. */
+    /* The message is inline, always NUL-terminated when non-empty, and
+       truncated when necessary. The structure needs no prior initialization
+       and the caller never allocates or frees the message. */
     int32_t code;
-    char *message;
+    char message[512];
 } sk_error;
 
 #define SK_NATIVE_ABI_VERSION 1U
