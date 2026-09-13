@@ -314,6 +314,63 @@ mod tests {
     }
 
     #[test]
+    fn presence_sensitive_request_and_response_fields_round_trip() {
+        let request = serde_json::json!({
+            "protocol_version": 1,
+            "operation": "search",
+            "request": {
+                "query": "",
+                "search_fields": [],
+                "filter": {"range": {
+                    "field": "price",
+                    "lower": {"float64": 1.0},
+                    "include_lower": false
+                }},
+                "sort": [{"field": "price", "direction": "asc", "missing": "last"}],
+                "facets": [{"field": "brand", "limit": 0, "sort": "count_asc"}],
+                "ranking": {"bm25_ranking": {}},
+                "limit": 0,
+                "offset": 0,
+                "projection": [],
+                "highlighting": [],
+                "language": "",
+                "query_expr": {"term_query": {
+                    "field": "title", "value": {"string": "耳机"}
+                }}
+            }
+        });
+        let request_bytes =
+            request_json_to_flatbuffer(&serde_json::to_vec(&request).unwrap()).unwrap();
+        let request_json: Value =
+            serde_json::from_slice(&request_flatbuffer_to_json(&request_bytes).unwrap()).unwrap();
+        assert_eq!(request_json, request);
+
+        let response = serde_json::json!({
+            "protocol_version": 1,
+            "operation": "search",
+            "response": {"search": {
+                "hits": [{
+                    "id": "doc",
+                    "score": 0.0,
+                    "fields": {"price": {"float64": 1.5}},
+                    "highlights": [{"field": "title", "fragments": [{
+                        "text": "耳机", "matches": [{"start_byte": 0, "end_byte": 6}]
+                    }]}]
+                }],
+                "total_hits": {"value": "18446744073709551615", "relation": "lower_bound"},
+                "facets": [{"field": "brand", "values": [{
+                    "value": {"string": "Sony"}, "count": "0"
+                }]}]
+            }}
+        });
+        let response_bytes =
+            response_json_to_flatbuffer(&serde_json::to_vec(&response).unwrap()).unwrap();
+        let response_json: Value =
+            serde_json::from_slice(&response_flatbuffer_to_json(&response_bytes).unwrap()).unwrap();
+        assert_eq!(response_json, response);
+    }
+
+    #[test]
     fn every_response_union_variant_has_json_encoding() {
         use crate::generated::search_kernel::ffi::v1 as transport;
         use searchkernel_api::v1 as api;
