@@ -5,7 +5,46 @@
       "protocol_version": 1,
       "request": {
         "document": {
-          "id": "fixture"
+          "fields": {
+            "brand": {
+              "string": "Sony"
+            },
+            "category": {
+              "string": "Headphones"
+            },
+            "description": {
+              "string": "Wireless headphones"
+            },
+            "image_url": {
+              "string": "/images/42.jpg"
+            },
+            "in_stock": {
+              "bool": true
+            },
+            "popularity": {
+              "int64": "9234"
+            },
+            "price": {
+              "float64": 449.99
+            },
+            "sku": {
+              "string": "WH-1000XM6"
+            },
+            "tags": {
+              "list": [
+                {
+                  "string": "wireless"
+                },
+                {
+                  "string": "premium"
+                }
+              ]
+            },
+            "title": {
+              "string": "Sony WH-1000XM6"
+            }
+          },
+          "id": "sku-42"
         }
       }
     },
@@ -14,7 +53,46 @@
       "protocol_version": 1,
       "request": {
         "document": {
-          "id": "fixture"
+          "fields": {
+            "brand": {
+              "string": "Sony"
+            },
+            "category": {
+              "string": "Headphones"
+            },
+            "description": {
+              "string": "Wireless headphones"
+            },
+            "image_url": {
+              "string": "/images/42.jpg"
+            },
+            "in_stock": {
+              "bool": true
+            },
+            "popularity": {
+              "int64": "9234"
+            },
+            "price": {
+              "float64": 449.99
+            },
+            "sku": {
+              "string": "WH-1000XM6"
+            },
+            "tags": {
+              "list": [
+                {
+                  "string": "wireless"
+                },
+                {
+                  "string": "premium"
+                }
+              ]
+            },
+            "title": {
+              "string": "Sony WH-1000XM6"
+            }
+          },
+          "id": "sku-42"
         }
       }
     },
@@ -22,33 +100,64 @@
       "operation": "patch",
       "protocol_version": 1,
       "request": {
-        "id": "fixture",
-        "operations": []
+        "id": "sku-42",
+        "operations": [
+          {
+            "set_field": {
+              "field": "price",
+              "value": {
+                "float64": 399.99
+              }
+            }
+          },
+          {
+            "set_field": {
+              "field": "in_stock",
+              "value": {
+                "bool": true
+              }
+            }
+          }
+        ]
       }
     },
     {
       "operation": "delete",
       "protocol_version": 1,
       "request": {
-        "id": "fixture"
+        "id": "sku-42"
       }
     },
     {
       "operation": "get",
       "protocol_version": 1,
       "request": {
-        "id": "fixture"
+        "id": "sku-42"
       }
     },
     {
       "operation": "search",
       "protocol_version": 1,
-      "request": {}
+      "request": {
+        "query": "x",
+        "ranking": {
+          "bm25_ranking": {}
+        }
+      }
     },
     {
       "operation": "analyze",
       "protocol_version": 1,
-      "request": {}
+      "request": {
+        "target": {
+          "analyzer": {
+            "name": "standard",
+            "options": {},
+            "version": 1
+          }
+        },
+        "text": "Text"
+      }
     },
     {
       "operation": "describe",
@@ -59,7 +168,9 @@
       "operation": "inspect_query",
       "protocol_version": 1,
       "request": {
-        "request": {}
+        "request": {
+          "query": "x"
+        }
       }
     }
   ],
@@ -158,5 +269,5 @@
     }
   ],
   "schema_digest": "010284fc0b2c92134e959a144b579ac72a5f05ef5fba74c837123172453878de",
-  "source": "BFBS union members with generated minimal canonical payloads"
+  "source": "normative API conformance fixtures for requests; schema-derived minimal responses"
 }

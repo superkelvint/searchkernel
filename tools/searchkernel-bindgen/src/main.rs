@@ -495,13 +495,15 @@ fn generate_golden_json(
         .iter()
         .map(|type_name| {
             let operation = operation_name(type_name).expect("verified union member");
-            serde_json::json!({
+            let (request, _source) = normative_request_golden(root, &operation)
+                .unwrap_or_else(|error| panic!("generate {operation} golden fixture: {error}"));
+            Ok::<_, String>(serde_json::json!({
                 "protocol_version": 1,
                 "operation": operation,
-                "request": golden_payload(&operation, "request"),
-            })
+                "request": request,
+            }))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let response = response_types
         .iter()
         .map(|type_name| {
@@ -515,7 +517,7 @@ fn generate_golden_json(
         .collect::<Vec<_>>();
     let fixtures = serde_json::json!({
         "schema_digest": schema_digest,
-        "source": "BFBS union members with generated minimal canonical payloads",
+        "source": "normative API conformance fixtures for requests; schema-derived minimal responses",
         "requests": request,
         "responses": response,
     });
@@ -532,6 +534,95 @@ fn generate_golden_json(
         fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+fn normative_request_golden(root: &Path, operation: &str) -> Result<(Value, &'static str), String> {
+    let (case, source) = match operation {
+        "insert" => ("cases/write/insert.json", "write.insert"),
+        "upsert" => ("cases/write/upsert.json", "write.upsert"),
+        "patch" => ("cases/write/patch-set.json", "write.patch-set"),
+        "delete" => ("cases/write/delete.json", "write.delete"),
+        "get" => ("cases/write/get.json", "write.get"),
+        "search" => ("cases/search/bm25.json", "search.bm25"),
+        "analyze" => (
+            "cases/analyze/explicit-standard.json",
+            "analyze.explicit-standard",
+        ),
+        "describe" => (
+            "cases/introspection/describe-index.json",
+            "introspection.describe-index",
+        ),
+        "inspect_query" => (
+            "cases/introspection/inspect-query.json",
+            "introspection.inspect-query",
+        ),
+        _ => return Err(format!("no normative fixture selected for {operation}")),
+    };
+    let path = root.join("reference/api-conformance").join(case);
+    let fixture: Value = serde_json::from_str(
+        &fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?,
+    )
+    .map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut input = fixture
+        .get("input")
+        .cloned()
+        .ok_or_else(|| format!("{} has no input", path.display()))?;
+    if operation == "analyze" {
+        let object = input
+            .as_object_mut()
+            .ok_or_else(|| "analyze fixture input is not an object".to_owned())?;
+        let analyzer = object
+            .remove("analyzer")
+            .ok_or_else(|| "analyze fixture has no analyzer".to_owned())?;
+        object.insert(
+            "target".to_owned(),
+            serde_json::json!({"analyzer": analyzer}),
+        );
+    }
+    if operation == "search" {
+        if let Some(ranking) = input.get_mut("ranking") {
+            if let Some(object) = ranking.as_object_mut() {
+                if let Some(value) = object.remove("bm25") {
+                    object.insert("bm25_ranking".to_owned(), value);
+                }
+            }
+        }
+    }
+    if operation == "patch" {
+        if let Some(operations) = input.get_mut("operations").and_then(Value::as_array_mut) {
+            for operation in operations {
+                if let Some(object) = operation.as_object_mut() {
+                    if let Some(value) = object.remove("set") {
+                        object.insert("set_field".to_owned(), value);
+                    }
+                    if let Some(value) = object.remove("unset") {
+                        object.insert("unset_field".to_owned(), value);
+                    }
+                }
+            }
+        }
+    }
+    normalize_golden_values(&mut input);
+    Ok((input, source))
+}
+
+fn normalize_golden_values(value: &mut Value) {
+    match value {
+        Value::Array(values) => values.iter_mut().for_each(normalize_golden_values),
+        Value::Object(object) => {
+            for (name, value) in object.iter_mut() {
+                if matches!(name.as_str(), "int64" | "uint64") {
+                    if let Some(number) = value.as_i64() {
+                        *value = Value::String(number.to_string());
+                    } else if let Some(number) = value.as_u64() {
+                        *value = Value::String(number.to_string());
+                    }
+                }
+                normalize_golden_values(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn golden_payload(operation: &str, direction: &str) -> Value {
