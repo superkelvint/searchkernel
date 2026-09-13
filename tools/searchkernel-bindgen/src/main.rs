@@ -354,6 +354,22 @@ fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str
         let name = reference.rsplit('/').next().unwrap_or(reference);
         let short = name.strip_prefix("SearchKernel_V1_").unwrap_or(name);
         return match short {
+            "FieldProjection" | "HighlightRequest" => {
+                serde_json::json!({
+                    "oneOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        absent_vector_schema(),
+                    ]
+                })
+            }
+            "SearchFieldSelection" => {
+                serde_json::json!({
+                    "oneOf": [
+                        {"type": "array", "items": {"$ref": format!("#/payload_definitions/{direction}/SearchKernel_V1_SearchField")}},
+                        absent_vector_schema(),
+                    ]
+                })
+            }
             "OptionalBool" => serde_json::json!({"type": "boolean"}),
             "OptionalDouble" => serde_json::json!({"type": "number"}),
             "OptionalUInt32" => {
@@ -394,6 +410,7 @@ fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str
             ("SearchKernel_V1_Document", "fields")
                 | ("SearchKernel_V1_Analyzer", "options")
                 | ("SearchKernel_V1_ValueObject", "fields")
+                | ("SearchKernel_V1_Hit", "fields")
                 | ("SearchKernel_V1_ErrorDetail", "metadata")
         ) {
             let item = if field == "metadata" {

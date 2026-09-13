@@ -1393,7 +1393,26 @@
             "type": "string"
           },
           "projection": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldProjection"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1519,10 +1538,10 @@
           "fields": {
             "oneOf": [
               {
-                "items": {
-                  "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
                 },
-                "type": "array"
+                "type": "object"
               },
               {
                 "additionalProperties": false,
@@ -1573,7 +1592,26 @@
         "additionalProperties": false,
         "properties": {
           "default_search_fields": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchFieldSelection"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "fields": {
             "oneOf": [
@@ -2028,7 +2066,26 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
           },
           "highlighting": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightRequest"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "language": {
             "type": "string"
@@ -2044,7 +2101,26 @@
             "type": "integer"
           },
           "projection": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldProjection"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "query": {
             "type": "string"
@@ -2056,7 +2132,26 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_RankingPolicy"
           },
           "search_fields": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchFieldSelection"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "sort": {
             "oneOf": [
@@ -3326,7 +3421,26 @@
             "type": "string"
           },
           "projection": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldProjection"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -3452,10 +3566,10 @@
           "fields": {
             "oneOf": [
               {
-                "items": {
-                  "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
                 },
-                "type": "array"
+                "type": "object"
               },
               {
                 "additionalProperties": false,
@@ -3506,7 +3620,26 @@
         "additionalProperties": false,
         "properties": {
           "default_search_fields": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchFieldSelection"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "fields": {
             "oneOf": [
@@ -3961,7 +4094,26 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
           },
           "highlighting": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightRequest"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "language": {
             "type": "string"
@@ -3977,7 +4129,26 @@
             "type": "integer"
           },
           "projection": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldProjection"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "query": {
             "type": "string"
@@ -3989,7 +4160,26 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_RankingPolicy"
           },
           "search_fields": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchFieldSelection"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "sort": {
             "oneOf": [
