@@ -1,4 +1,5 @@
 #include "searchkernel_vespa.h"
+#include "file_descriptor.h"
 
 #include <vespa/config-bucketspaces.h>
 #include <vespa/config-stor-distribution.h>
@@ -751,25 +752,26 @@ class EmbeddedEngine {
             throw std::invalid_argument("index data exists but schema identity is missing");
         }
         const auto temporary_path = path.string() + ".tmp";
-        const int fd = ::open(temporary_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600);
-        if (fd < 0) {
+        FileDescriptor fd(::open(temporary_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600));
+        if (fd.get() < 0) {
             throw std::runtime_error("could not create index schema identity: " + temporary_path);
         }
         bool installed = false;
         try {
             size_t offset = 0;
             while (offset < expected.size()) {
-                const auto written = ::write(fd, expected.data() + offset, expected.size() - offset);
+                const auto written = ::write(fd.get(), expected.data() + offset, expected.size() - offset);
                 if (written < 0 && errno == EINTR) continue;
                 if (written <= 0) {
                     throw std::runtime_error("could not write index schema identity: " + path.string());
                 }
                 offset += static_cast<size_t>(written);
             }
-            if (::fsync(fd) != 0) {
+            if (::fsync(fd.get()) != 0) {
                 throw std::runtime_error("could not flush index schema identity: " + path.string());
             }
-            if (::close(fd) != 0) {
+            const int close_result = fd.close();
+            if (close_result != 0) {
                 throw std::runtime_error("could not close index schema identity: " + path.string());
             }
             if (::rename(temporary_path.c_str(), path.c_str()) != 0) {
@@ -782,12 +784,12 @@ class EmbeddedEngine {
                 throw std::runtime_error("could not open index directory for flushing: " + directory.string());
             }
             const int sync_result = ::fsync(directory_fd);
-            const int close_result = ::close(directory_fd);
-            if (sync_result != 0 || close_result != 0) {
+            const int directory_close_result = ::close(directory_fd);
+            if (sync_result != 0 || directory_close_result != 0) {
                 throw std::runtime_error("could not flush index directory: " + directory.string());
             }
         } catch (...) {
-            ::close(fd);
+            (void)fd.close();
             if (!installed) {
                 ::unlink(temporary_path.c_str());
             }

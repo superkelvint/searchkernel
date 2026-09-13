@@ -312,6 +312,15 @@ Each commit must:
 - never edit checked-in acceptance artifacts unless the task is verifier-authoring work;
 - never modify upstream Vespa source.
 
+## Regression test quality
+
+When a reported defect is fixed, first add a regression test that demonstrates
+the defect against the existing implementation and confirm that it fails. The
+test must exercise observable behavior or the actual implementation path.
+Never use source-text searches, `include_str!` assertions, naming conventions,
+or similar textual proxies as a substitute for an executable regression test.
+Such tests are not evidence that the defect exists or that the fix works.
+
 ## Rust style
 
 Write idiomatic, production-quality Rust for a native systems wrapper.

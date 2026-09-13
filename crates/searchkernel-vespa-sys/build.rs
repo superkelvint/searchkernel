@@ -57,10 +57,25 @@ fn main() {
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed={}", header.display());
     println!("cargo:rerun-if-changed=abi_layout_check.c");
+    println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
+    println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
+    println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
     cc::Build::new()
         .file(manifest_dir.join("abi_layout_check.c"))
         .include(sdk.join("include"))
         .flag_if_supported("-std=c11")
         .warnings(true)
         .compile("searchkernel_vespa_abi_layout");
+    cc::Build::new()
+        .cpp(true)
+        .file(manifest_dir.join("schema_identity_fd_test.cc"))
+        .include(manifest_dir.join("../../native/vespa"))
+        .warnings(true)
+        .compile("searchkernel_schema_identity_fd_test");
+    cc::Build::new()
+        .cpp(true)
+        .file(manifest_dir.join("abi_noexcept_check.cc"))
+        .include(sdk.join("include"))
+        .warnings(true)
+        .compile("searchkernel_vespa_abi_noexcept");
 }
