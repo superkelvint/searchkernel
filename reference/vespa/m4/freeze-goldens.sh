@@ -16,5 +16,6 @@ mkdir -p "$M4/expected"
 
 # Sanity assertions on the oracle output before freezing it.
 python3 "$M4/validate_expected.py" "$EXPECTED"
+"$M4/freeze-immutable.sh"
 
 echo "M4 goldens regenerated. Review expected/results.jsonl, then commit the verifier specification."

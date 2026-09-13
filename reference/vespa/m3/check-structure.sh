@@ -17,21 +17,6 @@ if grep -nE 'searchkernel-core|searchkernel_core' "$PROD/Cargo.toml" >/dev/null 
   exit 1
 fi
 
-# High-signal fixture-specific shortcuts. Scenario ids must never occur as
-# hard-coded string values in production source. Match quoted literals rather
-# than arbitrary substrings, since ids such as "empty" are ordinary words in
-# legitimate error messages and test names.
-while IFS= read -r id; do
-  [[ -z "$id" ]] && continue
-  if grep -RInF --exclude-dir=target -- "\"$id\"" "$PROD/src" >/dev/null 2>&1 ||
-     grep -RInF --exclude-dir=target -- "'$id'" "$PROD/src" >/dev/null 2>&1; then
-    echo "fixture scenario id '$id' appears in production source" >&2
-    exit 1
-  fi
-done < <(python3 - "$ROOT/reference/vespa/m3/scenarios/cases.jsonl" <<'PY'
-import json, sys
-for line in open(sys.argv[1], encoding='utf-8'):
-    line=line.strip()
-    if line: print(json.loads(line)['id'])
-PY
-)
+source "$ROOT/reference/vespa/common/verify-common.sh"
+check_fixture_literals "$ROOT/reference/vespa/m3/scenarios/cases.jsonl" \
+  "$ROOT/crates/searchkernel-vespa/src" "$ROOT/crates/searchkernel-vespa-sys/src" "$ROOT/native/vespa"

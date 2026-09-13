@@ -1,17 +1,14 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$ROOT/../.." && pwd)
-SDK=${SK_NATIVE_SDK:-$REPO_ROOT/native/sdk/linux-x86_64}
+. "$ROOT/common/verify-common.sh"
+
+"$ROOT/m0/verify-m0.sh"
+
 TARGET=$REPO_ROOT/target/vespa-verifier/m1
-CARGO_TARGET_DIR=$REPO_ROOT/target/vespa-verifier/cargo
-export CARGO_TARGET_DIR
-CONFIG=$SDK/share/embedded_crud_cfg
-
+CONFIG="$SDK/share/embedded_crud_cfg"
 mkdir -p "$TARGET"
-
-"$ROOT/common/check-production-shortcuts.sh"
 
 cargo check --quiet --manifest-path "$ROOT/api-contract/Cargo.toml" --bin m1
 cargo build --quiet --manifest-path "$ROOT/m1/rust-driver/Cargo.toml"
@@ -22,11 +19,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-if ! ldd "$BIN" | grep -q 'libsearchkernel_vespa'; then
-    echo "M1 driver is not dynamically linked to libsearchkernel_vespa" >&2
-    ldd "$BIN" >&2 || true
-    exit 1
-fi
+require_native_driver "$BIN"
 
 rm -rf "$TARGET/data"
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

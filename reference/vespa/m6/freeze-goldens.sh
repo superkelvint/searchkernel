@@ -2,9 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-PINNED="2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
-actual="$(git -C "$ROOT/upstream/vespa" rev-parse HEAD)"
-[[ "$actual" == "$PINNED" ]] || { echo "expected Vespa $PINNED, found $actual" >&2; exit 1; }
+source "$ROOT/reference/vespa/common/verify-common.sh"
+require_pinned_vespa
 "$SCRIPT_DIR/validate_scenarios.py"
 
 rm -rf "$SCRIPT_DIR/scenarios/rendered"

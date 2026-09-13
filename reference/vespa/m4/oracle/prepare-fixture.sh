@@ -3,17 +3,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 M4="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$M4/../../.." && pwd)"
-VESPA="${VESPA_SOURCE_DIR:-$ROOT/upstream/vespa}"
+VESPA="$ROOT/upstream/vespa"
 BASE="$VESPA/searchcore/src/tests/proton/documentdb/cfg"
 OUT="$M4/fixture"
-PINNED="2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+source "$ROOT/reference/vespa/common/verify-common.sh"
 
 [[ -d "$BASE" ]] || { echo "missing pinned Vespa documentdb fixture: $BASE" >&2; exit 1; }
-actual="$(git -C "$VESPA" rev-parse HEAD)"
-[[ "$actual" == "$PINNED" ]] || {
-  echo "M4 oracle expects Vespa $PINNED, found $actual" >&2
-  exit 1
-}
+require_pinned_vespa
 
 # Once created, this directory is part of the checked-in M4 verifier fixture.
 # Do not regenerate it during implementation/acceptance.

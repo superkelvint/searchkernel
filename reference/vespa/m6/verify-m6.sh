@@ -3,10 +3,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
+source "$ROOT/reference/vespa/common/verify-common.sh"
+
+require_pinned_vespa
 
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
 "$SCRIPT_DIR/check-immutable.sh"
+
+for scenario in "$SCRIPT_DIR/scenarios"/[0-9][0-9]-*.json; do
+  check_fixture_literals --keys text,query "$scenario" "$ROOT/crates/searchkernel-vespa/src" \
+    "$ROOT/crates/searchkernel-vespa-sys/src" "$ROOT/native/vespa"
+done
 
 if [[ -x reference/vespa/m5/verify-m5.sh ]]; then
   reference/vespa/m5/verify-m5.sh
@@ -15,9 +23,7 @@ else
   exit 1
 fi
 
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace
+run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m6
 
 "$SCRIPT_DIR/check-structure.sh"
@@ -44,12 +50,10 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   "$SCRIPT_DIR/canonicalize_cfg.py" "$scenario" "$cfg" > "$actual"
   "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$actual"
 
-  if [[ "${M6_LIVE_ORACLE:-1}" != "0" ]]; then
-    live="$TMP/$id-java.json"
-    "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$id" "$schema" "$SCRIPT_DIR/scenarios/rendered/$id.sd" \
-      | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",",":")))' > "$live"
-    "$SCRIPT_DIR/compare.py" "$live" "$actual"
-  fi
+  live="$TMP/$id-java.json"
+  "$SCRIPT_DIR/oracle/run-java-oracle.sh" "$id" "$schema" "$SCRIPT_DIR/scenarios/rendered/$id.sd" \
+    | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",",":")))' > "$live"
+  "$SCRIPT_DIR/compare.py" "$live" "$actual"
 
   if find "$cfg" -type l -print -quit | grep -q .; then
     echo "generated config contains symlink for $id" >&2

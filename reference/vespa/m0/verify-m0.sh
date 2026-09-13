@@ -1,19 +1,20 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$ROOT/../.." && pwd)
-SDK=${SK_NATIVE_SDK:-$REPO_ROOT/native/sdk/linux-x86_64}
-TARGET=$REPO_ROOT/target/vespa-verifier/m0
+. "$ROOT/common/verify-common.sh"
 
+require_pinned_vespa
+
+TARGET=$REPO_ROOT/target/vespa-verifier/m0
 mkdir -p "$TARGET"
 rm -rf "$TARGET/data"
 mkdir -p "$TARGET/data"
 
-HEADER=$SDK/include/searchkernel_vespa.h
-LIB=$SDK/lib/libsearchkernel_vespa.so
-CONFIG=$SDK/share/embedded_crud_cfg
-MANIFEST=$SDK/manifest.json
+HEADER="$SDK/include/searchkernel_vespa.h"
+LIB="$SDK/lib/libsearchkernel_vespa.so"
+CONFIG="$SDK/share/embedded_crud_cfg"
+MANIFEST="$SDK/manifest.json"
 
 if grep -qE "[#]include[[:space:]]*[<\"]vespa/" "$HEADER"; then
     echo "M0 public native header leaks Vespa headers" >&2
@@ -27,12 +28,7 @@ for path in "$HEADER" "$LIB" "$CONFIG" "$MANIFEST"; do
     fi
 done
 
-python3 - "$MANIFEST" <<'PY'
-import json, sys
-m = json.load(open(sys.argv[1]))
-assert m.get("native_abi_version") == 1, m
-assert m.get("vespa_commit") == "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e", m
-PY
+require_sdk_manifest "$MANIFEST"
 
 if ldd "$LIB" | grep -q 'not found'; then
     echo "M0 native library has unresolved runtime dependencies:" >&2

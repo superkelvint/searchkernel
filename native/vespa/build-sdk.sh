@@ -79,7 +79,10 @@ cp "$ROOT/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
 find "$VESPA_DEPS/lib64" -maxdepth 1 -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
-    cp -a "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
+    if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
+         "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
+        cp -a "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
+    fi
 fi
 AWS_LIB_DIR=${VESPA_AWS_LIB_DIR:-$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist}
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then

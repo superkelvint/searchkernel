@@ -36,21 +36,8 @@ fi
 # Toy-tokenizer removal is verified by code review plus the M3-sensitive runtime
 # scenario; do not grep generic Unicode implementation primitives here.
 
-# Frozen aliases/scenario ids may appear in the driver, never production.
-python3 - "$SCEN" <<'PY' | while IFS= read -r needle; do
-import json, sys
-s=json.load(open(sys.argv[1], encoding='utf-8'))
-for x in s['documents']:
-    print(x)
-for st in s['steps']:
-    if 'id' in st: print(st['id'])
-PY
-  [[ -z "$needle" ]] && continue
-  if grep -RInF --exclude-dir=target -- "$needle" "$RUST/src" "$SYS/src" "$NATIVE" >/dev/null 2>&1; then
-    echo "M4 fixture identifier '$needle' appears in production source" >&2
-    exit 1
-  fi
-done
+source "$ROOT/reference/vespa/common/verify-common.sh"
+check_fixture_literals "$SCEN" "$RUST/src" "$SYS/src" "$NATIVE"
 
 # Vespa headers belong only to native/vespa, never the safe Rust crate.
 if grep -RInE '#include[[:space:]]*[<\"]vespa/' "$RUST" "$SYS" --include='*.rs' 2>/dev/null; then

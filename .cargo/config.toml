@@ -1,9 +1,9 @@
 [target.x86_64-unknown-linux-gnu]
 rustflags = [
     "-C",
-    "link-arg=-Wl,-rpath,$ORIGIN/../../native/sdk/linux-x86_64/lib",
-    "-C",
     "link-arg=-Wl,-rpath,$ORIGIN/../../../native/sdk/linux-x86_64/lib",
     "-C",
-    "link-arg=-Wl,-rpath,$ORIGIN/../../../../../../native/sdk/linux-x86_64/lib",
+    "link-arg=-Wl,-rpath,$ORIGIN/../../../../native/sdk/linux-x86_64/lib",
+    "-C",
+    "link-arg=-Wl,-rpath,$ORIGIN/../../../../../native/sdk/linux-x86_64/lib",
 ]

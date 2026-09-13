@@ -5,24 +5,20 @@ M3="$ROOT/reference/vespa/m3"
 WORK="$M3/target/verify"
 mkdir -p "$WORK"
 cd "$ROOT"
+source "$ROOT/reference/vespa/common/verify-common.sh"
+
+require_pinned_vespa
+require_immutable_checksum "$M3/M3-IMMUTABLE.sha256"
 
 [[ -s "$M3/expected/document.jsonl" && -s "$M3/expected/query.jsonl" ]] || {
   echo "M3 frozen goldens are missing. Harness author must run freeze-goldens.sh before implementation." >&2
   exit 1
 }
-# M2 is cumulative. Support the two historical verifier layouts used by the project.
-if [[ -x "$ROOT/reference/vespa/verify-m2.sh" ]]; then
-  "$ROOT/reference/vespa/verify-m2.sh"
-elif [[ -x "$ROOT/reference/vespa/m2/verify-m2.sh" ]]; then
-  "$ROOT/reference/vespa/m2/verify-m2.sh"
-else
-  echo "cannot locate cumulative M2 verifier" >&2
-  exit 1
-fi
+"$ROOT/reference/vespa/m2/verify-m2.sh"
 
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-targets --all-features
+"$M3/kstem/verify-kstem.sh"
+
+run_workspace_quality
 
 if [[ -f "$ROOT/reference/vespa/api-contract/Cargo.toml" ]]; then
   cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m3

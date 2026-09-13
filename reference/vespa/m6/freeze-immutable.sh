@@ -2,17 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CHECKSUM="$SCRIPT_DIR/M6-IMMUTABLE.sha256"
-
-{
-  printf '%s\n' reference/vespa/api-contract/src/bin/m6.rs
-  find reference/vespa/m6 -type f \
-    ! -name M6-IMMUTABLE.sha256 \
-    ! -path '*/target/*' \
-    ! -path '*/__pycache__/*' \
-    -print | sort
-} | (
-  cd "$ROOT"
-  xargs sha256sum
-) > "$CHECKSUM"
+"$SCRIPT_DIR/../common/freeze-immutable.sh" \
+  "$SCRIPT_DIR" "$CHECKSUM" \
+  reference/vespa/api-contract/src/bin/m6.rs \
+  reference/vespa/common/verify-common.sh \
+  reference/vespa/common/check-immutable.sh \
+  reference/vespa/common/freeze-immutable.sh \
+  reference/vespa/common/check-fixture-literals.py \
+  reference/vespa/verify-through.sh

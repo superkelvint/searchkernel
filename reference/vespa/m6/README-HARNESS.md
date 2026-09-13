@@ -30,16 +30,11 @@ After review, commit the verifier specification. Implementation acceptance is:
 ./reference/vespa/m6/verify-m6.sh
 ```
 
-The normal verifier compares Rust output to frozen expected semantics, optionally compares against the live Java oracle, validates the private document-schema manifest, and opens every generated directory through the real embedded engine.
+The normal verifier compares Rust output to frozen expected semantics and the live Java oracle, validates the private document-schema manifest, and opens every generated directory through the real embedded engine.
 
 The verifier also checks `M6-IMMUTABLE.sha256` before running implementation
 checks. Changes to the M6 contract, oracle, scenarios, expected outputs, or
 comparison logic therefore require an explicit verifier-authoring freeze.
 
-Set:
-
-```bash
-M6_LIVE_ORACLE=0
-```
-
-to skip the redundant live Java comparison during fast local iteration. Frozen expected output remains mandatory. The default is `M6_LIVE_ORACLE=1` for final acceptance.
+The live Java comparison is mandatory. Run the verifier in an environment with
+the pinned Vespa checkout and its Java oracle dependencies available.

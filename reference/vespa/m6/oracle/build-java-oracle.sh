@@ -4,16 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 M6="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$M6/../../.." && pwd)"
-VESPA_ROOT="${VESPA_ROOT:-$ROOT/upstream/vespa}"
+VESPA_ROOT="$ROOT/upstream/vespa"
 BUILD="$M6/oracle/target"
 TOOLS="$BUILD/tools"
-PINNED="2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+source "$ROOT/reference/vespa/common/verify-common.sh"
 
 fail() { echo "m6 java oracle: $*" >&2; exit 1; }
 
 [[ -f "$VESPA_ROOT/pom.xml" ]] || fail "missing pinned Vespa source: $VESPA_ROOT"
+require_pinned_vespa
 actual="$(git -C "$VESPA_ROOT" rev-parse HEAD)"
-[[ "$actual" == "$PINNED" ]] || fail "expected Vespa $PINNED, found $actual"
 
 mkdir -p "$BUILD/classes" "$TOOLS"
 

@@ -1,21 +1,19 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$ROOT/../.." && pwd)
-SDK=${SK_NATIVE_SDK:-$REPO_ROOT/native/sdk/linux-x86_64}
-TARGET=$REPO_ROOT/target/vespa-verifier/m5
-CARGO_TARGET_DIR=$REPO_ROOT/target/vespa-verifier/cargo
-export CARGO_TARGET_DIR
-CONFIG=$SDK/share/embedded_crud_cfg
+. "$ROOT/common/verify-common.sh"
 
+TARGET=$REPO_ROOT/target/vespa-verifier/m5
+CONFIG="$SDK/share/embedded_crud_cfg"
 mkdir -p "$TARGET"
 
-"$ROOT/m0/verify-m0.sh"
-"$ROOT/m1/verify-m1.sh"
-"$ROOT/m2/verify-m2.sh"
+"$ROOT/m4/verify-m4.sh"
 
-"$ROOT/common/check-production-shortcuts.sh"
+for scenario in "$ROOT/m5/scenarios"/*.json; do
+    check_fixture_literals "$scenario" "$REPO_ROOT/crates/searchkernel-vespa/src" \
+        "$REPO_ROOT/crates/searchkernel-vespa-sys/src" "$REPO_ROOT/native/vespa"
+done
 
 if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-core|searchkernel-testkit|serde_json|HashMap|HashSet' \
     "$ROOT/m5/rust-driver"; then
@@ -35,18 +33,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-if ! ldd "$BIN" | grep -q 'libsearchkernel_vespa'; then
-    echo "M5 driver is not dynamically linked to libsearchkernel_vespa" >&2
-    ldd "$BIN" >&2 || true
-    exit 1
-fi
-
-for symbol in sk_engine_open sk_engine_put sk_engine_update sk_engine_remove sk_engine_search; do
-    if ! nm -D "$BIN" 2>/dev/null | grep -q "$symbol"; then
-        echo "M5 driver does not reference required native symbol: $symbol" >&2
-        exit 1
-    fi
-done
+require_native_driver "$BIN" sk_engine_open sk_engine_put sk_engine_update sk_engine_remove sk_engine_search
 
 if [ ! -d "$CONFIG" ]; then
     echo "M5 config directory not found: $CONFIG" >&2

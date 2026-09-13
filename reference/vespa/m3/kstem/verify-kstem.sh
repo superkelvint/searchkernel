@@ -4,7 +4,11 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
 frozen="$here/frozen"
-build="$here/build"
+source "$repo/reference/vespa/common/verify-common.sh"
+
+require_pinned_vespa
+build=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-kstem-verify.XXXXXX")
+trap 'rm -rf "$build"' EXIT
 
 for file in corpus.txt expected.tsv PINNED_SOURCE.txt FROZEN.sha256; do
     [[ -f "$frozen/$file" ]] || {
@@ -40,21 +44,7 @@ python3 "$here/tools/compare.py" "$frozen/expected.tsv" "$build/actual-rust.tsv"
 # pinned Java source. This is intentionally opt-in so ordinary verification does
 # not require a JDK or a full Vespa checkout.
 if [[ "${KSTEM_VERIFY_JAVA_ORACLE:-0}" == "1" ]]; then
-    find_vespa_src() {
-        if [[ -n "${VESPA_SRC:-}" && -f "$VESPA_SRC/linguistics/src/main/java/com/yahoo/language/simple/kstem/KStemmer.java" ]]; then
-            printf '%s\n' "$VESPA_SRC"; return 0
-        fi
-        local c
-        for c in "$repo/upstream/vespa" "$repo/reference/vespa" /work/upstream/vespa; do
-            [[ -f "$c/linguistics/src/main/java/com/yahoo/language/simple/kstem/KStemmer.java" ]] && { printf '%s\n' "$c"; return 0; }
-        done
-        while IFS= read -r c; do
-            [[ -f "$c/linguistics/src/main/java/com/yahoo/language/simple/kstem/KStemmer.java" ]] && { printf '%s\n' "$c"; return 0; }
-        done < <(find "$repo/reference" -maxdepth 2 -type d -name 'vespa*' 2>/dev/null | sort)
-        return 1
-    }
-
-    vespa_src=$(find_vespa_src) || { echo "Set VESPA_SRC for Java oracle verification" >&2; exit 2; }
+    vespa_src="$repo/upstream/vespa"
     kstemmer="$vespa_src/linguistics/src/main/java/com/yahoo/language/simple/kstem/KStemmer.java"
     recorded_hash=$(awk -F= '$1=="kstemmer_sha256" {print $2}' "$frozen/PINNED_SOURCE.txt")
     actual_hash=$(sha256sum "$kstemmer" | awk '{print $1}')

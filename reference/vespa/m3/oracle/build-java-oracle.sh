@@ -6,6 +6,7 @@ M3="$ROOT/reference/vespa/m3"
 VESPA_ROOT="${VESPA_ROOT:-$ROOT/upstream/vespa}"
 BUILD="$M3/oracle/target"
 TOOLS="$BUILD/tools"
+source "$ROOT/reference/vespa/common/verify-common.sh"
 
 fail() {
   echo "m3 java oracle: $*" >&2
@@ -16,10 +17,15 @@ fail() {
 [[ -f "$VESPA_ROOT/bootstrap.sh" ]] || fail "missing pinned Vespa bootstrap.sh"
 [[ -f "$VESPA_ROOT/opennlp-linguistics/pom.xml" ]] || fail "missing pinned Vespa opennlp-linguistics module"
 [[ -x "$VESPA_ROOT/dist/getversionmap.sh" ]] || fail "missing executable Vespa dist/getversionmap.sh"
+[[ "$(cd "$VESPA_ROOT" && pwd -P)" == "$(cd "$ROOT/upstream/vespa" && pwd -P)" ]] || \
+  fail "M3 oracle must use the repository's pinned Vespa checkout"
+require_pinned_vespa
 
 mkdir -p "$BUILD/classes" "$TOOLS"
 
 REVISION="$(git -C "$VESPA_ROOT" rev-parse HEAD 2>/dev/null || printf 'not-a-git-checkout')"
+EXPECTED_REVISION="$(expected_vespa_revision)"
+[[ "$REVISION" == "$EXPECTED_REVISION" ]] || fail "expected Vespa $EXPECTED_REVISION, found $REVISION"
 STAMP="$BUILD/vespa-revision.txt"
 
 # Use the Maven version declared by the pinned Vespa checkout. Do not call
@@ -138,4 +144,3 @@ javac -Xlint:all,-path -Werror \
   "$M3/oracle/src/searchkernel/m3/LinguisticsOracle.java"
 
 printf '%s\n' "$CP" > "$BUILD/runtime-classpath.txt"
-

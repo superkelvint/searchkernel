@@ -23,6 +23,11 @@ def main():
     if len(exp) != len(act):
         raise SystemExit(f"checkpoint count mismatch: expected {len(exp)}, got {len(act)}")
     for i, (e, a) in enumerate(zip(exp, act), 1):
+        if set(e) != set(a):
+            raise SystemExit(
+                f"checkpoint {i} fields mismatch: "
+                f"expected {sorted(e)}, got {sorted(a)}"
+            )
         if e.get("id") != a.get("id"):
             raise SystemExit(f"checkpoint {i} id mismatch: {e.get('id')!r} != {a.get('id')!r}")
         eh, ah = e.get("hits"), a.get("hits")
@@ -35,6 +40,11 @@ def main():
                 f"ACTUAL   {json.dumps(a, ensure_ascii=False)}"
             )
         for j, (x, y) in enumerate(zip(eh, ah)):
+            if set(x) != set(y):
+                raise SystemExit(
+                    f"{e['id']} hit {j}: fields mismatch: "
+                    f"expected {sorted(x)}, got {sorted(y)}"
+                )
             xs, ys = x.get("score"), y.get("score")
             if (xs is None) != (ys is None):
                 raise SystemExit(f"{e['id']} hit {j}: score presence differs")
