@@ -122,8 +122,10 @@ constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
 constexpr size_t MAX_RANK_PROFILE_BYTES = 256;
 constexpr size_t MAX_TEXT_BYTES = 16 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
+constexpr size_t MAX_TOTAL_TEXT_TERM_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;
 constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
+constexpr uint32_t MAX_SEARCH_LIMIT = 1'000'000;
 constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
     "index",          "index_url",      "summary",       "attribute", "select_input",
     "host",           "documentid",     "position",      "split_foreach", "tokenize",
@@ -997,8 +999,11 @@ public:
     }
 
     void cleanup_noexcept() noexcept {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
         try {
+            // Mutex acquisition may itself report a system error. Keep it
+            // inside this boundary because this function is called from a
+            // noexcept destructor after a failed graceful close.
+            std::lock_guard<std::mutex> operation_lock(_operation_mutex);
             if (_handler) {
                 _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
                                            DocTypeName(_document_type));
@@ -1465,6 +1470,9 @@ extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
         if (*field == '\0') {
             throw std::invalid_argument("search field must not be empty");
         }
+        if (limit > MAX_SEARCH_LIMIT) {
+            throw std::invalid_argument("search limit is too large");
+        }
         auto request = std::make_unique<sk_search_request>();
         request->field = field;
         request->value = value;
@@ -1601,6 +1609,7 @@ void fill_text_document(TextDocument &document, const char *id, const char *fiel
     document.field = field;
     document.text = copy_text_bytes(text, text_length, MAX_TEXT_BYTES, "text");
     document.occurrences.reserve(occurrence_count);
+    size_t total_term_bytes = 0;
     for (uint32_t index = 0; index < occurrence_count; ++index) {
         const auto &input = occurrences[index];
         if (input.term_length == 0) {
@@ -1615,6 +1624,10 @@ void fill_text_document(TextDocument &document, const char *id, const char *fiel
             !is_utf8_boundary(document.text, input.byte_start + input.byte_length)) {
             throw std::invalid_argument("text occurrence span is not on UTF-8 boundaries");
         }
+        if (input.term_length > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
+            throw std::invalid_argument("total text occurrence term bytes are too large");
+        }
+        total_term_bytes += input.term_length;
         document.occurrences.push_back({
             copy_text_bytes(input.term, input.term_length, MAX_TEXT_TERM_BYTES,
                             "text occurrence term"),
@@ -1650,6 +1663,7 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
     request.rank_profile = rank_profile;
     request.terms.reserve(term_count);
     request.positions.reserve(term_count);
+    size_t total_term_bytes = 0;
     for (uint32_t index = 0; index < term_count; ++index) {
         const auto &input = terms[index];
         if (input.term_length == 0) {
@@ -1658,6 +1672,10 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
         if (input.position != index) {
             throw std::invalid_argument("text query positions must be contiguous");
         }
+        if (input.term_length > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
+            throw std::invalid_argument("total text query term bytes are too large");
+        }
+        total_term_bytes += input.term_length;
         request.terms.push_back(copy_text_bytes(input.term, input.term_length,
                                                  MAX_TEXT_TERM_BYTES,
                                                  "text query term"));

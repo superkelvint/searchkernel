@@ -10,7 +10,8 @@ pub use linguistics::{
 pub use schema::{ConfigCompiler, Field, FieldType, Schema};
 
 use searchkernel_vespa_sys as sys;
-use std::ffi::{CStr, CString, NulError};
+use std::ffi::{CString, NulError};
+use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr::{self, NonNull};
 
@@ -83,9 +84,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 fn native_error(error: &NativeError, status: i32) -> Error {
     let code = error.0.code;
-    let message = unsafe { CStr::from_ptr(error.0.message.as_ptr()) }
-        .to_string_lossy()
-        .into_owned();
+    let message_bytes: Vec<u8> = error
+        .0
+        .message
+        .iter()
+        .take_while(|&&byte| byte != 0)
+        .map(|&byte| byte as u8)
+        .collect();
+    let message = String::from_utf8_lossy(&message_bytes).into_owned();
     let message = if message.is_empty() {
         format!("native operation failed with status {status}")
     } else {
@@ -354,6 +360,7 @@ impl Engine {
         check(status, &error)
     }
 
+    /// Search a text field using the requested query form.
     pub fn search_text(
         &self,
         query: TextQuery<'_>,
@@ -488,7 +495,37 @@ fn length_u32(length: usize, what: &str) -> Result<u32, Error> {
         .map_err(|_| Error::message(format!("{what} count exceeds native ABI capacity")))
 }
 
-fn text_occurrences(analysis: &DocumentAnalysis) -> Result<Vec<sys::sk_text_occurrence>, Error> {
+struct NativeOccurrences<'a> {
+    raw: Vec<sys::sk_text_occurrence>,
+    _analysis: PhantomData<&'a DocumentAnalysis>,
+}
+
+impl NativeOccurrences<'_> {
+    fn as_ptr(&self) -> *const sys::sk_text_occurrence {
+        self.raw.as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.raw.len()
+    }
+}
+
+struct NativeQueryTerms<'a> {
+    raw: Vec<sys::sk_text_query_term>,
+    _analysis: PhantomData<&'a QueryAnalysis>,
+}
+
+impl NativeQueryTerms<'_> {
+    fn as_ptr(&self) -> *const sys::sk_text_query_term {
+        self.raw.as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.raw.len()
+    }
+}
+
+fn text_occurrences(analysis: &DocumentAnalysis) -> Result<NativeOccurrences<'_>, Error> {
     analysis
         .terms
         .iter()
@@ -501,10 +538,14 @@ fn text_occurrences(analysis: &DocumentAnalysis) -> Result<Vec<sys::sk_text_occu
                 position: term.position,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|raw| NativeOccurrences {
+            raw,
+            _analysis: PhantomData,
+        })
 }
 
-fn text_query_terms(analysis: &QueryAnalysis) -> Result<Vec<sys::sk_text_query_term>, Error> {
+fn text_query_terms(analysis: &QueryAnalysis) -> Result<NativeQueryTerms<'_>, Error> {
     analysis
         .terms
         .iter()
@@ -523,7 +564,11 @@ fn text_query_terms(analysis: &QueryAnalysis) -> Result<Vec<sys::sk_text_query_t
                 position: term.position,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|raw| NativeQueryTerms {
+            raw,
+            _analysis: PhantomData,
+        })
 }
 
 fn validate_term_query(analysis: &QueryAnalysis) -> Result<(), Error> {
@@ -585,12 +630,15 @@ mod tests {
 
         let occurrences = text_occurrences(&analysis).expect("valid occurrence");
         assert_eq!(occurrences.len(), 1);
-        assert_eq!(occurrences[0].term_length, 3);
-        assert_eq!(occurrences[0].byte_start, 5);
-        assert_eq!(occurrences[0].byte_length, 3);
-        assert_eq!(occurrences[0].position, 2);
+        assert_eq!(occurrences.raw[0].term_length, 3);
+        assert_eq!(occurrences.raw[0].byte_start, 5);
+        assert_eq!(occurrences.raw[0].byte_length, 3);
+        assert_eq!(occurrences.raw[0].position, 2);
         let term = unsafe {
-            std::slice::from_raw_parts(occurrences[0].term, occurrences[0].term_length as usize)
+            std::slice::from_raw_parts(
+                occurrences.raw[0].term,
+                occurrences.raw[0].term_length as usize,
+            )
         };
         assert_eq!(term, b"fox");
     }
@@ -606,10 +654,11 @@ mod tests {
 
         let terms = text_query_terms(&analysis).expect("valid query term");
         assert_eq!(terms.len(), 1);
-        assert_eq!(terms[0].term_length, 7);
-        assert_eq!(terms[0].position, 4);
-        let term =
-            unsafe { std::slice::from_raw_parts(terms[0].term, terms[0].term_length as usize) };
+        assert_eq!(terms.raw[0].term_length, 7);
+        assert_eq!(terms.raw[0].position, 4);
+        let term = unsafe {
+            std::slice::from_raw_parts(terms.raw[0].term, terms.raw[0].term_length as usize)
+        };
         assert_eq!(term, b"running");
     }
 

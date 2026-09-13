@@ -96,7 +96,13 @@ SK_API int32_t sk_engine_search(const sk_engine *engine,
                                 const sk_search_request *request,
                                 sk_search_result **out_result, sk_error *out_error);
 
+/* Engine operations and sk_engine_close may be called concurrently; the
+   adapter serializes them. sk_engine_destroy requires exclusive ownership of
+   the engine and must not race with any other operation. */
+
 SK_API uint32_t sk_search_result_size(const sk_search_result *result) SK_NOEXCEPT;
+/* The returned ID is borrowed from result and remains valid until result is
+   destroyed. */
 SK_API int32_t sk_search_result_id(const sk_search_result *result, uint32_t index,
                                    const char **out_id, uint32_t *out_length,
                                    sk_error *out_error);

@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const NAME_ERROR: &str = "names must match [A-Za-z_][A-Za-z0-9_]*";
+const MAX_SCHEMA_IDENTIFIER_BYTES: usize = 256;
 const RESERVED_FIELD_NAMES: &[&str] = &[
     "index",
     "index_url",
@@ -280,6 +281,17 @@ impl FieldType {
 
 fn validate_schema(schema: &Schema) -> Result<()> {
     validate_name(&schema.document_type, "document type")?;
+    if schema
+        .fields
+        .iter()
+        .filter(|field| field.field_type == FieldType::Text)
+        .count()
+        > 1
+    {
+        return Err(Error::message(
+            "M6 supports exactly one indexed text field; multiple text fields are not supported",
+        ));
+    }
     for (index, field) in schema.fields.iter().enumerate() {
         validate_name(&field.name, &format!("field at index {index}"))?;
         if RESERVED_FIELD_NAMES.contains(&field.name.as_str()) {
@@ -327,6 +339,11 @@ fn validate_schema(schema: &Schema) -> Result<()> {
 }
 
 fn validate_name(value: &str, kind: &str) -> Result<()> {
+    if value.len() > MAX_SCHEMA_IDENTIFIER_BYTES {
+        return Err(Error::message(format!(
+            "invalid {kind} name: maximum length is {MAX_SCHEMA_IDENTIFIER_BYTES} bytes"
+        )));
+    }
     let mut characters = value.chars();
     let valid_first = characters
         .next()
@@ -541,6 +558,56 @@ mod tests {
             .field(Field::new("title", FieldType::Text).indexed());
         assert!(ConfigCompiler
             .compile_to(&duplicate, temporary_path("duplicate"))
+            .is_err());
+    }
+
+    #[test]
+    fn identifier_length_matches_native_contract() {
+        for length in [255, 256] {
+            let document_type = format!("a{}", "x".repeat(length - 1));
+            let document_path = temporary_path(&format!("document-length-{length}"));
+            ConfigCompiler
+                .compile_to(&Schema::new(document_type), &document_path)
+                .expect("document type at the limit should compile");
+            let _ = fs::remove_dir_all(document_path);
+
+            let field_name = format!("a{}", "x".repeat(length - 1));
+            let field_path = temporary_path(&format!("field-length-{length}"));
+            ConfigCompiler
+                .compile_to(
+                    &Schema::new("typea")
+                        .field(Field::new(field_name, FieldType::Integer).attribute()),
+                    &field_path,
+                )
+                .expect("field name at the limit should compile");
+            let _ = fs::remove_dir_all(field_path);
+        }
+
+        for (label, schema) in [
+            (
+                "document-length-257",
+                Schema::new(format!("a{}", "x".repeat(256))),
+            ),
+            (
+                "field-length-257",
+                Schema::new("typea").field(
+                    Field::new(format!("a{}", "x".repeat(256)), FieldType::Integer).attribute(),
+                ),
+            ),
+        ] {
+            assert!(ConfigCompiler
+                .compile_to(&schema, temporary_path(label))
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_multiple_text_fields_until_ranking_supports_them() {
+        let schema = Schema::new("products")
+            .field(Field::new("title", FieldType::Text).indexed())
+            .field(Field::new("description", FieldType::Text).indexed());
+        assert!(ConfigCompiler
+            .compile_to(&schema, temporary_path("multiple-text-fields"))
             .is_err());
     }
 

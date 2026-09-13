@@ -59,7 +59,14 @@ pub(crate) fn close(handle: u64) -> bool {
     if handle == 0 {
         return false;
     }
-    lock_registry().entries.remove(&handle).is_some()
+    let removed = {
+        let mut registry = lock_registry();
+        registry.entries.remove(&handle)
+    };
+    let closed = removed.is_some();
+    // Drop the backend/context state after releasing the global registry lock.
+    drop(removed);
+    closed
 }
 
 #[cfg(feature = "ffi-test-support")]
