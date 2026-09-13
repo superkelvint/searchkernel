@@ -129,3 +129,49 @@ pub(crate) fn fields(name: &str) -> Option<&'static [&'static str]> {
         _ => None,
     }
 }
+
+pub(crate) fn request_operation(tag: u8) -> Option<&'static str> {
+    match tag {
+        1 => Some("insert"),
+        2 => Some("upsert"),
+        3 => Some("patch"),
+        4 => Some("delete"),
+        5 => Some("get"),
+        6 => Some("search"),
+        7 => Some("analyze"),
+        8 => Some("describe"),
+        9 => Some("inspect_query"),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_request_operation(name: &str) -> bool {
+    matches!(
+        name,
+        "insert"
+            | "upsert"
+            | "patch"
+            | "delete"
+            | "get"
+            | "search"
+            | "analyze"
+            | "describe"
+            | "inspect_query"
+    )
+}
+
+pub(crate) fn response_operation(tag: u8) -> Option<&'static str> {
+    match tag {
+        1 => Some("insert"),
+        2 => Some("upsert"),
+        3 => Some("patch"),
+        4 => Some("delete"),
+        5 => Some("get"),
+        6 => Some("search"),
+        7 => Some("analyze"),
+        8 => Some("error"),
+        9 => Some("describe"),
+        10 => Some("inspect_query"),
+        _ => None,
+    }
+}

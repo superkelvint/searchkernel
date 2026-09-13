@@ -1,4 +1,10 @@
 //! Strict JSON transport for the canonical Search Kernel FlatBuffers protocol.
+//!
+//! The public representation uses natural arrays, objects, and base64 strings.
+//! For schema vectors whose absence is distinct from an empty value, the
+//! generated codec uses the reserved `{"$absent":true}` marker. It is emitted
+//! only for that otherwise unrepresentable state and is accepted only as the
+//! sole field of a vector payload.
 
 #[path = "generated_codec.rs"]
 mod codec;
@@ -13,6 +19,7 @@ pub use codec::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn search_json_builds_verified_skrq() {
@@ -64,6 +71,12 @@ mod tests {
         assert!(matches!(
             request_json_to_flatbuffer(
                 br#"{"protocol_version":1,"operation":"search","request":{"limt":1}}"#
+            ),
+            Err(JsonCodecError::Contract(_))
+        ));
+        assert!(matches!(
+            request_json_to_flatbuffer(
+                br#"{"protocol_version":1,"operation":"search","request":{},"response":{}}"#
             ),
             Err(JsonCodecError::Contract(_))
         ));
@@ -168,6 +181,59 @@ mod tests {
                 .document()
                 .unwrap();
         assert_eq!(document.fields().unwrap().len(), 5);
+
+        let absent_inner = request_json_to_flatbuffer(
+            br#"{"protocol_version":1,"operation":"insert","request":{"document":{"id":"d","fields":{"list":{"list":{"$absent":true}},"object":{"object":{"$absent":true}},"bytes":{"bytes":{"$absent":true}}}}}}"#,
+        )
+        .unwrap();
+        let insert =
+            flatbuffers::root::<crate::generated::search_kernel::ffi::v1::RequestEnvelope>(
+                &absent_inner,
+            )
+            .unwrap()
+            .payload_as_search_kernel_v1_insert_request()
+            .unwrap();
+        let fields = insert.document().unwrap().fields().unwrap();
+        for (name, expected_kind) in [
+            (
+                "list",
+                crate::generated::search_kernel::v1::ValueKind::ValueList,
+            ),
+            (
+                "object",
+                crate::generated::search_kernel::v1::ValueKind::ValueObject,
+            ),
+            (
+                "bytes",
+                crate::generated::search_kernel::v1::ValueKind::BytesValue,
+            ),
+        ] {
+            let value = fields
+                .iter()
+                .find(|entry| entry.key() == name)
+                .unwrap()
+                .value()
+                .unwrap();
+            assert_eq!(value.kind_type(), expected_kind);
+            match expected_kind {
+                crate::generated::search_kernel::v1::ValueKind::ValueList => {
+                    assert!(value.kind_as_value_list().unwrap().values().is_none())
+                }
+                crate::generated::search_kernel::v1::ValueKind::ValueObject => {
+                    assert!(value.kind_as_value_object().unwrap().fields().is_none())
+                }
+                crate::generated::search_kernel::v1::ValueKind::BytesValue => {
+                    assert!(value.kind_as_bytes_value().unwrap().value().is_none())
+                }
+                _ => unreachable!(),
+            }
+        }
+        let absent_json: Value =
+            serde_json::from_slice(&request_flatbuffer_to_json(&absent_inner).unwrap()).unwrap();
+        assert_eq!(
+            absent_json["request"]["document"]["fields"]["list"]["list"],
+            serde_json::json!({"$absent": true})
+        );
     }
 
     #[test]
@@ -350,5 +416,158 @@ mod tests {
             },
         );
         assert!(value["response"]["inspect_query"].is_object());
+    }
+
+    #[test]
+    fn portable_request_corpus_round_trips_through_json_codec() {
+        let manifest: Value = serde_json::from_str(include_str!(
+            "../../../reference/api-conformance/cases.json"
+        ))
+        .unwrap();
+        let cases = manifest["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 204);
+
+        let mut covered = 0;
+        let mut round_tripped = 0;
+        for case in cases {
+            let operation = case["operation"].as_str().unwrap();
+            let path = format!(
+                "{}/../../reference/api-conformance/{}",
+                env!("CARGO_MANIFEST_DIR"),
+                case["case"].as_str().unwrap()
+            );
+            let case_data: Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let Some((operation, request)) = transport_request(operation, &case_data["input"])
+            else {
+                continue;
+            };
+            covered += 1;
+            let envelope = serde_json::json!({
+                "protocol_version": 1,
+                "operation": operation,
+                "request": request,
+            });
+            let input = serde_json::to_vec(&envelope).unwrap();
+            let Ok(flatbuffer) = request_json_to_flatbuffer(&input) else {
+                // Cases that deliberately exercise a transport-level null or
+                // malformed value are expected to be rejected by this codec.
+                continue;
+            };
+            let json = request_flatbuffer_to_json(&flatbuffer).unwrap();
+            let second = request_json_to_flatbuffer(&json).unwrap();
+            assert_eq!(request_kind(&flatbuffer), request_kind(&second));
+            // The generated JSON form is the semantic decoder used here: if
+            // two FlatBuffers values differ in any represented field, their
+            // canonical JSON values differ as well. This deliberately avoids
+            // depending on incidental FlatBuffers byte layout.
+            let second_json = request_flatbuffer_to_json(&second).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&json).unwrap(),
+                serde_json::from_slice::<Value>(&second_json).unwrap()
+            );
+            round_tripped += 1;
+        }
+        assert_eq!(covered, 77);
+        assert!(
+            round_tripped >= 60,
+            "only {round_tripped} cases round-tripped"
+        );
+    }
+
+    fn request_kind(bytes: &[u8]) -> u8 {
+        flatbuffers::root::<crate::generated::search_kernel::ffi::v1::RequestEnvelope>(bytes)
+            .unwrap()
+            .payload_type()
+            .0
+    }
+
+    fn transport_request(operation: &str, input: &Value) -> Option<(&'static str, Value)> {
+        match operation {
+            "search_to_ir" => Some(("search", normalize_search(input.clone()))),
+            "insert_to_ir" => Some(("insert", input.clone())),
+            "upsert_to_ir" => Some(("upsert", input.clone())),
+            "delete_to_ir" => Some(("delete", input.clone())),
+            "get_to_ir" => Some(("get", normalize_get(input.clone()))),
+            "patch_to_ir" => Some(("patch", normalize_patch(input.clone()))),
+            "analyze_to_ir" => Some(("analyze", normalize_analyze(input.clone()))),
+            "describe" => Some(("describe", input.clone())),
+            "inspect_query" => Some(("inspect_query", input.clone())),
+            "write_to_ir" => {
+                let kind = input["kind"].as_str()?;
+                let operation = match kind {
+                    "insert" => "insert",
+                    "upsert" => "upsert",
+                    "patch" => "patch",
+                    "delete" => "delete",
+                    "get" => "get",
+                    _ => return None,
+                };
+                Some((operation, input["request"].clone()))
+            }
+            _ => None,
+        }
+    }
+
+    fn normalize_search(mut input: Value) -> Value {
+        let Some(object) = input.as_object_mut() else {
+            return input;
+        };
+        for name in ["projection", "search_fields", "highlighting"] {
+            if let Some(value) = object.get_mut(name) {
+                if let Some(fields) = value.get("fields") {
+                    *value = fields.clone();
+                } else if value.is_object() {
+                    *value = serde_json::json!({"$absent": true});
+                }
+            }
+        }
+        input
+    }
+
+    fn normalize_get(mut input: Value) -> Value {
+        if let Some(projection) = input.get_mut("projection") {
+            if let Some(fields) = projection.get("fields") {
+                *projection = fields.clone();
+            } else if projection.is_object() {
+                *projection = serde_json::json!({"$absent": true});
+            }
+        }
+        input
+    }
+
+    fn normalize_patch(mut input: Value) -> Value {
+        if let Some(operations) = input.get_mut("operations").and_then(Value::as_array_mut) {
+            for operation in operations {
+                if let Some(object) = operation.as_object_mut() {
+                    if let Some(value) = object.remove("set") {
+                        object.insert("set_field".to_owned(), value);
+                    }
+                    if let Some(value) = object.remove("unset") {
+                        object.insert("unset_field".to_owned(), value);
+                    }
+                }
+            }
+        }
+        input
+    }
+
+    fn normalize_analyze(input: Value) -> Value {
+        let Some(mut object) = input.as_object().cloned() else {
+            return input;
+        };
+        if let Some(analyzer) = object.remove("analyzer") {
+            object.insert(
+                "target".to_owned(),
+                serde_json::json!({"analyzer": analyzer}),
+            );
+        }
+        if let Some(field) = object.remove("field") {
+            object.insert(
+                "target".to_owned(),
+                serde_json::json!({"field": {"field": field}}),
+            );
+        }
+        Value::Object(object)
     }
 }

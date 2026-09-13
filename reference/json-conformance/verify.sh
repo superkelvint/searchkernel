@@ -40,5 +40,6 @@ done
 FLATC_PATH="$flatc_bin" cargo run -q -p searchkernel-bindgen -- check
 cargo test -q -p searchkernel-json --lib
 cargo test -q -p searchkernel-ffi --all-features --lib
+"$root/reference/api-conformance/verify.sh"
 
 echo "C6 JSON conformance PASS"
