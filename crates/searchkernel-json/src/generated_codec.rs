@@ -320,6 +320,9 @@ fn one_key<'a>(value: &'a Value, path: &str) -> Result<(&'a str, &'a Value), Jso
 
 pub fn request_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
     let value = parse(input)?;
+    let _: crate::generated::json_types::JsonRequestEnvelope =
+        serde_json::from_value(value.clone())
+            .map_err(|error| contract(format!("invalid request envelope: {error}")))?;
     let envelope = object(&value, "request")?;
     check_envelope_keys(envelope, "request", "request")?;
     let version = u32_value(
@@ -539,6 +542,9 @@ pub fn response_flatbuffer_to_json(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
 
 pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
     let value = parse(input)?;
+    let _: crate::generated::json_types::JsonResponseEnvelope =
+        serde_json::from_value(value.clone())
+            .map_err(|error| contract(format!("invalid response envelope: {error}")))?;
     let envelope = object(&value, "response")?;
     check_envelope_keys(envelope, "response", "response")?;
     let version = u32_value(
