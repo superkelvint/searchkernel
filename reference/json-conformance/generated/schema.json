@@ -737,10 +737,26 @@
         "additionalProperties": false,
         "properties": {
           "tokens": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzedToken"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzedToken"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -787,10 +803,26 @@
             "type": "string"
           },
           "options": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "version": {
             "maximum": 4294967295,
@@ -879,10 +911,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -897,10 +945,26 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_ErrorCode"
           },
           "details": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_ErrorDetail"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_ErrorDetail"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "message": {
             "type": "string"
@@ -936,10 +1000,26 @@
             "type": "string"
           },
           "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "type": "string"
@@ -971,10 +1051,26 @@
             "type": "string"
           },
           "values": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetValue"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetValue"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1059,10 +1155,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1071,10 +1183,26 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1104,86 +1232,80 @@
         "type": "object"
       },
       "SearchKernel_V1_FilterExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "and": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterAnd"
-                  }
-                },
-                "required": [
-                  "and"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "or": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterOr"
-                  }
-                },
-                "required": [
-                  "or"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "not": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterNot"
-                  }
-                },
-                "required": [
-                  "not"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "comparison": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterComparison"
-                  }
-                },
-                "required": [
-                  "comparison"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "range": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterRange"
-                  }
-                },
-                "required": [
-                  "range"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "exists": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExists"
-                  }
-                },
-                "required": [
-                  "exists"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "and": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterAnd"
               }
-            ]
+            },
+            "required": [
+              "and"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "or": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterOr"
+              }
+            },
+            "required": [
+              "or"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "not": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterNot"
+              }
+            },
+            "required": [
+              "not"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "comparison": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterComparison"
+              }
+            },
+            "required": [
+              "comparison"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "range": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterRange"
+              }
+            },
+            "required": [
+              "range"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExists"
+              }
+            },
+            "required": [
+              "exists"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_FilterExprKind": {
         "enum": [
@@ -1210,10 +1332,26 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1273,10 +1411,26 @@
         "additionalProperties": false,
         "properties": {
           "matches": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightSpan"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightSpan"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "text": {
             "type": "string"
@@ -1288,10 +1442,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1303,10 +1473,26 @@
             "type": "string"
           },
           "fragments": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightFragment"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightFragment"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1331,16 +1517,48 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "highlights": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightResult"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_HighlightResult"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -1358,10 +1576,26 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchFieldSelection"
           },
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldDefinition"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldDefinition"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "name": {
             "type": "string"
@@ -1487,38 +1721,32 @@
         "type": "object"
       },
       "SearchKernel_V1_PatchOperation": {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "set_field": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_SetField"
-                  }
-                },
-                "required": [
-                  "set_field"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "unset_field": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_UnsetField"
-                  }
-                },
-                "required": [
-                  "unset_field"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "set_field": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_SetField"
               }
-            ]
+            },
+            "required": [
+              "set_field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "unset_field": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_UnsetField"
+              }
+            },
+            "required": [
+              "unset_field"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_PatchOperationKind": {
         "enum": [
@@ -1535,10 +1763,26 @@
             "type": "string"
           },
           "operations": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_PatchOperation"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_PatchOperation"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1556,64 +1800,22 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
             "oneOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "term_query": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_TermQuery"
-                  }
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryExpr"
                 },
-                "required": [
-                  "term_query"
-                ],
-                "type": "object"
+                "type": "array"
               },
               {
                 "additionalProperties": false,
                 "properties": {
-                  "and": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryAnd"
+                  "$absent": {
+                    "const": true
                   }
                 },
                 "required": [
-                  "and"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "or": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryOr"
-                  }
-                },
-                "required": [
-                  "or"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "not": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryNot"
-                  }
-                },
-                "required": [
-                  "not"
+                  "$absent"
                 ],
                 "type": "object"
               }
@@ -1621,6 +1823,58 @@
           }
         },
         "type": "object"
+      },
+      "SearchKernel_V1_QueryExpr": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "term_query": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_TermQuery"
+              }
+            },
+            "required": [
+              "term_query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "and": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryAnd"
+              }
+            },
+            "required": [
+              "and"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "or": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryOr"
+              }
+            },
+            "required": [
+              "or"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "not": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryNot"
+              }
+            },
+            "required": [
+              "not"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "SearchKernel_V1_QueryExprKind": {
         "enum": [
@@ -1645,40 +1899,22 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicy": {
-        "additionalProperties": false,
-        "properties": {
-          "policy": {
             "oneOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "default_relevance_v1": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_DefaultRelevanceV1"
-                  }
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryExpr"
                 },
-                "required": [
-                  "default_relevance_v1"
-                ],
-                "type": "object"
+                "type": "array"
               },
               {
                 "additionalProperties": false,
                 "properties": {
-                  "bm25_ranking": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Bm25Ranking"
+                  "$absent": {
+                    "const": true
                   }
                 },
                 "required": [
-                  "bm25_ranking"
+                  "$absent"
                 ],
                 "type": "object"
               }
@@ -1686,6 +1922,34 @@
           }
         },
         "type": "object"
+      },
+      "SearchKernel_V1_RankingPolicy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "default_relevance_v1": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_DefaultRelevanceV1"
+              }
+            },
+            "required": [
+              "default_relevance_v1"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bm25_ranking": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_Bm25Ranking"
+              }
+            },
+            "required": [
+              "bm25_ranking"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "SearchKernel_V1_RankingPolicyKind": {
         "enum": [
@@ -1711,10 +1975,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchField"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1723,10 +2003,26 @@
         "additionalProperties": false,
         "properties": {
           "facets": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetRequest"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetRequest"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "filter": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExpr"
@@ -1763,10 +2059,26 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchFieldSelection"
           },
           "sort": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_SortExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_SortExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -1775,16 +2087,48 @@
         "additionalProperties": false,
         "properties": {
           "facets": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetResult"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_FacetResult"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "hits": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_Hit"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Hit"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "total_hits": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_TotalHits"
@@ -1889,7 +2233,7 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "pattern": "^-?[0-9]+$",
+            "pattern": "^[0-9]+$",
             "type": "string"
           }
         },
@@ -1923,122 +2267,116 @@
         "type": "object"
       },
       "SearchKernel_V1_Value": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "null": {
-                    "type": "null"
-                  }
-                },
-                "required": [
-                  "null"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "bool": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_BoolValue"
-                  }
-                },
-                "required": [
-                  "bool"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "int64": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Int64Value"
-                  }
-                },
-                "required": [
-                  "int64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "uint64": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_UInt64Value"
-                  }
-                },
-                "required": [
-                  "uint64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "float64": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Float64Value"
-                  }
-                },
-                "required": [
-                  "float64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "string": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_StringValue"
-                  }
-                },
-                "required": [
-                  "string"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "bytes": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_BytesValue"
-                  }
-                },
-                "required": [
-                  "bytes"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "list": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueList"
-                  }
-                },
-                "required": [
-                  "list"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "object": {
-                    "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueObject"
-                  }
-                },
-                "required": [
-                  "object"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "null": {
+                "type": "null"
               }
-            ]
+            },
+            "required": [
+              "null"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bool": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_BoolValue"
+              }
+            },
+            "required": [
+              "bool"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "int64": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_Int64Value"
+              }
+            },
+            "required": [
+              "int64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "uint64": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_UInt64Value"
+              }
+            },
+            "required": [
+              "uint64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "float64": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_Float64Value"
+              }
+            },
+            "required": [
+              "float64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "string": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_StringValue"
+              }
+            },
+            "required": [
+              "string"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_BytesValue"
+              }
+            },
+            "required": [
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "list": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueList"
+              }
+            },
+            "required": [
+              "list"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "object": {
+                "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueObject"
+              }
+            },
+            "required": [
+              "object"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_ValueEntry": {
         "additionalProperties": false,
@@ -2074,10 +2412,26 @@
         "additionalProperties": false,
         "properties": {
           "values": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2086,10 +2440,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2300,10 +2670,26 @@
         "additionalProperties": false,
         "properties": {
           "tokens": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzedToken"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzedToken"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2350,10 +2736,26 @@
             "type": "string"
           },
           "options": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "version": {
             "maximum": 4294967295,
@@ -2442,10 +2844,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -2460,10 +2878,26 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_ErrorCode"
           },
           "details": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_ErrorDetail"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_ErrorDetail"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "message": {
             "type": "string"
@@ -2499,10 +2933,26 @@
             "type": "string"
           },
           "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "type": "string"
@@ -2534,10 +2984,26 @@
             "type": "string"
           },
           "values": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetValue"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetValue"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2622,10 +3088,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2634,10 +3116,26 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2667,86 +3165,80 @@
         "type": "object"
       },
       "SearchKernel_V1_FilterExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "and": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterAnd"
-                  }
-                },
-                "required": [
-                  "and"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "or": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterOr"
-                  }
-                },
-                "required": [
-                  "or"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "not": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterNot"
-                  }
-                },
-                "required": [
-                  "not"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "comparison": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterComparison"
-                  }
-                },
-                "required": [
-                  "comparison"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "range": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterRange"
-                  }
-                },
-                "required": [
-                  "range"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "exists": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExists"
-                  }
-                },
-                "required": [
-                  "exists"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "and": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterAnd"
               }
-            ]
+            },
+            "required": [
+              "and"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "or": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterOr"
+              }
+            },
+            "required": [
+              "or"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "not": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterNot"
+              }
+            },
+            "required": [
+              "not"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "comparison": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterComparison"
+              }
+            },
+            "required": [
+              "comparison"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "range": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterRange"
+              }
+            },
+            "required": [
+              "range"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "exists": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExists"
+              }
+            },
+            "required": [
+              "exists"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_FilterExprKind": {
         "enum": [
@@ -2773,10 +3265,26 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2836,10 +3344,26 @@
         "additionalProperties": false,
         "properties": {
           "matches": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightSpan"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightSpan"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "text": {
             "type": "string"
@@ -2851,10 +3375,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2866,10 +3406,26 @@
             "type": "string"
           },
           "fragments": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightFragment"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightFragment"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -2894,16 +3450,48 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "highlights": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightResult"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_HighlightResult"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -2921,10 +3509,26 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchFieldSelection"
           },
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldDefinition"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldDefinition"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "name": {
             "type": "string"
@@ -3050,38 +3654,32 @@
         "type": "object"
       },
       "SearchKernel_V1_PatchOperation": {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "set_field": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_SetField"
-                  }
-                },
-                "required": [
-                  "set_field"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "unset_field": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_UnsetField"
-                  }
-                },
-                "required": [
-                  "unset_field"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "set_field": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_SetField"
               }
-            ]
+            },
+            "required": [
+              "set_field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "unset_field": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_UnsetField"
+              }
+            },
+            "required": [
+              "unset_field"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_PatchOperationKind": {
         "enum": [
@@ -3098,10 +3696,26 @@
             "type": "string"
           },
           "operations": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchOperation"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchOperation"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -3119,64 +3733,22 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
             "oneOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "term_query": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_TermQuery"
-                  }
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryExpr"
                 },
-                "required": [
-                  "term_query"
-                ],
-                "type": "object"
+                "type": "array"
               },
               {
                 "additionalProperties": false,
                 "properties": {
-                  "and": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryAnd"
+                  "$absent": {
+                    "const": true
                   }
                 },
                 "required": [
-                  "and"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "or": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryOr"
-                  }
-                },
-                "required": [
-                  "or"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "not": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryNot"
-                  }
-                },
-                "required": [
-                  "not"
+                  "$absent"
                 ],
                 "type": "object"
               }
@@ -3184,6 +3756,58 @@
           }
         },
         "type": "object"
+      },
+      "SearchKernel_V1_QueryExpr": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "term_query": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_TermQuery"
+              }
+            },
+            "required": [
+              "term_query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "and": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryAnd"
+              }
+            },
+            "required": [
+              "and"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "or": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryOr"
+              }
+            },
+            "required": [
+              "or"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "not": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryNot"
+              }
+            },
+            "required": [
+              "not"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "SearchKernel_V1_QueryExprKind": {
         "enum": [
@@ -3208,40 +3832,22 @@
         "additionalProperties": false,
         "properties": {
           "clauses": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicy": {
-        "additionalProperties": false,
-        "properties": {
-          "policy": {
             "oneOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "default_relevance_v1": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_DefaultRelevanceV1"
-                  }
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryExpr"
                 },
-                "required": [
-                  "default_relevance_v1"
-                ],
-                "type": "object"
+                "type": "array"
               },
               {
                 "additionalProperties": false,
                 "properties": {
-                  "bm25_ranking": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Bm25Ranking"
+                  "$absent": {
+                    "const": true
                   }
                 },
                 "required": [
-                  "bm25_ranking"
+                  "$absent"
                 ],
                 "type": "object"
               }
@@ -3249,6 +3855,34 @@
           }
         },
         "type": "object"
+      },
+      "SearchKernel_V1_RankingPolicy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "default_relevance_v1": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_DefaultRelevanceV1"
+              }
+            },
+            "required": [
+              "default_relevance_v1"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bm25_ranking": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_Bm25Ranking"
+              }
+            },
+            "required": [
+              "bm25_ranking"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "SearchKernel_V1_RankingPolicyKind": {
         "enum": [
@@ -3274,10 +3908,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchField"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchField"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -3286,10 +3936,26 @@
         "additionalProperties": false,
         "properties": {
           "facets": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetRequest"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetRequest"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "filter": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExpr"
@@ -3326,10 +3992,26 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchFieldSelection"
           },
           "sort": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_SortExpr"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_SortExpr"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -3338,16 +4020,48 @@
         "additionalProperties": false,
         "properties": {
           "facets": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetResult"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_FacetResult"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "hits": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Hit"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Hit"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "total_hits": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_TotalHits"
@@ -3452,7 +4166,7 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "pattern": "^-?[0-9]+$",
+            "pattern": "^[0-9]+$",
             "type": "string"
           }
         },
@@ -3486,122 +4200,116 @@
         "type": "object"
       },
       "SearchKernel_V1_Value": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "null": {
-                    "type": "null"
-                  }
-                },
-                "required": [
-                  "null"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "bool": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_BoolValue"
-                  }
-                },
-                "required": [
-                  "bool"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "int64": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Int64Value"
-                  }
-                },
-                "required": [
-                  "int64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "uint64": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_UInt64Value"
-                  }
-                },
-                "required": [
-                  "uint64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "float64": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Float64Value"
-                  }
-                },
-                "required": [
-                  "float64"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "string": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_StringValue"
-                  }
-                },
-                "required": [
-                  "string"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "bytes": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_BytesValue"
-                  }
-                },
-                "required": [
-                  "bytes"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "list": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueList"
-                  }
-                },
-                "required": [
-                  "list"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "object": {
-                    "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueObject"
-                  }
-                },
-                "required": [
-                  "object"
-                ],
-                "type": "object"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "null": {
+                "type": "null"
               }
-            ]
+            },
+            "required": [
+              "null"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bool": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_BoolValue"
+              }
+            },
+            "required": [
+              "bool"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "int64": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_Int64Value"
+              }
+            },
+            "required": [
+              "int64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "uint64": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_UInt64Value"
+              }
+            },
+            "required": [
+              "uint64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "float64": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_Float64Value"
+              }
+            },
+            "required": [
+              "float64"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "string": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_StringValue"
+              }
+            },
+            "required": [
+              "string"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_BytesValue"
+              }
+            },
+            "required": [
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "list": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueList"
+              }
+            },
+            "required": [
+              "list"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "object": {
+                "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueObject"
+              }
+            },
+            "required": [
+              "object"
+            ],
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "SearchKernel_V1_ValueEntry": {
         "additionalProperties": false,
@@ -3637,10 +4345,26 @@
         "additionalProperties": false,
         "properties": {
           "values": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -3649,10 +4373,26 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "additionalProperties": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
-            },
-            "type": "object"
+            "oneOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
+                },
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "$absent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "$absent"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"

@@ -1,3 +1,5 @@
+use flatbuffers::root;
+use flatbuffers_reflection::reflection::Schema;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -90,12 +92,17 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
     validate_schema(&response, "response")?;
     let request_types = verify_union(&request, "SearchKernel_FFI_V1_RequestEnvelope")?;
     let response_types = verify_union(&response, "SearchKernel_FFI_V1_ResponseEnvelope")?;
-    // FlatBuffers assigns union discriminants in declaration order. The
-    // ordered union members come from the BFBS-derived JSON schema above, so
-    // the codec never maintains a second discriminator table or parses a
-    // language binding to discover wire values.
-    let request_tags = union_tags(&request_types);
-    let response_tags = union_tags(&response_types);
+    // Read the actual union enum values from the BFBS reflection schema. The
+    // codec never maintains a second discriminator table or parses a language
+    // binding to discover wire values.
+    let request_tags = read_bfbs_union_tags(
+        &temp.join("searchkernel_ffi_request.bfbs"),
+        "SearchKernel.FFI.V1.RequestPayload",
+    )?;
+    let response_tags = read_bfbs_union_tags(
+        &temp.join("searchkernel_ffi_response.bfbs"),
+        "SearchKernel.FFI.V1.ResponsePayload",
+    )?;
     let support = fs::read_to_string(root.join("crates/searchkernel-json/src/codec.rs"))
         .map_err(|e| format!("read codec support: {e}"))?;
     for type_name in request_types.iter().chain(response_types.iter()) {
@@ -305,6 +312,23 @@ fn natural_payload_definition(type_name: &str, definition: &Value, direction: &s
         );
         return Value::Object(output);
     }
+    if let Some(properties) = object.get("properties").and_then(Value::as_object) {
+        let union_fields = properties
+            .iter()
+            .filter(|(name, _)| !name.ends_with("_type"))
+            .filter_map(|(name, value)| value.get("anyOf").map(|_| name.as_str()))
+            .collect::<Vec<_>>();
+        if union_fields.len() == 1
+            && properties
+                .keys()
+                .all(|name| name == union_fields[0] || name == &format!("{}_type", union_fields[0]))
+        {
+            return natural_union_schema(
+                properties.get(union_fields[0]).expect("union field"),
+                direction,
+            );
+        }
+    }
     let mut output = object.clone();
     if let Some(properties) = object.get("properties").and_then(Value::as_object) {
         let mut natural = serde_json::Map::new();
@@ -339,8 +363,11 @@ fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str
                 serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/SearchKernel_V1_MissingPlacement")})
             }
             "BytesValue" if field == "value" => serde_json::json!({"type": "string"}),
-            "Int64Value" | "UInt64Value" if field == "value" => {
+            "Int64Value" if field == "value" => {
                 serde_json::json!({"type": "string", "pattern": "^-?[0-9]+$"})
+            }
+            "UInt64Value" if field == "value" => {
+                serde_json::json!({"type": "string", "pattern": "^[0-9]+$"})
             }
             _ => serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/{name}")}),
         };
@@ -355,6 +382,8 @@ fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str
     {
         return if type_name.ends_with("BytesValue") {
             serde_json::json!({"type": "string"})
+        } else if type_name.ends_with("UInt64Value") {
+            serde_json::json!({"type": "string", "pattern": "^[0-9]+$"})
         } else {
             serde_json::json!({"type": "string", "pattern": "^-?[0-9]+$"})
         };
@@ -372,15 +401,34 @@ fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str
             } else {
                 serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/SearchKernel_V1_Value")})
             };
-            return serde_json::json!({"type": "object", "additionalProperties": item});
+            return serde_json::json!({
+                "oneOf": [
+                    {"type": "object", "additionalProperties": item},
+                    absent_vector_schema(),
+                ]
+            });
         }
         let item = value
             .get("items")
             .map(|item| natural_property(type_name, field, item, direction))
             .unwrap_or_else(|| serde_json::json!({}));
-        return serde_json::json!({"type": "array", "items": item});
+        return serde_json::json!({
+            "oneOf": [
+                {"type": "array", "items": item},
+                absent_vector_schema(),
+            ]
+        });
     }
     value.clone()
+}
+
+fn absent_vector_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["$absent"],
+        "properties": {"$absent": {"const": true}}
+    })
 }
 
 fn natural_union_schema(value: &Value, direction: &str) -> Value {
@@ -766,12 +814,35 @@ fn generate_json_types(
     Ok(())
 }
 
-fn union_tags(types: &[String]) -> BTreeMap<String, u8> {
-    types
+fn read_bfbs_union_tags(path: &Path, union_name: &str) -> Result<BTreeMap<String, u8>, String> {
+    let bytes = fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let schema = root::<Schema>(&bytes)
+        .map_err(|error| format!("read BFBS reflection schema {}: {error}", path.display()))?;
+    let enumeration = schema
+        .enums()
         .iter()
-        .enumerate()
-        .map(|(index, name)| (name.clone(), (index + 1) as u8))
-        .collect()
+        .find(|enumeration| enumeration.name() == union_name && enumeration.is_union())
+        .ok_or_else(|| {
+            let names = schema
+                .enums()
+                .iter()
+                .map(|enumeration| enumeration.name().to_owned())
+                .collect::<Vec<_>>();
+            format!("BFBS has no union enum `{union_name}` (available: {names:?})")
+        })?;
+    let mut tags = BTreeMap::new();
+    for value in enumeration.values().iter() {
+        if value.name() == "NONE" {
+            continue;
+        }
+        let tag = u8::try_from(value.value())
+            .map_err(|error| format!("invalid discriminant for {}: {error}", value.name()))?;
+        tags.insert(value.name().to_owned(), tag);
+    }
+    if tags.is_empty() {
+        return Err(format!("BFBS union `{union_name}` has no variants"));
+    }
+    Ok(tags)
 }
 
 fn json_type_name(name: &str) -> String {
