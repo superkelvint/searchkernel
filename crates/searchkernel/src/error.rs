@@ -4,6 +4,7 @@ use std::fmt;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
+/// An error returned by the public Search Kernel API.
 pub enum Error {
     Portable(PortableError),
     Serialization(String),

@@ -3,18 +3,21 @@ use crate::error::{Error, Result};
 use searchkernel_core::{self as core, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Describes whether a hit count is exact or a lower bound.
 pub enum TotalHitsRelation {
     Exact,
     LowerBound,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The number of matching documents and its accuracy.
 pub struct TotalHits {
     pub value: u64,
     pub relation: TotalHitsRelation,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Search hits, total-hit information, and facet values.
 pub struct SearchResult<T> {
     pub hits: Vec<Hit<T>>,
     pub total_hits: TotalHits,
@@ -22,6 +25,7 @@ pub struct SearchResult<T> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// One matching document.
 pub struct Hit<T> {
     pub id: DocumentId,
     pub score: Option<f64>,
@@ -30,30 +34,35 @@ pub struct Hit<T> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Facet values for one field.
 pub struct FacetResult {
     pub field: String,
     pub values: Vec<FacetValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// One distinct facet value and its document count.
 pub struct FacetValue {
     pub value: serde_json::Value,
     pub count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Highlighted fragments for one field.
 pub struct HighlightResult {
     pub field: String,
     pub fragments: Vec<HighlightFragment>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// One piece of highlighted text and its matching spans.
 pub struct HighlightFragment {
     pub text: String,
     pub matches: Vec<HighlightSpan>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A byte range inside a highlighted fragment.
 pub struct HighlightSpan {
     pub start_byte: u32,
     pub end_byte: u32,
@@ -65,12 +74,12 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
     let hits = result
         .hits
         .into_iter()
-        .map(hit)
+        .map(convert_hit)
         .collect::<Result<Vec<_>>>()?;
     let facets = result
         .facets
         .into_iter()
-        .map(facet)
+        .map(convert_facet)
         .collect::<Result<Vec<_>>>()?;
     Ok(SearchResult {
         hits,
@@ -89,47 +98,47 @@ pub(crate) fn document<T: serde::de::DeserializeOwned>(
     Ok((id, document))
 }
 
-fn hit<T: serde::de::DeserializeOwned>(value: core::Hit) -> Result<Hit<T>> {
-    let document = serde_json::from_value(fields_to_json(value.fields)?)
+fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>> {
+    let document = serde_json::from_value(fields_to_json(hit.fields)?)
         .map_err(|error| Error::Deserialization(error.to_string()))?;
     Ok(Hit {
-        id: DocumentId::from(value.id),
-        score: value.score,
+        id: DocumentId::from(hit.id),
+        score: hit.score,
         document,
-        highlights: value.highlights.into_iter().map(highlight).collect(),
+        highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
     })
 }
 
-fn total_hits(value: core::TotalHits) -> TotalHits {
+fn total_hits(total_hits: core::TotalHits) -> TotalHits {
     TotalHits {
-        value: value.value,
-        relation: match value.relation {
+        value: total_hits.value,
+        relation: match total_hits.relation {
             core::TotalHitsRelation::Exact => TotalHitsRelation::Exact,
             core::TotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
         },
     }
 }
 
-fn facet(value: core::FacetResult) -> Result<FacetResult> {
+fn convert_facet(facet: core::FacetResult) -> Result<FacetResult> {
     Ok(FacetResult {
-        field: value.field,
-        values: value
+        field: facet.field,
+        values: facet
             .values
             .into_iter()
-            .map(|value| {
+            .map(|facet_value| {
                 Ok(FacetValue {
-                    value: json_value(value.value)?,
-                    count: value.count,
+                    value: json_value(facet_value.value)?,
+                    count: facet_value.count,
                 })
             })
             .collect::<Result<Vec<_>>>()?,
     })
 }
 
-fn highlight(value: core::HighlightResult) -> HighlightResult {
+fn convert_highlight(highlight: core::HighlightResult) -> HighlightResult {
     HighlightResult {
-        field: value.field,
-        fragments: value
+        field: highlight.field,
+        fragments: highlight
             .fragments
             .into_iter()
             .map(|fragment| HighlightFragment {
@@ -158,10 +167,10 @@ fn fields_to_json(fields: std::collections::BTreeMap<String, Value>) -> Result<s
 fn json_value(value: Value) -> Result<serde_json::Value> {
     Ok(match value {
         Value::Null => serde_json::Value::Null,
-        Value::Bool(value) => serde_json::Value::Bool(value),
-        Value::Int64(value) => serde_json::Value::Number(value.into()),
-        Value::UInt64(value) => serde_json::Value::Number(value.into()),
-        Value::Float64(value) => serde_json::Number::from_f64(value)
+        Value::Bool(boolean) => serde_json::Value::Bool(boolean),
+        Value::Int64(integer) => serde_json::Value::Number(integer.into()),
+        Value::UInt64(integer) => serde_json::Value::Number(integer.into()),
+        Value::Float64(number) => serde_json::Number::from_f64(number)
             .map(serde_json::Value::Number)
             .ok_or_else(|| {
                 Error::infrastructure("backend returned a non-finite floating-point value")

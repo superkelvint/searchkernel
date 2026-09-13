@@ -1,6 +1,14 @@
 //! Corpus-runner API.
 
-use searchkernel_core::{api, *};
+use searchkernel_core::{
+    analyzer_to_ir, api, error_to_api, field_to_ir, index_definition_to_ir, AnalyzeRequestIr,
+    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FacetIr, FacetSort,
+    FieldCardinality, FieldIr, FieldKind, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr,
+    IndexContext, IndexDefinitionIr, IndexName, InsertRequestIr, LanguageHint, MissingPlacement,
+    PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryIr, RangeIr,
+    RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
+    UpsertRequestIr, WriteRequestIr, WriteRequestRef,
+};
 use serde_json::{json, Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -9,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// The number of conformance cases that passed, grouped by category.
 pub struct ConformanceReport {
     pub passed: usize,
     pub categories: Vec<(String, usize)>,
@@ -73,13 +82,16 @@ pub struct ConformanceRunner {
 }
 
 impl ConformanceRunner {
+    /// Create a runner for the corpus stored below `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
+    /// Return the corpus directory used by this runner.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Run every case in the corpus and compare it with its golden output.
     pub fn run(&self) -> StdResult<ConformanceReport, RunnerError> {
         let cases_path = self.root.join("cases.json");
         let cases = read_json(&cases_path)?;

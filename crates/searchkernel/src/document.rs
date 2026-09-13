@@ -1,9 +1,11 @@
 use serde::Serialize;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// The stable identifier of a document in an index.
 pub struct DocumentId(String);
 
 impl DocumentId {
+    /// Borrow the identifier as a string.
     pub fn as_str(&self) -> &str {
         &self.0
     }

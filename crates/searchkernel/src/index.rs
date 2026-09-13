@@ -42,54 +42,64 @@ impl Index {
         })
     }
 
+    /// Insert a new document.
     pub fn insert<T: Serialize>(&self, id: impl Into<DocumentId>, document: &T) -> Result<()> {
-        let id = id.into();
-        let value = serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-        let bytes = wire::insert(id.as_str(), &value)?;
-        let request = self.root_insert(&bytes)?;
-        let _result = self.backend.insert(self.context.insert_to_ir(request)?)?;
+        let document_id = id.into();
+        let document_value =
+            serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
+        let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
+        let request = self.root_insert(&request_bytes)?;
+        let ir_request = self.context.insert_to_ir(request)?;
+        self.backend.insert(ir_request)?;
         Ok(())
     }
 
+    /// Insert a document or replace the existing document with the same ID.
     pub fn upsert<T: Serialize>(&self, id: impl Into<DocumentId>, document: &T) -> Result<()> {
-        let id = id.into();
-        let value = serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-        let bytes = wire::upsert(id.as_str(), &value)?;
-        let request = self.root_upsert(&bytes)?;
-        let _result = self.backend.upsert(self.context.upsert_to_ir(request)?)?;
+        let document_id = id.into();
+        let document_value =
+            serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
+        let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
+        let request = self.root_upsert(&request_bytes)?;
+        let ir_request = self.context.upsert_to_ir(request)?;
+        self.backend.upsert(ir_request)?;
         Ok(())
     }
 
+    /// Apply field updates to an existing document.
     pub fn patch(&self, id: impl Into<DocumentId>, patch: Patch) -> Result<()> {
-        let id = id.into();
-        let bytes = wire::patch(id.as_str(), &patch)?;
-        let request = self.root_patch(&bytes)?;
-        let _result = self.backend.patch(self.context.patch_to_ir(request)?)?;
+        let document_id = id.into();
+        let request_bytes = wire::patch(document_id.as_str(), &patch)?;
+        let request = self.root_patch(&request_bytes)?;
+        let ir_request = self.context.patch_to_ir(request)?;
+        self.backend.patch(ir_request)?;
         Ok(())
     }
 
+    /// Delete a document and return whether it existed.
     pub fn delete(&self, id: impl Into<DocumentId>) -> Result<bool> {
-        let id = id.into();
-        let bytes = wire::delete(id.as_str());
-        let request = self.root_delete(&bytes)?;
-        Ok(self
-            .backend
-            .delete(self.context.delete_to_ir(request)?)?
-            .deleted)
+        let document_id = id.into();
+        let request_bytes = wire::delete(document_id.as_str());
+        let request = self.root_delete(&request_bytes)?;
+        let ir_request = self.context.delete_to_ir(request)?;
+        let delete_result = self.backend.delete(ir_request)?;
+        Ok(delete_result.deleted)
     }
 
+    /// Read a document and deserialize it into `T`.
     pub fn get<T: DeserializeOwned>(&self, id: impl Into<DocumentId>) -> Result<Option<T>> {
-        let id = id.into();
-        let bytes = wire::get(id.as_str());
-        let request = self.root_get(&bytes)?;
-        let result = self.backend.get(self.context.get_to_ir(request)?)?;
-        result
+        let document_id = id.into();
+        let request_bytes = wire::get(document_id.as_str());
+        let request = self.root_get(&request_bytes)?;
+        let get_result = self.backend.get(self.context.get_to_ir(request)?)?;
+        get_result
             .document
             .map(result::document)
             .transpose()
             .map(|value| value.map(|(_, document)| document))
     }
 
+    /// Start a search for `query`.
     pub fn search(&self, query: impl Into<String>) -> SearchBuilder<'_> {
         SearchBuilder::new(self, query)
     }
@@ -98,14 +108,14 @@ impl Index {
         &self,
         request: &SearchBuilder<'_>,
     ) -> Result<result::SearchResult<T>> {
-        let bytes = wire::search(request)?;
-        let request = searchkernel_core::__flatbuffers::root::<api::SearchRequest>(&bytes)
-            .map_err(|error| {
-                Error::infrastructure(format!("invalid generated search request: {error}"))
-            })?;
-        let request = self.context.search_to_ir(request)?;
-        let result = self.backend.search(request)?;
-        result::search_result(result)
+        let request_bytes = wire::search(request)?;
+        let wire_request =
+            searchkernel_core::__flatbuffers::root::<api::SearchRequest>(&request_bytes).map_err(
+                |error| Error::infrastructure(format!("invalid generated search request: {error}")),
+            )?;
+        let ir_request = self.context.search_to_ir(wire_request)?;
+        let backend_result = self.backend.search(ir_request)?;
+        result::search_result(backend_result)
     }
 
     fn root_insert<'a>(&self, bytes: &'a [u8]) -> Result<api::InsertRequest<'a>> {

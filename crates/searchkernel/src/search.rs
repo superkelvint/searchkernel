@@ -4,18 +4,21 @@ use crate::result::SearchResult;
 use serde::de::DeserializeOwned;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The direction in which a sort field is ordered.
 pub enum SortDirection {
     Asc,
     Desc,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Where documents with no value for a sort field are placed.
 pub enum MissingPlacement {
     First,
     Last,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// A field and direction used to order search hits.
 pub struct Sort {
     pub(crate) field: String,
     pub(crate) direction: SortDirection,
@@ -23,6 +26,7 @@ pub struct Sort {
 }
 
 impl Sort {
+    /// Sort by `field` from the smallest value to the largest value.
     pub fn asc(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
@@ -31,6 +35,7 @@ impl Sort {
         }
     }
 
+    /// Sort by `field` from the largest value to the smallest value.
     pub fn desc(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
@@ -39,11 +44,13 @@ impl Sort {
         }
     }
 
+    /// Put documents without this field before documents with a value.
     pub fn missing_first(mut self) -> Self {
         self.missing = Some(MissingPlacement::First);
         self
     }
 
+    /// Put documents without this field after documents with a value.
     pub fn missing_last(mut self) -> Self {
         self.missing = Some(MissingPlacement::Last);
         self
@@ -51,6 +58,7 @@ impl Sort {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The order used to return facet values.
 pub enum FacetSort {
     CountDesc,
     CountAsc,
@@ -59,6 +67,7 @@ pub enum FacetSort {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// A request for the distinct values of one field.
 pub struct Facet {
     pub(crate) field: String,
     pub(crate) limit: Option<u32>,
@@ -66,6 +75,7 @@ pub struct Facet {
 }
 
 impl Facet {
+    /// Create a facet request for `field`.
     pub fn new(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
@@ -74,11 +84,13 @@ impl Facet {
         }
     }
 
+    /// Limit the number of values returned for this facet.
     pub fn limit(mut self, value: u32) -> Self {
         self.limit = Some(value);
         self
     }
 
+    /// Choose how values in this facet are ordered.
     pub fn sort(mut self, value: FacetSort) -> Self {
         self.sort = Some(value);
         self
@@ -98,11 +110,17 @@ impl From<String> for Facet {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The ranking policy used to score matching documents.
 pub enum Ranking {
     DefaultRelevanceV1,
     Bm25,
 }
 
+/// A fluent search request.
+///
+/// The builder stores caller intent. Validation, defaults, and conversion to
+/// the backend-independent request happen when [`SearchBuilder::execute`] is
+/// called.
 pub struct SearchBuilder<'a> {
     pub(crate) index: &'a Index,
     pub(crate) query: String,
@@ -136,6 +154,7 @@ impl<'a> SearchBuilder<'a> {
         }
     }
 
+    /// Select the fields used for a text query.
     pub fn search_fields<I>(mut self, fields: I) -> Self
     where
         I: IntoIterator<Item = crate::schema::SearchField>,
@@ -144,65 +163,79 @@ impl<'a> SearchBuilder<'a> {
         self
     }
 
+    /// Add one filter to the search request.
     pub fn filter(mut self, filter: Filter) -> Self {
         self.filters.push(filter);
         self
     }
 
+    /// Add one sort order to the search request.
     pub fn sort(mut self, sort: Sort) -> Self {
         self.sorts.push(sort);
         self
     }
 
+    /// Add one facet request to the search request.
     pub fn facet(mut self, facet: Facet) -> Self {
         self.facets.push(facet);
         self
     }
 
+    /// Add facets by field name.
     pub fn facets<I>(mut self, facets: I) -> Self
     where
-        I: IntoIterator<Item = &'static str>,
+        I: IntoIterator,
+        I::Item: Into<Facet>,
     {
-        self.facets.extend(facets.into_iter().map(Facet::from));
+        self.facets.extend(facets.into_iter().map(Into::into));
         self
     }
 
+    /// Select the ranking policy for the search.
     pub fn ranking(mut self, ranking: Ranking) -> Self {
         self.ranking = Some(ranking);
         self
     }
 
+    /// Restrict returned documents to these fields.
     pub fn projection<I>(mut self, fields: I) -> Self
     where
-        I: IntoIterator<Item = &'static str>,
+        I: IntoIterator,
+        I::Item: Into<String>,
     {
-        self.projection = Some(fields.into_iter().map(str::to_owned).collect());
+        self.projection = Some(fields.into_iter().map(Into::into).collect());
         self
     }
 
+    /// Request highlighted fragments for these fields.
     pub fn highlight<I>(mut self, fields: I) -> Self
     where
-        I: IntoIterator<Item = &'static str>,
+        I: IntoIterator,
+        I::Item: Into<String>,
     {
-        self.highlighting = Some(fields.into_iter().map(str::to_owned).collect());
+        self.highlighting = Some(fields.into_iter().map(Into::into).collect());
         self
     }
 
+    /// Set the language hint used by the backend.
     pub fn language(mut self, language: impl Into<String>) -> Self {
         self.language = Some(language.into());
         self
     }
 
+    /// Limit the number of hits returned.
     pub fn limit(mut self, limit: u32) -> Self {
         self.limit = Some(limit);
         self
     }
 
+    /// Skip this many hits before returning results.
     pub fn offset(mut self, offset: u32) -> Self {
         self.offset = Some(offset);
         self
     }
 
+    /// Execute the completed search request.
     pub fn execute<T: DeserializeOwned>(self) -> crate::Result<SearchResult<T>> {
         self.index.execute_search(&self)
     }

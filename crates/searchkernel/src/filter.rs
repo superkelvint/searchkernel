@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Clone, Debug, PartialEq)]
+/// A filter expression evaluated by the backend.
 pub struct Filter(pub(crate) FilterNode);
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,6 +36,7 @@ pub(crate) enum ComparisonOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Inclusive or exclusive bounds for a numeric range filter.
 pub struct Range {
     pub(crate) lower: Option<PendingValue>,
     pub(crate) upper: Option<PendingValue>,
@@ -43,6 +45,7 @@ pub struct Range {
 }
 
 impl Range {
+    /// Start an empty range.
     pub fn new() -> Self {
         Self {
             lower: None,
@@ -52,21 +55,25 @@ impl Range {
         }
     }
 
+    /// Set the lower bound of the range.
     pub fn lower<T: Serialize>(mut self, value: T) -> Self {
         self.lower = Some(pending(&value));
         self
     }
 
+    /// Set the upper bound of the range.
     pub fn upper<T: Serialize>(mut self, value: T) -> Self {
         self.upper = Some(pending(&value));
         self
     }
 
+    /// Include or exclude the lower bound.
     pub fn include_lower(mut self, value: bool) -> Self {
         self.include_lower = Some(value);
         self
     }
 
+    /// Include or exclude the upper bound.
     pub fn include_upper(mut self, value: bool) -> Self {
         self.include_upper = Some(value);
         self
@@ -80,8 +87,10 @@ impl Default for Range {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// A field name from which a filter can be built.
 pub struct FieldRef(String);
 
+/// Start a filter expression for `name`.
 pub fn field(name: impl Into<String>) -> FieldRef {
     FieldRef(name.into())
 }
@@ -95,44 +104,55 @@ impl FieldRef {
         })
     }
 
+    /// Match values equal to `value`.
     pub fn eq<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Eq, value)
     }
+    /// Match values not equal to `value`.
     pub fn ne<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Ne, value)
     }
+    /// Match values less than `value`.
     pub fn lt<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Lt, value)
     }
+    /// Match values less than or equal to `value`.
     pub fn lte<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Lte, value)
     }
+    /// Match values greater than `value`.
     pub fn gt<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Gt, value)
     }
+    /// Match values greater than or equal to `value`.
     pub fn gte<T: Serialize>(self, value: T) -> Filter {
         self.comparison(ComparisonOp::Gte, value)
     }
+    /// Match values within `bounds`.
     pub fn range(self, bounds: Range) -> Filter {
         Filter(FilterNode::Range {
             field: self.0,
             bounds,
         })
     }
+    /// Match documents where this field has a value.
     pub fn exists(self) -> Filter {
         Filter(FilterNode::Exists { field: self.0 })
     }
 }
 
 impl Filter {
+    /// Require every filter in the collection to match.
     pub fn all<I: IntoIterator<Item = Filter>>(filters: I) -> Self {
         Self(FilterNode::All(filters.into_iter().collect()))
     }
 
+    /// Require at least one filter in the collection to match.
     pub fn any<I: IntoIterator<Item = Filter>>(filters: I) -> Self {
         Self(FilterNode::Any(filters.into_iter().collect()))
     }
 
+    /// Negate a filter.
     #[allow(clippy::should_implement_trait)]
     pub fn not(filter: Filter) -> Self {
         Self(FilterNode::Not(Box::new(filter)))

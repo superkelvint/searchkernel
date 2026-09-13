@@ -198,31 +198,110 @@ trait FromScriptedResult: Sized {
     ) -> std::result::Result<Self, TestkitError>;
 }
 
-macro_rules! typed_result {
-    ($type:ty, $variant:ident, $kind:ident) => {
-        impl FromScriptedResult for $type {
-            fn from_result(
-                result: ScriptedResult,
-                kind: OperationKind,
-            ) -> std::result::Result<Self, TestkitError> {
-                match result {
-                    ScriptedResult::$variant(value) => Ok(value),
-                    _ => Err(TestkitError::InvalidOutcome {
-                        operation: kind,
-                        outcome: stringify!($kind),
-                    }),
-                }
-            }
+impl FromScriptedResult for searchkernel_core::InsertResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Insert(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "insert",
+            }),
         }
-    };
+    }
 }
-typed_result!(searchkernel_core::UpsertResult, Upsert, upsert);
-typed_result!(searchkernel_core::InsertResult, Insert, insert);
-typed_result!(searchkernel_core::PatchResult, Patch, patch);
-typed_result!(searchkernel_core::DeleteResult, Delete, delete);
-typed_result!(searchkernel_core::GetResult, Get, get);
-typed_result!(searchkernel_core::SearchResult, Search, search);
-typed_result!(searchkernel_core::AnalyzeResult, Analyze, analyze);
+
+impl FromScriptedResult for searchkernel_core::UpsertResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Upsert(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "upsert",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_core::PatchResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Patch(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "patch",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_core::DeleteResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Delete(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "delete",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_core::GetResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Get(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "get",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_core::SearchResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Search(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "search",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_core::AnalyzeResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Analyze(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "analyze",
+            }),
+        }
+    }
+}
 
 fn portable_misuse(error: TestkitError) -> PortableError {
     PortableError::new(searchkernel_core::ErrorCode::Internal, error.to_string()).with_detail(

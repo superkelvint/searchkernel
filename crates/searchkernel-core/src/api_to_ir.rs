@@ -1,7 +1,15 @@
 //! FlatBuffers API to owned Search Kernel IR conversion.
 
 use crate::error::{PortableError, Result};
-use crate::model::*;
+use crate::model::{
+    AnalyzeRequestIr, AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentId,
+    DocumentIr, FacetIr, FacetSort, FieldCapabilities, FieldCardinality, FieldIr, FieldKind,
+    FieldName, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexDefinitionIr, IndexName,
+    InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr, PatchRequestIr,
+    PrefixPolicy, ProjectionIr, QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr,
+    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, TypoPolicy, UpsertRequestIr,
+    WriteRequestIr,
+};
 use searchkernel_api::v1 as api;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -139,82 +147,17 @@ impl IndexContext {
             ));
         }
         let mut seen = BTreeSet::new();
-        let mut result = Vec::with_capacity(count);
+        let mut converted_operations = Vec::with_capacity(count);
         if let Some(operations) = operations {
             for (index, operation) in operations.iter().enumerate() {
                 let path = format!("operations[{index}]");
-                let tag = operation.operation_type();
-                let field = match tag {
-                    api::PatchOperationKind::SetField => {
-                        let set = operation.operation_as_set_field().ok_or_else(|| {
-                            invalid(
-                                "invalid_patch_operation",
-                                Some(path.clone()),
-                                "patch operation must select set or unset",
-                            )
-                        })?;
-                        let field = self
-                            .field(set.field().unwrap_or_default(), format!("{path}.set.field"))?;
-                        if !seen.insert(field.name.clone()) {
-                            return Err(invalid(
-                                "duplicate_patch_field",
-                                Some(path.clone()),
-                                "a patch may mention each field at most once",
-                            ));
-                        }
-                        let value = set.value().ok_or_else(|| {
-                            invalid(
-                                "missing_value",
-                                Some(format!("{path}.set.value")),
-                                "set operation requires a value",
-                            )
-                        })?;
-                        PatchOperationIr::Set {
-                            field: field.name.clone(),
-                            value: self.value_to_ir_at(
-                                field,
-                                value,
-                                format!("{path}.set.value"),
-                            )?,
-                        }
-                    }
-                    api::PatchOperationKind::UnsetField => {
-                        let unset = operation.operation_as_unset_field().ok_or_else(|| {
-                            invalid(
-                                "invalid_patch_operation",
-                                Some(path.clone()),
-                                "patch operation must select set or unset",
-                            )
-                        })?;
-                        let field = self.field(
-                            unset.field().unwrap_or_default(),
-                            format!("{path}.unset.field"),
-                        )?;
-                        if !seen.insert(field.name.clone()) {
-                            return Err(invalid(
-                                "duplicate_patch_field",
-                                Some(path.clone()),
-                                "a patch may mention each field at most once",
-                            ));
-                        }
-                        PatchOperationIr::Unset {
-                            field: field.name.clone(),
-                        }
-                    }
-                    _ => {
-                        return Err(invalid(
-                            "invalid_patch_operation",
-                            Some(path),
-                            "patch operation must select set or unset",
-                        ))
-                    }
-                };
-                result.push(field);
+                let converted = self.patch_operation_to_ir(operation, &path, &mut seen)?;
+                converted_operations.push(converted);
             }
         }
         Ok(PatchRequestIr {
             id,
-            operations: result,
+            operations: converted_operations,
         })
     }
     pub fn delete_to_ir(&self, request: api::DeleteRequest<'_>) -> Result<DeleteRequestIr> {
@@ -417,6 +360,61 @@ impl IndexContext {
             .get(name)
             .map(|&i| &self.definition.fields[i])
             .ok_or_else(|| invalid("unknown_field", Some(path), "field is not defined"))
+    }
+
+    fn patch_operation_to_ir(
+        &self,
+        operation: api::PatchOperation<'_>,
+        path: &str,
+        seen_fields: &mut BTreeSet<FieldName>,
+    ) -> Result<PatchOperationIr> {
+        match operation.operation_type() {
+            api::PatchOperationKind::SetField => {
+                let set = operation.operation_as_set_field().ok_or_else(|| {
+                    invalid(
+                        "invalid_patch_operation",
+                        Some(path),
+                        "patch operation must select set or unset",
+                    )
+                })?;
+                let field =
+                    self.field(set.field().unwrap_or_default(), format!("{path}.set.field"))?;
+                ensure_field_is_not_repeated(seen_fields, field, path)?;
+                let value = set.value().ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}.set.value")),
+                        "set operation requires a value",
+                    )
+                })?;
+                Ok(PatchOperationIr::Set {
+                    field: field.name.clone(),
+                    value: self.value_to_ir_at(field, value, format!("{path}.set.value"))?,
+                })
+            }
+            api::PatchOperationKind::UnsetField => {
+                let unset = operation.operation_as_unset_field().ok_or_else(|| {
+                    invalid(
+                        "invalid_patch_operation",
+                        Some(path),
+                        "patch operation must select set or unset",
+                    )
+                })?;
+                let field = self.field(
+                    unset.field().unwrap_or_default(),
+                    format!("{path}.unset.field"),
+                )?;
+                ensure_field_is_not_repeated(seen_fields, field, path)?;
+                Ok(PatchOperationIr::Unset {
+                    field: field.name.clone(),
+                })
+            }
+            _ => Err(invalid(
+                "invalid_patch_operation",
+                Some(path),
+                "patch operation must select set or unset",
+            )),
+        }
     }
     fn document_id(&self, value: Option<&str>, path: &str) -> Result<DocumentId> {
         DocumentId::parse(value.unwrap_or_default().to_owned()).map_err(|_| {
@@ -1040,8 +1038,12 @@ impl IndexContext {
     }
 }
 
-fn field_to_ir_at(d: api::FieldDefinition<'_>, name: FieldName, path: &str) -> Result<FieldIr> {
-    let kind = match d.kind().0 {
+fn field_to_ir_at(
+    definition: api::FieldDefinition<'_>,
+    name: FieldName,
+    path: &str,
+) -> Result<FieldIr> {
+    let kind = match definition.kind().0 {
         1 => FieldKind::Text,
         2 => FieldKind::Keyword,
         3 => FieldKind::Int64,
@@ -1055,7 +1057,7 @@ fn field_to_ir_at(d: api::FieldDefinition<'_>, name: FieldName, path: &str) -> R
             ))
         }
     };
-    let cardinality = match d.cardinality().0 {
+    let cardinality = match definition.cardinality().0 {
         0 | 1 => FieldCardinality::Single,
         2 => FieldCardinality::Multi,
         _ => {
@@ -1096,45 +1098,53 @@ fn field_to_ir_at(d: api::FieldDefinition<'_>, name: FieldName, path: &str) -> R
             facetable: true,
         },
     };
-    let mut c = FieldCapabilities {
-        stored: d.stored().map_or(defaults.stored, |v| v.value()),
-        searchable: d.searchable().map_or(defaults.searchable, |v| v.value()),
-        filterable: d.filterable().map_or(defaults.filterable, |v| v.value()),
-        sortable: d.sortable().map_or(defaults.sortable, |v| v.value()),
-        facetable: d.facetable().map_or(defaults.facetable, |v| v.value()),
+    let mut capabilities = FieldCapabilities {
+        stored: definition.stored().map_or(defaults.stored, |v| v.value()),
+        searchable: definition
+            .searchable()
+            .map_or(defaults.searchable, |v| v.value()),
+        filterable: definition
+            .filterable()
+            .map_or(defaults.filterable, |v| v.value()),
+        sortable: definition
+            .sortable()
+            .map_or(defaults.sortable, |v| v.value()),
+        facetable: definition
+            .facetable()
+            .map_or(defaults.facetable, |v| v.value()),
     };
-    if cardinality == FieldCardinality::Multi && d.sortable().is_none() {
-        c.sortable = false;
+    if cardinality == FieldCardinality::Multi && definition.sortable().is_none() {
+        capabilities.sortable = false;
     }
-    if kind == FieldKind::Text && c.filterable {
+    if kind == FieldKind::Text && capabilities.filterable {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.filterable")),
             "text fields have incompatible capabilities",
         ));
     }
-    if kind == FieldKind::Text && c.sortable {
+    if kind == FieldKind::Text && capabilities.sortable {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.sortable")),
             "text fields have incompatible capabilities",
         ));
     }
-    if kind == FieldKind::Text && c.facetable {
+    if kind == FieldKind::Text && capabilities.facetable {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.facetable")),
             "text fields have incompatible capabilities",
         ));
     }
-    if kind != FieldKind::Text && c.searchable {
+    if kind != FieldKind::Text && capabilities.searchable {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.searchable")),
             "non-text fields cannot be searchable",
         ));
     }
-    if cardinality == FieldCardinality::Multi && c.sortable {
+    if cardinality == FieldCardinality::Multi && capabilities.sortable {
         return Err(invalid(
             "invalid_capability",
             Some(format!("{path}.sortable")),
@@ -1145,17 +1155,17 @@ fn field_to_ir_at(d: api::FieldDefinition<'_>, name: FieldName, path: &str) -> R
         name,
         kind,
         cardinality,
-        analyzer: analyzer_to_ir_at(d.analyzer(), kind, &format!("{path}.analyzer"))?,
-        capabilities: c,
+        analyzer: analyzer_to_ir_at(definition.analyzer(), kind, &format!("{path}.analyzer"))?,
+        capabilities,
     })
 }
 fn analyzer_to_ir_at(
-    a: Option<api::Analyzer<'_>>,
+    analyzer: Option<api::Analyzer<'_>>,
     kind: FieldKind,
     path: &str,
 ) -> Result<Option<AnalyzerIdentity>> {
     if kind != FieldKind::Text {
-        if a.is_some() {
+        if analyzer.is_some() {
             return Err(invalid(
                 "invalid_analyzer",
                 Some(path),
@@ -1164,12 +1174,12 @@ fn analyzer_to_ir_at(
         }
         return Ok(None);
     }
-    let Some(a) = a else {
+    let Some(analyzer) = analyzer else {
         return Ok(Some(AnalyzerIdentity::StandardV1));
     };
-    if a.name().unwrap_or_default() == "standard"
-        && a.version() == 1
-        && a.options().map_or(0, |v| v.len()) == 0
+    if analyzer.name().unwrap_or_default() == "standard"
+        && analyzer.version() == 1
+        && analyzer.options().map_or(0, |v| v.len()) == 0
     {
         Ok(Some(AnalyzerIdentity::StandardV1))
     } else {
@@ -1181,50 +1191,55 @@ fn analyzer_to_ir_at(
     }
 }
 fn search_fields_to_ir_at(
-    s: api::SearchFieldSelection<'_>,
+    selection: api::SearchFieldSelection<'_>,
     fields: &[FieldIr],
     path: &str,
 ) -> Result<Vec<SearchFieldIr>> {
-    let mut out = Vec::new();
-    let mut seen = BTreeSet::new();
-    if let Some(fs) = s.fields() {
-        for (i, v) in fs.iter().enumerate() {
-            let fp = format!("{path}.fields[{i}].field");
+    let mut search_fields = Vec::new();
+    let mut seen_fields = BTreeSet::new();
+    if let Some(fields_selection) = selection.fields() {
+        for (index, search_field) in fields_selection.iter().enumerate() {
+            let field_path = format!("{path}.fields[{index}].field");
             let f = fields
                 .iter()
-                .find(|f| f.name.as_str() == v.field().unwrap_or_default())
+                .find(|field| field.name.as_str() == search_field.field().unwrap_or_default())
                 .ok_or_else(|| {
-                    invalid("unknown_field", Some(fp.clone()), "field is not defined")
+                    invalid(
+                        "unknown_field",
+                        Some(field_path.clone()),
+                        "field is not defined",
+                    )
                 })?;
             if !f.capabilities.searchable {
                 return Err(invalid(
                     "field_not_searchable",
-                    Some(fp),
+                    Some(field_path),
                     "search field must be searchable",
                 ));
             }
-            if !seen.insert(f.name.clone()) {
+            if !seen_fields.insert(f.name.clone()) {
                 return Err(invalid(
                     "duplicate_search_field",
-                    Some(format!("{path}.fields[{i}].field")),
+                    Some(format!("{path}.fields[{index}].field")),
                     "search fields must be unique",
                 ));
             }
-            let w =
-                SearchFieldWeight::new(v.weight().map_or(1.0, |x| x.value())).map_err(|_| {
-                    invalid(
-                        "invalid_search_weight",
-                        Some(format!("{path}.fields[{i}].weight")),
-                        "search-field weight must be finite and non-negative",
-                    )
-                })?;
-            out.push(SearchFieldIr {
+            let weight =
+                SearchFieldWeight::new(search_field.weight().map_or(1.0, |value| value.value()))
+                    .map_err(|_| {
+                        invalid(
+                            "invalid_search_weight",
+                            Some(format!("{path}.fields[{index}].weight")),
+                            "search-field weight must be finite and non-negative",
+                        )
+                    })?;
+            search_fields.push(SearchFieldIr {
                 field: f.name.clone(),
-                weight: w,
+                weight,
             })
         }
     }
-    Ok(out)
+    Ok(search_fields)
 }
 fn ranking_to_ir(r: Option<api::RankingPolicy<'_>>) -> Result<RankingPolicyIr> {
     let Some(r) = r else {
@@ -1367,91 +1382,93 @@ fn parse_language(v: &str, path: &str) -> Result<LanguageHint> {
     })
 }
 fn filter_children(
-    v: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FilterExpr<'_>>>>,
-    c: &IndexContext,
-    p: &str,
-    n: &str,
+    children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FilterExpr<'_>>>>,
+    context: &IndexContext,
+    parent_path: &str,
+    operation_name: &str,
 ) -> Result<Vec<FilterIr>> {
-    let mut o = Vec::new();
-    if let Some(v) = v {
-        for (i, x) in v.iter().enumerate() {
-            o.push(c.filter_to_ir_at(x, &format!("{p}.{n}.clauses[{i}]"))?)
+    let mut converted = Vec::new();
+    if let Some(children) = children {
+        for (index, child) in children.iter().enumerate() {
+            let child_path = format!("{parent_path}.{operation_name}.clauses[{index}]");
+            converted.push(context.filter_to_ir_at(child, &child_path)?);
         }
     }
-    Ok(o)
+    Ok(converted)
 }
 fn query_children(
-    v: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
-    c: &IndexContext,
-    p: &str,
-    n: &str,
+    children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
+    context: &IndexContext,
+    parent_path: &str,
+    operation_name: &str,
 ) -> Result<Vec<QueryIr>> {
-    let mut o = Vec::new();
-    if let Some(v) = v {
-        for (i, x) in v.iter().enumerate() {
-            o.push(c.query_expr_to_ir(x, &format!("{p}.{n}.clauses[{i}]"))?)
+    let mut converted = Vec::new();
+    if let Some(children) = children {
+        for (index, child) in children.iter().enumerate() {
+            let child_path = format!("{parent_path}.{operation_name}.clauses[{index}]");
+            converted.push(context.query_expr_to_ir(child, &child_path)?);
         }
     }
-    Ok(o)
+    Ok(converted)
 }
-fn flatten_and(v: Vec<FilterIr>) -> FilterIr {
-    let mut o = Vec::new();
-    for x in v {
-        if let FilterIr::And(c) = x {
-            o.extend(c)
+fn flatten_and(clauses: Vec<FilterIr>) -> FilterIr {
+    let mut flattened = Vec::new();
+    for clause in clauses {
+        if let FilterIr::And(nested_clauses) = clause {
+            flattened.extend(nested_clauses)
         } else {
-            o.push(x)
+            flattened.push(clause)
         }
     }
-    if o.len() == 1 {
-        o.pop().expect("one")
+    if flattened.len() == 1 {
+        flattened.pop().expect("one clause was checked")
     } else {
-        FilterIr::And(o)
-    }
-}
-fn flatten_or(v: Vec<FilterIr>) -> FilterIr {
-    let mut o = Vec::new();
-    for x in v {
-        if let FilterIr::Or(c) = x {
-            o.extend(c)
-        } else {
-            o.push(x)
-        }
-    }
-    if o.len() == 1 {
-        o.pop().expect("one")
-    } else {
-        FilterIr::Or(o)
+        FilterIr::And(flattened)
     }
 }
-fn flatten_query_and(v: Vec<QueryIr>) -> QueryIr {
-    let mut o = Vec::new();
-    for x in v {
-        if let QueryIr::And(c) = x {
-            o.extend(c)
+fn flatten_or(clauses: Vec<FilterIr>) -> FilterIr {
+    let mut flattened = Vec::new();
+    for clause in clauses {
+        if let FilterIr::Or(nested_clauses) = clause {
+            flattened.extend(nested_clauses)
         } else {
-            o.push(x)
+            flattened.push(clause)
         }
     }
-    if o.len() == 1 {
-        o.pop().expect("one")
+    if flattened.len() == 1 {
+        flattened.pop().expect("one clause was checked")
     } else {
-        QueryIr::And(o)
+        FilterIr::Or(flattened)
     }
 }
-fn flatten_query_or(v: Vec<QueryIr>) -> QueryIr {
-    let mut o = Vec::new();
-    for x in v {
-        if let QueryIr::Or(c) = x {
-            o.extend(c)
+fn flatten_query_and(clauses: Vec<QueryIr>) -> QueryIr {
+    let mut flattened = Vec::new();
+    for clause in clauses {
+        if let QueryIr::And(nested_clauses) = clause {
+            flattened.extend(nested_clauses)
         } else {
-            o.push(x)
+            flattened.push(clause)
         }
     }
-    if o.len() == 1 {
-        o.pop().expect("one")
+    if flattened.len() == 1 {
+        flattened.pop().expect("one clause was checked")
     } else {
-        QueryIr::Or(o)
+        QueryIr::And(flattened)
+    }
+}
+fn flatten_query_or(clauses: Vec<QueryIr>) -> QueryIr {
+    let mut flattened = Vec::new();
+    for clause in clauses {
+        if let QueryIr::Or(nested_clauses) = clause {
+            flattened.extend(nested_clauses)
+        } else {
+            flattened.push(clause)
+        }
+    }
+    if flattened.len() == 1 {
+        flattened.pop().expect("one clause was checked")
+    } else {
+        QueryIr::Or(flattened)
     }
 }
 fn numeric_gt(a: &ScalarValueIr, b: &ScalarValueIr) -> bool {
@@ -1460,6 +1477,21 @@ fn numeric_gt(a: &ScalarValueIr, b: &ScalarValueIr) -> bool {
         (ScalarValueIr::Float64(a), ScalarValueIr::Float64(b)) => a > b,
         _ => false,
     }
+}
+
+fn ensure_field_is_not_repeated(
+    seen_fields: &mut BTreeSet<FieldName>,
+    field: &FieldIr,
+    path: &str,
+) -> Result<()> {
+    if seen_fields.insert(field.name.clone()) {
+        return Ok(());
+    }
+    Err(invalid(
+        "duplicate_patch_field",
+        Some(path),
+        "a patch may mention each field at most once",
+    ))
 }
 
 fn invalid(

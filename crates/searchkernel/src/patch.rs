@@ -2,6 +2,7 @@ use crate::document::{pending, PendingValue};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq)]
+/// A collection of field updates applied to one document.
 pub struct Patch {
     pub(crate) operations: Vec<PatchOperation>,
 }
@@ -13,12 +14,14 @@ pub(crate) enum PatchOperation {
 }
 
 impl Patch {
+    /// Start an empty patch.
     pub fn new() -> Self {
         Self {
             operations: Vec::new(),
         }
     }
 
+    /// Set a field to a serialized value.
     pub fn set<T: Serialize>(mut self, field: impl Into<String>, value: T) -> Self {
         self.operations.push(PatchOperation::Set {
             field: field.into(),
@@ -27,6 +30,7 @@ impl Patch {
         self
     }
 
+    /// Remove a field from the document.
     pub fn unset(mut self, field: impl Into<String>) -> Self {
         self.operations.push(PatchOperation::Unset {
             field: field.into(),
