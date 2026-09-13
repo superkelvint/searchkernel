@@ -11,7 +11,6 @@ pub use schema::{ConfigCompiler, Field, FieldType, Schema};
 
 use searchkernel_vespa_sys as sys;
 use std::ffi::{CString, NulError};
-use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr::{self, NonNull};
 
@@ -88,13 +87,11 @@ impl std::error::Error for Error {}
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 fn native_error(error: &NativeError, status: i32) -> Error {
-    let code = error.0.code;
     let message_bytes: Vec<u8> = error
         .0
-        .message
         .iter()
         .take_while(|&&byte| byte != 0)
-        .map(|&byte| byte as u8)
+        .copied()
         .collect();
     let message = String::from_utf8_lossy(&message_bytes).into_owned();
     let message = if message.is_empty() {
@@ -102,7 +99,7 @@ fn native_error(error: &NativeError, status: i32) -> Error {
     } else {
         message
     };
-    Error::native(code, message)
+    Error::native(status, message)
 }
 
 fn check(status: i32, error: &NativeError) -> Result<(), Error> {
@@ -158,6 +155,7 @@ impl Engine {
                 config_dir.as_ptr(),
                 &mut handle,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -173,7 +171,9 @@ impl Engine {
     /// close observable while ensuring the native handle is still destroyed.
     pub fn close(self) -> Result<(), Error> {
         let mut error = NativeError::new();
-        let status = unsafe { sys::sk_engine_close(self.handle.as_ptr(), error.as_mut_ptr()) };
+        let status = unsafe {
+            sys::sk_engine_close(self.handle.as_ptr(), error.as_mut_ptr(), error.capacity())
+        };
         check(status, &error)
     }
 
@@ -190,6 +190,7 @@ impl Engine {
                 value,
                 &mut document,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -200,6 +201,7 @@ impl Engine {
                 self.handle.as_ptr(),
                 document.0.as_ptr(),
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)
@@ -218,13 +220,19 @@ impl Engine {
                 value,
                 &mut update,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
         let update = NativeUpdate(require_ptr(update, "document update")?);
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_engine_update(self.handle.as_ptr(), update.0.as_ptr(), error.as_mut_ptr())
+            sys::sk_engine_update(
+                self.handle.as_ptr(),
+                update.0.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
         };
         check(status, &error)
     }
@@ -240,6 +248,7 @@ impl Engine {
                 document_id.as_ptr(),
                 &mut was_found,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -258,6 +267,7 @@ impl Engine {
                 limit,
                 &mut request,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -271,6 +281,7 @@ impl Engine {
                 request.0.as_ptr(),
                 &mut result,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -288,6 +299,7 @@ impl Engine {
                     &mut id_ptr,
                     &mut id_length,
                     error.as_mut_ptr(),
+                    error.capacity(),
                 )
             };
             check(status, &error)?;
@@ -320,20 +332,35 @@ impl Engine {
                 field.as_ptr(),
                 document.text.as_bytes().as_ptr(),
                 length_u32(document.text.len(), "text")?,
-                occurrences.as_ptr(),
-                length_u32(occurrences.len(), "text occurrence")?,
                 &mut native_document,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
         let native_document = NativeTextDocument(require_ptr(native_document, "text document")?);
         let mut error = NativeError::new();
         let status = unsafe {
+            sys::sk_text_document_add_occurrences(
+                native_document.0.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
             sys::sk_engine_put_text(
                 self.handle.as_ptr(),
                 native_document.0.as_ptr(),
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)
@@ -353,20 +380,35 @@ impl Engine {
                 field.as_ptr(),
                 document.text.as_bytes().as_ptr(),
                 length_u32(document.text.len(), "text")?,
-                occurrences.as_ptr(),
-                length_u32(occurrences.len(), "text occurrence")?,
                 &mut native_update,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
         let native_update = NativeTextUpdate(require_ptr(native_update, "text update")?);
         let mut error = NativeError::new();
         let status = unsafe {
+            sys::sk_text_update_add_occurrences(
+                native_update.0.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
             sys::sk_engine_update_text(
                 self.handle.as_ptr(),
                 native_update.0.as_ptr(),
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)
@@ -395,15 +437,27 @@ impl Engine {
             sys::sk_text_request_create(
                 kind,
                 field.as_ptr(),
-                terms.as_ptr(),
-                length_u32(terms.len(), "text query term")?,
                 rank_profile.as_ptr(),
                 &mut native_request,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
         let native_request = NativeTextRequest(require_ptr(native_request, "text request")?);
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_text_request_add_terms(
+                native_request.0.as_ptr(),
+                terms.term_bytes.as_ptr(),
+                length_u32(terms.term_bytes.len(), "text query term bytes")?,
+                terms.term_lengths.as_ptr(),
+                length_u32(terms.term_lengths.len(), "text query term")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
 
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
@@ -413,6 +467,7 @@ impl Engine {
                 native_request.0.as_ptr(),
                 &mut native_result,
                 error.as_mut_ptr(),
+                error.capacity(),
             )
         };
         check(status, &error)?;
@@ -432,6 +487,7 @@ impl Engine {
                     &mut id_length,
                     &mut score,
                     error.as_mut_ptr(),
+                    error.capacity(),
                 )
             };
             check(status, &error)?;
@@ -458,19 +514,24 @@ impl Drop for Engine {
     }
 }
 
-/// Owns the fixed-size native error value used for one operation.
-struct NativeError(sys::sk_error);
+/// Owns the caller-provided diagnostic bytes used for one native operation.
+///
+/// The native ABI intentionally receives only this byte pointer and capacity:
+/// an error struct would duplicate C/Rust layout and ownership contracts for
+/// information already returned authoritatively by the status value.
+struct NativeError([u8; sys::SK_ERROR_MESSAGE_CAPACITY as usize]);
 
 impl NativeError {
     fn new() -> Self {
-        Self(sys::sk_error {
-            code: 0,
-            message: [0; 512],
-        })
+        Self([0; 512])
     }
 
-    fn as_mut_ptr(&mut self) -> *mut sys::sk_error {
-        &mut self.0
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.0.as_mut_ptr()
+    }
+
+    fn capacity(&self) -> u32 {
+        self.0.len() as u32
     }
 }
 
@@ -507,80 +568,60 @@ fn length_u32(length: usize, what: &str) -> Result<u32, Error> {
         .map_err(|_| Error::message(format!("{what} count exceeds native ABI capacity")))
 }
 
-struct NativeOccurrences<'a> {
-    raw: Vec<sys::sk_text_occurrence>,
-    _analysis: PhantomData<&'a DocumentAnalysis>,
+struct NativeOccurrences {
+    term_bytes: Vec<u8>,
+    term_lengths: Vec<u32>,
+    byte_starts: Vec<u32>,
+    byte_lengths: Vec<u32>,
 }
 
-impl NativeOccurrences<'_> {
-    fn as_ptr(&self) -> *const sys::sk_text_occurrence {
-        self.raw.as_ptr()
+fn text_occurrences(analysis: &DocumentAnalysis) -> Result<NativeOccurrences, Error> {
+    let mut result = NativeOccurrences {
+        term_bytes: Vec::new(),
+        term_lengths: Vec::with_capacity(analysis.terms.len()),
+        byte_starts: Vec::with_capacity(analysis.terms.len()),
+        byte_lengths: Vec::with_capacity(analysis.terms.len()),
+    };
+    for term in &analysis.terms {
+        result
+            .term_lengths
+            .push(length_u32(term.term.len(), "text term")?);
+        result.term_bytes.extend_from_slice(term.term.as_bytes());
+        result
+            .byte_starts
+            .push(length_u32(term.byte_start, "text span")?);
+        result
+            .byte_lengths
+            .push(length_u32(term.byte_len, "text span")?);
     }
+    Ok(result)
+}
 
-    fn len(&self) -> usize {
-        self.raw.len()
+struct NativeQueryTerms {
+    term_bytes: Vec<u8>,
+    term_lengths: Vec<u32>,
+}
+
+fn text_query_terms(analysis: &QueryAnalysis) -> Result<NativeQueryTerms, Error> {
+    let mut result = NativeQueryTerms {
+        term_bytes: Vec::new(),
+        term_lengths: Vec::with_capacity(analysis.terms.len()),
+    };
+    for term in &analysis.terms {
+        let stem = term.stems.first().ok_or_else(|| {
+            Error::message("M4 query analysis returned no stem for a query position")
+        })?;
+        if term.stems.len() != 1 {
+            return Err(Error::message(
+                "M4 query analysis returned multiple stems for a query position",
+            ));
+        }
+        result
+            .term_lengths
+            .push(length_u32(stem.len(), "text query term")?);
+        result.term_bytes.extend_from_slice(stem.as_bytes());
     }
-}
-
-struct NativeQueryTerms<'a> {
-    raw: Vec<sys::sk_text_query_term>,
-    _analysis: PhantomData<&'a QueryAnalysis>,
-}
-
-impl NativeQueryTerms<'_> {
-    fn as_ptr(&self) -> *const sys::sk_text_query_term {
-        self.raw.as_ptr()
-    }
-
-    fn len(&self) -> usize {
-        self.raw.len()
-    }
-}
-
-fn text_occurrences(analysis: &DocumentAnalysis) -> Result<NativeOccurrences<'_>, Error> {
-    analysis
-        .terms
-        .iter()
-        .map(|term| {
-            Ok(sys::sk_text_occurrence {
-                term: term.term.as_bytes().as_ptr(),
-                term_length: length_u32(term.term.len(), "text term")?,
-                byte_start: length_u32(term.byte_start, "text span")?,
-                byte_length: length_u32(term.byte_len, "text span")?,
-                position: term.position,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|raw| NativeOccurrences {
-            raw,
-            _analysis: PhantomData,
-        })
-}
-
-fn text_query_terms(analysis: &QueryAnalysis) -> Result<NativeQueryTerms<'_>, Error> {
-    analysis
-        .terms
-        .iter()
-        .map(|term| {
-            let stem = term.stems.first().ok_or_else(|| {
-                Error::message("M4 query analysis returned no stem for a query position")
-            })?;
-            if term.stems.len() != 1 {
-                return Err(Error::message(
-                    "M4 query analysis returned multiple stems for a query position",
-                ));
-            }
-            Ok(sys::sk_text_query_term {
-                term: stem.as_bytes().as_ptr(),
-                term_length: length_u32(stem.len(), "text query term")?,
-                position: term.position,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|raw| NativeQueryTerms {
-            raw,
-            _analysis: PhantomData,
-        })
+    Ok(result)
 }
 
 fn validate_term_query(analysis: &QueryAnalysis) -> Result<(), Error> {
@@ -629,7 +670,7 @@ mod tests {
     };
 
     #[test]
-    fn document_analysis_converts_to_native_occurrences() {
+    fn document_analysis_converts_to_native_soa_occurrences() {
         let analysis = DocumentAnalysis {
             terms: vec![DocumentTerm {
                 original: "fox".to_owned(),
@@ -641,18 +682,10 @@ mod tests {
         };
 
         let occurrences = text_occurrences(&analysis).expect("valid occurrence");
-        assert_eq!(occurrences.len(), 1);
-        assert_eq!(occurrences.raw[0].term_length, 3);
-        assert_eq!(occurrences.raw[0].byte_start, 5);
-        assert_eq!(occurrences.raw[0].byte_length, 3);
-        assert_eq!(occurrences.raw[0].position, 2);
-        let term = unsafe {
-            std::slice::from_raw_parts(
-                occurrences.raw[0].term,
-                occurrences.raw[0].term_length as usize,
-            )
-        };
-        assert_eq!(term, b"fox");
+        assert_eq!(occurrences.term_bytes, b"fox");
+        assert_eq!(occurrences.term_lengths, [3]);
+        assert_eq!(occurrences.byte_starts, [5]);
+        assert_eq!(occurrences.byte_lengths, [3]);
     }
 
     #[test]
@@ -665,13 +698,8 @@ mod tests {
         };
 
         let terms = text_query_terms(&analysis).expect("valid query term");
-        assert_eq!(terms.len(), 1);
-        assert_eq!(terms.raw[0].term_length, 7);
-        assert_eq!(terms.raw[0].position, 4);
-        let term = unsafe {
-            std::slice::from_raw_parts(terms.raw[0].term, terms.raw[0].term_length as usize)
-        };
-        assert_eq!(term, b"running");
+        assert_eq!(terms.term_bytes, b"running");
+        assert_eq!(terms.term_lengths, [7]);
     }
 
     #[test]

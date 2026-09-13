@@ -8,6 +8,8 @@ fn main() {
     let sdk = env::var_os("SK_NATIVE_SDK")
         .map(PathBuf::from)
         .unwrap_or(default_sdk);
+    let sdk = fs::canonicalize(&sdk)
+        .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
     let lib_dir = sdk.join("lib");
     let header = sdk.join("include/searchkernel_vespa.h");
     let rust_abi =
@@ -68,18 +70,11 @@ fn main() {
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     println!("cargo:rerun-if-changed={}", header.display());
-    println!("cargo:rerun-if-changed=abi_layout_check.c");
     println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
     println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
     println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
     println!("cargo:rerun-if-changed=../../native/vespa/transport_owner.h");
-    cc::Build::new()
-        .file(manifest_dir.join("abi_layout_check.c"))
-        .include(sdk.join("include"))
-        .flag_if_supported("-std=c11")
-        .warnings(true)
-        .compile("searchkernel_vespa_abi_layout");
     cc::Build::new()
         .cpp(true)
         .file(manifest_dir.join("schema_identity_fd_test.cc"))
@@ -103,9 +98,11 @@ fn main() {
 fn generate_bindings(header: &Path) -> bindgen::Bindings {
     bindgen::Builder::default()
         .header(header.to_string_lossy())
-        .allowlist_type("sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|text_occurrence|text_query_term|error)")
+        .allowlist_type(
+            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result)",
+        )
         .allowlist_function("sk_.*")
-        .allowlist_var("SK_(NATIVE_ABI_VERSION|STATUS_.*)")
+        .allowlist_var("SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|STATUS_.*)")
         .layout_tests(true)
         .generate_comments(false)
         .generate()

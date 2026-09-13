@@ -6,12 +6,11 @@
 
 static int open_and_close(const char *data_dir, const char *config_dir) {
     sk_engine *engine = NULL;
-    sk_error error = {0};
-    int32_t rc = sk_engine_open(data_dir, config_dir, &engine, &error);
+    uint8_t error[512] = {0};
+    int32_t rc = sk_engine_open(data_dir, config_dir, &engine, error, sizeof(error));
     if (rc != 0 || engine == NULL) {
-        fprintf(stderr, "sk_engine_open failed: code=%d message=%s\n",
-                (int) error.code,
-                error.message[0] != '\0' ? error.message : "<none>");
+        fprintf(stderr, "sk_engine_open failed: status=%d message=%s\n",
+                (int) rc, error[0] != '\0' ? (char *) error : "<none>");
         return 1;
     }
     sk_engine_destroy(engine);
@@ -25,7 +24,7 @@ int main(int argc, char **argv) {
     }
 
     uint32_t abi = sk_native_abi_version();
-    if (abi != 1) {
+    if (abi != 2) {
         fprintf(stderr, "unexpected native ABI: %u\n", abi);
         return 1;
     }

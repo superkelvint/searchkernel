@@ -18,7 +18,8 @@ fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
-    "$SDK/lib/libsearchkernel_vespa.so" "$SDK/lib/libsearchkernel_vespa.so.1"
+    "$SDK/lib/libsearchkernel_vespa.so" "$SDK/lib/libsearchkernel_vespa.so.1" \
+    "$SDK/lib/libsearchkernel_vespa.so.2"
 
 INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE" | sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g")
 DEFINES=$(sed -n 's/^CXX_DEFINES = //p' "$FLAGS_FILE")
@@ -33,7 +34,7 @@ $CXX $DEFINES $INCLUDES $CXX_FLAGS -Wno-inline -std=gnu++23 -fPIC \
 LINK_LINE=$(sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g" "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
-     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.1 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.1#")
+     s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.2 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
 LINK_ARGS=${LINK_LINE#*c++   }
 LINK_ARGS=${LINK_ARGS#*c++ }
 # The harvested command targets an executable and requests a complete dynamic
@@ -59,10 +60,10 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
 cd "$(dirname "$(dirname "$(dirname "$LINK_FILE")")")"
 eval "$CXX $LINK_ARGS"
 
-ln -sf libsearchkernel_vespa.so.1 "$SDK/lib/libsearchkernel_vespa.so"
+ln -sf libsearchkernel_vespa.so.2 "$SDK/lib/libsearchkernel_vespa.so"
 
-UNEXPECTED_SYMBOLS=$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.1" |
-    awk '$2 ~ /^[A-Z]$/ { name = $3; sub(/@@.*/, "", name); if (name != "SEARCHKERNEL_1" && name !~ /^sk_/) print name }')
+UNEXPECTED_SYMBOLS=$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.2" |
+    awk '$2 ~ /^[A-Z]$/ { name = $3; sub(/@@.*/, "", name); if (name != "SEARCHKERNEL_2" && name !~ /^sk_/) print name }')
 if [ -n "$UNEXPECTED_SYMBOLS" ]; then
     echo "unexpected global symbols in Search Kernel ABI library:" >&2
     printf '%s\n' "$UNEXPECTED_SYMBOLS" >&2
@@ -103,7 +104,7 @@ if command -v patchelf >/dev/null 2>&1; then
     # Keep the bundled upstream binaries byte-for-byte intact.  The adapter's
     # legacy RPATH is sufficient for transitive dependencies in this private
     # SDK and avoids rewriting unusual upstream ELF layouts.
-    patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.1"
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.2"
 fi
 
 echo "built SDK at $SDK"

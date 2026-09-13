@@ -49,7 +49,7 @@ recoverable Rust error.
 ## Fixture
 
 `fixtures/persisted-v1` is a Linux x86-64 compatibility fixture created with
-the pinned Vespa revision and native ABI version 1. It contains puts for four
+the pinned Vespa revision and native ABI version 2. It contains puts for four
 documents, an update, a delete, and the final logical state:
 
 ```text

@@ -57,7 +57,7 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as stream:
     manifest = json.load(stream)
-assert manifest.get("native_abi_version") == 1, manifest
+assert manifest.get("native_abi_version") == 2, manifest
 assert manifest.get("vespa_commit") == sys.argv[2], manifest
 PY
 }

@@ -1,4 +1,4 @@
-SEARCHKERNEL_1 {
+SEARCHKERNEL_2 {
     global:
         sk_native_abi_version;
         sk_engine_open;
@@ -18,10 +18,13 @@ SEARCHKERNEL_1 {
         sk_search_result_id;
         sk_search_result_destroy;
         sk_text_document_create;
+        sk_text_document_add_occurrences;
         sk_text_document_destroy;
         sk_text_update_create;
+        sk_text_update_add_occurrences;
         sk_text_update_destroy;
         sk_text_request_create;
+        sk_text_request_add_terms;
         sk_text_request_destroy;
         sk_engine_put_text;
         sk_engine_update_text;

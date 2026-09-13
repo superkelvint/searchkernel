@@ -76,6 +76,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1052,10 +1053,30 @@ class EmbeddedEngine {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
         }
-        validate_index_configuration(manifest, config_path);
-        validate_attribute_configuration(manifest, config_path);
-        validate_summary_configuration(manifest, config_path);
-        validate_rank_profile_configuration(manifest, config_path);
+        try {
+            validate_index_configuration(manifest, config_path);
+        } catch (const std::exception &error) {
+            throw std::invalid_argument(std::string("inconsistent generated index configuration: ") +
+                                        error.what());
+        }
+        try {
+            validate_attribute_configuration(manifest, config_path);
+        } catch (const std::exception &error) {
+            throw std::invalid_argument(std::string("inconsistent generated attribute configuration: ") +
+                                        error.what());
+        }
+        try {
+            validate_summary_configuration(manifest, config_path);
+        } catch (const std::exception &error) {
+            throw std::invalid_argument(std::string("inconsistent generated summary configuration: ") +
+                                        error.what());
+        }
+        try {
+            validate_rank_profile_configuration(manifest, config_path);
+        } catch (const std::exception &error) {
+            throw std::invalid_argument(std::string("inconsistent generated rank-profile configuration: ") +
+                                        error.what());
+        }
     }
 
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
@@ -1636,48 +1657,39 @@ struct ErrorResult {
     std::vector<std::string> ids;
 };
 
-void destroy_error(sk_error *error) noexcept {
-    if (!error) {
+void clear_error(uint8_t *error, uint32_t error_capacity) noexcept {
+    if (!error || error_capacity == 0) {
         return;
     }
-    error->code = 0;
-    error->message[0] = '\0';
+    error[0] = '\0';
 }
 
-void clear_error(sk_error *error) noexcept {
-    destroy_error(error);
-}
-
-int32_t set_error(sk_error *error, int32_t code, const char *message) noexcept {
-    if (!error) {
-        return code;
-    }
-    destroy_error(error);
-    error->code = code;
-    if (!message) {
+int32_t set_error(uint8_t *error, uint32_t error_capacity, int32_t code,
+                 const char *message) noexcept {
+    if (!error || error_capacity == 0 || !message) {
         return code;
     }
     const size_t length = std::strlen(message);
-    const size_t copied = std::min(length, sizeof(error->message) - 1);
-    std::memcpy(error->message, message, copied);
-    error->message[copied] = '\0';
-    return error->code;
+    const size_t copied = std::min(length, static_cast<size_t>(error_capacity - 1));
+    std::memcpy(error, message, copied);
+    error[copied] = '\0';
+    return code;
 }
 
 template <typename Function>
-int32_t invoke(sk_error *error, Function &&function) noexcept {
-    clear_error(error);
+int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noexcept {
+    clear_error(error, error_capacity);
     try {
         function();
         return SK_STATUS_OK;
     } catch (const std::bad_alloc &) {
-        return set_error(error, SK_STATUS_OUT_OF_MEMORY, nullptr);
+        return set_error(error, error_capacity, SK_STATUS_OUT_OF_MEMORY, nullptr);
     } catch (const std::invalid_argument &exception) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, exception.what());
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
-        return set_error(error, SK_STATUS_INTERNAL, exception.what());
+        return set_error(error, error_capacity, SK_STATUS_INTERNAL, exception.what());
     } catch (...) {
-        return set_error(error, SK_STATUS_INTERNAL, "unknown native exception");
+        return set_error(error, error_capacity, SK_STATUS_INTERNAL, "unknown native exception");
     }
 }
 
@@ -1700,14 +1712,16 @@ extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
 }
 
 extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
-                                   sk_engine **out_engine, sk_error *error) SK_NOEXCEPT {
+                                   sk_engine **out_engine, uint8_t *error,
+                                   uint32_t error_capacity) SK_NOEXCEPT {
     if (out_engine) {
         *out_engine = nullptr;
     }
     if (!out_engine || !data_dir || !config_dir) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine open arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "engine open arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         std::error_code filesystem_error;
         const std::filesystem::path data_path(data_dir);
         if (std::filesystem::exists(data_path, filesystem_error) &&
@@ -1734,11 +1748,13 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
     });
 }
 
-extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) SK_NOEXCEPT {
+extern "C" int32_t sk_engine_close(sk_engine *engine, uint8_t *error,
+                                    uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine close arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "engine close arguments are invalid");
     }
-    return invoke(error, [&] { engine->impl->close(); });
+    return invoke(error, error_capacity, [&] { engine->impl->close(); });
 }
 
 extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
@@ -1750,14 +1766,16 @@ extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
 
 extern "C" int32_t sk_document_create(const char *id, const char *field,
                                         int32_t value, sk_document **out,
-                                        sk_error *error) SK_NOEXCEPT {
+                                        uint8_t *error,
+                                        uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !id || !field) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "document arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "document arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         validate_document_id(id);
         validate_field_name(field);
         if (*id == '\0' || *field == '\0') {
@@ -1776,14 +1794,16 @@ extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT { delete 
 extern "C" int32_t sk_document_update_create(const char *id, const char *field,
                                                int32_t value,
                                                sk_document_update **out,
-                                               sk_error *error) SK_NOEXCEPT {
+                                               uint8_t *error,
+                                               uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !id || !field) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "update arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         validate_document_id(id);
         validate_field_name(field);
         if (*id == '\0' || *field == '\0') {
@@ -1804,14 +1824,16 @@ extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCE
 extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
                                               uint32_t limit,
                                               sk_search_request **out,
-                                              sk_error *error) SK_NOEXCEPT {
+                                              uint8_t *error,
+                                              uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !field) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "search arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         validate_field_name(field);
         if (*field == '\0') {
             throw std::invalid_argument("search field must not be empty");
@@ -1832,35 +1854,41 @@ extern "C" void sk_search_request_destroy(sk_search_request *request) SK_NOEXCEP
 }
 
 extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
-                                  sk_error *error) SK_NOEXCEPT {
+                                  uint8_t *error,
+                                  uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !document) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "put arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "put arguments are invalid");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         engine->impl->put(document->id, document->field, document->value);
     });
 }
 
 extern "C" int32_t sk_engine_update(sk_engine *engine,
                                      const sk_document_update *update,
-                                     sk_error *error) SK_NOEXCEPT {
+                                     uint8_t *error,
+                                     uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !update) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "update arguments are invalid");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         engine->impl->update(update->id, update->field, update->value);
     });
 }
 
 extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
-                                     int32_t *out_was_found, sk_error *error) SK_NOEXCEPT {
+                                     int32_t *out_was_found, uint8_t *error,
+                                     uint32_t error_capacity) SK_NOEXCEPT {
     if (out_was_found) {
         *out_was_found = 0;
     }
     if (!engine || !engine->impl || !id || !out_was_found) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "remove arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "remove arguments are invalid");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         validate_document_id(id);
         *out_was_found = engine->impl->remove(id) ? 1 : 0;
     });
@@ -1869,14 +1897,16 @@ extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
 extern "C" int32_t sk_engine_search(const sk_engine *engine,
                                      const sk_search_request *request,
                                      sk_search_result **out_result,
-                                     sk_error *error) SK_NOEXCEPT {
+                                     uint8_t *error,
+                                     uint32_t error_capacity) SK_NOEXCEPT {
     if (out_result) {
         *out_result = nullptr;
     }
     if (!engine || !engine->impl || !request || !out_result) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "search arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "search arguments are invalid");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         if (request->limit == 0) {
             throw std::invalid_argument("search limit must be greater than zero");
         }
@@ -1893,7 +1923,8 @@ extern "C" uint32_t sk_search_result_size(const sk_search_result *result) SK_NOE
 
 extern "C" int32_t sk_search_result_id(const sk_search_result *result,
                                         uint32_t index, const char **out_id,
-                                        uint32_t *out_length, sk_error *error) SK_NOEXCEPT {
+                                        uint32_t *out_length, uint8_t *error,
+                                        uint32_t error_capacity) SK_NOEXCEPT {
     if (out_id) {
         *out_id = nullptr;
     }
@@ -1901,12 +1932,14 @@ extern "C" int32_t sk_search_result_id(const sk_search_result *result,
         *out_length = 0;
     }
     if (!result || !out_id || !out_length) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "result arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "result arguments are invalid");
     }
     if (index >= result->ids.size()) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "result index is out of bounds");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "result index is out of bounds");
     }
-    clear_error(error);
+    clear_error(error, error_capacity);
     *out_id = result->ids[index].data();
     *out_length = static_cast<uint32_t>(result->ids[index].size());
     return SK_STATUS_OK;
@@ -1936,57 +1969,80 @@ std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
     return result;
 }
 
-void fill_text_document(TextDocument &document, const char *id, const char *field,
-                        const uint8_t *text, uint32_t text_length,
-                        const sk_text_occurrence *occurrences,
-                        uint32_t occurrence_count) {
+void initialize_text_document(TextDocument &document, const char *id, const char *field,
+                              const uint8_t *text, uint32_t text_length) {
     validate_document_id(id);
     validate_field_name(field);
     if (*id == '\0' || *field == '\0') {
         throw std::invalid_argument("text document ID and field must not be empty");
     }
-    if (occurrence_count > MAX_TEXT_OCCURRENCES) {
-        throw std::invalid_argument("text occurrence count is too large");
-    }
-    if (occurrence_count != 0 && occurrences == nullptr) {
-        throw std::invalid_argument("text occurrences must not be null");
-    }
     document.id = id;
     document.field = field;
     document.text = copy_text_bytes(text, text_length, MAX_TEXT_BYTES, "text");
-    document.occurrences.reserve(occurrence_count);
-    size_t total_term_bytes = 0;
-    for (uint32_t index = 0; index < occurrence_count; ++index) {
-        const auto &input = occurrences[index];
-        if (input.term_length == 0) {
-            throw std::invalid_argument("text occurrence term must not be empty");
-        }
-        if (input.position != index) {
-            throw std::invalid_argument("text occurrence positions must be contiguous");
-        }
-        if (input.byte_start > document.text.size() ||
-            input.byte_length > document.text.size() - input.byte_start ||
-            !is_utf8_boundary(document.text, input.byte_start) ||
-            !is_utf8_boundary(document.text, input.byte_start + input.byte_length)) {
-            throw std::invalid_argument("text occurrence span is not on UTF-8 boundaries");
-        }
-        if (input.term_length > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
-            throw std::invalid_argument("total text occurrence term bytes are too large");
-        }
-        total_term_bytes += input.term_length;
-        document.occurrences.push_back({
-            copy_text_bytes(input.term, input.term_length, MAX_TEXT_TERM_BYTES,
-                            "text occurrence term"),
-            input.byte_start,
-            input.byte_length,
-            input.position
-        });
-    }
 }
 
-void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
-                       const sk_text_query_term *terms, uint32_t term_count,
-                       const char *rank_profile) {
+template <typename TextDocumentType>
+void append_text_occurrences(TextDocumentType &document, const uint8_t *term_bytes,
+                             uint32_t term_bytes_length, const uint32_t *term_lengths,
+                             const uint32_t *byte_starts, const uint32_t *byte_lengths,
+                             uint32_t occurrence_count) {
+    if (document.occurrences.size() > MAX_TEXT_OCCURRENCES ||
+        occurrence_count > MAX_TEXT_OCCURRENCES - document.occurrences.size()) {
+        throw std::invalid_argument("text occurrence count is too large");
+    }
+    if (occurrence_count == 0) {
+        if (term_bytes_length != 0) {
+            throw std::invalid_argument("text occurrence term bytes are not fully described");
+        }
+        return;
+    }
+    if (!term_lengths || !byte_starts || !byte_lengths) {
+        throw std::invalid_argument("text occurrence arrays must not be null");
+    }
+    if (term_bytes_length != 0 && !term_bytes) {
+        throw std::invalid_argument("text occurrence term bytes must not be null");
+    }
+    size_t total_term_bytes = 0;
+    for (uint32_t index = 0; index < occurrence_count; ++index) {
+        if (term_lengths[index] == 0) {
+            throw std::invalid_argument("text occurrence term must not be empty");
+        }
+        if (term_lengths[index] > MAX_TEXT_TERM_BYTES ||
+            term_lengths[index] > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
+            throw std::invalid_argument("text occurrence term bytes are too large");
+        }
+        total_term_bytes += term_lengths[index];
+        if (byte_starts[index] > document.text.size() ||
+            byte_lengths[index] > document.text.size() - byte_starts[index] ||
+            !is_utf8_boundary(document.text, byte_starts[index]) ||
+            !is_utf8_boundary(document.text, byte_starts[index] + byte_lengths[index])) {
+            throw std::invalid_argument("text occurrence span is not on UTF-8 boundaries");
+        }
+    }
+    if (total_term_bytes != term_bytes_length) {
+        throw std::invalid_argument("text occurrence term lengths do not match term bytes");
+    }
+
+    std::vector<TextOccurrence> additions;
+    additions.reserve(occurrence_count);
+    size_t term_offset = 0;
+    for (uint32_t index = 0; index < occurrence_count; ++index) {
+        const auto term_length = term_lengths[index];
+        additions.push_back({
+            copy_text_bytes(term_bytes + term_offset, term_length,
+                            MAX_TEXT_TERM_BYTES, "text occurrence term"),
+            byte_starts[index],
+            byte_lengths[index],
+            static_cast<uint32_t>(document.occurrences.size() + index)});
+        term_offset += term_length;
+    }
+    document.occurrences.insert(document.occurrences.end(),
+                                std::make_move_iterator(additions.begin()),
+                                std::make_move_iterator(additions.end()));
+}
+
+void initialize_text_request(TextRequest &request, uint32_t kind, const char *field,
+                             const char *rank_profile) {
     validate_field_name(field);
     validate_rank_profile(rank_profile);
     if (*field == '\0' || *rank_profile == '\0') {
@@ -1995,37 +2051,64 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
     if (kind != 1 && kind != 2) {
         throw std::invalid_argument("unsupported text query kind");
     }
-    if ((kind == 1 && term_count != 1) || (kind == 2 && term_count == 0)) {
-        throw std::invalid_argument("invalid number of terms for text query kind");
-    }
-    if (term_count > MAX_TEXT_TERMS) {
-        throw std::invalid_argument("text term count is too large");
-    }
-    if (term_count != 0 && terms == nullptr) {
-        throw std::invalid_argument("text query terms must not be null");
-    }
     request.kind = kind;
     request.field = field;
     request.rank_profile = rank_profile;
-    request.terms.reserve(term_count);
-    request.positions.reserve(term_count);
+}
+
+void append_text_terms(TextRequest &request, const uint8_t *term_bytes,
+                       uint32_t term_bytes_length, const uint32_t *term_lengths,
+                       uint32_t term_count) {
+    if (request.terms.size() > MAX_TEXT_TERMS ||
+        term_count > MAX_TEXT_TERMS - request.terms.size()) {
+        throw std::invalid_argument("text term count is too large");
+    }
+    const auto resulting_count = request.terms.size() + term_count;
+    if ((request.kind == 1 && resulting_count != 1) ||
+        (request.kind == 2 && resulting_count == 0)) {
+        throw std::invalid_argument("invalid number of terms for text query kind");
+    }
+    if (term_count == 0) {
+        if (term_bytes_length != 0) {
+            throw std::invalid_argument("text query term bytes are not fully described");
+        }
+        return;
+    }
+    if (!term_lengths) {
+        throw std::invalid_argument("text query term lengths must not be null");
+    }
+    if (term_bytes_length != 0 && !term_bytes) {
+        throw std::invalid_argument("text query term bytes must not be null");
+    }
     size_t total_term_bytes = 0;
     for (uint32_t index = 0; index < term_count; ++index) {
-        const auto &input = terms[index];
-        if (input.term_length == 0) {
+        if (term_lengths[index] == 0) {
             throw std::invalid_argument("text query term must not be empty");
         }
-        if (input.position != index) {
-            throw std::invalid_argument("text query positions must be contiguous");
+        if (term_lengths[index] > MAX_TEXT_TERM_BYTES ||
+            term_lengths[index] > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
+            throw std::invalid_argument("text query term bytes are too large");
         }
-        if (input.term_length > MAX_TOTAL_TEXT_TERM_BYTES - total_term_bytes) {
-            throw std::invalid_argument("total text query term bytes are too large");
-        }
-        total_term_bytes += input.term_length;
-        request.terms.push_back(copy_text_bytes(input.term, input.term_length,
-                                                 MAX_TEXT_TERM_BYTES,
-                                                 "text query term"));
-        request.positions.push_back(input.position);
+        total_term_bytes += term_lengths[index];
+    }
+    if (total_term_bytes != term_bytes_length) {
+        throw std::invalid_argument("text query term lengths do not match term bytes");
+    }
+    std::vector<std::string> additions;
+    additions.reserve(term_count);
+    size_t term_offset = 0;
+    for (uint32_t index = 0; index < term_count; ++index) {
+        const auto term_length = term_lengths[index];
+        additions.push_back(copy_text_bytes(term_bytes + term_offset, term_length,
+                                            MAX_TEXT_TERM_BYTES, "text query term"));
+        term_offset += term_length;
+    }
+    request.terms.insert(request.terms.end(),
+                         std::make_move_iterator(additions.begin()),
+                         std::make_move_iterator(additions.end()));
+    request.positions.reserve(request.terms.size());
+    for (size_t index = request.positions.size(); index < request.terms.size(); ++index) {
+        request.positions.push_back(static_cast<uint32_t>(index));
     }
 }
 
@@ -2033,19 +2116,34 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
 
 extern "C" int32_t sk_text_document_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
-    const sk_text_occurrence *occurrences, uint32_t occurrence_count,
-    sk_text_document **out, sk_error *error) SK_NOEXCEPT {
+    sk_text_document **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !id || !field) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text document arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text document arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         auto document = std::make_unique<sk_text_document>();
-        fill_text_document(*document, id, field, text, text_length,
-                           occurrences, occurrence_count);
+        initialize_text_document(*document, id, field, text, text_length);
         *out = document.release();
+    });
+}
+
+extern "C" int32_t sk_text_document_add_occurrences(
+    sk_text_document *document, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document) {
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text document is null");
+    }
+    return invoke(error, error_capacity, [&] {
+        append_text_occurrences(*document, term_bytes, term_bytes_length, term_lengths,
+                                byte_starts, byte_lengths, occurrence_count);
     });
 }
 
@@ -2055,19 +2153,34 @@ extern "C" void sk_text_document_destroy(sk_text_document *document) SK_NOEXCEPT
 
 extern "C" int32_t sk_text_update_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
-    const sk_text_occurrence *occurrences, uint32_t occurrence_count,
-    sk_text_update **out, sk_error *error) SK_NOEXCEPT {
+    sk_text_update **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !id || !field) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text update arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         auto update = std::make_unique<sk_text_update>();
-        fill_text_document(*update, id, field, text, text_length,
-                           occurrences, occurrence_count);
+        initialize_text_document(*update, id, field, text, text_length);
         *out = update.release();
+    });
+}
+
+extern "C" int32_t sk_text_update_add_occurrences(
+    sk_text_update *update, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update) {
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text update is null");
+    }
+    return invoke(error, error_capacity, [&] {
+        append_text_occurrences(*update, term_bytes, term_bytes_length, term_lengths,
+                                byte_starts, byte_lengths, occurrence_count);
     });
 }
 
@@ -2076,19 +2189,34 @@ extern "C" void sk_text_update_destroy(sk_text_update *update) SK_NOEXCEPT {
 }
 
 extern "C" int32_t sk_text_request_create(
-    uint32_t kind, const char *field, const sk_text_query_term *terms,
-    uint32_t term_count, const char *rank_profile, sk_text_request **out,
-    sk_error *error) SK_NOEXCEPT {
+    uint32_t kind, const char *field, const char *rank_profile,
+    sk_text_request **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
     if (!out || !field || !rank_profile) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text request arguments must not be null");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text request arguments must not be null");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         auto request = std::make_unique<sk_text_request>();
-        fill_text_request(*request, kind, field, terms, term_count, rank_profile);
+        initialize_text_request(*request, kind, field, rank_profile);
         *out = request.release();
+    });
+}
+
+extern "C" int32_t sk_text_request_add_terms(
+    sk_text_request *request, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    uint32_t term_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request) {
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text request is null");
+    }
+    return invoke(error, error_capacity, [&] {
+        append_text_terms(*request, term_bytes, term_bytes_length, term_lengths, term_count);
     });
 }
 
@@ -2098,33 +2226,39 @@ extern "C" void sk_text_request_destroy(sk_text_request *request) SK_NOEXCEPT {
 
 extern "C" int32_t sk_engine_put_text(sk_engine *engine,
                                         const sk_text_document *document,
-                                        sk_error *error) SK_NOEXCEPT {
+                                        uint8_t *error,
+                                        uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !document) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text put arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text put arguments are invalid");
     }
-    return invoke(error, [&] { engine->impl->put_text(*document); });
+    return invoke(error, error_capacity, [&] { engine->impl->put_text(*document); });
 }
 
 extern "C" int32_t sk_engine_update_text(sk_engine *engine,
                                            const sk_text_update *update,
-                                           sk_error *error) SK_NOEXCEPT {
+                                           uint8_t *error,
+                                           uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !update) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text update arguments are invalid");
     }
-    return invoke(error, [&] { engine->impl->update_text(*update); });
+    return invoke(error, error_capacity, [&] { engine->impl->update_text(*update); });
 }
 
 extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
                                            const sk_text_request *request,
                                            sk_text_result **out_result,
-                                           sk_error *error) SK_NOEXCEPT {
+                                           uint8_t *error,
+                                           uint32_t error_capacity) SK_NOEXCEPT {
     if (out_result) {
         *out_result = nullptr;
     }
     if (!engine || !engine->impl || !request || !out_result) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text search arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text search arguments are invalid");
     }
-    return invoke(error, [&] {
+    return invoke(error, error_capacity, [&] {
         auto result = std::make_unique<sk_text_result>();
         result->hits = engine->impl->search_text(*request);
         *out_result = result.release();
@@ -2138,7 +2272,8 @@ extern "C" uint32_t sk_text_result_size(const sk_text_result *result) SK_NOEXCEP
 extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
                                        uint32_t index, const char **out_id,
                                        uint32_t *out_length, double *out_score,
-                                       sk_error *error) SK_NOEXCEPT {
+                                       uint8_t *error,
+                                       uint32_t error_capacity) SK_NOEXCEPT {
     if (out_id) {
         *out_id = nullptr;
     }
@@ -2149,12 +2284,14 @@ extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
         *out_score = 0.0;
     }
     if (!result || !out_id || !out_length || !out_score) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text result arguments are invalid");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text result arguments are invalid");
     }
     if (index >= result->hits.size()) {
-        return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text result index is out of bounds");
+        return set_error(error, error_capacity, SK_STATUS_INVALID_ARGUMENT,
+                         "text result index is out of bounds");
     }
-    clear_error(error);
+    clear_error(error, error_capacity);
     *out_id = result->hits[index].id.data();
     *out_length = static_cast<uint32_t>(result->hits[index].id.size());
     *out_score = result->hits[index].score;

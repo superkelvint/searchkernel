@@ -12,34 +12,6 @@ unsafe extern "C" {
 }
 
 #[cfg(test)]
-mod abi_layout_tests {
-    use super::*;
-    use std::mem::{align_of, offset_of, size_of};
-
-    #[test]
-    fn generated_layout_matches_the_frozen_c_header_layout() {
-        assert_eq!(size_of::<sk_text_occurrence>(), 24);
-        assert_eq!(align_of::<sk_text_occurrence>(), 8);
-        assert_eq!(offset_of!(sk_text_occurrence, term), 0);
-        assert_eq!(offset_of!(sk_text_occurrence, term_length), 8);
-        assert_eq!(offset_of!(sk_text_occurrence, byte_start), 12);
-        assert_eq!(offset_of!(sk_text_occurrence, byte_length), 16);
-        assert_eq!(offset_of!(sk_text_occurrence, position), 20);
-
-        assert_eq!(size_of::<sk_text_query_term>(), 16);
-        assert_eq!(align_of::<sk_text_query_term>(), 8);
-        assert_eq!(offset_of!(sk_text_query_term, term), 0);
-        assert_eq!(offset_of!(sk_text_query_term, term_length), 8);
-        assert_eq!(offset_of!(sk_text_query_term, position), 12);
-
-        assert_eq!(size_of::<sk_error>(), 516);
-        assert_eq!(align_of::<sk_error>(), 4);
-        assert_eq!(offset_of!(sk_error, code), 0);
-        assert_eq!(offset_of!(sk_error, message), 4);
-    }
-}
-
-#[cfg(test)]
 mod native_regression_tests {
     use super::{
         searchkernel_schema_identity_fd_reuse_regression,
@@ -62,5 +34,78 @@ mod native_regression_tests {
             result, 0,
             "transport destructor regression failed with code {result}"
         );
+    }
+}
+
+#[cfg(test)]
+mod text_soa_abi_regression_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn text_transport_uses_opaque_soa_builders() {
+        let _document_add: unsafe extern "C" fn(
+            *mut sk_text_document,
+            *const u8,
+            u32,
+            *const u32,
+            *const u32,
+            *const u32,
+            u32,
+            *mut u8,
+            u32,
+        ) -> i32 = sk_text_document_add_occurrences;
+        let _request_add: unsafe extern "C" fn(
+            *mut sk_text_request,
+            *const u8,
+            u32,
+            *const u32,
+            u32,
+            *mut u8,
+            u32,
+        ) -> i32 = sk_text_request_add_terms;
+    }
+
+    #[test]
+    fn text_soa_builder_validates_parallel_arrays_before_mutation() {
+        let id = CString::new("id").unwrap();
+        let field = CString::new("title").unwrap();
+        let text = b"quick fox";
+        let mut document = std::ptr::null_mut();
+        let mut error = [0_u8; SK_ERROR_MESSAGE_CAPACITY as usize];
+        let status = unsafe {
+            sk_text_document_create(
+                id.as_ptr(),
+                field.as_ptr(),
+                text.as_ptr(),
+                text.len() as u32,
+                &mut document,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_STATUS_OK as i32);
+        assert!(!document.is_null());
+
+        let term_bytes = b"quick";
+        let term_lengths = [4_u32];
+        let byte_starts = [0_u32];
+        let byte_lengths = [5_u32];
+        let status = unsafe {
+            sk_text_document_add_occurrences(
+                document,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                byte_starts.as_ptr(),
+                byte_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_STATUS_INVALID_ARGUMENT as i32);
+
+        unsafe { sk_text_document_destroy(document) };
     }
 }

@@ -4,7 +4,8 @@ pub const SK_STATUS_OK: u32 = 0;
 pub const SK_STATUS_INVALID_ARGUMENT: u32 = 1;
 pub const SK_STATUS_INTERNAL: u32 = 2;
 pub const SK_STATUS_OUT_OF_MEMORY: u32 = 3;
-pub const SK_NATIVE_ABI_VERSION: u32 = 1;
+pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
+pub const SK_NATIVE_ABI_VERSION: u32 = 2;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -50,61 +51,6 @@ pub struct sk_text_request {
 pub struct sk_text_result {
     _unused: [u8; 0],
 }
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct sk_text_occurrence {
-    pub term: *const u8,
-    pub term_length: u32,
-    pub byte_start: u32,
-    pub byte_length: u32,
-    pub position: u32,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of sk_text_occurrence"][::std::mem::size_of::<sk_text_occurrence>() - 24usize];
-    ["Alignment of sk_text_occurrence"][::std::mem::align_of::<sk_text_occurrence>() - 8usize];
-    ["Offset of field: sk_text_occurrence::term"]
-        [::std::mem::offset_of!(sk_text_occurrence, term) - 0usize];
-    ["Offset of field: sk_text_occurrence::term_length"]
-        [::std::mem::offset_of!(sk_text_occurrence, term_length) - 8usize];
-    ["Offset of field: sk_text_occurrence::byte_start"]
-        [::std::mem::offset_of!(sk_text_occurrence, byte_start) - 12usize];
-    ["Offset of field: sk_text_occurrence::byte_length"]
-        [::std::mem::offset_of!(sk_text_occurrence, byte_length) - 16usize];
-    ["Offset of field: sk_text_occurrence::position"]
-        [::std::mem::offset_of!(sk_text_occurrence, position) - 20usize];
-};
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct sk_text_query_term {
-    pub term: *const u8,
-    pub term_length: u32,
-    pub position: u32,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of sk_text_query_term"][::std::mem::size_of::<sk_text_query_term>() - 16usize];
-    ["Alignment of sk_text_query_term"][::std::mem::align_of::<sk_text_query_term>() - 8usize];
-    ["Offset of field: sk_text_query_term::term"]
-        [::std::mem::offset_of!(sk_text_query_term, term) - 0usize];
-    ["Offset of field: sk_text_query_term::term_length"]
-        [::std::mem::offset_of!(sk_text_query_term, term_length) - 8usize];
-    ["Offset of field: sk_text_query_term::position"]
-        [::std::mem::offset_of!(sk_text_query_term, position) - 12usize];
-};
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct sk_error {
-    pub code: i32,
-    pub message: [::std::os::raw::c_char; 512usize],
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of sk_error"][::std::mem::size_of::<sk_error>() - 516usize];
-    ["Alignment of sk_error"][::std::mem::align_of::<sk_error>() - 4usize];
-    ["Offset of field: sk_error::code"][::std::mem::offset_of!(sk_error, code) - 0usize];
-    ["Offset of field: sk_error::message"][::std::mem::offset_of!(sk_error, message) - 4usize];
-};
 unsafe extern "C" {
     pub fn sk_native_abi_version() -> u32;
 }
@@ -113,11 +59,16 @@ unsafe extern "C" {
         data_dir: *const ::std::os::raw::c_char,
         config_dir: *const ::std::os::raw::c_char,
         out_engine: *mut *mut sk_engine,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
-    pub fn sk_engine_close(engine: *mut sk_engine, out_error: *mut sk_error) -> i32;
+    pub fn sk_engine_close(
+        engine: *mut sk_engine,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_engine_destroy(engine: *mut sk_engine);
@@ -128,7 +79,8 @@ unsafe extern "C" {
         field: *const ::std::os::raw::c_char,
         value: i32,
         out_document: *mut *mut sk_document,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -140,7 +92,8 @@ unsafe extern "C" {
         field: *const ::std::os::raw::c_char,
         value: i32,
         out_update: *mut *mut sk_document_update,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -152,7 +105,8 @@ unsafe extern "C" {
         value: i32,
         limit: u32,
         out_request: *mut *mut sk_search_request,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -162,14 +116,16 @@ unsafe extern "C" {
     pub fn sk_engine_put(
         engine: *mut sk_engine,
         document: *const sk_document,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_engine_update(
         engine: *mut sk_engine,
         update: *const sk_document_update,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -177,7 +133,8 @@ unsafe extern "C" {
         engine: *mut sk_engine,
         document_id: *const ::std::os::raw::c_char,
         out_was_found: *mut i32,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -185,7 +142,8 @@ unsafe extern "C" {
         engine: *const sk_engine,
         request: *const sk_search_request,
         out_result: *mut *mut sk_search_result,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -197,7 +155,8 @@ unsafe extern "C" {
         index: u32,
         out_id: *mut *const ::std::os::raw::c_char,
         out_length: *mut u32,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -209,10 +168,22 @@ unsafe extern "C" {
         field: *const ::std::os::raw::c_char,
         text: *const u8,
         text_length: u32,
-        occurrences: *const sk_text_occurrence,
-        occurrence_count: u32,
         out_document: *mut *mut sk_text_document,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_text_document_add_occurrences(
+        document: *mut sk_text_document,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        byte_starts: *const u32,
+        byte_lengths: *const u32,
+        occurrence_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -224,10 +195,22 @@ unsafe extern "C" {
         field: *const ::std::os::raw::c_char,
         text: *const u8,
         text_length: u32,
-        occurrences: *const sk_text_occurrence,
-        occurrence_count: u32,
         out_update: *mut *mut sk_text_update,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_text_update_add_occurrences(
+        update: *mut sk_text_update,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        byte_starts: *const u32,
+        byte_lengths: *const u32,
+        occurrence_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -237,11 +220,21 @@ unsafe extern "C" {
     pub fn sk_text_request_create(
         kind: u32,
         field: *const ::std::os::raw::c_char,
-        terms: *const sk_text_query_term,
-        term_count: u32,
         rank_profile: *const ::std::os::raw::c_char,
         out_request: *mut *mut sk_text_request,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_text_request_add_terms(
+        request: *mut sk_text_request,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        term_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -251,14 +244,16 @@ unsafe extern "C" {
     pub fn sk_engine_put_text(
         engine: *mut sk_engine,
         document: *const sk_text_document,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_engine_update_text(
         engine: *mut sk_engine,
         update: *const sk_text_update,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -266,7 +261,8 @@ unsafe extern "C" {
         engine: *const sk_engine,
         request: *const sk_text_request,
         out_result: *mut *mut sk_text_result,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -279,7 +275,8 @@ unsafe extern "C" {
         out_id: *mut *const ::std::os::raw::c_char,
         out_length: *mut u32,
         out_score: *mut f64,
-        out_error: *mut sk_error,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {

@@ -201,6 +201,18 @@ A direct C++ oracle is a behavioral reference, not another production backend.
 
 ## Native boundary rules
 
+### Public native ABI aggregate rule
+
+The public native ABI must use opaque handles and fixed-width primitive
+arguments. Text or other repeated data must use primitive arrays (preferably a
+single structure-of-arrays transfer), never a public aggregate struct. A
+future aggregate may cross the boundary only after an executable benchmark
+demonstrates that the primitive representation is materially inadequate; a
+source-text check or intuition is not evidence. The reason is architectural:
+an aggregate creates a second C/Rust layout contract and, when it contains
+borrowed pointers, a second lifetime contract. New ABI additions must follow
+this rule as well.
+
 ### No Vespa types in the public Rust API
 
 The native ABI uses Search Kernel-owned values and opaque handles. Convert to
