@@ -331,6 +331,25 @@ fn existing_data_without_schema_identity_cannot_be_rebound() {
 }
 
 #[test]
+fn stale_schema_identity_temp_file_does_not_block_new_index() {
+    let (config, data) = compile_config(
+        "stale-identity-temp",
+        &Schema::new("typea").field(Field::new("title", FieldType::Text).indexed()),
+    );
+    fs::create_dir_all(&data).expect("create data directory");
+    fs::write(data.join(".searchkernel-schema.tmp"), b"partial identity")
+        .expect("create stale identity temporary file");
+
+    let engine = Engine::open(&data, &config)
+        .expect("a stale schema identity temporary file is not engine state");
+    engine.close().expect("close engine");
+
+    assert!(data.join(".searchkernel-schema").is_file());
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn schema_identity_covers_physical_generated_configuration() {
     let schema = text_schema();
     let (config, data) = compile_config("physical-identity", &schema);

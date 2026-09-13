@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
@@ -31,19 +31,29 @@ fn main() {
         );
     }
 
-    if let Some(output) = env::var_os("SK_NATIVE_BINDINGS_OUTPUT") {
-        let bindings = bindgen::Builder::default()
-            .header(header.to_string_lossy())
-            .allowlist_type("sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|text_occurrence|text_query_term|error)")
-            .allowlist_function("sk_.*")
-            .allowlist_var("SK_(NATIVE_ABI_VERSION|STATUS_.*)")
-            .layout_tests(true)
-            .generate_comments(false)
-            .generate()
-            .expect("generate native ABI bindings");
+    let bindings_check = env::var_os("SK_NATIVE_BINDINGS_CHECK").is_some();
+    if let Some(output) = env::var_os("SK_NATIVE_BINDINGS_OUTPUT").or_else(|| {
+        bindings_check.then(|| {
+            PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"))
+                .join("native_bindings.rs")
+                .into_os_string()
+        })
+    }) {
+        let bindings = generate_bindings(&header);
         bindings
-            .write_to_file(output)
+            .write_to_file(&output)
             .expect("write native ABI bindings");
+        if bindings_check {
+            let checked_in = fs::read(manifest_dir.join("src/bindings.rs"))
+                .expect("read checked-in native ABI bindings");
+            let generated = fs::read(&output).expect("read generated native ABI bindings");
+            if generated != checked_in {
+                panic!(
+                    "checked-in native ABI bindings are stale; regenerate them from {}",
+                    header.display()
+                );
+            }
+        }
     }
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
@@ -54,12 +64,16 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_OUTPUT");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_CHECK");
     println!("cargo:rerun-if-changed=src/abi.rs");
+    println!("cargo:rerun-if-changed=src/bindings.rs");
     println!("cargo:rerun-if-changed={}", header.display());
     println!("cargo:rerun-if-changed=abi_layout_check.c");
     println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
+    println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
     println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
+    println!("cargo:rerun-if-changed=../../native/vespa/transport_owner.h");
     cc::Build::new()
         .file(manifest_dir.join("abi_layout_check.c"))
         .include(sdk.join("include"))
@@ -74,8 +88,26 @@ fn main() {
         .compile("searchkernel_schema_identity_fd_test");
     cc::Build::new()
         .cpp(true)
+        .file(manifest_dir.join("transport_lifecycle_test.cc"))
+        .include(manifest_dir.join("../../native/vespa"))
+        .warnings(true)
+        .compile("searchkernel_transport_lifecycle_test");
+    cc::Build::new()
+        .cpp(true)
         .file(manifest_dir.join("abi_noexcept_check.cc"))
         .include(sdk.join("include"))
         .warnings(true)
         .compile("searchkernel_vespa_abi_noexcept");
+}
+
+fn generate_bindings(header: &Path) -> bindgen::Bindings {
+    bindgen::Builder::default()
+        .header(header.to_string_lossy())
+        .allowlist_type("sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|text_occurrence|text_query_term|error)")
+        .allowlist_function("sk_.*")
+        .allowlist_var("SK_(NATIVE_ABI_VERSION|STATUS_.*)")
+        .layout_tests(true)
+        .generate_comments(false)
+        .generate()
+        .expect("generate native ABI bindings")
 }

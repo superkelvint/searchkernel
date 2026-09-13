@@ -1,5 +1,6 @@
 #include "searchkernel_vespa.h"
 #include "file_descriptor.h"
+#include "transport_owner.h"
 
 #include <vespa/config-bucketspaces.h>
 #include <vespa/config-stor-distribution.h>
@@ -341,6 +342,8 @@ public:
     }
 };
 
+using EmbeddedTransportOwner = TransportOwner<FNET_Transport>;
+
 class EmbeddedThreadingService final : public proton::ISharedThreadingService {
     vespalib::ThreadExecutor &_shared;
     std::unique_ptr<vespalib::ISequencedTaskExecutor> _field_writer =
@@ -349,15 +352,17 @@ class EmbeddedThreadingService final : public proton::ISharedThreadingService {
             return 1;
         }, 1);
     vespalib::InvokeServiceImpl _invoke_service{10ms};
-    FNET_Transport _transport;
+    EmbeddedTransportOwner _transport;
     storage::spi::dummy::DummyBucketExecutor _bucket_executor{2};
 
 public:
-    explicit EmbeddedThreadingService(vespalib::ThreadExecutor &shared) : _shared(shared) { _transport.Start(); }
+    explicit EmbeddedThreadingService(vespalib::ThreadExecutor &shared) : _shared(shared) { _transport.start(); }
     ThreadExecutor &shared() override { return _shared; }
     vespalib::ISequencedTaskExecutor &field_writer() override { return *_field_writer; }
     vespalib::InvokeService &invokeService() override { return _invoke_service; }
-    FNET_Transport &transport() override { return _transport; }
+    FNET_Transport &transport() override { return _transport.transport(); }
+    void shutdown() { _transport.shutdown(); }
+    void shutdown_noexcept() noexcept { _transport.shutdown_noexcept(); }
     storage::spi::BucketExecutor &bucket_executor() override { return _bucket_executor; }
     const std::atomic<vespalib::steady_time> &nowRef() const override { return _invoke_service.nowRef(); }
 };
@@ -426,7 +431,9 @@ public:
                     throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
                                              filesystem_error.message());
                 }
-                if (entry->path().filename() != ".searchkernel.lock") {
+                const auto filename = entry->path().filename().string();
+                if (filename != ".searchkernel.lock" &&
+                    !filename.starts_with(".searchkernel-schema.tmp")) {
                     _had_existing_state = true;
                     break;
                 }
@@ -751,8 +758,8 @@ class EmbeddedEngine {
         if (had_existing_state) {
             throw std::invalid_argument("index data exists but schema identity is missing");
         }
-        const auto temporary_path = path.string() + ".tmp";
-        FileDescriptor fd(::open(temporary_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600));
+        auto temporary_path = path.string() + ".tmp.XXXXXX";
+        FileDescriptor fd(::mkstemp(temporary_path.data()));
         if (fd.get() < 0) {
             throw std::runtime_error("could not create index schema identity: " + temporary_path);
         }
@@ -779,12 +786,12 @@ class EmbeddedEngine {
             }
             installed = true;
             const auto directory = std::filesystem::path(data_dir);
-            const int directory_fd = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY);
-            if (directory_fd < 0) {
+            FileDescriptor directory_fd(::open(directory.c_str(), O_RDONLY | O_DIRECTORY));
+            if (directory_fd.get() < 0) {
                 throw std::runtime_error("could not open index directory for flushing: " + directory.string());
             }
-            const int sync_result = ::fsync(directory_fd);
-            const int directory_close_result = ::close(directory_fd);
+            const int sync_result = ::fsync(directory_fd.get());
+            const int directory_close_result = directory_fd.close();
             if (sync_result != 0 || directory_close_result != 0) {
                 throw std::runtime_error("could not flush index directory: " + directory.string());
             }
@@ -1328,7 +1335,7 @@ public:
                 _db->close();
                 _db.reset();
             }
-            _shared_service.transport().ShutDown(true);
+            _shared_service.shutdown();
             _state.store(State::Closed, std::memory_order_release);
         } catch (...) {
             _state.store(State::Failed, std::memory_order_release);
@@ -1358,7 +1365,7 @@ public:
             _db.reset();
         }
         try {
-            _shared_service.transport().ShutDown(true);
+            _shared_service.shutdown_noexcept();
         } catch (...) {
         }
     }

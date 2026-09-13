@@ -8,6 +8,7 @@ include!("bindings.rs");
 #[cfg(test)]
 unsafe extern "C" {
     fn searchkernel_schema_identity_fd_reuse_regression() -> i32;
+    fn searchkernel_transport_destructor_regression() -> i32;
 }
 
 #[cfg(test)]
@@ -40,7 +41,10 @@ mod abi_layout_tests {
 
 #[cfg(test)]
 mod native_regression_tests {
-    use super::searchkernel_schema_identity_fd_reuse_regression;
+    use super::{
+        searchkernel_schema_identity_fd_reuse_regression,
+        searchkernel_transport_destructor_regression,
+    };
 
     #[test]
     fn schema_identity_fd_cleanup_survives_descriptor_reuse() {
@@ -48,6 +52,15 @@ mod native_regression_tests {
         assert_eq!(
             result, 0,
             "descriptor reuse regression failed with code {result}"
+        );
+    }
+
+    #[test]
+    fn started_transport_is_shutdown_before_destruction() {
+        let result = unsafe { searchkernel_transport_destructor_regression() };
+        assert_eq!(
+            result, 0,
+            "transport destructor regression failed with code {result}"
         );
     }
 }
