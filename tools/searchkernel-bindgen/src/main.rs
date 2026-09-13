@@ -90,6 +90,18 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
     validate_schema(&response, "response")?;
     let request_types = verify_union(&request, "SearchKernel_FFI_V1_RequestEnvelope")?;
     let response_types = verify_union(&response, "SearchKernel_FFI_V1_ResponseEnvelope")?;
+    let support = fs::read_to_string(root.join("crates/searchkernel-json/src/codec.rs"))
+        .map_err(|e| format!("read codec support: {e}"))?;
+    for type_name in request_types.iter().chain(response_types.iter()) {
+        let functions = codec_support_functions(type_name)?;
+        for function in functions {
+            if !support.contains(&format!("fn {function}")) {
+                return Err(format!(
+                    "union member {type_name} has no codec support function {function}; generation aborted"
+                ));
+            }
+        }
+    }
     let mut digest = Sha256::new();
     digest.update(
         fs::read(temp.join("searchkernel_ffi_request.schema.json")).map_err(|e| e.to_string())?,
@@ -418,6 +430,36 @@ fn property_kind(value: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("unknown")
         .to_owned()
+}
+
+fn codec_support_functions(type_name: &str) -> Result<Vec<String>, String> {
+    let operation = operation_name(type_name)?;
+    let request = type_name.ends_with("Request");
+    if request {
+        let encoder = operation.clone();
+        let decoder = match operation.as_str() {
+            "describe" => "generated_empty_request_json".to_owned(),
+            "inspect_query" => "request_inspect".to_owned(),
+            other => format!("request_{other}"),
+        };
+        Ok(vec![encoder, decoder])
+    } else {
+        let encoder = if operation == "error" {
+            "error_from_json".to_owned()
+        } else if operation == "inspect_query" {
+            "response_inspect_from_json".to_owned()
+        } else {
+            format!("response_{operation}_from_json")
+        };
+        let decoder = if operation == "error" {
+            "response_error".to_owned()
+        } else if operation == "inspect_query" {
+            "response_inspect".to_owned()
+        } else {
+            format!("response_{operation}")
+        };
+        Ok(vec![encoder, decoder])
+    }
 }
 
 fn validate_schema(schema: &Value, label: &str) -> Result<(), String> {
