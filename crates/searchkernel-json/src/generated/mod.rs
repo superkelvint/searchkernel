@@ -17,3 +17,8 @@ pub mod search_kernel {
 pub(crate) mod schema {
     include!("schema_metadata.rs");
 }
+
+#[allow(dead_code)]
+pub(crate) mod json_types {
+    include!("json_types.rs");
+}
