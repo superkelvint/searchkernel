@@ -35,17 +35,12 @@ $flatc_bin \
     "$repo_root/api/searchkernel_ffi_response.fbs"
 
 for destination in \
-    "$repo_root/crates/searchkernel-ffi/generated/search_kernel/ffi/v1" \
-    "$repo_root/crates/searchkernel-json/src/generated/search_kernel/ffi/v1"; do
+    "$repo_root/crates/searchkernel-ffi/generated/search_kernel/ffi/v1"; do
     cp "$generated_transport/search_kernel/ffi/v1"/*_generated.rs "$destination/"
 done
-
-FLATC_PATH="$flatc_bin" cargo run -q -p searchkernel-bindgen -- generate
 
 # Keep checked-in generated code consistent with the repository's Rust style.
 rustfmt "$repo_root/crates/searchkernel-api/src/lib.rs" \
     "$repo_root/crates/searchkernel-api/src/generated/mod.rs" \
     "$repo_root/crates/searchkernel-api/src/generated/search_kernel/v1/"*_generated.rs \
-    "$repo_root/crates/searchkernel-ffi/generated/search_kernel/ffi/v1/"*_generated.rs \
-    "$repo_root/crates/searchkernel-json/src/generated/search_kernel/ffi/v1/"*_generated.rs \
-    "$repo_root/crates/searchkernel-json/src/generated_codec.rs"
+    "$repo_root/crates/searchkernel-ffi/generated/search_kernel/ffi/v1/"*_generated.rs
