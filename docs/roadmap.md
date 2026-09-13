@@ -382,7 +382,7 @@ Matcher
 
 M3 linguistics is reused for text terms.
 
-There is no YQL compatibility requirement.
+YQL must be supported as well.
 
 This API is distinct from the C-series high-level `index.search(...).filter(...)` API.
 
