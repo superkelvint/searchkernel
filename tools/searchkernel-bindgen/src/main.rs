@@ -90,6 +90,24 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
     validate_schema(&response, "response")?;
     let request_types = verify_union(&request, "SearchKernel_FFI_V1_RequestEnvelope")?;
     let response_types = verify_union(&response, "SearchKernel_FFI_V1_ResponseEnvelope")?;
+    run_command(
+        flatc,
+        &[
+            "--rust",
+            "--rust-module-root-file",
+            "--gen-all",
+            "-o",
+            temp.to_str().unwrap(),
+            &root
+                .join("api/searchkernel_ffi_request.fbs")
+                .to_string_lossy(),
+            &root
+                .join("api/searchkernel_ffi_response.fbs")
+                .to_string_lossy(),
+        ],
+    )?;
+    let request_tags = read_union_tags(flatc, temp, "request_payload_generated.rs")?;
+    let response_tags = read_union_tags(flatc, temp, "response_payload_generated.rs")?;
     let support = fs::read_to_string(root.join("crates/searchkernel-json/src/codec.rs"))
         .map_err(|e| format!("read codec support: {e}"))?;
     for type_name in request_types.iter().chain(response_types.iter()) {
@@ -173,6 +191,8 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
         &response,
         &request_types,
         &response_types,
+        &request_tags,
+        &response_tags,
         check,
     )?;
     generate_dispatch(root, &request_types, &response_types, check)?;
@@ -376,6 +396,42 @@ fn generate_json_types(
     Ok(())
 }
 
+fn read_union_tags(flatc: &Path, temp: &Path, file: &str) -> Result<BTreeMap<String, u8>, String> {
+    let path = temp.join("search_kernel/ffi/v1").join(file);
+    let source = fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "read FlatBuffers-generated union metadata from {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut tags = BTreeMap::new();
+    for line in source.lines() {
+        let line = line.trim();
+        let Some(line) = line.strip_prefix("pub const ") else {
+            continue;
+        };
+        let Some((name, value)) = line.split_once(": Self = Self(") else {
+            continue;
+        };
+        let value = value
+            .strip_suffix(");")
+            .ok_or_else(|| format!("invalid union tag declaration in {file}: {line}"))?
+            .parse::<u8>()
+            .map_err(|error| format!("invalid union tag in {file}: {error}"))?;
+        if name != "NONE" {
+            tags.insert(name.to_owned(), value);
+        }
+    }
+    if tags.is_empty() {
+        return Err(format!(
+            "FlatBuffers-generated union metadata was empty for {} (flatc {})",
+            path.display(),
+            flatc.display()
+        ));
+    }
+    Ok(tags)
+}
+
 fn json_type_name(name: &str) -> String {
     let mut output = String::from("Json");
     for part in name.split('_') {
@@ -454,6 +510,8 @@ fn generate_metadata(
     response: &Value,
     request_types: &[String],
     response_types: &[String],
+    request_tags: &BTreeMap<String, u8>,
+    response_tags: &BTreeMap<String, u8>,
     check: bool,
 ) -> Result<(), String> {
     let mut definitions = BTreeMap::<String, (Vec<String>, BTreeMap<String, String>)>::new();
@@ -535,11 +593,13 @@ fn generate_metadata(
         "    REQUEST_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
     );
     output.push_str("\npub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[\n");
-    for (index, name) in request_types.iter().enumerate() {
+    for name in request_types {
         output.push_str(&format!(
             "    ({:?}, {}),\n",
             operation_name(name)?,
-            index + 1
+            request_tags
+                .get(name)
+                .ok_or_else(|| format!("missing generated tag for {name}"))?
         ));
     }
     output.push_str("];\n");
@@ -557,11 +617,13 @@ fn generate_metadata(
         "    RESPONSE_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
     );
     output.push_str("\npub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[\n");
-    for (index, name) in response_types.iter().enumerate() {
+    for name in response_types {
         output.push_str(&format!(
             "    ({:?}, {}),\n",
             operation_name(name)?,
-            index + 1
+            response_tags
+                .get(name)
+                .ok_or_else(|| format!("missing generated tag for {name}"))?
         ));
     }
     output.push_str("];\n");
