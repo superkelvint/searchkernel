@@ -16,7 +16,7 @@ The verifier is intentionally structured so the following implementation mutatio
 | Return output on an ABI failure | malformed/protocol/pointer tests |
 | Make `sk_buffer_free` a no-op | live-buffer counter and repeated-cycle tests |
 | Key buffers only by address | allocation-token ownership regression |
-| Fail to clear a freed buffer | buffer-free test |
+| Free by pointer without validating the allocation token | allocation-token ownership regression |
 | Reuse closed handle values | handle lifecycle test |
 | Let a call start after close | concurrent-close test |
 | Cancel an already-started call on close | concurrent-close test |

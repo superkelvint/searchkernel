@@ -7,9 +7,10 @@ The production ABI is exactly:
 
 ```c
 uint32_t sk_abi_version(void);
-sk_status_t sk_call(sk_handle_t, const uint8_t *, size_t, sk_buffer_t *);
+sk_status_t sk_call(sk_handle_t, const uint8_t *, size_t,
+                    uint8_t **, size_t *, uint64_t *);
 sk_status_t sk_close(sk_handle_t);
-void sk_buffer_free(sk_buffer_t *);
+void sk_buffer_free(uint8_t *, uint64_t);
 ```
 
 The checked-in public header is generated from the Rust ABI declarations with
@@ -39,12 +40,13 @@ ABI statuses are transport/runtime failures only. Search Kernel semantic errors 
 
 `sk_call()` validates in this order:
 
-1. `out_response` must be non-null.
-2. The implementation immediately writes an empty `sk_buffer_t` to
-   `out_response` without inspecting its previous contents. This permits a
-   caller to provide ordinary uninitialized C out-parameter storage. The
-   caller must release any previously owned response before reusing that
-   storage.
+1. All three output pointers must be non-null. Any non-null output pointer is
+   initialized to its empty value before returning `INVALID_ARGUMENT`.
+2. The implementation immediately writes `NULL`, `0`, and `0` to
+   `out_data`, `out_len`, and `out_allocation_id` without inspecting their
+   previous contents. This permits ordinary uninitialized C out-parameter
+   storage. The caller must release any previously owned response before
+   reusing that storage.
 3. `handle` must be valid and open.
 4. `(request, request_len)` must be a valid pointer/length pair. `request == NULL && request_len > 0` is `INVALID_ARGUMENT`.
 5. The request envelope must be a complete verified FlatBuffer with file identifier `SKRQ`.
@@ -56,11 +58,13 @@ A zero-length request on a valid handle is `SK_STATUS_INVALID_REQUEST`.
 
 ## Output
 
-After validating that `out_response` is non-null, `sk_call()` immediately
-initializes all of its fields to the empty state without reading their prior
-contents. On every non-OK ABI status it remains empty.
+After validating the output pointer arguments, `sk_call()` immediately
+initializes all three outputs to the empty state without reading their prior
+contents. On every non-OK ABI status they remain empty.
 
-On `SK_STATUS_OK`, it contains exactly one complete `ResponseEnvelope` with file identifier `SKRS`.
+On `SK_STATUS_OK`, `*out_data` points to exactly one complete
+`ResponseEnvelope` with file identifier `SKRS`, `*out_len` gives its length,
+and `*out_allocation_id` gives its ownership token.
 
 Semantic errors are successful ABI calls containing `ResponseKind::Error`.
 
@@ -72,26 +76,28 @@ Input request bytes are borrowed only for the duration of `sk_call()`:
 - never freed by Search Kernel;
 - no pointer into them is retained after return.
 
-A non-empty output buffer is owned by Search Kernel and must be released with `sk_buffer_free()`.
+A non-empty output buffer is owned by Search Kernel and must be released with
+`sk_buffer_free(data, allocation_id)`.
 
-Each non-empty output contains a process-lifetime allocation token in
-`allocation_id`. The token is monotonically allocated and is never reused.
+Each non-empty output returns a process-lifetime allocation token in
+`*out_allocation_id`. The token is monotonically allocated and is never reused.
 Buffer ownership is keyed by this token and the corresponding `data` pointer;
-the caller-visible `len` is not used to release the allocation. Copying a
-descriptor and freeing the old copy after a later allocation cannot release
-the later allocation.
+the caller-visible length is not used to release the allocation. Copying the
+pointer/token pair and freeing the old copy after a later allocation cannot
+release the later allocation.
 
 `sk_buffer_free()`:
 
-- accepts `NULL` and does nothing;
-- accepts an empty buffer and does nothing;
+- accepts `data == NULL` and does nothing;
+- accepts an allocation ID of zero and does nothing;
 - releases a Search Kernel-owned response;
 - validates the allocation ID and corresponding data pointer before releasing
   an owned response;
-- sets `data = NULL`, `len = 0`, and `allocation_id = 0` before returning;
-- is therefore safe to call a second time on the same cleared struct.
+- is therefore safe to call a second time on the same pointer/token pair.
 
-Passing an arbitrary foreign pointer to `sk_buffer_free()` is outside the contract.
+`sk_buffer_free()` does not receive or modify the caller's length variable;
+the caller must stop using the response bytes after freeing them. Passing an
+arbitrary foreign pointer to `sk_buffer_free()` is outside the contract.
 
 ## Handles
 

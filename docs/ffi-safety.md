@@ -21,17 +21,14 @@ Request bytes are borrowed for the duration of `sk_call`. The request storage
 must remain readable, unchanged, and mapped until `sk_call` returns. The
 caller must not concurrently write, free, unmap, or reuse it.
 
-The `sk_buffer_t` descriptor passed as `out_response` is caller-owned writable
-storage. It must not be concurrently read, written, reused, or passed to
-`sk_buffer_free` while `sk_call` is using it.
+The three output arguments passed to `sk_call` are caller-owned writable
+storage. They must not be concurrently read, written, or reused while
+`sk_call` is using them. On success, `out_data` and `out_len` describe the
+response bytes and `out_allocation_id` is the ownership token.
 
-Likewise, one `sk_buffer_t` descriptor must not be passed concurrently to
-multiple `sk_buffer_free` calls. Independent copies of a descriptor may be
-freed independently; the allocation token and data-pointer checks ensure that
-only the first valid copy releases the underlying response allocation. A
-stale copy cannot release a later allocation, even if the allocator reuses the
-same address.
-
-The caller must ensure that no thread accesses a descriptor while another
-thread is mutating it. This includes the `data`, `len`, and `allocation_id`
-fields being cleared by `sk_buffer_free`.
+The caller releases the response with `sk_buffer_free(out_data,
+out_allocation_id)`. The token and data-pointer checks ensure that only the
+first valid pointer/token pair releases the underlying response allocation. A
+stale copied pair cannot release a later allocation, even if the allocator
+reuses the same address. `sk_buffer_free` does not modify the caller's length
+variable; the caller must stop using the bytes after freeing them.

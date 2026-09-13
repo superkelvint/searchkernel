@@ -29,21 +29,6 @@ typedef uint32_t sk_status_t;
 
 typedef uint64_t sk_handle_t;
 
-typedef struct sk_buffer_t {
-  /**
-   * Pointer to the response bytes, or null for an empty buffer.
-   */
-  uint8_t *data;
-  /**
-   * Number of response bytes visible to the caller.
-   */
-  size_t len;
-  /**
-   * Search Kernel's non-reused process-lifetime allocation token.
-   */
-  uint64_t allocation_id;
-} sk_buffer_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -53,25 +38,32 @@ uint32_t sk_abi_version(void);
 /**
  * # Safety
  *
- * `out_response` must point to writable storage for a `SkBuffer`. It is a
- * write-only out-parameter on entry, so its previous contents are not read.
- * `request` must point to `request_len` readable bytes when `request_len` is
- * non-zero.
+ * `out_data`, `out_len`, and `out_allocation_id` must point to writable
+ * storage. They are write-only out-parameters on entry, so their previous
+ * contents are not read.
+ * The caller must release any response previously held in that storage before
+ * reusing it, and must not access the storage concurrently with this call.
+ * `request` must point to `request_len` readable, unmodified bytes for the
+ * entire duration of this call when `request_len` is non-zero.
  */
 sk_status_t sk_call(sk_handle_t handle,
                     const uint8_t *request,
                     size_t request_len,
-                    struct sk_buffer_t *out_response);
+                    uint8_t **out_data,
+                    size_t *out_len,
+                    uint64_t *out_allocation_id);
 
 sk_status_t sk_close(sk_handle_t handle);
 
 /**
  * # Safety
  *
- * `buffer` must be null or point to a valid writable `SkBuffer`. If it is
- * non-empty, it must be a buffer previously returned by `sk_call`.
+ * `data` must be null or a pointer previously returned through `sk_call`,
+ * and `allocation_id` must be the matching token. Passing a stale or already
+ * released pair is harmless. The caller must not access the response bytes
+ * after releasing them.
  */
-void sk_buffer_free(struct sk_buffer_t *buffer);
+void sk_buffer_free(uint8_t *data, uint64_t allocation_id);
 
 #ifdef __cplusplus
 }  // extern "C"

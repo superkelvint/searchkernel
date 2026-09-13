@@ -1,4 +1,3 @@
-use crate::SkBuffer;
 use crate::{buffer, dispatch, handle, status};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -9,19 +8,35 @@ pub(crate) unsafe fn call(
     handle_value: u64,
     request: *const u8,
     request_len: usize,
-    out_response: *mut SkBuffer,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+    out_allocation_id: *mut u64,
 ) -> u32 {
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
-        call_inner(handle_value, request, request_len, out_response)
+        call_inner(
+            handle_value,
+            request,
+            request_len,
+            out_data,
+            out_len,
+            out_allocation_id,
+        )
     }));
     match result {
         Ok(status) => status,
         Err(_) => {
-            if !out_response.is_null() {
-                // `call_inner` only writes a validated empty output buffer at
-                // the final commit point. This cleanup also handles a panic
-                // after such a commit without leaking the allocation.
-                unsafe { buffer::free(out_response) };
+            if !out_data.is_null() && !out_len.is_null() && !out_allocation_id.is_null() {
+                // `call_inner` initializes all three outputs before dispatch.
+                // This cleanup also handles a panic after the response
+                // allocation was committed without leaking it.
+                let data = unsafe { *out_data };
+                let allocation_id = unsafe { *out_allocation_id };
+                unsafe { buffer::free(data, allocation_id) };
+                unsafe {
+                    *out_data = ptr::null_mut();
+                    *out_len = 0;
+                    *out_allocation_id = 0;
+                }
             }
             status::PANIC
         }
@@ -32,26 +47,32 @@ unsafe fn call_inner(
     handle_value: u64,
     request: *const u8,
     request_len: usize,
-    out_response: *mut SkBuffer,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+    out_allocation_id: *mut u64,
 ) -> u32 {
-    if out_response.is_null() {
+    if out_data.is_null() || out_len.is_null() || out_allocation_id.is_null() {
+        if !out_data.is_null() {
+            unsafe { *out_data = ptr::null_mut() };
+        }
+        if !out_len.is_null() {
+            unsafe { *out_len = 0 };
+        }
+        if !out_allocation_id.is_null() {
+            unsafe { *out_allocation_id = 0 };
+        }
         return status::INVALID_ARGUMENT;
     }
-    // The output descriptor is a write-only out-parameter. In particular, do
-    // not read its previous contents: ordinary C callers may pass a pointer to
-    // uninitialized storage. The caller is responsible for releasing any
-    // response it previously owned before reusing that storage.
-    // SAFETY: null was checked above; the C ABI requires writable storage for
-    // the complete SkBuffer object.
+    // These primitive outputs are write-only out-parameters. In particular,
+    // do not read their previous contents: ordinary C callers may pass
+    // pointers to uninitialized storage. The caller is responsible for
+    // releasing any response it previously owned before reusing that storage.
+    // SAFETY: all three pointers were checked above and the C ABI requires
+    // writable storage for each primitive output.
     unsafe {
-        ptr::write(
-            out_response,
-            SkBuffer {
-                data: ptr::null_mut(),
-                len: 0,
-                allocation_id: 0,
-            },
-        );
+        ptr::write(out_data, ptr::null_mut());
+        ptr::write(out_len, 0);
+        ptr::write(out_allocation_id, 0);
     }
 
     if request_len > MAX_REQUEST_BYTES {
@@ -77,9 +98,9 @@ unsafe fn call_inner(
     let request = unsafe { std::slice::from_raw_parts(request, request_len) };
     match dispatch::dispatch(&state, request) {
         Ok(response) => {
-            // SAFETY: `out_response` was validated before dispatch and the
-            // response allocation is registered before publishing its pointer.
-            unsafe { buffer::write(out_response, response) };
+            // SAFETY: all output pointers were validated before dispatch and
+            // the response allocation is registered before publishing it.
+            unsafe { buffer::write(out_data, out_len, out_allocation_id, response) };
             status::OK
         }
         Err(status) => status,
@@ -94,8 +115,10 @@ pub(crate) fn close(handle_value: u64) -> u32 {
     }
 }
 
-pub(crate) unsafe fn buffer_free(buffer: *mut SkBuffer) {
-    let _ = catch_unwind(AssertUnwindSafe(|| unsafe { buffer::free(buffer) }));
+pub(crate) unsafe fn buffer_free(data: *mut u8, allocation_id: u64) {
+    let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+        buffer::free(data, allocation_id)
+    }));
 }
 
 pub(crate) fn abi_version() -> u32 {
@@ -109,34 +132,40 @@ mod tests {
 
     #[test]
     fn oversized_requests_are_rejected_before_handle_lookup_or_parsing() {
-        let mut output = crate::SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 0,
-        };
+        let mut data = ptr::null_mut();
+        let mut len = 0;
+        let mut allocation_id = 0;
         // SAFETY: `output` is a valid empty buffer. The oversized request is
         // rejected before its null pointer could be dereferenced.
-        let result = unsafe { call(0, ptr::null(), MAX_REQUEST_BYTES + 1, &mut output) };
+        let result = unsafe {
+            call(
+                0,
+                ptr::null(),
+                MAX_REQUEST_BYTES + 1,
+                &mut data,
+                &mut len,
+                &mut allocation_id,
+            )
+        };
         assert_eq!(result, status::INVALID_ARGUMENT);
-        assert!(output.data.is_null());
-        assert_eq!(output.len, 0);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
     }
 
     #[test]
     fn output_is_initialized_before_handle_validation() {
         let mut sentinel = 0x5au8;
-        let mut output = crate::SkBuffer {
-            data: &mut sentinel,
-            len: usize::MAX,
-            allocation_id: u64::MAX,
-        };
-        // SAFETY: `output` is writable storage. Its fields intentionally hold
-        // arbitrary values to prove that `call` does not read them first.
-        let result = unsafe { call(0, ptr::null(), 0, &mut output) };
+        let mut data = &mut sentinel as *mut u8;
+        let mut len = usize::MAX;
+        let mut allocation_id = u64::MAX;
+        // SAFETY: all outputs are writable storage. Their values intentionally
+        // hold arbitrary values to prove that `call` does not read them first.
+        let result = unsafe { call(0, ptr::null(), 0, &mut data, &mut len, &mut allocation_id) };
         assert_eq!(result, status::INVALID_HANDLE);
-        assert!(output.data.is_null());
-        assert_eq!(output.len, 0);
-        assert_eq!(output.allocation_id, 0);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
         assert_eq!(sentinel, 0x5a);
     }
 }

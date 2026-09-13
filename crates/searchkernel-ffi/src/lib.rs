@@ -26,33 +26,43 @@ pub const SK_STATUS_UNSUPPORTED_OPERATION: u32 = 5;
 pub const SK_STATUS_INTERNAL: u32 = 6;
 pub const SK_STATUS_PANIC: u32 = 7;
 
-#[repr(C)]
-#[doc(hidden)]
-#[derive(Clone, Copy)]
-pub struct SkBuffer {
-    /// Pointer to the response bytes, or null for an empty buffer.
-    pub data: *mut u8,
-    /// Number of response bytes visible to the caller.
-    pub len: usize,
-    /// Search Kernel's non-reused process-lifetime allocation token.
-    pub allocation_id: u64,
-}
-
 #[cfg(test)]
-mod abi_layout_tests {
-    use super::SkBuffer;
-    use std::mem::{align_of, offset_of, size_of};
+mod primitive_output_abi_tests {
+    use super::{sk_buffer_free, sk_call, SK_STATUS_INVALID_ARGUMENT, SK_STATUS_INVALID_HANDLE};
+    use std::ptr;
 
     #[test]
-    fn buffer_layout_is_c_compatible() {
-        assert_eq!(
-            size_of::<SkBuffer>(),
-            size_of::<usize>() * 2 + size_of::<u64>()
-        );
-        assert_eq!(align_of::<SkBuffer>(), align_of::<u64>());
-        assert_eq!(offset_of!(SkBuffer, data), 0);
-        assert_eq!(offset_of!(SkBuffer, len), size_of::<usize>());
-        assert_eq!(offset_of!(SkBuffer, allocation_id), size_of::<usize>() * 2);
+    fn output_uses_primitive_out_parameters() {
+        let mut data = ptr::null_mut();
+        let mut len = usize::MAX;
+        let mut allocation_id = u64::MAX;
+        // SAFETY: all output pointers are valid writable storage, and the
+        // empty request is rejected before any request bytes are accessed.
+        let status = unsafe { sk_call(0, ptr::null(), 0, &mut data, &mut len, &mut allocation_id) };
+        assert_eq!(status, SK_STATUS_INVALID_HANDLE);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
+
+        let mut partial_len = usize::MAX;
+        let mut partial_allocation_id = u64::MAX;
+        // SAFETY: the non-null output pointers are valid writable storage.
+        let status = unsafe {
+            sk_call(
+                0,
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                &mut partial_len,
+                &mut partial_allocation_id,
+            )
+        };
+        assert_eq!(status, SK_STATUS_INVALID_ARGUMENT);
+        assert_eq!(partial_len, 0);
+        assert_eq!(partial_allocation_id, 0);
+
+        // SAFETY: null data with a zero token is the empty free operation.
+        unsafe { sk_buffer_free(ptr::null_mut(), 0) };
     }
 }
 
@@ -68,19 +78,33 @@ pub extern "C" fn sk_abi_version() -> u32 {
 #[no_mangle]
 /// # Safety
 ///
-/// `out_response` must point to writable storage for a `SkBuffer`. It is a
-/// write-only out-parameter on entry, so its previous contents are not read.
-/// `request` must point to `request_len` readable bytes when `request_len` is
-/// non-zero.
+/// `out_data`, `out_len`, and `out_allocation_id` must point to writable
+/// storage. They are write-only out-parameters on entry, so their previous
+/// contents are not read.
+/// The caller must release any response previously held in that storage before
+/// reusing it, and must not access the storage concurrently with this call.
+/// `request` must point to `request_len` readable, unmodified bytes for the
+/// entire duration of this call when `request_len` is non-zero.
 pub unsafe extern "C" fn sk_call(
     handle: SkHandle,
     request: *const u8,
     request_len: usize,
-    out_response: *mut SkBuffer,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+    out_allocation_id: *mut u64,
 ) -> SkStatus {
     // SAFETY: the function's caller is responsible for the documented
     // foreign pointer validity requirements.
-    unsafe { abi::call(handle, request, request_len, out_response) }
+    unsafe {
+        abi::call(
+            handle,
+            request,
+            request_len,
+            out_data,
+            out_len,
+            out_allocation_id,
+        )
+    }
 }
 
 #[no_mangle]
@@ -91,10 +115,12 @@ pub extern "C" fn sk_close(handle: SkHandle) -> SkStatus {
 #[no_mangle]
 /// # Safety
 ///
-/// `buffer` must be null or point to a valid writable `SkBuffer`. If it is
-/// non-empty, it must be a buffer previously returned by `sk_call`.
-pub unsafe extern "C" fn sk_buffer_free(buffer: *mut SkBuffer) {
-    // SAFETY: the function's caller is responsible for the documented buffer
-    // structure validity requirements.
-    unsafe { abi::buffer_free(buffer) }
+/// `data` must be null or a pointer previously returned through `sk_call`,
+/// and `allocation_id` must be the matching token. Passing a stale or already
+/// released pair is harmless. The caller must not access the response bytes
+/// after releasing them.
+pub unsafe extern "C" fn sk_buffer_free(data: *mut u8, allocation_id: u64) {
+    // SAFETY: the function's caller is responsible for the documented pointer
+    // and token validity requirements.
+    unsafe { abi::buffer_free(data, allocation_id) }
 }

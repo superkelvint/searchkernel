@@ -24,59 +24,59 @@ mod tests {
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct SkBuffer {
-        data: *mut u8,
-        len: usize,
-        allocation_id: u64,
-    }
-
     extern "C" {
         fn sk_abi_version() -> u32;
         fn sk_call(
             handle: u64,
             request: *const u8,
             request_len: usize,
-            out_response: *mut SkBuffer,
+            out_data: *mut *mut u8,
+            out_len: *mut usize,
+            out_allocation_id: *mut u64,
         ) -> u32;
         fn sk_close(handle: u64) -> u32;
-        fn sk_buffer_free(buffer: *mut SkBuffer);
+        fn sk_buffer_free(data: *mut u8, allocation_id: u64);
     }
 
-    fn raw_call(handle: u64, request: &[u8]) -> (u32, SkBuffer) {
-        let mut out = SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 0,
-        };
+    type RawResponse = (*mut u8, usize, u64);
+
+    fn raw_call(handle: u64, request: &[u8]) -> (u32, RawResponse) {
+        let mut data = ptr::null_mut();
+        let mut len = 0;
+        let mut allocation_id = 0;
         let request_ptr = if request.is_empty() {
             ptr::null()
         } else {
             request.as_ptr()
         };
-        let status = unsafe { sk_call(handle, request_ptr, request.len(), &mut out) };
-        (status, out)
+        let status = unsafe {
+            sk_call(
+                handle,
+                request_ptr,
+                request.len(),
+                &mut data,
+                &mut len,
+                &mut allocation_id,
+            )
+        };
+        (status, (data, len, allocation_id))
     }
 
-    fn take_response(mut buffer: SkBuffer) -> Vec<u8> {
-        let bytes = if buffer.data.is_null() || buffer.len == 0 {
+    fn take_response((data, len, allocation_id): RawResponse) -> Vec<u8> {
+        let bytes = if data.is_null() || len == 0 {
             Vec::new()
         } else {
-            unsafe { std::slice::from_raw_parts(buffer.data, buffer.len) }.to_vec()
+            unsafe { std::slice::from_raw_parts(data, len) }.to_vec()
         };
-        unsafe { sk_buffer_free(&mut buffer) };
-        assert!(buffer.data.is_null());
-        assert_eq!(buffer.len, 0);
-        assert_eq!(buffer.allocation_id, 0);
+        unsafe { sk_buffer_free(data, allocation_id) };
         bytes
     }
 
     fn call_ok(handle: u64, request: &[u8]) -> DecodedResponse {
         let (status, out) = raw_call(handle, request);
         assert_eq!(status, SK_STATUS_OK);
-        assert!(!out.data.is_null());
-        assert!(out.len > 0);
+        assert!(!out.0.is_null());
+        assert!(out.1 > 0);
         let bytes = take_response(out);
         decode_response(&bytes).expect("valid response envelope")
     }
@@ -780,15 +780,15 @@ mod tests {
         for end in 0..valid.len() {
             let (status, out) = raw_call(handle, &valid[..end]);
             assert_eq!(status, SK_STATUS_INVALID_REQUEST, "prefix length {end}");
-            assert!(out.data.is_null());
-            assert_eq!(out.len, 0);
+            assert!(out.0.is_null());
+            assert_eq!(out.1, 0);
         }
 
         for garbage in [vec![0u8], vec![0u8; 16], b"not-flatbuffers".to_vec()] {
             let (status, out) = raw_call(handle, &garbage);
             assert_eq!(status, SK_STATUS_INVALID_REQUEST);
-            assert!(out.data.is_null());
-            assert_eq!(out.len, 0);
+            assert!(out.0.is_null());
+            assert_eq!(out.1, 0);
         }
 
         assert!(backend.calls().is_empty());
@@ -806,14 +806,14 @@ mod tests {
         let wrong_version = wrap_request_with_protocol(RequestKind::Search, &inner, 2);
         let (status, out) = raw_call(handle, &wrong_version);
         assert_eq!(status, SK_STATUS_UNSUPPORTED_PROTOCOL);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
 
         let unknown = wrap_unknown_operation(250, &inner);
         let (status, out) = raw_call(handle, &unknown);
         assert_eq!(status, SK_STATUS_UNSUPPORTED_OPERATION);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
 
         assert!(backend.calls().is_empty());
         close_ok(handle);
@@ -841,8 +841,8 @@ mod tests {
         let other = register_index(context(), recorder.clone());
         let (status, out) = raw_call(other, &response_bytes);
         assert_eq!(status, SK_STATUS_INVALID_REQUEST);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
         assert!(recorder.calls().is_empty());
         close_ok(other);
     }
@@ -851,44 +851,93 @@ mod tests {
     fn output_is_write_only_and_pointer_rules_are_frozen() {
         let _guard = TEST_LOCK.lock().unwrap();
         assert_eq!(
-            unsafe { sk_call(0, ptr::null(), 0, ptr::null_mut()) },
+            unsafe {
+                sk_call(
+                    0,
+                    ptr::null(),
+                    0,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            },
             SK_STATUS_INVALID_ARGUMENT
         );
+
+        let mut partial_len = usize::MAX;
+        let mut partial_allocation_id = u64::MAX;
+        assert_eq!(
+            unsafe {
+                sk_call(
+                    0,
+                    ptr::null(),
+                    0,
+                    ptr::null_mut(),
+                    &mut partial_len,
+                    &mut partial_allocation_id,
+                )
+            },
+            SK_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(partial_len, 0);
+        assert_eq!(partial_allocation_id, 0);
 
         let context = context();
         let backend = Arc::new(RecordingBackend::new());
         let handle = register_index(context, backend);
 
         let mut sentinel = 0x5au8;
-        let original = (&mut sentinel as *mut u8, 1usize);
-        let mut non_empty = SkBuffer {
-            data: original.0,
-            len: original.1,
-            allocation_id: 0,
+        let mut data = &mut sentinel as *mut u8;
+        let mut len = 1usize;
+        let mut allocation_id = 0u64;
+        let status = unsafe {
+            sk_call(
+                0,
+                ptr::null(),
+                0,
+                &mut data,
+                &mut len,
+                &mut allocation_id,
+            )
         };
-        let status = unsafe { sk_call(0, ptr::null(), 0, &mut non_empty) };
         assert_eq!(status, SK_STATUS_INVALID_HANDLE);
-        assert!(non_empty.data.is_null());
-        assert_eq!(non_empty.len, 0);
-        assert_eq!(non_empty.allocation_id, 0);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
         assert_eq!(sentinel, 0x5a);
 
-        let mut out = SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 0,
+        let mut data = ptr::null_mut();
+        let mut len = 0;
+        let mut allocation_id = 0;
+        let status = unsafe {
+            sk_call(
+                handle,
+                ptr::null(),
+                1,
+                &mut data,
+                &mut len,
+                &mut allocation_id,
+            )
         };
-        let status = unsafe { sk_call(handle, ptr::null(), 1, &mut out) };
         assert_eq!(status, SK_STATUS_INVALID_ARGUMENT);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
-        assert_eq!(out.allocation_id, 0);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
 
-        let status = unsafe { sk_call(handle, ptr::null(), 0, &mut out) };
+        let status = unsafe {
+            sk_call(
+                handle,
+                ptr::null(),
+                0,
+                &mut data,
+                &mut len,
+                &mut allocation_id,
+            )
+        };
         assert_eq!(status, SK_STATUS_INVALID_REQUEST);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
-        assert_eq!(out.allocation_id, 0);
+        assert!(data.is_null());
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
 
         close_ok(handle);
     }
@@ -926,21 +975,21 @@ mod tests {
             assert_eq!(libc::mprotect(mapping, allocation_len, libc::PROT_READ), 0);
         }
 
-        let mut out = SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 0,
-        };
+        let mut data = ptr::null_mut();
+        let mut len = 0;
+        let mut allocation_id = 0;
         let status = unsafe {
             sk_call(
                 handle,
                 mapping.cast::<u8>(),
                 request.len(),
-                &mut out,
+                &mut data,
+                &mut len,
+                &mut allocation_id,
             )
         };
         assert_eq!(status, SK_STATUS_OK);
-        let bytes = take_response(out);
+        let bytes = take_response((data, len, allocation_id));
         assert!(matches!(
             decode_response(&bytes).unwrap(),
             DecodedResponse::Search(_)
@@ -970,36 +1019,30 @@ mod tests {
         ]));
         let handle = register_index(context, backend.clone());
         let request = wrap_request(RequestKind::Search, &inner);
-        let (status, mut out) = raw_call(handle, &request);
+        let (status, out) = raw_call(handle, &request);
         assert_eq!(status, SK_STATUS_OK);
         let stale = out;
-        let stale_id = out.allocation_id;
+        let stale_id = out.2;
         assert_eq!(live_buffer_count(), 1);
-        unsafe { sk_buffer_free(&mut out) };
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
-        assert_eq!(out.allocation_id, 0);
+        unsafe { sk_buffer_free(out.0, out.2) };
         assert_eq!(live_buffer_count(), 0);
-        unsafe { sk_buffer_free(&mut out) };
+        unsafe { sk_buffer_free(out.0, out.2) };
         assert_eq!(live_buffer_count(), 0);
-        unsafe { sk_buffer_free(ptr::null_mut()) };
+        unsafe { sk_buffer_free(ptr::null_mut(), 0) };
         assert_eq!(live_buffer_count(), 0);
 
         // A stale token cannot release a later buffer, even when presented
         // with the later buffer's pointer.
-        let (status, mut later) = raw_call(handle, &request);
+        let (status, later) = raw_call(handle, &request);
         assert_eq!(status, SK_STATUS_OK);
-        let later_id = later.allocation_id;
-        let mut stale_copy = stale;
-        unsafe { sk_buffer_free(&mut stale_copy) };
-        assert_eq!(later.allocation_id, later_id);
+        let later_id = later.2;
+        unsafe { sk_buffer_free(stale.0, stale.2) };
+        assert_eq!(later.2, later_id);
         assert_eq!(live_buffer_count(), 1);
-        let mut wrong_token = later;
-        wrong_token.allocation_id = stale_id;
-        unsafe { sk_buffer_free(&mut wrong_token) };
-        assert_eq!(later.allocation_id, later_id);
+        unsafe { sk_buffer_free(later.0, stale_id) };
+        assert_eq!(later.2, later_id);
         assert_eq!(live_buffer_count(), 1);
-        unsafe { sk_buffer_free(&mut later) };
+        unsafe { sk_buffer_free(later.0, later.2) };
         assert_eq!(live_buffer_count(), 0);
         backend.finish().unwrap();
         close_ok(handle);
@@ -1020,8 +1063,8 @@ mod tests {
         let request = wrap_request(RequestKind::Search, &search_bytes());
         let (status, out) = raw_call(first, &request);
         assert_eq!(status, SK_STATUS_INVALID_HANDLE);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
 
         close_ok(second);
         assert_eq!(live_handle_count(), 0);
@@ -1046,8 +1089,8 @@ mod tests {
         let request = wrap_request(RequestKind::Search, &search_bytes());
         let (status, out) = raw_call(handle, &request);
         assert_eq!(status, SK_STATUS_PANIC);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
         close_ok(handle);
 
         let usable = register_index(context(), Arc::new(RecordingBackend::new()));
@@ -1102,8 +1145,8 @@ mod tests {
 
         let (status, out) = raw_call(handle, &request);
         assert_eq!(status, SK_STATUS_INVALID_HANDLE);
-        assert!(out.data.is_null());
-        assert_eq!(out.len, 0);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
 
         release.wait();
         let (status, bytes) = worker.join().unwrap();

@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
-use std::ptr;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
-
-use crate::SkBuffer;
 
 static LIVE_BUFFERS: AtomicUsize = AtomicUsize::new(0);
 static NEXT_ALLOCATION_ID: AtomicU64 = AtomicU64::new(1);
@@ -31,15 +28,12 @@ pub(crate) fn live_count() -> usize {
     LIVE_BUFFERS.load(Ordering::Acquire)
 }
 
-pub(crate) unsafe fn write(out: *mut SkBuffer, bytes: Vec<u8>) {
-    // SAFETY: callers validate this output pointer and its empty state before
-    // reaching this commit function.
-    unsafe {
-        debug_assert!(!out.is_null());
-        debug_assert!((*out).data.is_null());
-        debug_assert_eq!((*out).len, 0);
-        debug_assert_eq!((*out).allocation_id, 0);
-    }
+pub(crate) unsafe fn write(
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+    out_allocation_id: *mut u64,
+    bytes: Vec<u8>,
+) {
     let boxed = bytes.into_boxed_slice();
     let len = boxed.len();
     debug_assert!(len > 0);
@@ -60,34 +54,18 @@ pub(crate) unsafe fn write(out: *mut SkBuffer, bytes: Vec<u8>) {
         },
     );
     debug_assert!(previous.is_none());
-    // SAFETY: `out` was validated by the ABI entrypoint and the allocation is
-    // retained in `BUFFERS` until `free` removes it.
+    // SAFETY: all outputs were validated by the ABI entrypoint and the
+    // allocation is retained in `BUFFERS` until `free` removes it.
     unsafe {
-        (*out).data = data;
-        (*out).len = len;
-        (*out).allocation_id = allocation_id;
+        *out_data = data;
+        *out_len = len;
+        *out_allocation_id = allocation_id;
     }
     LIVE_BUFFERS.fetch_add(1, Ordering::AcqRel);
 }
 
-/// Release a buffer created by `write` and clear its public state.
-pub(crate) unsafe fn free(buffer: *mut SkBuffer) {
-    if buffer.is_null() {
-        return;
-    }
-
-    // SAFETY: callers of this internal function provide a valid `SkBuffer`;
-    // the public contract only permits Search Kernel-owned non-empty buffers.
-    let data = unsafe { (*buffer).data };
-    let allocation_id = unsafe { (*buffer).allocation_id };
-    // Clear first so a second call is harmless even if deallocation changes
-    // process state unexpectedly.
-    unsafe {
-        (*buffer).data = ptr::null_mut();
-        (*buffer).len = 0;
-        (*buffer).allocation_id = 0;
-    }
-
+/// Release a pointer/token pair created by `write`.
+pub(crate) unsafe fn free(data: *mut u8, allocation_id: u64) {
     if data.is_null() {
         return;
     }
@@ -111,59 +89,67 @@ pub(crate) unsafe fn free(buffer: *mut SkBuffer) {
 #[cfg(all(test, feature = "ffi-test-support"))]
 mod tests {
     use super::*;
+    use std::ptr;
 
     #[test]
     fn owned_buffers_are_cleared_and_counted() {
-        let mut buffer = SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 0,
+        let mut data = ptr::null_mut();
+        let mut len = 0;
+        let mut allocation_id = 0;
+        // SAFETY: this test provides valid output pointers.
+        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![1, 2, 3]) };
+        assert!(!data.is_null());
+        assert_eq!(len, 3);
+        assert_eq!(live_count(), 1);
+
+        // SAFETY: this is the pointer/token pair returned by write.
+        unsafe { free(data, allocation_id) };
+        assert_eq!(live_count(), 0);
+
+        // SAFETY: releasing the same pointer/token pair again is harmless.
+        unsafe { free(data, allocation_id) };
+        assert_eq!(live_count(), 0);
+
+        // A copied pointer/token pair cannot release a later allocation,
+        // even if the allocator happens to reuse the same address.
+        let mut stale_data = ptr::null_mut();
+        let mut stale_len = 0;
+        let mut stale_id = 0;
+        unsafe {
+            write(
+                &mut stale_data,
+                &mut stale_len,
+                &mut stale_id,
+                vec![7, 8, 9],
+            )
         };
-        // SAFETY: this test provides a valid output structure.
-        unsafe { write(&mut buffer, vec![1, 2, 3]) };
-        assert!(!buffer.data.is_null());
-        assert_eq!(buffer.len, 3);
+        unsafe { free(stale_data, stale_id) };
+        let mut live_data = ptr::null_mut();
+        let mut live_len = 0;
+        let mut live_id = 0;
+        unsafe {
+            write(
+                &mut live_data,
+                &mut live_len,
+                &mut live_id,
+                vec![10, 11, 12],
+            )
+        };
+        unsafe { free(stale_data, stale_id) };
         assert_eq!(live_count(), 1);
 
-        // SAFETY: this is the buffer returned by the write function.
-        unsafe { free(&mut buffer) };
-        assert!(buffer.data.is_null());
-        assert_eq!(buffer.len, 0);
-        assert_eq!(live_count(), 0);
-
-        // SAFETY: the first free cleared the structure.
-        unsafe { free(&mut buffer) };
-        assert_eq!(live_count(), 0);
-
-        // A copied descriptor with an old token cannot release a later
-        // allocation, even if its address happens to be reused.
-        unsafe { write(&mut buffer, vec![7, 8, 9]) };
-        let stale = buffer;
-        unsafe { free(&mut buffer) };
-        unsafe { write(&mut buffer, vec![10, 11, 12]) };
-        let live_id = buffer.allocation_id;
-        let mut stale_copy = stale;
-        unsafe { free(&mut stale_copy) };
-        assert_eq!(buffer.allocation_id, live_id);
+        // A live pointer with an old token must not release the live
+        // allocation either.
+        unsafe { free(live_data, stale_id) };
         assert_eq!(live_count(), 1);
-
-        // Also verify the token independently of the address check: a
-        // descriptor with the live pointer but an old token must not release
-        // the live allocation.
-        let mut wrong_token = buffer;
-        wrong_token.allocation_id = stale.allocation_id;
-        unsafe { free(&mut wrong_token) };
-        assert_eq!(buffer.allocation_id, live_id);
-        assert_eq!(live_count(), 1);
-        unsafe { free(&mut buffer) };
+        unsafe { free(live_data, live_id) };
         assert_eq!(live_count(), 0);
 
-        // SAFETY: this test provides a valid output structure.
-        unsafe { write(&mut buffer, vec![4, 5, 6]) };
-        buffer.len = usize::MAX;
-        // SAFETY: the pointer is still the buffer returned by `write`; the
-        // deliberately corrupted public length must not affect deallocation.
-        unsafe { free(&mut buffer) };
+        // Length is not part of the deallocation API and cannot affect it.
+        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![4, 5, 6]) };
+        len = usize::MAX;
+        assert_eq!(len, usize::MAX);
+        unsafe { free(data, allocation_id) };
         assert_eq!(live_count(), 0);
     }
 }
