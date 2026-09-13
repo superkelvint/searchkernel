@@ -38,6 +38,8 @@ Running a search cluster to get full-text search, filtering, and ranking is a lo
 
 Vespa already solves the hard problems here — ranking, tensors, vector search, index fusion, durability — at a level of maturity that would take years to reproduce. Search Kernel doesn't try. It makes that engine usable as a library.
 
+If you are new to the codebase, start with the [codebase reading guide](docs/reading-the-codebase.md).
+
 ## What it is
 
 - **Embedded.** The engine runs in your process. An index is a directory, not a service.
