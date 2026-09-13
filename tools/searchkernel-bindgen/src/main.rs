@@ -242,23 +242,36 @@ fn generate_json_schema(
 }
 
 fn natural_envelope_schema(types: &[String], payload_name: &str) -> Value {
-    let operations = types
+    let branches = types
         .iter()
-        .filter_map(|type_name| operation_name(type_name).ok())
+        .filter_map(|type_name| {
+            let operation = operation_name(type_name).ok()?;
+            let payload = if payload_name == "response" {
+                serde_json::json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [operation.clone()],
+                    "properties": {
+                        operation.clone(): {"$ref": format!("#/payload_definitions/{payload_name}/{type_name}")}
+                    }
+                })
+            } else {
+                serde_json::json!({"$ref": format!("#/payload_definitions/{payload_name}/{type_name}")})
+            };
+            Some(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocol_version", "operation", payload_name],
+                "properties": {
+                    "protocol_version": {"type": "integer", "minimum": 0, "maximum": 4294967295u64},
+                    "operation": {"const": operation},
+                    payload_name: payload,
+                }
+            }))
+        })
         .collect::<Vec<_>>();
     serde_json::json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["protocol_version", "operation", payload_name],
-        "properties": {
-            "protocol_version": {"type": "integer", "minimum": 0, "maximum": 4294967295u64},
-            "operation": {"type": "string", "enum": operations},
-            payload_name: {
-                "oneOf": types.iter().map(|type_name| {
-                    serde_json::json!({"$ref": format!("#/payload_definitions/{payload_name}/{type_name}")})
-                }).collect::<Vec<_>>()
-            }
-        },
+        "oneOf": branches,
         "x-union-members": types,
         "x-union-presentation": "operation selects the natural payload object"
     })
@@ -273,16 +286,30 @@ fn natural_payload_definitions(schema: &Value, direction: &str) -> Value {
     for (type_name, definition) in definitions {
         output.insert(
             type_name.clone(),
-            natural_payload_definition(definition, direction),
+            natural_payload_definition(type_name, definition, direction),
         );
     }
     Value::Object(output)
 }
 
-fn natural_payload_definition(definition: &Value, direction: &str) -> Value {
+fn natural_payload_definition(type_name: &str, definition: &Value, direction: &str) -> Value {
     let Some(object) = definition.as_object() else {
         return definition.clone();
     };
+    if let Some(values) = object.get("enum").and_then(Value::as_array) {
+        let mut output = object.clone();
+        output.insert(
+            "enum".to_owned(),
+            Value::Array(
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|value| Value::String(schema_snake(value)))
+                    .collect(),
+            ),
+        );
+        return Value::Object(output);
+    }
     let mut output = object.clone();
     if let Some(properties) = object.get("properties").and_then(Value::as_object) {
         let mut natural = serde_json::Map::new();
@@ -290,11 +317,142 @@ fn natural_payload_definition(definition: &Value, direction: &str) -> Value {
             if name.ends_with("_type") {
                 continue;
             }
-            natural.insert(name.clone(), value.clone());
+            natural.insert(
+                name.clone(),
+                natural_property(type_name, name, value, direction),
+            );
         }
         output.insert("properties".to_owned(), Value::Object(natural));
     }
     rewrite_schema_refs(&Value::Object(output), direction)
+}
+
+fn natural_property(type_name: &str, field: &str, value: &Value, direction: &str) -> Value {
+    if value.get("anyOf").is_some() {
+        return natural_union_schema(value, direction);
+    }
+    if let Some(reference) = value.get("$ref").and_then(Value::as_str) {
+        let name = reference.rsplit('/').next().unwrap_or(reference);
+        let short = name.strip_prefix("SearchKernel_V1_").unwrap_or(name);
+        return match short {
+            "OptionalBool" => serde_json::json!({"type": "boolean"}),
+            "OptionalDouble" => serde_json::json!({"type": "number"}),
+            "OptionalUInt32" => {
+                serde_json::json!({"type": "integer", "minimum": 0, "maximum": 4294967295u64})
+            }
+            "OptionalMissingPlacement" => {
+                serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/SearchKernel_V1_MissingPlacement")})
+            }
+            "BytesValue" if field == "value" => serde_json::json!({"type": "string"}),
+            "Int64Value" | "UInt64Value" if field == "value" => {
+                serde_json::json!({"type": "string", "pattern": "^-?[0-9]+$"})
+            }
+            _ => serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/{name}")}),
+        };
+    }
+    if field == "value"
+        && matches!(
+            type_name,
+            "SearchKernel_V1_Int64Value"
+                | "SearchKernel_V1_UInt64Value"
+                | "SearchKernel_V1_BytesValue"
+        )
+    {
+        return if type_name.ends_with("BytesValue") {
+            serde_json::json!({"type": "string"})
+        } else {
+            serde_json::json!({"type": "string", "pattern": "^-?[0-9]+$"})
+        };
+    }
+    if value.get("type").and_then(Value::as_str) == Some("array") {
+        if matches!(
+            (type_name, field),
+            ("SearchKernel_V1_Document", "fields")
+                | ("SearchKernel_V1_Analyzer", "options")
+                | ("SearchKernel_V1_ValueObject", "fields")
+                | ("SearchKernel_V1_ErrorDetail", "metadata")
+        ) {
+            let item = if field == "metadata" {
+                serde_json::json!({"type": "string"})
+            } else {
+                serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/SearchKernel_V1_Value")})
+            };
+            return serde_json::json!({"type": "object", "additionalProperties": item});
+        }
+        let item = value
+            .get("items")
+            .map(|item| natural_property(type_name, field, item, direction))
+            .unwrap_or_else(|| serde_json::json!({}));
+        return serde_json::json!({"type": "array", "items": item});
+    }
+    value.clone()
+}
+
+fn natural_union_schema(value: &Value, direction: &str) -> Value {
+    let variants = value
+        .get("anyOf")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|variant| variant.get("$ref").and_then(Value::as_str))
+        .filter_map(|reference| reference.rsplit('/').next())
+        .map(|name| {
+            let key = natural_variant_name(name);
+            let payload = if key == "null" {
+                serde_json::json!({"type": "null"})
+            } else {
+                serde_json::json!({"$ref": format!("#/payload_definitions/{direction}/{name}")})
+            };
+            serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": [key.clone()],
+                "properties": {key: payload}
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({"oneOf": variants})
+}
+
+fn natural_variant_name(name: &str) -> String {
+    match name.strip_prefix("SearchKernel_V1_").unwrap_or(name) {
+        "NullValueValue" => "null".to_owned(),
+        "BoolValue" => "bool".to_owned(),
+        "Int64Value" => "int64".to_owned(),
+        "UInt64Value" => "uint64".to_owned(),
+        "Float64Value" => "float64".to_owned(),
+        "StringValue" => "string".to_owned(),
+        "BytesValue" => "bytes".to_owned(),
+        "ValueList" => "list".to_owned(),
+        "ValueObject" => "object".to_owned(),
+        "FilterAnd" | "QueryAnd" => "and".to_owned(),
+        "FilterOr" | "QueryOr" => "or".to_owned(),
+        "FilterNot" | "QueryNot" => "not".to_owned(),
+        "FilterComparison" => "comparison".to_owned(),
+        "FilterRange" => "range".to_owned(),
+        "FilterExists" => "exists".to_owned(),
+        "TermQuery" => "term_query".to_owned(),
+        "DefaultRelevanceV1" => "default_relevance_v1".to_owned(),
+        "Bm25Ranking" => "bm25_ranking".to_owned(),
+        "SetField" => "set_field".to_owned(),
+        "UnsetField" => "unset_field".to_owned(),
+        "Analyzer" => "analyzer".to_owned(),
+        "AnalyzeFieldTarget" => "field".to_owned(),
+        other => schema_snake(other),
+    }
+}
+
+fn schema_snake(value: &str) -> String {
+    value
+        .chars()
+        .enumerate()
+        .fold(String::new(), |mut output, (index, character)| {
+            if character.is_ascii_uppercase() && index != 0 {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+            output
+        })
 }
 
 fn rewrite_schema_refs(value: &Value, direction: &str) -> Value {

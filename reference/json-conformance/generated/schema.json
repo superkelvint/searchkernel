@@ -2,65 +2,206 @@
   "$schema": "https://json-schema.org/draft/2019-09/schema",
   "definitions": {
     "request": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "enum": [
-            "insert",
-            "upsert",
-            "patch",
-            "delete",
-            "get",
-            "search",
-            "analyze",
-            "describe",
-            "inspect_query"
-          ],
-          "type": "string"
-        },
-        "protocol_version": {
-          "maximum": 4294967295,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "request": {
-          "oneOf": [
-            {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "insert"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_InsertRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "upsert"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_UpsertRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "patch"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_PatchRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "delete"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_DeleteRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "get"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_GetRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "search"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "analyze"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzeRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "describe"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_DescribeRequest"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "inspect_query"
             },
-            {
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request": {
               "$ref": "#/payload_definitions/request/SearchKernel_V1_InspectQueryRequest"
             }
-          ]
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "request"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "protocol_version",
-        "operation",
-        "request"
       ],
-      "type": "object",
       "x-union-members": [
         "SearchKernel_V1_InsertRequest",
         "SearchKernel_V1_UpsertRequest",
@@ -75,69 +216,318 @@
       "x-union-presentation": "operation selects the natural payload object"
     },
     "response": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "enum": [
-            "insert",
-            "upsert",
-            "patch",
-            "delete",
-            "get",
-            "search",
-            "analyze",
-            "error",
-            "describe",
-            "inspect_query"
-          ],
-          "type": "string"
-        },
-        "protocol_version": {
-          "maximum": 4294967295,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "response": {
-          "oneOf": [
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_InsertResult"
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "insert"
             },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_UpsertResult"
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
             },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_DeleteResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_GetResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_Error"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_DescribeResult"
-            },
-            {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_InspectQueryResult"
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "insert": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_InsertResult"
+                }
+              },
+              "required": [
+                "insert"
+              ],
+              "type": "object"
             }
-          ]
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "upsert"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "upsert": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_UpsertResult"
+                }
+              },
+              "required": [
+                "upsert"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "patch"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "patch": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchResult"
+                }
+              },
+              "required": [
+                "patch"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "delete"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "delete": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_DeleteResult"
+                }
+              },
+              "required": [
+                "delete"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "get"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "get": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_GetResult"
+                }
+              },
+              "required": [
+                "get"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "search"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "search": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchResult"
+                }
+              },
+              "required": [
+                "search"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "analyze"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "analyze": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeResult"
+                }
+              },
+              "required": [
+                "analyze"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "error"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_Error"
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "describe"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "describe": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_DescribeResult"
+                }
+              },
+              "required": [
+                "describe"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "inspect_query"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "response": {
+              "additionalProperties": false,
+              "properties": {
+                "inspect_query": {
+                  "$ref": "#/payload_definitions/response/SearchKernel_V1_InspectQueryResult"
+                }
+              },
+              "required": [
+                "inspect_query"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "protocol_version",
+            "operation",
+            "response"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "protocol_version",
-        "operation",
-        "response"
       ],
-      "type": "object",
       "x-union-members": [
         "SearchKernel_V1_InsertResult",
         "SearchKernel_V1_UpsertResult",
@@ -160,33 +550,114 @@
         "additionalProperties": false,
         "properties": {
           "payload": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_InsertRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "insert_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_InsertRequest"
+                  }
+                },
+                "required": [
+                  "insert_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_UpsertRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "upsert_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_UpsertRequest"
+                  }
+                },
+                "required": [
+                  "upsert_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_PatchRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "patch_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_PatchRequest"
+                  }
+                },
+                "required": [
+                  "patch_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_DeleteRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "delete_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_DeleteRequest"
+                  }
+                },
+                "required": [
+                  "delete_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_GetRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "get_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_GetRequest"
+                  }
+                },
+                "required": [
+                  "get_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "search_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_SearchRequest"
+                  }
+                },
+                "required": [
+                  "search_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzeRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "analyze_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzeRequest"
+                  }
+                },
+                "required": [
+                  "analyze_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_DescribeRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "describe_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_DescribeRequest"
+                  }
+                },
+                "required": [
+                  "describe_request"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_InspectQueryRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "inspect_query_request": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_InspectQueryRequest"
+                  }
+                },
+                "required": [
+                  "inspect_query_request"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -200,16 +671,16 @@
       },
       "SearchKernel_FFI_V1_RequestPayload": {
         "enum": [
-          "NONE",
-          "SearchKernel_V1_InsertRequest",
-          "SearchKernel_V1_UpsertRequest",
-          "SearchKernel_V1_PatchRequest",
-          "SearchKernel_V1_DeleteRequest",
-          "SearchKernel_V1_GetRequest",
-          "SearchKernel_V1_SearchRequest",
-          "SearchKernel_V1_AnalyzeRequest",
-          "SearchKernel_V1_DescribeRequest",
-          "SearchKernel_V1_InspectQueryRequest"
+          "n_o_n_e",
+          "search_kernel__v1__insert_request",
+          "search_kernel__v1__upsert_request",
+          "search_kernel__v1__patch_request",
+          "search_kernel__v1__delete_request",
+          "search_kernel__v1__get_request",
+          "search_kernel__v1__search_request",
+          "search_kernel__v1__analyze_request",
+          "search_kernel__v1__describe_request",
+          "search_kernel__v1__inspect_query_request"
         ],
         "type": "string"
       },
@@ -229,12 +700,30 @@
             "type": "string"
           },
           "target": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_Analyzer"
+                "additionalProperties": false,
+                "properties": {
+                  "analyzer": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Analyzer"
+                  }
+                },
+                "required": [
+                  "analyzer"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzeFieldTarget"
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_AnalyzeFieldTarget"
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -258,9 +747,9 @@
       },
       "SearchKernel_V1_AnalyzeTarget": {
         "enum": [
-          "NONE",
-          "Analyzer",
-          "AnalyzeFieldTarget"
+          "n_o_n_e",
+          "analyzer",
+          "analyze_field_target"
         ],
         "type": "string"
       },
@@ -298,10 +787,10 @@
             "type": "string"
           },
           "options": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           },
           "version": {
             "maximum": 4294967295,
@@ -329,25 +818,20 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "items": {
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": "array"
+            "type": "string"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_ComparisonOp": {
         "enum": [
-          "Unspecified",
-          "Eq",
-          "Ne",
-          "Lt",
-          "Lte",
-          "Gt",
-          "Gte"
+          "unspecified",
+          "eq",
+          "ne",
+          "lt",
+          "lte",
+          "gt",
+          "gte"
         ],
         "type": "string"
       },
@@ -395,10 +879,10 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           },
           "id": {
             "type": "string"
@@ -429,16 +913,16 @@
       },
       "SearchKernel_V1_ErrorCode": {
         "enum": [
-          "Unspecified",
-          "InvalidArgument",
-          "NotFound",
-          "AlreadyExists",
-          "FailedPrecondition",
-          "Conflict",
-          "Unsupported",
-          "ResourceExhausted",
-          "Internal",
-          "Unavailable"
+          "unspecified",
+          "invalid_argument",
+          "not_found",
+          "already_exists",
+          "failed_precondition",
+          "conflict",
+          "unsupported",
+          "resource_exhausted",
+          "internal",
+          "unavailable"
         ],
         "type": "string"
       },
@@ -452,10 +936,10 @@
             "type": "string"
           },
           "metadata": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_StringEntry"
+            "additionalProperties": {
+              "type": "string"
             },
-            "type": "array"
+            "type": "object"
           },
           "path": {
             "type": "string"
@@ -470,7 +954,9 @@
             "type": "string"
           },
           "limit": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "sort": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalFacetSort"
@@ -495,11 +981,11 @@
       },
       "SearchKernel_V1_FacetSort": {
         "enum": [
-          "Unspecified",
-          "CountDesc",
-          "CountAsc",
-          "ValueAsc",
-          "ValueDesc"
+          "unspecified",
+          "count_desc",
+          "count_asc",
+          "value_asc",
+          "value_desc"
         ],
         "type": "string"
       },
@@ -519,9 +1005,9 @@
       },
       "SearchKernel_V1_FieldCardinality": {
         "enum": [
-          "Unspecified",
-          "Single",
-          "Multi"
+          "unspecified",
+          "single",
+          "multi"
         ],
         "type": "string"
       },
@@ -535,10 +1021,10 @@
             "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldCardinality"
           },
           "facetable": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "filterable": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "kind": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldKind"
@@ -547,25 +1033,25 @@
             "type": "string"
           },
           "searchable": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "sortable": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "stored": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_FieldKind": {
         "enum": [
-          "Unspecified",
-          "Text",
-          "Keyword",
-          "Int64",
-          "Float64",
-          "Bool"
+          "unspecified",
+          "text",
+          "keyword",
+          "int64",
+          "float64",
+          "bool"
         ],
         "type": "string"
       },
@@ -621,24 +1107,78 @@
         "additionalProperties": false,
         "properties": {
           "expr": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterAnd"
+                "additionalProperties": false,
+                "properties": {
+                  "and": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterAnd"
+                  }
+                },
+                "required": [
+                  "and"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterOr"
+                "additionalProperties": false,
+                "properties": {
+                  "or": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterOr"
+                  }
+                },
+                "required": [
+                  "or"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterNot"
+                "additionalProperties": false,
+                "properties": {
+                  "not": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterNot"
+                  }
+                },
+                "required": [
+                  "not"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterComparison"
+                "additionalProperties": false,
+                "properties": {
+                  "comparison": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterComparison"
+                  }
+                },
+                "required": [
+                  "comparison"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterRange"
+                "additionalProperties": false,
+                "properties": {
+                  "range": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterRange"
+                  }
+                },
+                "required": [
+                  "range"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExists"
+                "additionalProperties": false,
+                "properties": {
+                  "exists": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_FilterExists"
+                  }
+                },
+                "required": [
+                  "exists"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -647,13 +1187,13 @@
       },
       "SearchKernel_V1_FilterExprKind": {
         "enum": [
-          "NONE",
-          "FilterAnd",
-          "FilterOr",
-          "FilterNot",
-          "FilterComparison",
-          "FilterRange",
-          "FilterExists"
+          "n_o_n_e",
+          "filter_and",
+          "filter_or",
+          "filter_not",
+          "filter_comparison",
+          "filter_range",
+          "filter_exists"
         ],
         "type": "string"
       },
@@ -685,10 +1225,10 @@
             "type": "string"
           },
           "include_lower": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "include_upper": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "lower": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
@@ -806,7 +1346,7 @@
             "type": "string"
           },
           "score": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalDouble"
+            "type": "number"
           }
         },
         "type": "object"
@@ -869,25 +1409,24 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_MissingPlacement": {
         "enum": [
-          "Unspecified",
-          "First",
-          "Last"
+          "unspecified",
+          "first",
+          "last"
         ],
         "type": "string"
       },
       "SearchKernel_V1_NullValue": {
         "enum": [
-          "Unspecified",
-          "Null"
+          "unspecified",
+          "null"
         ],
         "type": "string"
       },
@@ -951,12 +1490,30 @@
         "additionalProperties": false,
         "properties": {
           "operation": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_SetField"
+                "additionalProperties": false,
+                "properties": {
+                  "set_field": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_SetField"
+                  }
+                },
+                "required": [
+                  "set_field"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_UnsetField"
+                "additionalProperties": false,
+                "properties": {
+                  "unset_field": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_UnsetField"
+                  }
+                },
+                "required": [
+                  "unset_field"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -965,9 +1522,9 @@
       },
       "SearchKernel_V1_PatchOperationKind": {
         "enum": [
-          "NONE",
-          "SetField",
-          "UnsetField"
+          "n_o_n_e",
+          "set_field",
+          "unset_field"
         ],
         "type": "string"
       },
@@ -1011,18 +1568,54 @@
         "additionalProperties": false,
         "properties": {
           "expr": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_TermQuery"
+                "additionalProperties": false,
+                "properties": {
+                  "term_query": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_TermQuery"
+                  }
+                },
+                "required": [
+                  "term_query"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryAnd"
+                "additionalProperties": false,
+                "properties": {
+                  "and": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryAnd"
+                  }
+                },
+                "required": [
+                  "and"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryOr"
+                "additionalProperties": false,
+                "properties": {
+                  "or": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryOr"
+                  }
+                },
+                "required": [
+                  "or"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryNot"
+                "additionalProperties": false,
+                "properties": {
+                  "not": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_QueryNot"
+                  }
+                },
+                "required": [
+                  "not"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -1031,11 +1624,11 @@
       },
       "SearchKernel_V1_QueryExprKind": {
         "enum": [
-          "NONE",
-          "TermQuery",
-          "QueryAnd",
-          "QueryOr",
-          "QueryNot"
+          "n_o_n_e",
+          "term_query",
+          "query_and",
+          "query_or",
+          "query_not"
         ],
         "type": "string"
       },
@@ -1064,12 +1657,30 @@
         "additionalProperties": false,
         "properties": {
           "policy": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_DefaultRelevanceV1"
+                "additionalProperties": false,
+                "properties": {
+                  "default_relevance_v1": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_DefaultRelevanceV1"
+                  }
+                },
+                "required": [
+                  "default_relevance_v1"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_Bm25Ranking"
+                "additionalProperties": false,
+                "properties": {
+                  "bm25_ranking": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Bm25Ranking"
+                  }
+                },
+                "required": [
+                  "bm25_ranking"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -1078,9 +1689,9 @@
       },
       "SearchKernel_V1_RankingPolicyKind": {
         "enum": [
-          "NONE",
-          "DefaultRelevanceV1",
-          "Bm25Ranking"
+          "n_o_n_e",
+          "default_relevance_v1",
+          "bm25_ranking"
         ],
         "type": "string"
       },
@@ -1091,7 +1702,7 @@
             "type": "string"
           },
           "weight": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalDouble"
+            "type": "number"
           }
         },
         "type": "object"
@@ -1127,10 +1738,14 @@
             "type": "string"
           },
           "limit": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "offset": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "projection": {
             "$ref": "#/payload_definitions/request/SearchKernel_V1_FieldProjection"
@@ -1191,9 +1806,9 @@
       },
       "SearchKernel_V1_SortDirection": {
         "enum": [
-          "Unspecified",
-          "Asc",
-          "Desc"
+          "unspecified",
+          "asc",
+          "desc"
         ],
         "type": "string"
       },
@@ -1207,7 +1822,7 @@
             "type": "string"
           },
           "missing": {
-            "$ref": "#/payload_definitions/request/SearchKernel_V1_OptionalMissingPlacement"
+            "$ref": "#/payload_definitions/request/SearchKernel_V1_MissingPlacement"
           }
         },
         "type": "object"
@@ -1264,9 +1879,9 @@
       },
       "SearchKernel_V1_TotalHitsRelation": {
         "enum": [
-          "Unspecified",
-          "Exact",
-          "LowerBound"
+          "unspecified",
+          "exact",
+          "lower_bound"
         ],
         "type": "string"
       },
@@ -1274,9 +1889,8 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
           }
         },
         "type": "object"
@@ -1312,33 +1926,114 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_NullValueValue"
+                "additionalProperties": false,
+                "properties": {
+                  "null": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "null"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_BoolValue"
+                "additionalProperties": false,
+                "properties": {
+                  "bool": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_BoolValue"
+                  }
+                },
+                "required": [
+                  "bool"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_Int64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "int64": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Int64Value"
+                  }
+                },
+                "required": [
+                  "int64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_UInt64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "uint64": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_UInt64Value"
+                  }
+                },
+                "required": [
+                  "uint64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_Float64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "float64": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_Float64Value"
+                  }
+                },
+                "required": [
+                  "float64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_StringValue"
+                "additionalProperties": false,
+                "properties": {
+                  "string": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_StringValue"
+                  }
+                },
+                "required": [
+                  "string"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_BytesValue"
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_BytesValue"
+                  }
+                },
+                "required": [
+                  "bytes"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueList"
+                "additionalProperties": false,
+                "properties": {
+                  "list": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueList"
+                  }
+                },
+                "required": [
+                  "list"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueObject"
+                "additionalProperties": false,
+                "properties": {
+                  "object": {
+                    "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueObject"
+                  }
+                },
+                "required": [
+                  "object"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -1362,16 +2057,16 @@
       },
       "SearchKernel_V1_ValueKind": {
         "enum": [
-          "NONE",
-          "NullValueValue",
-          "BoolValue",
-          "Int64Value",
-          "UInt64Value",
-          "Float64Value",
-          "StringValue",
-          "BytesValue",
-          "ValueList",
-          "ValueObject"
+          "n_o_n_e",
+          "null_value_value",
+          "bool_value",
+          "int64_value",
+          "u_int64_value",
+          "float64_value",
+          "string_value",
+          "bytes_value",
+          "value_list",
+          "value_object"
         ],
         "type": "string"
       },
@@ -1391,10 +2086,10 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/request/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/request/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           }
         },
         "type": "object"
@@ -1405,36 +2100,126 @@
         "additionalProperties": false,
         "properties": {
           "payload": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_InsertResult"
+                "additionalProperties": false,
+                "properties": {
+                  "insert_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_InsertResult"
+                  }
+                },
+                "required": [
+                  "insert_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_UpsertResult"
+                "additionalProperties": false,
+                "properties": {
+                  "upsert_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_UpsertResult"
+                  }
+                },
+                "required": [
+                  "upsert_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchResult"
+                "additionalProperties": false,
+                "properties": {
+                  "patch_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_PatchResult"
+                  }
+                },
+                "required": [
+                  "patch_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_DeleteResult"
+                "additionalProperties": false,
+                "properties": {
+                  "delete_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_DeleteResult"
+                  }
+                },
+                "required": [
+                  "delete_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_GetResult"
+                "additionalProperties": false,
+                "properties": {
+                  "get_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_GetResult"
+                  }
+                },
+                "required": [
+                  "get_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchResult"
+                "additionalProperties": false,
+                "properties": {
+                  "search_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_SearchResult"
+                  }
+                },
+                "required": [
+                  "search_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeResult"
+                "additionalProperties": false,
+                "properties": {
+                  "analyze_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeResult"
+                  }
+                },
+                "required": [
+                  "analyze_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_Error"
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Error"
+                  }
+                },
+                "required": [
+                  "error"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_DescribeResult"
+                "additionalProperties": false,
+                "properties": {
+                  "describe_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_DescribeResult"
+                  }
+                },
+                "required": [
+                  "describe_result"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_InspectQueryResult"
+                "additionalProperties": false,
+                "properties": {
+                  "inspect_query_result": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_InspectQueryResult"
+                  }
+                },
+                "required": [
+                  "inspect_query_result"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -1448,17 +2233,17 @@
       },
       "SearchKernel_FFI_V1_ResponsePayload": {
         "enum": [
-          "NONE",
-          "SearchKernel_V1_InsertResult",
-          "SearchKernel_V1_UpsertResult",
-          "SearchKernel_V1_PatchResult",
-          "SearchKernel_V1_DeleteResult",
-          "SearchKernel_V1_GetResult",
-          "SearchKernel_V1_SearchResult",
-          "SearchKernel_V1_AnalyzeResult",
-          "SearchKernel_V1_Error",
-          "SearchKernel_V1_DescribeResult",
-          "SearchKernel_V1_InspectQueryResult"
+          "n_o_n_e",
+          "search_kernel__v1__insert_result",
+          "search_kernel__v1__upsert_result",
+          "search_kernel__v1__patch_result",
+          "search_kernel__v1__delete_result",
+          "search_kernel__v1__get_result",
+          "search_kernel__v1__search_result",
+          "search_kernel__v1__analyze_result",
+          "search_kernel__v1__error",
+          "search_kernel__v1__describe_result",
+          "search_kernel__v1__inspect_query_result"
         ],
         "type": "string"
       },
@@ -1478,12 +2263,30 @@
             "type": "string"
           },
           "target": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_Analyzer"
+                "additionalProperties": false,
+                "properties": {
+                  "analyzer": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Analyzer"
+                  }
+                },
+                "required": [
+                  "analyzer"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeFieldTarget"
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_AnalyzeFieldTarget"
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -1507,9 +2310,9 @@
       },
       "SearchKernel_V1_AnalyzeTarget": {
         "enum": [
-          "NONE",
-          "Analyzer",
-          "AnalyzeFieldTarget"
+          "n_o_n_e",
+          "analyzer",
+          "analyze_field_target"
         ],
         "type": "string"
       },
@@ -1547,10 +2350,10 @@
             "type": "string"
           },
           "options": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           },
           "version": {
             "maximum": 4294967295,
@@ -1578,25 +2381,20 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "items": {
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": "array"
+            "type": "string"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_ComparisonOp": {
         "enum": [
-          "Unspecified",
-          "Eq",
-          "Ne",
-          "Lt",
-          "Lte",
-          "Gt",
-          "Gte"
+          "unspecified",
+          "eq",
+          "ne",
+          "lt",
+          "lte",
+          "gt",
+          "gte"
         ],
         "type": "string"
       },
@@ -1644,10 +2442,10 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           },
           "id": {
             "type": "string"
@@ -1678,16 +2476,16 @@
       },
       "SearchKernel_V1_ErrorCode": {
         "enum": [
-          "Unspecified",
-          "InvalidArgument",
-          "NotFound",
-          "AlreadyExists",
-          "FailedPrecondition",
-          "Conflict",
-          "Unsupported",
-          "ResourceExhausted",
-          "Internal",
-          "Unavailable"
+          "unspecified",
+          "invalid_argument",
+          "not_found",
+          "already_exists",
+          "failed_precondition",
+          "conflict",
+          "unsupported",
+          "resource_exhausted",
+          "internal",
+          "unavailable"
         ],
         "type": "string"
       },
@@ -1701,10 +2499,10 @@
             "type": "string"
           },
           "metadata": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_StringEntry"
+            "additionalProperties": {
+              "type": "string"
             },
-            "type": "array"
+            "type": "object"
           },
           "path": {
             "type": "string"
@@ -1719,7 +2517,9 @@
             "type": "string"
           },
           "limit": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "sort": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalFacetSort"
@@ -1744,11 +2544,11 @@
       },
       "SearchKernel_V1_FacetSort": {
         "enum": [
-          "Unspecified",
-          "CountDesc",
-          "CountAsc",
-          "ValueAsc",
-          "ValueDesc"
+          "unspecified",
+          "count_desc",
+          "count_asc",
+          "value_asc",
+          "value_desc"
         ],
         "type": "string"
       },
@@ -1768,9 +2568,9 @@
       },
       "SearchKernel_V1_FieldCardinality": {
         "enum": [
-          "Unspecified",
-          "Single",
-          "Multi"
+          "unspecified",
+          "single",
+          "multi"
         ],
         "type": "string"
       },
@@ -1784,10 +2584,10 @@
             "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldCardinality"
           },
           "facetable": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "filterable": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "kind": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldKind"
@@ -1796,25 +2596,25 @@
             "type": "string"
           },
           "searchable": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "sortable": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "stored": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_FieldKind": {
         "enum": [
-          "Unspecified",
-          "Text",
-          "Keyword",
-          "Int64",
-          "Float64",
-          "Bool"
+          "unspecified",
+          "text",
+          "keyword",
+          "int64",
+          "float64",
+          "bool"
         ],
         "type": "string"
       },
@@ -1870,24 +2670,78 @@
         "additionalProperties": false,
         "properties": {
           "expr": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterAnd"
+                "additionalProperties": false,
+                "properties": {
+                  "and": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterAnd"
+                  }
+                },
+                "required": [
+                  "and"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterOr"
+                "additionalProperties": false,
+                "properties": {
+                  "or": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterOr"
+                  }
+                },
+                "required": [
+                  "or"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterNot"
+                "additionalProperties": false,
+                "properties": {
+                  "not": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterNot"
+                  }
+                },
+                "required": [
+                  "not"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterComparison"
+                "additionalProperties": false,
+                "properties": {
+                  "comparison": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterComparison"
+                  }
+                },
+                "required": [
+                  "comparison"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterRange"
+                "additionalProperties": false,
+                "properties": {
+                  "range": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterRange"
+                  }
+                },
+                "required": [
+                  "range"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExists"
+                "additionalProperties": false,
+                "properties": {
+                  "exists": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_FilterExists"
+                  }
+                },
+                "required": [
+                  "exists"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -1896,13 +2750,13 @@
       },
       "SearchKernel_V1_FilterExprKind": {
         "enum": [
-          "NONE",
-          "FilterAnd",
-          "FilterOr",
-          "FilterNot",
-          "FilterComparison",
-          "FilterRange",
-          "FilterExists"
+          "n_o_n_e",
+          "filter_and",
+          "filter_or",
+          "filter_not",
+          "filter_comparison",
+          "filter_range",
+          "filter_exists"
         ],
         "type": "string"
       },
@@ -1934,10 +2788,10 @@
             "type": "string"
           },
           "include_lower": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "include_upper": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalBool"
+            "type": "boolean"
           },
           "lower": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
@@ -2055,7 +2909,7 @@
             "type": "string"
           },
           "score": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalDouble"
+            "type": "number"
           }
         },
         "type": "object"
@@ -2118,25 +2972,24 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
           }
         },
         "type": "object"
       },
       "SearchKernel_V1_MissingPlacement": {
         "enum": [
-          "Unspecified",
-          "First",
-          "Last"
+          "unspecified",
+          "first",
+          "last"
         ],
         "type": "string"
       },
       "SearchKernel_V1_NullValue": {
         "enum": [
-          "Unspecified",
-          "Null"
+          "unspecified",
+          "null"
         ],
         "type": "string"
       },
@@ -2200,12 +3053,30 @@
         "additionalProperties": false,
         "properties": {
           "operation": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_SetField"
+                "additionalProperties": false,
+                "properties": {
+                  "set_field": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_SetField"
+                  }
+                },
+                "required": [
+                  "set_field"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_UnsetField"
+                "additionalProperties": false,
+                "properties": {
+                  "unset_field": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_UnsetField"
+                  }
+                },
+                "required": [
+                  "unset_field"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -2214,9 +3085,9 @@
       },
       "SearchKernel_V1_PatchOperationKind": {
         "enum": [
-          "NONE",
-          "SetField",
-          "UnsetField"
+          "n_o_n_e",
+          "set_field",
+          "unset_field"
         ],
         "type": "string"
       },
@@ -2260,18 +3131,54 @@
         "additionalProperties": false,
         "properties": {
           "expr": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_TermQuery"
+                "additionalProperties": false,
+                "properties": {
+                  "term_query": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_TermQuery"
+                  }
+                },
+                "required": [
+                  "term_query"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryAnd"
+                "additionalProperties": false,
+                "properties": {
+                  "and": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryAnd"
+                  }
+                },
+                "required": [
+                  "and"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryOr"
+                "additionalProperties": false,
+                "properties": {
+                  "or": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryOr"
+                  }
+                },
+                "required": [
+                  "or"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryNot"
+                "additionalProperties": false,
+                "properties": {
+                  "not": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_QueryNot"
+                  }
+                },
+                "required": [
+                  "not"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -2280,11 +3187,11 @@
       },
       "SearchKernel_V1_QueryExprKind": {
         "enum": [
-          "NONE",
-          "TermQuery",
-          "QueryAnd",
-          "QueryOr",
-          "QueryNot"
+          "n_o_n_e",
+          "term_query",
+          "query_and",
+          "query_or",
+          "query_not"
         ],
         "type": "string"
       },
@@ -2313,12 +3220,30 @@
         "additionalProperties": false,
         "properties": {
           "policy": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_DefaultRelevanceV1"
+                "additionalProperties": false,
+                "properties": {
+                  "default_relevance_v1": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_DefaultRelevanceV1"
+                  }
+                },
+                "required": [
+                  "default_relevance_v1"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_Bm25Ranking"
+                "additionalProperties": false,
+                "properties": {
+                  "bm25_ranking": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Bm25Ranking"
+                  }
+                },
+                "required": [
+                  "bm25_ranking"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -2327,9 +3252,9 @@
       },
       "SearchKernel_V1_RankingPolicyKind": {
         "enum": [
-          "NONE",
-          "DefaultRelevanceV1",
-          "Bm25Ranking"
+          "n_o_n_e",
+          "default_relevance_v1",
+          "bm25_ranking"
         ],
         "type": "string"
       },
@@ -2340,7 +3265,7 @@
             "type": "string"
           },
           "weight": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalDouble"
+            "type": "number"
           }
         },
         "type": "object"
@@ -2376,10 +3301,14 @@
             "type": "string"
           },
           "limit": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "offset": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalUInt32"
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
           },
           "projection": {
             "$ref": "#/payload_definitions/response/SearchKernel_V1_FieldProjection"
@@ -2440,9 +3369,9 @@
       },
       "SearchKernel_V1_SortDirection": {
         "enum": [
-          "Unspecified",
-          "Asc",
-          "Desc"
+          "unspecified",
+          "asc",
+          "desc"
         ],
         "type": "string"
       },
@@ -2456,7 +3385,7 @@
             "type": "string"
           },
           "missing": {
-            "$ref": "#/payload_definitions/response/SearchKernel_V1_OptionalMissingPlacement"
+            "$ref": "#/payload_definitions/response/SearchKernel_V1_MissingPlacement"
           }
         },
         "type": "object"
@@ -2513,9 +3442,9 @@
       },
       "SearchKernel_V1_TotalHitsRelation": {
         "enum": [
-          "Unspecified",
-          "Exact",
-          "LowerBound"
+          "unspecified",
+          "exact",
+          "lower_bound"
         ],
         "type": "string"
       },
@@ -2523,9 +3452,8 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
           }
         },
         "type": "object"
@@ -2561,33 +3489,114 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "anyOf": [
+            "oneOf": [
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_NullValueValue"
+                "additionalProperties": false,
+                "properties": {
+                  "null": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "null"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_BoolValue"
+                "additionalProperties": false,
+                "properties": {
+                  "bool": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_BoolValue"
+                  }
+                },
+                "required": [
+                  "bool"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_Int64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "int64": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Int64Value"
+                  }
+                },
+                "required": [
+                  "int64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_UInt64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "uint64": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_UInt64Value"
+                  }
+                },
+                "required": [
+                  "uint64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_Float64Value"
+                "additionalProperties": false,
+                "properties": {
+                  "float64": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_Float64Value"
+                  }
+                },
+                "required": [
+                  "float64"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_StringValue"
+                "additionalProperties": false,
+                "properties": {
+                  "string": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_StringValue"
+                  }
+                },
+                "required": [
+                  "string"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_BytesValue"
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_BytesValue"
+                  }
+                },
+                "required": [
+                  "bytes"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueList"
+                "additionalProperties": false,
+                "properties": {
+                  "list": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueList"
+                  }
+                },
+                "required": [
+                  "list"
+                ],
+                "type": "object"
               },
               {
-                "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueObject"
+                "additionalProperties": false,
+                "properties": {
+                  "object": {
+                    "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueObject"
+                  }
+                },
+                "required": [
+                  "object"
+                ],
+                "type": "object"
               }
             ]
           }
@@ -2611,16 +3620,16 @@
       },
       "SearchKernel_V1_ValueKind": {
         "enum": [
-          "NONE",
-          "NullValueValue",
-          "BoolValue",
-          "Int64Value",
-          "UInt64Value",
-          "Float64Value",
-          "StringValue",
-          "BytesValue",
-          "ValueList",
-          "ValueObject"
+          "n_o_n_e",
+          "null_value_value",
+          "bool_value",
+          "int64_value",
+          "u_int64_value",
+          "float64_value",
+          "string_value",
+          "bytes_value",
+          "value_list",
+          "value_object"
         ],
         "type": "string"
       },
@@ -2640,10 +3649,10 @@
         "additionalProperties": false,
         "properties": {
           "fields": {
-            "items": {
-              "$ref": "#/payload_definitions/response/SearchKernel_V1_ValueEntry"
+            "additionalProperties": {
+              "$ref": "#/payload_definitions/response/SearchKernel_V1_Value"
             },
-            "type": "array"
+            "type": "object"
           }
         },
         "type": "object"
