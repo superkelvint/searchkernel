@@ -26,6 +26,9 @@ extern "C" {
 #define SK_STATUS_INTERNAL 2
 #define SK_STATUS_OUT_OF_MEMORY 3
 
+#define SK_TEXT_QUERY_TERM 1U
+#define SK_TEXT_QUERY_PHRASE 2U
+
 /*
  * This is a primitive-only ABI. The semantic objects are opaque handles; the
  * only non-opaque values are fixed-width scalars and borrowed byte ranges.

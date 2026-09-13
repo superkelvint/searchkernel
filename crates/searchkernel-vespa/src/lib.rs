@@ -421,11 +421,11 @@ impl Engine {
         rank_profile: &str,
     ) -> Result<TextSearchResult, Error> {
         let (kind, field, text) = match query {
-            TextQuery::Term { field, text } => (1, field, text),
-            TextQuery::Phrase { field, text } => (2, field, text),
+            TextQuery::Term { field, text } => (sys::SK_TEXT_QUERY_TERM, field, text),
+            TextQuery::Phrase { field, text } => (sys::SK_TEXT_QUERY_PHRASE, field, text),
         };
         let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
-        if kind == 1 {
+        if kind == sys::SK_TEXT_QUERY_TERM {
             validate_term_query(&analysis)?;
         }
         let terms = text_query_terms(&analysis)?;

@@ -4,6 +4,8 @@ pub const SK_STATUS_OK: u32 = 0;
 pub const SK_STATUS_INVALID_ARGUMENT: u32 = 1;
 pub const SK_STATUS_INTERNAL: u32 = 2;
 pub const SK_STATUS_OUT_OF_MEMORY: u32 = 3;
+pub const SK_TEXT_QUERY_TERM: u32 = 1;
+pub const SK_TEXT_QUERY_PHRASE: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
 pub const SK_NATIVE_ABI_VERSION: u32 = 2;
 #[repr(C)]

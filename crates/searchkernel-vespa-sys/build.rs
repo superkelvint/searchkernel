@@ -102,7 +102,9 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
             "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result)",
         )
         .allowlist_function("sk_.*")
-        .allowlist_var("SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|STATUS_.*)")
+        .allowlist_var(
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|STATUS_.*|TEXT_QUERY_(TERM|PHRASE))",
+        )
         .layout_tests(true)
         .generate_comments(false)
         .generate()

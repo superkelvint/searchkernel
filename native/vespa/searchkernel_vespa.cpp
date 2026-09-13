@@ -1577,12 +1577,12 @@ public:
             throw std::invalid_argument("text term count cannot be represented by Vespa");
         }
         QueryBuilder<proton::matching::ProtonNodeTypes> builder;
-        if (text.kind == 1) {
+        if (text.kind == SK_TEXT_QUERY_TERM) {
             if (text.terms.size() != 1) {
                 throw std::invalid_argument("term query must contain exactly one term");
             }
             builder.addStringTerm(text.terms[0], text.field, 1, Weight(1));
-        } else if (text.kind == 2) {
+        } else if (text.kind == SK_TEXT_QUERY_PHRASE) {
             if (text.terms.empty()) {
                 throw std::invalid_argument("phrase query must contain a term");
             }
@@ -2048,7 +2048,7 @@ void initialize_text_request(TextRequest &request, uint32_t kind, const char *fi
     if (*field == '\0' || *rank_profile == '\0') {
         throw std::invalid_argument("text query field and rank profile must not be empty");
     }
-    if (kind != 1 && kind != 2) {
+    if (kind != SK_TEXT_QUERY_TERM && kind != SK_TEXT_QUERY_PHRASE) {
         throw std::invalid_argument("unsupported text query kind");
     }
     request.kind = kind;
@@ -2064,8 +2064,8 @@ void append_text_terms(TextRequest &request, const uint8_t *term_bytes,
         throw std::invalid_argument("text term count is too large");
     }
     const auto resulting_count = request.terms.size() + term_count;
-    if ((request.kind == 1 && resulting_count != 1) ||
-        (request.kind == 2 && resulting_count == 0)) {
+    if ((request.kind == SK_TEXT_QUERY_TERM && resulting_count != 1) ||
+        (request.kind == SK_TEXT_QUERY_PHRASE && resulting_count == 0)) {
         throw std::invalid_argument("invalid number of terms for text query kind");
     }
     if (term_count == 0) {
