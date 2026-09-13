@@ -18,6 +18,7 @@ use std::ptr::{self, NonNull};
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
 
 #[derive(Debug, Clone, Copy)]
+/// A text document passed to the native Vespa adapter.
 pub struct TextDocument<'a> {
     pub id: &'a str,
     pub field: &'a str,
@@ -25,23 +26,27 @@ pub struct TextDocument<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// A text query supported by the native Vespa adapter.
 pub enum TextQuery<'a> {
     Term { field: &'a str, text: &'a str },
     Phrase { field: &'a str, text: &'a str },
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One hit returned by a text search.
 pub struct TextHit {
     pub document_id: String,
     pub score: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// The result of a text search.
 pub struct TextSearchResult {
     pub hits: Vec<TextHit>,
 }
 
 #[derive(Debug)]
+/// An error returned while calling the native adapter.
 pub struct Error {
     code: i32,
     message: String,
@@ -134,6 +139,7 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Open a native engine using its data and generated configuration directories.
     pub fn open(data_dir: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> Result<Self, Error> {
         let actual_abi = unsafe { sys::sk_native_abi_version() };
         if actual_abi != EXPECTED_ABI {
@@ -171,6 +177,7 @@ impl Engine {
         check(status, &error)
     }
 
+    /// Insert one integer-valued document.
     pub fn put(&self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
         let document_id = cstring(document_id)?;
         let field = cstring(field)?;
@@ -198,6 +205,7 @@ impl Engine {
         check(status, &error)
     }
 
+    /// Update one integer field in an existing document.
     pub fn update(&self, document_id: &str, field: &str, value: i32) -> Result<(), Error> {
         let document_id = cstring(document_id)?;
         let field = cstring(field)?;
@@ -221,6 +229,7 @@ impl Engine {
         check(status, &error)
     }
 
+    /// Remove a document and report whether it existed.
     pub fn remove(&self, document_id: &str) -> Result<bool, Error> {
         let document_id = cstring(document_id)?;
         let mut was_found = 0;
@@ -237,6 +246,7 @@ impl Engine {
         Ok(was_found != 0)
     }
 
+    /// Search an integer field and return matching document IDs.
     pub fn search(&self, field: &str, value: i32, limit: u32) -> Result<Vec<String>, Error> {
         let field = cstring(field)?;
         let mut request = ptr::null_mut();
@@ -296,6 +306,7 @@ impl Engine {
         Ok(ids)
     }
 
+    /// Insert a text document after applying Vespa-compatible linguistics.
     pub fn put_text(&self, document: TextDocument<'_>) -> Result<(), Error> {
         let analysis = Linguistics.analyze_document(document.text, LinguisticsOptions::default());
         let occurrences = text_occurrences(&analysis)?;
@@ -328,6 +339,7 @@ impl Engine {
         check(status, &error)
     }
 
+    /// Update a text field after applying Vespa-compatible linguistics.
     pub fn update_text(&self, document: TextDocument<'_>) -> Result<(), Error> {
         let analysis = Linguistics.analyze_document(document.text, LinguisticsOptions::default());
         let occurrences = text_occurrences(&analysis)?;

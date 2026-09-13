@@ -27,6 +27,7 @@ const RESERVED_FIELD_NAMES: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A field type supported by the embedded Vespa configuration compiler.
 pub enum FieldType {
     Text,
     String,
@@ -36,6 +37,7 @@ pub enum FieldType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One field in a Vespa document schema.
 pub struct Field {
     name: String,
     field_type: FieldType,
@@ -45,6 +47,7 @@ pub struct Field {
 }
 
 impl Field {
+    /// Create a field with no indexing or storage capabilities enabled.
     pub fn new(name: impl Into<String>, field_type: FieldType) -> Self {
         Self {
             name: name.into(),
@@ -55,16 +58,19 @@ impl Field {
         }
     }
 
+    /// Add a full-text index for this field.
     pub fn indexed(mut self) -> Self {
         self.indexed = true;
         self
     }
 
+    /// Store this field as an attribute.
     pub fn attribute(mut self) -> Self {
         self.attribute = true;
         self
     }
 
+    /// Include this field in the default document summary.
     pub fn summary(mut self) -> Self {
         self.summary = true;
         self
@@ -72,12 +78,14 @@ impl Field {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The document type and fields used to generate Vespa configuration.
 pub struct Schema {
     document_type: String,
     fields: Vec<Field>,
 }
 
 impl Schema {
+    /// Create an empty schema for `document_type`.
     pub fn new(document_type: impl Into<String>) -> Self {
         Self {
             document_type: document_type.into(),
@@ -85,6 +93,7 @@ impl Schema {
         }
     }
 
+    /// Add one field to the schema.
     pub fn field(mut self, field: Field) -> Self {
         self.fields.push(field);
         self
@@ -92,29 +101,36 @@ impl Schema {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Writes the configuration files required by the embedded engine.
 pub struct ConfigCompiler;
 
 impl ConfigCompiler {
     pub fn compile_to(&self, schema: &Schema, directory: impl AsRef<Path>) -> Result<()> {
         let output = directory.as_ref();
-        let derived = DerivedConfig::from_schema(schema)?;
+        let derived_config = DerivedConfig::from_schema(schema)?;
         let output_state = OutputState::inspect(output)?;
-        let temporary = TemporaryDirectory::create(output)?;
+        let temporary_directory = TemporaryDirectory::create(output)?;
 
-        (|| {
-            write_config(
-                &temporary.path,
-                "searchkernel-schema.json",
-                &derived.manifest(),
-            )?;
-            write_config(&temporary.path, "indexschema.cfg", &derived.indexschema())?;
-            write_config(&temporary.path, "attributes.cfg", &derived.attributes())?;
-            write_config(&temporary.path, "summary.cfg", &derived.summary())?;
-            write_config(&temporary.path, "rank-profiles.cfg", &rank_profiles(schema))?;
-            write_config(&temporary.path, "juniperrc.cfg", "")?;
-            temporary.install(output, output_state)
-        })()
+        write_generated_files(&temporary_directory.path, schema, &derived_config)?;
+        temporary_directory.install(output, output_state)
     }
+}
+
+fn write_generated_files(
+    directory: &Path,
+    schema: &Schema,
+    derived_config: &DerivedConfig<'_>,
+) -> Result<()> {
+    write_config(
+        directory,
+        "searchkernel-schema.json",
+        &derived_config.manifest(),
+    )?;
+    write_config(directory, "indexschema.cfg", &derived_config.indexschema())?;
+    write_config(directory, "attributes.cfg", &derived_config.attributes())?;
+    write_config(directory, "summary.cfg", &derived_config.summary())?;
+    write_config(directory, "rank-profiles.cfg", &rank_profiles(schema))?;
+    write_config(directory, "juniperrc.cfg", "")
 }
 
 #[derive(Debug)]
@@ -144,13 +160,7 @@ impl<'a> DerivedConfig<'a> {
             output.push_str(&format!(
                 "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
                 quoted(&field.name),
-                quoted(match field.field_type {
-                    FieldType::Text => "text",
-                    FieldType::String => "string",
-                    FieldType::Integer => "integer",
-                    FieldType::Float => "float",
-                    FieldType::Boolean => "boolean",
-                }),
+                quoted(field.field_type.manifest_name()),
                 field.indexed,
                 field.attribute,
                 field.summary,
@@ -260,6 +270,16 @@ impl SummaryField {
 }
 
 impl FieldType {
+    fn manifest_name(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::String => "string",
+            Self::Integer => "integer",
+            Self::Float => "float",
+            Self::Boolean => "boolean",
+        }
+    }
+
     fn attribute_type(self) -> &'static str {
         match self {
             Self::Text | Self::String => "STRING",

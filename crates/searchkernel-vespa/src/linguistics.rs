@@ -16,17 +16,20 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_normalization::UnicodeNormalization;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Languages currently supported by the replacement linguistics layer.
 pub enum Language {
     English,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Stemming behavior applied during analysis.
 pub enum StemMode {
     None,
     Default,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Options controlling document and query analysis.
 pub struct LinguisticsOptions {
     pub language: Language,
     pub stem_mode: StemMode,
@@ -44,11 +47,13 @@ impl Default for LinguisticsOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The analyzed terms produced from document text.
 pub struct DocumentAnalysis {
     pub terms: Vec<DocumentTerm>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One analyzed document term and its source span.
 pub struct DocumentTerm {
     pub original: String,
     pub term: String,
@@ -58,29 +63,32 @@ pub struct DocumentTerm {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// The analyzed terms produced from query text.
 pub struct QueryAnalysis {
     pub terms: Vec<QueryTerm>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One query position and its possible stems.
 pub struct QueryTerm {
     pub stems: Vec<String>,
     pub position: u32,
 }
 
 #[derive(Debug, Default)]
+/// Vespa-compatible document and query analyzer.
 pub struct Linguistics;
 
 impl Linguistics {
     pub fn analyze_document(&self, text: &str, options: LinguisticsOptions) -> DocumentAnalysis {
         let mut terms = Vec::new();
-        let mut kstemmer = stemmer::KStemmer::default();
+        let mut stemmer = stemmer::KStemmer::default();
         for token in tokenize(text) {
             if !token.class.is_indexable() {
                 continue;
             }
             let original = &text[token.start..token.end];
-            let term = process_token(original, options, true, &mut kstemmer);
+            let term = process_token(original, options, true, &mut stemmer);
             if term.trim().chars().next().is_some() {
                 let position = terms.len() as u32;
                 terms.push(DocumentTerm {
@@ -97,7 +105,7 @@ impl Linguistics {
 
     pub fn analyze_query(&self, text: &str, options: LinguisticsOptions) -> QueryAnalysis {
         let mut terms = Vec::new();
-        let mut kstemmer = stemmer::KStemmer::default();
+        let mut stemmer = stemmer::KStemmer::default();
         for token in tokenize(text) {
             if !token.class.is_indexable() {
                 continue;
@@ -105,7 +113,7 @@ impl Linguistics {
 
             // Stemmer.stem(String, Language, StemMode, boolean) in the pinned
             // Vespa API delegates to the overload which uses removeAccents=false.
-            let term = process_token(&text[token.start..token.end], options, false, &mut kstemmer);
+            let term = process_token(&text[token.start..token.end], options, false, &mut stemmer);
             let position = terms.len() as u32;
             terms.push(QueryTerm {
                 stems: vec![term],
