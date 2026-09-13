@@ -523,15 +523,9 @@ fn generate_metadata(
     }
     output.push_str("        _ => None,\n    }\n}\n");
     output.push_str("\npub(crate) fn request_operation(tag: u8) -> Option<&'static str> {\n");
-    output.push_str("    match tag {\n");
-    for name in request_types {
-        output.push_str(&format!(
-            "        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::{0}.0 => Some({1:?}),\n",
-            enum_variant(name),
-            operation_name(name)?
-        ));
-    }
-    output.push_str("        _ => None,\n    }\n}\n");
+    output.push_str(
+        "    REQUEST_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
+    );
     output.push_str("\npub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[\n");
     for (index, name) in request_types.iter().enumerate() {
         output.push_str(&format!(
@@ -551,15 +545,9 @@ fn generate_metadata(
     }
     output.push_str(")\n}\n");
     output.push_str("\npub(crate) fn response_operation(tag: u8) -> Option<&'static str> {\n");
-    output.push_str("    match tag {\n");
-    for name in response_types {
-        output.push_str(&format!(
-            "        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::{0}.0 => Some({1:?}),\n",
-            enum_variant(name),
-            operation_name(name)?
-        ));
-    }
-    output.push_str("        _ => None,\n    }\n}\n");
+    output.push_str(
+        "    RESPONSE_TAGS.iter().find_map(|(name, value)| (*value == tag).then_some(*name))\n}\n",
+    );
     output.push_str("\npub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[\n");
     for (index, name) in response_types.iter().enumerate() {
         output.push_str(&format!(

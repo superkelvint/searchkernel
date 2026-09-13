@@ -914,18 +914,9 @@ pub(crate) fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 pub(crate) fn request_operation(tag: u8) -> Option<&'static str> {
-    match tag {
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_InsertRequest.0 => Some("insert"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_UpsertRequest.0 => Some("upsert"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_PatchRequest.0 => Some("patch"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_DeleteRequest.0 => Some("delete"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_GetRequest.0 => Some("get"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_SearchRequest.0 => Some("search"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_AnalyzeRequest.0 => Some("analyze"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_DescribeRequest.0 => Some("describe"),
-        value if value == crate::generated::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_InspectQueryRequest.0 => Some("inspect_query"),
-        _ => None,
-    }
+    REQUEST_TAGS
+        .iter()
+        .find_map(|(name, value)| (*value == tag).then_some(*name))
 }
 
 pub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[
@@ -956,19 +947,9 @@ pub(crate) fn is_request_operation(name: &str) -> bool {
 }
 
 pub(crate) fn response_operation(tag: u8) -> Option<&'static str> {
-    match tag {
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_InsertResult.0 => Some("insert"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_UpsertResult.0 => Some("upsert"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_PatchResult.0 => Some("patch"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_DeleteResult.0 => Some("delete"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_GetResult.0 => Some("get"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_SearchResult.0 => Some("search"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_AnalyzeResult.0 => Some("analyze"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_Error.0 => Some("error"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_DescribeResult.0 => Some("describe"),
-        value if value == crate::generated::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_InspectQueryResult.0 => Some("inspect_query"),
-        _ => None,
-    }
+    RESPONSE_TAGS
+        .iter()
+        .find_map(|(name, value)| (*value == tag).then_some(*name))
 }
 
 pub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[
