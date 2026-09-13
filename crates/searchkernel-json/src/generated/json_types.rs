@@ -964,3 +964,287 @@ pub(crate) struct JsonSearchKernelV1ValueObject {
     #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<Box<JsonSearchKernelV1ValueEntry>>>,
 }
+
+// Natural payload DTOs are the generated JSON boundary model.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1InsertRequest {
+    #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1UpsertRequest {
+    #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1PatchRequest {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+    #[serde(
+        rename = "operations",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub operations: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1DeleteRequest {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1GetRequest {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+    #[serde(
+        rename = "projection",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub projection: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1SearchRequest {
+    #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
+    pub facets: Option<serde_json::Value>,
+    #[serde(rename = "filter", default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<serde_json::Value>,
+    #[serde(
+        rename = "highlighting",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub highlighting: Option<serde_json::Value>,
+    #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<serde_json::Value>,
+    #[serde(rename = "limit", default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<serde_json::Value>,
+    #[serde(rename = "offset", default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<serde_json::Value>,
+    #[serde(
+        rename = "projection",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub projection: Option<serde_json::Value>,
+    #[serde(rename = "query", default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<serde_json::Value>,
+    #[serde(
+        rename = "query_expr",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub query_expr: Option<serde_json::Value>,
+    #[serde(rename = "ranking", default, skip_serializing_if = "Option::is_none")]
+    pub ranking: Option<serde_json::Value>,
+    #[serde(
+        rename = "search_fields",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub search_fields: Option<serde_json::Value>,
+    #[serde(rename = "sort", default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1AnalyzeRequest {
+    #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<serde_json::Value>,
+    #[serde(rename = "target", default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<serde_json::Value>,
+    #[serde(rename = "text", default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1DescribeRequest {}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1InspectQueryRequest {
+    #[serde(rename = "request", default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1InsertResult {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1UpsertResult {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1PatchResult {
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1DeleteResult {
+    #[serde(rename = "deleted", default, skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<serde_json::Value>,
+    #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1GetResult {
+    #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1SearchResult {
+    #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
+    pub facets: Option<serde_json::Value>,
+    #[serde(rename = "hits", default, skip_serializing_if = "Option::is_none")]
+    pub hits: Option<serde_json::Value>,
+    #[serde(
+        rename = "total_hits",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub total_hits: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1AnalyzeResult {
+    #[serde(rename = "tokens", default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1Error {
+    #[serde(rename = "code", default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<serde_json::Value>,
+    #[serde(rename = "details", default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    #[serde(rename = "message", default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<serde_json::Value>,
+    #[serde(rename = "retryable", default, skip_serializing_if = "Option::is_none")]
+    pub retryable: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1DescribeResult {
+    #[serde(rename = "index", default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JsonNaturalJsonSearchKernelV1InspectQueryResult {
+    #[serde(
+        rename = "resolved_request",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resolved_request: Option<serde_json::Value>,
+}
+
+pub(crate) fn validate_request_payload(
+    operation: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    match operation {
+        "insert" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1InsertRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "upsert" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1UpsertRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "patch" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1PatchRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "delete" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1DeleteRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "get" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1GetRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "search" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1SearchRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "analyze" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1AnalyzeRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "describe" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1DescribeRequest>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "inspect_query" => {
+            serde_json::from_value::<JsonNaturalJsonSearchKernelV1InspectQueryRequest>(value)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        _ => Err(format!("unknown request operation `{operation}`")),
+    }
+}
+
+pub(crate) fn validate_response_payload(
+    operation: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    match operation {
+        "insert" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1InsertResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "upsert" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1UpsertResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "patch" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1PatchResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "delete" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1DeleteResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "get" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1GetResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "search" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1SearchResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "analyze" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1AnalyzeResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "error" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1Error>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "describe" => serde_json::from_value::<JsonNaturalJsonSearchKernelV1DescribeResult>(value)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        "inspect_query" => {
+            serde_json::from_value::<JsonNaturalJsonSearchKernelV1InspectQueryResult>(value)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+        _ => Err(format!("unknown response operation `{operation}`")),
+    }
+}

@@ -130,7 +130,14 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
         check,
     )?;
     generate_golden_json(root, &schema_digest, &request_types, &response_types, check)?;
-    generate_json_types(root, &request, &response, check)?;
+    generate_json_types(
+        root,
+        &request,
+        &response,
+        &request_types,
+        &response_types,
+        check,
+    )?;
     let manifest = serde_json::json!({
         "flatc": "25.12.19",
         "schema_digest": schema_digest,
@@ -643,6 +650,8 @@ fn generate_json_types(
     root: &Path,
     request: &Value,
     response: &Value,
+    request_types: &[String],
+    response_types: &[String],
     check: bool,
 ) -> Result<(), String> {
     let mut definitions = BTreeMap::<String, Value>::new();
@@ -692,6 +701,58 @@ fn generate_json_types(
         }
         output.push_str("}\n\n");
     }
+    output.push_str("// Natural payload DTOs are the generated JSON boundary model.\n");
+    for type_name in request_types.iter().chain(response_types) {
+        let Some(definition) = definitions.get(type_name) else {
+            return Err(format!(
+                "missing DTO definition for union member {type_name}"
+            ));
+        };
+        let Some(properties) = definition.get("properties").and_then(Value::as_object) else {
+            output.push_str(&format!(
+                "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct JsonNatural{} {{}}\n\n",
+                json_type_name(type_name)
+            ));
+            continue;
+        };
+        output.push_str(&format!(
+            "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(deny_unknown_fields)]\npub(crate) struct JsonNatural{} {{\n",
+            json_type_name(type_name)
+        ));
+        for field in properties.keys().filter(|field| !field.ends_with("_type")) {
+            output.push_str(&format!(
+                "    #[serde(rename = {field:?}, default, skip_serializing_if = \"Option::is_none\")]\n    pub {}: Option<serde_json::Value>,\n",
+                json_field_name(field)
+            ));
+        }
+        output.push_str("}\n\n");
+    }
+    output.push_str(
+        "pub(crate) fn validate_request_payload(operation: &str, value: serde_json::Value) -> Result<(), String> {\n    match operation {\n",
+    );
+    for type_name in request_types {
+        output.push_str(&format!(
+            "        {:?} => serde_json::from_value::<JsonNatural{}>(value).map(|_| ()).map_err(|error| error.to_string()),\n",
+            operation_name(type_name)?,
+            json_type_name(type_name)
+        ));
+    }
+    output.push_str(
+        "        _ => Err(format!(\"unknown request operation `{operation}`\")),\n    }\n}\n\n",
+    );
+    output.push_str(
+        "pub(crate) fn validate_response_payload(operation: &str, value: serde_json::Value) -> Result<(), String> {\n    match operation {\n",
+    );
+    for type_name in response_types {
+        output.push_str(&format!(
+            "        {:?} => serde_json::from_value::<JsonNatural{}>(value).map(|_| ()).map_err(|error| error.to_string()),\n",
+            operation_name(type_name)?,
+            json_type_name(type_name)
+        ));
+    }
+    output.push_str(
+        "        _ => Err(format!(\"unknown response operation `{operation}`\")),\n    }\n}\n\n",
+    );
     let path = root.join("crates/searchkernel-json/src/generated/json_types.rs");
     let bytes = format_rust(output.into_bytes())?;
     if check {

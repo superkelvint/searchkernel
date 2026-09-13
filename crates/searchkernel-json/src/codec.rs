@@ -338,6 +338,11 @@ pub fn request_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErro
         return Err(contract(format!("unknown operation `{operation}`")));
     }
     let payload = object(required(envelope, "request", "request")?, "request.request")?;
+    crate::generated::json_types::validate_request_payload(
+        &operation,
+        Value::Object(payload.clone()),
+    )
+    .map_err(|error| contract(format!("invalid {operation} payload: {error}")))?;
 
     let mut builder = FlatBufferBuilder::new();
     let (kind, payload) = generated_request_json_to_payload(&mut builder, &operation, payload)?;
@@ -571,6 +576,11 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
             "response operation `{declared_operation}` does not match payload `{operation}`"
         )));
     }
+    crate::generated::json_types::validate_response_payload(
+        operation,
+        payload.clone(),
+    )
+    .map_err(|error| contract(format!("invalid {operation} response: {error}")))?;
 
     let mut builder = FlatBufferBuilder::new();
     let (kind, payload) = generated_response_json_to_payload(&mut builder, operation, payload)?;
