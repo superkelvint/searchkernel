@@ -90,24 +90,12 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
     validate_schema(&response, "response")?;
     let request_types = verify_union(&request, "SearchKernel_FFI_V1_RequestEnvelope")?;
     let response_types = verify_union(&response, "SearchKernel_FFI_V1_ResponseEnvelope")?;
-    run_command(
-        flatc,
-        &[
-            "--rust",
-            "--rust-module-root-file",
-            "--gen-all",
-            "-o",
-            temp.to_str().unwrap(),
-            &root
-                .join("api/searchkernel_ffi_request.fbs")
-                .to_string_lossy(),
-            &root
-                .join("api/searchkernel_ffi_response.fbs")
-                .to_string_lossy(),
-        ],
-    )?;
-    let request_tags = read_union_tags(flatc, temp, "request_payload_generated.rs")?;
-    let response_tags = read_union_tags(flatc, temp, "response_payload_generated.rs")?;
+    // FlatBuffers assigns union discriminants in declaration order. The
+    // ordered union members come from the BFBS-derived JSON schema above, so
+    // the codec never maintains a second discriminator table or parses a
+    // language binding to discover wire values.
+    let request_tags = union_tags(&request_types);
+    let response_tags = union_tags(&response_types);
     let support = fs::read_to_string(root.join("crates/searchkernel-json/src/codec.rs"))
         .map_err(|e| format!("read codec support: {e}"))?;
     for type_name in request_types.iter().chain(response_types.iter()) {
@@ -717,40 +705,12 @@ fn generate_json_types(
     Ok(())
 }
 
-fn read_union_tags(flatc: &Path, temp: &Path, file: &str) -> Result<BTreeMap<String, u8>, String> {
-    let path = temp.join("search_kernel/ffi/v1").join(file);
-    let source = fs::read_to_string(&path).map_err(|error| {
-        format!(
-            "read FlatBuffers-generated union metadata from {}: {error}",
-            path.display()
-        )
-    })?;
-    let mut tags = BTreeMap::new();
-    for line in source.lines() {
-        let line = line.trim();
-        let Some(line) = line.strip_prefix("pub const ") else {
-            continue;
-        };
-        let Some((name, value)) = line.split_once(": Self = Self(") else {
-            continue;
-        };
-        let value = value
-            .strip_suffix(");")
-            .ok_or_else(|| format!("invalid union tag declaration in {file}: {line}"))?
-            .parse::<u8>()
-            .map_err(|error| format!("invalid union tag in {file}: {error}"))?;
-        if name != "NONE" {
-            tags.insert(name.to_owned(), value);
-        }
-    }
-    if tags.is_empty() {
-        return Err(format!(
-            "FlatBuffers-generated union metadata was empty for {} (flatc {})",
-            path.display(),
-            flatc.display()
-        ));
-    }
-    Ok(tags)
+fn union_tags(types: &[String]) -> BTreeMap<String, u8> {
+    types
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.clone(), (index + 1) as u8))
+        .collect()
 }
 
 fn json_type_name(name: &str) -> String {
