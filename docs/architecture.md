@@ -2,6 +2,9 @@
 
 Search Kernel is a Rust interface to the local C++ search engine used by Vespa.
 
+For a guided, file-by-file introduction aimed at readers who are not regular
+Rust programmers, see [How to read Search Kernel](reading-the-codebase.md).
+
 The project does not attempt to redesign Vespa's search architecture. Its purpose is to make the existing engine usable as a normal native library from Rust and, later, Python.
 
 ## Structure
