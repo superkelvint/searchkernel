@@ -26,7 +26,12 @@ DEFINES=$(sed -n 's/^CXX_DEFINES = //p' "$FLAGS_FILE")
 CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # The compiler used for the pinned Vespa artifacts is not required to be
 # installed at the consumer.  The public SDK only contains the ABI library.
+# Keep DWARF in this artifact deliberately: the ABI release check uses
+# libabigail to compare the types reachable from the exported C functions.
+# These explicit final flags make that property independent of the harvested
+# test target's optimization/debug configuration.
 $CXX $DEFINES $INCLUDES $CXX_FLAGS -Wno-inline -std=gnu++23 -fPIC \
+    -O2 -g \
     -fvisibility=hidden \
     -I"$ROOT/native/vespa" -c "$ROOT/native/vespa/searchkernel_vespa.cpp" \
     -o "$BUILD/searchkernel_vespa.o"

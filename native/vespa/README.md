@@ -11,6 +11,7 @@ configuration details, and native error translation belong.
 3. Read `embedded_crud_cfg/` to see the configuration consumed by the
    embedded engine.
 4. Read `build-sdk.sh` only when a native SDK rebuild is required.
+5. Read `../ABI.md` for the required debug-info and ABI comparison workflow.
 
 ## Key concepts
 
