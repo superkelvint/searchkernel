@@ -68,8 +68,10 @@ pub extern "C" fn sk_abi_version() -> u32 {
 #[no_mangle]
 /// # Safety
 ///
-/// `out_response` must point to a valid writable `SkBuffer`, and `request`
-/// must point to `request_len` readable bytes when `request_len` is non-zero.
+/// `out_response` must point to writable storage for a `SkBuffer`. It is a
+/// write-only out-parameter on entry, so its previous contents are not read.
+/// `request` must point to `request_len` readable bytes when `request_len` is
+/// non-zero.
 pub unsafe extern "C" fn sk_call(
     handle: SkHandle,
     request: *const u8,

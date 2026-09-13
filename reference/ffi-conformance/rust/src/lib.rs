@@ -848,16 +848,12 @@ mod tests {
     }
 
     #[test]
-    fn output_precondition_and_pointer_rules_are_frozen() {
+    fn output_is_write_only_and_pointer_rules_are_frozen() {
         let _guard = TEST_LOCK.lock().unwrap();
         assert_eq!(
             unsafe { sk_call(0, ptr::null(), 0, ptr::null_mut()) },
             SK_STATUS_INVALID_ARGUMENT
         );
-
-        let context = context();
-        let backend = Arc::new(RecordingBackend::new());
-        let handle = register_index(context, backend);
 
         let mut sentinel = 0x5au8;
         let original = (&mut sentinel as *mut u8, 1usize);
@@ -866,11 +862,10 @@ mod tests {
             len: original.1,
             allocation_id: 0,
         };
-        let request = wrap_request(RequestKind::Search, &search_bytes());
-        let status = unsafe { sk_call(handle, request.as_ptr(), request.len(), &mut non_empty) };
-        assert_eq!(status, SK_STATUS_INVALID_ARGUMENT);
-        assert_eq!(non_empty.data, original.0);
-        assert_eq!(non_empty.len, original.1);
+        let status = unsafe { sk_call(0, ptr::null(), 0, &mut non_empty) };
+        assert_eq!(status, SK_STATUS_INVALID_HANDLE);
+        assert!(non_empty.data.is_null());
+        assert_eq!(non_empty.len, 0);
         assert_eq!(non_empty.allocation_id, 0);
         assert_eq!(sentinel, 0x5a);
 
@@ -891,7 +886,6 @@ mod tests {
         assert_eq!(out.len, 0);
         assert_eq!(out.allocation_id, 0);
 
-        close_ok(handle);
     }
 
     #[cfg(unix)]

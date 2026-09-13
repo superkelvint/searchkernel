@@ -53,8 +53,10 @@ uint32_t sk_abi_version(void);
 /**
  * # Safety
  *
- * `out_response` must point to a valid writable `SkBuffer`, and `request`
- * must point to `request_len` readable bytes when `request_len` is non-zero.
+ * `out_response` must point to writable storage for a `SkBuffer`. It is a
+ * write-only out-parameter on entry, so its previous contents are not read.
+ * `request` must point to `request_len` readable bytes when `request_len` is
+ * non-zero.
  */
 sk_status_t sk_call(sk_handle_t handle,
                     const uint8_t *request,

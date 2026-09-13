@@ -36,7 +36,9 @@ int main(void) {
 
     assert(sk_close(0u) == SK_STATUS_INVALID_HANDLE);
 
-    sk_buffer_t out = {0};
+    // sk_call treats the output as write-only on entry, so ordinary
+    // uninitialized C out-parameter storage is valid.
+    sk_buffer_t out;
     assert(sk_call(0u, NULL, 0u, &out) == SK_STATUS_INVALID_HANDLE);
     assert(out.data == NULL);
     assert(out.len == 0u);

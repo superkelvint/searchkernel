@@ -40,7 +40,11 @@ ABI statuses are transport/runtime failures only. Search Kernel semantic errors 
 `sk_call()` validates in this order:
 
 1. `out_response` must be non-null.
-2. `out_response` must be empty (`data == NULL && len == 0 && allocation_id == 0`).
+2. The implementation immediately writes an empty `sk_buffer_t` to
+   `out_response` without inspecting its previous contents. This permits a
+   caller to provide ordinary uninitialized C out-parameter storage. The
+   caller must release any previously owned response before reusing that
+   storage.
 3. `handle` must be valid and open.
 4. `(request, request_len)` must be a valid pointer/length pair. `request == NULL && request_len > 0` is `INVALID_ARGUMENT`.
 5. The request envelope must be a complete verified FlatBuffer with file identifier `SKRQ`.
@@ -52,7 +56,9 @@ A zero-length request on a valid handle is `SK_STATUS_INVALID_REQUEST`.
 
 ## Output
 
-Before any operation that can write output, `sk_call()` treats `out_response` as empty. On every non-OK ABI status it remains empty.
+After validating that `out_response` is non-null, `sk_call()` immediately
+initializes all of its fields to the empty state without reading their prior
+contents. On every non-OK ABI status it remains empty.
 
 On `SK_STATUS_OK`, it contains exactly one complete `ResponseEnvelope` with file identifier `SKRS`.
 

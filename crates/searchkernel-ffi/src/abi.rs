@@ -1,6 +1,7 @@
 use crate::SkBuffer;
 use crate::{buffer, dispatch, handle, status};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ptr;
 
 pub(crate) const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
@@ -36,11 +37,21 @@ unsafe fn call_inner(
     if out_response.is_null() {
         return status::INVALID_ARGUMENT;
     }
-    // SAFETY: null was checked above; the caller must provide a valid output
-    // structure as required by the C ABI.
-    let output = unsafe { &mut *out_response };
-    if !output.data.is_null() || output.len != 0 || output.allocation_id != 0 {
-        return status::INVALID_ARGUMENT;
+    // The output descriptor is a write-only out-parameter. In particular, do
+    // not read its previous contents: ordinary C callers may pass a pointer to
+    // uninitialized storage. The caller is responsible for releasing any
+    // response it previously owned before reusing that storage.
+    // SAFETY: null was checked above; the C ABI requires writable storage for
+    // the complete SkBuffer object.
+    unsafe {
+        ptr::write(
+            out_response,
+            SkBuffer {
+                data: ptr::null_mut(),
+                len: 0,
+                allocation_id: 0,
+            },
+        );
     }
 
     if request_len > MAX_REQUEST_BYTES {
@@ -112,17 +123,20 @@ mod tests {
     }
 
     #[test]
-    fn nonzero_allocation_id_is_not_an_empty_output_buffer() {
+    fn output_is_initialized_before_handle_validation() {
+        let mut sentinel = 0x5au8;
         let mut output = crate::SkBuffer {
-            data: ptr::null_mut(),
-            len: 0,
-            allocation_id: 42,
+            data: &mut sentinel,
+            len: usize::MAX,
+            allocation_id: u64::MAX,
         };
-        // SAFETY: `output` is a valid writable buffer descriptor.
+        // SAFETY: `output` is writable storage. Its fields intentionally hold
+        // arbitrary values to prove that `call` does not read them first.
         let result = unsafe { call(0, ptr::null(), 0, &mut output) };
-        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert_eq!(result, status::INVALID_HANDLE);
         assert!(output.data.is_null());
         assert_eq!(output.len, 0);
-        assert_eq!(output.allocation_id, 42);
+        assert_eq!(output.allocation_id, 0);
+        assert_eq!(sentinel, 0x5a);
     }
 }
