@@ -1,2545 +1,2644 @@
 {
-  "request": {
-    "$ref": "#/definitions/SearchKernel_FFI_V1_RequestEnvelope",
-    "$schema": "https://json-schema.org/draft/2019-09/schema",
-    "definitions": {
-      "SearchKernel_FFI_V1_RequestEnvelope": {
-        "additionalProperties": false,
-        "properties": {
-          "payload": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_InsertRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UpsertRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_PatchRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DeleteRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_GetRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_AnalyzeRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DescribeRequest"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_InspectQueryRequest"
-              }
-            ]
-          },
-          "payload_type": {
-            "$ref": "#/definitions/SearchKernel_FFI_V1_RequestPayload"
-          },
-          "protocol_version": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_FFI_V1_RequestPayload": {
-        "enum": [
-          "NONE",
-          "SearchKernel_V1_InsertRequest",
-          "SearchKernel_V1_UpsertRequest",
-          "SearchKernel_V1_PatchRequest",
-          "SearchKernel_V1_DeleteRequest",
-          "SearchKernel_V1_GetRequest",
-          "SearchKernel_V1_SearchRequest",
-          "SearchKernel_V1_AnalyzeRequest",
-          "SearchKernel_V1_DescribeRequest",
-          "SearchKernel_V1_InspectQueryRequest"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_AnalyzeFieldTarget": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "language": {
-            "type": "string"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Analyzer"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_AnalyzeFieldTarget"
-              }
-            ]
-          },
-          "target_type": {
-            "$ref": "#/definitions/SearchKernel_V1_AnalyzeTarget"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeResult": {
-        "additionalProperties": false,
-        "properties": {
-          "tokens": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_AnalyzedToken"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeTarget": {
-        "enum": [
-          "NONE",
-          "Analyzer",
-          "AnalyzeFieldTarget"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_AnalyzedToken": {
-        "additionalProperties": false,
-        "properties": {
-          "end_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "position": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "start_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "surface": {
-            "type": "string"
-          },
-          "term": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Analyzer": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "options": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
-          },
-          "version": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Bm25Ranking": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_BoolValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_BytesValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "items": {
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ComparisonOp": {
-        "enum": [
-          "Unspecified",
-          "Eq",
-          "Ne",
-          "Lt",
-          "Lte",
-          "Gt",
-          "Gte"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_DefaultRelevanceV1": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_DeleteRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_DeleteResult": {
-        "additionalProperties": false,
-        "properties": {
-          "deleted": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_DescribeRequest": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_DescribeResult": {
-        "additionalProperties": false,
-        "properties": {
-          "index": {
-            "$ref": "#/definitions/SearchKernel_V1_IndexDefinition"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Document": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
-          },
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Error": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "$ref": "#/definitions/SearchKernel_V1_ErrorCode"
-          },
-          "details": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ErrorDetail"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "retryable": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ErrorCode": {
-        "enum": [
-          "Unspecified",
-          "InvalidArgument",
-          "NotFound",
-          "AlreadyExists",
-          "FailedPrecondition",
-          "Conflict",
-          "Unsupported",
-          "ResourceExhausted",
-          "Internal",
-          "Unavailable"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_ErrorDetail": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "metadata": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_StringEntry"
-            },
-            "type": "array"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "limit": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "sort": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalFacetSort"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetResult": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "values": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetValue"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetSort": {
-        "enum": [
-          "Unspecified",
-          "CountDesc",
-          "CountAsc",
-          "ValueAsc",
-          "ValueDesc"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FacetValue": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FieldCardinality": {
-        "enum": [
-          "Unspecified",
-          "Single",
-          "Multi"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FieldDefinition": {
-        "additionalProperties": false,
-        "properties": {
-          "analyzer": {
-            "$ref": "#/definitions/SearchKernel_V1_Analyzer"
-          },
-          "cardinality": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldCardinality"
-          },
-          "facetable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "filterable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "kind": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldKind"
-          },
-          "name": {
-            "type": "string"
-          },
-          "searchable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "sortable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "stored": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FieldKind": {
-        "enum": [
-          "Unspecified",
-          "Text",
-          "Keyword",
-          "Int64",
-          "Float64",
-          "Bool"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FieldProjection": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterAnd": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterComparison": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "op": {
-            "$ref": "#/definitions/SearchKernel_V1_ComparisonOp"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExists": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterAnd"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterOr"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterNot"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterComparison"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterRange"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterExists"
-              }
-            ]
-          },
-          "expr_type": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExprKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExprKind": {
-        "enum": [
-          "NONE",
-          "FilterAnd",
-          "FilterOr",
-          "FilterNot",
-          "FilterComparison",
-          "FilterRange",
-          "FilterExists"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FilterNot": {
-        "additionalProperties": false,
-        "properties": {
-          "clause": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterOr": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterRange": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "include_lower": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "include_upper": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "lower": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          },
-          "upper": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Float64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "number"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_GetRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "projection": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_GetResult": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightFragment": {
-        "additionalProperties": false,
-        "properties": {
-          "matches": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightSpan"
-            },
-            "type": "array"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightResult": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "fragments": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightFragment"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightSpan": {
-        "additionalProperties": false,
-        "properties": {
-          "end_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "start_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Hit": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
-          },
-          "highlights": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightResult"
-            },
-            "type": "array"
-          },
-          "id": {
-            "type": "string"
-          },
-          "score": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_IndexDefinition": {
-        "additionalProperties": false,
-        "properties": {
-          "default_search_fields": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
-          },
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FieldDefinition"
-            },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InsertRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InsertResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InspectQueryRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "request": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InspectQueryResult": {
-        "additionalProperties": false,
-        "properties": {
-          "resolved_request": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Int64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_MissingPlacement": {
-        "enum": [
-          "Unspecified",
-          "First",
-          "Last"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_NullValue": {
-        "enum": [
-          "Unspecified",
-          "Null"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_NullValueValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_NullValue"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalBool": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalDouble": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "number"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalFacetSort": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_FacetSort"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalMissingPlacement": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_MissingPlacement"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalUInt32": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchOperation": {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_SetField"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UnsetField"
-              }
-            ]
-          },
-          "operation_type": {
-            "$ref": "#/definitions/SearchKernel_V1_PatchOperationKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchOperationKind": {
-        "enum": [
-          "NONE",
-          "SetField",
-          "UnsetField"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_PatchRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "operations": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_PatchOperation"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryAnd": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_TermQuery"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryAnd"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryOr"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryNot"
-              }
-            ]
-          },
-          "expr_type": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExprKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExprKind": {
-        "enum": [
-          "NONE",
-          "TermQuery",
-          "QueryAnd",
-          "QueryOr",
-          "QueryNot"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_QueryNot": {
-        "additionalProperties": false,
-        "properties": {
-          "clause": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryOr": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicy": {
-        "additionalProperties": false,
-        "properties": {
-          "policy": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DefaultRelevanceV1"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Bm25Ranking"
-              }
-            ]
-          },
-          "policy_type": {
-            "$ref": "#/definitions/SearchKernel_V1_RankingPolicyKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicyKind": {
-        "enum": [
-          "NONE",
-          "DefaultRelevanceV1",
-          "Bm25Ranking"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_SearchField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "weight": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchFieldSelection": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_SearchField"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "facets": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetRequest"
-            },
-            "type": "array"
-          },
-          "filter": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-          },
-          "highlighting": {
-            "$ref": "#/definitions/SearchKernel_V1_HighlightRequest"
-          },
-          "language": {
-            "type": "string"
-          },
-          "limit": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "offset": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "projection": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
-          },
-          "query": {
-            "type": "string"
-          },
-          "query_expr": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-          },
-          "ranking": {
-            "$ref": "#/definitions/SearchKernel_V1_RankingPolicy"
-          },
-          "search_fields": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
-          },
-          "sort": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_SortExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchResult": {
-        "additionalProperties": false,
-        "properties": {
-          "facets": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetResult"
-            },
-            "type": "array"
-          },
-          "hits": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_Hit"
-            },
-            "type": "array"
-          },
-          "total_hits": {
-            "$ref": "#/definitions/SearchKernel_V1_TotalHits"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SetField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SortDirection": {
-        "enum": [
-          "Unspecified",
-          "Asc",
-          "Desc"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_SortExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "direction": {
-            "$ref": "#/definitions/SearchKernel_V1_SortDirection"
-          },
-          "field": {
-            "type": "string"
-          },
-          "missing": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalMissingPlacement"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_StringEntry": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "type": "object"
-      },
-      "SearchKernel_V1_StringValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TermQuery": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TotalHits": {
-        "additionalProperties": false,
-        "properties": {
-          "relation": {
-            "$ref": "#/definitions/SearchKernel_V1_TotalHitsRelation"
-          },
-          "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TotalHitsRelation": {
-        "enum": [
-          "Unspecified",
-          "Exact",
-          "LowerBound"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_UInt64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UnsetField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UpsertRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UpsertResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Value": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_NullValueValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_BoolValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Int64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UInt64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Float64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_StringValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_BytesValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_ValueList"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_ValueObject"
-              }
-            ]
-          },
-          "kind_type": {
-            "$ref": "#/definitions/SearchKernel_V1_ValueKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueEntry": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueKind": {
-        "enum": [
-          "NONE",
-          "NullValueValue",
-          "BoolValue",
-          "Int64Value",
-          "UInt64Value",
-          "Float64Value",
-          "StringValue",
-          "BytesValue",
-          "ValueList",
-          "ValueObject"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_ValueList": {
-        "additionalProperties": false,
-        "properties": {
-          "values": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_Value"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueObject": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      }
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "definitions": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "enum": [
+            "insert",
+            "upsert",
+            "patch",
+            "delete",
+            "get",
+            "search",
+            "analyze",
+            "describe",
+            "inspect_query"
+          ],
+          "type": "string"
+        },
+        "protocol_version": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "request": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "operation",
+        "request"
+      ],
+      "type": "object",
+      "x-union-members": [
+        "SearchKernel_V1_InsertRequest",
+        "SearchKernel_V1_UpsertRequest",
+        "SearchKernel_V1_PatchRequest",
+        "SearchKernel_V1_DeleteRequest",
+        "SearchKernel_V1_GetRequest",
+        "SearchKernel_V1_SearchRequest",
+        "SearchKernel_V1_AnalyzeRequest",
+        "SearchKernel_V1_DescribeRequest",
+        "SearchKernel_V1_InspectQueryRequest"
+      ],
+      "x-union-presentation": "operation selects the natural payload object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "enum": [
+            "insert",
+            "upsert",
+            "patch",
+            "delete",
+            "get",
+            "search",
+            "analyze",
+            "error",
+            "describe",
+            "inspect_query"
+          ],
+          "type": "string"
+        },
+        "protocol_version": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "response": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "operation",
+        "response"
+      ],
+      "type": "object",
+      "x-union-members": [
+        "SearchKernel_V1_InsertResult",
+        "SearchKernel_V1_UpsertResult",
+        "SearchKernel_V1_PatchResult",
+        "SearchKernel_V1_DeleteResult",
+        "SearchKernel_V1_GetResult",
+        "SearchKernel_V1_SearchResult",
+        "SearchKernel_V1_AnalyzeResult",
+        "SearchKernel_V1_Error",
+        "SearchKernel_V1_DescribeResult",
+        "SearchKernel_V1_InspectQueryResult"
+      ],
+      "x-union-presentation": "operation selects the natural payload object"
     }
   },
-  "response": {
-    "$ref": "#/definitions/SearchKernel_FFI_V1_ResponseEnvelope",
-    "$schema": "https://json-schema.org/draft/2019-09/schema",
-    "definitions": {
-      "SearchKernel_FFI_V1_ResponseEnvelope": {
-        "additionalProperties": false,
-        "properties": {
-          "payload": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_InsertResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UpsertResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_PatchResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DeleteResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_GetResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_SearchResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_AnalyzeResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Error"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DescribeResult"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_InspectQueryResult"
-              }
-            ]
-          },
-          "payload_type": {
-            "$ref": "#/definitions/SearchKernel_FFI_V1_ResponsePayload"
-          },
-          "protocol_version": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_FFI_V1_ResponsePayload": {
-        "enum": [
-          "NONE",
-          "SearchKernel_V1_InsertResult",
-          "SearchKernel_V1_UpsertResult",
-          "SearchKernel_V1_PatchResult",
-          "SearchKernel_V1_DeleteResult",
-          "SearchKernel_V1_GetResult",
-          "SearchKernel_V1_SearchResult",
-          "SearchKernel_V1_AnalyzeResult",
-          "SearchKernel_V1_Error",
-          "SearchKernel_V1_DescribeResult",
-          "SearchKernel_V1_InspectQueryResult"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_AnalyzeFieldTarget": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "language": {
-            "type": "string"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Analyzer"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_AnalyzeFieldTarget"
-              }
-            ]
-          },
-          "target_type": {
-            "$ref": "#/definitions/SearchKernel_V1_AnalyzeTarget"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeResult": {
-        "additionalProperties": false,
-        "properties": {
-          "tokens": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_AnalyzedToken"
+  "description": "Generated from the normative Search Kernel FlatBuffers contract.",
+  "title": "Search Kernel canonical HTTP JSON",
+  "x-flatbuffers-schema": {
+    "request": {
+      "$ref": "#/definitions/SearchKernel_FFI_V1_RequestEnvelope",
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "definitions": {
+        "SearchKernel_FFI_V1_RequestEnvelope": {
+          "additionalProperties": false,
+          "properties": {
+            "payload": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_InsertRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UpsertRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_PatchRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DeleteRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_GetRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_AnalyzeRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DescribeRequest"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_InspectQueryRequest"
+                }
+              ]
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_AnalyzeTarget": {
-        "enum": [
-          "NONE",
-          "Analyzer",
-          "AnalyzeFieldTarget"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_AnalyzedToken": {
-        "additionalProperties": false,
-        "properties": {
-          "end_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "position": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "start_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "surface": {
-            "type": "string"
-          },
-          "term": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Analyzer": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "options": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+            "payload_type": {
+              "$ref": "#/definitions/SearchKernel_FFI_V1_RequestPayload"
             },
-            "type": "array"
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
           },
-          "version": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_Bm25Ranking": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_BoolValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
+        "SearchKernel_FFI_V1_RequestPayload": {
+          "enum": [
+            "NONE",
+            "SearchKernel_V1_InsertRequest",
+            "SearchKernel_V1_UpsertRequest",
+            "SearchKernel_V1_PatchRequest",
+            "SearchKernel_V1_DeleteRequest",
+            "SearchKernel_V1_GetRequest",
+            "SearchKernel_V1_SearchRequest",
+            "SearchKernel_V1_AnalyzeRequest",
+            "SearchKernel_V1_DescribeRequest",
+            "SearchKernel_V1_InspectQueryRequest"
+          ],
+          "type": "string"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_BytesValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "items": {
-              "maximum": 255,
+        "SearchKernel_V1_AnalyzeFieldTarget": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Analyzer"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_AnalyzeFieldTarget"
+                }
+              ]
+            },
+            "target_type": {
+              "$ref": "#/definitions/SearchKernel_V1_AnalyzeTarget"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeResult": {
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_AnalyzedToken"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeTarget": {
+          "enum": [
+            "NONE",
+            "Analyzer",
+            "AnalyzeFieldTarget"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_AnalyzedToken": {
+          "additionalProperties": false,
+          "properties": {
+            "end_byte": {
+              "maximum": 4294967295,
               "minimum": 0,
               "type": "integer"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ComparisonOp": {
-        "enum": [
-          "Unspecified",
-          "Eq",
-          "Ne",
-          "Lt",
-          "Lte",
-          "Gt",
-          "Gte"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_DefaultRelevanceV1": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_DeleteRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_DeleteResult": {
-        "additionalProperties": false,
-        "properties": {
-          "deleted": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_DescribeRequest": {
-        "additionalProperties": false,
-        "properties": {},
-        "type": "object"
-      },
-      "SearchKernel_V1_DescribeResult": {
-        "additionalProperties": false,
-        "properties": {
-          "index": {
-            "$ref": "#/definitions/SearchKernel_V1_IndexDefinition"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Document": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+            "position": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
             },
-            "type": "array"
-          },
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Error": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "$ref": "#/definitions/SearchKernel_V1_ErrorCode"
-          },
-          "details": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ErrorDetail"
+            "start_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
             },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "retryable": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_ErrorCode": {
-        "enum": [
-          "Unspecified",
-          "InvalidArgument",
-          "NotFound",
-          "AlreadyExists",
-          "FailedPrecondition",
-          "Conflict",
-          "Unsupported",
-          "ResourceExhausted",
-          "Internal",
-          "Unavailable"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_ErrorDetail": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "metadata": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_StringEntry"
-            },
-            "type": "array"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "limit": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "sort": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalFacetSort"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetResult": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "values": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetValue"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FacetSort": {
-        "enum": [
-          "Unspecified",
-          "CountDesc",
-          "CountAsc",
-          "ValueAsc",
-          "ValueDesc"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FacetValue": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FieldCardinality": {
-        "enum": [
-          "Unspecified",
-          "Single",
-          "Multi"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FieldDefinition": {
-        "additionalProperties": false,
-        "properties": {
-          "analyzer": {
-            "$ref": "#/definitions/SearchKernel_V1_Analyzer"
-          },
-          "cardinality": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldCardinality"
-          },
-          "facetable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "filterable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "kind": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldKind"
-          },
-          "name": {
-            "type": "string"
-          },
-          "searchable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "sortable": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "stored": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FieldKind": {
-        "enum": [
-          "Unspecified",
-          "Text",
-          "Keyword",
-          "Int64",
-          "Float64",
-          "Bool"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FieldProjection": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
+            "surface": {
               "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterAnd": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterComparison": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
+            "term": {
+              "type": "string"
+            }
           },
-          "op": {
-            "$ref": "#/definitions/SearchKernel_V1_ComparisonOp"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExists": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterAnd"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterOr"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterNot"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterComparison"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterRange"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_FilterExists"
-              }
-            ]
-          },
-          "expr_type": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExprKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterExprKind": {
-        "enum": [
-          "NONE",
-          "FilterAnd",
-          "FilterOr",
-          "FilterNot",
-          "FilterComparison",
-          "FilterRange",
-          "FilterExists"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_FilterNot": {
-        "additionalProperties": false,
-        "properties": {
-          "clause": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterOr": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_FilterRange": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "include_lower": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "include_upper": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
-          },
-          "lower": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          },
-          "upper": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Float64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "number"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_GetRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "projection": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_GetResult": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightFragment": {
-        "additionalProperties": false,
-        "properties": {
-          "matches": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightSpan"
-            },
-            "type": "array"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
+        "SearchKernel_V1_Analyzer": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
               "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightResult": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "fragments": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightFragment"
+            "options": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_HighlightSpan": {
-        "additionalProperties": false,
-        "properties": {
-          "end_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
+            "version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
           },
-          "start_byte": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_Hit": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+        "SearchKernel_V1_Bm25Ranking": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_BoolValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_BytesValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "items": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ComparisonOp": {
+          "enum": [
+            "Unspecified",
+            "Eq",
+            "Ne",
+            "Lt",
+            "Lte",
+            "Gt",
+            "Gte"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_DefaultRelevanceV1": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_DeleteRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_DeleteResult": {
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "type": "boolean"
             },
-            "type": "array"
+            "id": {
+              "type": "string"
+            }
           },
-          "highlights": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_HighlightResult"
+          "type": "object"
+        },
+        "SearchKernel_V1_DescribeRequest": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_DescribeResult": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "$ref": "#/definitions/SearchKernel_V1_IndexDefinition"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Document": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
             },
-            "type": "array"
+            "id": {
+              "type": "string"
+            }
           },
-          "id": {
-            "type": "string"
-          },
-          "score": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_IndexDefinition": {
-        "additionalProperties": false,
-        "properties": {
-          "default_search_fields": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
-          },
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FieldDefinition"
+        "SearchKernel_V1_Error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/definitions/SearchKernel_V1_ErrorCode"
             },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InsertRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InsertResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InspectQueryRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "request": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_InspectQueryResult": {
-        "additionalProperties": false,
-        "properties": {
-          "resolved_request": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Int64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_MissingPlacement": {
-        "enum": [
-          "Unspecified",
-          "First",
-          "Last"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_NullValue": {
-        "enum": [
-          "Unspecified",
-          "Null"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_NullValueValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_NullValue"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalBool": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalDouble": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "number"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalFacetSort": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_FacetSort"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalMissingPlacement": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_MissingPlacement"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_OptionalUInt32": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchOperation": {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_SetField"
+            "details": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ErrorDetail"
               },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UnsetField"
-              }
-            ]
-          },
-          "operation_type": {
-            "$ref": "#/definitions/SearchKernel_V1_PatchOperationKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchOperationKind": {
-        "enum": [
-          "NONE",
-          "SetField",
-          "UnsetField"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_PatchRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "operations": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_PatchOperation"
+              "type": "array"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_PatchResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryAnd": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+            "message": {
+              "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "expr": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_TermQuery"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryAnd"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryOr"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_QueryNot"
-              }
-            ]
+            "retryable": {
+              "type": "boolean"
+            }
           },
-          "expr_type": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExprKind"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryExprKind": {
-        "enum": [
-          "NONE",
-          "TermQuery",
-          "QueryAnd",
-          "QueryOr",
-          "QueryNot"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_QueryNot": {
-        "additionalProperties": false,
-        "properties": {
-          "clause": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-          }
+        "SearchKernel_V1_ErrorCode": {
+          "enum": [
+            "Unspecified",
+            "InvalidArgument",
+            "NotFound",
+            "AlreadyExists",
+            "FailedPrecondition",
+            "Conflict",
+            "Unsupported",
+            "ResourceExhausted",
+            "Internal",
+            "Unavailable"
+          ],
+          "type": "string"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_QueryOr": {
-        "additionalProperties": false,
-        "properties": {
-          "clauses": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+        "SearchKernel_V1_ErrorDetail": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicy": {
-        "additionalProperties": false,
-        "properties": {
-          "policy": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_DefaultRelevanceV1"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Bm25Ranking"
-              }
-            ]
-          },
-          "policy_type": {
-            "$ref": "#/definitions/SearchKernel_V1_RankingPolicyKind"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_RankingPolicyKind": {
-        "enum": [
-          "NONE",
-          "DefaultRelevanceV1",
-          "Bm25Ranking"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_SearchField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "weight": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchFieldSelection": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_SearchField"
+            "message": {
+              "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "facets": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetRequest"
+            "metadata": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_StringEntry"
+              },
+              "type": "array"
             },
-            "type": "array"
+            "path": {
+              "type": "string"
+            }
           },
-          "filter": {
-            "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
-          },
-          "highlighting": {
-            "$ref": "#/definitions/SearchKernel_V1_HighlightRequest"
-          },
-          "language": {
-            "type": "string"
-          },
-          "limit": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "offset": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
-          },
-          "projection": {
-            "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
-          },
-          "query": {
-            "type": "string"
-          },
-          "query_expr": {
-            "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
-          },
-          "ranking": {
-            "$ref": "#/definitions/SearchKernel_V1_RankingPolicy"
-          },
-          "search_fields": {
-            "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
-          },
-          "sort": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_SortExpr"
+          "type": "object"
+        },
+        "SearchKernel_V1_FacetRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
             },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SearchResult": {
-        "additionalProperties": false,
-        "properties": {
-          "facets": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_FacetResult"
+            "limit": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
             },
-            "type": "array"
+            "sort": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalFacetSort"
+            }
           },
-          "hits": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_Hit"
+          "type": "object"
+        },
+        "SearchKernel_V1_FacetResult": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
             },
-            "type": "array"
-          },
-          "total_hits": {
-            "$ref": "#/definitions/SearchKernel_V1_TotalHits"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SetField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_SortDirection": {
-        "enum": [
-          "Unspecified",
-          "Asc",
-          "Desc"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_SortExpr": {
-        "additionalProperties": false,
-        "properties": {
-          "direction": {
-            "$ref": "#/definitions/SearchKernel_V1_SortDirection"
-          },
-          "field": {
-            "type": "string"
-          },
-          "missing": {
-            "$ref": "#/definitions/SearchKernel_V1_OptionalMissingPlacement"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_StringEntry": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "type": "object"
-      },
-      "SearchKernel_V1_StringValue": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TermQuery": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TotalHits": {
-        "additionalProperties": false,
-        "properties": {
-          "relation": {
-            "$ref": "#/definitions/SearchKernel_V1_TotalHitsRelation"
-          },
-          "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_TotalHitsRelation": {
-        "enum": [
-          "Unspecified",
-          "Exact",
-          "LowerBound"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_UInt64Value": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "maximum": 18446744073709551615,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UnsetField": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UpsertRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "document": {
-            "$ref": "#/definitions/SearchKernel_V1_Document"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_UpsertResult": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SearchKernel_V1_Value": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/SearchKernel_V1_NullValueValue"
+            "values": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetValue"
               },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_BoolValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Int64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_UInt64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_Float64Value"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_StringValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_BytesValue"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_ValueList"
-              },
-              {
-                "$ref": "#/definitions/SearchKernel_V1_ValueObject"
-              }
-            ]
+              "type": "array"
+            }
           },
-          "kind_type": {
-            "$ref": "#/definitions/SearchKernel_V1_ValueKind"
-          }
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueEntry": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "type": "string"
+        "SearchKernel_V1_FacetSort": {
+          "enum": [
+            "Unspecified",
+            "CountDesc",
+            "CountAsc",
+            "ValueAsc",
+            "ValueDesc"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FacetValue": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
           },
-          "value": {
-            "$ref": "#/definitions/SearchKernel_V1_Value"
-          }
+          "type": "object"
         },
-        "required": [
-          "key"
-        ],
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueKind": {
-        "enum": [
-          "NONE",
-          "NullValueValue",
-          "BoolValue",
-          "Int64Value",
-          "UInt64Value",
-          "Float64Value",
-          "StringValue",
-          "BytesValue",
-          "ValueList",
-          "ValueObject"
-        ],
-        "type": "string"
-      },
-      "SearchKernel_V1_ValueList": {
-        "additionalProperties": false,
-        "properties": {
-          "values": {
-            "items": {
+        "SearchKernel_V1_FieldCardinality": {
+          "enum": [
+            "Unspecified",
+            "Single",
+            "Multi"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FieldDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "analyzer": {
+              "$ref": "#/definitions/SearchKernel_V1_Analyzer"
+            },
+            "cardinality": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldCardinality"
+            },
+            "facetable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "filterable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "kind": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldKind"
+            },
+            "name": {
+              "type": "string"
+            },
+            "searchable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "sortable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "stored": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FieldKind": {
+          "enum": [
+            "Unspecified",
+            "Text",
+            "Keyword",
+            "Int64",
+            "Float64",
+            "Bool"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FieldProjection": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterAnd": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterComparison": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "op": {
+              "$ref": "#/definitions/SearchKernel_V1_ComparisonOp"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExists": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "expr": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterAnd"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterOr"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterNot"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterComparison"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterRange"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterExists"
+                }
+              ]
+            },
+            "expr_type": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExprKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExprKind": {
+          "enum": [
+            "NONE",
+            "FilterAnd",
+            "FilterOr",
+            "FilterNot",
+            "FilterComparison",
+            "FilterRange",
+            "FilterExists"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FilterNot": {
+          "additionalProperties": false,
+          "properties": {
+            "clause": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterOr": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterRange": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "include_lower": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "include_upper": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "lower": {
               "$ref": "#/definitions/SearchKernel_V1_Value"
             },
-            "type": "array"
-          }
+            "upper": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
         },
-        "type": "object"
-      },
-      "SearchKernel_V1_ValueObject": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "items": {
-              "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+        "SearchKernel_V1_Float64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_GetRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
             },
-            "type": "array"
-          }
+            "projection": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
+            }
+          },
+          "type": "object"
         },
-        "type": "object"
+        "SearchKernel_V1_GetResult": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightFragment": {
+          "additionalProperties": false,
+          "properties": {
+            "matches": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightSpan"
+              },
+              "type": "array"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightResult": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "fragments": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightFragment"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "end_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Hit": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            },
+            "highlights": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightResult"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "score": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_IndexDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "default_search_fields": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FieldDefinition"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InsertRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InsertResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InspectQueryRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "request": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InspectQueryResult": {
+          "additionalProperties": false,
+          "properties": {
+            "resolved_request": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Int64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_MissingPlacement": {
+          "enum": [
+            "Unspecified",
+            "First",
+            "Last"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_NullValue": {
+          "enum": [
+            "Unspecified",
+            "Null"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_NullValueValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_NullValue"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalBool": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalDouble": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalFacetSort": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_FacetSort"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalMissingPlacement": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_MissingPlacement"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalUInt32": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchOperation": {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_SetField"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UnsetField"
+                }
+              ]
+            },
+            "operation_type": {
+              "$ref": "#/definitions/SearchKernel_V1_PatchOperationKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchOperationKind": {
+          "enum": [
+            "NONE",
+            "SetField",
+            "UnsetField"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_PatchRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_PatchOperation"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryAnd": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "expr": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_TermQuery"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryAnd"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryOr"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryNot"
+                }
+              ]
+            },
+            "expr_type": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExprKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryExprKind": {
+          "enum": [
+            "NONE",
+            "TermQuery",
+            "QueryAnd",
+            "QueryOr",
+            "QueryNot"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_QueryNot": {
+          "additionalProperties": false,
+          "properties": {
+            "clause": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryOr": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_RankingPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DefaultRelevanceV1"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Bm25Ranking"
+                }
+              ]
+            },
+            "policy_type": {
+              "$ref": "#/definitions/SearchKernel_V1_RankingPolicyKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_RankingPolicyKind": {
+          "enum": [
+            "NONE",
+            "DefaultRelevanceV1",
+            "Bm25Ranking"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_SearchField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "weight": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchFieldSelection": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_SearchField"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "facets": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetRequest"
+              },
+              "type": "array"
+            },
+            "filter": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+            },
+            "highlighting": {
+              "$ref": "#/definitions/SearchKernel_V1_HighlightRequest"
+            },
+            "language": {
+              "type": "string"
+            },
+            "limit": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
+            },
+            "offset": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
+            },
+            "projection": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
+            },
+            "query": {
+              "type": "string"
+            },
+            "query_expr": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+            },
+            "ranking": {
+              "$ref": "#/definitions/SearchKernel_V1_RankingPolicy"
+            },
+            "search_fields": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
+            },
+            "sort": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_SortExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchResult": {
+          "additionalProperties": false,
+          "properties": {
+            "facets": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetResult"
+              },
+              "type": "array"
+            },
+            "hits": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_Hit"
+              },
+              "type": "array"
+            },
+            "total_hits": {
+              "$ref": "#/definitions/SearchKernel_V1_TotalHits"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SetField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SortDirection": {
+          "enum": [
+            "Unspecified",
+            "Asc",
+            "Desc"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_SortExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "$ref": "#/definitions/SearchKernel_V1_SortDirection"
+            },
+            "field": {
+              "type": "string"
+            },
+            "missing": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalMissingPlacement"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_StringEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "SearchKernel_V1_StringValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TermQuery": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TotalHits": {
+          "additionalProperties": false,
+          "properties": {
+            "relation": {
+              "$ref": "#/definitions/SearchKernel_V1_TotalHitsRelation"
+            },
+            "value": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TotalHitsRelation": {
+          "enum": [
+            "Unspecified",
+            "Exact",
+            "LowerBound"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_UInt64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UnsetField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UpsertRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UpsertResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Value": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_NullValueValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_BoolValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Int64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UInt64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Float64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_StringValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_BytesValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_ValueList"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_ValueObject"
+                }
+              ]
+            },
+            "kind_type": {
+              "$ref": "#/definitions/SearchKernel_V1_ValueKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueKind": {
+          "enum": [
+            "NONE",
+            "NullValueValue",
+            "BoolValue",
+            "Int64Value",
+            "UInt64Value",
+            "Float64Value",
+            "StringValue",
+            "BytesValue",
+            "ValueList",
+            "ValueObject"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_ValueList": {
+          "additionalProperties": false,
+          "properties": {
+            "values": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_Value"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueObject": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      }
+    },
+    "response": {
+      "$ref": "#/definitions/SearchKernel_FFI_V1_ResponseEnvelope",
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "definitions": {
+        "SearchKernel_FFI_V1_ResponseEnvelope": {
+          "additionalProperties": false,
+          "properties": {
+            "payload": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_InsertResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UpsertResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_PatchResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DeleteResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_GetResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_SearchResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_AnalyzeResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Error"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DescribeResult"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_InspectQueryResult"
+                }
+              ]
+            },
+            "payload_type": {
+              "$ref": "#/definitions/SearchKernel_FFI_V1_ResponsePayload"
+            },
+            "protocol_version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_FFI_V1_ResponsePayload": {
+          "enum": [
+            "NONE",
+            "SearchKernel_V1_InsertResult",
+            "SearchKernel_V1_UpsertResult",
+            "SearchKernel_V1_PatchResult",
+            "SearchKernel_V1_DeleteResult",
+            "SearchKernel_V1_GetResult",
+            "SearchKernel_V1_SearchResult",
+            "SearchKernel_V1_AnalyzeResult",
+            "SearchKernel_V1_Error",
+            "SearchKernel_V1_DescribeResult",
+            "SearchKernel_V1_InspectQueryResult"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_AnalyzeFieldTarget": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Analyzer"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_AnalyzeFieldTarget"
+                }
+              ]
+            },
+            "target_type": {
+              "$ref": "#/definitions/SearchKernel_V1_AnalyzeTarget"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeResult": {
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_AnalyzedToken"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_AnalyzeTarget": {
+          "enum": [
+            "NONE",
+            "Analyzer",
+            "AnalyzeFieldTarget"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_AnalyzedToken": {
+          "additionalProperties": false,
+          "properties": {
+            "end_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "position": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "surface": {
+              "type": "string"
+            },
+            "term": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Analyzer": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            },
+            "version": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Bm25Ranking": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_BoolValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_BytesValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "items": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ComparisonOp": {
+          "enum": [
+            "Unspecified",
+            "Eq",
+            "Ne",
+            "Lt",
+            "Lte",
+            "Gt",
+            "Gte"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_DefaultRelevanceV1": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_DeleteRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_DeleteResult": {
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_DescribeRequest": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "SearchKernel_V1_DescribeResult": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "$ref": "#/definitions/SearchKernel_V1_IndexDefinition"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Document": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/definitions/SearchKernel_V1_ErrorCode"
+            },
+            "details": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ErrorDetail"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ErrorCode": {
+          "enum": [
+            "Unspecified",
+            "InvalidArgument",
+            "NotFound",
+            "AlreadyExists",
+            "FailedPrecondition",
+            "Conflict",
+            "Unsupported",
+            "ResourceExhausted",
+            "Internal",
+            "Unavailable"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_ErrorDetail": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "metadata": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_StringEntry"
+              },
+              "type": "array"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FacetRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "limit": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
+            },
+            "sort": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalFacetSort"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FacetResult": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetValue"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FacetSort": {
+          "enum": [
+            "Unspecified",
+            "CountDesc",
+            "CountAsc",
+            "ValueAsc",
+            "ValueDesc"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FacetValue": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FieldCardinality": {
+          "enum": [
+            "Unspecified",
+            "Single",
+            "Multi"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FieldDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "analyzer": {
+              "$ref": "#/definitions/SearchKernel_V1_Analyzer"
+            },
+            "cardinality": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldCardinality"
+            },
+            "facetable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "filterable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "kind": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldKind"
+            },
+            "name": {
+              "type": "string"
+            },
+            "searchable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "sortable": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "stored": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FieldKind": {
+          "enum": [
+            "Unspecified",
+            "Text",
+            "Keyword",
+            "Int64",
+            "Float64",
+            "Bool"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FieldProjection": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterAnd": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterComparison": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "op": {
+              "$ref": "#/definitions/SearchKernel_V1_ComparisonOp"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExists": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "expr": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterAnd"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterOr"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterNot"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterComparison"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterRange"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_FilterExists"
+                }
+              ]
+            },
+            "expr_type": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExprKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterExprKind": {
+          "enum": [
+            "NONE",
+            "FilterAnd",
+            "FilterOr",
+            "FilterNot",
+            "FilterComparison",
+            "FilterRange",
+            "FilterExists"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_FilterNot": {
+          "additionalProperties": false,
+          "properties": {
+            "clause": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterOr": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_FilterRange": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "include_lower": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "include_upper": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalBool"
+            },
+            "lower": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            },
+            "upper": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Float64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_GetRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "projection": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_GetResult": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightFragment": {
+          "additionalProperties": false,
+          "properties": {
+            "matches": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightSpan"
+              },
+              "type": "array"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightResult": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "fragments": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightFragment"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_HighlightSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "end_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_byte": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Hit": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            },
+            "highlights": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_HighlightResult"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "score": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_IndexDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "default_search_fields": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FieldDefinition"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InsertRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InsertResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InspectQueryRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "request": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_InspectQueryResult": {
+          "additionalProperties": false,
+          "properties": {
+            "resolved_request": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchRequest"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Int64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_MissingPlacement": {
+          "enum": [
+            "Unspecified",
+            "First",
+            "Last"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_NullValue": {
+          "enum": [
+            "Unspecified",
+            "Null"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_NullValueValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_NullValue"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalBool": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalDouble": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalFacetSort": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_FacetSort"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalMissingPlacement": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_MissingPlacement"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_OptionalUInt32": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchOperation": {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_SetField"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UnsetField"
+                }
+              ]
+            },
+            "operation_type": {
+              "$ref": "#/definitions/SearchKernel_V1_PatchOperationKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchOperationKind": {
+          "enum": [
+            "NONE",
+            "SetField",
+            "UnsetField"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_PatchRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_PatchOperation"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_PatchResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryAnd": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "expr": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_TermQuery"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryAnd"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryOr"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_QueryNot"
+                }
+              ]
+            },
+            "expr_type": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExprKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryExprKind": {
+          "enum": [
+            "NONE",
+            "TermQuery",
+            "QueryAnd",
+            "QueryOr",
+            "QueryNot"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_QueryNot": {
+          "additionalProperties": false,
+          "properties": {
+            "clause": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_QueryOr": {
+          "additionalProperties": false,
+          "properties": {
+            "clauses": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_RankingPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_DefaultRelevanceV1"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Bm25Ranking"
+                }
+              ]
+            },
+            "policy_type": {
+              "$ref": "#/definitions/SearchKernel_V1_RankingPolicyKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_RankingPolicyKind": {
+          "enum": [
+            "NONE",
+            "DefaultRelevanceV1",
+            "Bm25Ranking"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_SearchField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "weight": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalDouble"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchFieldSelection": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_SearchField"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "facets": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetRequest"
+              },
+              "type": "array"
+            },
+            "filter": {
+              "$ref": "#/definitions/SearchKernel_V1_FilterExpr"
+            },
+            "highlighting": {
+              "$ref": "#/definitions/SearchKernel_V1_HighlightRequest"
+            },
+            "language": {
+              "type": "string"
+            },
+            "limit": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
+            },
+            "offset": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalUInt32"
+            },
+            "projection": {
+              "$ref": "#/definitions/SearchKernel_V1_FieldProjection"
+            },
+            "query": {
+              "type": "string"
+            },
+            "query_expr": {
+              "$ref": "#/definitions/SearchKernel_V1_QueryExpr"
+            },
+            "ranking": {
+              "$ref": "#/definitions/SearchKernel_V1_RankingPolicy"
+            },
+            "search_fields": {
+              "$ref": "#/definitions/SearchKernel_V1_SearchFieldSelection"
+            },
+            "sort": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_SortExpr"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SearchResult": {
+          "additionalProperties": false,
+          "properties": {
+            "facets": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_FacetResult"
+              },
+              "type": "array"
+            },
+            "hits": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_Hit"
+              },
+              "type": "array"
+            },
+            "total_hits": {
+              "$ref": "#/definitions/SearchKernel_V1_TotalHits"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SetField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_SortDirection": {
+          "enum": [
+            "Unspecified",
+            "Asc",
+            "Desc"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_SortExpr": {
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "$ref": "#/definitions/SearchKernel_V1_SortDirection"
+            },
+            "field": {
+              "type": "string"
+            },
+            "missing": {
+              "$ref": "#/definitions/SearchKernel_V1_OptionalMissingPlacement"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_StringEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "SearchKernel_V1_StringValue": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TermQuery": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TotalHits": {
+          "additionalProperties": false,
+          "properties": {
+            "relation": {
+              "$ref": "#/definitions/SearchKernel_V1_TotalHitsRelation"
+            },
+            "value": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_TotalHitsRelation": {
+          "enum": [
+            "Unspecified",
+            "Exact",
+            "LowerBound"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_UInt64Value": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UnsetField": {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UpsertRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/SearchKernel_V1_Document"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_UpsertResult": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_Value": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_NullValueValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_BoolValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Int64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_UInt64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_Float64Value"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_StringValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_BytesValue"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_ValueList"
+                },
+                {
+                  "$ref": "#/definitions/SearchKernel_V1_ValueObject"
+                }
+              ]
+            },
+            "kind_type": {
+              "$ref": "#/definitions/SearchKernel_V1_ValueKind"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SearchKernel_V1_Value"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueKind": {
+          "enum": [
+            "NONE",
+            "NullValueValue",
+            "BoolValue",
+            "Int64Value",
+            "UInt64Value",
+            "Float64Value",
+            "StringValue",
+            "BytesValue",
+            "ValueList",
+            "ValueObject"
+          ],
+          "type": "string"
+        },
+        "SearchKernel_V1_ValueList": {
+          "additionalProperties": false,
+          "properties": {
+            "values": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_Value"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "SearchKernel_V1_ValueObject": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/SearchKernel_V1_ValueEntry"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
       }
     }
   }

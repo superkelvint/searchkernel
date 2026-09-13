@@ -115,7 +115,15 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
             "unsupported schema change (digest {schema_digest}); update the generated JSON codec and bindgen support"
         ));
     }
-    generate_json_schema(root, &request, &response, check)?;
+    generate_json_schema(
+        root,
+        &request,
+        &response,
+        &request_types,
+        &response_types,
+        check,
+    )?;
+    generate_golden_json(root, &schema_digest, &request_types, &response_types, check)?;
     generate_json_types(root, &request, &response, check)?;
     let manifest = serde_json::json!({
         "flatc": "25.12.19",
@@ -170,11 +178,22 @@ fn generate_json_schema(
     root: &Path,
     request: &Value,
     response: &Value,
+    request_types: &[String],
+    response_types: &[String],
     check: bool,
 ) -> Result<(), String> {
     let schema = serde_json::json!({
-        "request": request,
-        "response": response,
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "title": "Search Kernel canonical HTTP JSON",
+        "description": "Generated from the normative Search Kernel FlatBuffers contract.",
+        "definitions": {
+            "request": natural_envelope_schema(request_types, "request"),
+            "response": natural_envelope_schema(response_types, "response"),
+        },
+        "x-flatbuffers-schema": {
+            "request": request,
+            "response": response,
+        },
     });
     let bytes = serde_json::to_vec_pretty(&schema).map_err(|e| e.to_string())?;
     let path = root.join("reference/json-conformance/generated/schema.json");
@@ -189,6 +208,101 @@ fn generate_json_schema(
         fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+fn natural_envelope_schema(types: &[String], payload_name: &str) -> Value {
+    let operations = types
+        .iter()
+        .filter_map(|type_name| operation_name(type_name).ok())
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_version", "operation", payload_name],
+        "properties": {
+            "protocol_version": {"type": "integer", "minimum": 0, "maximum": 4294967295u64},
+            "operation": {"type": "string", "enum": operations},
+            payload_name: {"type": "object"}
+        },
+        "x-union-members": types,
+        "x-union-presentation": "operation selects the natural payload object"
+    })
+}
+
+fn generate_golden_json(
+    root: &Path,
+    schema_digest: &str,
+    request_types: &[String],
+    response_types: &[String],
+    check: bool,
+) -> Result<(), String> {
+    let request = request_types
+        .iter()
+        .map(|type_name| {
+            let operation = operation_name(type_name).expect("verified union member");
+            serde_json::json!({
+                "protocol_version": 1,
+                "operation": operation,
+                "request": golden_payload(&operation, "request"),
+            })
+        })
+        .collect::<Vec<_>>();
+    let response = response_types
+        .iter()
+        .map(|type_name| {
+            let operation = operation_name(type_name).expect("verified union member");
+            serde_json::json!({
+                "protocol_version": 1,
+                "operation": operation,
+                "response": {operation.clone(): golden_payload(&operation, "response")},
+            })
+        })
+        .collect::<Vec<_>>();
+    let fixtures = serde_json::json!({
+        "schema_digest": schema_digest,
+        "source": "BFBS union members with generated minimal canonical payloads",
+        "requests": request,
+        "responses": response,
+    });
+    let bytes = serde_json::to_vec_pretty(&fixtures).map_err(|e| e.to_string())?;
+    let path = root.join("reference/json-conformance/generated/golden.json");
+    if check {
+        let current = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if current != bytes {
+            return Err(format!("generated file is stale: {}", path.display()));
+        }
+    } else {
+        fs::create_dir_all(path.parent().expect("golden fixture has a parent"))
+            .map_err(|e| format!("create golden fixture directory: {e}"))?;
+        fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn golden_payload(operation: &str, direction: &str) -> Value {
+    if direction == "request" {
+        match operation {
+            "insert" | "upsert" => serde_json::json!({"document": {"id": "fixture"}}),
+            "patch" => serde_json::json!({"id": "fixture", "operations": []}),
+            "delete" | "get" => serde_json::json!({"id": "fixture"}),
+            "inspect_query" => serde_json::json!({"request": {}}),
+            _ => Value::Object(Default::default()),
+        }
+    } else {
+        match operation {
+            "insert" | "upsert" | "patch" => serde_json::json!({"id": "fixture"}),
+            "delete" => serde_json::json!({"id": "fixture", "deleted": false}),
+            "search" => serde_json::json!({
+                "total_hits": {"value": "0", "relation": "exact"}
+            }),
+            "describe" => serde_json::json!({"index": {}}),
+            "inspect_query" => serde_json::json!({"resolved_request": {}}),
+            "error" => serde_json::json!({
+                "code": "unspecified", "message": "", "retryable": false
+            }),
+            _ => Value::Object(Default::default()),
+        }
+    }
 }
 
 fn generate_json_types(

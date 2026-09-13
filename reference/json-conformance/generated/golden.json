@@ -1,0 +1,162 @@
+{
+  "requests": [
+    {
+      "operation": "insert",
+      "protocol_version": 1,
+      "request": {
+        "document": {
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "upsert",
+      "protocol_version": 1,
+      "request": {
+        "document": {
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "patch",
+      "protocol_version": 1,
+      "request": {
+        "id": "fixture",
+        "operations": []
+      }
+    },
+    {
+      "operation": "delete",
+      "protocol_version": 1,
+      "request": {
+        "id": "fixture"
+      }
+    },
+    {
+      "operation": "get",
+      "protocol_version": 1,
+      "request": {
+        "id": "fixture"
+      }
+    },
+    {
+      "operation": "search",
+      "protocol_version": 1,
+      "request": {}
+    },
+    {
+      "operation": "analyze",
+      "protocol_version": 1,
+      "request": {}
+    },
+    {
+      "operation": "describe",
+      "protocol_version": 1,
+      "request": {}
+    },
+    {
+      "operation": "inspect_query",
+      "protocol_version": 1,
+      "request": {
+        "request": {}
+      }
+    }
+  ],
+  "responses": [
+    {
+      "operation": "insert",
+      "protocol_version": 1,
+      "response": {
+        "insert": {
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "upsert",
+      "protocol_version": 1,
+      "response": {
+        "upsert": {
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "patch",
+      "protocol_version": 1,
+      "response": {
+        "patch": {
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "delete",
+      "protocol_version": 1,
+      "response": {
+        "delete": {
+          "deleted": false,
+          "id": "fixture"
+        }
+      }
+    },
+    {
+      "operation": "get",
+      "protocol_version": 1,
+      "response": {
+        "get": {}
+      }
+    },
+    {
+      "operation": "search",
+      "protocol_version": 1,
+      "response": {
+        "search": {
+          "total_hits": {
+            "relation": "exact",
+            "value": "0"
+          }
+        }
+      }
+    },
+    {
+      "operation": "analyze",
+      "protocol_version": 1,
+      "response": {
+        "analyze": {}
+      }
+    },
+    {
+      "operation": "error",
+      "protocol_version": 1,
+      "response": {
+        "error": {
+          "code": "unspecified",
+          "message": "",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "operation": "describe",
+      "protocol_version": 1,
+      "response": {
+        "describe": {
+          "index": {}
+        }
+      }
+    },
+    {
+      "operation": "inspect_query",
+      "protocol_version": 1,
+      "response": {
+        "inspect_query": {
+          "resolved_request": {}
+        }
+      }
+    }
+  ],
+  "schema_digest": "010284fc0b2c92134e959a144b579ac72a5f05ef5fba74c837123172453878de",
+  "source": "BFBS union members with generated minimal canonical payloads"
+}

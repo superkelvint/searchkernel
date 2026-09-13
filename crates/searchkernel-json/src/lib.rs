@@ -286,6 +286,28 @@ mod tests {
     }
 
     #[test]
+    fn generated_union_golden_fixtures_round_trip() {
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../../../reference/json-conformance/generated/golden.json"
+        ))
+        .unwrap();
+        for fixture in fixtures["requests"].as_array().unwrap() {
+            let bytes = serde_json::to_vec(fixture).unwrap();
+            let flatbuffer = request_json_to_flatbuffer(&bytes).unwrap();
+            let canonical = request_flatbuffer_to_json(&flatbuffer).unwrap();
+            let second = request_json_to_flatbuffer(&canonical).unwrap();
+            assert_eq!(request_flatbuffer_to_json(&second).unwrap(), canonical);
+        }
+        for fixture in fixtures["responses"].as_array().unwrap() {
+            let bytes = serde_json::to_vec(fixture).unwrap();
+            let flatbuffer = response_json_to_flatbuffer(&bytes).unwrap();
+            let canonical = response_flatbuffer_to_json(&flatbuffer).unwrap();
+            let second = response_json_to_flatbuffer(&canonical).unwrap();
+            assert_eq!(response_flatbuffer_to_json(&second).unwrap(), canonical);
+        }
+    }
+
+    #[test]
     fn every_response_union_variant_has_json_encoding() {
         use crate::generated::search_kernel::ffi::v1 as transport;
         use searchkernel_api::v1 as api;
