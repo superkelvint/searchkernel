@@ -80,6 +80,12 @@ mod tests {
             ),
             Err(JsonCodecError::Contract(_))
         ));
+        assert!(matches!(
+            response_json_to_flatbuffer(
+                br#"{"protocol_version":1,"operation":"search","response":{"error":{"code":"internal","message":"bad","retryable":false}}}"#
+            ),
+            Err(JsonCodecError::Contract(_))
+        ));
     }
 
     #[test]
@@ -103,7 +109,7 @@ mod tests {
         let json = response_flatbuffer_to_json(builder.finished_data()).unwrap();
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&json).unwrap(),
-            serde_json::json!({"protocol_version":1,"response":{"insert":{"id":"doc-1"}}})
+            serde_json::json!({"protocol_version":1,"operation":"insert","response":{"insert":{"id":"doc-1"}}})
         );
     }
 

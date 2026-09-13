@@ -546,6 +546,10 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
     if version != PROTOCOL_VERSION {
         return Err(contract(format!("unsupported protocol_version {version}")));
     }
+    let declared_operation = string(
+        required(envelope, "operation", "response")?,
+        "response.operation",
+    )?;
     let response = object(required(envelope, "response", "response")?, "response.response")?;
     if response.len() != 1 {
         return Err(contract(
@@ -555,6 +559,11 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
     let (operation, payload) = response.iter().next().expect("length checked");
     if !crate::generated::schema::is_response_operation(operation) {
         return Err(contract(format!("unknown response operation `{operation}`")));
+    }
+    if declared_operation != *operation {
+        return Err(contract(format!(
+            "response operation `{declared_operation}` does not match payload `{operation}`"
+        )));
     }
 
     let mut builder = FlatBufferBuilder::new();
@@ -1247,7 +1256,11 @@ fn response_payload_fallback<'a>(
     };
     let response = serde_json::json!({name: payload});
     serde_json::to_vec(
-        &serde_json::json!({"protocol_version": PROTOCOL_VERSION, "response": response}),
+        &serde_json::json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "operation": name,
+            "response": response
+        }),
     )
     .map_err(|e| JsonCodecError::Contract(e.to_string()))
 }
