@@ -337,45 +337,7 @@ pub fn request_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErro
     let payload = object(required(envelope, "request", "request")?, "request.request")?;
 
     let mut builder = FlatBufferBuilder::new();
-    let (kind, payload) = match operation.as_str() {
-        "insert" => (
-            transport::RequestPayload::SearchKernel_V1_InsertRequest,
-            insert(&mut builder, payload)?,
-        ),
-        "upsert" => (
-            transport::RequestPayload::SearchKernel_V1_UpsertRequest,
-            upsert(&mut builder, payload)?,
-        ),
-        "patch" => (
-            transport::RequestPayload::SearchKernel_V1_PatchRequest,
-            patch(&mut builder, payload)?,
-        ),
-        "delete" => (
-            transport::RequestPayload::SearchKernel_V1_DeleteRequest,
-            delete(&mut builder, payload)?,
-        ),
-        "get" => (
-            transport::RequestPayload::SearchKernel_V1_GetRequest,
-            get(&mut builder, payload)?,
-        ),
-        "search" => (
-            transport::RequestPayload::SearchKernel_V1_SearchRequest,
-            offset(search(&mut builder, payload)?),
-        ),
-        "analyze" => (
-            transport::RequestPayload::SearchKernel_V1_AnalyzeRequest,
-            analyze(&mut builder, payload)?,
-        ),
-        "describe" => (
-            transport::RequestPayload::SearchKernel_V1_DescribeRequest,
-            describe(&mut builder, payload)?,
-        ),
-        "inspect_query" => (
-            transport::RequestPayload::SearchKernel_V1_InspectQueryRequest,
-            inspect_query(&mut builder, payload)?,
-        ),
-        _ => return Err(contract(format!("unknown operation `{operation}`"))),
-    };
+    let (kind, payload) = generated_request_json_to_payload(&mut builder, &operation, payload)?;
     let root = transport::RequestEnvelope::create(
         &mut builder,
         &transport::RequestEnvelopeArgs {
@@ -415,44 +377,12 @@ pub fn request_flatbuffer_to_json(input: &[u8]) -> Result<Vec<u8>, JsonCodecErro
             JsonCodecError::FlatBuffer(format!("unknown request discriminator {tag}"))
         }
     })?;
-    let payload = match tag {
-        x if x == transport::RequestPayload::SearchKernel_V1_InsertRequest.0 => {
-            request_insert(envelope.payload_as_search_kernel_v1_insert_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_UpsertRequest.0 => {
-            request_upsert(envelope.payload_as_search_kernel_v1_upsert_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_PatchRequest.0 => {
-            request_patch(envelope.payload_as_search_kernel_v1_patch_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_DeleteRequest.0 => {
-            request_delete(envelope.payload_as_search_kernel_v1_delete_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_GetRequest.0 => {
-            request_get(envelope.payload_as_search_kernel_v1_get_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_SearchRequest.0 => {
-            request_search(envelope.payload_as_search_kernel_v1_search_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_AnalyzeRequest.0 => {
-            request_analyze(envelope.payload_as_search_kernel_v1_analyze_request())?
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_DescribeRequest.0 => {
-            Value::Object(Map::new())
-        }
-        x if x == transport::RequestPayload::SearchKernel_V1_InspectQueryRequest.0 => {
-            request_inspect(envelope.payload_as_search_kernel_v1_inspect_query_request())?
-        }
-        0 => {
-            return Err(JsonCodecError::FlatBuffer(
-                "missing request payload".to_owned(),
-            ))
-        }
-        other => {
-            return Err(JsonCodecError::FlatBuffer(format!(
-                "unknown request discriminator {other}"
-            )))
-        }
+    let payload = if tag == 0 {
+        return Err(JsonCodecError::FlatBuffer(
+            "missing request payload".to_owned(),
+        ));
+    } else {
+        generated_request_payload_to_json(envelope, tag)?
     };
     serde_json::to_vec(&serde_json::json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -574,6 +504,13 @@ fn request_analyze(value: Option<api::AnalyzeRequest<'_>>) -> Result<Value, Json
     Ok(Value::Object(out))
 }
 
+fn generated_empty_request_json(
+    value: Option<api::DescribeRequest<'_>>,
+) -> Result<Value, JsonCodecError> {
+    required_result(value, "describe")?;
+    Ok(Value::Object(Map::new()))
+}
+
 fn request_inspect(value: Option<api::InspectQueryRequest<'_>>) -> Result<Value, JsonCodecError> {
     let value = required_result(value, "inspect_query")?;
     Ok(serde_json::json!({
@@ -598,6 +535,698 @@ pub fn response_flatbuffer_to_json(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
     response_payload_fallback(envelope)
 }
 
+pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
+    let value = parse(input)?;
+    let envelope = object(&value, "response")?;
+    check_envelope_keys(envelope, "response", "response")?;
+    let version = u32_value(
+        required(envelope, "protocol_version", "response")?,
+        "response.protocol_version",
+    )?;
+    if version != PROTOCOL_VERSION {
+        return Err(contract(format!("unsupported protocol_version {version}")));
+    }
+    let response = object(required(envelope, "response", "response")?, "response.response")?;
+    if response.len() != 1 {
+        return Err(contract(
+            "`response.response` must contain exactly one variant",
+        ));
+    }
+    let (operation, payload) = response.iter().next().expect("length checked");
+    if !crate::generated::schema::is_response_operation(operation) {
+        return Err(contract(format!("unknown response operation `{operation}`")));
+    }
+
+    let mut builder = FlatBufferBuilder::new();
+    let (kind, payload) = generated_response_json_to_payload(&mut builder, operation, payload)?;
+    let root = transport::ResponseEnvelope::create(
+        &mut builder,
+        &transport::ResponseEnvelopeArgs {
+            protocol_version: version,
+            payload_type: kind,
+            payload: Some(payload),
+        },
+    );
+    builder.finish(root, Some(transport::RESPONSE_ENVELOPE_IDENTIFIER));
+    Ok(builder.finished_data().to_vec())
+}
+
+fn response_id(value: &Value, path: &str) -> Result<String, JsonCodecError> {
+    string(required(object(value, path)?, "id", path)?, &format!("{path}.id"))
+}
+
+fn response_insert_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    check_keys(object(value, "response.insert")?, "SearchKernel_V1_InsertResult", "response.insert")?;
+    let id = b.create_string(&response_id(value, "response.insert")?);
+    Ok(offset(api::InsertResult::create(
+        b,
+        &api::InsertResultArgs { id: Some(id) },
+    )))
+}
+
+fn response_upsert_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    check_keys(object(value, "response.upsert")?, "SearchKernel_V1_UpsertResult", "response.upsert")?;
+    let id = b.create_string(&response_id(value, "response.upsert")?);
+    Ok(offset(api::UpsertResult::create(
+        b,
+        &api::UpsertResultArgs { id: Some(id) },
+    )))
+}
+
+fn response_patch_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    check_keys(object(value, "response.patch")?, "SearchKernel_V1_PatchResult", "response.patch")?;
+    let id = b.create_string(&response_id(value, "response.patch")?);
+    Ok(offset(api::PatchResult::create(
+        b,
+        &api::PatchResultArgs { id: Some(id) },
+    )))
+}
+
+fn response_delete_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.delete")?;
+    check_keys(o, "SearchKernel_V1_DeleteResult", "response.delete")?;
+    let id = b.create_string(&response_id(value, "response.delete")?);
+    let deleted = bool_value(required(o, "deleted", "response.delete")?, "response.delete.deleted")?;
+    Ok(offset(api::DeleteResult::create(
+        b,
+        &api::DeleteResultArgs {
+            id: Some(id),
+            deleted,
+        },
+    )))
+}
+
+fn response_get_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.get")?;
+    check_keys(o, "SearchKernel_V1_GetResult", "response.get")?;
+    let document = field(o, "document")
+        .map(|value| document(b, value))
+        .transpose()?;
+    Ok(offset(api::GetResult::create(
+        b,
+        &api::GetResultArgs { document },
+    )))
+}
+
+fn response_analyze_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.analyze")?;
+    check_keys(o, "SearchKernel_V1_AnalyzeResult", "response.analyze")?;
+    let tokens = field(o, "tokens")
+        .map(|value| {
+            let items = array(value, "response.analyze.tokens")?;
+            let mut tokens = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                tokens.push(analyzed_token(b, item, &format!("response.analyze.tokens[{i}]"))?);
+            }
+            Ok::<_, JsonCodecError>(b.create_vector(&tokens))
+        })
+        .transpose()?;
+    Ok(offset(api::AnalyzeResult::create(
+        b,
+        &api::AnalyzeResultArgs { tokens },
+    )))
+}
+
+fn analyzed_token<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::AnalyzedToken<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_AnalyzedToken", path)?;
+    let surface = b.create_string(&string(required(o, "surface", path)?, &format!("{path}.surface"))?);
+    let term = b.create_string(&string(required(o, "term", path)?, &format!("{path}.term"))?);
+    let position = u32_value(required(o, "position", path)?, &format!("{path}.position"))?;
+    let start_byte = u32_value(required(o, "start_byte", path)?, &format!("{path}.start_byte"))?;
+    let end_byte = u32_value(required(o, "end_byte", path)?, &format!("{path}.end_byte"))?;
+    Ok(api::AnalyzedToken::create(
+        b,
+        &api::AnalyzedTokenArgs {
+            surface: Some(surface),
+            term: Some(term),
+            position,
+            start_byte,
+            end_byte,
+        },
+    ))
+}
+
+fn response_search_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.search")?;
+    check_keys(o, "SearchKernel_V1_SearchResult", "response.search")?;
+    let total = total_hits_from_json(b, required(o, "total_hits", "response.search")?)?;
+    let hits = field(o, "hits")
+        .map(|value| {
+            let items = array(value, "response.search.hits")?;
+            let mut hits = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                hits.push(hit_from_json(b, item, &format!("response.search.hits[{i}]"))?);
+            }
+            Ok::<_, JsonCodecError>(b.create_vector(&hits))
+        })
+        .transpose()?;
+    let facets = field(o, "facets")
+        .map(|value| {
+            let items = array(value, "response.search.facets")?;
+            let mut facets = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                facets.push(facet_result_from_json(
+                    b,
+                    item,
+                    &format!("response.search.facets[{i}]"),
+                )?);
+            }
+            Ok::<_, JsonCodecError>(b.create_vector(&facets))
+        })
+        .transpose()?;
+    Ok(offset(api::SearchResult::create(
+        b,
+        &api::SearchResultArgs {
+            hits,
+            total_hits: Some(total),
+            facets,
+        },
+    )))
+}
+
+fn total_hits_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<api::TotalHits<'a>>, JsonCodecError> {
+    let o = object(value, "response.search.total_hits")?;
+    check_keys(
+        o,
+        "SearchKernel_V1_TotalHits",
+        "response.search.total_hits",
+    )?;
+    let number = decimal::<u64>(
+        required(o, "value", "response.search.total_hits")?,
+        "response.search.total_hits.value",
+        "unsigned 64-bit integer",
+    )?;
+    let relation = match string(
+        required(o, "relation", "response.search.total_hits")?,
+        "response.search.total_hits.relation",
+    )?
+    .as_str()
+    {
+        "unspecified" => api::TotalHitsRelation::Unspecified,
+        "exact" => api::TotalHitsRelation::Exact,
+        "lower_bound" => api::TotalHitsRelation::LowerBound,
+        other => {
+            return Err(contract(format!(
+                "unknown enum `response.search.total_hits.relation` value `{other}`"
+            )))
+        }
+    };
+    Ok(api::TotalHits::create(
+        b,
+        &api::TotalHitsArgs {
+            value: number,
+            relation,
+        },
+    ))
+}
+
+fn hit_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::Hit<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_Hit", path)?;
+    let id = b.create_string(&string(required(o, "id", path)?, &format!("{path}.id"))?);
+    let score = field(o, "score")
+        .map(|value| f64_value(value, &format!("{path}.score")).map(api::OptionalDouble::new))
+        .transpose()?;
+    let fields = field(o, "fields")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.fields"))?;
+            if is_absent_vector(value, &format!("{path}.fields"))? {
+                Ok(None)
+            } else {
+                Ok(Some(b.create_vector(&entries)))
+            }
+        })
+        .transpose()?
+        .flatten();
+    let highlights = field(o, "highlights")
+        .map(|value| {
+            if is_absent_vector(value, &format!("{path}.highlights"))? {
+                return Ok(None);
+            }
+            let items = array(value, &format!("{path}.highlights"))?;
+            let mut highlights = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                highlights.push(highlight_result_from_json(
+                    b,
+                    item,
+                    &format!("{path}.highlights[{i}]"),
+                )?);
+            }
+            Ok(Some(b.create_vector(&highlights)))
+        })
+        .transpose()?
+        .flatten();
+    Ok(api::Hit::create(
+        b,
+        &api::HitArgs {
+            id: Some(id),
+            score: score.as_ref(),
+            fields,
+            highlights,
+        },
+    ))
+}
+
+fn facet_result_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::FacetResult<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_FacetResult", path)?;
+    let field_offset = b.create_string(&string(
+        required(o, "field", path)?,
+        &format!("{path}.field"),
+    )?);
+    let values = field(o, "values")
+        .map(|value| {
+            let items = array(value, &format!("{path}.values"))?;
+            let mut values = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                values.push(facet_value_from_json(
+                    b,
+                    item,
+                    &format!("{path}.values[{i}]"),
+                )?);
+            }
+            Ok::<_, JsonCodecError>(b.create_vector(&values))
+        })
+        .transpose()?;
+    Ok(api::FacetResult::create(
+        b,
+        &api::FacetResultArgs {
+            field: Some(field_offset),
+            values,
+        },
+    ))
+}
+
+fn facet_value_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    input: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::FacetValue<'a>>, JsonCodecError> {
+    let o = object(input, path)?;
+    check_keys(o, "SearchKernel_V1_FacetValue", path)?;
+    let value_offset = value(b, required(o, "value", path)?)?;
+    let count = decimal::<u64>(
+        required(o, "count", path)?,
+        &format!("{path}.count"),
+        "unsigned 64-bit integer",
+    )?;
+    Ok(api::FacetValue::create(
+        b,
+        &api::FacetValueArgs {
+            value: Some(value_offset),
+            count,
+        },
+    ))
+}
+
+fn highlight_result_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::HighlightResult<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_HighlightResult", path)?;
+    let field_offset = b.create_string(&string(
+        required(o, "field", path)?,
+        &format!("{path}.field"),
+    )?);
+    let fragments = field(o, "fragments")
+        .map(|value| {
+            if is_absent_vector(value, &format!("{path}.fragments"))? {
+                return Ok(None);
+            }
+            let items = array(value, &format!("{path}.fragments"))?;
+            let mut fragments = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                fragments.push(highlight_fragment_from_json(
+                    b,
+                    item,
+                    &format!("{path}.fragments[{i}]"),
+                )?);
+            }
+            Ok(Some(b.create_vector(&fragments)))
+        })
+        .transpose()?
+        .flatten();
+    Ok(api::HighlightResult::create(
+        b,
+        &api::HighlightResultArgs {
+            field: Some(field_offset),
+            fragments,
+        },
+    ))
+}
+
+fn highlight_fragment_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::HighlightFragment<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_HighlightFragment", path)?;
+    let text = b.create_string(&string(
+        required(o, "text", path)?,
+        &format!("{path}.text"),
+    )?);
+    let matches = field(o, "matches")
+        .map(|value| {
+            if is_absent_vector(value, &format!("{path}.matches"))? {
+                return Ok(None);
+            }
+            let items = array(value, &format!("{path}.matches"))?;
+            let mut matches = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                let span = object(item, &format!("{path}.matches[{i}]"))?;
+                check_keys(
+                    span,
+                    "SearchKernel_V1_HighlightSpan",
+                    &format!("{path}.matches[{i}]"),
+                )?;
+                matches.push(api::HighlightSpan::create(
+                    b,
+                    &api::HighlightSpanArgs {
+                        start_byte: u32_value(
+                            required(span, "start_byte", &format!("{path}.matches[{i}]"))?,
+                            &format!("{path}.matches[{i}].start_byte"),
+                        )?,
+                        end_byte: u32_value(
+                            required(span, "end_byte", &format!("{path}.matches[{i}]"))?,
+                            &format!("{path}.matches[{i}].end_byte"),
+                        )?,
+                    },
+                ));
+            }
+            Ok(Some(b.create_vector(&matches)))
+        })
+        .transpose()?
+        .flatten();
+    Ok(api::HighlightFragment::create(
+        b,
+        &api::HighlightFragmentArgs { text: Some(text), matches },
+    ))
+}
+
+fn error_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.error")?;
+    check_keys(o, "SearchKernel_V1_Error", "response.error")?;
+    let code = error_code_from_json(
+        required(o, "code", "response.error")?,
+        "response.error.code",
+    )?;
+    let message = b.create_string(&string(
+        required(o, "message", "response.error")?,
+        "response.error.message",
+    )?);
+    let retryable = bool_value(
+        required(o, "retryable", "response.error")?,
+        "response.error.retryable",
+    )?;
+    let details = field(o, "details")
+        .map(|value| {
+            let items = array(value, "response.error.details")?;
+            let mut details = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                details.push(error_detail_from_json(
+                    b,
+                    item,
+                    &format!("response.error.details[{i}]"),
+                )?);
+            }
+            Ok::<_, JsonCodecError>(b.create_vector(&details))
+        })
+        .transpose()?;
+    Ok(offset(api::Error::create(
+        b,
+        &api::ErrorArgs {
+            code,
+            message: Some(message),
+            details,
+            retryable,
+        },
+    )))
+}
+
+fn error_detail_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ErrorDetail<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_ErrorDetail", path)?;
+    let code = b.create_string(&string(
+        required(o, "code", path)?,
+        &format!("{path}.code"),
+    )?);
+    let path_offset = field(o, "path")
+        .map(|value| string(value, &format!("{path}.path")).map(|value| b.create_string(&value)))
+        .transpose()?;
+    let message = b.create_string(&string(
+        required(o, "message", path)?,
+        &format!("{path}.message"),
+    )?);
+    let metadata = field(o, "metadata")
+        .map(|value| {
+            if is_absent_vector(value, &format!("{path}.metadata"))? {
+                return Ok(None);
+            }
+            let entries = string_entries(b, value, &format!("{path}.metadata"))?;
+            Ok(Some(b.create_vector(&entries)))
+        })
+        .transpose()?
+        .flatten();
+    Ok(api::ErrorDetail::create(
+        b,
+        &api::ErrorDetailArgs {
+            code: Some(code),
+            path: path_offset,
+            message: Some(message),
+            metadata,
+        },
+    ))
+}
+
+fn string_entries<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<Vec<WIPOffset<api::StringEntry<'a>>>, JsonCodecError> {
+    let o = object(value, path)?;
+    let mut entries = Vec::with_capacity(o.len());
+    for (key, value) in o {
+        if key == ABSENT_VECTOR_KEY {
+            return Err(contract(format!("reserved field `{path}.{key}`")));
+        }
+        let key_offset = b.create_string(key);
+        let value_offset = b.create_string(&string(value, &format!("{path}.{key}"))?);
+        entries.push(api::StringEntry::create(
+            b,
+            &api::StringEntryArgs {
+                key: Some(key_offset),
+                value: Some(value_offset),
+            },
+        ));
+    }
+    Ok(entries)
+}
+
+fn error_code_from_json(value: &Value, path: &str) -> Result<api::ErrorCode, JsonCodecError> {
+    match string(value, path)?.as_str() {
+        "unspecified" => Ok(api::ErrorCode::Unspecified),
+        "invalid_argument" => Ok(api::ErrorCode::InvalidArgument),
+        "not_found" => Ok(api::ErrorCode::NotFound),
+        "already_exists" => Ok(api::ErrorCode::AlreadyExists),
+        "failed_precondition" => Ok(api::ErrorCode::FailedPrecondition),
+        "conflict" => Ok(api::ErrorCode::Conflict),
+        "unsupported" => Ok(api::ErrorCode::Unsupported),
+        "resource_exhausted" => Ok(api::ErrorCode::ResourceExhausted),
+        "internal" => Ok(api::ErrorCode::Internal),
+        "unavailable" => Ok(api::ErrorCode::Unavailable),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn response_describe_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.describe")?;
+    check_keys(o, "SearchKernel_V1_DescribeResult", "response.describe")?;
+    let index = index_definition_from_json(
+        b,
+        required(o, "index", "response.describe")?,
+        "response.describe.index",
+    )?;
+    Ok(offset(api::DescribeResult::create(
+        b,
+        &api::DescribeResultArgs { index: Some(index) },
+    )))
+}
+
+fn response_inspect_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
+    let o = object(value, "response.inspect_query")?;
+    check_keys(
+        o,
+        "SearchKernel_V1_InspectQueryResult",
+        "response.inspect_query",
+    )?;
+    let request = search(
+        b,
+        object(
+            required(o, "resolved_request", "response.inspect_query")?,
+            "response.inspect_query.resolved_request",
+        )?,
+    )?;
+    Ok(offset(api::InspectQueryResult::create(
+        b,
+        &api::InspectQueryResultArgs {
+            resolved_request: Some(request),
+        },
+    )))
+}
+
+fn index_definition_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::IndexDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_IndexDefinition", path)?;
+    let name = field(o, "name")
+        .map(|value| string(value, &format!("{path}.name")).map(|value| b.create_string(&value)))
+        .transpose()?;
+    let fields = field(o, "fields")
+        .map(|value| {
+            if is_absent_vector(value, &format!("{path}.fields"))? {
+                return Ok(None);
+            }
+            let items = array(value, &format!("{path}.fields"))?;
+            let mut fields = Vec::with_capacity(items.len());
+            for (i, item) in items.iter().enumerate() {
+                fields.push(field_definition_from_json(
+                    b,
+                    item,
+                    &format!("{path}.fields[{i}]"),
+                )?);
+            }
+            Ok(Some(b.create_vector(&fields)))
+        })
+        .transpose()?
+        .flatten();
+    let default_search_fields = field(o, "default_search_fields")
+        .map(|value| selection(b, value, &format!("{path}.default_search_fields")))
+        .transpose()?;
+    Ok(api::IndexDefinition::create(
+        b,
+        &api::IndexDefinitionArgs {
+            name,
+            fields,
+            default_search_fields,
+        },
+    ))
+}
+
+fn field_definition_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::FieldDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V1_FieldDefinition", path)?;
+    let name = b.create_string(&string(
+        required(o, "name", path)?,
+        &format!("{path}.name"),
+    )?);
+    let kind = match string(required(o, "kind", path)?, &format!("{path}.kind"))?.as_str() {
+        "unspecified" => api::FieldKind::Unspecified,
+        "text" => api::FieldKind::Text,
+        "keyword" => api::FieldKind::Keyword,
+        "int64" => api::FieldKind::Int64,
+        "float64" => api::FieldKind::Float64,
+        "bool" => api::FieldKind::Bool,
+        other => return Err(contract(format!("unknown enum `{path}.kind` value `{other}`"))),
+    };
+    let cardinality = match string(
+        required(o, "cardinality", path)?,
+        &format!("{path}.cardinality"),
+    )?
+    .as_str()
+    {
+        "unspecified" => api::FieldCardinality::Unspecified,
+        "single" => api::FieldCardinality::Single,
+        "multi" => api::FieldCardinality::Multi,
+        other => {
+            return Err(contract(format!(
+                "unknown enum `{path}.cardinality` value `{other}`"
+            )))
+        }
+    };
+    let stored = optional_bool(o, "stored", path)?;
+    let searchable = optional_bool(o, "searchable", path)?;
+    let filterable = optional_bool(o, "filterable", path)?;
+    let sortable = optional_bool(o, "sortable", path)?;
+    let facetable = optional_bool(o, "facetable", path)?;
+    let analyzer = field(o, "analyzer")
+        .map(|value| analyzer(b, object(value, &format!("{path}.analyzer"))?))
+        .transpose()?;
+    Ok(api::FieldDefinition::create(
+        b,
+        &api::FieldDefinitionArgs {
+            name: Some(name),
+            kind,
+            cardinality,
+            stored: stored.as_ref(),
+            searchable: searchable.as_ref(),
+            filterable: filterable.as_ref(),
+            sortable: sortable.as_ref(),
+            facetable: facetable.as_ref(),
+            analyzer,
+        },
+    ))
+}
+
 fn response_payload_fallback<'a>(
     envelope: transport::ResponseEnvelope<'a>,
 ) -> Result<Vec<u8>, JsonCodecError> {
@@ -609,47 +1238,12 @@ fn response_payload_fallback<'a>(
             JsonCodecError::FlatBuffer(format!("unknown response discriminator {tag}"))
         }
     })?;
-    let payload = match tag {
-        x if x == transport::ResponsePayload::SearchKernel_V1_InsertResult.0 => {
-            response_insert(envelope.payload_as_search_kernel_v1_insert_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_UpsertResult.0 => {
-            response_upsert(envelope.payload_as_search_kernel_v1_upsert_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_PatchResult.0 => {
-            response_patch(envelope.payload_as_search_kernel_v1_patch_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_DeleteResult.0 => {
-            response_delete(envelope.payload_as_search_kernel_v1_delete_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_GetResult.0 => {
-            response_get(envelope.payload_as_search_kernel_v1_get_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_SearchResult.0 => {
-            response_search(envelope.payload_as_search_kernel_v1_search_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_AnalyzeResult.0 => {
-            response_analyze(envelope.payload_as_search_kernel_v1_analyze_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_Error.0 => {
-            response_error(envelope.payload_as_search_kernel_v1_error())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_DescribeResult.0 => {
-            response_describe(envelope.payload_as_search_kernel_v1_describe_result())?
-        }
-        x if x == transport::ResponsePayload::SearchKernel_V1_InspectQueryResult.0 => {
-            response_inspect(envelope.payload_as_search_kernel_v1_inspect_query_result())?
-        }
-        0 => {
-            return Err(JsonCodecError::FlatBuffer(
-                "missing response payload".to_owned(),
-            ))
-        }
-        other => {
-            return Err(JsonCodecError::FlatBuffer(format!(
-                "unknown response discriminator {other}"
-            )))
-        }
+    let payload = if tag == 0 {
+        return Err(JsonCodecError::FlatBuffer(
+            "missing response payload".to_owned(),
+        ));
+    } else {
+        generated_response_payload_to_json(envelope, tag)?
     };
     let response = serde_json::json!({name: payload});
     serde_json::to_vec(

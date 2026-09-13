@@ -13,7 +13,7 @@ mod generated;
 
 pub use codec::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
-    JsonCodecError,
+    response_json_to_flatbuffer, JsonCodecError,
 };
 
 #[cfg(test)]
@@ -275,6 +275,12 @@ mod tests {
             );
             builder.finish(envelope, Some(transport::RESPONSE_ENVELOPE_IDENTIFIER));
             let json = response_flatbuffer_to_json(builder.finished_data()).unwrap();
+            let round_tripped = response_json_to_flatbuffer(&json).unwrap();
+            let round_tripped_json = response_flatbuffer_to_json(&round_tripped).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&json).unwrap(),
+                serde_json::from_slice::<serde_json::Value>(&round_tripped_json).unwrap()
+            );
             serde_json::from_slice(&json).unwrap()
         }
 
@@ -429,6 +435,7 @@ mod tests {
 
         let mut covered = 0;
         let mut round_tripped = 0;
+        let mut rejected = 0;
         for case in cases {
             let operation = case["operation"].as_str().unwrap();
             let path = format!(
@@ -449,10 +456,25 @@ mod tests {
                 "request": request,
             });
             let input = serde_json::to_vec(&envelope).unwrap();
-            let Ok(flatbuffer) = request_json_to_flatbuffer(&input) else {
-                // Cases that deliberately exercise a transport-level null or
-                // malformed value are expected to be rejected by this codec.
-                continue;
+            let flatbuffer = match request_json_to_flatbuffer(&input) {
+                Ok(flatbuffer) => flatbuffer,
+                Err(error) => {
+                    assert!(
+                        matches!(
+                            case["id"].as_str(),
+                            Some("analyze.none-target-error")
+                                | Some("write.patch-none-operation")
+                                | Some("wire.facets-null-equals-empty")
+                                | Some("wire.patch-operations-null-equals-empty")
+                                | Some("wire.query-null-equals-empty")
+                                | Some("wire.sort-null-equals-empty")
+                        ),
+                        "{} ({operation}) was not representable as canonical JSON: {error}",
+                        case["id"]
+                    );
+                    rejected += 1;
+                    continue;
+                }
             };
             let json = request_flatbuffer_to_json(&flatbuffer).unwrap();
             let second = request_json_to_flatbuffer(&json).unwrap();
@@ -469,10 +491,8 @@ mod tests {
             round_tripped += 1;
         }
         assert_eq!(covered, 77);
-        assert!(
-            round_tripped >= 60,
-            "only {round_tripped} cases round-tripped"
-        );
+        assert_eq!(round_tripped + rejected, covered);
+        assert_eq!(rejected, 6);
     }
 
     fn request_kind(bytes: &[u8]) -> u8 {
@@ -507,12 +527,50 @@ mod tests {
             }
             _ => None,
         }
+        .map(|(operation, mut request)| {
+            normalize_portable_values(&mut request);
+            (operation, request)
+        })
+    }
+
+    fn normalize_portable_values(value: &mut Value) {
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    normalize_portable_values(value);
+                }
+            }
+            Value::Object(object) => {
+                for (name, value) in object.iter_mut() {
+                    if matches!(name.as_str(), "int64" | "uint64") {
+                        if let Some(number) = value.as_i64() {
+                            *value = Value::String(number.to_string());
+                        } else if let Some(number) = value.as_u64() {
+                            *value = Value::String(number.to_string());
+                        }
+                    }
+                    if name == "null" && value == &Value::Bool(true) {
+                        *value = Value::Null;
+                    }
+                    normalize_portable_values(value);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn normalize_search(mut input: Value) -> Value {
         let Some(object) = input.as_object_mut() else {
             return input;
         };
+        if let Some(ranking) = object.get_mut("ranking") {
+            if let Some(value) = ranking.get("bm25") {
+                *ranking = serde_json::json!({"bm25_ranking": value});
+            }
+            if let Some(value) = ranking.get("default_relevance") {
+                *ranking = serde_json::json!({"default_relevance_v1": value});
+            }
+        }
         for name in ["projection", "search_fields", "highlighting"] {
             if let Some(value) = object.get_mut(name) {
                 if let Some(fields) = value.get("fields") {
