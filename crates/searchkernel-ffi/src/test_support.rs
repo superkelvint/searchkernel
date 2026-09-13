@@ -4,6 +4,9 @@ use searchkernel_core::{Backend, IndexContext};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[cfg(test)]
+pub(crate) use searchkernel_testkit::RecordingBackend;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestKind {
     Insert,

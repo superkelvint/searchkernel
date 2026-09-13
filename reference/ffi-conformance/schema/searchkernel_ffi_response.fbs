@@ -1,0 +1,25 @@
+include "searchkernel.fbs";
+
+namespace SearchKernel.FFI.V1;
+
+union ResponsePayload {
+  SearchKernel.V1.InsertResult,
+  SearchKernel.V1.UpsertResult,
+  SearchKernel.V1.PatchResult,
+  SearchKernel.V1.DeleteResult,
+  SearchKernel.V1.GetResult,
+  SearchKernel.V1.SearchResult,
+  SearchKernel.V1.AnalyzeResult,
+  // Keep Error at its existing discriminant. New variants are appended.
+  SearchKernel.V1.Error,
+  SearchKernel.V1.DescribeResult,
+  SearchKernel.V1.InspectQueryResult
+}
+
+table ResponseEnvelope {
+  protocol_version:uint = 1;
+  payload:ResponsePayload;
+}
+
+root_type ResponseEnvelope;
+file_identifier "SKRS";

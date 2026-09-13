@@ -855,6 +855,10 @@ mod tests {
             SK_STATUS_INVALID_ARGUMENT
         );
 
+        let context = context();
+        let backend = Arc::new(RecordingBackend::new());
+        let handle = register_index(context, backend);
+
         let mut sentinel = 0x5au8;
         let original = (&mut sentinel as *mut u8, 1usize);
         let mut non_empty = SkBuffer {
@@ -886,6 +890,7 @@ mod tests {
         assert_eq!(out.len, 0);
         assert_eq!(out.allocation_id, 0);
 
+        close_ok(handle);
     }
 
     #[cfg(unix)]
