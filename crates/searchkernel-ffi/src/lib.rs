@@ -56,6 +56,10 @@ mod abi_layout_tests {
     }
 }
 
+#[cfg(all(test, feature = "ffi-test-support"))]
+#[path = "json_convergence_tests.rs"]
+mod json_convergence_tests;
+
 #[no_mangle]
 pub extern "C" fn sk_abi_version() -> u32 {
     abi::abi_version()

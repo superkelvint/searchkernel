@@ -90,6 +90,20 @@ pub fn inspect_query_result_to_api(request: &crate::model::SearchRequestIr) -> V
     builder.finished_data().to_vec()
 }
 
+/// Encode an InspectQuery result into an existing transport builder.
+pub fn inspect_query_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    request: &crate::model::SearchRequestIr,
+) -> flatbuffers::WIPOffset<api::InspectQueryResult<'a>> {
+    let resolved_request = search_request_offset(builder, request);
+    api::InspectQueryResult::create(
+        builder,
+        &api::InspectQueryResultArgs {
+            resolved_request: Some(resolved_request),
+        },
+    )
+}
+
 /// Encode only the normalized `SearchRequest` table.
 pub fn search_request_ir_to_api(request: &crate::model::SearchRequestIr) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
@@ -108,6 +122,15 @@ pub fn describe_result_to_api(definition: &crate::model::IndexDefinitionIr) -> V
     );
     builder.finish(root, None);
     builder.finished_data().to_vec()
+}
+
+/// Encode a Describe result into an existing transport builder.
+pub fn describe_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    definition: &crate::model::IndexDefinitionIr,
+) -> flatbuffers::WIPOffset<api::DescribeResult<'a>> {
+    let index = index_definition_offset(builder, definition);
+    api::DescribeResult::create(builder, &api::DescribeResultArgs { index: Some(index) })
 }
 
 /// Encode only the normalized `IndexDefinition` table.

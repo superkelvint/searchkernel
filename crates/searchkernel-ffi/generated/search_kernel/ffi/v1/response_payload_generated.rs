@@ -11,13 +11,13 @@ pub const ENUM_MIN_RESPONSE_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 8;
+pub const ENUM_MAX_RESPONSE_PAYLOAD: u8 = 10;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 9] = [
+pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 11] = [
     ResponsePayload::NONE,
     ResponsePayload::SearchKernel_V1_InsertResult,
     ResponsePayload::SearchKernel_V1_UpsertResult,
@@ -27,6 +27,8 @@ pub const ENUM_VALUES_RESPONSE_PAYLOAD: [ResponsePayload; 9] = [
     ResponsePayload::SearchKernel_V1_SearchResult,
     ResponsePayload::SearchKernel_V1_AnalyzeResult,
     ResponsePayload::SearchKernel_V1_Error,
+    ResponsePayload::SearchKernel_V1_DescribeResult,
+    ResponsePayload::SearchKernel_V1_InspectQueryResult,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -43,9 +45,11 @@ impl ResponsePayload {
     pub const SearchKernel_V1_SearchResult: Self = Self(6);
     pub const SearchKernel_V1_AnalyzeResult: Self = Self(7);
     pub const SearchKernel_V1_Error: Self = Self(8);
+    pub const SearchKernel_V1_DescribeResult: Self = Self(9);
+    pub const SearchKernel_V1_InspectQueryResult: Self = Self(10);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 8;
+    pub const ENUM_MAX: u8 = 10;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_V1_InsertResult,
@@ -56,6 +60,8 @@ impl ResponsePayload {
         Self::SearchKernel_V1_SearchResult,
         Self::SearchKernel_V1_AnalyzeResult,
         Self::SearchKernel_V1_Error,
+        Self::SearchKernel_V1_DescribeResult,
+        Self::SearchKernel_V1_InspectQueryResult,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -69,6 +75,8 @@ impl ResponsePayload {
             Self::SearchKernel_V1_SearchResult => Some("SearchKernel_V1_SearchResult"),
             Self::SearchKernel_V1_AnalyzeResult => Some("SearchKernel_V1_AnalyzeResult"),
             Self::SearchKernel_V1_Error => Some("SearchKernel_V1_Error"),
+            Self::SearchKernel_V1_DescribeResult => Some("SearchKernel_V1_DescribeResult"),
+            Self::SearchKernel_V1_InspectQueryResult => Some("SearchKernel_V1_InspectQueryResult"),
             _ => None,
         }
     }

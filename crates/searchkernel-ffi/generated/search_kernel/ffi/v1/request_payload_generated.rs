@@ -11,13 +11,13 @@ pub const ENUM_MIN_REQUEST_PAYLOAD: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 7;
+pub const ENUM_MAX_REQUEST_PAYLOAD: u8 = 9;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 8] = [
+pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 10] = [
     RequestPayload::NONE,
     RequestPayload::SearchKernel_V1_InsertRequest,
     RequestPayload::SearchKernel_V1_UpsertRequest,
@@ -26,6 +26,8 @@ pub const ENUM_VALUES_REQUEST_PAYLOAD: [RequestPayload; 8] = [
     RequestPayload::SearchKernel_V1_GetRequest,
     RequestPayload::SearchKernel_V1_SearchRequest,
     RequestPayload::SearchKernel_V1_AnalyzeRequest,
+    RequestPayload::SearchKernel_V1_DescribeRequest,
+    RequestPayload::SearchKernel_V1_InspectQueryRequest,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -41,9 +43,11 @@ impl RequestPayload {
     pub const SearchKernel_V1_GetRequest: Self = Self(5);
     pub const SearchKernel_V1_SearchRequest: Self = Self(6);
     pub const SearchKernel_V1_AnalyzeRequest: Self = Self(7);
+    pub const SearchKernel_V1_DescribeRequest: Self = Self(8);
+    pub const SearchKernel_V1_InspectQueryRequest: Self = Self(9);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 7;
+    pub const ENUM_MAX: u8 = 9;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::NONE,
         Self::SearchKernel_V1_InsertRequest,
@@ -53,6 +57,8 @@ impl RequestPayload {
         Self::SearchKernel_V1_GetRequest,
         Self::SearchKernel_V1_SearchRequest,
         Self::SearchKernel_V1_AnalyzeRequest,
+        Self::SearchKernel_V1_DescribeRequest,
+        Self::SearchKernel_V1_InspectQueryRequest,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -65,6 +71,10 @@ impl RequestPayload {
             Self::SearchKernel_V1_GetRequest => Some("SearchKernel_V1_GetRequest"),
             Self::SearchKernel_V1_SearchRequest => Some("SearchKernel_V1_SearchRequest"),
             Self::SearchKernel_V1_AnalyzeRequest => Some("SearchKernel_V1_AnalyzeRequest"),
+            Self::SearchKernel_V1_DescribeRequest => Some("SearchKernel_V1_DescribeRequest"),
+            Self::SearchKernel_V1_InspectQueryRequest => {
+                Some("SearchKernel_V1_InspectQueryRequest")
+            }
             _ => None,
         }
     }

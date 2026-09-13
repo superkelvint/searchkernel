@@ -9,7 +9,9 @@ union RequestPayload {
   SearchKernel.V1.DeleteRequest,
   SearchKernel.V1.GetRequest,
   SearchKernel.V1.SearchRequest,
-  SearchKernel.V1.AnalyzeRequest
+  SearchKernel.V1.AnalyzeRequest,
+  SearchKernel.V1.DescribeRequest,
+  SearchKernel.V1.InspectQueryRequest
 }
 
 table RequestEnvelope {

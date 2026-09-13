@@ -10,7 +10,10 @@ union ResponsePayload {
   SearchKernel.V1.GetResult,
   SearchKernel.V1.SearchResult,
   SearchKernel.V1.AnalyzeResult,
-  SearchKernel.V1.Error
+  // Keep Error at its existing discriminant. New variants are appended.
+  SearchKernel.V1.Error,
+  SearchKernel.V1.DescribeResult,
+  SearchKernel.V1.InspectQueryResult
 }
 
 table ResponseEnvelope {

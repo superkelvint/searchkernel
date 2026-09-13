@@ -22,6 +22,8 @@ pub(crate) const REQUEST_DELETE: u8 = RequestPayload::SearchKernel_V1_DeleteRequ
 pub(crate) const REQUEST_GET: u8 = RequestPayload::SearchKernel_V1_GetRequest.0;
 pub(crate) const REQUEST_SEARCH: u8 = RequestPayload::SearchKernel_V1_SearchRequest.0;
 pub(crate) const REQUEST_ANALYZE: u8 = RequestPayload::SearchKernel_V1_AnalyzeRequest.0;
+pub(crate) const REQUEST_DESCRIBE: u8 = RequestPayload::SearchKernel_V1_DescribeRequest.0;
+pub(crate) const REQUEST_INSPECT_QUERY: u8 = RequestPayload::SearchKernel_V1_InspectQueryRequest.0;
 
 pub(crate) const RESPONSE_INSERT: u8 = ResponsePayload::SearchKernel_V1_InsertResult.0;
 pub(crate) const RESPONSE_UPSERT: u8 = ResponsePayload::SearchKernel_V1_UpsertResult.0;
@@ -31,6 +33,8 @@ pub(crate) const RESPONSE_GET: u8 = ResponsePayload::SearchKernel_V1_GetResult.0
 pub(crate) const RESPONSE_SEARCH: u8 = ResponsePayload::SearchKernel_V1_SearchResult.0;
 pub(crate) const RESPONSE_ANALYZE: u8 = ResponsePayload::SearchKernel_V1_AnalyzeResult.0;
 pub(crate) const RESPONSE_ERROR: u8 = ResponsePayload::SearchKernel_V1_Error.0;
+pub(crate) const RESPONSE_DESCRIBE: u8 = ResponsePayload::SearchKernel_V1_DescribeResult.0;
+pub(crate) const RESPONSE_INSPECT_QUERY: u8 = ResponsePayload::SearchKernel_V1_InspectQueryResult.0;
 
 pub(crate) fn parse_request(bytes: &[u8]) -> Result<RequestEnvelope<'_>, ()> {
     if !has_identifier(bytes, REQUEST_ENVELOPE_IDENTIFIER.as_bytes()) {
@@ -87,6 +91,12 @@ fn trim_request_inner(kind: u8, inner: &[u8]) -> &[u8] {
         REQUEST_SEARCH => trim_inner(inner, |bytes| root::<api::SearchRequest<'_>>(bytes).is_ok()),
         REQUEST_ANALYZE => trim_inner(inner, |bytes| {
             root::<api::AnalyzeRequest<'_>>(bytes).is_ok()
+        }),
+        REQUEST_DESCRIBE => trim_inner(inner, |bytes| {
+            root::<api::DescribeRequest<'_>>(bytes).is_ok()
+        }),
+        REQUEST_INSPECT_QUERY => trim_inner(inner, |bytes| {
+            root::<api::InspectQueryRequest<'_>>(bytes).is_ok()
         }),
         _ => inner,
     }

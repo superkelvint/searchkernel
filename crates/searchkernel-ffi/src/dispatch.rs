@@ -100,6 +100,33 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             });
             Ok(response)
         }
+        transport::REQUEST_DESCRIBE => {
+            let payload = envelope
+                .payload_as_search_kernel_v1_describe_request()
+                .ok_or(status::INVALID_REQUEST)?;
+            let _ = payload;
+            let result = state.context.describe();
+            Ok(transport::frame_response(
+                transport::RESPONSE_DESCRIBE,
+                |builder| {
+                    searchkernel_core::describe_result_offset(builder, &result).as_union_value()
+                },
+            ))
+        }
+        transport::REQUEST_INSPECT_QUERY => {
+            let payload = envelope
+                .payload_as_search_kernel_v1_inspect_query_request()
+                .ok_or(status::INVALID_REQUEST)?;
+            let request = payload.request().ok_or(status::INVALID_REQUEST)?;
+            let result = state.context.inspect_query(request);
+            Ok(encode_result(
+                result,
+                transport::RESPONSE_INSPECT_QUERY,
+                |builder, result| {
+                    searchkernel_core::inspect_query_result_offset(builder, result).as_union_value()
+                },
+            ))
+        }
         0 => Err(status::INVALID_REQUEST),
         _ => Err(status::UNSUPPORTED_OPERATION),
     }

@@ -218,6 +218,40 @@ impl<'a> ResponseEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v1_describe_result(
+        &self,
+    ) -> Option<super::super::v1::DescribeResult<'a>> {
+        if self.payload_type() == ResponsePayload::SearchKernel_V1_DescribeResult {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v1::DescribeResult::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v1_inspect_query_result(
+        &self,
+    ) -> Option<super::super::v1::InspectQueryResult<'a>> {
+        if self.payload_type() == ResponsePayload::SearchKernel_V1_InspectQueryResult {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v1::InspectQueryResult::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -238,6 +272,8 @@ impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
           ResponsePayload::SearchKernel_V1_SearchResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v1::SearchResult>>("ResponsePayload::SearchKernel_V1_SearchResult", pos),
           ResponsePayload::SearchKernel_V1_AnalyzeResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v1::AnalyzeResult>>("ResponsePayload::SearchKernel_V1_AnalyzeResult", pos),
           ResponsePayload::SearchKernel_V1_Error => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v1::Error>>("ResponsePayload::SearchKernel_V1_Error", pos),
+          ResponsePayload::SearchKernel_V1_DescribeResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v1::DescribeResult>>("ResponsePayload::SearchKernel_V1_DescribeResult", pos),
+          ResponsePayload::SearchKernel_V1_InspectQueryResult => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v1::InspectQueryResult>>("ResponsePayload::SearchKernel_V1_InspectQueryResult", pos),
           _ => Ok(()),
         }
      })?
@@ -382,6 +418,26 @@ impl ::core::fmt::Debug for ResponseEnvelope<'_> {
             }
             ResponsePayload::SearchKernel_V1_Error => {
                 if let Some(x) = self.payload_as_search_kernel_v1_error() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            ResponsePayload::SearchKernel_V1_DescribeResult => {
+                if let Some(x) = self.payload_as_search_kernel_v1_describe_result() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            ResponsePayload::SearchKernel_V1_InspectQueryResult => {
+                if let Some(x) = self.payload_as_search_kernel_v1_inspect_query_result() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(

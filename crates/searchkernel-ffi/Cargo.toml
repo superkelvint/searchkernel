@@ -17,3 +17,7 @@ searchkernel-core = { path = "../searchkernel-core" }
 
 [build-dependencies]
 cbindgen = "0.29.4"
+
+[dev-dependencies]
+searchkernel-json = { path = "../searchkernel-json" }
+searchkernel-testkit = { path = "../searchkernel-testkit" }

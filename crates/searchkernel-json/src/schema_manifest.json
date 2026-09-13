@@ -1,0 +1,32 @@
+{
+  "flatc": "25.12.19",
+  "request_variants": [
+    "SearchKernel_V1_InsertRequest",
+    "SearchKernel_V1_UpsertRequest",
+    "SearchKernel_V1_PatchRequest",
+    "SearchKernel_V1_DeleteRequest",
+    "SearchKernel_V1_GetRequest",
+    "SearchKernel_V1_SearchRequest",
+    "SearchKernel_V1_AnalyzeRequest",
+    "SearchKernel_V1_DescribeRequest",
+    "SearchKernel_V1_InspectQueryRequest"
+  ],
+  "response_variants": [
+    "SearchKernel_V1_InsertResult",
+    "SearchKernel_V1_UpsertResult",
+    "SearchKernel_V1_PatchResult",
+    "SearchKernel_V1_DeleteResult",
+    "SearchKernel_V1_GetResult",
+    "SearchKernel_V1_SearchResult",
+    "SearchKernel_V1_AnalyzeResult",
+    "SearchKernel_V1_Error",
+    "SearchKernel_V1_DescribeResult",
+    "SearchKernel_V1_InspectQueryResult"
+  ],
+  "schema_digest": "010284fc0b2c92134e959a144b579ac72a5f05ef5fba74c837123172453878de",
+  "source": [
+    "api/searchkernel.fbs",
+    "api/searchkernel_ffi_request.fbs",
+    "api/searchkernel_ffi_response.fbs"
+  ]
+}

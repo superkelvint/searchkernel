@@ -13,6 +13,8 @@ pub enum RequestKind {
     Get,
     Search,
     Analyze,
+    Describe,
+    InspectQuery,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,6 +70,8 @@ fn request_kind(kind: RequestKind) -> u8 {
         RequestKind::Get => transport::REQUEST_GET,
         RequestKind::Search => transport::REQUEST_SEARCH,
         RequestKind::Analyze => transport::REQUEST_ANALYZE,
+        RequestKind::Describe => transport::REQUEST_DESCRIBE,
+        RequestKind::InspectQuery => transport::REQUEST_INSPECT_QUERY,
     }
 }
 
