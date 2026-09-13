@@ -253,6 +253,39 @@ mod tests {
     }
 
     #[test]
+    fn complete_portable_value_domain_round_trips() {
+        let input = serde_json::json!({
+            "protocol_version": 1,
+            "operation": "insert",
+            "request": {"document": {"id": "values", "fields": {
+                "null": {"null": null},
+                "false": {"bool": false},
+                "true": {"bool": true},
+                "zero": {"int64": "0"},
+                "negative": {"int64": "-9223372036854775808"},
+                "signed_max": {"int64": "9223372036854775807"},
+                "unsigned_max": {"uint64": "18446744073709551615"},
+                "float": {"float64": 1.5},
+                "empty_string": {"string": ""},
+                "unicode": {"string": "耳机 🎧"},
+                "empty_bytes": {"bytes": ""},
+                "bytes": {"bytes": "AAEC"},
+                "empty_list": {"list": []},
+                "nested_list": {"list": [{"list": [{"string": "nested"}]}]},
+                "empty_object": {"object": {}},
+                "nested_object": {"object": {"child": {"object": {"ok": {"bool": true}}}}}
+            }}}
+        });
+        let first = request_json_to_flatbuffer(&serde_json::to_vec(&input).unwrap()).unwrap();
+        let json = request_flatbuffer_to_json(&first).unwrap();
+        let second = request_json_to_flatbuffer(&json).unwrap();
+        let first_json: Value = serde_json::from_slice(&json).unwrap();
+        let second_json: Value =
+            serde_json::from_slice(&request_flatbuffer_to_json(&second).unwrap()).unwrap();
+        assert_eq!(first_json, second_json);
+    }
+
+    #[test]
     fn every_response_union_variant_has_json_encoding() {
         use crate::generated::search_kernel::ffi::v1 as transport;
         use searchkernel_api::v1 as api;
