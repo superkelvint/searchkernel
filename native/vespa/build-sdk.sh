@@ -3,8 +3,6 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 VESPA_ROOT=${VESPA_ROOT:-$ROOT/upstream/vespa}
-VESPA_DEPS=${VESPA_DEPS:-/opt/vespa-deps}
-VESPA_EXTRA_LIB_DIR=${VESPA_EXTRA_LIB_DIR:-$VESPA_DEPS/../../usr/lib64}
 SDK=${SK_NATIVE_SDK:-$ROOT/native/sdk/linux-x86_64}
 BUILD=${SK_NATIVE_BUILD_DIR:-$ROOT/target/native-sdk}
 CXX=${CXX:-c++}
@@ -16,12 +14,43 @@ if [ ! -f "$LINK_FILE" ] || [ ! -f "$FLAGS_FILE" ]; then
     exit 1
 fi
 
+# The configured Vespa build records the dependency root used when it was
+# produced. That path is a build-machine detail, not a repository location.
+# Reuse it only when it is available; otherwise require the caller to provide
+# the dependency installation explicitly rather than feeding stale absolute
+# paths to the linker.
+RAW_INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE")
+CONFIGURED_DEPS=$(printf '%s\n' "$RAW_INCLUDES" |
+    sed -n 's#.*-isystem \([^ ]*\)/include.*#\1#p')
+VESPA_DEPS=${VESPA_DEPS:-$CONFIGURED_DEPS}
+if [ -z "$VESPA_DEPS" ] || [ ! -d "$VESPA_DEPS" ]; then
+    echo "Vespa dependencies were not found at the configured build path" >&2
+    echo "Set VESPA_DEPS to the dependency installation used by the Vespa build" >&2
+    echo "(configured path: ${CONFIGURED_DEPS:-unknown})" >&2
+    exit 1
+fi
+
+if [ -n "${VESPA_DEPS_LIB_DIR:-}" ]; then
+    DEPS_LIB_DIR=$VESPA_DEPS_LIB_DIR
+elif [ -d "$VESPA_DEPS/lib64" ]; then
+    DEPS_LIB_DIR=$VESPA_DEPS/lib64
+elif [ -d "$VESPA_DEPS/lib" ]; then
+    DEPS_LIB_DIR=$VESPA_DEPS/lib
+else
+    echo "Vespa dependency library directory was not found below $VESPA_DEPS" >&2
+    echo "Set VESPA_DEPS_LIB_DIR to the directory containing the Vespa libraries" >&2
+    exit 1
+fi
+DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
+VESPA_EXTRA_LIB_DIR=${VESPA_EXTRA_LIB_DIR:-$VESPA_DEPS/../../usr/lib64}
+
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
     "$SDK/lib/libsearchkernel_vespa.so" "$SDK/lib/libsearchkernel_vespa.so.1" \
     "$SDK/lib/libsearchkernel_vespa.so.2"
 
-INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE" | sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g")
+INCLUDES=$(printf '%s\n' "$RAW_INCLUDES" | sed \
+    "s|/work/vespa|$VESPA_ROOT|g; s|$CONFIGURED_DEPS/include|$DEPS_INCLUDE_DIR|g; s|$CONFIGURED_DEPS|$VESPA_DEPS|g")
 DEFINES=$(sed -n 's/^CXX_DEFINES = //p' "$FLAGS_FILE")
 CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # The compiler used for the pinned Vespa artifacts is not required to be
@@ -36,7 +65,9 @@ $CXX $DEFINES $INCLUDES $CXX_FLAGS -Wno-inline -std=gnu++23 -fPIC \
     -I"$ROOT/native/vespa" -c "$ROOT/native/vespa/searchkernel_vespa.cpp" \
     -o "$BUILD/searchkernel_vespa.o"
 
-LINK_LINE=$(sed "s#/work/vespa#$VESPA_ROOT#g; s#/opt/vespa-deps#$VESPA_DEPS#g" "$LINK_FILE")
+LINK_LINE=$(sed \
+    "s|/work/vespa|$VESPA_ROOT|g; s|$CONFIGURED_DEPS/lib64|$DEPS_LIB_DIR|g; s|$CONFIGURED_DEPS/include|$DEPS_INCLUDE_DIR|g; s|$CONFIGURED_DEPS|$VESPA_DEPS|g" \
+    "$LINK_FILE")
 LINK_LINE=$(printf '%s\n' "$LINK_LINE" | sed \
     "s#CMakeFiles/searchcore_embedded_crud_spike_app.dir/embedded_crud_spike.cpp.o#$BUILD/searchkernel_vespa.o#; \
      s#-o searchcore_embedded_crud_spike_app#-shared -Wl,-soname,libsearchkernel_vespa.so.2 -Wl,-rpath,$SDK/lib -o $SDK/lib/libsearchkernel_vespa.so.2#")
@@ -83,7 +114,7 @@ cp "$ROOT/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 # build. Test support libraries are not part of the production ABI package.
 # The adapter's private RPATH makes the SDK independent of the build paths.
 find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
-find "$VESPA_DEPS/lib64" -maxdepth 1 -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
+find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
