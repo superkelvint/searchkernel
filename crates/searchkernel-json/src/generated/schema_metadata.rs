@@ -175,3 +175,19 @@ pub(crate) fn response_operation(tag: u8) -> Option<&'static str> {
         _ => None,
     }
 }
+
+pub(crate) fn is_response_operation(name: &str) -> bool {
+    matches!(
+        name,
+        "insert"
+            | "upsert"
+            | "patch"
+            | "delete"
+            | "get"
+            | "search"
+            | "analyze"
+            | "error"
+            | "describe"
+            | "inspect_query"
+    )
+}
