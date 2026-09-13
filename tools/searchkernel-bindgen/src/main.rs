@@ -215,6 +215,10 @@ fn generate_json_schema(
             "request": natural_envelope_schema(request_types, "request"),
             "response": natural_envelope_schema(response_types, "response"),
         },
+        "payload_definitions": {
+            "request": natural_payload_definitions(request, "request"),
+            "response": natural_payload_definitions(response, "response"),
+        },
         "x-flatbuffers-schema": {
             "request": request,
             "response": response,
@@ -247,11 +251,77 @@ fn natural_envelope_schema(types: &[String], payload_name: &str) -> Value {
         "properties": {
             "protocol_version": {"type": "integer", "minimum": 0, "maximum": 4294967295u64},
             "operation": {"type": "string", "enum": operations},
-            payload_name: {"type": "object"}
+            payload_name: {
+                "oneOf": types.iter().map(|type_name| {
+                    serde_json::json!({"$ref": format!("#/payload_definitions/{payload_name}/{type_name}")})
+                }).collect::<Vec<_>>()
+            }
         },
         "x-union-members": types,
         "x-union-presentation": "operation selects the natural payload object"
     })
+}
+
+fn natural_payload_definitions(schema: &Value, direction: &str) -> Value {
+    let definitions = schema
+        .get("definitions")
+        .and_then(Value::as_object)
+        .expect("validated schema definitions");
+    let mut output = serde_json::Map::new();
+    for (type_name, definition) in definitions {
+        output.insert(
+            type_name.clone(),
+            natural_payload_definition(definition, direction),
+        );
+    }
+    Value::Object(output)
+}
+
+fn natural_payload_definition(definition: &Value, direction: &str) -> Value {
+    let Some(object) = definition.as_object() else {
+        return definition.clone();
+    };
+    let mut output = object.clone();
+    if let Some(properties) = object.get("properties").and_then(Value::as_object) {
+        let mut natural = serde_json::Map::new();
+        for (name, value) in properties {
+            if name.ends_with("_type") {
+                continue;
+            }
+            natural.insert(name.clone(), value.clone());
+        }
+        output.insert("properties".to_owned(), Value::Object(natural));
+    }
+    rewrite_schema_refs(&Value::Object(output), direction)
+}
+
+fn rewrite_schema_refs(value: &Value, direction: &str) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| rewrite_schema_refs(value, direction))
+                .collect(),
+        ),
+        Value::Object(object) => {
+            let mut output = serde_json::Map::new();
+            for (key, value) in object {
+                if key == "$ref" {
+                    if let Some(reference) = value.as_str() {
+                        let name = reference.rsplit('/').next().unwrap_or(reference);
+                        output.insert(
+                            key.clone(),
+                            Value::String(format!("#/payload_definitions/{direction}/{name}")),
+                        );
+                        continue;
+                    }
+                }
+                output.insert(key.clone(), rewrite_schema_refs(value, direction));
+            }
+            Value::Object(output)
+        }
+        _ => value.clone(),
+    }
 }
 
 fn generate_golden_json(
