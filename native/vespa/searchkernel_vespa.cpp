@@ -114,7 +114,9 @@ using cloud::config::filedistribution::FiledistributorrpcConfig;
 
 namespace {
 
-constexpr int TLS_PORT = 9014;
+constexpr unsigned int FIRST_TLS_PORT = 9014;
+constexpr unsigned int LAST_TLS_PORT = 65535;
+std::atomic<unsigned int> NEXT_TLS_PORT{FIRST_TLS_PORT};
 constexpr char LEGACY_DOC_TYPE[] = {'t', 'y', 'p', 'e', 'a', '\0'};
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
 constexpr size_t MAX_FIELD_NAME_BYTES = 256;
@@ -374,7 +376,38 @@ storage::spi::Bucket bucket_for(const document::DocumentId &id) {
     return storage::spi::Bucket(document::Bucket(bucket_space(), bucket_id_for(id)));
 }
 
+unsigned int next_tls_port() {
+    auto port = NEXT_TLS_PORT.load(std::memory_order_relaxed);
+    for (;;) {
+        if (port > LAST_TLS_PORT) {
+            throw std::runtime_error("transaction log port space exhausted");
+        }
+        if (NEXT_TLS_PORT.compare_exchange_weak(port, port + 1,
+                                                std::memory_order_relaxed,
+                                                std::memory_order_relaxed)) {
+            return port;
+        }
+    }
+}
+
+void validate_raw_document_id(std::string_view id, std::string_view document_type) {
+    if (!id.starts_with("id:")) {
+        return;
+    }
+    const auto namespace_end = id.find(':', 3);
+    if (namespace_end <= 3 || namespace_end + 1 >= id.size()) {
+        throw std::invalid_argument("raw document ID is malformed");
+    }
+    const auto document_type_start = namespace_end + 1;
+    const auto document_type_end = id.find("::", document_type_start);
+    if (document_type_end == std::string_view::npos || document_type_end == document_type_start ||
+        id.substr(document_type_start, document_type_end - document_type_start) != document_type) {
+        throw std::invalid_argument("raw document ID belongs to a different document type");
+    }
+}
+
 std::string internal_document_id(std::string_view id, std::string_view document_type) {
+    validate_raw_document_id(id, document_type);
     if (id.starts_with("id:")) {
         return std::string(id);
     }
@@ -480,6 +513,7 @@ class EmbeddedEngine {
     HwInfo _hw_info;
     EmbeddedFileHeaderContext _file_header_context;
     std::string _tls_dir;
+    const unsigned int _tls_port;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
     struct ManifestField {
@@ -950,8 +984,9 @@ public:
           _hw_info(),
           _file_header_context(),
           _tls_dir("tmp"),
+          _tls_port(next_tls_port()),
           _tls(_shared_service.transport(), _tls_dir,
-               TLS_PORT, data_dir, _file_header_context),
+               static_cast<int>(_tls_port), data_dir, _file_header_context),
           _query_limiter(),
           _manifest(read_schema_manifest(config_dir)),
           _document_type(_manifest.document_type),
@@ -1006,7 +1041,7 @@ public:
 
         _db = DocumentDB::create(
             data_dir, config.getConfig(),
-            vespalib::SocketSpec::from_host_port("localhost", TLS_PORT).spec(),
+            vespalib::SocketSpec::from_host_port("localhost", static_cast<int>(_tls_port)).spec(),
             _query_limiter, DocTypeName(_document_type), bucket_space(),
             *proton_config, _db_owner, _shared_service, _tls, _wire_service,
             _file_header_context,
