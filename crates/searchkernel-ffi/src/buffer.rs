@@ -24,7 +24,7 @@ pub(crate) fn live_count() -> usize {
     LIVE_BUFFERS.load(Ordering::Acquire)
 }
 
-pub(crate) fn write(out: *mut SkBuffer, bytes: Vec<u8>) {
+pub(crate) unsafe fn write(out: *mut SkBuffer, bytes: Vec<u8>) {
     // SAFETY: callers validate this output pointer and its empty state before
     // reaching this commit function.
     unsafe {
@@ -86,7 +86,8 @@ mod tests {
             data: ptr::null_mut(),
             len: 0,
         };
-        write(&mut buffer, vec![1, 2, 3]);
+        // SAFETY: this test provides a valid output structure.
+        unsafe { write(&mut buffer, vec![1, 2, 3]) };
         assert!(!buffer.data.is_null());
         assert_eq!(buffer.len, 3);
         assert_eq!(live_count(), 1);
@@ -101,7 +102,8 @@ mod tests {
         unsafe { free(&mut buffer) };
         assert_eq!(live_count(), 0);
 
-        write(&mut buffer, vec![4, 5, 6]);
+        // SAFETY: this test provides a valid output structure.
+        unsafe { write(&mut buffer, vec![4, 5, 6]) };
         buffer.len = usize::MAX;
         // SAFETY: the pointer is still the buffer returned by `write`; the
         // deliberately corrupted public length must not affect deallocation.

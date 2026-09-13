@@ -2,7 +2,7 @@ use crate::SkBuffer;
 use crate::{buffer, dispatch, handle, status};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-pub(crate) fn call(
+pub(crate) unsafe fn call(
     handle_value: u64,
     request: *const u8,
     request_len: usize,
@@ -60,7 +60,9 @@ unsafe fn call_inner(
     let request = unsafe { std::slice::from_raw_parts(request, request_len) };
     match dispatch::dispatch(&state, request) {
         Ok(response) => {
-            buffer::write(out_response, response);
+            // SAFETY: `out_response` was validated before dispatch and the
+            // response allocation is registered before publishing its pointer.
+            unsafe { buffer::write(out_response, response) };
             status::OK
         }
         Err(status) => status,
@@ -75,7 +77,7 @@ pub(crate) fn close(handle_value: u64) -> u32 {
     }
 }
 
-pub(crate) fn buffer_free(buffer: *mut SkBuffer) {
+pub(crate) unsafe fn buffer_free(buffer: *mut SkBuffer) {
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe { buffer::free(buffer) }));
 }
 

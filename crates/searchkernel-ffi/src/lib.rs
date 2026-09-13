@@ -26,13 +26,19 @@ pub extern "C" fn sk_abi_version() -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn sk_call(
+/// # Safety
+///
+/// `out_response` must point to a valid writable `SkBuffer`, and `request`
+/// must point to `request_len` readable bytes when `request_len` is non-zero.
+pub unsafe extern "C" fn sk_call(
     handle: u64,
     request: *const u8,
     request_len: usize,
     out_response: *mut SkBuffer,
 ) -> u32 {
-    abi::call(handle, request, request_len, out_response)
+    // SAFETY: the function's caller is responsible for the documented
+    // foreign pointer validity requirements.
+    unsafe { abi::call(handle, request, request_len, out_response) }
 }
 
 #[no_mangle]
@@ -41,6 +47,12 @@ pub extern "C" fn sk_close(handle: u64) -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn sk_buffer_free(buffer: *mut SkBuffer) {
-    abi::buffer_free(buffer)
+/// # Safety
+///
+/// `buffer` must be null or point to a valid writable `SkBuffer`. If it is
+/// non-empty, it must be a buffer previously returned by `sk_call`.
+pub unsafe extern "C" fn sk_buffer_free(buffer: *mut SkBuffer) {
+    // SAFETY: the function's caller is responsible for the documented buffer
+    // structure validity requirements.
+    unsafe { abi::buffer_free(buffer) }
 }
