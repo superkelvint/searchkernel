@@ -984,7 +984,7 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1UpsertRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1PatchRequest {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
     #[serde(
         rename = "operations",
         default,
@@ -997,14 +997,14 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1PatchRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1DeleteRequest {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1GetRequest {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
     #[serde(
         rename = "projection",
         default,
@@ -1027,7 +1027,7 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1SearchRequest {
     )]
     pub highlighting: Option<serde_json::Value>,
     #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<serde_json::Value>,
+    pub language: Option<String>,
     #[serde(rename = "limit", default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<serde_json::Value>,
     #[serde(rename = "offset", default, skip_serializing_if = "Option::is_none")]
@@ -1039,7 +1039,7 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1SearchRequest {
     )]
     pub projection: Option<serde_json::Value>,
     #[serde(rename = "query", default, skip_serializing_if = "Option::is_none")]
-    pub query: Option<serde_json::Value>,
+    pub query: Option<String>,
     #[serde(
         rename = "query_expr",
         default,
@@ -1062,11 +1062,11 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1SearchRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1AnalyzeRequest {
     #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<serde_json::Value>,
+    pub language: Option<String>,
     #[serde(rename = "target", default, skip_serializing_if = "Option::is_none")]
     pub target: Option<serde_json::Value>,
     #[serde(rename = "text", default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<serde_json::Value>,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1084,30 +1084,30 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1InspectQueryRequest {
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1InsertResult {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1UpsertResult {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1PatchResult {
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JsonNaturalJsonSearchKernelV1DeleteResult {
     #[serde(rename = "deleted", default, skip_serializing_if = "Option::is_none")]
-    pub deleted: Option<serde_json::Value>,
+    pub deleted: Option<bool>,
     #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1147,9 +1147,9 @@ pub(crate) struct JsonNaturalJsonSearchKernelV1Error {
     #[serde(rename = "details", default, skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
     #[serde(rename = "message", default, skip_serializing_if = "Option::is_none")]
-    pub message: Option<serde_json::Value>,
+    pub message: Option<String>,
     #[serde(rename = "retryable", default, skip_serializing_if = "Option::is_none")]
-    pub retryable: Option<serde_json::Value>,
+    pub retryable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

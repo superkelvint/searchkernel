@@ -786,8 +786,9 @@ fn generate_json_types(
         ));
         for field in properties.keys().filter(|field| !field.ends_with("_type")) {
             output.push_str(&format!(
-                "    #[serde(rename = {field:?}, default, skip_serializing_if = \"Option::is_none\")]\n    pub {}: Option<serde_json::Value>,\n",
-                json_field_name(field)
+                "    #[serde(rename = {field:?}, default, skip_serializing_if = \"Option::is_none\")]\n    pub {}: Option<{}>,\n",
+                json_field_name(field),
+                natural_dto_field_type(properties.get(field).expect("field exists")),
             ));
         }
         output.push_str("}\n\n");
@@ -913,6 +914,32 @@ fn dto_field_type(value: &Value, definitions: &BTreeMap<String, Value>) -> Strin
         // assumptions in the DTO. The generated codec applies the policy.
         Some("integer") => "serde_json::Value".to_owned(),
         _ => "serde_json::Value".to_owned(),
+    }
+}
+
+fn natural_dto_field_type(value: &Value) -> &'static str {
+    if value.get("anyOf").is_some() || value.get("$ref").is_some() {
+        return "serde_json::Value";
+    }
+    if value.get("type").and_then(Value::as_str) == Some("array") {
+        return "serde_json::Value";
+    }
+    match value.get("type").and_then(Value::as_str) {
+        Some("string") => "String",
+        Some("boolean") => "bool",
+        Some("number") => "f64",
+        Some("integer") => {
+            if value
+                .get("maximum")
+                .and_then(Value::as_u64)
+                .is_some_and(|maximum| maximum <= u32::MAX as u64)
+            {
+                "u32"
+            } else {
+                "serde_json::Value"
+            }
+        }
+        _ => "serde_json::Value",
     }
 }
 
