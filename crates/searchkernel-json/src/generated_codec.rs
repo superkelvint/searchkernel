@@ -552,7 +552,10 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
         required(envelope, "operation", "response")?,
         "response.operation",
     )?;
-    let response = object(required(envelope, "response", "response")?, "response.response")?;
+    let response = object(
+        required(envelope, "response", "response")?,
+        "response.response",
+    )?;
     if response.len() != 1 {
         return Err(contract(
             "`response.response` must contain exactly one variant",
@@ -560,7 +563,9 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
     }
     let (operation, payload) = response.iter().next().expect("length checked");
     if !crate::generated::schema::is_response_operation(operation) {
-        return Err(contract(format!("unknown response operation `{operation}`")));
+        return Err(contract(format!(
+            "unknown response operation `{operation}`"
+        )));
     }
     if declared_operation != *operation {
         return Err(contract(format!(
@@ -583,14 +588,21 @@ pub fn response_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErr
 }
 
 fn response_id(value: &Value, path: &str) -> Result<String, JsonCodecError> {
-    string(required(object(value, path)?, "id", path)?, &format!("{path}.id"))
+    string(
+        required(object(value, path)?, "id", path)?,
+        &format!("{path}.id"),
+    )
 }
 
 fn response_insert_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(object(value, "response.insert")?, "SearchKernel_V1_InsertResult", "response.insert")?;
+    check_keys(
+        object(value, "response.insert")?,
+        "SearchKernel_V1_InsertResult",
+        "response.insert",
+    )?;
     let id = b.create_string(&response_id(value, "response.insert")?);
     Ok(offset(api::InsertResult::create(
         b,
@@ -602,7 +614,11 @@ fn response_upsert_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(object(value, "response.upsert")?, "SearchKernel_V1_UpsertResult", "response.upsert")?;
+    check_keys(
+        object(value, "response.upsert")?,
+        "SearchKernel_V1_UpsertResult",
+        "response.upsert",
+    )?;
     let id = b.create_string(&response_id(value, "response.upsert")?);
     Ok(offset(api::UpsertResult::create(
         b,
@@ -614,7 +630,11 @@ fn response_patch_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(object(value, "response.patch")?, "SearchKernel_V1_PatchResult", "response.patch")?;
+    check_keys(
+        object(value, "response.patch")?,
+        "SearchKernel_V1_PatchResult",
+        "response.patch",
+    )?;
     let id = b.create_string(&response_id(value, "response.patch")?);
     Ok(offset(api::PatchResult::create(
         b,
@@ -629,7 +649,10 @@ fn response_delete_from_json<'a>(
     let o = object(value, "response.delete")?;
     check_keys(o, "SearchKernel_V1_DeleteResult", "response.delete")?;
     let id = b.create_string(&response_id(value, "response.delete")?);
-    let deleted = bool_value(required(o, "deleted", "response.delete")?, "response.delete.deleted")?;
+    let deleted = bool_value(
+        required(o, "deleted", "response.delete")?,
+        "response.delete.deleted",
+    )?;
     Ok(offset(api::DeleteResult::create(
         b,
         &api::DeleteResultArgs {
@@ -665,7 +688,11 @@ fn response_analyze_from_json<'a>(
             let items = array(value, "response.analyze.tokens")?;
             let mut tokens = Vec::with_capacity(items.len());
             for (i, item) in items.iter().enumerate() {
-                tokens.push(analyzed_token(b, item, &format!("response.analyze.tokens[{i}]"))?);
+                tokens.push(analyzed_token(
+                    b,
+                    item,
+                    &format!("response.analyze.tokens[{i}]"),
+                )?);
             }
             Ok::<_, JsonCodecError>(b.create_vector(&tokens))
         })
@@ -683,10 +710,19 @@ fn analyzed_token<'a>(
 ) -> Result<WIPOffset<api::AnalyzedToken<'a>>, JsonCodecError> {
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V1_AnalyzedToken", path)?;
-    let surface = b.create_string(&string(required(o, "surface", path)?, &format!("{path}.surface"))?);
-    let term = b.create_string(&string(required(o, "term", path)?, &format!("{path}.term"))?);
+    let surface = b.create_string(&string(
+        required(o, "surface", path)?,
+        &format!("{path}.surface"),
+    )?);
+    let term = b.create_string(&string(
+        required(o, "term", path)?,
+        &format!("{path}.term"),
+    )?);
     let position = u32_value(required(o, "position", path)?, &format!("{path}.position"))?;
-    let start_byte = u32_value(required(o, "start_byte", path)?, &format!("{path}.start_byte"))?;
+    let start_byte = u32_value(
+        required(o, "start_byte", path)?,
+        &format!("{path}.start_byte"),
+    )?;
     let end_byte = u32_value(required(o, "end_byte", path)?, &format!("{path}.end_byte"))?;
     Ok(api::AnalyzedToken::create(
         b,
@@ -712,7 +748,11 @@ fn response_search_from_json<'a>(
             let items = array(value, "response.search.hits")?;
             let mut hits = Vec::with_capacity(items.len());
             for (i, item) in items.iter().enumerate() {
-                hits.push(hit_from_json(b, item, &format!("response.search.hits[{i}]"))?);
+                hits.push(hit_from_json(
+                    b,
+                    item,
+                    &format!("response.search.hits[{i}]"),
+                )?);
             }
             Ok::<_, JsonCodecError>(b.create_vector(&hits))
         })
@@ -746,11 +786,7 @@ fn total_hits_from_json<'a>(
     value: &Value,
 ) -> Result<WIPOffset<api::TotalHits<'a>>, JsonCodecError> {
     let o = object(value, "response.search.total_hits")?;
-    check_keys(
-        o,
-        "SearchKernel_V1_TotalHits",
-        "response.search.total_hits",
-    )?;
+    check_keys(o, "SearchKernel_V1_TotalHits", "response.search.total_hits")?;
     let number = decimal::<u64>(
         required(o, "value", "response.search.total_hits")?,
         "response.search.total_hits.value",
@@ -970,7 +1006,10 @@ fn highlight_fragment_from_json<'a>(
         .flatten();
     Ok(api::HighlightFragment::create(
         b,
-        &api::HighlightFragmentArgs { text: Some(text), matches },
+        &api::HighlightFragmentArgs {
+            text: Some(text),
+            matches,
+        },
     ))
 }
 
@@ -1197,7 +1236,11 @@ fn field_definition_from_json<'a>(
         "int64" => api::FieldKind::Int64,
         "float64" => api::FieldKind::Float64,
         "bool" => api::FieldKind::Bool,
-        other => return Err(contract(format!("unknown enum `{path}.kind` value `{other}`"))),
+        other => {
+            return Err(contract(format!(
+                "unknown enum `{path}.kind` value `{other}`"
+            )))
+        }
     };
     let cardinality = match string(
         required(o, "cardinality", path)?,
@@ -1257,13 +1300,11 @@ fn response_payload_fallback<'a>(
         generated_response_payload_to_json(envelope, tag)?
     };
     let response = serde_json::json!({name: payload});
-    serde_json::to_vec(
-        &serde_json::json!({
-            "protocol_version": PROTOCOL_VERSION,
-            "operation": name,
-            "response": response
-        }),
-    )
+    serde_json::to_vec(&serde_json::json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "operation": name,
+        "response": response
+    }))
     .map_err(|e| JsonCodecError::Contract(e.to_string()))
 }
 
