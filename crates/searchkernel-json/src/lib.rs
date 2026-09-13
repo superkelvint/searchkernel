@@ -469,6 +469,7 @@ mod tests {
         let mut covered = 0;
         let mut round_tripped = 0;
         let mut rejected = 0;
+        let mut component_cases = 0;
         for case in cases {
             let operation = case["operation"].as_str().unwrap();
             let path = format!(
@@ -480,6 +481,11 @@ mod tests {
                 serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
             let Some((operation, request)) = transport_request(operation, &case_data["input"])
             else {
+                assert!(
+                    is_component_operation(operation),
+                    "unclassified corpus operation {operation}"
+                );
+                component_cases += 1;
                 continue;
             };
             covered += 1;
@@ -526,6 +532,7 @@ mod tests {
         assert_eq!(covered, 77);
         assert_eq!(round_tripped + rejected, covered);
         assert_eq!(rejected, 6);
+        assert_eq!(component_cases, cases.len() - covered);
     }
 
     fn request_kind(bytes: &[u8]) -> u8 {
@@ -564,6 +571,27 @@ mod tests {
             normalize_portable_values(&mut request);
             (operation, request)
         })
+    }
+
+    fn is_component_operation(operation: &str) -> bool {
+        matches!(
+            operation,
+            "analyzer_to_ir"
+                | "comparison_to_ir"
+                | "document_to_ir"
+                | "facet_to_ir"
+                | "field_to_ir"
+                | "filter_to_ir"
+                | "highlighting_to_ir"
+                | "index_definition_to_ir"
+                | "projection_to_ir"
+                | "query_to_ir"
+                | "range_to_ir"
+                | "ranking_to_ir"
+                | "search_fields_to_ir"
+                | "sort_to_ir"
+                | "value_to_ir"
+        )
     }
 
     fn normalize_portable_values(value: &mut Value) {
