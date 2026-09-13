@@ -123,9 +123,6 @@ unsafe extern "C" {
     pub fn sk_engine_destroy(engine: *mut sk_engine);
 }
 unsafe extern "C" {
-    pub fn sk_error_destroy(error: *mut sk_error);
-}
-unsafe extern "C" {
     pub fn sk_document_create(
         document_id: *const ::std::os::raw::c_char,
         field: *const ::std::os::raw::c_char,

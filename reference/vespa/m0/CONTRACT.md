@@ -30,7 +30,6 @@ The exported M0 ABI must match `NATIVE_ABI_CONTRACT.h` for:
 sk_native_abi_version
 sk_engine_open
 sk_engine_destroy
-sk_error_destroy
 ```
 
 ## Acceptance

@@ -12,11 +12,9 @@ static int open_and_close(const char *data_dir, const char *config_dir) {
         fprintf(stderr, "sk_engine_open failed: code=%d message=%s\n",
                 (int) error.code,
                 error.message[0] != '\0' ? error.message : "<none>");
-        sk_error_destroy(&error);
         return 1;
     }
     sk_engine_destroy(engine);
-    sk_error_destroy(&error);
     return 0;
 }
 

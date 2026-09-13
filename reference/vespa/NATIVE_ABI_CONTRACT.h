@@ -11,7 +11,7 @@ typedef struct sk_engine sk_engine;
 
 typedef struct sk_error {
     int32_t code;
-    char *message;
+    char message[512];
 } sk_error;
 
 typedef struct sk_document sk_document;
@@ -28,7 +28,6 @@ int32_t sk_engine_open(
     sk_error *out_error);
 
 void sk_engine_destroy(sk_engine *engine);
-void sk_error_destroy(sk_error *error);
 
 /* M2 operations. The opaque request/document constructors may remain private to
  * the Rust sys crate, but these operation symbols are required so the verifier

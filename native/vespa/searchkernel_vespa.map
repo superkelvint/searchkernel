@@ -4,7 +4,6 @@ SEARCHKERNEL_1 {
         sk_engine_open;
         sk_engine_close;
         sk_engine_destroy;
-        sk_error_destroy;
         sk_document_create;
         sk_document_destroy;
         sk_document_update_create;

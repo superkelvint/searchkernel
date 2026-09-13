@@ -390,6 +390,7 @@ class DataDirectoryLock {
     int _fd = -1;
     std::string _key;
     bool _registered = false;
+    bool _had_existing_state = false;
 
     void unregister_path() noexcept {
         if (!_registered) return;
@@ -404,6 +405,36 @@ class DataDirectoryLock {
 public:
     explicit DataDirectoryLock(const std::string &data_dir) {
         const auto path = std::filesystem::path(data_dir);
+        std::error_code filesystem_error;
+        const bool existed = std::filesystem::exists(path, filesystem_error);
+        if (filesystem_error) {
+            throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
+                                     filesystem_error.message());
+        }
+        if (existed && !std::filesystem::is_directory(path, filesystem_error)) {
+            if (filesystem_error) {
+                throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
+                                         filesystem_error.message());
+            }
+            throw std::invalid_argument("engine data path is not a directory: " + path.string());
+        }
+        if (existed) {
+            for (std::filesystem::directory_iterator entry(path, filesystem_error), end;
+                 entry != end; entry.increment(filesystem_error)) {
+                if (filesystem_error) {
+                    throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
+                                             filesystem_error.message());
+                }
+                if (entry->path().filename() != ".searchkernel.lock") {
+                    _had_existing_state = true;
+                    break;
+                }
+            }
+            if (filesystem_error) {
+                throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
+                                         filesystem_error.message());
+            }
+        }
         std::filesystem::create_directories(path);
         _key = std::filesystem::weakly_canonical(path).string();
         {
@@ -447,34 +478,62 @@ public:
         }
         unregister_path();
     }
+
+    bool had_existing_state() const noexcept { return _had_existing_state; }
 };
 
-unsigned int ephemeral_tls_port() {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        throw std::runtime_error("could not create transaction log port probe: " +
-                                 std::string(std::strerror(errno)));
+class PortReservation {
+    int _fd = -1;
+    unsigned int _port = 0;
+
+public:
+    PortReservation() {
+        _fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (_fd < 0) {
+            throw std::runtime_error("could not create transaction log port reservation: " +
+                                     std::string(std::strerror(errno)));
+        }
+        int reuse = 1;
+        if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) != 0) {
+            const auto error = errno;
+            ::close(_fd);
+            _fd = -1;
+            throw std::runtime_error("could not configure transaction log port reservation: " +
+                                     std::string(std::strerror(error)));
+        }
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(0);
+        if (::bind(_fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0) {
+            const auto error = errno;
+            ::close(_fd);
+            _fd = -1;
+            throw std::runtime_error("could not reserve transaction log port: " +
+                                     std::string(std::strerror(error)));
+        }
+        socklen_t length = sizeof(address);
+        if (::getsockname(_fd, reinterpret_cast<sockaddr *>(&address), &length) != 0) {
+            const auto error = errno;
+            ::close(_fd);
+            _fd = -1;
+            throw std::runtime_error("could not read transaction log port: " +
+                                     std::string(std::strerror(error)));
+        }
+        _port = ntohs(address.sin_port);
     }
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(0);
-    if (::bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0) {
-        const auto error = errno;
-        ::close(fd);
-        throw std::runtime_error("could not probe transaction log port: " +
-                                 std::string(std::strerror(error)));
+
+    PortReservation(const PortReservation &) = delete;
+    PortReservation &operator=(const PortReservation &) = delete;
+
+    ~PortReservation() noexcept {
+        if (_fd >= 0) {
+            ::close(_fd);
+        }
     }
-    socklen_t length = sizeof(address);
-    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&address), &length) != 0) {
-        const auto error = errno;
-        ::close(fd);
-        throw std::runtime_error("could not read transaction log port: " +
-                                 std::string(std::strerror(error)));
-    }
-    ::close(fd);
-    return ntohs(address.sin_port);
-}
+
+    unsigned int port() const noexcept { return _port; }
+};
 
 void validate_raw_document_id(std::string_view id, std::string_view document_type) {
     if (!id.starts_with("id:")) {
@@ -618,6 +677,7 @@ class EmbeddedEngine {
     HwInfo _hw_info;
     EmbeddedFileHeaderContext _file_header_context;
     std::string _tls_dir;
+    PortReservation _tls_port_reservation;
     const unsigned int _tls_port;
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
@@ -637,31 +697,49 @@ class EmbeddedEngine {
     std::atomic<State> _state{State::Open};
     mutable std::mutex _operation_mutex;
 
-    static std::string schema_identity(const SchemaManifest &manifest) {
-        std::string identity = "version=1\ndocument_type=" + manifest.document_type + "\n";
+    static std::string read_identity_file(const std::filesystem::path &path) {
+        std::ifstream input(path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("could not read generated configuration: " + path.string());
+        }
+        const std::string contents((std::istreambuf_iterator<char>(input)),
+                                   std::istreambuf_iterator<char>());
+        if (!input.good() && !input.eof()) {
+            throw std::runtime_error("could not read generated configuration: " + path.string());
+        }
+        return contents;
+    }
+
+    static std::string schema_identity(const SchemaManifest &manifest,
+                                       const std::filesystem::path &config_dir) {
+        std::string identity = "version=2\ndocument_type=" + manifest.document_type + "\n";
         for (const auto &field : manifest.fields) {
             identity += "field=" + field.name + "\t" + field.type + "\t" +
                         (field.index ? "1" : "0") + "\t" +
                         (field.attribute ? "1" : "0") + "\t" +
                         (field.summary ? "1" : "0") + "\n";
         }
+        for (const char *name : {"indexschema.cfg", "attributes.cfg", "summary.cfg",
+                                 "rank-profiles.cfg", "juniperrc.cfg"}) {
+            const auto contents = read_identity_file(config_dir / name);
+            identity += "file=" + std::string(name) + "\nlength=" +
+                        std::to_string(contents.size()) + "\n";
+            identity += contents;
+            identity.push_back('\n');
+        }
         return identity;
     }
 
     static std::string validate_or_persist_schema_identity(
-        const std::string &data_dir, const SchemaManifest &manifest) {
+        const std::string &data_dir, const std::string &config_dir,
+        const SchemaManifest &manifest, bool had_existing_state) {
         const auto path = std::filesystem::path(data_dir) / ".searchkernel-schema";
-        const auto expected = schema_identity(manifest);
+        const auto expected = schema_identity(manifest, config_dir);
         if (std::filesystem::exists(path)) {
             if (!std::filesystem::is_regular_file(path)) {
                 throw std::invalid_argument("index schema identity is not a regular file");
             }
-            std::ifstream input(path);
-            const std::string actual((std::istreambuf_iterator<char>(input)),
-                                     std::istreambuf_iterator<char>());
-            if (!input.good() && !input.eof()) {
-                throw std::runtime_error("could not read index schema identity: " + path.string());
-            }
+            const auto actual = read_identity_file(path);
             if (actual != expected) {
                 throw std::invalid_argument(
                     "index data was created with a different generated schema");
@@ -669,13 +747,51 @@ class EmbeddedEngine {
             return expected;
         }
 
-        std::ofstream output(path);
-        if (!output) {
-            throw std::runtime_error("could not create index schema identity: " + path.string());
+        if (had_existing_state) {
+            throw std::invalid_argument("index data exists but schema identity is missing");
         }
-        output << expected;
-        if (!output) {
-            throw std::runtime_error("could not write index schema identity: " + path.string());
+        const auto temporary_path = path.string() + ".tmp";
+        const int fd = ::open(temporary_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600);
+        if (fd < 0) {
+            throw std::runtime_error("could not create index schema identity: " + temporary_path);
+        }
+        bool installed = false;
+        try {
+            size_t offset = 0;
+            while (offset < expected.size()) {
+                const auto written = ::write(fd, expected.data() + offset, expected.size() - offset);
+                if (written < 0 && errno == EINTR) continue;
+                if (written <= 0) {
+                    throw std::runtime_error("could not write index schema identity: " + path.string());
+                }
+                offset += static_cast<size_t>(written);
+            }
+            if (::fsync(fd) != 0) {
+                throw std::runtime_error("could not flush index schema identity: " + path.string());
+            }
+            if (::close(fd) != 0) {
+                throw std::runtime_error("could not close index schema identity: " + path.string());
+            }
+            if (::rename(temporary_path.c_str(), path.c_str()) != 0) {
+                throw std::runtime_error("could not install index schema identity: " + path.string());
+            }
+            installed = true;
+            const auto directory = std::filesystem::path(data_dir);
+            const int directory_fd = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY);
+            if (directory_fd < 0) {
+                throw std::runtime_error("could not open index directory for flushing: " + directory.string());
+            }
+            const int sync_result = ::fsync(directory_fd);
+            const int close_result = ::close(directory_fd);
+            if (sync_result != 0 || close_result != 0) {
+                throw std::runtime_error("could not flush index directory: " + directory.string());
+            }
+        } catch (...) {
+            ::close(fd);
+            if (!installed) {
+                ::unlink(temporary_path.c_str());
+            }
+            throw;
         }
         return expected;
     }
@@ -1078,7 +1194,8 @@ public:
     EmbeddedEngine(const std::string &data_dir, const std::string &config_dir)
         : _manifest(read_schema_manifest(config_dir)),
           _data_lock(data_dir),
-          _schema_identity(validate_or_persist_schema_identity(data_dir, _manifest)),
+          _schema_identity(validate_or_persist_schema_identity(
+              data_dir, config_dir, _manifest, _data_lock.had_existing_state())),
           _document_type(_manifest.document_type),
           _document_types(make_documenttypes_config(_manifest)),
           _repo(std::make_shared<DocumentTypeRepo>(*_document_types)),
@@ -1090,7 +1207,8 @@ public:
           _hw_info(),
           _file_header_context(),
           _tls_dir("tmp"),
-          _tls_port(ephemeral_tls_port()),
+          _tls_port_reservation(),
+          _tls_port(_tls_port_reservation.port()),
           _tls(_shared_service.transport(), _tls_dir,
                static_cast<int>(_tls_port), data_dir, _file_header_context),
           _query_limiter(),
@@ -1573,7 +1691,7 @@ extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
 }
 
 extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
-                                   sk_engine **out_engine, sk_error *error) {
+                                   sk_engine **out_engine, sk_error *error) SK_NOEXCEPT {
     if (out_engine) {
         *out_engine = nullptr;
     }
@@ -1607,7 +1725,7 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
     });
 }
 
-extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) {
+extern "C" int32_t sk_engine_close(sk_engine *engine, sk_error *error) SK_NOEXCEPT {
     if (!engine || !engine->impl) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "engine close arguments are invalid");
     }
@@ -1621,13 +1739,9 @@ extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
     }
 }
 
-extern "C" void sk_error_destroy(sk_error *error) SK_NOEXCEPT {
-    destroy_error(error);
-}
-
 extern "C" int32_t sk_document_create(const char *id, const char *field,
                                         int32_t value, sk_document **out,
-                                        sk_error *error) {
+                                        sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1653,7 +1767,7 @@ extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT { delete 
 extern "C" int32_t sk_document_update_create(const char *id, const char *field,
                                                int32_t value,
                                                sk_document_update **out,
-                                               sk_error *error) {
+                                               sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1681,7 +1795,7 @@ extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCE
 extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
                                               uint32_t limit,
                                               sk_search_request **out,
-                                              sk_error *error) {
+                                              sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1709,7 +1823,7 @@ extern "C" void sk_search_request_destroy(sk_search_request *request) SK_NOEXCEP
 }
 
 extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
-                                  sk_error *error) {
+                                  sk_error *error) SK_NOEXCEPT {
     if (!engine || !engine->impl || !document) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "put arguments are invalid");
     }
@@ -1720,7 +1834,7 @@ extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
 
 extern "C" int32_t sk_engine_update(sk_engine *engine,
                                      const sk_document_update *update,
-                                     sk_error *error) {
+                                     sk_error *error) SK_NOEXCEPT {
     if (!engine || !engine->impl || !update) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "update arguments are invalid");
     }
@@ -1730,7 +1844,7 @@ extern "C" int32_t sk_engine_update(sk_engine *engine,
 }
 
 extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
-                                     int32_t *out_was_found, sk_error *error) {
+                                     int32_t *out_was_found, sk_error *error) SK_NOEXCEPT {
     if (out_was_found) {
         *out_was_found = 0;
     }
@@ -1746,7 +1860,7 @@ extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
 extern "C" int32_t sk_engine_search(const sk_engine *engine,
                                      const sk_search_request *request,
                                      sk_search_result **out_result,
-                                     sk_error *error) {
+                                     sk_error *error) SK_NOEXCEPT {
     if (out_result) {
         *out_result = nullptr;
     }
@@ -1770,7 +1884,7 @@ extern "C" uint32_t sk_search_result_size(const sk_search_result *result) SK_NOE
 
 extern "C" int32_t sk_search_result_id(const sk_search_result *result,
                                         uint32_t index, const char **out_id,
-                                        uint32_t *out_length, sk_error *error) {
+                                        uint32_t *out_length, sk_error *error) SK_NOEXCEPT {
     if (out_id) {
         *out_id = nullptr;
     }
@@ -1911,7 +2025,7 @@ void fill_text_request(TextRequest &request, uint32_t kind, const char *field,
 extern "C" int32_t sk_text_document_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
     const sk_text_occurrence *occurrences, uint32_t occurrence_count,
-    sk_text_document **out, sk_error *error) {
+    sk_text_document **out, sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1933,7 +2047,7 @@ extern "C" void sk_text_document_destroy(sk_text_document *document) SK_NOEXCEPT
 extern "C" int32_t sk_text_update_create(
     const char *id, const char *field, const uint8_t *text, uint32_t text_length,
     const sk_text_occurrence *occurrences, uint32_t occurrence_count,
-    sk_text_update **out, sk_error *error) {
+    sk_text_update **out, sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1955,7 +2069,7 @@ extern "C" void sk_text_update_destroy(sk_text_update *update) SK_NOEXCEPT {
 extern "C" int32_t sk_text_request_create(
     uint32_t kind, const char *field, const sk_text_query_term *terms,
     uint32_t term_count, const char *rank_profile, sk_text_request **out,
-    sk_error *error) {
+    sk_error *error) SK_NOEXCEPT {
     if (out) {
         *out = nullptr;
     }
@@ -1975,7 +2089,7 @@ extern "C" void sk_text_request_destroy(sk_text_request *request) SK_NOEXCEPT {
 
 extern "C" int32_t sk_engine_put_text(sk_engine *engine,
                                         const sk_text_document *document,
-                                        sk_error *error) {
+                                        sk_error *error) SK_NOEXCEPT {
     if (!engine || !engine->impl || !document) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text put arguments are invalid");
     }
@@ -1984,7 +2098,7 @@ extern "C" int32_t sk_engine_put_text(sk_engine *engine,
 
 extern "C" int32_t sk_engine_update_text(sk_engine *engine,
                                            const sk_text_update *update,
-                                           sk_error *error) {
+                                           sk_error *error) SK_NOEXCEPT {
     if (!engine || !engine->impl || !update) {
         return set_error(error, SK_STATUS_INVALID_ARGUMENT, "text update arguments are invalid");
     }
@@ -1994,7 +2108,7 @@ extern "C" int32_t sk_engine_update_text(sk_engine *engine,
 extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
                                            const sk_text_request *request,
                                            sk_text_result **out_result,
-                                           sk_error *error) {
+                                           sk_error *error) SK_NOEXCEPT {
     if (out_result) {
         *out_result = nullptr;
     }
@@ -2015,7 +2129,7 @@ extern "C" uint32_t sk_text_result_size(const sk_text_result *result) SK_NOEXCEP
 extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
                                        uint32_t index, const char **out_id,
                                        uint32_t *out_length, double *out_score,
-                                       sk_error *error) {
+                                       sk_error *error) SK_NOEXCEPT {
     if (out_id) {
         *out_id = nullptr;
     }

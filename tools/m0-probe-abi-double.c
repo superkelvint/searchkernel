@@ -1,7 +1,6 @@
 #include <searchkernel_vespa.h>
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 struct sk_engine {
@@ -17,9 +16,8 @@ static const char *mode(void) {
 
 static void clear_error(sk_error *error) {
     if (error) {
-        free(error->message);
-        error->message = NULL;
         error->code = 0;
+        error->message[0] = '\0';
     }
 }
 
@@ -35,10 +33,11 @@ static void set_error(sk_error *error, int32_t code, const char *message) {
         return;
     }
     length = strlen(message);
-    error->message = malloc(length + 1);
-    if (error->message) {
-        memcpy(error->message, message, length + 1);
+    if (length >= sizeof(error->message)) {
+        length = sizeof(error->message) - 1;
     }
+    memcpy(error->message, message, length);
+    error->message[length] = '\0';
 }
 
 uint32_t sk_native_abi_version(void) {
@@ -82,8 +81,4 @@ int32_t sk_engine_open(const char *data_dir, const char *config_dir,
 
 void sk_engine_destroy(sk_engine *engine) {
     free(engine);
-}
-
-void sk_error_destroy(sk_error *error) {
-    clear_error(error);
 }

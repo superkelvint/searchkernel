@@ -302,6 +302,56 @@ fn data_directories_are_exclusive_and_schema_bound() {
 }
 
 #[test]
+fn existing_data_without_schema_identity_cannot_be_rebound() {
+    let original_schema = text_schema();
+    let (config_a, data_a) = compile_config("missing-identity", &original_schema);
+    let engine = Engine::open(&data_a, &config_a).expect("open original index");
+    engine
+        .put_text(TextDocument {
+            id: "persisted",
+            field: "title",
+            text: "persisted data",
+        })
+        .expect("write persisted data");
+    engine.close().expect("close original index");
+
+    fs::remove_file(data_a.join(".searchkernel-schema")).expect("remove schema identity");
+    let replacement_schema = Schema::new("replacement_type")
+        .field(Field::new("title", FieldType::Text).indexed().summary());
+    let (config_b, _data_b) = compile_config("replacement-identity", &replacement_schema);
+
+    assert!(
+        Engine::open(&data_a, &config_b).is_err(),
+        "existing engine state without an identity must not be rebound"
+    );
+
+    for path in [config_a, config_b, data_a] {
+        let _ = fs::remove_dir_all(path);
+    }
+}
+
+#[test]
+fn schema_identity_covers_physical_generated_configuration() {
+    let schema = text_schema();
+    let (config, data) = compile_config("physical-identity", &schema);
+    let engine = Engine::open(&data, &config).expect("open index");
+    engine.close().expect("close index");
+
+    fs::write(
+        config.join("juniperrc.cfg"),
+        "changed physical configuration\n",
+    )
+    .expect("mutate physical configuration");
+    assert!(
+        Engine::open(&data, &config).is_err(),
+        "schema identity must include physical generated configuration"
+    );
+
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_validates_manifest_and_configuration_location_before_side_effects() {
     let (config, data) = compile_config("manifest-preflight", &text_schema());
     fs::remove_file(config.join("searchkernel-schema.json")).expect("remove manifest");
@@ -351,6 +401,83 @@ fn native_rejects_invalid_manifest_values_at_the_boundary() {
         );
         let _ = fs::remove_dir_all(config);
         let _ = fs::remove_dir_all(data);
+    }
+}
+
+#[test]
+fn native_schema_identity_persistence_is_crash_safe() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../native/vespa/searchkernel_vespa.cpp"
+    ));
+    assert!(source.contains("path.string() + \".tmp\""));
+    assert!(source.contains("::fsync"));
+    assert!(source.contains("::rename"));
+    assert!(source.contains("O_DIRECTORY"));
+    assert!(source.contains("index data exists but schema identity is missing"));
+}
+
+#[test]
+fn native_transaction_log_port_selection_keeps_reservation_until_bind() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../native/vespa/searchkernel_vespa.cpp"
+    ));
+    assert!(source.contains("class PortReservation"));
+    assert!(source.contains("_tls_port_reservation"));
+    assert!(!source.contains("unsigned int ephemeral_tls_port()"));
+}
+
+#[test]
+fn native_abi_exports_are_noexcept_and_error_destroy_is_removed() {
+    let header = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../native/vespa/searchkernel_vespa.h"
+    ));
+    assert!(!header.contains("sk_error_destroy"));
+    for name in [
+        "sk_native_abi_version",
+        "sk_engine_open",
+        "sk_engine_close",
+        "sk_engine_destroy",
+        "sk_document_create",
+        "sk_document_destroy",
+        "sk_document_update_create",
+        "sk_document_update_destroy",
+        "sk_search_request_create",
+        "sk_search_request_destroy",
+        "sk_engine_put",
+        "sk_engine_update",
+        "sk_engine_remove",
+        "sk_engine_search",
+        "sk_search_result_size",
+        "sk_search_result_id",
+        "sk_search_result_destroy",
+        "sk_text_document_create",
+        "sk_text_document_destroy",
+        "sk_text_update_create",
+        "sk_text_update_destroy",
+        "sk_text_request_create",
+        "sk_text_request_destroy",
+        "sk_engine_put_text",
+        "sk_engine_update_text",
+        "sk_engine_search_text",
+        "sk_text_result_size",
+        "sk_text_result_hit",
+        "sk_text_result_destroy",
+    ] {
+        let declaration_start = header
+            .find(name)
+            .unwrap_or_else(|| panic!("missing native ABI declaration: {name}"));
+        let declaration_end = header[declaration_start..]
+            .find(';')
+            .expect("native ABI declaration must end with a semicolon")
+            + declaration_start;
+        let declaration = &header[declaration_start..=declaration_end];
+        assert!(
+            declaration.contains("SK_NOEXCEPT"),
+            "native ABI declaration is not noexcept: {declaration}"
+        );
     }
 }
 
