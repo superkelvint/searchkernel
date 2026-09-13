@@ -1,0 +1,24 @@
+name: ABI surface
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  abi-surface:
+    name: Public ABI aggregate check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install libclang Python bindings
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libclang-dev python3-clang
+
+      - name: Run ABI surface regression tests
+        run: python3 tools/test_check_abi_surface.py
+
+      - name: Check public Vespa ABI header
+        run: python3 tools/check_abi_surface.py native/vespa/searchkernel_vespa.h

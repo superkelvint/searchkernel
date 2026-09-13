@@ -62,3 +62,23 @@ An ABI change requires explicit review. In particular, changing or removing
 an existing exported signature or reachable type requires a native ABI version
 bump and a new baseline. Compatible additions still require review because
 they change the exported contract and the version-script symbol set.
+
+## Public header aggregate check
+
+The public header is also checked before native ABI comparison. The check uses
+libclang to inspect each function declaration and rejects pointers to, or
+returns of, fully defined `struct`/`union` types. Forward declarations remain
+opaque and pass. An exception must be added to `ALLOWLIST` in
+`tools/check_abi_surface.py` with a benchmark result and review/PR reference.
+
+The CI job installs `python3-clang` and `libclang` and runs:
+
+```bash
+python3 tools/check_abi_surface.py native/vespa/searchkernel_vespa.h
+```
+
+The focused regression suite can be run locally with:
+
+```bash
+python3 tools/test_check_abi_surface.py
+```
