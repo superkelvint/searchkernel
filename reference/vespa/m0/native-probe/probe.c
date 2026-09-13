@@ -6,12 +6,12 @@
 
 static int open_and_close(const char *data_dir, const char *config_dir) {
     sk_engine *engine = NULL;
-    sk_error error = {0, NULL};
+    sk_error error = {0};
     int32_t rc = sk_engine_open(data_dir, config_dir, &engine, &error);
     if (rc != 0 || engine == NULL) {
         fprintf(stderr, "sk_engine_open failed: code=%d message=%s\n",
                 (int) error.code,
-                error.message ? error.message : "<none>");
+                error.message[0] != '\0' ? error.message : "<none>");
         sk_error_destroy(&error);
         return 1;
     }

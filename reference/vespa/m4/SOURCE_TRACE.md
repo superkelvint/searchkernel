@@ -74,7 +74,7 @@ value. Query terms are lowered directly to real `StringTerm`/`Phrase` nodes.
 and freezes the M4 variant under:
 
 ```text
-reference/vespa/m4/fixture/embedded_text_cfg/
+reference/vespa/m4/fixture/
 ```
 
 The generated fixture defines indexed `title`, positions, interleaved features,

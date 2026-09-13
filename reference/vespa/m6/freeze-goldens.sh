@@ -29,4 +29,5 @@ for scenario in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
 done
 
 "$SCRIPT_DIR/validate_expected.py"
+"$SCRIPT_DIR/freeze-immutable.sh"
 echo "M6 goldens regenerated. Review expected/*.json, then commit the verifier specification." >&2

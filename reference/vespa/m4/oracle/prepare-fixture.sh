@@ -5,7 +5,7 @@ M4="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$M4/../../.." && pwd)"
 VESPA="${VESPA_SOURCE_DIR:-$ROOT/upstream/vespa}"
 BASE="$VESPA/searchcore/src/tests/proton/documentdb/cfg"
-OUT="$M4/fixture/embedded_text_cfg"
+OUT="$M4/fixture"
 PINNED="2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 
 [[ -d "$BASE" ]] || { echo "missing pinned Vespa documentdb fixture: $BASE" >&2; exit 1; }
@@ -17,7 +17,7 @@ actual="$(git -C "$VESPA" rev-parse HEAD)"
 
 # Once created, this directory is part of the checked-in M4 verifier fixture.
 # Do not regenerate it during implementation/acceptance.
-if [[ -f "$OUT/.m4-text-fixture" ]]; then
+if [[ -f "$OUT/searchkernel-schema.json" ]]; then
   exit 0
 fi
 if [[ -e "$OUT" && -n "$(find "$OUT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
@@ -58,12 +58,8 @@ rankprofile[1].fef.property[0].name "vespa.rank.firstphase"
 rankprofile[1].fef.property[0].value "bm25(title)"
 CFG
 
-cat > "$OUT/.m4-text-fixture" <<EOF2
-source_revision=$PINNED
-source_fixture=searchcore/src/tests/proton/documentdb/cfg
-field=title
-index=STRING,SINGLE,positions=true,interleavedfeatures=true
-rank_profile=bm25 -> bm25(title)
+cat > "$OUT/searchkernel-schema.json" <<'EOF2'
+{"version":1,"document_type":"typea","fields":[{"name":"title","type":"text","index":true,"attribute":false,"summary":false}]}
 EOF2
 
 echo "Prepared M4 text fixture: $OUT" >&2

@@ -117,9 +117,8 @@ namespace {
 constexpr unsigned int FIRST_TLS_PORT = 9014;
 constexpr unsigned int LAST_TLS_PORT = 65535;
 std::atomic<unsigned int> NEXT_TLS_PORT{FIRST_TLS_PORT};
-constexpr char LEGACY_DOC_TYPE[] = {'t', 'y', 'p', 'e', 'a', '\0'};
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
-constexpr size_t MAX_FIELD_NAME_BYTES = 256;
+constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
 constexpr size_t MAX_RANK_PROFILE_BYTES = 256;
 constexpr size_t MAX_TEXT_BYTES = 16 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERM_BYTES = 1024 * 1024;
@@ -152,7 +151,7 @@ bool is_slime_type(const vespalib::slime::Inspector &value, uint32_t type) noexc
 }
 
 void validate_manifest_identifier(const std::string &value, const char *what) {
-    if (value.size() > MAX_FIELD_NAME_BYTES || !is_identifier(value)) {
+    if (value.size() > MAX_SCHEMA_IDENTIFIER_BYTES || !is_identifier(value)) {
         throw std::invalid_argument(std::string("generated schema ") + what +
                                     " is not a valid identifier");
     }
@@ -280,7 +279,7 @@ void validate_document_id(const char *value) {
 }
 
 void validate_field_name(const char *value) {
-    validate_string_size(value, MAX_FIELD_NAME_BYTES, "field name");
+    validate_string_size(value, MAX_SCHEMA_IDENTIFIER_BYTES, "field name");
 }
 
 void validate_rank_profile(const char *value) {
@@ -506,16 +505,6 @@ std::string query_stack_dump(int32_t value, const std::string &field) {
 }
 
 class EmbeddedEngine {
-    EmbeddedWireService _wire_service;
-    EmbeddedDBOwner _db_owner;
-    vespalib::ThreadStackExecutor _summary_executor;
-    EmbeddedThreadingService _shared_service;
-    HwInfo _hw_info;
-    EmbeddedFileHeaderContext _file_header_context;
-    std::string _tls_dir;
-    const unsigned int _tls_port;
-    TransLogServer _tls;
-    proton::matching::QueryLimiter _query_limiter;
     struct ManifestField {
         std::string name;
         std::string type;
@@ -526,7 +515,6 @@ class EmbeddedEngine {
     struct SchemaManifest {
         std::string document_type;
         std::vector<ManifestField> fields;
-        bool generated = false;
     };
 
     SchemaManifest _manifest;
@@ -534,6 +522,16 @@ class EmbeddedEngine {
     std::shared_ptr<const DocumenttypesConfig> _document_types;
     std::shared_ptr<DocumentTypeRepo> _repo;
     const DocumentType *_doc_type;
+    EmbeddedWireService _wire_service;
+    EmbeddedDBOwner _db_owner;
+    vespalib::ThreadStackExecutor _summary_executor;
+    EmbeddedThreadingService _shared_service;
+    HwInfo _hw_info;
+    EmbeddedFileHeaderContext _file_header_context;
+    std::string _tls_dir;
+    const unsigned int _tls_port;
+    TransLogServer _tls;
+    proton::matching::QueryLimiter _query_limiter;
     DocumentDB::SP _db;
     PersistenceOwner _persistence_owner;
     AcceptAllWrites _write_filter;
@@ -737,13 +735,6 @@ class EmbeddedEngine {
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
         const auto path = std::filesystem::path(config_dir) / "searchkernel-schema.json";
         if (!std::filesystem::is_regular_file(path)) {
-            const auto config_path = std::filesystem::path(config_dir);
-            const bool legacy_config =
-                std::filesystem::is_regular_file(config_path / "proton.cfg") ||
-                std::filesystem::is_regular_file(config_path / ".m4-text-fixture");
-            if (legacy_config) {
-                return {LEGACY_DOC_TYPE, {}, false};
-            }
             throw std::invalid_argument("generated schema manifest is missing");
         }
         std::ifstream input(path);
@@ -763,7 +754,7 @@ class EmbeddedEngine {
             !is_slime_type(root["fields"], vespalib::slime::ARRAY::ID)) {
             throw std::invalid_argument("generated schema manifest is incomplete");
         }
-        SchemaManifest manifest{root["document_type"].asString().make_string(), {}, true};
+        SchemaManifest manifest{root["document_type"].asString().make_string(), {}};
         validate_manifest_identifier(manifest.document_type, "document type");
         const auto &fields = root["fields"];
         manifest.fields.reserve(fields.children());
@@ -799,22 +790,18 @@ class EmbeddedEngine {
             }
             manifest.fields.push_back({std::move(name), std::move(type), indexed, attribute, summary});
         }
+        if (std::count_if(manifest.fields.begin(), manifest.fields.end(), [](const auto &field) {
+                return field.type == "text";
+            }) > 1) {
+            throw std::invalid_argument(
+                "generated schema supports exactly one indexed text field");
+        }
+        validate_generated_configuration(manifest, config_dir);
         return manifest;
-    }
-
-    static const document::DataType *manifest_type(const std::string &type) {
-        if (type == "text" || type == "string") return document::DataType::STRING;
-        if (type == "integer") return document::DataType::INT;
-        if (type == "float") return document::DataType::DOUBLE;
-        if (type == "boolean") return document::DataType::BOOL;
-        throw std::invalid_argument("unsupported generated schema field type: " + type);
     }
 
     static std::shared_ptr<const DocumenttypesConfig>
     make_documenttypes_config(const SchemaManifest &manifest) {
-        if (!manifest.generated) {
-            return std::make_shared<DocumenttypesConfig>();
-        }
         document::new_config_builder::NewConfigBuilder builder;
         auto &document_type = builder.document(manifest.document_type);
         for (const auto &field : manifest.fields) {
@@ -833,106 +820,6 @@ class EmbeddedEngine {
         return std::make_shared<DocumenttypesConfig>(builder.config());
     }
 
-    static const document::DataType *attribute_type(const std::string &type) {
-        if (type == "STRING") return document::DataType::STRING;
-        if (type == "INT32") return document::DataType::INT;
-        if (type == "DOUBLE") return document::DataType::DOUBLE;
-        if (type == "BOOL") return document::DataType::BOOL;
-        throw std::invalid_argument("unsupported generated attribute datatype: " + type);
-    }
-
-    static void add_document_field(std::map<std::string, const document::DataType *> &fields,
-                                   const std::string &name, const document::DataType *type) {
-        const auto [it, inserted] = fields.emplace(name, type);
-        if (!inserted && it->second->getId() != type->getId()) {
-            throw std::invalid_argument("generated configuration assigns conflicting types to field " + name);
-        }
-    }
-
-    static void add_attribute_fields(std::map<std::string, const document::DataType *> &fields,
-                                     const std::filesystem::path &config_dir) {
-        const auto values = read_config(config_dir / "attributes.cfg");
-        for (size_t index = 0; ; ++index) {
-            const auto name_it = values.find("attribute[" + std::to_string(index) + "].name");
-            if (name_it == values.end()) {
-                break;
-            }
-            const auto type_it = values.find("attribute[" + std::to_string(index) + "].datatype");
-            if (type_it == values.end()) {
-                throw std::invalid_argument("generated attribute is missing datatype: " + name_it->second);
-            }
-            add_document_field(fields, name_it->second, attribute_type(type_it->second));
-        }
-    }
-
-    static void add_index_fields(std::map<std::string, const document::DataType *> &fields,
-                                 const std::filesystem::path &config_dir) {
-        const auto values = read_config(config_dir / "indexschema.cfg");
-        for (size_t index = 0; ; ++index) {
-            const auto name_it = values.find("indexfield[" + std::to_string(index) + "].name");
-            if (name_it == values.end()) break;
-            add_document_field(fields, name_it->second, document::DataType::STRING);
-        }
-    }
-
-    static void add_summary_fields(std::map<std::string, const document::DataType *> &fields,
-                                   const std::filesystem::path &config_dir) {
-        const auto values = read_config(config_dir / "summary.cfg");
-        size_t default_class = 0;
-        bool found_default = false;
-        for (size_t index = 0; ; ++index) {
-            const auto name_it = values.find("classes[" + std::to_string(index) + "].name");
-            if (name_it == values.end()) break;
-            if (name_it->second == "default") {
-                default_class = index;
-                found_default = true;
-                break;
-            }
-        }
-        if (!found_default) return;
-        const std::string prefix = "classes[" + std::to_string(default_class) + "].fields[";
-        for (size_t index = 0; ; ++index) {
-            const auto field_prefix = prefix + std::to_string(index) + "]";
-            const auto name_it = values.find(field_prefix + ".name");
-            if (name_it == values.end()) break;
-            const auto command_it = values.find(field_prefix + ".command");
-            if (command_it != values.end() && command_it->second.empty()) {
-                if (name_it->second != "documentid" && name_it->second != "rankfeatures" &&
-                    name_it->second != "summaryfeatures") {
-                    add_document_field(fields, name_it->second, document::DataType::STRING);
-                }
-            }
-        }
-    }
-
-    static DocumentType make_document_type(const SchemaManifest &manifest,
-                                           const std::string &config_dir) {
-        DocumentType type(manifest.document_type, 0);
-        std::map<std::string, const document::DataType *> fields;
-        const auto config_path = std::filesystem::path(config_dir);
-        if (manifest.generated) {
-            for (const auto &field : manifest.fields) {
-                add_document_field(fields, field.name, manifest_type(field.type));
-            }
-        } else {
-            add_attribute_fields(fields, config_path);
-            add_index_fields(fields, config_path);
-            add_summary_fields(fields, config_path);
-            // Keep the historical M0-M5 fixture fields available when opening
-            // an old hand-written fixture.
-            if (!fields.contains("attr1")) {
-                fields.emplace("attr1", document::DataType::INT);
-            }
-            if (!fields.contains("title")) {
-                fields.emplace("title", document::DataType::STRING);
-            }
-        }
-        int32_t field_id = 1;
-        for (const auto &[name, data_type] : fields) {
-            type.addField(document::Field(name, field_id++, *data_type));
-        }
-        return type;
-    }
 
     void prepare_bucket(const Bucket &bucket) {
         const uint64_t raw_id = bucket.getBucketId().getId();
@@ -977,7 +864,12 @@ class EmbeddedEngine {
 
 public:
     EmbeddedEngine(const std::string &data_dir, const std::string &config_dir)
-        : _wire_service(),
+        : _manifest(read_schema_manifest(config_dir)),
+          _document_type(_manifest.document_type),
+          _document_types(make_documenttypes_config(_manifest)),
+          _repo(std::make_shared<DocumentTypeRepo>(*_document_types)),
+          _doc_type(_repo->getDocumentType(_document_type)),
+          _wire_service(),
           _db_owner(),
           _summary_executor(8),
           _shared_service(_summary_executor),
@@ -988,14 +880,6 @@ public:
           _tls(_shared_service.transport(), _tls_dir,
                static_cast<int>(_tls_port), data_dir, _file_header_context),
           _query_limiter(),
-          _manifest(read_schema_manifest(config_dir)),
-          _document_type(_manifest.document_type),
-          _document_types(make_documenttypes_config(_manifest)),
-          _repo(_manifest.generated
-                    ? std::make_shared<DocumentTypeRepo>(*_document_types)
-                    : std::make_shared<DocumentTypeRepo>(
-                          make_document_type(_manifest, config_dir))),
-          _doc_type(_repo->getDocumentType(_document_type)),
           _db(),
           _persistence_owner(),
           _write_filter(),
@@ -1004,9 +888,6 @@ public:
                        _resource_usage_notifier, -1, false),
           _handler(),
           _prepared_buckets() {
-        if (_manifest.generated) {
-            validate_generated_configuration(_manifest, config_dir);
-        }
         std::filesystem::create_directories(data_dir);
         if (_doc_type == nullptr) {
             throw std::runtime_error("generated document type was not added to DocumentTypeRepo: " +
@@ -1429,19 +1310,6 @@ int32_t set_error(sk_error *error, int32_t code, const char *message) noexcept {
     return error->code;
 }
 
-std::filesystem::path resolve_config_directory(const std::filesystem::path &path) {
-    // M4's frozen fixture predates ConfigCompiler and passes its fixture root.
-    // Keep this one named compatibility rule; all other callers must pass the
-    // actual configuration directory.
-    const auto nested_config = path / "embedded_text_cfg";
-    if (path.filename() == "fixture" &&
-        std::filesystem::is_regular_file(nested_config / "indexschema.cfg") &&
-        std::filesystem::is_regular_file(nested_config / ".m4-text-fixture")) {
-        return nested_config;
-    }
-    return path;
-}
-
 template <typename Function>
 int32_t invoke(sk_error *error, Function &&function) noexcept {
     clear_error(error);
@@ -1504,10 +1372,9 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
             }
             throw std::invalid_argument("engine config path is not a directory: " + config_path.string());
         }
-        const auto resolved_config_path = resolve_config_directory(config_path);
         auto engine = std::make_unique<sk_engine>();
         engine->impl = std::make_unique<EmbeddedEngine>(data_dir,
-                                                        resolved_config_path.string());
+                                                        config_path.string());
         *out_engine = engine.release();
     });
 }

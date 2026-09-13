@@ -6,6 +6,7 @@ cd "$ROOT"
 
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
+"$SCRIPT_DIR/check-immutable.sh"
 
 if [[ -x reference/vespa/m5/verify-m5.sh ]]; then
   reference/vespa/m5/verify-m5.sh

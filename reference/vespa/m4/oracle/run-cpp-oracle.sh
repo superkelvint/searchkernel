@@ -27,7 +27,7 @@ if [[ -f /.dockerenv ]]; then
   WORK="$(mktemp -d /tmp/searchkernel-m4-oracle.XXXXXX)"
   trap 'rm -rf "$WORK"' EXIT
   cd "$WORK"
-  export M4_ORACLE_CONFIG_DIR="$M4/fixture/embedded_text_cfg"
+  export M4_ORACLE_CONFIG_DIR="$M4/fixture"
   exec "$BIN"
 fi
 
@@ -40,7 +40,7 @@ exec docker run --rm -i \
   --privileged \
   --pids-limit -1 \
   -v "$ROOT":/work:ro \
-  -e M4_ORACLE_CONFIG_DIR=/work/reference/vespa/m4/fixture/embedded_text_cfg \
+  -e M4_ORACLE_CONFIG_DIR=/work/reference/vespa/m4/fixture \
   "$IMAGE" \
   /bin/bash -lc '
     set -e
@@ -48,4 +48,3 @@ exec docker run --rm -i \
     cd "$WORK"
     exec /work/reference/vespa/m4/oracle/target/m4_cpp_oracle
   '
-
