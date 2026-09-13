@@ -84,7 +84,7 @@ mod text_soa_abi_regression_tests {
                 error.len() as u32,
             )
         };
-        assert_eq!(status, SK_STATUS_OK as i32);
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
         assert!(!document.is_null());
 
         let term_bytes = b"quick";
@@ -104,8 +104,145 @@ mod text_soa_abi_regression_tests {
                 error.len() as u32,
             )
         };
-        assert_eq!(status, SK_STATUS_INVALID_ARGUMENT as i32);
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
 
         unsafe { sk_text_document_destroy(document) };
+    }
+
+    #[test]
+    fn text_soa_builders_accept_only_one_population_transfer() {
+        let id = CString::new("id").unwrap();
+        let field = CString::new("title").unwrap();
+        let rank_profile = CString::new("default").unwrap();
+        let text = b"quick fox";
+        let term_bytes = b"quick";
+        let term_lengths = [5_u32];
+        let byte_starts = [0_u32];
+        let byte_lengths = [5_u32];
+        let mut error = [0_u8; SK_ERROR_MESSAGE_CAPACITY as usize];
+
+        let mut document = std::ptr::null_mut();
+        let status = unsafe {
+            sk_text_document_create(
+                id.as_ptr(),
+                field.as_ptr(),
+                text.as_ptr(),
+                text.len() as u32,
+                &mut document,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_document_add_occurrences(
+                document,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                byte_starts.as_ptr(),
+                byte_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_document_add_occurrences(
+                document,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                byte_starts.as_ptr(),
+                byte_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+        unsafe { sk_text_document_destroy(document) };
+
+        let mut update = std::ptr::null_mut();
+        let status = unsafe {
+            sk_text_update_create(
+                id.as_ptr(),
+                field.as_ptr(),
+                text.as_ptr(),
+                text.len() as u32,
+                &mut update,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_update_add_occurrences(
+                update,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                byte_starts.as_ptr(),
+                byte_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_update_add_occurrences(
+                update,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                byte_starts.as_ptr(),
+                byte_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+        unsafe { sk_text_update_destroy(update) };
+
+        let mut request = std::ptr::null_mut();
+        let status = unsafe {
+            sk_text_request_create(
+                SK_TEXT_QUERY_PHRASE,
+                field.as_ptr(),
+                rank_profile.as_ptr(),
+                &mut request,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_request_add_terms(
+                request,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_OK as i32);
+        let status = unsafe {
+            sk_text_request_add_terms(
+                request,
+                term_bytes.as_ptr(),
+                term_bytes.len() as u32,
+                term_lengths.as_ptr(),
+                1,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+        unsafe { sk_text_request_destroy(request) };
     }
 }

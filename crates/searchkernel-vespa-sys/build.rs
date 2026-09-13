@@ -73,6 +73,7 @@ fn main() {
     println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
     println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
     println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
+    println!("cargo:rerun-if-changed=native_header_namespace_check.cc");
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
     println!("cargo:rerun-if-changed=../../native/vespa/transport_owner.h");
     cc::Build::new()
@@ -93,6 +94,13 @@ fn main() {
         .include(sdk.join("include"))
         .warnings(true)
         .compile("searchkernel_vespa_abi_noexcept");
+    cc::Build::new()
+        .cpp(true)
+        .file(manifest_dir.join("native_header_namespace_check.cc"))
+        .include(sdk.join("include"))
+        .include(manifest_dir.join("../searchkernel-ffi/include"))
+        .warnings(true)
+        .compile("searchkernel_vespa_header_namespace");
 }
 
 fn generate_bindings(header: &Path) -> bindgen::Bindings {
@@ -103,7 +111,7 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
         )
         .allowlist_function("sk_.*")
         .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|STATUS_.*|TEXT_QUERY_(TERM|PHRASE))",
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE))",
         )
         .layout_tests(true)
         .generate_comments(false)
