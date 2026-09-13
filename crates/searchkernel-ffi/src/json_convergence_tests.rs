@@ -1,8 +1,8 @@
+use crate::test_support::RecordingBackend;
 use crate::test_support::{wrap_request, RequestKind};
 use crate::{dispatch, handle};
 use searchkernel_core::{api, IndexContext};
 use searchkernel_json::request_json_to_flatbuffer;
-use crate::test_support::RecordingBackend;
 use std::sync::Arc;
 
 fn context() -> Arc<IndexContext> {
