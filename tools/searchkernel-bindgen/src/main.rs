@@ -115,6 +115,7 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
             "unsupported schema change (digest {schema_digest}); update the generated JSON codec and bindgen support"
         ));
     }
+    generate_json_schema(root, &request, &response, check)?;
     let manifest = serde_json::json!({
         "flatc": "25.12.19",
         "schema_digest": schema_digest,
@@ -161,6 +162,31 @@ fn run(root: &Path, flatc: &Path, temp: &Path, check: bool) -> Result<(), String
         check,
     )?;
     generate_dispatch(root, &request_types, &response_types, check)?;
+    Ok(())
+}
+
+fn generate_json_schema(
+    root: &Path,
+    request: &Value,
+    response: &Value,
+    check: bool,
+) -> Result<(), String> {
+    let schema = serde_json::json!({
+        "request": request,
+        "response": response,
+    });
+    let bytes = serde_json::to_vec_pretty(&schema).map_err(|e| e.to_string())?;
+    let path = root.join("reference/json-conformance/generated/schema.json");
+    if check {
+        let current = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if current != bytes {
+            return Err(format!("generated file is stale: {}", path.display()));
+        }
+    } else {
+        fs::create_dir_all(path.parent().expect("schema has a parent"))
+            .map_err(|e| format!("create generated schema directory: {e}"))?;
+        fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     Ok(())
 }
 
