@@ -151,9 +151,23 @@ fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, Js
 
 fn check_keys(
     object: &Map<String, Value>,
-    allowed: &[&str],
+    message: &str,
     path: &str,
 ) -> Result<(), JsonCodecError> {
+    let allowed = crate::generated::schema::fields(message).ok_or_else(|| {
+        JsonCodecError::FlatBuffer(format!("missing generated schema metadata for `{message}`"))
+    })?;
+    if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(contract(format!("unknown field `{path}.{key}`")));
+    }
+    Ok(())
+}
+
+fn check_envelope_keys(object: &Map<String, Value>, path: &str) -> Result<(), JsonCodecError> {
+    // `operation` and `request`/`response` are the generated codec's natural
+    // presentation of the canonical FlatBuffers union. They intentionally do
+    // not mirror the raw envelope fields (`payload_type`, `payload`).
+    let allowed = ["protocol_version", "operation", "request", "response"];
     if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
         return Err(contract(format!("unknown field `{path}.{key}`")));
     }
@@ -284,11 +298,7 @@ fn one_key<'a>(value: &'a Value, path: &str) -> Result<(&'a str, &'a Value), Jso
 pub fn request_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
     let value = parse(input)?;
     let envelope = object(&value, "request")?;
-    check_keys(
-        envelope,
-        &["protocol_version", "operation", "request"],
-        "request",
-    )?;
+    check_envelope_keys(envelope, "request")?;
     let version = u32_value(
         required(envelope, "protocol_version", "request")?,
         "request.protocol_version",
@@ -352,6 +362,199 @@ pub fn request_json_to_flatbuffer(input: &[u8]) -> Result<Vec<u8>, JsonCodecErro
     );
     builder.finish(root, Some(transport::REQUEST_ENVELOPE_IDENTIFIER));
     Ok(builder.finished_data().to_vec())
+}
+
+/// Convert a canonical SKRQ envelope to the public JSON representation.
+///
+/// Keeping this operation beside the JSON-to-FlatBuffers entry point makes
+/// request conformance tests exercise the same representation in both
+/// directions; it is not a second semantic request path.
+pub fn request_flatbuffer_to_json(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
+    if input.len() < 8 || input[4..8] != *transport::REQUEST_ENVELOPE_IDENTIFIER.as_bytes() {
+        return Err(JsonCodecError::FlatBuffer(
+            "missing SKRQ file identifier".to_owned(),
+        ));
+    }
+    let envelope = root::<transport::RequestEnvelope<'_>>(input)
+        .map_err(|e| JsonCodecError::FlatBuffer(e.to_string()))?;
+    if envelope.protocol_version() != PROTOCOL_VERSION {
+        return Err(JsonCodecError::Contract(format!(
+            "unsupported protocol_version {}",
+            envelope.protocol_version()
+        )));
+    }
+    let (operation, payload) = match envelope.payload_type().0 {
+        x if x == transport::RequestPayload::SearchKernel_V1_InsertRequest.0 => (
+            "insert",
+            request_insert(envelope.payload_as_search_kernel_v1_insert_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_UpsertRequest.0 => (
+            "upsert",
+            request_upsert(envelope.payload_as_search_kernel_v1_upsert_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_PatchRequest.0 => (
+            "patch",
+            request_patch(envelope.payload_as_search_kernel_v1_patch_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_DeleteRequest.0 => (
+            "delete",
+            request_delete(envelope.payload_as_search_kernel_v1_delete_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_GetRequest.0 => (
+            "get",
+            request_get(envelope.payload_as_search_kernel_v1_get_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_SearchRequest.0 => (
+            "search",
+            request_search(envelope.payload_as_search_kernel_v1_search_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_AnalyzeRequest.0 => (
+            "analyze",
+            request_analyze(envelope.payload_as_search_kernel_v1_analyze_request())?,
+        ),
+        x if x == transport::RequestPayload::SearchKernel_V1_DescribeRequest.0 => {
+            ("describe", Value::Object(Map::new()))
+        }
+        x if x == transport::RequestPayload::SearchKernel_V1_InspectQueryRequest.0 => (
+            "inspect_query",
+            request_inspect(envelope.payload_as_search_kernel_v1_inspect_query_request())?,
+        ),
+        0 => {
+            return Err(JsonCodecError::FlatBuffer(
+                "missing request payload".to_owned(),
+            ))
+        }
+        other => {
+            return Err(JsonCodecError::FlatBuffer(format!(
+                "unknown request discriminator {other}"
+            )))
+        }
+    };
+    serde_json::to_vec(&serde_json::json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "operation": operation,
+        "request": payload,
+    }))
+    .map_err(|e| JsonCodecError::Contract(e.to_string()))
+}
+
+fn request_insert(value: Option<api::InsertRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "insert")?;
+    let mut out = Map::new();
+    if let Some(document) = value.document() {
+        out.insert("document".to_owned(), document_json(document)?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn request_upsert(value: Option<api::UpsertRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "upsert")?;
+    let mut out = Map::new();
+    if let Some(document) = value.document() {
+        out.insert("document".to_owned(), document_json(document)?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn request_patch(value: Option<api::PatchRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "patch")?;
+    let mut out = Map::new();
+    if let Some(id) = value.id() {
+        out.insert("id".to_owned(), Value::String(id.to_owned()));
+    }
+    if let Some(items) = value.operations() {
+        let mut operations = Vec::new();
+        for item in items.iter() {
+            operations.push(patch_operation_json(item)?);
+        }
+        out.insert("operations".to_owned(), Value::Array(operations));
+    }
+    Ok(Value::Object(out))
+}
+
+fn patch_operation_json(value: api::PatchOperation<'_>) -> Result<Value, JsonCodecError> {
+    match value.operation_type() {
+        api::PatchOperationKind::SetField => {
+            let operation = required_result(value.operation_as_set_field(), "set_field")?;
+            Ok(serde_json::json!({"set_field": {
+                "field": required_result(operation.field(), "set_field.field")?,
+                "value": value_json(required_result(operation.value(), "set_field.value")?)?
+            }}))
+        }
+        api::PatchOperationKind::UnsetField => {
+            let operation = required_result(value.operation_as_unset_field(), "unset_field")?;
+            Ok(serde_json::json!({"unset_field": {
+                "field": required_result(operation.field(), "unset_field.field")?
+            }}))
+        }
+        _ => Err(JsonCodecError::FlatBuffer(
+            "unknown patch operation discriminator".to_owned(),
+        )),
+    }
+}
+
+fn request_delete(value: Option<api::DeleteRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "delete")?;
+    let mut out = Map::new();
+    if let Some(id) = value.id() {
+        out.insert("id".to_owned(), Value::String(id.to_owned()));
+    }
+    Ok(Value::Object(out))
+}
+
+fn request_get(value: Option<api::GetRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "get")?;
+    let mut out = Map::new();
+    if let Some(id) = value.id() {
+        out.insert("id".to_owned(), Value::String(id.to_owned()));
+    }
+    if let Some(projection) = value.projection() {
+        out.insert("projection".to_owned(), field_projection_json(projection)?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn request_search(value: Option<api::SearchRequest<'_>>) -> Result<Value, JsonCodecError> {
+    search_json(required_result(value, "search")?)
+}
+
+fn request_analyze(value: Option<api::AnalyzeRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "analyze")?;
+    let mut out = Map::new();
+    if value.target().is_some() {
+        let target = match value.target_type() {
+            api::AnalyzeTarget::Analyzer => {
+                serde_json::json!({"analyzer": analyzer_json(required_result(value.target_as_analyzer(), "analyze.target.analyzer")?)?})
+            }
+            api::AnalyzeTarget::AnalyzeFieldTarget => {
+                let target = required_result(
+                    value.target_as_analyze_field_target(),
+                    "analyze.target.field",
+                )?;
+                serde_json::json!({"field": {"field": required_result(target.field(), "analyze.target.field.field")?}})
+            }
+            _ => {
+                return Err(JsonCodecError::FlatBuffer(
+                    "unknown analyze target discriminator".to_owned(),
+                ))
+            }
+        };
+        out.insert("target".to_owned(), target);
+    }
+    if let Some(text) = value.text() {
+        out.insert("text".to_owned(), Value::String(text.to_owned()));
+    }
+    if let Some(language) = value.language() {
+        out.insert("language".to_owned(), Value::String(language.to_owned()));
+    }
+    Ok(Value::Object(out))
+}
+
+fn request_inspect(value: Option<api::InspectQueryRequest<'_>>) -> Result<Value, JsonCodecError> {
+    let value = required_result(value, "inspect_query")?;
+    Ok(serde_json::json!({
+        "request": search_json(required_result(value.request(), "inspect_query.request")?)?
+    }))
 }
 
 pub fn response_flatbuffer_to_json(input: &[u8]) -> Result<Vec<u8>, JsonCodecError> {
@@ -600,16 +803,15 @@ fn document_json(document: api::Document<'_>) -> Result<Value, JsonCodecError> {
 
 fn value_json(value: api::Value<'_>) -> Result<Value, JsonCodecError> {
     let (name, payload) = match value.kind_type() {
-        api::ValueKind::NullValueValue => (
-            "null",
-            value.kind_as_null_value_value().map(|v| {
-                if v.value() == api::NullValue::Null {
-                    Value::Null
-                } else {
-                    Value::String(to_snake(v.value().variant_name().unwrap_or("unknown")))
-                }
-            }),
-        ),
+        api::ValueKind::NullValueValue => {
+            let null = required_result(value.kind_as_null_value_value(), "value.null")?;
+            if null.value() != api::NullValue::Null {
+                return Err(JsonCodecError::FlatBuffer(
+                    "unknown or unspecified null value".to_owned(),
+                ));
+            }
+            ("null", Some(Value::Null))
+        }
         api::ValueKind::BoolValue => (
             "bool",
             value.kind_as_bool_value().map(|v| Value::Bool(v.value())),
@@ -1080,7 +1282,7 @@ fn insert<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["document"], "insert")?;
+    check_keys(o, "SearchKernel_V1_InsertRequest", "insert")?;
     let document = document(b, required(o, "document", "insert")?)?;
     Ok(offset(api::InsertRequest::create(
         b,
@@ -1094,7 +1296,7 @@ fn upsert<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["document"], "upsert")?;
+    check_keys(o, "SearchKernel_V1_UpsertRequest", "upsert")?;
     let document = document(b, required(o, "document", "upsert")?)?;
     Ok(offset(api::UpsertRequest::create(
         b,
@@ -1108,7 +1310,7 @@ fn delete<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["id"], "delete")?;
+    check_keys(o, "SearchKernel_V1_DeleteRequest", "delete")?;
     let id = b.create_string(&string(required(o, "id", "delete")?, "delete.id")?);
     Ok(offset(api::DeleteRequest::create(
         b,
@@ -1120,7 +1322,7 @@ fn get<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["id", "projection"], "get")?;
+    check_keys(o, "SearchKernel_V1_GetRequest", "get")?;
     let id_text = string(required(o, "id", "get")?, "get.id")?;
     let id = b.create_string(&id_text);
     let projection = match field(o, "projection") {
@@ -1140,7 +1342,7 @@ fn patch<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["id", "operations"], "patch")?;
+    check_keys(o, "SearchKernel_V1_PatchRequest", "patch")?;
     let id_text = string(required(o, "id", "patch")?, "patch.id")?;
     let id = b.create_string(&id_text);
     let operations = array(required(o, "operations", "patch")?, "patch.operations")?;
@@ -1192,7 +1394,7 @@ fn set_field<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SetField<'a>>, JsonCodecError> {
-    check_keys(o, &["field", "value"], "set_field")?;
+    check_keys(o, "SearchKernel_V1_SetField", "set_field")?;
     let field_text = string(required(o, "field", "set_field")?, "set_field.field")?;
     let field = b.create_string(&field_text);
     let value = value(b, required(o, "value", "set_field")?)?;
@@ -1209,7 +1411,7 @@ fn unset_field<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::UnsetField<'a>>, JsonCodecError> {
-    check_keys(o, &["field"], "unset_field")?;
+    check_keys(o, "SearchKernel_V1_UnsetField", "unset_field")?;
     let field = b.create_string(&string(
         required(o, "field", "unset_field")?,
         "unset_field.field",
@@ -1225,7 +1427,7 @@ fn document<'a>(
     value: &Value,
 ) -> Result<WIPOffset<api::Document<'a>>, JsonCodecError> {
     let o = object(value, "document")?;
-    check_keys(o, &["id", "fields"], "document")?;
+    check_keys(o, "SearchKernel_V1_Document", "document")?;
     let id = optional_string(o, "id", "document")?.map(|v| b.create_string(&v));
     let entries = map_entries(b, o.get("fields"), "document.fields")?;
     let fields = o.get("fields").map(|_| b.create_vector(&entries));
@@ -1410,7 +1612,7 @@ fn search_field<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::SearchField<'a>>, JsonCodecError> {
     let o = object(value, path)?;
-    check_keys(o, &["field", "weight"], path)?;
+    check_keys(o, "SearchKernel_V1_SearchField", path)?;
     let field = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1429,24 +1631,7 @@ fn search<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SearchRequest<'a>>, JsonCodecError> {
-    check_keys(
-        o,
-        &[
-            "query",
-            "search_fields",
-            "filter",
-            "sort",
-            "facets",
-            "ranking",
-            "limit",
-            "offset",
-            "projection",
-            "highlighting",
-            "language",
-            "query_expr",
-        ],
-        "search",
-    )?;
+    check_keys(o, "SearchKernel_V1_SearchRequest", "search")?;
     let query = optional_string(o, "query", "search")?.map(|v| b.create_string(&v));
     let search_fields = field(o, "search_fields")
         .map(|v| selection(b, v, "search.search_fields"))
@@ -1619,7 +1804,7 @@ fn comparison<'a>(
     o: &Map<String, Value>,
     path: &str,
 ) -> Result<WIPOffset<api::FilterComparison<'a>>, JsonCodecError> {
-    check_keys(o, &["field", "op", "value"], path)?;
+    check_keys(o, "SearchKernel_V1_FilterComparison", path)?;
     let field = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1641,11 +1826,7 @@ fn range<'a>(
     o: &Map<String, Value>,
     path: &str,
 ) -> Result<WIPOffset<api::FilterRange<'a>>, JsonCodecError> {
-    check_keys(
-        o,
-        &["field", "lower", "upper", "include_lower", "include_upper"],
-        path,
-    )?;
+    check_keys(o, "SearchKernel_V1_FilterRange", path)?;
     let field_offset = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1671,7 +1852,7 @@ fn exists<'a>(
     o: &Map<String, Value>,
     path: &str,
 ) -> Result<WIPOffset<api::FilterExists<'a>>, JsonCodecError> {
-    check_keys(o, &["field"], path)?;
+    check_keys(o, "SearchKernel_V1_FilterExists", path)?;
     let field = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1688,7 +1869,7 @@ fn sort<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::SortExpr<'a>>, JsonCodecError> {
     let o = object(value, path)?;
-    check_keys(o, &["field", "direction", "missing"], path)?;
+    check_keys(o, "SearchKernel_V1_SortExpr", path)?;
     let field_offset = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1718,7 +1899,7 @@ fn facet<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FacetRequest<'a>>, JsonCodecError> {
     let o = object(value, path)?;
-    check_keys(o, &["field", "limit", "sort"], path)?;
+    check_keys(o, "SearchKernel_V1_FacetRequest", path)?;
     let field_offset = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1839,7 +2020,7 @@ fn term_query<'a>(
     o: &Map<String, Value>,
     path: &str,
 ) -> Result<WIPOffset<api::TermQuery<'a>>, JsonCodecError> {
-    check_keys(o, &["field", "value"], path)?;
+    check_keys(o, "SearchKernel_V1_TermQuery", path)?;
     let field = b.create_string(&string(
         required(o, "field", path)?,
         &format!("{path}.field"),
@@ -1858,7 +2039,7 @@ fn analyze<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["target", "text", "language"], "analyze")?;
+    check_keys(o, "SearchKernel_V1_AnalyzeRequest", "analyze")?;
     let (target_type, target) = match field(o, "target") {
         None => (api::AnalyzeTarget::NONE, None),
         Some(value) => {
@@ -1893,7 +2074,7 @@ fn analyzer<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::Analyzer<'a>>, JsonCodecError> {
-    check_keys(o, &["name", "version", "options"], "analyzer")?;
+    check_keys(o, "SearchKernel_V1_Analyzer", "analyzer")?;
     let name = optional_string(o, "name", "analyzer")?.map(|v| b.create_string(&v));
     let version = field(o, "version")
         .map(|v| u32_value(v, "analyzer.version"))
@@ -1915,7 +2096,11 @@ fn analyze_field_target<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::AnalyzeFieldTarget<'a>>, JsonCodecError> {
-    check_keys(o, &["field"], "analyze.target.field")?;
+    check_keys(
+        o,
+        "SearchKernel_V1_AnalyzeFieldTarget",
+        "analyze.target.field",
+    )?;
     let field = b.create_string(&string(
         required(o, "field", "analyze.target.field")?,
         "analyze.target.field.field",
@@ -1976,7 +2161,7 @@ fn describe<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &[], "describe")?;
+    check_keys(o, "SearchKernel_V1_DescribeRequest", "describe")?;
     Ok(offset(api::DescribeRequest::create(
         b,
         &api::DescribeRequestArgs {},
@@ -1987,7 +2172,7 @@ fn inspect_query<'a>(
     b: &mut FlatBufferBuilder<'a>,
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
-    check_keys(o, &["request"], "inspect_query")?;
+    check_keys(o, "SearchKernel_V1_InspectQueryRequest", "inspect_query")?;
     let request = search(
         b,
         object(

@@ -13,3 +13,7 @@ pub mod search_kernel {
         }
     }
 }
+
+pub(crate) mod schema {
+    include!("schema_metadata.rs");
+}

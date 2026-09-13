@@ -5,7 +5,10 @@ mod codec;
 #[allow(warnings)]
 mod generated;
 
-pub use codec::{request_json_to_flatbuffer, response_flatbuffer_to_json, JsonCodecError};
+pub use codec::{
+    request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
+    JsonCodecError,
+};
 
 #[cfg(test)]
 mod tests {
@@ -21,6 +24,33 @@ mod tests {
         assert!(envelope
             .payload_as_search_kernel_v1_search_request()
             .is_some());
+    }
+
+    #[test]
+    fn requests_round_trip_through_canonical_json() {
+        let original =
+            br#"{"protocol_version":1,"operation":"search","request":{"query":"foo","limit":0,"projection":[]}}"#;
+        let flatbuffer = request_json_to_flatbuffer(original).unwrap();
+        let json = request_flatbuffer_to_json(&flatbuffer).unwrap();
+        let round_tripped = request_json_to_flatbuffer(&json).unwrap();
+        let first = flatbuffers::root::<crate::generated::search_kernel::ffi::v1::RequestEnvelope>(
+            &flatbuffer,
+        )
+        .unwrap();
+        let second =
+            flatbuffers::root::<crate::generated::search_kernel::ffi::v1::RequestEnvelope>(
+                &round_tripped,
+            )
+            .unwrap();
+        let first = first.payload_as_search_kernel_v1_search_request().unwrap();
+        let second = second.payload_as_search_kernel_v1_search_request().unwrap();
+        assert_eq!(first.query(), second.query());
+        assert_eq!(
+            first.limit().map(|value| value.value()),
+            second.limit().map(|value| value.value())
+        );
+        assert_eq!(first.projection().unwrap().fields().unwrap().len(), 0);
+        assert_eq!(second.projection().unwrap().fields().unwrap().len(), 0);
     }
 
     #[test]
