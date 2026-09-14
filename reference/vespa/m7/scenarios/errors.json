@@ -52,6 +52,21 @@
           "type": "text"
         }
       ],
+      "id": "unsupported-query-source",
+      "schema": "typea",
+      "yql": "select * from wrong_type where title contains \"fox\"",
+      "yql_error": "unsupported_yql"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
       "id": "equals-on-text",
       "schema": "typea",
       "typed": {

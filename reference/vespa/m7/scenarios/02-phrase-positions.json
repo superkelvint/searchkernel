@@ -36,7 +36,7 @@
   "typed": {
     "field": "title",
     "kind": "phrase",
-    "text": "running foxes"
+    "text": "run foxes"
   },
-  "yql": "select * from sources * where title contains phrase(\"running\", \"foxes\")"
+  "yql": "select * from sources * where title contains phrase(\"run\", \"foxes\")"
 }

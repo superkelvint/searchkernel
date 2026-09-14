@@ -1,0 +1,1 @@
+{"id":"mixed-text-numeric","query":{"children":[{"field":"title","kind":"term","text":"brown"},{"field":"qty","kind":"equals","value":10}],"kind":"and"},"schema":"typea"}

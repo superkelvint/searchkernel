@@ -43,12 +43,15 @@ for p in paths:
     validate_query(x['typed'],p)
     if not isinstance(x.get('yql'),str) or not x['yql'].strip(): die(f'{p}: missing yql')
     if not isinstance(x.get('expected_hits'),list) or len(set(x['expected_hits']))!=len(x['expected_hits']): die(f'{p}: bad expected_hits')
-    docids=[]
+    document_fields=set()
+    docids=set()
     for d in x.get('documents',[]):
-        if d.get('id') in docids: die(f'{p}: duplicate document id')
-        docids.append(d.get('id'))
         if d.get('kind') not in ('text','integer'): die(f'{p}: bad document kind')
         if d.get('field') not in fields: die(f'{p}: document field unknown')
+        key=(d.get('id'),d.get('field'))
+        if key in document_fields: die(f'{p}: duplicate document field')
+        document_fields.add(key)
+        docids.add(d.get('id'))
     if not set(x['expected_hits']) <= set(docids): die(f'{p}: expected hit missing from docs')
 
 err=json.loads((ROOT/'scenarios/errors.json').read_text())

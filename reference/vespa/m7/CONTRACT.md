@@ -80,6 +80,21 @@ parameter substitution
 
 Unsupported YQL constructs must return a deterministic error. They must not be silently accepted and ignored.
 
+### YQL source selectors
+
+An `Engine` owns one compiled Vespa document type. Source selection therefore
+has the following M7 semantics:
+
+```text
+from sources *       -> the configured document type
+from <document-type> -> accepted only when it names the configured type
+any other named source -> deterministic unsupported_yql error
+```
+
+This preserves the source-set behavior of Vespa's `YqlParser` within M7's
+single-document-type boundary. A named source is not merely syntax: it is
+validated when the complete YQL statement is searched.
+
 ## Typed API semantics
 
 The frozen API contract is `reference/vespa/api-contract/src/bin/m7.rs`.
@@ -103,10 +118,19 @@ Query
   Exists { field }
 ```
 
-`Query::from_yql()` parses only the frozen subset above and returns the same typed `Query` representation used by direct callers.
+`Query::from_yql()` parses only the frozen subset above and returns the same
+typed expression representation used by direct callers. `Query` deliberately
+does not contain the YQL source selector, so this method is an expression
+projection rather than a complete source-aware YQL query. It has no schema
+against which to validate a named source.
 
 `Engine::search_query()` performs field-aware validation and native compilation.
-`Engine::search_yql()` must be equivalent to `Query::from_yql()` followed by `search_query()`.
+`Engine::search_yql()` parses the complete YQL statement, validates its source
+selector against the engine's configured document type, and lowers the
+resulting expression through the same path as `search_query()`. It is
+equivalent to `Query::from_yql()` followed by `search_query()` for the query
+expression and for `sources *` (and the configured document type), but the
+source-validation step is intentionally retained for named sources.
 
 ## Field-aware rules
 
@@ -199,7 +223,8 @@ No hit-limit/top-k range semantics are part of M7.
 M7 has three independent authorities:
 
 1. the frozen typed API contract;
-2. the pinned Vespa Java `YqlParser` for supported YQL structure/semantics;
+2. the pinned Vespa Java `YqlParser` for supported YQL structure/semantics,
+   including source selection as bounded by M7's one-document-type index;
 3. the real embedded C++ Matcher for execution results.
 
 The Java oracle is verification-only. Production must never invoke Java/JVM/Maven.
@@ -221,8 +246,14 @@ open range
 unbounded range
 integer exists
 YQL precedence
-named YQL source
+named YQL source syntax acceptance; source selection/rejection
 ```
+
+Scenario 13's canonical `Query` expectation intentionally verifies only that
+the named-source syntax is accepted and that its expression is lowered
+correctly; the source selector cannot appear in the source-free `Query` AST.
+Named-source semantics are verified separately by the negative
+`unsupported-query-source` case and by the real search path.
 
 Negative scenarios cover:
 
@@ -235,6 +266,7 @@ malformed YQL
 unsupported ORDER BY
 unsupported LIMIT
 unsupported projection
+unsupported named source
 ```
 
 ## Forbidden shortcuts
@@ -264,8 +296,9 @@ M7 is complete when:
 M0–M6 remain green
 frozen M7 API compiles
 all supported typed queries canonicalize correctly
-supported YQL matches pinned Java YqlParser semantics
-all typed/YQL equivalent pairs canonicalize equivalently
+supported YQL expression and source-selection behavior matches pinned Java
+YqlParser semantics within the M7 one-document-type boundary
+all typed/YQL expression-equivalent pairs canonicalize equivalently
 all typed and YQL paths return the same real-engine hit sets
 M3 query analysis is proven in the real path
 NOT/range/exists semantics match Vespa

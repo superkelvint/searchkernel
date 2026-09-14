@@ -273,6 +273,11 @@ mod yql {
                 return Ok(Query::Exists { field });
             }
             let (lower, upper) = normalize_unannotated_range(lower, upper, bounds.is_none());
+            if let (RangeBound::Included(low), RangeBound::Included(high)) = (&lower, &upper) {
+                if low == high {
+                    return Ok(Query::Equals { field, value: *low });
+                }
+            }
             Ok(Query::Range {
                 field,
                 lower,

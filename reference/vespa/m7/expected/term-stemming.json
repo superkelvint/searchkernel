@@ -1,1 +1,1 @@
-{"id":"term-stemming","query":{"field":"title","kind":"term","text":"running"},"schema":"typea"}
+{"id":"term-stemming","query":{"field":"title","kind":"term","text":"runners"},"schema":"typea"}

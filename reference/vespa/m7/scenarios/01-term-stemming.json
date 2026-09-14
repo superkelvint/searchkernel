@@ -4,7 +4,7 @@
       "field": "title",
       "id": "runner",
       "kind": "text",
-      "value": "run quickly"
+      "value": "runner quickly"
     },
     {
       "field": "title",
@@ -30,7 +30,7 @@
   "typed": {
     "field": "title",
     "kind": "term",
-    "text": "running"
+    "text": "runners"
   },
-  "yql": "select * from sources * where title contains \"running\""
+  "yql": "select * from sources * where title contains \"runners\""
 }

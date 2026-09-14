@@ -1,0 +1,77 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "doc1",
+      "kind": "text",
+      "value": "brown fox"
+    },
+    {
+      "field": "qty",
+      "id": "doc1",
+      "kind": "integer",
+      "value": 10
+    },
+    {
+      "field": "title",
+      "id": "doc2",
+      "kind": "text",
+      "value": "brown fox"
+    },
+    {
+      "field": "qty",
+      "id": "doc2",
+      "kind": "integer",
+      "value": 30
+    },
+    {
+      "field": "title",
+      "id": "doc3",
+      "kind": "text",
+      "value": "red fox"
+    },
+    {
+      "field": "qty",
+      "id": "doc3",
+      "kind": "integer",
+      "value": 10
+    }
+  ],
+  "expected_hits": [
+    "doc1"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": false,
+      "type": "integer"
+    }
+  ],
+  "id": "mixed-text-numeric",
+  "schema": "typea",
+  "typed": {
+    "children": [
+      {
+        "field": "title",
+        "kind": "term",
+        "text": "brown"
+      },
+      {
+        "field": "qty",
+        "kind": "equals",
+        "value": 10
+      }
+    ],
+    "kind": "and"
+  },
+  "yql": "select * from sources * where title contains \"brown\" and qty = 10"
+}
