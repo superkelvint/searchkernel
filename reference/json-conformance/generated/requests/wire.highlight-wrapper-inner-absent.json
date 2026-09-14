@@ -2,9 +2,7 @@
   "protocol_version": 1,
   "request": {
     "search": {
-      "highlighting": {
-        "$absent": true
-      },
+      "highlighting": [],
       "query": "x"
     }
   }

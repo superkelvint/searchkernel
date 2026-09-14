@@ -7,9 +7,7 @@
         {
           "code": "invalid_sort",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "sort.missing"
         }
       ],

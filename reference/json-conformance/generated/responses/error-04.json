@@ -7,9 +7,7 @@
         {
           "code": "duplicate_highlight_field",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "highlighting.fields[1]"
         }
       ],

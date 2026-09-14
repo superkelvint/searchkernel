@@ -7,9 +7,7 @@
         {
           "code": "duplicate_patch_field",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "operations[1]"
         }
       ],

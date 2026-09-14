@@ -7,9 +7,7 @@
         {
           "code": "cardinality_mismatch",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "value"
         }
       ],

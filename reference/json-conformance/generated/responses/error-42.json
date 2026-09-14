@@ -7,9 +7,7 @@
         {
           "code": "non_finite_number",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "value"
         }
       ],

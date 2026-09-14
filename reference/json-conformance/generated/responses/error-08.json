@@ -7,9 +7,7 @@
         {
           "code": "duplicate_search_field",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "search_fields.fields[1].field"
         }
       ],

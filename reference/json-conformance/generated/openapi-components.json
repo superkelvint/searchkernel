@@ -2,39 +2,1247 @@
   "components": {
     "schemas": {
       "analyze": {
+        "additionalProperties": false,
         "description": "Canonical analyze operation",
+        "properties": {
+          "analyze": {
+            "$ref": "#/components/schemas/search_kernel._v1._analyze_result"
+          }
+        },
+        "required": [
+          "analyze"
+        ],
         "type": "object"
       },
       "delete": {
+        "additionalProperties": false,
         "description": "Canonical delete operation",
+        "properties": {
+          "delete": {
+            "$ref": "#/components/schemas/search_kernel._v1._delete_result"
+          }
+        },
+        "required": [
+          "delete"
+        ],
         "type": "object"
       },
       "describe": {
+        "additionalProperties": false,
         "description": "Canonical describe operation",
+        "properties": {
+          "describe": {
+            "$ref": "#/components/schemas/search_kernel._v1._describe_result"
+          }
+        },
+        "required": [
+          "describe"
+        ],
         "type": "object"
       },
       "get": {
+        "additionalProperties": false,
         "description": "Canonical get operation",
+        "properties": {
+          "get": {
+            "$ref": "#/components/schemas/search_kernel._v1._get_result"
+          }
+        },
+        "required": [
+          "get"
+        ],
         "type": "object"
       },
       "insert": {
+        "additionalProperties": false,
         "description": "Canonical insert operation",
+        "properties": {
+          "insert": {
+            "$ref": "#/components/schemas/search_kernel._v1._insert_result"
+          }
+        },
+        "required": [
+          "insert"
+        ],
         "type": "object"
       },
       "inspect_query": {
+        "additionalProperties": false,
         "description": "Canonical inspect_query operation",
+        "properties": {
+          "inspect_query": {
+            "$ref": "#/components/schemas/search_kernel._v1._inspect_query_result"
+          }
+        },
+        "required": [
+          "inspect_query"
+        ],
         "type": "object"
       },
       "patch": {
+        "additionalProperties": false,
         "description": "Canonical patch operation",
+        "properties": {
+          "patch": {
+            "$ref": "#/components/schemas/search_kernel._v1._patch_result"
+          }
+        },
+        "required": [
+          "patch"
+        ],
         "type": "object"
       },
       "search": {
+        "additionalProperties": false,
         "description": "Canonical search operation",
+        "properties": {
+          "search": {
+            "$ref": "#/components/schemas/search_kernel._v1._search_result"
+          }
+        },
+        "required": [
+          "search"
+        ],
+        "type": "object"
+      },
+      "search_kernel._f_f_i._v1._request_envelope": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "analyze": {
+                "type": "object"
+              },
+              "delete": {
+                "type": "object"
+              },
+              "describe": {
+                "type": "object"
+              },
+              "get": {
+                "type": "object"
+              },
+              "insert": {
+                "type": "object"
+              },
+              "inspect_query": {
+                "type": "object"
+              },
+              "patch": {
+                "type": "object"
+              },
+              "search": {
+                "type": "object"
+              },
+              "upsert": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "protocol_version": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._f_f_i._v1._response_envelope": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "analyze": {
+                "type": "object"
+              },
+              "delete": {
+                "type": "object"
+              },
+              "describe": {
+                "type": "object"
+              },
+              "error": {
+                "type": "object"
+              },
+              "get": {
+                "type": "object"
+              },
+              "insert": {
+                "type": "object"
+              },
+              "inspect_query": {
+                "type": "object"
+              },
+              "patch": {
+                "type": "object"
+              },
+              "search": {
+                "type": "object"
+              },
+              "upsert": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "protocol_version": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._analyze_field_target": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._analyze_request": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "target": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "analyze_field_target": {
+                "type": "object"
+              },
+              "analyzer": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._analyze_result": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._analyzed_token"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._analyzed_token": {
+        "additionalProperties": false,
+        "properties": {
+          "end_byte": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "start_byte": {
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._analyzer": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._value_entry"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._bm25_ranking": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "search_kernel._v1._bool_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._bytes_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._default_relevance_v1": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "search_kernel._v1._delete_request": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._delete_result": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._describe_request": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "search_kernel._v1._describe_result": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "$ref": "#/components/schemas/search_kernel._v1._index_definition"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._document": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._value_entry"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._error_detail"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._error_detail": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._string_entry"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._facet_request": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_u_int32"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_facet_sort"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._facet_result": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._facet_value"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._facet_value": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._field_definition": {
+        "additionalProperties": false,
+        "properties": {
+          "analyzer": {
+            "$ref": "#/components/schemas/search_kernel._v1._analyzer"
+          },
+          "cardinality": {
+            "type": "integer"
+          },
+          "facetable": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "filterable": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "kind": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "searchable": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "sortable": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "stored": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._field_projection": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_and": {
+        "additionalProperties": false,
+        "properties": {
+          "clauses": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._filter_expr"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_comparison": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "op": {
+            "type": "integer"
+          },
+          "value": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_exists": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_expr": {
+        "additionalProperties": false,
+        "properties": {
+          "expr": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "filter_and": {
+                "type": "object"
+              },
+              "filter_comparison": {
+                "type": "object"
+              },
+              "filter_exists": {
+                "type": "object"
+              },
+              "filter_not": {
+                "type": "object"
+              },
+              "filter_or": {
+                "type": "object"
+              },
+              "filter_range": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_not": {
+        "additionalProperties": false,
+        "properties": {
+          "clause": {
+            "$ref": "#/components/schemas/search_kernel._v1._filter_expr"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_or": {
+        "additionalProperties": false,
+        "properties": {
+          "clauses": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._filter_expr"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._filter_range": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "include_lower": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "include_upper": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_bool"
+          },
+          "lower": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          },
+          "upper": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._float64_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._get_request": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/search_kernel._v1._field_projection"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._get_result": {
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/search_kernel._v1._document"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._highlight_fragment": {
+        "additionalProperties": false,
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._highlight_span"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._highlight_request": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._highlight_result": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "fragments": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._highlight_fragment"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._highlight_span": {
+        "additionalProperties": false,
+        "properties": {
+          "end_byte": {
+            "type": "integer"
+          },
+          "start_byte": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._hit": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._value_entry"
+            },
+            "type": "array"
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._highlight_result"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "score": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_double"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._index_definition": {
+        "additionalProperties": false,
+        "properties": {
+          "default_search_fields": {
+            "$ref": "#/components/schemas/search_kernel._v1._search_field_selection"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._field_definition"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._insert_request": {
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/search_kernel._v1._document"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._insert_result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._inspect_query_request": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/search_kernel._v1._search_request"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._inspect_query_result": {
+        "additionalProperties": false,
+        "properties": {
+          "resolved_request": {
+            "$ref": "#/components/schemas/search_kernel._v1._search_request"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._int64_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._null_value_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._optional_bool": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._optional_double": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._optional_facet_sort": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._optional_missing_placement": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._optional_u_int32": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._patch_operation": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "set_field": {
+                "type": "object"
+              },
+              "unset_field": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._patch_request": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._patch_operation"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._patch_result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._query_and": {
+        "additionalProperties": false,
+        "properties": {
+          "clauses": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._query_expr"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._query_expr": {
+        "additionalProperties": false,
+        "properties": {
+          "expr": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "query_and": {
+                "type": "object"
+              },
+              "query_not": {
+                "type": "object"
+              },
+              "query_or": {
+                "type": "object"
+              },
+              "term_query": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._query_not": {
+        "additionalProperties": false,
+        "properties": {
+          "clause": {
+            "$ref": "#/components/schemas/search_kernel._v1._query_expr"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._query_or": {
+        "additionalProperties": false,
+        "properties": {
+          "clauses": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._query_expr"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._ranking_policy": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "bm25_ranking": {
+                "type": "object"
+              },
+              "default_relevance_v1": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._search_field": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "weight": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_double"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._search_field_selection": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._search_field"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._search_request": {
+        "additionalProperties": false,
+        "properties": {
+          "facets": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._facet_request"
+            },
+            "type": "array"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/search_kernel._v1._filter_expr"
+          },
+          "highlighting": {
+            "$ref": "#/components/schemas/search_kernel._v1._highlight_request"
+          },
+          "language": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_u_int32"
+          },
+          "offset": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_u_int32"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/search_kernel._v1._field_projection"
+          },
+          "query": {
+            "type": "string"
+          },
+          "query_expr": {
+            "$ref": "#/components/schemas/search_kernel._v1._query_expr"
+          },
+          "ranking": {
+            "$ref": "#/components/schemas/search_kernel._v1._ranking_policy"
+          },
+          "search_fields": {
+            "$ref": "#/components/schemas/search_kernel._v1._search_field_selection"
+          },
+          "sort": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._sort_expr"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._search_result": {
+        "additionalProperties": false,
+        "properties": {
+          "facets": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._facet_result"
+            },
+            "type": "array"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._hit"
+            },
+            "type": "array"
+          },
+          "total_hits": {
+            "$ref": "#/components/schemas/search_kernel._v1._total_hits"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._set_field": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._sort_expr": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "type": "integer"
+          },
+          "field": {
+            "type": "string"
+          },
+          "missing": {
+            "$ref": "#/components/schemas/search_kernel._v1._optional_missing_placement"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._string_entry": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._string_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._term_query": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._total_hits": {
+        "additionalProperties": false,
+        "properties": {
+          "relation": {
+            "type": "integer"
+          },
+          "value": {
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._u_int64_value": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._unset_field": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._upsert_request": {
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/search_kernel._v1._document"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._upsert_result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._value": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "additionalProperties": false,
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "bool_value": {
+                "type": "object"
+              },
+              "bytes_value": {
+                "type": "object"
+              },
+              "float64_value": {
+                "type": "object"
+              },
+              "int64_value": {
+                "type": "object"
+              },
+              "null_value_value": {
+                "type": "object"
+              },
+              "string_value": {
+                "type": "object"
+              },
+              "u_int64_value": {
+                "type": "object"
+              },
+              "value_list": {
+                "type": "object"
+              },
+              "value_object": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._value_entry": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/search_kernel._v1._value"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._value_list": {
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._value"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "search_kernel._v1._value_object": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/search_kernel._v1._value_entry"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "upsert": {
+        "additionalProperties": false,
         "description": "Canonical upsert operation",
+        "properties": {
+          "upsert": {
+            "$ref": "#/components/schemas/search_kernel._v1._upsert_result"
+          }
+        },
+        "required": [
+          "upsert"
+        ],
         "type": "object"
       }
     }

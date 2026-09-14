@@ -7,9 +7,7 @@
         {
           "code": "invalid_patch_operation",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "operations[0]"
         }
       ],

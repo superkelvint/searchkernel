@@ -7,9 +7,7 @@
         {
           "code": "no_searchable_fields",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "search_fields"
         }
       ],

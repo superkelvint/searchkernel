@@ -7,9 +7,7 @@
         {
           "code": "duplicate_facet_field",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "facets[1].field"
         }
       ],

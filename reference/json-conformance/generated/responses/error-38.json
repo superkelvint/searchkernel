@@ -7,9 +7,7 @@
         {
           "code": "invalid_schema",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "fields"
         }
       ],

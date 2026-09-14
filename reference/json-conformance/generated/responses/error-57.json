@@ -7,9 +7,7 @@
         {
           "code": "unsupported_analyzer",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "fields[0].analyzer"
         }
       ],

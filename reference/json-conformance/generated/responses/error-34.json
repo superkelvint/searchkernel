@@ -7,9 +7,7 @@
         {
           "code": "invalid_query",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "query_expr"
         }
       ],

@@ -7,9 +7,7 @@
         {
           "code": "invalid_capability",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "fields[0].sortable"
         }
       ],

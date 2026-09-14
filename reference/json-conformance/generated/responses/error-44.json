@@ -7,9 +7,7 @@
         {
           "code": "type_mismatch",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "document.fields.price"
         }
       ],

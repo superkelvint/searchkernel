@@ -7,9 +7,7 @@
         {
           "code": "empty_boolean_filter",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "filter.all"
         }
       ],

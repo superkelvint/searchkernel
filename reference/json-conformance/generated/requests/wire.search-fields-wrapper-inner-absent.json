@@ -3,9 +3,7 @@
   "request": {
     "search": {
       "query": "",
-      "search_fields": {
-        "$absent": true
-      }
+      "search_fields": []
     }
   }
 }

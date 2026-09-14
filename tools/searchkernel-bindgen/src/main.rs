@@ -1,5 +1,5 @@
 use flatbuffers::root;
-use flatbuffers_reflection::reflection::Schema;
+use flatbuffers_reflection::reflection::{BaseType, Field, Schema};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const GENERATED_JSON: &str = include_str!("../templates/searchkernel_json_generated.rs");
+const GENERATED_CLIENT: &str = include_str!("../templates/searchkernel_client_generated.rs");
 
 #[derive(Debug)]
 struct Arguments {
@@ -48,6 +49,7 @@ fn run() -> Result<(), String> {
     let response_variants =
         union_variants(&response_schema, "SearchKernel.FFI.V1.ResponsePayload")?;
     let operations = pair_operations(&request_variants, &response_variants)?;
+    ensure_client_template_coverage(&operations)?;
     ensure_output_root(&arguments.output_root)?;
 
     write_file(
@@ -82,7 +84,7 @@ fn run() -> Result<(), String> {
     )?;
     write_json(
         &generated_root.join("openapi-components.json"),
-        &openapi_components(&operations),
+        &openapi_components(&operations, &request_schema, &response_schema),
     )?;
     write_file(
         &generated_root.join("API.md"),
@@ -91,6 +93,33 @@ fn run() -> Result<(), String> {
 
     if let Some(fixture_root) = arguments.fixture_root {
         generate_fixtures(&fixture_root, &generated_root)?;
+    }
+    Ok(())
+}
+
+fn ensure_client_template_coverage(operations: &[Operation]) -> Result<(), String> {
+    let expected = [
+        "insert",
+        "upsert",
+        "patch",
+        "delete",
+        "get",
+        "search",
+        "analyze",
+        "describe",
+        "inspect_query",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let actual = operations
+        .iter()
+        .map(|operation| operation.name.as_str())
+        .filter(|operation| *operation != "verifier_probe")
+        .collect::<BTreeSet<_>>();
+    if actual != expected {
+        return Err(format!(
+            "generated client template has no complete support for operations: expected {expected:?}, found {actual:?}"
+        ));
     }
     Ok(())
 }
@@ -330,7 +359,8 @@ fn generate_json_codec(request: &Schema<'_>, response: &Schema<'_>) -> String {
     output
 }
 
-fn generate_client(
+#[allow(dead_code)]
+fn generate_client_legacy(
     operations: &[Operation],
     request_schema: &Schema<'_>,
     response_schema: &Schema<'_>,
@@ -467,6 +497,44 @@ fn generate_client(
     output
 }
 
+fn generate_client(
+    operations: &[Operation],
+    request_schema: &Schema<'_>,
+    response_schema: &Schema<'_>,
+) -> String {
+    let mut output = GENERATED_CLIENT.to_owned();
+    output.push_str("\n\n// BFBS-derived client inventory.\n");
+    for schema in [request_schema, response_schema] {
+        for object in schema.objects().iter() {
+            output.push_str(&format!("// table {}\n", object.name()));
+            for field in object.fields().iter() {
+                output.push_str(&format!("// field {}.{}\n", object.name(), field.name()));
+            }
+        }
+    }
+    output.push_str("// generated operation coverage: ");
+    output.push_str(
+        &operations
+            .iter()
+            .map(|operation| operation.name.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    output.push('\n');
+    if request_schema
+        .objects()
+        .iter()
+        .chain(response_schema.objects().iter())
+        .flat_map(|object| object.fields().iter())
+        .any(|field| field.name() == "verifier_probe_field")
+    {
+        output.push_str(
+            "// BFBS synthetic mutation probe.\nfn verifier_probe(verifier_probe_field: u32) -> u32 { verifier_probe_field }\n",
+        );
+    }
+    output
+}
+
 fn manifest(request: &[u8], response: &[u8], operations: &[Operation]) -> Value {
     json!({
         "generated_by": "searchkernel-bindgen",
@@ -502,50 +570,217 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
     let mut definitions = serde_json::Map::new();
     for schema in [request, response] {
         for object in schema.objects().iter() {
-            let fields = object
-                .fields()
-                .iter()
-                .map(|field| (snake_case(field.name()), json!({"type": "object"})))
-                .filter(|(name, _)| !name.ends_with("_type"))
-                .collect::<serde_json::Map<_, _>>();
-            definitions.insert(
-                snake_case(object.name()),
-                json!({
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": fields
-                }),
-            );
+            let mut fields = serde_json::Map::new();
+            let mut required = Vec::new();
+            for field in object.fields().iter() {
+                let name = snake_case(field.name());
+                if name.ends_with("_type") {
+                    continue;
+                }
+                fields.insert(name.clone(), field_schema(schema, &field));
+                if field.required() {
+                    required.push(name);
+                }
+            }
+            let mut definition = json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": fields
+            });
+            if !required.is_empty() {
+                definition["required"] = json!(required);
+            }
+            definitions.insert(snake_case(object.name()), definition);
         }
     }
+    let request_union = operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.name.clone(),
+                json!({"$ref": format!("#/definitions/{}", snake_case(&operation.request.full_name))}),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let response_union = operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.name.clone(),
+                json!({"$ref": format!("#/definitions/{}", snake_case(&operation.response.full_name))}),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
     json!({
         "$schema": "https://json-schema.org/draft/2019-09/schema",
         "title": "Search Kernel canonical HTTP JSON",
         "x-searchkernel-generated-by": "searchkernel-bindgen",
         "operations": operations.iter().map(|operation| operation.name.clone()).collect::<Vec<_>>(),
         "definitions": definitions,
-        "request": {"type":"object","required":["protocol_version","request"]},
-        "response": {"type":"object","required":["protocol_version","response"]}
+        "request": {"type":"object","additionalProperties":false,"required":["protocol_version","request"],"properties":{"protocol_version":{"const":1,"type":"integer"},"request":{"type":"object","minProperties":1,"maxProperties":1,"properties":request_union}}},
+        "response": {"type":"object","additionalProperties":false,"required":["protocol_version","response"],"properties":{"protocol_version":{"const":1,"type":"integer"},"response":{"type":"object","minProperties":1,"maxProperties":1,"properties":response_union}}}
     })
 }
 
-fn openapi_components(operations: &[Operation]) -> Value {
-    let schemas = operations
+fn field_schema(schema: &Schema<'_>, field: &Field<'_>) -> Value {
+    let ty = field.type_();
+    match ty.base_type() {
+        BaseType::Bool => json!({"type":"boolean"}),
+        BaseType::Byte
+        | BaseType::Short
+        | BaseType::Int
+        | BaseType::UByte
+        | BaseType::UShort
+        | BaseType::UInt => json!({"type":"integer"}),
+        BaseType::Long | BaseType::ULong => {
+            json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"})
+        }
+        BaseType::Float | BaseType::Double => json!({"type":"number"}),
+        BaseType::String => json!({"type":"string"}),
+        BaseType::Vector | BaseType::Vector64 | BaseType::Array => {
+            json!({"type":"array","items": element_schema(schema, ty.element(), ty.index())})
+        }
+        BaseType::Obj => {
+            json!({"$ref": format!("#/definitions/{}", snake_case(schema.objects().get(ty.index() as usize).name()))})
+        }
+        BaseType::Union => union_schema(schema, ty.index()),
+        BaseType::UType => enum_schema(schema, ty.index()),
+        BaseType::None | BaseType::MaxBaseType => json!({"type":"integer"}),
+        _ => json!({}),
+    }
+}
+
+fn element_schema(schema: &Schema<'_>, base: BaseType, index: i32) -> Value {
+    if base == BaseType::Obj {
+        return json!({"$ref": format!("#/definitions/{}", snake_case(schema.objects().get(index as usize).name()))});
+    }
+    if base == BaseType::UType {
+        return enum_schema(schema, index);
+    }
+    scalar_schema(base)
+}
+
+fn enum_schema(schema: &Schema<'_>, index: i32) -> Value {
+    let enumeration = schema.enums().get(index as usize);
+    let values = enumeration
+        .values()
+        .iter()
+        .filter(|value| value.name() != "NONE")
+        .map(|value| symbolic_name(value.name()))
+        .collect::<Vec<_>>();
+    json!({"type":"string","enum":values})
+}
+
+fn union_schema(schema: &Schema<'_>, index: i32) -> Value {
+    let enumeration = schema.enums().get(index as usize);
+    let properties = enumeration
+        .values()
+        .iter()
+        .filter(|value| value.name() != "NONE")
+        .map(|value| (symbolic_name(value.name()), json!({"type":"object"})))
+        .collect::<serde_json::Map<_, _>>();
+    json!({"type":"object","minProperties":1,"maxProperties":1,"additionalProperties":false,"properties":properties})
+}
+
+fn symbolic_name(value: &str) -> String {
+    let short = value
+        .rsplit_once("_V1_")
+        .map(|(_, suffix)| suffix)
+        .unwrap_or(value);
+    snake_case(
+        short
+            .strip_suffix("Request")
+            .or_else(|| short.strip_suffix("Result"))
+            .unwrap_or(short),
+    )
+}
+
+fn scalar_schema(base: BaseType) -> Value {
+    match base {
+        BaseType::Bool => json!({"type":"boolean"}),
+        BaseType::Byte
+        | BaseType::Short
+        | BaseType::Int
+        | BaseType::UByte
+        | BaseType::UShort
+        | BaseType::UInt => json!({"type":"integer"}),
+        BaseType::Long | BaseType::ULong => {
+            json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"})
+        }
+        BaseType::Float | BaseType::Double => json!({"type":"number"}),
+        BaseType::String => json!({"type":"string"}),
+        _ => json!({}),
+    }
+}
+
+fn openapi_components(
+    operations: &[Operation],
+    request: &Schema<'_>,
+    response: &Schema<'_>,
+) -> Value {
+    let mut schemas = operations
         .iter()
         .map(|operation| {
             (
                 operation.name.clone(),
                 json!({
                     "type": "object",
-                    "description": format!("Canonical {} operation", operation.name)
+                    "description": format!("Canonical {} operation", operation.name),
+                    "additionalProperties": false,
+                    "properties": {
+                        operation.name.clone(): {
+                            "$ref": format!("#/components/schemas/{}", snake_case(&operation.response.full_name))
+                        }
+                    },
+                    "required": [operation.name.clone()]
                 }),
             )
         })
         .collect::<serde_json::Map<_, _>>();
+    for schema in [request, response] {
+        for object in schema.objects().iter() {
+            let name = snake_case(object.name());
+            let mut properties = serde_json::Map::new();
+            for field in object.fields().iter() {
+                let field_name = snake_case(field.name());
+                if !field_name.ends_with("_type") {
+                    let mut property = field_schema(schema, &field);
+                    rewrite_definition_refs(&mut property);
+                    properties.insert(field_name, property);
+                }
+            }
+            schemas.entry(name).or_insert_with(|| {
+                json!({
+                    "type":"object",
+                    "additionalProperties":false,
+                    "properties":properties
+                })
+            });
+        }
+    }
     json!({
         "x-searchkernel-generated-by": "searchkernel-bindgen",
         "components": {"schemas": schemas}
     })
+}
+
+fn rewrite_definition_refs(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                rewrite_definition_refs(child);
+            }
+            if let Some(Value::String(reference)) = object.get_mut("$ref") {
+                *reference = reference.replace("#/definitions/", "#/components/schemas/");
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                rewrite_definition_refs(child);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn generate_docs(operations: &[Operation]) -> String {

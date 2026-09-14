@@ -7,9 +7,7 @@
         {
           "code": "invalid_facet",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "facet.sort"
         }
       ],

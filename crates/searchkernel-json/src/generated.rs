@@ -3744,24 +3744,14 @@ fn contract(message: impl Into<String>) -> JsonCodecError {
     JsonCodecError::Contract(message.into())
 }
 
-const ABSENT_VECTOR_KEY: &str = "$absent";
-
 fn absent_vector_json() -> Value {
-    serde_json::json!({ABSENT_VECTOR_KEY: true})
+    Value::Array(Vec::new())
 }
 
-fn is_absent_vector(value: &Value, path: &str) -> Result<bool, JsonCodecError> {
-    let Some(object) = value.as_object() else {
-        return Ok(false);
-    };
-    if object.len() == 1 && object.get(ABSENT_VECTOR_KEY) == Some(&Value::Bool(true)) {
-        return Ok(true);
-    }
-    if object.contains_key(ABSENT_VECTOR_KEY) {
-        return Err(contract(format!(
-            "{path}.{ABSENT_VECTOR_KEY} must be true and must be the only field"
-        )));
-    }
+fn is_absent_vector(value: &Value, _path: &str) -> Result<bool, JsonCodecError> {
+    // Absence is represented by omission at the containing field.  An empty
+    // JSON array is always the explicit present-empty form.
+    let _ = value;
     Ok(false)
 }
 
@@ -3869,6 +3859,21 @@ fn decimal<T: std::str::FromStr>(
     type_name: &str,
 ) -> Result<T, JsonCodecError> {
     let text = string(value, path)?;
+    let bytes = text.as_bytes();
+    let digits = if bytes.first() == Some(&b'-') {
+        &bytes[1..]
+    } else {
+        bytes
+    };
+    let canonical = !bytes.is_empty()
+        && bytes.first() != Some(&b'+')
+        && !digits.is_empty()
+        && digits.iter().all(u8::is_ascii_digit)
+        && (digits.len() == 1 || digits[0] != b'0')
+        && !(bytes.first() == Some(&b'-') && digits.iter().all(|digit| *digit == b'0'));
+    if !canonical {
+        return Err(contract(format!("`{path}` must be a canonical decimal {type_name}")));
+    }
     text.parse::<T>()
         .map_err(|_| contract(format!("`{path}` must be a decimal {type_name}")))
 }
@@ -4026,7 +4031,9 @@ fn request_patch(value: Option<api::PatchRequest<'_>>) -> Result<Value, JsonCode
         for item in items.iter() {
             operations.push(patch_operation_json(item)?);
         }
-        out.insert("operations".to_owned(), Value::Array(operations));
+        if !operations.is_empty() {
+            out.insert("operations".to_owned(), Value::Array(operations));
+        }
     }
     Ok(Value::Object(out))
 }
@@ -4698,9 +4705,6 @@ fn string_entries<'a>(
     let o = object(value, path)?;
     let mut entries = Vec::with_capacity(o.len());
     for (key, value) in o {
-        if key == ABSENT_VECTOR_KEY {
-            return Err(contract(format!("reserved field `{path}.{key}`")));
-        }
         let key_offset = b.create_string(key);
         let value_offset = b.create_string(&string(value, &format!("{path}.{key}"))?);
         entries.push(api::StringEntry::create(
@@ -5030,7 +5034,7 @@ fn value_map_json<'a>(
     values: Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::ValueEntry<'a>>>>,
 ) -> Result<Value, JsonCodecError> {
     if values.is_none() {
-        return Ok(absent_vector_json());
+        return Ok(Value::Object(Map::new()));
     }
     let mut out = Map::new();
     if let Some(values) = values {
@@ -5048,7 +5052,7 @@ fn string_map_json<'a>(
     values: Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::StringEntry<'a>>>>,
 ) -> Result<Value, JsonCodecError> {
     if values.is_none() {
-        return Ok(absent_vector_json());
+        return Ok(Value::Object(Map::new()));
     }
     let mut out = Map::new();
     if let Some(values) = values {

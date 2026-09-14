@@ -7,9 +7,7 @@
         {
           "code": "field_not_searchable",
           "message": "",
-          "metadata": {
-            "$absent": true
-          },
+          "metadata": {},
           "path": "query_expr.term.field"
         }
       ],

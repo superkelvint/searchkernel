@@ -2,8 +2,7 @@
   "protocol_version": 1,
   "request": {
     "patch": {
-      "id": "sku-42",
-      "operations": []
+      "id": "sku-42"
     }
   }
 }
