@@ -23,6 +23,8 @@ pub mod model {
         Object(BTreeMap<String, Value>),
     }
 
+    // __BFBS_CLIENT_ENUMS__
+
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct Document { pub id: Option<String>, pub fields: BTreeMap<String, Value> }
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -32,9 +34,9 @@ pub mod model {
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct SearchField { pub field: String, pub weight: Option<f64> }
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SortExpr { pub field: String, pub direction: u8, pub missing: Option<u8> }
+    pub struct SortExpr { pub field: String, pub direction: SortDirection, pub missing: Option<MissingPlacement> }
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetRequest { pub field: String, pub limit: Option<u32>, pub sort: Option<u8> }
+    pub struct FacetRequest { pub field: String, pub limit: Option<u32>, pub sort: Option<FacetSort> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct HighlightRequest { pub fields: Vec<String> }
     #[derive(Debug, Clone, PartialEq)]
@@ -42,8 +44,8 @@ pub mod model {
         And(Vec<FilterExpr>),
         Or(Vec<FilterExpr>),
         Not(Box<FilterExpr>),
-        Comparison { field: String, op: u8, value: Value },
-        Range { field: String, lower: Value, upper: Value, include_lower: Option<bool>, include_upper: Option<bool> },
+        Comparison { field: String, op: ComparisonOp, value: Value },
+        Range { field: String, lower: Option<Value>, upper: Option<Value>, include_lower: Option<bool>, include_upper: Option<bool> },
         Exists { field: String },
     }
     #[derive(Debug, Clone, PartialEq)]
@@ -88,9 +90,9 @@ pub mod model {
     pub struct InspectQueryRequest { pub request: Option<SearchRequest> }
 
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct ErrorDetail { pub code: String, pub message: String, pub path: Option<String>, pub metadata: BTreeMap<String, Value> }
+    pub struct ErrorDetail { pub code: String, pub message: String, pub path: Option<String>, pub metadata: BTreeMap<String, String> }
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Error { pub code: String, pub message: String, pub retryable: bool, pub details: Vec<ErrorDetail> }
+    pub struct Error { pub code: ErrorCode, pub message: String, pub retryable: bool, pub details: Vec<ErrorDetail> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct InsertResult { pub id: String }
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -104,7 +106,7 @@ pub mod model {
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct GetResult { pub document: Option<DocumentResult> }
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct TotalHits { pub value: u64, pub relation: String }
+    pub struct TotalHits { pub value: u64, pub relation: TotalHitsRelation }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct HighlightSpan { pub start_byte: u32, pub end_byte: u32 }
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -125,7 +127,7 @@ pub mod model {
     pub struct AnalyzeResult { pub tokens: Vec<AnalyzedToken> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct FieldDefinition {
-        pub name: Option<String>, pub kind: u8, pub cardinality: u8,
+        pub name: Option<String>, pub kind: FieldKind, pub cardinality: FieldCardinality,
         pub stored: Option<bool>, pub searchable: Option<bool>, pub filterable: Option<bool>,
         pub sortable: Option<bool>, pub facetable: Option<bool>, pub analyzer: Option<Analyzer>,
     }
@@ -227,16 +229,16 @@ fn model_filter<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FilterExp
         model::FilterExpr::Comparison { field, op, value } => {
             let field = builder.create_string(&field);
             let value = model_value(builder, value)?;
-            let op = match op { 1 => wire::ComparisonOp::Eq, 2 => wire::ComparisonOp::Ne, 3 => wire::ComparisonOp::Lt, 4 => wire::ComparisonOp::Lte, 5 => wire::ComparisonOp::Gt, 6 => wire::ComparisonOp::Gte, _ => wire::ComparisonOp::Unspecified };
+            let op = match op { model::ComparisonOp::Unspecified => wire::ComparisonOp::Unspecified, model::ComparisonOp::Eq => wire::ComparisonOp::Eq, model::ComparisonOp::Ne => wire::ComparisonOp::Ne, model::ComparisonOp::Lt => wire::ComparisonOp::Lt, model::ComparisonOp::Lte => wire::ComparisonOp::Lte, model::ComparisonOp::Gt => wire::ComparisonOp::Gt, model::ComparisonOp::Gte => wire::ComparisonOp::Gte };
             (wire::FilterExprKind::FilterComparison, wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: Some(field), op, value: Some(value) }).as_union_value())
         }
         model::FilterExpr::Range { field, lower, upper, include_lower, include_upper } => {
             let field = builder.create_string(&field);
-            let lower = model_value(builder, lower)?;
-            let upper = model_value(builder, upper)?;
+            let lower = lower.map(|value| model_value(builder, value)).transpose()?;
+            let upper = upper.map(|value| model_value(builder, value)).transpose()?;
             let include_lower = include_lower.map(wire::OptionalBool::new);
             let include_upper = include_upper.map(wire::OptionalBool::new);
-            (wire::FilterExprKind::FilterRange, wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: Some(field), lower: Some(lower), upper: Some(upper), include_lower: include_lower.as_ref(), include_upper: include_upper.as_ref() }).as_union_value())
+            (wire::FilterExprKind::FilterRange, wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: Some(field), lower, upper, include_lower: include_lower.as_ref(), include_upper: include_upper.as_ref() }).as_union_value())
         }
         model::FilterExpr::Exists { field } => {
             let field = builder.create_string(&field);
@@ -273,8 +275,8 @@ fn model_query<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::QueryExpr)
 
 fn model_projection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FieldProjection) -> flatbuffers::WIPOffset<wire::FieldProjection<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::FieldProjection::create(builder, &wire::FieldProjectionArgs { fields: Some(fields) }) }
 fn model_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::SearchFieldSelection) -> Result<flatbuffers::WIPOffset<wire::SearchFieldSelection<'a>>, String> { let mut fields = Vec::with_capacity(value.fields.len()); for field in value.fields { let name = builder.create_string(&field.field); let weight = field.weight.map(|value| { if !value.is_finite() { return Err("non-finite search field weight is not portable".to_owned()); } Ok(wire::OptionalDouble::new(value)) }).transpose()?; fields.push(wire::SearchField::create(builder, &wire::SearchFieldArgs { field: Some(name), weight: weight.as_ref() })); } let fields = builder.create_vector(&fields); Ok(wire::SearchFieldSelection::create(builder, &wire::SearchFieldSelectionArgs { fields: Some(fields) })) }
-fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = match value.direction { 1 => wire::SortDirection::Asc, 2 => wire::SortDirection::Desc, _ => wire::SortDirection::Unspecified }; let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(match value { 1 => wire::MissingPlacement::First, 2 => wire::MissingPlacement::Last, _ => wire::MissingPlacement::Unspecified })); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(match value { 1 => wire::FacetSort::CountDesc, 2 => wire::FacetSort::CountAsc, 3 => wire::FacetSort::ValueAsc, 4 => wire::FacetSort::ValueDesc, _ => wire::FacetSort::Unspecified })); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
+fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = match value.direction { model::SortDirection::Unspecified => wire::SortDirection::Unspecified, model::SortDirection::Asc => wire::SortDirection::Asc, model::SortDirection::Desc => wire::SortDirection::Desc }; let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(match value { model::MissingPlacement::Unspecified => wire::MissingPlacement::Unspecified, model::MissingPlacement::First => wire::MissingPlacement::First, model::MissingPlacement::Last => wire::MissingPlacement::Last })); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
+fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(match value { model::FacetSort::Unspecified => wire::FacetSort::Unspecified, model::FacetSort::CountDesc => wire::FacetSort::CountDesc, model::FacetSort::CountAsc => wire::FacetSort::CountAsc, model::FacetSort::ValueAsc => wire::FacetSort::ValueAsc, model::FacetSort::ValueDesc => wire::FacetSort::ValueDesc })); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
 fn model_highlighting<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::HighlightRequest) -> flatbuffers::WIPOffset<wire::HighlightRequest<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: Some(fields) }) }
 fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value { model::RankingPolicy::DefaultRelevanceV1 => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), model::RankingPolicy::Bm25Ranking => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
 
@@ -332,7 +334,7 @@ fn envelope<'a>(operation: &str, bytes: &'a [u8]) -> Result<wire::ResponseEnvelo
     if bytes.len() < 8 || bytes[4..8] != *wire::RESPONSE_ENVELOPE_IDENTIFIER.as_bytes() { return Err(DecodeError::Protocol("missing SKRS file identifier".to_owned())); }
     let value = root::<wire::ResponseEnvelope<'a>>(bytes).map_err(|e| DecodeError::Protocol(e.to_string()))?;
     if value.protocol_version() != 1 { return Err(DecodeError::Protocol("unsupported protocol version".to_owned())); }
-    if value.payload_type() == wire::ResponsePayload::SearchKernel_V1_Error { let error = value.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol("error response payload is missing".to_owned()))?; return Err(DecodeError::Portable(model::Error { code: format!("{:?}", error.code()), message: error.message().unwrap_or_default().to_owned(), retryable: error.retryable(), details: decode_error_details(error.details())? })); }
+    if value.payload_type() == wire::ResponsePayload::SearchKernel_V1_Error { let error = value.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol("error response payload is missing".to_owned()))?; return Err(DecodeError::Portable(model::Error { code: decode_error_code(error.code())?, message: error.message().unwrap_or_default().to_owned(), retryable: error.retryable(), details: decode_error_details(error.details())? })); }
     let expected = format!("SearchKernel_V1_{}Result", operation.to_case_pascal());
     let actual = format!("{:?}", value.payload_type());
     if actual != expected { return Err(DecodeError::Protocol(format!("response variant does not match operation {operation}"))); }
@@ -342,15 +344,79 @@ trait CasePascal { fn to_case_pascal(&self) -> String; }
 impl CasePascal for str { fn to_case_pascal(&self) -> String { self.split('_').map(|part| { let mut chars = part.chars(); match chars.next() { Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(), None => String::new() } }).collect() } }
 fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> { value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}"))) }
 
+fn decode_comparison_op(value: wire::ComparisonOp) -> Result<model::ComparisonOp, DecodeError> {
+    match value.0 {
+        0 => Ok(model::ComparisonOp::Unspecified), 1 => Ok(model::ComparisonOp::Eq),
+        2 => Ok(model::ComparisonOp::Ne), 3 => Ok(model::ComparisonOp::Lt),
+        4 => Ok(model::ComparisonOp::Lte), 5 => Ok(model::ComparisonOp::Gt),
+        6 => Ok(model::ComparisonOp::Gte),
+        _ => Err(DecodeError::Protocol("unknown comparison operator".to_owned())),
+    }
+}
+fn decode_sort_direction(value: wire::SortDirection) -> Result<model::SortDirection, DecodeError> {
+    match value.0 {
+        0 => Ok(model::SortDirection::Unspecified), 1 => Ok(model::SortDirection::Asc),
+        2 => Ok(model::SortDirection::Desc),
+        _ => Err(DecodeError::Protocol("unknown sort direction".to_owned())),
+    }
+}
+fn decode_missing_placement(value: wire::MissingPlacement) -> Result<model::MissingPlacement, DecodeError> {
+    match value.0 {
+        0 => Ok(model::MissingPlacement::Unspecified), 1 => Ok(model::MissingPlacement::First),
+        2 => Ok(model::MissingPlacement::Last),
+        _ => Err(DecodeError::Protocol("unknown missing placement".to_owned())),
+    }
+}
+fn decode_facet_sort(value: wire::FacetSort) -> Result<model::FacetSort, DecodeError> {
+    match value.0 {
+        0 => Ok(model::FacetSort::Unspecified), 1 => Ok(model::FacetSort::CountDesc),
+        2 => Ok(model::FacetSort::CountAsc), 3 => Ok(model::FacetSort::ValueAsc),
+        4 => Ok(model::FacetSort::ValueDesc),
+        _ => Err(DecodeError::Protocol("unknown facet sort".to_owned())),
+    }
+}
+fn decode_field_kind(value: wire::FieldKind) -> Result<model::FieldKind, DecodeError> {
+    match value.0 {
+        0 => Ok(model::FieldKind::Unspecified), 1 => Ok(model::FieldKind::Text),
+        2 => Ok(model::FieldKind::Keyword), 3 => Ok(model::FieldKind::Int64),
+        4 => Ok(model::FieldKind::Float64), 5 => Ok(model::FieldKind::Bool),
+        _ => Err(DecodeError::Protocol("unknown field kind".to_owned())),
+    }
+}
+fn decode_field_cardinality(value: wire::FieldCardinality) -> Result<model::FieldCardinality, DecodeError> {
+    match value.0 {
+        0 => Ok(model::FieldCardinality::Unspecified), 1 => Ok(model::FieldCardinality::Single),
+        2 => Ok(model::FieldCardinality::Multi),
+        _ => Err(DecodeError::Protocol("unknown field cardinality".to_owned())),
+    }
+}
+fn decode_total_hits_relation(value: wire::TotalHitsRelation) -> Result<model::TotalHitsRelation, DecodeError> {
+    match value.0 {
+        0 => Ok(model::TotalHitsRelation::Unspecified), 1 => Ok(model::TotalHitsRelation::Exact),
+        2 => Ok(model::TotalHitsRelation::LowerBound),
+        _ => Err(DecodeError::Protocol("unknown total-hits relation".to_owned())),
+    }
+}
+fn decode_error_code(value: wire::ErrorCode) -> Result<model::ErrorCode, DecodeError> {
+    match value.0 {
+        0 => Ok(model::ErrorCode::Unspecified), 1 => Ok(model::ErrorCode::InvalidArgument),
+        2 => Ok(model::ErrorCode::NotFound), 3 => Ok(model::ErrorCode::AlreadyExists),
+        4 => Ok(model::ErrorCode::FailedPrecondition), 5 => Ok(model::ErrorCode::Conflict),
+        6 => Ok(model::ErrorCode::Unsupported), 7 => Ok(model::ErrorCode::ResourceExhausted),
+        8 => Ok(model::ErrorCode::Internal), 9 => Ok(model::ErrorCode::Unavailable),
+        _ => Err(DecodeError::Protocol("unknown error code".to_owned())),
+    }
+}
+
 fn decode_error_details(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ErrorDetail<'_>>>>) -> Result<Vec<model::ErrorDetail>, DecodeError> {
     let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut metadata = BTreeMap::new(); if let Some(values) = item.metadata() { for entry in values.iter() { metadata.insert(entry.key().to_owned(), model::Value::String(required_string(entry.value(), "error.metadata.value")?)); } } result.push(model::ErrorDetail { code: required_string(item.code(), "error.detail.code")?, message: required_string(item.message(), "error.detail.message")?, path: item.path().map(ToOwned::to_owned), metadata }); } }
+    if let Some(items) = items { for item in items.iter() { let mut metadata = BTreeMap::new(); if let Some(values) = item.metadata() { for entry in values.iter() { metadata.insert(entry.key().to_owned(), required_string(entry.value(), "error.metadata.value")?); } } result.push(model::ErrorDetail { code: required_string(item.code(), "error.detail.code")?, message: required_string(item.message(), "error.detail.message")?, path: item.path().map(ToOwned::to_owned), metadata }); } }
     Ok(result)
 }
 
 fn decode_value(value: wire::Value<'_>) -> Result<model::Value, DecodeError> {
     match value.kind_type() {
-        wire::ValueKind::NONE => Ok(model::Value::Null),
+        wire::ValueKind::NONE => Err(DecodeError::Protocol("missing value".to_owned())),
         wire::ValueKind::NullValueValue => Ok(model::Value::Null),
         wire::ValueKind::BoolValue => Ok(model::Value::Bool(value.kind_as_bool_value().ok_or_else(|| DecodeError::Protocol("missing bool value".to_owned()))?.value())),
         wire::ValueKind::Int64Value => Ok(model::Value::Int64(value.kind_as_int_64_value().ok_or_else(|| DecodeError::Protocol("missing int64 value".to_owned()))?.value())),
@@ -395,8 +461,8 @@ fn decode_filter(value: wire::FilterExpr<'_>) -> Result<model::FilterExpr, Decod
         wire::FilterExprKind::FilterAnd => { let node = value.expr_as_filter_and().ok_or_else(|| DecodeError::Protocol("missing filter_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::And(clauses)) }
         wire::FilterExprKind::FilterOr => { let node = value.expr_as_filter_or().ok_or_else(|| DecodeError::Protocol("missing filter_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::Or(clauses)) }
         wire::FilterExprKind::FilterNot => { let node = value.expr_as_filter_not().ok_or_else(|| DecodeError::Protocol("missing filter_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing filter_not clause".to_owned()))?; Ok(model::FilterExpr::Not(Box::new(decode_filter(clause)?))) }
-        wire::FilterExprKind::FilterComparison => { let node = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing filter_comparison payload".to_owned()))?; Ok(model::FilterExpr::Comparison { field: required_string(node.field(), "filter_comparison.field")?, op: node.op().0, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing filter_comparison.value".to_owned()))?)? }) }
-        wire::FilterExprKind::FilterRange => { let node = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing filter_range payload".to_owned()))?; Ok(model::FilterExpr::Range { field: required_string(node.field(), "filter_range.field")?, lower: decode_value(node.lower().ok_or_else(|| DecodeError::Protocol("missing filter_range.lower".to_owned()))?)?, upper: decode_value(node.upper().ok_or_else(|| DecodeError::Protocol("missing filter_range.upper".to_owned()))?)?, include_lower: node.include_lower().map(|v| v.value()), include_upper: node.include_upper().map(|v| v.value()) }) }
+        wire::FilterExprKind::FilterComparison => { let node = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing filter_comparison payload".to_owned()))?; Ok(model::FilterExpr::Comparison { field: required_string(node.field(), "filter_comparison.field")?, op: decode_comparison_op(node.op())?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing filter_comparison.value".to_owned()))?)? }) }
+        wire::FilterExprKind::FilterRange => { let node = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing filter_range payload".to_owned()))?; Ok(model::FilterExpr::Range { field: required_string(node.field(), "filter_range.field")?, lower: node.lower().map(decode_value).transpose()?, upper: node.upper().map(decode_value).transpose()?, include_lower: node.include_lower().map(|v| v.value()), include_upper: node.include_upper().map(|v| v.value()) }) }
         wire::FilterExprKind::FilterExists => { let node = value.expr_as_filter_exists().ok_or_else(|| DecodeError::Protocol("missing filter_exists payload".to_owned()))?; Ok(model::FilterExpr::Exists { field: required_string(node.field(), "filter_exists.field")? }) }
         _ => Err(DecodeError::Protocol("unknown filter discriminator".to_owned())),
     }
@@ -411,8 +477,8 @@ fn decode_query(value: wire::QueryExpr<'_>) -> Result<model::QueryExpr, DecodeEr
     }
 }
 fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::SearchRequest, DecodeError> {
-    let sort = value.sort().map(|items| items.iter().map(|item| Ok(model::SortExpr { field: required_string(item.field(), "sort.field")?, direction: item.direction().0, missing: item.missing().map(|missing| missing.value().0) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    let facets = value.facets().map(|items| items.iter().map(|item| Ok(model::FacetRequest { field: required_string(item.field(), "facet.field")?, limit: item.limit().map(|limit| limit.value()), sort: item.sort().map(|sort| sort.value().0) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    let sort = value.sort().map(|items| items.iter().map(|item| Ok(model::SortExpr { field: required_string(item.field(), "sort.field")?, direction: decode_sort_direction(item.direction())?, missing: item.missing().map(|missing| decode_missing_placement(missing.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    let facets = value.facets().map(|items| items.iter().map(|item| Ok(model::FacetRequest { field: required_string(item.field(), "facet.field")?, limit: item.limit().map(|limit| limit.value()), sort: item.sort().map(|sort| decode_facet_sort(sort.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
     Ok(model::SearchRequest {
         query: value.query().map(ToOwned::to_owned),
         search_fields: value.search_fields().map(decode_selection).transpose()?,
@@ -425,7 +491,7 @@ fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::Search
 }
 fn decode_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> { Ok(model::Analyzer { name: value.name().map(ToOwned::to_owned), version: value.version(), options: decode_entries(value.options())? }) }
 fn decode_index(value: wire::IndexDefinition<'_>) -> Result<model::IndexDefinition, DecodeError> {
-    let fields = value.fields().map(|items| items.iter().map(|field| Ok(model::FieldDefinition { name: field.name().map(ToOwned::to_owned), kind: field.kind().0, cardinality: field.cardinality().0, stored: field.stored().map(|v| v.value()), searchable: field.searchable().map(|v| v.value()), filterable: field.filterable().map(|v| v.value()), sortable: field.sortable().map(|v| v.value()), facetable: field.facetable().map(|v| v.value()), analyzer: field.analyzer().map(decode_analyzer).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    let fields = value.fields().map(|items| items.iter().map(|field| Ok(model::FieldDefinition { name: field.name().map(ToOwned::to_owned), kind: decode_field_kind(field.kind())?, cardinality: decode_field_cardinality(field.cardinality())?, stored: field.stored().map(|v| v.value()), searchable: field.searchable().map(|v| v.value()), filterable: field.filterable().map(|v| v.value()), sortable: field.sortable().map(|v| v.value()), facetable: field.facetable().map(|v| v.value()), analyzer: field.analyzer().map(decode_analyzer).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
     Ok(model::IndexDefinition { name: value.name().map(ToOwned::to_owned), fields, default_search_fields: value.default_search_fields().map(decode_selection).transpose()? })
 }
 
@@ -435,7 +501,48 @@ impl DecodeResponse for model::PatchResult { fn decode(operation: &str, bytes: &
 
 impl DecodeResponse for model::DeleteResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_delete_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")?, deleted: value.deleted() }) } }
 impl DecodeResponse for model::GetResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_get_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let document = value.document().map(decode_document).transpose()?; Ok(Self { document }) } }
-impl DecodeResponse for model::SearchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let total = value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field total_hits".to_owned()))?; let hits = value.hits().map(|items| items.iter().map(decode_hit).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); let facets = decode_facets(value.facets())?; Ok(Self { hits, total_hits: model::TotalHits { value: total.value(), relation: format!("{:?}", total.relation()).to_ascii_lowercase() }, facets }) } }
+impl DecodeResponse for model::SearchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let total = value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field total_hits".to_owned()))?; let hits = value.hits().map(|items| items.iter().map(decode_hit).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); let facets = decode_facets(value.facets())?; Ok(Self { hits, total_hits: model::TotalHits { value: total.value(), relation: decode_total_hits_relation(total.relation())? }, facets }) } }
 impl DecodeResponse for model::AnalyzeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_analyze_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let tokens = value.tokens().map(|items| items.iter().map(|token| Ok(model::AnalyzedToken { surface: required_string(token.surface(), "token.surface")?, term: required_string(token.term(), "token.term")?, position: token.position(), start_byte: token.start_byte(), end_byte: token.end_byte() })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default(); Ok(Self { tokens }) } }
 impl DecodeResponse for model::DescribeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { index: value.index().map(decode_index).transpose()? }) } }
 impl DecodeResponse for model::InspectQueryResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { resolved_request: value.resolved_request().map(decode_search_request).transpose()? }) } }
+
+#[cfg(test)]
+mod generated_value_tests {
+    use super::*;
+
+    #[test]
+    fn wire_none_is_missing_but_explicit_null_is_semantic_null() {
+        let mut builder = FlatBufferBuilder::new();
+        let missing = wire::Value::create(
+            &mut builder,
+            &wire::ValueArgs {
+                kind_type: wire::ValueKind::NONE,
+                kind: None,
+            },
+        );
+        builder.finish_minimal(missing);
+        let missing = root::<wire::Value>(builder.finished_data()).expect("decode missing value");
+        assert!(matches!(
+            decode_value(missing),
+            Err(DecodeError::Protocol(message)) if message == "missing value"
+        ));
+
+        let mut builder = FlatBufferBuilder::new();
+        let null = wire::NullValueValue::create(
+            &mut builder,
+            &wire::NullValueValueArgs {
+                value: wire::NullValue::Null,
+            },
+        );
+        let value = wire::Value::create(
+            &mut builder,
+            &wire::ValueArgs {
+                kind_type: wire::ValueKind::NullValueValue,
+                kind: Some(null.as_union_value()),
+            },
+        );
+        builder.finish_minimal(value);
+        let value = root::<wire::Value>(builder.finished_data()).expect("decode explicit null");
+        assert_eq!(decode_value(value).expect("explicit null"), model::Value::Null);
+    }
+}
