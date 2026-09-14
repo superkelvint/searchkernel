@@ -37,12 +37,24 @@ pub mod model {
     pub struct FacetRequest { pub field: String, pub limit: Option<u32>, pub sort: Option<u8> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct HighlightRequest { pub fields: Vec<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FilterExpr { pub variant: Option<String>, pub payload: Option<Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct QueryExpr { pub variant: Option<String>, pub payload: Option<Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct RankingPolicy { pub variant: Option<String> }
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum FilterExpr {
+        And(Vec<FilterExpr>),
+        Or(Vec<FilterExpr>),
+        Not(Box<FilterExpr>),
+        Comparison { field: String, op: u8, value: Value },
+        Range { field: String, lower: Value, upper: Value, include_lower: Option<bool>, include_upper: Option<bool> },
+        Exists { field: String },
+    }
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum QueryExpr {
+        Term { field: String, value: Value },
+        And(Vec<QueryExpr>),
+        Or(Vec<QueryExpr>),
+        Not(Box<QueryExpr>),
+    }
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum RankingPolicy { DefaultRelevanceV1, Bm25Ranking }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct Analyzer { pub name: Option<String>, pub version: u32, pub options: BTreeMap<String, Value> }
 
@@ -52,8 +64,8 @@ pub mod model {
     pub struct UpsertRequest { pub document: Option<Document> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct PatchRequest { pub id: Option<String>, pub operations: Vec<PatchOperation> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct PatchOperation { pub variant: Option<String>, pub field: Option<String>, pub value: Option<Value> }
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum PatchOperation { Set { field: Option<String>, value: Option<Value> }, Unset { field: Option<String> } }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct DeleteRequest { pub id: Option<String> }
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -112,7 +124,13 @@ pub mod model {
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct AnalyzeResult { pub tokens: Vec<AnalyzedToken> }
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct IndexDefinition { pub name: Option<String> }
+    pub struct FieldDefinition {
+        pub name: Option<String>, pub kind: u8, pub cardinality: u8,
+        pub stored: Option<bool>, pub searchable: Option<bool>, pub filterable: Option<bool>,
+        pub sortable: Option<bool>, pub facetable: Option<bool>, pub analyzer: Option<Analyzer>,
+    }
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct IndexDefinition { pub name: Option<String>, pub fields: Vec<FieldDefinition>, pub default_search_fields: Option<SearchFieldSelection> }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct DescribeResult { pub index: Option<IndexDefinition> }
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -191,30 +209,64 @@ fn model_optional_bool(value: Option<&model::Value>) -> Option<wire::OptionalBoo
 fn model_optional_f64(value: Option<&model::Value>) -> Option<wire::OptionalDouble> { value.and_then(|value| match value { model::Value::Float64(value) if value.is_finite() => Some(wire::OptionalDouble::new(*value)), _ => None }) }
 
 fn model_filter<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FilterExpr) -> Result<flatbuffers::WIPOffset<wire::FilterExpr<'a>>, String> {
-    let variant = value.variant.ok_or_else(|| "filter expression variant is required".to_owned())?;
-    let payload = model_object(value.payload, "filter payload")?;
-    let (expr_type, expr) = match variant.as_str() {
-        "filter_and" | "filter_or" => {
-            let values = match payload.get("clauses") { Some(model::Value::List(values)) => values.iter().cloned().map(|value| match value { model::Value::Object(object) => model_filter(builder, model::FilterExpr { variant: object.get("variant").and_then(|v| match v { model::Value::String(v) => Some(v.clone()), _ => None }), payload: object.get("payload").cloned() }), _ => Err("filter clause must be an object".to_owned()) }).collect::<Result<Vec<_>, _>>()?, None => Vec::new(), _ => return Err("filter clauses must be a list".to_owned()) };
-            let values = builder.create_vector(&values);
-            if variant == "filter_and" { (wire::FilterExprKind::FilterAnd, wire::FilterAnd::create(builder, &wire::FilterAndArgs { clauses: Some(values) }).as_union_value()) } else { (wire::FilterExprKind::FilterOr, wire::FilterOr::create(builder, &wire::FilterOrArgs { clauses: Some(values) }).as_union_value()) }
+    let (expr_type, expr) = match value {
+        model::FilterExpr::And(clauses) => {
+            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
+            let clauses = builder.create_vector(&clauses);
+            (wire::FilterExprKind::FilterAnd, wire::FilterAnd::create(builder, &wire::FilterAndArgs { clauses: Some(clauses) }).as_union_value())
         }
-        "filter_not" => return Err("filter_not requires a generated nested clause model".to_owned()),
-        "filter_exists" => { let field = builder.create_string(&model_string(payload.get("field"), "filter_exists.field")?); (wire::FilterExprKind::FilterExists, wire::FilterExists::create(builder, &wire::FilterExistsArgs { field: Some(field) }).as_union_value()) }
-        "filter_comparison" | "filter_range" => return Err("filter comparison/range models require generated scalar fields".to_owned()),
-        other => return Err(format!("unknown filter variant {other}")),
+        model::FilterExpr::Or(clauses) => {
+            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
+            let clauses = builder.create_vector(&clauses);
+            (wire::FilterExprKind::FilterOr, wire::FilterOr::create(builder, &wire::FilterOrArgs { clauses: Some(clauses) }).as_union_value())
+        }
+        model::FilterExpr::Not(clause) => {
+            let clause = model_filter(builder, *clause)?;
+            (wire::FilterExprKind::FilterNot, wire::FilterNot::create(builder, &wire::FilterNotArgs { clause: Some(clause) }).as_union_value())
+        }
+        model::FilterExpr::Comparison { field, op, value } => {
+            let field = builder.create_string(&field);
+            let value = model_value(builder, value)?;
+            let op = match op { 1 => wire::ComparisonOp::Eq, 2 => wire::ComparisonOp::Ne, 3 => wire::ComparisonOp::Lt, 4 => wire::ComparisonOp::Lte, 5 => wire::ComparisonOp::Gt, 6 => wire::ComparisonOp::Gte, _ => wire::ComparisonOp::Unspecified };
+            (wire::FilterExprKind::FilterComparison, wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: Some(field), op, value: Some(value) }).as_union_value())
+        }
+        model::FilterExpr::Range { field, lower, upper, include_lower, include_upper } => {
+            let field = builder.create_string(&field);
+            let lower = model_value(builder, lower)?;
+            let upper = model_value(builder, upper)?;
+            let include_lower = include_lower.map(wire::OptionalBool::new);
+            let include_upper = include_upper.map(wire::OptionalBool::new);
+            (wire::FilterExprKind::FilterRange, wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: Some(field), lower: Some(lower), upper: Some(upper), include_lower: include_lower.as_ref(), include_upper: include_upper.as_ref() }).as_union_value())
+        }
+        model::FilterExpr::Exists { field } => {
+            let field = builder.create_string(&field);
+            (wire::FilterExprKind::FilterExists, wire::FilterExists::create(builder, &wire::FilterExistsArgs { field: Some(field) }).as_union_value())
+        }
     };
     Ok(wire::FilterExpr::create(builder, &wire::FilterExprArgs { expr_type, expr: Some(expr) }))
 }
 
 fn model_query<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::QueryExpr) -> Result<flatbuffers::WIPOffset<wire::QueryExpr<'a>>, String> {
-    let variant = value.variant.ok_or_else(|| "query expression variant is required".to_owned())?;
-    let payload = model_object(value.payload, "query payload")?;
-    let (expr_type, expr) = match variant.as_str() {
-        "term_query" => { let field = builder.create_string(&model_string(payload.get("field"), "term_query.field")?); let value = model_value(builder, payload.get("value").cloned().ok_or_else(|| "term_query.value is required".to_owned())?)?; (wire::QueryExprKind::TermQuery, wire::TermQuery::create(builder, &wire::TermQueryArgs { field: Some(field), value: Some(value) }).as_union_value()) }
-        "query_and" | "query_or" => return Err("boolean query models require generated nested clause fields".to_owned()),
-        "query_not" => return Err("query_not requires a generated nested clause model".to_owned()),
-        other => return Err(format!("unknown query variant {other}")),
+    let (expr_type, expr) = match value {
+        model::QueryExpr::Term { field, value } => {
+            let field = builder.create_string(&field);
+            let value = model_value(builder, value)?;
+            (wire::QueryExprKind::TermQuery, wire::TermQuery::create(builder, &wire::TermQueryArgs { field: Some(field), value: Some(value) }).as_union_value())
+        }
+        model::QueryExpr::And(clauses) => {
+            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
+            let clauses = builder.create_vector(&clauses);
+            (wire::QueryExprKind::QueryAnd, wire::QueryAnd::create(builder, &wire::QueryAndArgs { clauses: Some(clauses) }).as_union_value())
+        }
+        model::QueryExpr::Or(clauses) => {
+            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
+            let clauses = builder.create_vector(&clauses);
+            (wire::QueryExprKind::QueryOr, wire::QueryOr::create(builder, &wire::QueryOrArgs { clauses: Some(clauses) }).as_union_value())
+        }
+        model::QueryExpr::Not(clause) => {
+            let clause = model_query(builder, *clause)?;
+            (wire::QueryExprKind::QueryNot, wire::QueryNot::create(builder, &wire::QueryNotArgs { clause: Some(clause) }).as_union_value())
+        }
     };
     Ok(wire::QueryExpr::create(builder, &wire::QueryExprArgs { expr_type, expr: Some(expr) }))
 }
@@ -224,7 +276,7 @@ fn model_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::Search
 fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = match value.direction { 1 => wire::SortDirection::Asc, 2 => wire::SortDirection::Desc, _ => wire::SortDirection::Unspecified }; let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(match value { 1 => wire::MissingPlacement::First, 2 => wire::MissingPlacement::Last, _ => wire::MissingPlacement::Unspecified })); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
 fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(match value { 1 => wire::FacetSort::CountDesc, 2 => wire::FacetSort::CountAsc, 3 => wire::FacetSort::ValueAsc, 4 => wire::FacetSort::ValueDesc, _ => wire::FacetSort::Unspecified })); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
 fn model_highlighting<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::HighlightRequest) -> flatbuffers::WIPOffset<wire::HighlightRequest<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: Some(fields) }) }
-fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value.variant.as_deref() { None | Some("default_relevance_v1") => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), Some("bm25_ranking") => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()), Some(other) => return Err(format!("unknown ranking policy {other}")) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
+fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value { model::RankingPolicy::DefaultRelevanceV1 => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), model::RankingPolicy::Bm25Ranking => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
 
 fn encode_insert(value: model::InsertRequest) -> Result<Vec<u8>, String> {
     let mut b = FlatBufferBuilder::new(); let doc = match value.document { Some(v) => Some(document(&mut b, v)?), None => None };
@@ -239,7 +291,7 @@ fn encode_upsert(value: model::UpsertRequest) -> Result<Vec<u8>, String> {
 fn encode_patch(value: model::PatchRequest) -> Result<Vec<u8>, String> {
     let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
     let mut operations = Vec::with_capacity(value.operations.len());
-    for operation in value.operations { let operation_value = match operation.variant.as_deref() { Some("unset_field") => { let field = operation.field.as_deref().map(|v| b.create_string(v)); wire::UnsetField::create(&mut b, &wire::UnsetFieldArgs { field }).as_union_value() }, Some("set_field") => { let field = operation.field.as_deref().map(|v| b.create_string(v)); let value = operation.value.map(|v| model_value(&mut b, v)).transpose()?; wire::SetField::create(&mut b, &wire::SetFieldArgs { field, value }).as_union_value() }, Some("none") | None => return Err("patch operation requires a recognized variant".to_owned()), Some(other) => return Err(format!("unknown patch operation variant {other}")), }; let operation_type = match operation.variant.as_deref() { Some("unset_field") => wire::PatchOperationKind::UnsetField, Some("set_field") => wire::PatchOperationKind::SetField, _ => unreachable!() }; operations.push(wire::PatchOperation::create(&mut b, &wire::PatchOperationArgs { operation_type, operation: Some(operation_value) })); }
+    for operation in value.operations { let (operation_type, operation_value) = match operation { model::PatchOperation::Unset { field } => { let field = field.as_deref().map(|v| b.create_string(v)); (wire::PatchOperationKind::UnsetField, wire::UnsetField::create(&mut b, &wire::UnsetFieldArgs { field }).as_union_value()) }, model::PatchOperation::Set { field, value } => { let field = field.as_deref().map(|v| b.create_string(v)); let value = value.map(|v| model_value(&mut b, v)).transpose()?; (wire::PatchOperationKind::SetField, wire::SetField::create(&mut b, &wire::SetFieldArgs { field, value }).as_union_value()) } }; operations.push(wire::PatchOperation::create(&mut b, &wire::PatchOperationArgs { operation_type, operation: Some(operation_value) })); }
     let operations = if operations.is_empty() { None } else { Some(b.create_vector(&operations)) };
     let payload = wire::PatchRequest::create(&mut b, &wire::PatchRequestArgs { id, operations });
     Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_PatchRequest, payload.as_union_value()))
@@ -255,21 +307,24 @@ fn encode_get(value: model::GetRequest) -> Result<Vec<u8>, String> {
     let payload = wire::GetRequest::create(&mut b, &wire::GetRequestArgs { id, projection });
     Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_GetRequest, payload.as_union_value()))
 }
-fn encode_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let query = value.query.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
+fn model_search<'a>(mut b: &mut FlatBufferBuilder<'a>, value: model::SearchRequest) -> Result<flatbuffers::WIPOffset<wire::SearchRequest<'a>>, String> {
+    let query = value.query.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
     let search_fields = value.search_fields.map(|value| model_selection(&mut b, value)).transpose()?; let filter = value.filter.map(|value| model_filter(&mut b, value)).transpose()?; let sort = model_sort(&mut b, value.sort)?; let facets = model_facets(&mut b, value.facets)?; let ranking = value.ranking.map(|value| model_ranking(&mut b, value)).transpose()?; let projection = value.projection.map(|value| model_projection(&mut b, value)); let highlighting = value.highlighting.map(|value| model_highlighting(&mut b, value)); let query_expr = value.query_expr.map(|value| model_query(&mut b, value)).transpose()?;
     let limit = value.limit.map(wire::OptionalUInt32::new); let offset = value.offset.map(wire::OptionalUInt32::new);
-    let request = wire::SearchRequest::create(&mut b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr });
+    Ok(wire::SearchRequest::create(b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr }))
+}
+fn encode_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
+    let mut b = FlatBufferBuilder::new(); let request = model_search(&mut b, value)?;
     Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_SearchRequest, request.as_union_value()))
 }
 fn encode_analyze(value: model::AnalyzeRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let target = match value.target { model::AnalyzeTarget::None => (wire::AnalyzeTarget::NONE, None), model::AnalyzeTarget::Analyzer(value) => { let name = value.name.as_deref().map(|v| b.create_string(v)); let mut entries = Vec::with_capacity(value.options.len()); for (key, value) in value.options { let key = b.create_string(&key); let value = model_value(&mut b, value)?; entries.push(wire::ValueEntry::create(&mut b, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let options = if entries.is_empty() { None } else { Some(b.create_vector(&entries)) }; let target = wire::Analyzer::create(&mut b, &wire::AnalyzerArgs { name, version: value.version, options }); (wire::AnalyzeTarget::Analyzer, Some(target.as_union_value())) }, model::AnalyzeTarget::Field(field) => { let field = b.create_string(&field); let target = wire::AnalyzeFieldTarget::create(&mut b, &wire::AnalyzeFieldTargetArgs { field: Some(field) }); (wire::AnalyzeTarget::AnalyzeFieldTarget, Some(target.as_union_value())) } };
+    let mut b = FlatBufferBuilder::new(); let target = match value.target { model::AnalyzeTarget::None => (wire::AnalyzeTarget::NONE, None), model::AnalyzeTarget::Analyzer(value) => { let name = value.name.as_deref().map(|v| b.create_string(v)); let mut entries = Vec::with_capacity(value.options.len()); for (key, value) in value.options { let key = b.create_string(&key); let value = model_value(&mut b, value)?; entries.push(wire::ValueEntry::create(&mut b, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let options = Some(b.create_vector(&entries)); let target = wire::Analyzer::create(&mut b, &wire::AnalyzerArgs { name, version: value.version, options }); (wire::AnalyzeTarget::Analyzer, Some(target.as_union_value())) }, model::AnalyzeTarget::Field(field) => { let field = b.create_string(&field); let target = wire::AnalyzeFieldTarget::create(&mut b, &wire::AnalyzeFieldTargetArgs { field: Some(field) }); (wire::AnalyzeTarget::AnalyzeFieldTarget, Some(target.as_union_value())) } };
     let text = value.text.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
     let request = wire::AnalyzeRequest::create(&mut b, &wire::AnalyzeRequestArgs { target_type: target.0, target: target.1, text, language });
     Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_AnalyzeRequest, request.as_union_value()))
 }
 fn encode_describe(_: model::DescribeRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let p = wire::DescribeRequest::create(&mut b, &wire::DescribeRequestArgs {}); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_DescribeRequest, p.as_union_value())) }
-fn encode_inspect(value: model::InspectQueryRequest) -> Result<Vec<u8>, String> { if value.request.is_some() { return Err("inspect_query request requires generated nested SearchRequest encoding".to_owned()); } let mut b = FlatBufferBuilder::new(); let p = wire::InspectQueryRequest::create(&mut b, &wire::InspectQueryRequestArgs { request: None }); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InspectQueryRequest, p.as_union_value())) }
+fn encode_inspect(value: model::InspectQueryRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let request = value.request.map(|request| model_search(&mut b, request)).transpose()?; let p = wire::InspectQueryRequest::create(&mut b, &wire::InspectQueryRequestArgs { request }); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InspectQueryRequest, p.as_union_value())) }
 
 #[derive(Debug)] enum DecodeError { Portable(model::Error), Protocol(String) }
 trait DecodeResponse: Sized { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError>; }
@@ -329,13 +384,49 @@ fn decode_facets(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOff
     if let Some(items) = items { for item in items.iter() { let mut values = Vec::new(); if let Some(entries) = item.values() { for entry in entries.iter() { values.push(model::FacetValue { value: decode_value(entry.value().ok_or_else(|| DecodeError::Protocol("missing facet value".to_owned()))?)?, count: entry.count() }); } } result.push(model::FacetResult { field: required_string(item.field(), "facet.field")?, values }); } }
     Ok(result)
 }
-fn decode_search_request(value: wire::SearchRequest<'_>) -> model::SearchRequest {
-    model::SearchRequest {
-        query: value.query().map(ToOwned::to_owned),
-        limit: value.limit().map(|value| value.value()),
-        offset: value.offset().map(|value| value.value()),
-        ..Default::default()
+fn decode_selection(value: wire::SearchFieldSelection<'_>) -> Result<model::SearchFieldSelection, DecodeError> {
+    let fields = value.fields().map(|fields| fields.iter().map(|field| Ok(model::SearchField { field: required_string(field.field(), "search_fields.field")?, weight: field.weight().map(|weight| weight.value()) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    Ok(model::SearchFieldSelection { fields })
+}
+fn decode_projection(value: wire::FieldProjection<'_>) -> model::FieldProjection { model::FieldProjection { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
+fn decode_highlighting(value: wire::HighlightRequest<'_>) -> model::HighlightRequest { model::HighlightRequest { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
+fn decode_filter(value: wire::FilterExpr<'_>) -> Result<model::FilterExpr, DecodeError> {
+    match value.expr_type() {
+        wire::FilterExprKind::FilterAnd => { let node = value.expr_as_filter_and().ok_or_else(|| DecodeError::Protocol("missing filter_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::And(clauses)) }
+        wire::FilterExprKind::FilterOr => { let node = value.expr_as_filter_or().ok_or_else(|| DecodeError::Protocol("missing filter_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::Or(clauses)) }
+        wire::FilterExprKind::FilterNot => { let node = value.expr_as_filter_not().ok_or_else(|| DecodeError::Protocol("missing filter_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing filter_not clause".to_owned()))?; Ok(model::FilterExpr::Not(Box::new(decode_filter(clause)?))) }
+        wire::FilterExprKind::FilterComparison => { let node = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing filter_comparison payload".to_owned()))?; Ok(model::FilterExpr::Comparison { field: required_string(node.field(), "filter_comparison.field")?, op: node.op().0, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing filter_comparison.value".to_owned()))?)? }) }
+        wire::FilterExprKind::FilterRange => { let node = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing filter_range payload".to_owned()))?; Ok(model::FilterExpr::Range { field: required_string(node.field(), "filter_range.field")?, lower: decode_value(node.lower().ok_or_else(|| DecodeError::Protocol("missing filter_range.lower".to_owned()))?)?, upper: decode_value(node.upper().ok_or_else(|| DecodeError::Protocol("missing filter_range.upper".to_owned()))?)?, include_lower: node.include_lower().map(|v| v.value()), include_upper: node.include_upper().map(|v| v.value()) }) }
+        wire::FilterExprKind::FilterExists => { let node = value.expr_as_filter_exists().ok_or_else(|| DecodeError::Protocol("missing filter_exists payload".to_owned()))?; Ok(model::FilterExpr::Exists { field: required_string(node.field(), "filter_exists.field")? }) }
+        _ => Err(DecodeError::Protocol("unknown filter discriminator".to_owned())),
     }
+}
+fn decode_query(value: wire::QueryExpr<'_>) -> Result<model::QueryExpr, DecodeError> {
+    match value.expr_type() {
+        wire::QueryExprKind::TermQuery => { let node = value.expr_as_term_query().ok_or_else(|| DecodeError::Protocol("missing term_query payload".to_owned()))?; Ok(model::QueryExpr::Term { field: required_string(node.field(), "term_query.field")?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing term_query.value".to_owned()))?)? }) }
+        wire::QueryExprKind::QueryAnd => { let node = value.expr_as_query_and().ok_or_else(|| DecodeError::Protocol("missing query_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::And(clauses)) }
+        wire::QueryExprKind::QueryOr => { let node = value.expr_as_query_or().ok_or_else(|| DecodeError::Protocol("missing query_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::Or(clauses)) }
+        wire::QueryExprKind::QueryNot => { let node = value.expr_as_query_not().ok_or_else(|| DecodeError::Protocol("missing query_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing query_not clause".to_owned()))?; Ok(model::QueryExpr::Not(Box::new(decode_query(clause)?))) }
+        _ => Err(DecodeError::Protocol("unknown query discriminator".to_owned())),
+    }
+}
+fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::SearchRequest, DecodeError> {
+    let sort = value.sort().map(|items| items.iter().map(|item| Ok(model::SortExpr { field: required_string(item.field(), "sort.field")?, direction: item.direction().0, missing: item.missing().map(|missing| missing.value().0) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    let facets = value.facets().map(|items| items.iter().map(|item| Ok(model::FacetRequest { field: required_string(item.field(), "facet.field")?, limit: item.limit().map(|limit| limit.value()), sort: item.sort().map(|sort| sort.value().0) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    Ok(model::SearchRequest {
+        query: value.query().map(ToOwned::to_owned),
+        search_fields: value.search_fields().map(decode_selection).transpose()?,
+        filter: value.filter().map(decode_filter).transpose()?, sort, facets,
+        ranking: value.ranking().map(|ranking| match ranking.policy_type() { wire::RankingPolicyKind::DefaultRelevanceV1 => Ok(model::RankingPolicy::DefaultRelevanceV1), wire::RankingPolicyKind::Bm25Ranking => Ok(model::RankingPolicy::Bm25Ranking), _ => Err(DecodeError::Protocol("unknown ranking discriminator".to_owned())) }).transpose()?,
+        limit: value.limit().map(|value| value.value()), offset: value.offset().map(|value| value.value()),
+        projection: value.projection().map(decode_projection), highlighting: value.highlighting().map(decode_highlighting),
+        language: value.language().map(ToOwned::to_owned), query_expr: value.query_expr().map(decode_query).transpose()?,
+    })
+}
+fn decode_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> { Ok(model::Analyzer { name: value.name().map(ToOwned::to_owned), version: value.version(), options: decode_entries(value.options())? }) }
+fn decode_index(value: wire::IndexDefinition<'_>) -> Result<model::IndexDefinition, DecodeError> {
+    let fields = value.fields().map(|items| items.iter().map(|field| Ok(model::FieldDefinition { name: field.name().map(ToOwned::to_owned), kind: field.kind().0, cardinality: field.cardinality().0, stored: field.stored().map(|v| v.value()), searchable: field.searchable().map(|v| v.value()), filterable: field.filterable().map(|v| v.value()), sortable: field.sortable().map(|v| v.value()), facetable: field.facetable().map(|v| v.value()), analyzer: field.analyzer().map(decode_analyzer).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
+    Ok(model::IndexDefinition { name: value.name().map(ToOwned::to_owned), fields, default_search_fields: value.default_search_fields().map(decode_selection).transpose()? })
 }
 
 impl DecodeResponse for model::InsertResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_insert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
@@ -346,5 +437,5 @@ impl DecodeResponse for model::DeleteResult { fn decode(operation: &str, bytes: 
 impl DecodeResponse for model::GetResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_get_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let document = value.document().map(decode_document).transpose()?; Ok(Self { document }) } }
 impl DecodeResponse for model::SearchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let total = value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field total_hits".to_owned()))?; let hits = value.hits().map(|items| items.iter().map(decode_hit).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); let facets = decode_facets(value.facets())?; Ok(Self { hits, total_hits: model::TotalHits { value: total.value(), relation: format!("{:?}", total.relation()).to_ascii_lowercase() }, facets }) } }
 impl DecodeResponse for model::AnalyzeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_analyze_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let tokens = value.tokens().map(|items| items.iter().map(|token| Ok(model::AnalyzedToken { surface: required_string(token.surface(), "token.surface")?, term: required_string(token.term(), "token.term")?, position: token.position(), start_byte: token.start_byte(), end_byte: token.end_byte() })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default(); Ok(Self { tokens }) } }
-impl DecodeResponse for model::DescribeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { index: value.index().map(|index| model::IndexDefinition { name: index.name().map(ToOwned::to_owned) }) }) } }
-impl DecodeResponse for model::InspectQueryResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { resolved_request: value.resolved_request().map(decode_search_request) }) } }
+impl DecodeResponse for model::DescribeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { index: value.index().map(decode_index).transpose()? }) } }
+impl DecodeResponse for model::InspectQueryResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { resolved_request: value.resolved_request().map(decode_search_request).transpose()? }) } }

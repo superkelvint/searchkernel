@@ -570,6 +570,25 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
     let mut definitions = serde_json::Map::new();
     for schema in [request, response] {
         for object in schema.objects().iter() {
+            let short_name = short_type_name(object.name());
+            if short_name == "Value" {
+                definitions.insert(snake_case(object.name()), public_value_schema(schema));
+                continue;
+            }
+            if let Some(definition) = public_array_schema(&short_name) {
+                definitions.insert(snake_case(object.name()), definition);
+                continue;
+            }
+            if matches!(
+                short_name.as_str(),
+                "FilterExpr" | "QueryExpr" | "RankingPolicy" | "PatchOperation"
+            ) {
+                definitions.insert(
+                    snake_case(object.name()),
+                    public_union_schema(schema, &short_name),
+                );
+                continue;
+            }
             let mut fields = serde_json::Map::new();
             let mut required = Vec::new();
             for field in object.fields().iter() {
@@ -577,7 +596,7 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
                 if name.ends_with("_type") {
                     continue;
                 }
-                fields.insert(name.clone(), field_schema(schema, &field));
+                fields.insert(name.clone(), field_schema(schema, &short_name, &field));
                 if field.required() {
                     required.push(name);
                 }
@@ -622,8 +641,41 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
     })
 }
 
-fn field_schema(schema: &Schema<'_>, field: &Field<'_>) -> Value {
+fn field_schema(schema: &Schema<'_>, object_name: &str, field: &Field<'_>) -> Value {
+    let name = snake_case(field.name());
+    if object_name == "BytesValue" && name == "value" {
+        return json!({"type":"string","contentEncoding":"base64"});
+    }
+    if matches!(
+        (object_name, name.as_str()),
+        ("Document", "fields")
+            | ("Hit", "fields")
+            | ("ValueObject", "fields")
+            | ("Analyzer", "options")
+            | ("ErrorDetail", "metadata")
+    ) {
+        return json!({"type":"object","additionalProperties":{"$ref":"#/definitions/search_kernel._v1._value"}});
+    }
     let ty = field.type_();
+    let enum_name = match (object_name, name.as_str()) {
+        ("FieldDefinition", "kind") => Some("FieldKind"),
+        ("FieldDefinition", "cardinality") => Some("FieldCardinality"),
+        ("TotalHits", "relation") => Some("TotalHitsRelation"),
+        ("FilterComparison", "op") => Some("ComparisonOp"),
+        ("SortExpr", "direction") => Some("SortDirection"),
+        ("SortExpr", "missing") => Some("MissingPlacement"),
+        ("FacetRequest", "sort") => Some("FacetSort"),
+        _ => None,
+    };
+    if let Some(enum_name) = enum_name {
+        if let Some(index) = schema
+            .enums()
+            .iter()
+            .position(|item| short_type_name(item.name()) == enum_name)
+        {
+            return enum_schema(schema, index as i32);
+        }
+    }
     match ty.base_type() {
         BaseType::Bool => json!({"type":"boolean"}),
         BaseType::Byte
@@ -632,16 +684,23 @@ fn field_schema(schema: &Schema<'_>, field: &Field<'_>) -> Value {
         | BaseType::UByte
         | BaseType::UShort
         | BaseType::UInt => json!({"type":"integer"}),
-        BaseType::Long | BaseType::ULong => {
-            json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"})
-        }
+        BaseType::Long => json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"}),
+        BaseType::ULong => json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$"}),
         BaseType::Float | BaseType::Double => json!({"type":"number"}),
         BaseType::String => json!({"type":"string"}),
         BaseType::Vector | BaseType::Vector64 | BaseType::Array => {
             json!({"type":"array","items": element_schema(schema, ty.element(), ty.index())})
         }
         BaseType::Obj => {
-            json!({"$ref": format!("#/definitions/{}", snake_case(schema.objects().get(ty.index() as usize).name()))})
+            let target = short_type_name(schema.objects().get(ty.index() as usize).name());
+            match target.as_str() {
+                "OptionalBool" => json!({"type":"boolean"}),
+                "OptionalUInt32" => json!({"type":"integer","minimum":0,"maximum":4294967295u64}),
+                "OptionalDouble" => json!({"type":"number"}),
+                _ => {
+                    json!({"$ref": format!("#/definitions/{}", snake_case(schema.objects().get(ty.index() as usize).name()))})
+                }
+            }
         }
         BaseType::Union => union_schema(schema, ty.index()),
         BaseType::UType => enum_schema(schema, ty.index()),
@@ -665,7 +724,7 @@ fn enum_schema(schema: &Schema<'_>, index: i32) -> Value {
     let values = enumeration
         .values()
         .iter()
-        .filter(|value| value.name() != "NONE")
+        .filter(|value| !value.name().ends_with("_NONE"))
         .map(|value| symbolic_name(value.name()))
         .collect::<Vec<_>>();
     json!({"type":"string","enum":values})
@@ -676,10 +735,71 @@ fn union_schema(schema: &Schema<'_>, index: i32) -> Value {
     let properties = enumeration
         .values()
         .iter()
-        .filter(|value| value.name() != "NONE")
-        .map(|value| (symbolic_name(value.name()), json!({"type":"object"})))
+        .map(|value| {
+            if value.name() == "NONE" || value.name().ends_with("_NONE") {
+                return ("none".to_owned(), json!({"type":"object","additionalProperties":false,"maxProperties":0}));
+            }
+            let suffix = value
+                .name()
+                .rsplit_once("_V1_")
+                .map(|(_, suffix)| suffix)
+                .unwrap_or(value.name());
+            let key = if suffix == "AnalyzeFieldTarget" {
+                "field".to_owned()
+            } else {
+                symbolic_name(value.name())
+            };
+            let payload = schema.objects().iter().find(|object| short_type_name(object.name()) == suffix)
+                .map(|object| json!({"$ref": format!("#/definitions/{}", snake_case(object.name()))}))
+                .unwrap_or_else(|| json!({"type":"object"}));
+            (key, payload)
+        })
         .collect::<serde_json::Map<_, _>>();
     json!({"type":"object","minProperties":1,"maxProperties":1,"additionalProperties":false,"properties":properties})
+}
+
+fn public_value_schema(_schema: &Schema<'_>) -> Value {
+    let value_ref = format!("#/definitions/{}", snake_case("SearchKernel.V1.Value"));
+    json!({
+        "type":"object", "minProperties":1, "maxProperties":1, "additionalProperties":false,
+        "properties": {
+            "none": {"type":"object","additionalProperties":false,"maxProperties":0}, "null": {"type":"null"}, "bool": {"type":"boolean"},
+            "int64": {"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"},
+            "uint64": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"}, "float64": {"type":"number"},
+            "string": {"type":"string"}, "bytes": {"type":"string","contentEncoding":"base64"},
+            "list": {"type":"array","items":{"$ref":value_ref}},
+            "object": {"type":"object","additionalProperties":{"$ref":value_ref}}
+        }
+    })
+}
+
+fn public_array_schema(object_name: &str) -> Option<Value> {
+    let item = match object_name {
+        "FieldProjection" | "HighlightRequest" => json!({"type":"string"}),
+        "SearchFieldSelection" => {
+            json!({"$ref":"#/definitions/search_kernel._v1._search_field"})
+        }
+        _ => return None,
+    };
+    Some(json!({"type":"array","items":item}))
+}
+
+fn public_union_schema(schema: &Schema<'_>, object_name: &str) -> Value {
+    let enum_name = match object_name {
+        "FilterExpr" => "SearchKernel.V1.FilterExprKind",
+        "QueryExpr" => "SearchKernel.V1.QueryExprKind",
+        "RankingPolicy" => "SearchKernel.V1.RankingPolicyKind",
+        "PatchOperation" => "SearchKernel.V1.PatchOperationKind",
+        _ => return json!({"type":"object"}),
+    };
+    union_schema(
+        schema,
+        schema
+            .enums()
+            .iter()
+            .position(|item| short_type_name(item.name()) == short_type_name(enum_name))
+            .unwrap_or(0) as i32,
+    )
 }
 
 fn symbolic_name(value: &str) -> String {
@@ -687,6 +807,9 @@ fn symbolic_name(value: &str) -> String {
         .rsplit_once("_V1_")
         .map(|(_, suffix)| suffix)
         .unwrap_or(value);
+    if short == "AnalyzeFieldTarget" {
+        return "field".to_owned();
+    }
     snake_case(
         short
             .strip_suffix("Request")
@@ -704,9 +827,8 @@ fn scalar_schema(base: BaseType) -> Value {
         | BaseType::UByte
         | BaseType::UShort
         | BaseType::UInt => json!({"type":"integer"}),
-        BaseType::Long | BaseType::ULong => {
-            json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"})
-        }
+        BaseType::Long => json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"}),
+        BaseType::ULong => json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$"}),
         BaseType::Float | BaseType::Double => json!({"type":"number"}),
         BaseType::String => json!({"type":"string"}),
         _ => json!({}),
@@ -740,11 +862,33 @@ fn openapi_components(
     for schema in [request, response] {
         for object in schema.objects().iter() {
             let name = snake_case(object.name());
+            let short_name = short_type_name(object.name());
+            if short_name == "Value" {
+                let mut definition = public_value_schema(schema);
+                rewrite_definition_refs(&mut definition);
+                schemas.insert(name, definition);
+                continue;
+            }
+            if let Some(definition) = public_array_schema(&short_name) {
+                let mut definition = definition;
+                rewrite_definition_refs(&mut definition);
+                schemas.insert(name, definition);
+                continue;
+            }
+            if matches!(
+                short_name.as_str(),
+                "FilterExpr" | "QueryExpr" | "RankingPolicy" | "PatchOperation"
+            ) {
+                let mut definition = public_union_schema(schema, &short_name);
+                rewrite_definition_refs(&mut definition);
+                schemas.insert(name, definition);
+                continue;
+            }
             let mut properties = serde_json::Map::new();
             for field in object.fields().iter() {
                 let field_name = snake_case(field.name());
                 if !field_name.ends_with("_type") {
-                    let mut property = field_schema(schema, &field);
+                    let mut property = field_schema(schema, &short_name, &field);
                     rewrite_definition_refs(&mut property);
                     properties.insert(field_name, property);
                 }

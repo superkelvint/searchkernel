@@ -10,31 +10,36 @@
           "minProperties": 1,
           "properties": {
             "analyze": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._analyze_request"
             },
             "delete": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._delete_request"
             },
             "describe": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._describe_request"
             },
             "get": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._get_request"
             },
             "insert": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._insert_request"
             },
             "inspect_query": {
+              "$ref": "#/definitions/search_kernel._v1._inspect_query_request"
+            },
+            "none": {
+              "additionalProperties": false,
+              "maxProperties": 0,
               "type": "object"
             },
             "patch": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._patch_request"
             },
             "search": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._search_request"
             },
             "upsert": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._upsert_request"
             }
           },
           "type": "object"
@@ -54,34 +59,39 @@
           "minProperties": 1,
           "properties": {
             "analyze": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._analyze_result"
             },
             "delete": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._delete_result"
             },
             "describe": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._describe_result"
             },
             "error": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._error"
             },
             "get": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._get_result"
             },
             "insert": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._insert_result"
             },
             "inspect_query": {
+              "$ref": "#/definitions/search_kernel._v1._inspect_query_result"
+            },
+            "none": {
+              "additionalProperties": false,
+              "maxProperties": 0,
               "type": "object"
             },
             "patch": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._patch_result"
             },
             "search": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._search_result"
             },
             "upsert": {
-              "type": "object"
+              "$ref": "#/definitions/search_kernel._v1._upsert_result"
             }
           },
           "type": "object"
@@ -112,10 +122,15 @@
           "maxProperties": 1,
           "minProperties": 1,
           "properties": {
-            "analyze_field_target": {
-              "type": "object"
-            },
             "analyzer": {
+              "$ref": "#/definitions/search_kernel._v1._analyzer"
+            },
+            "field": {
+              "$ref": "#/definitions/search_kernel._v1._analyze_field_target"
+            },
+            "none": {
+              "additionalProperties": false,
+              "maxProperties": 0,
               "type": "object"
             }
           },
@@ -167,10 +182,10 @@
           "type": "string"
         },
         "options": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._value_entry"
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
-          "type": "array"
+          "type": "object"
         },
         "version": {
           "type": "integer"
@@ -196,10 +211,8 @@
       "additionalProperties": false,
       "properties": {
         "value": {
-          "items": {
-            "type": "integer"
-          },
-          "type": "array"
+          "contentEncoding": "base64",
+          "type": "string"
         }
       },
       "type": "object"
@@ -248,10 +261,10 @@
       "additionalProperties": false,
       "properties": {
         "fields": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._value_entry"
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
-          "type": "array"
+          "type": "object"
         },
         "id": {
           "type": "string"
@@ -290,10 +303,10 @@
           "type": "string"
         },
         "metadata": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._string_entry"
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
-          "type": "array"
+          "type": "object"
         },
         "path": {
           "type": "string"
@@ -308,10 +321,19 @@
           "type": "string"
         },
         "limit": {
-          "$ref": "#/definitions/search_kernel._v1._optional_u_int32"
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
         },
         "sort": {
-          "$ref": "#/definitions/search_kernel._v1._optional_facet_sort"
+          "enum": [
+            "unspecified",
+            "count_desc",
+            "count_asc",
+            "value_asc",
+            "value_desc"
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -335,7 +357,7 @@
       "additionalProperties": false,
       "properties": {
         "count": {
-          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "pattern": "^(0|[1-9][0-9]*)$",
           "type": "string"
         },
         "value": {
@@ -351,43 +373,50 @@
           "$ref": "#/definitions/search_kernel._v1._analyzer"
         },
         "cardinality": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "single",
+            "multi"
+          ],
+          "type": "string"
         },
         "facetable": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "filterable": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "kind": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "text",
+            "keyword",
+            "int64",
+            "float64",
+            "bool"
+          ],
+          "type": "string"
         },
         "name": {
           "type": "string"
         },
         "searchable": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "sortable": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "stored": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         }
       },
       "type": "object"
     },
     "search_kernel._v1._field_projection": {
-      "additionalProperties": false,
-      "properties": {
-        "fields": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
+      "items": {
+        "type": "string"
       },
-      "type": "object"
+      "type": "array"
     },
     "search_kernel._v1._filter_and": {
       "additionalProperties": false,
@@ -408,7 +437,16 @@
           "type": "string"
         },
         "op": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "eq",
+            "ne",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "type": "string"
         },
         "value": {
           "$ref": "#/definitions/search_kernel._v1._value"
@@ -427,31 +465,30 @@
     },
     "search_kernel._v1._filter_expr": {
       "additionalProperties": false,
+      "maxProperties": 1,
+      "minProperties": 1,
       "properties": {
-        "expr": {
+        "filter_and": {
+          "$ref": "#/definitions/search_kernel._v1._filter_and"
+        },
+        "filter_comparison": {
+          "$ref": "#/definitions/search_kernel._v1._filter_comparison"
+        },
+        "filter_exists": {
+          "$ref": "#/definitions/search_kernel._v1._filter_exists"
+        },
+        "filter_not": {
+          "$ref": "#/definitions/search_kernel._v1._filter_not"
+        },
+        "filter_or": {
+          "$ref": "#/definitions/search_kernel._v1._filter_or"
+        },
+        "filter_range": {
+          "$ref": "#/definitions/search_kernel._v1._filter_range"
+        },
+        "none": {
           "additionalProperties": false,
-          "maxProperties": 1,
-          "minProperties": 1,
-          "properties": {
-            "filter_and": {
-              "type": "object"
-            },
-            "filter_comparison": {
-              "type": "object"
-            },
-            "filter_exists": {
-              "type": "object"
-            },
-            "filter_not": {
-              "type": "object"
-            },
-            "filter_or": {
-              "type": "object"
-            },
-            "filter_range": {
-              "type": "object"
-            }
-          },
+          "maxProperties": 0,
           "type": "object"
         }
       },
@@ -485,10 +522,10 @@
           "type": "string"
         },
         "include_lower": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "include_upper": {
-          "$ref": "#/definitions/search_kernel._v1._optional_bool"
+          "type": "boolean"
         },
         "lower": {
           "$ref": "#/definitions/search_kernel._v1._value"
@@ -545,16 +582,10 @@
       "type": "object"
     },
     "search_kernel._v1._highlight_request": {
-      "additionalProperties": false,
-      "properties": {
-        "fields": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
+      "items": {
+        "type": "string"
       },
-      "type": "object"
+      "type": "array"
     },
     "search_kernel._v1._highlight_result": {
       "additionalProperties": false,
@@ -587,10 +618,10 @@
       "additionalProperties": false,
       "properties": {
         "fields": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._value_entry"
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
-          "type": "array"
+          "type": "object"
         },
         "highlights": {
           "items": {
@@ -602,7 +633,7 @@
           "type": "string"
         },
         "score": {
-          "$ref": "#/definitions/search_kernel._v1._optional_double"
+          "type": "number"
         }
       },
       "type": "object"
@@ -727,20 +758,19 @@
     },
     "search_kernel._v1._patch_operation": {
       "additionalProperties": false,
+      "maxProperties": 1,
+      "minProperties": 1,
       "properties": {
-        "operation": {
+        "none": {
           "additionalProperties": false,
-          "maxProperties": 1,
-          "minProperties": 1,
-          "properties": {
-            "set_field": {
-              "type": "object"
-            },
-            "unset_field": {
-              "type": "object"
-            }
-          },
+          "maxProperties": 0,
           "type": "object"
+        },
+        "set_field": {
+          "$ref": "#/definitions/search_kernel._v1._set_field"
+        },
+        "unset_field": {
+          "$ref": "#/definitions/search_kernel._v1._unset_field"
         }
       },
       "type": "object"
@@ -783,26 +813,25 @@
     },
     "search_kernel._v1._query_expr": {
       "additionalProperties": false,
+      "maxProperties": 1,
+      "minProperties": 1,
       "properties": {
-        "expr": {
+        "none": {
           "additionalProperties": false,
-          "maxProperties": 1,
-          "minProperties": 1,
-          "properties": {
-            "query_and": {
-              "type": "object"
-            },
-            "query_not": {
-              "type": "object"
-            },
-            "query_or": {
-              "type": "object"
-            },
-            "term_query": {
-              "type": "object"
-            }
-          },
+          "maxProperties": 0,
           "type": "object"
+        },
+        "query_and": {
+          "$ref": "#/definitions/search_kernel._v1._query_and"
+        },
+        "query_not": {
+          "$ref": "#/definitions/search_kernel._v1._query_not"
+        },
+        "query_or": {
+          "$ref": "#/definitions/search_kernel._v1._query_or"
+        },
+        "term_query": {
+          "$ref": "#/definitions/search_kernel._v1._term_query"
         }
       },
       "type": "object"
@@ -830,19 +859,18 @@
     },
     "search_kernel._v1._ranking_policy": {
       "additionalProperties": false,
+      "maxProperties": 1,
+      "minProperties": 1,
       "properties": {
-        "policy": {
+        "bm25_ranking": {
+          "$ref": "#/definitions/search_kernel._v1._bm25_ranking"
+        },
+        "default_relevance_v1": {
+          "$ref": "#/definitions/search_kernel._v1._default_relevance_v1"
+        },
+        "none": {
           "additionalProperties": false,
-          "maxProperties": 1,
-          "minProperties": 1,
-          "properties": {
-            "bm25_ranking": {
-              "type": "object"
-            },
-            "default_relevance_v1": {
-              "type": "object"
-            }
-          },
+          "maxProperties": 0,
           "type": "object"
         }
       },
@@ -855,22 +883,16 @@
           "type": "string"
         },
         "weight": {
-          "$ref": "#/definitions/search_kernel._v1._optional_double"
+          "type": "number"
         }
       },
       "type": "object"
     },
     "search_kernel._v1._search_field_selection": {
-      "additionalProperties": false,
-      "properties": {
-        "fields": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._search_field"
-          },
-          "type": "array"
-        }
+      "items": {
+        "$ref": "#/definitions/search_kernel._v1._search_field"
       },
-      "type": "object"
+      "type": "array"
     },
     "search_kernel._v1._search_request": {
       "additionalProperties": false,
@@ -891,10 +913,14 @@
           "type": "string"
         },
         "limit": {
-          "$ref": "#/definitions/search_kernel._v1._optional_u_int32"
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
         },
         "offset": {
-          "$ref": "#/definitions/search_kernel._v1._optional_u_int32"
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
         },
         "projection": {
           "$ref": "#/definitions/search_kernel._v1._field_projection"
@@ -957,13 +983,23 @@
       "additionalProperties": false,
       "properties": {
         "direction": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         },
         "field": {
           "type": "string"
         },
         "missing": {
-          "$ref": "#/definitions/search_kernel._v1._optional_missing_placement"
+          "enum": [
+            "unspecified",
+            "first",
+            "last"
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -1008,10 +1044,15 @@
       "additionalProperties": false,
       "properties": {
         "relation": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "exact",
+            "lower_bound"
+          ],
+          "type": "string"
         },
         "value": {
-          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "pattern": "^(0|[1-9][0-9]*)$",
           "type": "string"
         }
       },
@@ -1021,7 +1062,7 @@
       "additionalProperties": false,
       "properties": {
         "value": {
-          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "pattern": "^(0|[1-9][0-9]*)$",
           "type": "string"
         }
       },
@@ -1056,41 +1097,49 @@
     },
     "search_kernel._v1._value": {
       "additionalProperties": false,
+      "maxProperties": 1,
+      "minProperties": 1,
       "properties": {
-        "kind": {
+        "bool": {
+          "type": "boolean"
+        },
+        "bytes": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "float64": {
+          "type": "number"
+        },
+        "int64": {
+          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "list": {
+          "items": {
+            "$ref": "#/definitions/search_kernel._v1._value"
+          },
+          "type": "array"
+        },
+        "none": {
           "additionalProperties": false,
-          "maxProperties": 1,
-          "minProperties": 1,
-          "properties": {
-            "bool_value": {
-              "type": "object"
-            },
-            "bytes_value": {
-              "type": "object"
-            },
-            "float64_value": {
-              "type": "object"
-            },
-            "int64_value": {
-              "type": "object"
-            },
-            "null_value_value": {
-              "type": "object"
-            },
-            "string_value": {
-              "type": "object"
-            },
-            "u_int64_value": {
-              "type": "object"
-            },
-            "value_list": {
-              "type": "object"
-            },
-            "value_object": {
-              "type": "object"
-            }
+          "maxProperties": 0,
+          "type": "object"
+        },
+        "null": {
+          "type": "null"
+        },
+        "object": {
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
           "type": "object"
+        },
+        "string": {
+          "type": "string"
+        },
+        "uint64": {
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "type": "string"
         }
       },
       "type": "object"
@@ -1126,10 +1175,10 @@
       "additionalProperties": false,
       "properties": {
         "fields": {
-          "items": {
-            "$ref": "#/definitions/search_kernel._v1._value_entry"
+          "additionalProperties": {
+            "$ref": "#/definitions/search_kernel._v1._value"
           },
-          "type": "array"
+          "type": "object"
         }
       },
       "type": "object"
