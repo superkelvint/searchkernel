@@ -1,0 +1,69 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "brown",
+      "kind": "text",
+      "value": "brown dog"
+    },
+    {
+      "field": "title",
+      "id": "redfox",
+      "kind": "text",
+      "value": "red fox"
+    },
+    {
+      "field": "title",
+      "id": "reddog",
+      "kind": "text",
+      "value": "red dog"
+    },
+    {
+      "field": "title",
+      "id": "slow",
+      "kind": "text",
+      "value": "slow turtle"
+    }
+  ],
+  "expected_hits": [
+    "brown",
+    "redfox"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "yql-precedence",
+  "schema": "typea",
+  "typed": {
+    "children": [
+      {
+        "field": "title",
+        "kind": "term",
+        "text": "brown"
+      },
+      {
+        "children": [
+          {
+            "field": "title",
+            "kind": "term",
+            "text": "red"
+          },
+          {
+            "field": "title",
+            "kind": "term",
+            "text": "fox"
+          }
+        ],
+        "kind": "and"
+      }
+    ],
+    "kind": "or"
+  },
+  "yql": "select * from sources * where title contains \"brown\" or title contains \"red\" and title contains \"fox\""
+}

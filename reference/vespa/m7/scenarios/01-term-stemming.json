@@ -1,0 +1,36 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "runner",
+      "kind": "text",
+      "value": "run quickly"
+    },
+    {
+      "field": "title",
+      "id": "walker",
+      "kind": "text",
+      "value": "walk slowly"
+    }
+  ],
+  "expected_hits": [
+    "runner"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "term-stemming",
+  "schema": "typea",
+  "typed": {
+    "field": "title",
+    "kind": "term",
+    "text": "running"
+  },
+  "yql": "select * from sources * where title contains \"running\""
+}

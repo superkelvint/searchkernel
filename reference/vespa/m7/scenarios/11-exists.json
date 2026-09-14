@@ -1,0 +1,49 @@
+{
+  "documents": [
+    {
+      "field": "qty",
+      "id": "five",
+      "kind": "integer",
+      "value": 5
+    },
+    {
+      "field": "qty",
+      "id": "ten",
+      "kind": "integer",
+      "value": 10
+    },
+    {
+      "field": "title",
+      "id": "missing",
+      "kind": "text",
+      "value": "no quantity here"
+    }
+  ],
+  "expected_hits": [
+    "five",
+    "ten"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": false,
+      "type": "integer"
+    }
+  ],
+  "id": "exists",
+  "schema": "typea",
+  "typed": {
+    "field": "qty",
+    "kind": "exists"
+  },
+  "yql": "select * from sources * where range(qty, -Infinity, Infinity)"
+}

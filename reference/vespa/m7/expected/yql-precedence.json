@@ -1,0 +1,1 @@
+{"id":"yql-precedence","query":{"children":[{"field":"title","kind":"term","text":"brown"},{"children":[{"field":"title","kind":"term","text":"red"},{"field":"title","kind":"term","text":"fox"}],"kind":"and"}],"kind":"or"},"schema":"typea"}

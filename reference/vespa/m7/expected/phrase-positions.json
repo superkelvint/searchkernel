@@ -1,0 +1,1 @@
+{"id":"phrase-positions","query":{"field":"title","kind":"phrase","text":"running foxes"},"schema":"typea"}

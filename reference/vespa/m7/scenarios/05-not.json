@@ -1,0 +1,46 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "red",
+      "kind": "text",
+      "value": "red fox"
+    },
+    {
+      "field": "title",
+      "id": "brown",
+      "kind": "text",
+      "value": "brown fox"
+    },
+    {
+      "field": "title",
+      "id": "blue",
+      "kind": "text",
+      "value": "blue dog"
+    }
+  ],
+  "expected_hits": [
+    "blue",
+    "brown"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "not",
+  "schema": "typea",
+  "typed": {
+    "child": {
+      "field": "title",
+      "kind": "term",
+      "text": "red"
+    },
+    "kind": "not"
+  },
+  "yql": "select * from sources * where !(title contains \"red\")"
+}

@@ -1,0 +1,42 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "exact",
+      "kind": "text",
+      "value": "run fox"
+    },
+    {
+      "field": "title",
+      "id": "gap",
+      "kind": "text",
+      "value": "run very fox"
+    },
+    {
+      "field": "title",
+      "id": "wrong",
+      "kind": "text",
+      "value": "run dog"
+    }
+  ],
+  "expected_hits": [
+    "exact"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "phrase-positions",
+  "schema": "typea",
+  "typed": {
+    "field": "title",
+    "kind": "phrase",
+    "text": "running foxes"
+  },
+  "yql": "select * from sources * where title contains phrase(\"running\", \"foxes\")"
+}

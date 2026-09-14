@@ -1,0 +1,53 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "brown",
+      "kind": "text",
+      "value": "brown dog"
+    },
+    {
+      "field": "title",
+      "id": "red",
+      "kind": "text",
+      "value": "red fox"
+    },
+    {
+      "field": "title",
+      "id": "slow",
+      "kind": "text",
+      "value": "slow turtle"
+    }
+  ],
+  "expected_hits": [
+    "brown",
+    "red"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "or",
+  "schema": "typea",
+  "typed": {
+    "children": [
+      {
+        "field": "title",
+        "kind": "term",
+        "text": "brown"
+      },
+      {
+        "field": "title",
+        "kind": "term",
+        "text": "red"
+      }
+    ],
+    "kind": "or"
+  },
+  "yql": "select * from sources * where title contains \"brown\" or title contains \"red\""
+}

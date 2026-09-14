@@ -1,0 +1,1 @@
+{"id":"nested","query":{"children":[{"field":"title","kind":"term","text":"brown"},{"children":[{"field":"title","kind":"term","text":"fox"},{"field":"title","kind":"term","text":"dog"}],"kind":"or"}],"kind":"and"},"schema":"typea"}

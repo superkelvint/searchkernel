@@ -1,0 +1,1 @@
+{"id":"not","query":{"child":{"field":"title","kind":"term","text":"red"},"kind":"not"},"schema":"typea"}

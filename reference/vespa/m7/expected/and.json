@@ -1,0 +1,1 @@
+{"id":"and","query":{"children":[{"field":"title","kind":"term","text":"brown"},{"field":"title","kind":"term","text":"fox"}],"kind":"and"},"schema":"typea"}

@@ -1,0 +1,163 @@
+{
+  "cases": [
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "unknown-field",
+      "schema": "typea",
+      "typed": {
+        "field": "missing",
+        "kind": "term",
+        "text": "fox"
+      },
+      "typed_error": "unknown_field",
+      "yql": "select * from sources * where missing contains \"fox\"",
+      "yql_error": "unknown_field"
+    },
+    {
+      "fields": [
+        {
+          "attribute": true,
+          "index": false,
+          "name": "qty",
+          "summary": false,
+          "type": "integer"
+        }
+      ],
+      "id": "term-on-integer",
+      "schema": "typea",
+      "typed": {
+        "field": "qty",
+        "kind": "term",
+        "text": "10"
+      },
+      "typed_error": "wrong_field_type",
+      "yql": "select * from sources * where qty contains \"10\"",
+      "yql_error": "wrong_field_type"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "equals-on-text",
+      "schema": "typea",
+      "typed": {
+        "field": "title",
+        "kind": "equals",
+        "value": 10
+      },
+      "typed_error": "wrong_field_type",
+      "yql": "select * from sources * where title = 10",
+      "yql_error": "wrong_field_type"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "empty-and",
+      "schema": "typea",
+      "typed": {
+        "children": [],
+        "kind": "and"
+      },
+      "typed_error": "invalid_query"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "empty-or",
+      "schema": "typea",
+      "typed": {
+        "children": [],
+        "kind": "or"
+      },
+      "typed_error": "invalid_query"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "malformed-yql",
+      "schema": "typea",
+      "yql": "select * from sources * where (title contains \"fox\"",
+      "yql_error": "invalid_yql"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "unsupported-sort",
+      "schema": "typea",
+      "yql": "select * from sources * where title contains \"fox\" order by title",
+      "yql_error": "unsupported_yql"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "unsupported-limit",
+      "schema": "typea",
+      "yql": "select * from sources * where title contains \"fox\" limit 5",
+      "yql_error": "unsupported_yql"
+    },
+    {
+      "fields": [
+        {
+          "attribute": false,
+          "index": true,
+          "name": "title",
+          "summary": false,
+          "type": "text"
+        }
+      ],
+      "id": "unsupported-projection",
+      "schema": "typea",
+      "yql": "select title from sources * where title contains \"fox\"",
+      "yql_error": "unsupported_yql"
+    }
+  ]
+}

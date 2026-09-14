@@ -1,0 +1,50 @@
+{
+  "documents": [
+    {
+      "field": "qty",
+      "id": "ten",
+      "kind": "integer",
+      "value": 10
+    },
+    {
+      "field": "qty",
+      "id": "nineteen",
+      "kind": "integer",
+      "value": 19
+    },
+    {
+      "field": "qty",
+      "id": "twenty",
+      "kind": "integer",
+      "value": 20
+    }
+  ],
+  "expected_hits": [
+    "nineteen",
+    "ten"
+  ],
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": false,
+      "type": "integer"
+    }
+  ],
+  "id": "range-right-open",
+  "schema": "typea",
+  "typed": {
+    "field": "qty",
+    "kind": "range",
+    "lower": {
+      "kind": "included",
+      "value": 10
+    },
+    "upper": {
+      "kind": "excluded",
+      "value": 20
+    }
+  },
+  "yql": "select * from sources * where ({bounds:\"rightOpen\"}range(qty, 10, 20))"
+}

@@ -1,0 +1,1 @@
+{"id":"range-unbounded","query":{"field":"qty","kind":"range","lower":{"kind":"included","value":10},"upper":{"kind":"unbounded"}},"schema":"typea"}

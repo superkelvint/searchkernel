@@ -1,0 +1,1 @@
+{"id":"equals","query":{"field":"qty","kind":"equals","value":10},"schema":"typea"}

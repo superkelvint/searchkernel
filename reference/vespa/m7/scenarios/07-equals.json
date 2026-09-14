@@ -1,0 +1,42 @@
+{
+  "documents": [
+    {
+      "field": "qty",
+      "id": "five",
+      "kind": "integer",
+      "value": 5
+    },
+    {
+      "field": "qty",
+      "id": "ten",
+      "kind": "integer",
+      "value": 10
+    },
+    {
+      "field": "qty",
+      "id": "twenty",
+      "kind": "integer",
+      "value": 20
+    }
+  ],
+  "expected_hits": [
+    "ten"
+  ],
+  "fields": [
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": false,
+      "type": "integer"
+    }
+  ],
+  "id": "equals",
+  "schema": "typea",
+  "typed": {
+    "field": "qty",
+    "kind": "equals",
+    "value": 10
+  },
+  "yql": "select * from sources * where qty = 10"
+}

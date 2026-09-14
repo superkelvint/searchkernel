@@ -1,0 +1,1 @@
+{"id":"range-right-open","query":{"field":"qty","kind":"range","lower":{"kind":"included","value":10},"upper":{"kind":"excluded","value":20}},"schema":"typea"}

@@ -1,0 +1,36 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "fox",
+      "kind": "text",
+      "value": "fox"
+    },
+    {
+      "field": "title",
+      "id": "dog",
+      "kind": "text",
+      "value": "dog"
+    }
+  ],
+  "expected_hits": [
+    "fox"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "yql-named-source",
+  "schema": "typea",
+  "typed": {
+    "field": "title",
+    "kind": "term",
+    "text": "fox"
+  },
+  "yql": "select * from typea where title contains \"fox\""
+}
