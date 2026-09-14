@@ -60,6 +60,19 @@ Search Kernel links against Vespa's native libraries at build time. None of the 
 
 *(Installation instructions — supported platforms, native dependencies, build steps, per language — go here.)*
 
+### Development prerequisites
+
+Building and testing the workspace requires the official FlatBuffers C++ release
+`25.12.19`: the matching headers and library are needed by `searchkernel-json`,
+and the matching `flatc` executable is needed by the schema checks. The default
+installation locations are `/usr/local/include`, `/usr/local/lib`, and
+`/usr/local/bin`.
+
+For a non-standard installation, set `FLATBUFFERS_ROOT`, or set
+`FLATBUFFERS_INCLUDE_DIR` and `FLATBUFFERS_LIB_DIR` for Cargo. Set
+`FLATC_PATH` for the schema-check scripts. All installed components must be
+version `25.12.19`.
+
 ## Language bindings
 
 | Language   | Status |
