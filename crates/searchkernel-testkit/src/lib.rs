@@ -10,7 +10,10 @@ mod scripted;
 
 pub use error::{OperationKind, ScriptedCallError, TestkitError};
 pub use recording::RecordingBackend;
-pub use runner::{ConformanceReport, ConformanceRunner, RunnerError};
+pub use runner::{
+    build_component_transport_case, ConformanceReport, ConformanceRunner, RunnerError,
+    TransportCase,
+};
 pub use scripted::{ExpectedCall, ScriptedBackend, ScriptedOutcome, ScriptedResult};
 
 pub use searchkernel_core::{

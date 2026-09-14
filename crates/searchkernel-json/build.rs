@@ -7,12 +7,8 @@ fn main() {
     let install_root = env::var_os("FLATBUFFERS_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/usr/local"));
-    let include = env::var_os("FLATBUFFERS_INCLUDE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| install_root.join("include"));
-    let lib = env::var_os("FLATBUFFERS_LIB_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| install_root.join("lib"));
+    let include = install_root.join("include");
+    let lib = install_root.join("lib");
 
     let version_header = include.join("flatbuffers/base.h");
     let version = fs::read_to_string(&version_header).unwrap_or_else(|error| {
@@ -47,6 +43,4 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib.display());
     println!("cargo:rustc-link-lib=flatbuffers");
     println!("cargo:rerun-if-env-changed=FLATBUFFERS_ROOT");
-    println!("cargo:rerun-if-env-changed=FLATBUFFERS_INCLUDE_DIR");
-    println!("cargo:rerun-if-env-changed=FLATBUFFERS_LIB_DIR");
 }

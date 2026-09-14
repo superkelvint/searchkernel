@@ -3,7 +3,9 @@ use crate::{dispatch, handle};
 use searchkernel_core::{api, IndexContext};
 use searchkernel_json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
+    response_json_to_flatbuffer,
 };
+use searchkernel_testkit::{build_component_transport_case, TransportCase};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -110,4 +112,62 @@ fn native_and_json_requests_converge_at_the_canonical_dispatcher() {
 
     assert!(handle::close(native_handle));
     assert!(handle::close(json_handle));
+}
+
+#[test]
+fn component_corpus_is_embedded_in_transport_roots_for_json_roundtrip() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../reference/api-conformance");
+    let cases: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("cases.json")).expect("read API case manifest"),
+    )
+    .expect("parse API case manifest");
+    let transport_operations = [
+        "search_to_ir",
+        "insert_to_ir",
+        "upsert_to_ir",
+        "patch_to_ir",
+        "delete_to_ir",
+        "get_to_ir",
+        "analyze_to_ir",
+        "describe",
+        "inspect_query",
+        "write_to_ir",
+    ];
+    let cases = cases["cases"].as_array().expect("cases array");
+    let mut component_count = 0;
+    for entry in cases {
+        let operation = entry["operation"].as_str().expect("case operation");
+        if transport_operations.contains(&operation) {
+            continue;
+        }
+        component_count += 1;
+        let case_path = root.join(entry["case"].as_str().expect("case path"));
+        let case: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(case_path).unwrap()).unwrap();
+        let embedded = build_component_transport_case(operation, &case["input"])
+            .unwrap_or_else(|error| panic!("{}: {error}", entry["id"]));
+        match embedded {
+            TransportCase::Request(bytes) => {
+                let json = request_flatbuffer_to_json(&bytes).unwrap();
+                let round_tripped = request_json_to_flatbuffer(&json).unwrap();
+                assert_eq!(
+                    request_flatbuffer_to_json(&round_tripped).unwrap(),
+                    json,
+                    "{}",
+                    entry["id"]
+                );
+            }
+            TransportCase::Response(bytes) => {
+                let json = response_flatbuffer_to_json(&bytes).unwrap();
+                let round_tripped = response_json_to_flatbuffer(&json).unwrap();
+                assert_eq!(
+                    response_flatbuffer_to_json(&round_tripped).unwrap(),
+                    json,
+                    "{}",
+                    entry["id"]
+                );
+            }
+        }
+    }
+    assert_eq!(component_count, 127);
 }

@@ -76,6 +76,9 @@ int json_to_flatbuffer(const uint8_t* bfbs, size_t bfbs_len, const uint8_t* json
     return fail(1, error, error_ptr, error_len);
   }
 
+  if (json_len != 0 && std::memchr(json, '\0', json_len) != nullptr) {
+    return fail(2, "JSON input contains NUL byte", error_ptr, error_len);
+  }
   std::string text(reinterpret_cast<const char*>(json), json_len);
   if (!parser.ParseJson(text.c_str())) {
     return fail(2, parser.error_, error_ptr, error_len);

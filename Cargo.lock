@@ -468,6 +468,7 @@ dependencies = [
  "searchkernel-core",
  "searchkernel-json",
  "searchkernel-testkit",
+ "serde_json",
 ]
 
 [[package]]
