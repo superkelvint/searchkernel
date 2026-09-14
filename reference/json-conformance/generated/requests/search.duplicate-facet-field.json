@@ -1,0 +1,16 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "facets": [
+        {
+          "field": "brand"
+        },
+        {
+          "field": "brand"
+        }
+      ],
+      "query": "x"
+    }
+  }
+}

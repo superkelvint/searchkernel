@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "failed_precondition",
+      "details": [
+        {
+          "code": "no_searchable_fields",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "search_fields"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

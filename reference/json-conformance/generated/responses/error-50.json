@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "unknown_field",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "facet.field"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

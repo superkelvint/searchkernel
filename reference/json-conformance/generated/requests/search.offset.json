@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "offset": 20,
+      "query": "x"
+    }
+  }
+}

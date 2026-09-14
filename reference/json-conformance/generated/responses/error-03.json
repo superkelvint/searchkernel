@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "duplicate_field",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "fields[1].name"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

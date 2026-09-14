@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "field_not_searchable",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "query_expr.term.field"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "invalid_analyze_target",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "target"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

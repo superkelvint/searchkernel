@@ -1,0 +1,15 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "insert": {
+      "document": {
+        "fields": {
+          "brand": {
+            "null": null
+          }
+        },
+        "id": "x"
+      }
+    }
+  }
+}

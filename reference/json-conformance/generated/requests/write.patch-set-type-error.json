@@ -1,0 +1,18 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "patch": {
+      "id": "sku-42",
+      "operations": [
+        {
+          "set_field": {
+            "field": "price",
+            "value": {
+              "string": "oops"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "query": "x",
+      "sort": [
+        {
+          "direction": "unspecified",
+          "field": "price"
+        },
+        {
+          "direction": "unspecified",
+          "field": "price"
+        }
+      ]
+    }
+  }
+}

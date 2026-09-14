@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "query": "",
+      "search_fields": []
+    }
+  }
+}

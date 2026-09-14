@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "delete": {
+      "deleted": false,
+      "id": "fixture"
+    }
+  }
+}

@@ -148,7 +148,21 @@ fn component_corpus_is_embedded_in_transport_roots_for_json_roundtrip() {
             .unwrap_or_else(|error| panic!("{}: {error}", entry["id"]));
         match embedded {
             TransportCase::Request(bytes) => {
-                let json = request_flatbuffer_to_json(&bytes).unwrap();
+                let json = match request_flatbuffer_to_json(&bytes) {
+                    Ok(json) => json,
+                    Err(error) => {
+                        let golden_path = root.join(entry["golden"].as_str().expect("golden path"));
+                        let golden: serde_json::Value =
+                            serde_json::from_str(&std::fs::read_to_string(golden_path).unwrap())
+                                .unwrap();
+                        assert!(
+                            golden.get("error").is_some(),
+                            "{}: unexpected request JSON conversion failure: {error}",
+                            entry["id"]
+                        );
+                        continue;
+                    }
+                };
                 let round_tripped = request_json_to_flatbuffer(&json).unwrap();
                 assert_eq!(
                     request_flatbuffer_to_json(&round_tripped).unwrap(),
@@ -158,7 +172,21 @@ fn component_corpus_is_embedded_in_transport_roots_for_json_roundtrip() {
                 );
             }
             TransportCase::Response(bytes) => {
-                let json = response_flatbuffer_to_json(&bytes).unwrap();
+                let json = match response_flatbuffer_to_json(&bytes) {
+                    Ok(json) => json,
+                    Err(error) => {
+                        let golden_path = root.join(entry["golden"].as_str().expect("golden path"));
+                        let golden: serde_json::Value =
+                            serde_json::from_str(&std::fs::read_to_string(golden_path).unwrap())
+                                .unwrap();
+                        assert!(
+                            golden.get("error").is_some(),
+                            "{}: unexpected response JSON conversion failure: {error}",
+                            entry["id"]
+                        );
+                        continue;
+                    }
+                };
                 let round_tripped = response_json_to_flatbuffer(&json).unwrap();
                 assert_eq!(
                     response_flatbuffer_to_json(&round_tripped).unwrap(),

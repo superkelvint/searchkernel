@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "type_mismatch",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "value"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

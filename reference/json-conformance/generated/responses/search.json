@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "search": {
+      "facets": [],
+      "hits": [],
+      "total_hits": {
+        "relation": "exact",
+        "value": "0"
+      }
+    }
+  }
+}

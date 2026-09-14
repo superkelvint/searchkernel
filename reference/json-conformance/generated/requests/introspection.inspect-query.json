@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "inspect_query": {
+      "request": {
+        "query": "x"
+      }
+    }
+  }
+}

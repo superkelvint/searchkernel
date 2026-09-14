@@ -1,0 +1,43 @@
+{
+  "components": {
+    "schemas": {
+      "analyze": {
+        "description": "Canonical analyze operation",
+        "type": "object"
+      },
+      "delete": {
+        "description": "Canonical delete operation",
+        "type": "object"
+      },
+      "describe": {
+        "description": "Canonical describe operation",
+        "type": "object"
+      },
+      "get": {
+        "description": "Canonical get operation",
+        "type": "object"
+      },
+      "insert": {
+        "description": "Canonical insert operation",
+        "type": "object"
+      },
+      "inspect_query": {
+        "description": "Canonical inspect_query operation",
+        "type": "object"
+      },
+      "patch": {
+        "description": "Canonical patch operation",
+        "type": "object"
+      },
+      "search": {
+        "description": "Canonical search operation",
+        "type": "object"
+      },
+      "upsert": {
+        "description": "Canonical upsert operation",
+        "type": "object"
+      }
+    }
+  },
+  "x-searchkernel-generated-by": "searchkernel-bindgen"
+}

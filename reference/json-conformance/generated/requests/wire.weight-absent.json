@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "query": "x",
+      "search_fields": [
+        {
+          "field": "title"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "projection": [
+        "missing"
+      ],
+      "query": "x"
+    }
+  }
+}

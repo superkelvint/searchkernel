@@ -1,0 +1,15 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "insert": {
+      "document": {
+        "fields": {
+          "price": {
+            "string": "42"
+          }
+        },
+        "id": "x"
+      }
+    }
+  }
+}

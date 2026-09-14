@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "search": {
+      "highlighting": [
+        "brand"
+      ],
+      "query": "x"
+    }
+  }
+}

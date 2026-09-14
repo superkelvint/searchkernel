@@ -1,0 +1,15 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "analyze": {
+      "target": {
+        "analyzer": {
+          "name": "standard",
+          "options": {},
+          "version": 1
+        }
+      },
+      "text": "Text"
+    }
+  }
+}

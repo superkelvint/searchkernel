@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "empty_boolean_filter",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "filter.all"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

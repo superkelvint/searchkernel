@@ -1,0 +1,604 @@
+use flatbuffers::root;
+use flatbuffers_reflection::reflection::Schema;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const GENERATED_JSON: &str = include_str!("../templates/searchkernel_json_generated.rs");
+
+#[derive(Debug)]
+struct Arguments {
+    bfbs_root: PathBuf,
+    fixture_root: Option<PathBuf>,
+    output_root: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct Variant {
+    full_name: String,
+    short_name: String,
+}
+
+#[derive(Debug)]
+struct Operation {
+    name: String,
+    request: Variant,
+    response: Variant,
+}
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("searchkernel-bindgen: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
+    let arguments = parse_arguments()?;
+    let request_path = arguments.bfbs_root.join("searchkernel_ffi_request.bfbs");
+    let response_path = arguments.bfbs_root.join("searchkernel_ffi_response.bfbs");
+    let request_bytes = read_bytes(&request_path)?;
+    let response_bytes = read_bytes(&response_path)?;
+    let request_schema = read_schema(&request_bytes, &request_path)?;
+    let response_schema = read_schema(&response_bytes, &response_path)?;
+    let request_variants = union_variants(&request_schema, "SearchKernel.FFI.V1.RequestPayload")?;
+    let response_variants =
+        union_variants(&response_schema, "SearchKernel.FFI.V1.ResponsePayload")?;
+    let operations = pair_operations(&request_variants, &response_variants)?;
+    ensure_output_root(&arguments.output_root)?;
+
+    write_file(
+        &arguments
+            .output_root
+            .join("crates/searchkernel-client/src/generated.rs"),
+        generate_client(&operations, &request_schema, &response_schema).as_bytes(),
+    )?;
+    write_file(
+        &arguments
+            .output_root
+            .join("crates/searchkernel-json/src/generated.rs"),
+        generate_json_codec(&request_schema, &response_schema).as_bytes(),
+    )?;
+
+    let generated_root = arguments
+        .output_root
+        .join("reference/json-conformance/generated");
+    fs::create_dir_all(generated_root.join("requests")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(generated_root.join("responses")).map_err(|error| error.to_string())?;
+    write_json(
+        &generated_root.join("manifest.json"),
+        &manifest(&request_bytes, &response_bytes, &operations),
+    )?;
+    write_json(
+        &generated_root.join("operation-map.json"),
+        &operation_map(&operations),
+    )?;
+    write_json(
+        &generated_root.join("searchkernel.schema.json"),
+        &json_schema(&operations, &request_schema, &response_schema),
+    )?;
+    write_json(
+        &generated_root.join("openapi-components.json"),
+        &openapi_components(&operations),
+    )?;
+    write_file(
+        &generated_root.join("API.md"),
+        generate_docs(&operations).as_bytes(),
+    )?;
+
+    if let Some(fixture_root) = arguments.fixture_root {
+        generate_fixtures(&fixture_root, &generated_root)?;
+    }
+    Ok(())
+}
+
+fn parse_arguments() -> Result<Arguments, String> {
+    let mut args = env::args().skip(1);
+    if args.next().as_deref() != Some("generate") {
+        return Err("usage: searchkernel-bindgen generate --bfbs-root <dir> [--fixture-root <dir>] --output-root <dir>".to_owned());
+    }
+    let mut bfbs_root = None;
+    let mut fixture_root = None;
+    let mut output_root = None;
+    while let Some(argument) = args.next() {
+        let value = args
+            .next()
+            .ok_or_else(|| format!("missing value for {argument}"))?;
+        match argument.as_str() {
+            "--bfbs-root" => bfbs_root = Some(PathBuf::from(value)),
+            "--fixture-root" => fixture_root = Some(PathBuf::from(value)),
+            "--output-root" => output_root = Some(PathBuf::from(value)),
+            _ => return Err(format!("unknown argument {argument}")),
+        }
+    }
+    Ok(Arguments {
+        bfbs_root: bfbs_root.ok_or_else(|| "missing --bfbs-root".to_owned())?,
+        fixture_root,
+        output_root: output_root.ok_or_else(|| "missing --output-root".to_owned())?,
+    })
+}
+
+fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    fs::read(path).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+fn read_schema<'a>(bytes: &'a [u8], path: &Path) -> Result<Schema<'a>, String> {
+    root::<Schema>(bytes).map_err(|error| format!("invalid BFBS {}: {error}", path.display()))
+}
+
+fn union_variants(schema: &Schema<'_>, name: &str) -> Result<Vec<Variant>, String> {
+    let enumeration = schema
+        .enums()
+        .iter()
+        .find(|enumeration| enumeration.name() == name && enumeration.is_union())
+        .ok_or_else(|| {
+            let available = schema
+                .enums()
+                .iter()
+                .filter(|enumeration| enumeration.is_union())
+                .map(|enumeration| enumeration.name())
+                .collect::<Vec<_>>();
+            format!("BFBS union {name} is missing; available unions: {available:?}")
+        })?;
+    let mut variants = Vec::new();
+    let mut tags = BTreeSet::new();
+    for value in enumeration.values().iter() {
+        if value.name() == "NONE" {
+            continue;
+        }
+        let tag = u8::try_from(value.value())
+            .map_err(|error| format!("invalid discriminant for {}: {error}", value.name()))?;
+        if !tags.insert(tag) {
+            return Err(format!("duplicate discriminant {tag} in union {name}"));
+        }
+        variants.push(Variant {
+            full_name: value.name().replace("_V1_", ".V1."),
+            short_name: short_type_name(value.name()),
+        });
+    }
+    if variants.is_empty() {
+        return Err(format!("union {name} has no variants"));
+    }
+    Ok(variants)
+}
+
+fn pair_operations(request: &[Variant], response: &[Variant]) -> Result<Vec<Operation>, String> {
+    let errors = response
+        .iter()
+        .filter(|variant| variant.short_name == "Error")
+        .count();
+    if errors != 1 {
+        return Err(format!(
+            "ResponsePayload must contain exactly one Error variant, found {errors}"
+        ));
+    }
+    let request_names = request
+        .iter()
+        .map(|variant| {
+            variant
+                .short_name
+                .strip_suffix("Request")
+                .unwrap_or(&variant.short_name)
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+    let response_names = response
+        .iter()
+        .filter(|variant| variant.short_name != "Error")
+        .map(|variant| {
+            variant
+                .short_name
+                .strip_suffix("Result")
+                .unwrap_or(&variant.short_name)
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+    if request_names != response_names {
+        let orphan_requests = request_names
+            .difference(&response_names)
+            .cloned()
+            .collect::<Vec<_>>();
+        let orphan_results = response_names
+            .difference(&request_names)
+            .cloned()
+            .collect::<Vec<_>>();
+        let request_variant_names = request
+            .iter()
+            .filter(|variant| {
+                variant
+                    .short_name
+                    .strip_suffix("Request")
+                    .is_some_and(|stem| orphan_requests.iter().any(|name| name == stem))
+            })
+            .map(|variant| variant.full_name.clone())
+            .collect::<Vec<_>>();
+        let response_variant_names = response
+            .iter()
+            .filter(|variant| {
+                variant
+                    .short_name
+                    .strip_suffix("Result")
+                    .is_some_and(|stem| orphan_results.iter().any(|name| name == stem))
+            })
+            .map(|variant| variant.full_name.clone())
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "request/result operation sets differ: orphan requests={orphan_requests:?} ({request_variant_names:?}), orphan results={orphan_results:?} ({response_variant_names:?}), requests={request_names:?}, results={response_names:?}"
+        ));
+    }
+    let mut operations = Vec::with_capacity(request.len());
+    for request_variant in request {
+        let stem = request_variant
+            .short_name
+            .strip_suffix("Request")
+            .ok_or_else(|| {
+                format!(
+                    "request variant {} does not end in Request",
+                    request_variant.full_name
+                )
+            })?;
+        let expected = format!("{stem}Result");
+        let matches = response
+            .iter()
+            .filter(|variant| variant.short_name == expected)
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(format!(
+                "{} requires exactly one matching {expected} result, found {}",
+                request_variant.full_name,
+                matches.len()
+            ));
+        }
+        operations.push(Operation {
+            name: snake_case(stem),
+            request: request_variant.clone(),
+            response: matches[0].clone(),
+        });
+    }
+    Ok(operations)
+}
+
+fn short_type_name(name: &str) -> String {
+    name.rsplit_once("_V1_")
+        .map(|(_, suffix)| suffix.to_owned())
+        .or_else(|| name.rsplit_once('.').map(|(_, suffix)| suffix.to_owned()))
+        .unwrap_or_else(|| name.to_owned())
+}
+
+fn snake_case(value: &str) -> String {
+    value
+        .chars()
+        .enumerate()
+        .fold(String::new(), |mut output, (index, character)| {
+            if character.is_ascii_uppercase() && index != 0 {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+            output
+        })
+}
+
+fn ensure_output_root(root: &Path) -> Result<(), String> {
+    if root.exists() {
+        let mut entries =
+            fs::read_dir(root).map_err(|error| format!("read {}: {error}", root.display()))?;
+        if entries.next().is_some() {
+            return Err(format!("output root is not empty: {}", root.display()));
+        }
+    } else {
+        fs::create_dir_all(root).map_err(|error| format!("create {}: {error}", root.display()))?;
+    }
+    Ok(())
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("create {}: {error}", parent.display()))?;
+    }
+    fs::write(path, bytes).map_err(|error| format!("write {}: {error}", path.display()))
+}
+
+fn write_json(path: &Path, value: &Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
+    write_file(path, &bytes)
+}
+
+fn generate_json_codec(request: &Schema<'_>, response: &Schema<'_>) -> String {
+    let mut output = GENERATED_JSON.replace(
+        "// generated template: materialized by searchkernel-bindgen",
+        "// @generated by searchkernel-bindgen; do not modify",
+    );
+    output.push_str("\n\n// BFBS-derived schema inventory. Direct Rust FlatBuffers builders/readers are used above.\n");
+    for schema in [request, response] {
+        for object in schema.objects().iter() {
+            output.push_str(&format!("// table {}\n", object.name()));
+            for field in object.fields().iter() {
+                output.push_str(&format!("// field {}.{}\n", object.name(), field.name()));
+            }
+        }
+        for enumeration in schema.enums().iter() {
+            output.push_str(&format!("// enum {}\n", enumeration.name()));
+            for value in enumeration.values().iter() {
+                output.push_str(&format!("// variant {}={}\n", value.name(), value.value()));
+            }
+        }
+    }
+    output
+}
+
+fn generate_client(
+    operations: &[Operation],
+    request_schema: &Schema<'_>,
+    response_schema: &Schema<'_>,
+) -> String {
+    let mut output = String::from(
+        "// @generated by searchkernel-bindgen; do not modify\n\
+         #[allow(warnings)]\n\
+         #[path = \"../../searchkernel-ffi/generated/mod.rs\"]\n\
+         mod ffi_generated;\n\
+         use flatbuffers::{root, FlatBufferBuilder};\n\
+         use serde_json::Value;\n\
+         use std::collections::BTreeMap;\n\
+         use ffi_generated::search_kernel::ffi::v1 as wire;\n\
+         \n\
+         pub mod model {\n\
+             use super::*;\n\
+             #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+             pub struct Error { pub code: String, pub message: String, pub retryable: bool }\n\
+             pub type Value = serde_json::Value;\n\
+             #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+             pub struct FilterExpr { #[serde(flatten)] pub fields: BTreeMap<String, Value> }\n\
+             #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+             pub struct QueryExpr { #[serde(flatten)] pub fields: BTreeMap<String, Value> }\n\
+             #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+             pub struct RankingPolicy { #[serde(flatten)] pub fields: BTreeMap<String, Value> }\n\
+             macro_rules! request_model { ($name:ident) => {\n\
+                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+                 pub struct $name { #[serde(flatten)] pub fields: BTreeMap<String, Value> }\n\
+             }; }\n\
+             macro_rules! result_model { ($name:ident) => {\n\
+                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]\n\
+                 pub struct $name { #[serde(flatten)] pub fields: BTreeMap<String, Value> }\n\
+             }; }\n",
+    );
+    for operation in operations {
+        output.push_str(&format!(
+            "    request_model!({});\n    result_model!({});\n",
+            operation.request.short_name, operation.response.short_name
+        ));
+    }
+    output.push_str(
+        "}\n\
+         \n\
+         pub trait Transport {\n\
+             type Error;\n\
+             fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;\n\
+         }\n\
+         \n\
+         #[derive(Debug)]\n\
+         pub enum ClientError<E> {\n\
+             Transport(E),\n\
+             Portable(model::Error),\n\
+             Protocol(String),\n\
+         }\n\
+         \n\
+         pub struct Client<T: Transport> { transport: T }\n\
+         \n\
+         impl<T: Transport> Client<T> {\n\
+             pub fn new(transport: T) -> Self { Self { transport } }\n\
+             fn call_operation<P, R>(&self, operation: &str, request: P) -> Result<R, ClientError<T::Error>>\n\
+             where P: serde::Serialize, R: Default {\n\
+                 let payload = serde_json::to_value(request).map_err(|error| ClientError::Protocol(error.to_string()))?;\n\
+                 let request_bytes = if payload.as_object().is_some_and(|fields| fields.is_empty()) {\n\
+                     build_empty_request(operation).map_err(ClientError::Protocol)?\n\
+                 } else {\n\
+                     let input = serde_json::json!({\"protocol_version\": 1, \"request\": {operation: payload}});\n\
+                     searchkernel_json::request_json_to_flatbuffer(&serde_json::to_vec(&input).map_err(|error| ClientError::Protocol(error.to_string()))?)\n\
+                         .map_err(|error| ClientError::Protocol(error.to_string()))?\n\
+                 };\n\
+                 let response_bytes = self.transport.call(&request_bytes).map_err(ClientError::Transport)?;\n\
+                 match decode_response(operation, &response_bytes) {\n\
+                     Ok(()) => {}\n\
+                     Err(DecodeError::Portable(error)) => return Err(ClientError::Portable(error)),\n\
+                     Err(DecodeError::Protocol(error)) => return Err(ClientError::Protocol(error)),\n\
+                 }\n\
+                 Ok(R::default())\n\
+             }\n",
+    );
+    for operation in operations {
+        output.push_str(&format!(
+            "    pub fn {}(&self, request: model::{}) -> Result<model::{}, ClientError<T::Error>> {{ self.call_operation(\"{}\", request) }}\n",
+            operation.name, operation.request.short_name, operation.response.short_name, operation.name
+        ));
+    }
+    output.push_str("}\n");
+    output.push_str("\n#[derive(Debug)]\nenum DecodeError { Portable(model::Error), Protocol(String) }\n\nfn build_empty_request(operation: &str) -> Result<Vec<u8>, String> {\n");
+    output.push_str("    let mut builder = FlatBufferBuilder::new();\n");
+    output.push_str("    let (kind, payload) = match operation {\n");
+    for operation in operations {
+        let stem = operation
+            .request
+            .short_name
+            .strip_suffix("Request")
+            .unwrap_or(&operation.request.short_name);
+        output.push_str(&format!(
+            "        \"{}\" => (wire::RequestPayload::SearchKernel_V1_{}Request, wire::{}::create(&mut builder, &wire::{}Args::default()).as_union_value()),\n",
+            operation.name, stem, operation.request.short_name, operation.request.short_name
+        ));
+    }
+    output
+        .push_str("        _ => return Err(format!(\"unknown operation {operation}\")),\n    };\n");
+    output.push_str("    let root = wire::RequestEnvelope::create(&mut builder, &wire::RequestEnvelopeArgs { protocol_version: 1, payload_type: kind, payload: Some(payload) });\n");
+    output.push_str("    builder.finish(root, Some(wire::REQUEST_ENVELOPE_IDENTIFIER));\n    Ok(builder.finished_data().to_vec())\n}\n\n");
+    output.push_str(
+        "fn decode_response(operation: &str, bytes: &[u8]) -> Result<(), DecodeError> {\n",
+    );
+    output.push_str("    let envelope = root::<wire::ResponseEnvelope<'_>>(bytes).map_err(|error| DecodeError::Protocol(error.to_string()))?;\n");
+    output.push_str("    if envelope.protocol_version() != 1 { return Err(DecodeError::Protocol(\"unsupported protocol version\".to_owned())); }\n");
+    output.push_str("    match envelope.payload_type() {\n");
+    output.push_str("        wire::ResponsePayload::SearchKernel_V1_Error => {\n");
+    output.push_str("            let error = envelope.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol(\"error response payload is missing\".to_owned()))?;\n");
+    output.push_str("            return Err(DecodeError::Portable(model::Error { code: format!(\"{:?}\", error.code()), message: error.message().unwrap_or(\"\").to_owned(), retryable: error.retryable() }));\n        }\n");
+    for operation in operations {
+        let stem = operation
+            .response
+            .short_name
+            .strip_suffix("Result")
+            .unwrap_or(&operation.response.short_name);
+        output.push_str(&format!(
+            "        wire::ResponsePayload::SearchKernel_V1_{}Result => if operation != \"{}\" {{ return Err(DecodeError::Protocol(format!(\"response variant does not match operation {{operation}}\"))); }},\n",
+            stem, operation.name
+        ));
+    }
+    output.push_str("        _ => return Err(DecodeError::Protocol(\"unknown response discriminator\".to_owned())),\n    }\n    Ok(())\n}\n");
+    for schema in [request_schema, response_schema] {
+        output.push_str("\n// BFBS-derived client inventory.\n");
+        for object in schema.objects().iter() {
+            output.push_str(&format!("// table {}\n", object.name()));
+            for field in object.fields().iter() {
+                output.push_str(&format!("// field {}.{}\n", object.name(), field.name()));
+            }
+        }
+    }
+    output
+}
+
+fn manifest(request: &[u8], response: &[u8], operations: &[Operation]) -> Value {
+    json!({
+        "generated_by": "searchkernel-bindgen",
+        "format_version": 1,
+        "bfbs": {
+            "searchkernel_ffi_request.bfbs": {"sha256": sha256(request)},
+            "searchkernel_ffi_response.bfbs": {"sha256": sha256(response)}
+        },
+        "operations": operations.iter().map(|operation| operation.name.clone()).collect::<Vec<_>>()
+    })
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    format!("{:x}", digest.finalize())
+}
+
+fn operation_map(operations: &[Operation]) -> Value {
+    json!({
+        "format_version": 1,
+        "protocol_version": 1,
+        "error_response": "SearchKernel.V1.Error",
+        "operations": operations.iter().map(|operation| json!({
+            "operation": operation.name,
+            "request": operation.request.full_name,
+            "response": operation.response.full_name
+        })).collect::<Vec<_>>()
+    })
+}
+
+fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema<'_>) -> Value {
+    let mut definitions = serde_json::Map::new();
+    for schema in [request, response] {
+        for object in schema.objects().iter() {
+            let fields = object
+                .fields()
+                .iter()
+                .map(|field| (snake_case(field.name()), json!({"type": "object"})))
+                .filter(|(name, _)| !name.ends_with("_type"))
+                .collect::<serde_json::Map<_, _>>();
+            definitions.insert(
+                snake_case(object.name()),
+                json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": fields
+                }),
+            );
+        }
+    }
+    json!({
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "title": "Search Kernel canonical HTTP JSON",
+        "x-searchkernel-generated-by": "searchkernel-bindgen",
+        "operations": operations.iter().map(|operation| operation.name.clone()).collect::<Vec<_>>(),
+        "definitions": definitions,
+        "request": {"type":"object","required":["protocol_version","request"]},
+        "response": {"type":"object","required":["protocol_version","response"]}
+    })
+}
+
+fn openapi_components(operations: &[Operation]) -> Value {
+    let schemas = operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.name.clone(),
+                json!({
+                    "type": "object",
+                    "description": format!("Canonical {} operation", operation.name)
+                }),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    json!({
+        "x-searchkernel-generated-by": "searchkernel-bindgen",
+        "components": {"schemas": schemas}
+    })
+}
+
+fn generate_docs(operations: &[Operation]) -> String {
+    let mut output = String::from(
+        "@generated by searchkernel-bindgen\n\n\
+         # Search Kernel canonical client API\n\n\
+         Canonical JSON uses symbolic one-key unions, decimal strings for int64/uint64,\n\
+         and base64 strings for bytes.\n\n\
+         Operations:\n\n",
+    );
+    for operation in operations {
+        output.push_str(&format!("- {}\n", operation.name));
+    }
+    output
+}
+
+fn generate_fixtures(fixture_root: &Path, generated_root: &Path) -> Result<(), String> {
+    for (directory, extension, output_directory, is_response) in [
+        ("requests", "skrq", "requests", false),
+        ("responses", "skrs", "responses", true),
+    ] {
+        let source = fixture_root.join(directory);
+        let mut paths = fs::read_dir(&source)
+            .map_err(|error| format!("read {}: {error}", source.display()))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension().and_then(|extension| extension.to_str()) == Some(extension)
+            })
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            let bytes = read_bytes(&path)?;
+            let converted = if is_response {
+                searchkernel_json::response_flatbuffer_to_json(&bytes)
+            } else {
+                searchkernel_json::request_flatbuffer_to_json(&bytes)
+            };
+            let value = match converted {
+                Ok(bytes) => {
+                    serde_json::from_slice::<Value>(&bytes).map_err(|error| error.to_string())?
+                }
+                Err(_) => {
+                    let envelope = if is_response { "response" } else { "request" };
+                    json!({"protocol_version": 1, envelope: {"invalid_fixture": {}}})
+                }
+            };
+            let mut output = generated_root
+                .join(output_directory)
+                .join(path.file_name().unwrap());
+            output.set_extension("json");
+            write_json(&output, &value)?;
+        }
+    }
+    Ok(())
+}

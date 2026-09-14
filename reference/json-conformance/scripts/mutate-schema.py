@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+p=argparse.ArgumentParser(); p.add_argument('mode',choices=['probe','orphan']); p.add_argument('schema_dir'); a=p.parse_args()
+root=Path(a.schema_dir); main=root/'searchkernel.fbs'; req=root/'searchkernel_ffi_request.fbs'; resp=root/'searchkernel_ffi_response.fbs'
+mt=main.read_text(); rt=req.read_text(); st=resp.read_text(); marker='// -----------------------------------------------------------------------------\n// Portable errors'
+if marker not in mt: raise SystemExit('portable errors marker missing')
+if a.mode=='probe':
+    defs='// C6 verifier synthetic BFBS-only operation.\ntable VerifierProbeRequest {\n  token:string;\n}\n\ntable VerifierProbeResult {\n  token:string;\n}\n\n'
+    mt=mt.replace(marker,defs+marker,1)
+    needle='  query_expr:QueryExpr;\n}'; repl='  query_expr:QueryExpr;\n\n  // C6 verifier synthetic field.\n  verifier_probe_field:uint;\n}'
+    if needle not in mt: raise SystemExit('SearchRequest insertion point missing')
+    mt=mt.replace(needle,repl,1)
+    needle='  SearchKernel.V1.InspectQueryRequest\n}'; repl='  SearchKernel.V1.InspectQueryRequest,\n  SearchKernel.V1.VerifierProbeRequest\n}'
+    if needle not in rt: raise SystemExit('request union insertion point missing')
+    rt=rt.replace(needle,repl,1)
+    needle='  SearchKernel.V1.InspectQueryResult\n}'; repl='  SearchKernel.V1.InspectQueryResult,\n  SearchKernel.V1.VerifierProbeResult\n}'
+    if needle not in st: raise SystemExit('response union insertion point missing')
+    st=st.replace(needle,repl,1)
+else:
+    defs='// C6 verifier intentionally unpaired request.\ntable VerifierOrphanRequest {\n  token:string;\n}\n\n'; mt=mt.replace(marker,defs+marker,1)
+    needle='  SearchKernel.V1.InspectQueryRequest\n}'; repl='  SearchKernel.V1.InspectQueryRequest,\n  SearchKernel.V1.VerifierOrphanRequest\n}'
+    if needle not in rt: raise SystemExit('request union insertion point missing')
+    rt=rt.replace(needle,repl,1)
+main.write_text(mt); req.write_text(rt); resp.write_text(st)

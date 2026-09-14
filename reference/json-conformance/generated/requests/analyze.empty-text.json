@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "analyze": {
+      "target": {
+        "field": {
+          "field": "title"
+        }
+      },
+      "text": ""
+    }
+  }
+}

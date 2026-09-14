@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "invalid_facet",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "facet.sort"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

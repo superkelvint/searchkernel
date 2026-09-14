@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "unsupported",
+      "details": [
+        {
+          "code": "unsupported_analyzer",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "fields[0].analyzer"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[package]
+name = "searchkernel-bindgen"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+flatbuffers = "=25.12.19"
+flatbuffers-reflection = "=0.1.0"
+sha2 = "0.10"
+serde_json = "1"
+searchkernel-json = { path = "../../crates/searchkernel-json" }

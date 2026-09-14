@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "analyze": {
+      "language": "EN-US",
+      "target": {
+        "field": {
+          "field": "title"
+        }
+      },
+      "text": "Text"
+    }
+  }
+}

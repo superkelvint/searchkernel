@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "inspect_query": {
+      "resolved_request": {}
+    }
+  }
+}

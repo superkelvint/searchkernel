@@ -1,0 +1,20 @@
+{
+  "protocol_version": 1,
+  "response": {
+    "error": {
+      "code": "invalid_argument",
+      "details": [
+        {
+          "code": "invalid_search_weight",
+          "message": "",
+          "metadata": {
+            "$absent": true
+          },
+          "path": "default_search_fields.fields[0].weight"
+        }
+      ],
+      "message": "",
+      "retryable": false
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "get": {
+      "id": "商品-42"
+    }
+  }
+}

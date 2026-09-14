@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "delete": {
+      "id": "sku-42"
+    }
+  }
+}

@@ -8,6 +8,8 @@ members = [
     "crates/searchkernel-testkit",
     "crates/searchkernel-ffi",
     "crates/searchkernel-json",
+    "crates/searchkernel-client",
+    "tools/searchkernel-bindgen",
 ]
 resolver = "2"
 exclude = ["reference/vespa/m4/rust-driver", "reference/vespa/m6/rust-driver"]

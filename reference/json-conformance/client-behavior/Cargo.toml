@@ -1,0 +1,12 @@
+[package]
+name = "searchkernel-c6-client-behavior"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+searchkernel-client = { path = "../../../crates/searchkernel-client" }
+searchkernel-core = { path = "../../../crates/searchkernel-core" }
+flatbuffers = "=25.12.19"

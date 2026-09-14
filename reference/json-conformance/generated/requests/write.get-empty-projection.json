@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "get": {
+      "id": "sku-42",
+      "projection": []
+    }
+  }
+}
