@@ -1,5 +1,5 @@
 use searchkernel_vespa::{
-    ConfigCompiler, Engine, Field, FieldType, Schema, TextDocument, TextQuery,
+    ConfigCompiler, Engine, Field, FieldType, Query, RangeBound, Schema, TextDocument, TextQuery,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -42,6 +42,11 @@ fn generated_text_configuration_enables_real_bm25() {
     let (config, data) = compile_config(
         "bm25",
         &Schema::new("typea").field(Field::new("title", FieldType::Text).indexed()),
+    );
+    replace_once(
+        &config.join("indexschema.cfg"),
+        "indexfield[0].interleavedfeatures false",
+        "indexfield[0].interleavedfeatures true",
     );
     let engine = Engine::open(&data, &config).expect("open generated BM25 config");
     engine
@@ -122,8 +127,8 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "indexschema.cfg",
-            "indexfield[0].interleavedfeatures true",
             "indexfield[0].interleavedfeatures false",
+            "indexfield[0].interleavedfeatures true",
         ),
         (
             "attributes.cfg",
@@ -222,6 +227,126 @@ fn runtime_operations_enforce_manifest_field_semantics() {
     assert!(engine.search("title", 1, 10).is_err());
 
     engine.close().expect("close semantic test engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn low_level_query_validates_fields_before_text_analysis() {
+    let (config, data) = compile_config("query-field-validation", &text_schema());
+    let engine = Engine::open(&data, &config).expect("open query validation config");
+
+    let unknown = engine
+        .search_query(
+            &Query::Term {
+                field: "missing".to_owned(),
+                text: "two words".to_owned(),
+            },
+            "default",
+        )
+        .expect_err("unknown query field must be rejected");
+    assert!(unknown.to_string().contains("unknown"));
+
+    let wrong_type = engine
+        .search_query(
+            &Query::Term {
+                field: "qty".to_owned(),
+                text: "two words".to_owned(),
+            },
+            "default",
+        )
+        .expect_err("numeric query field must reject text operators");
+    assert!(wrong_type.to_string().contains("text"));
+
+    let nested_unknown = engine
+        .search_query(
+            &Query::And(vec![
+                Query::Term {
+                    field: "title".to_owned(),
+                    text: "two words".to_owned(),
+                },
+                Query::Term {
+                    field: "missing".to_owned(),
+                    text: "fox".to_owned(),
+                },
+            ]),
+            "default",
+        )
+        .expect_err("nested unknown fields must be rejected before text analysis");
+    assert!(nested_unknown.to_string().contains("unknown"));
+
+    engine.close().expect("close query validation engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn yql_search_uses_the_same_query_as_typed_search() {
+    let schema = Schema::new("typea").field(Field::new("title", FieldType::Text).indexed());
+    let (config, data) = compile_config("query-source-equivalence", &schema);
+    let engine = Engine::open(&data, &config).expect("open query source config");
+    engine
+        .put_text(TextDocument {
+            id: "fox",
+            field: "title",
+            text: "fox",
+        })
+        .expect("insert source-equivalence document");
+
+    let typed = Query::Term {
+        field: "title".to_owned(),
+        text: "fox".to_owned(),
+    };
+    let typed_result = engine
+        .search_query(&typed, "default")
+        .expect("typed source-equivalence query");
+    let yql_result = engine
+        .search_yql(
+            "select * from typea where title contains \"fox\"",
+            "default",
+        )
+        .expect("the schema document type is a supported YQL source");
+    assert_eq!(typed_result, yql_result);
+
+    let wrong_source = engine
+        .search_yql(
+            "select * from wrong_type where title contains \"fox\"",
+            "default",
+        )
+        .expect_err("an unsupported named YQL source must be rejected");
+    assert!(wrong_source
+        .to_string()
+        .contains("unsupported query source"));
+
+    engine.close().expect("close source-equivalence engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn low_level_query_range_accepts_full_signed_i32_domain() {
+    let (config, data) = compile_config(
+        "query-signed-range",
+        &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
+    );
+    let engine = Engine::open(&data, &config).expect("open signed range config");
+    engine
+        .put("minimum", "qty", i32::MIN)
+        .expect("insert minimum integer");
+    let result = engine
+        .search_query(
+            &Query::Range {
+                field: "qty".to_owned(),
+                lower: RangeBound::Included(i32::MIN),
+                upper: RangeBound::Included(i32::MIN),
+            },
+            "default",
+        )
+        .expect("search minimum integer");
+    assert_eq!(result.hits.len(), 1);
+    assert_eq!(result.hits[0].document_id, "minimum");
+
+    engine.close().expect("close signed range engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

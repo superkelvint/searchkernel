@@ -1,12 +1,14 @@
 //! Safe Vespa-specific adapter for the private Search Kernel ABI.
 
 mod linguistics;
+mod query;
 mod schema;
 
 pub use linguistics::{
     DocumentAnalysis, DocumentTerm, Language, Linguistics, LinguisticsOptions, QueryAnalysis,
     QueryTerm, StemMode,
 };
+pub use query::{Query, RangeBound};
 pub use schema::{ConfigCompiler, Field, FieldType, Schema};
 
 use searchkernel_vespa_sys as sys;
@@ -506,6 +508,62 @@ impl Engine {
         }
         Ok(TextSearchResult { hits })
     }
+
+    /// Search using the typed low-level Vespa query representation.
+    pub fn search_query(
+        &self,
+        query: &Query,
+        rank_profile: &str,
+    ) -> Result<TextSearchResult, Error> {
+        self.search_query_with_source(query, rank_profile, "*")
+    }
+
+    /// Parse and search a supported YQL query through the typed query compiler.
+    pub fn search_yql(&self, yql: &str, rank_profile: &str) -> Result<TextSearchResult, Error> {
+        let parsed = query::parse_yql(yql)?;
+        self.search_query_with_source(&parsed.query, rank_profile, &parsed.source)
+    }
+
+    fn search_query_with_source(
+        &self,
+        query: &Query,
+        rank_profile: &str,
+        source: &str,
+    ) -> Result<TextSearchResult, Error> {
+        query::validate_query(query)?;
+        let rank_profile = cstring(rank_profile)?;
+        let source = cstring(source)?;
+        let mut native_query = ptr::null_mut();
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_query_create(
+                self.handle.as_ptr(),
+                &mut native_query,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        let native_query = NativeQuery(require_ptr(native_query, "query")?);
+        validate_query_fields(&native_query, query)?;
+        lower_query(&native_query, query)?;
+
+        let mut native_result = ptr::null_mut();
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_engine_search_query(
+                self.handle.as_ptr(),
+                native_query.0.as_ptr(),
+                rank_profile.as_ptr(),
+                source.as_ptr(),
+                &mut native_result,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        read_text_result(native_result)
+    }
 }
 
 impl Drop for Engine {
@@ -653,6 +711,223 @@ impl Drop for NativeTextRequest {
     fn drop(&mut self) {
         unsafe { sys::sk_text_request_destroy(self.0.as_ptr()) };
     }
+}
+
+struct NativeQuery(NonNull<sys::sk_query>);
+impl Drop for NativeQuery {
+    fn drop(&mut self) {
+        unsafe { sys::sk_query_destroy(self.0.as_ptr()) };
+    }
+}
+
+fn lower_query(native: &NativeQuery, query: &Query) -> Result<(), Error> {
+    match query {
+        Query::Term { field, text } => {
+            let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
+            validate_term_query(&analysis)
+                .map_err(|error| query::invalid_query(format!("term analysis failed: {error}")))?;
+            let terms = text_query_terms(&analysis)?;
+            add_native_text(native, sys::SK_QUERY_TEXT_TERM, field, &terms)
+        }
+        Query::Phrase { field, text } => {
+            let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
+            if analysis.terms.is_empty() {
+                return Err(query::invalid_query(
+                    "phrase must analyze to at least one term",
+                ));
+            }
+            let terms = text_query_terms(&analysis)?;
+            add_native_text(native, sys::SK_QUERY_TEXT_PHRASE, field, &terms)
+        }
+        Query::And(children) => {
+            add_native_operator(native, sys::SK_QUERY_NODE_AND, children.len())?;
+            for child in children {
+                lower_query(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Or(children) => {
+            add_native_operator(native, sys::SK_QUERY_NODE_OR, children.len())?;
+            for child in children {
+                lower_query(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Not(child) => {
+            add_native_operator(native, sys::SK_QUERY_NODE_NOT, 1)?;
+            lower_query(native, child)
+        }
+        Query::Equals { field, value } => {
+            let field = cstring(field)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_query_add_equals(
+                    native.0.as_ptr(),
+                    field.as_ptr(),
+                    *value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)
+        }
+        Query::Range {
+            field,
+            lower,
+            upper,
+        } => {
+            let field = cstring(field)?;
+            let (lower_kind, lower_value) = native_bound(lower);
+            let (upper_kind, upper_value) = native_bound(upper);
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_query_add_range(
+                    native.0.as_ptr(),
+                    field.as_ptr(),
+                    lower_kind,
+                    lower_value,
+                    upper_kind,
+                    upper_value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)
+        }
+        Query::Exists { field } => {
+            let field = cstring(field)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_query_add_range(
+                    native.0.as_ptr(),
+                    field.as_ptr(),
+                    sys::SK_QUERY_BOUND_UNBOUNDED,
+                    0,
+                    sys::SK_QUERY_BOUND_UNBOUNDED,
+                    0,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)
+        }
+    }
+}
+
+fn validate_query_fields(native: &NativeQuery, query: &Query) -> Result<(), Error> {
+    match query {
+        Query::Term { field, .. } | Query::Phrase { field, .. } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+        }
+        Query::And(children) | Query::Or(children) => {
+            for child in children {
+                validate_query_fields(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Not(child) => validate_query_fields(native, child),
+        Query::Equals { field, .. } | Query::Range { field, .. } | Query::Exists { field } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field)
+        }
+    }
+}
+
+fn validate_native_field(native: &NativeQuery, kind: u32, field: &str) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_validate_field(
+            native.0.as_ptr(),
+            kind,
+            field.as_ptr(),
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_operator(native: &NativeQuery, kind: u32, count: usize) -> Result<(), Error> {
+    let count = length_u32(count, "query child")?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_operator(
+            native.0.as_ptr(),
+            kind,
+            count,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_text(
+    native: &NativeQuery,
+    kind: u32,
+    field: &str,
+    terms: &NativeQueryTerms,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_text(
+            native.0.as_ptr(),
+            kind,
+            field.as_ptr(),
+            terms.term_bytes.as_ptr(),
+            length_u32(terms.term_bytes.len(), "query text term bytes")?,
+            terms.term_lengths.as_ptr(),
+            length_u32(terms.term_lengths.len(), "query text term")?,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn native_bound(bound: &RangeBound) -> (u32, i32) {
+    match bound {
+        RangeBound::Unbounded => (sys::SK_QUERY_BOUND_UNBOUNDED, 0),
+        RangeBound::Included(value) => (sys::SK_QUERY_BOUND_INCLUDED, *value),
+        RangeBound::Excluded(value) => (sys::SK_QUERY_BOUND_EXCLUDED, *value),
+    }
+}
+
+fn read_text_result(pointer: *mut sys::sk_text_result) -> Result<TextSearchResult, Error> {
+    let result = NativeTextResult(require_ptr(pointer, "text result")?);
+    let size = unsafe { sys::sk_text_result_size(result.0.as_ptr()) } as usize;
+    let mut hits = Vec::with_capacity(size);
+    for index in 0..size {
+        let mut id_ptr = ptr::null();
+        let mut id_length = 0;
+        let mut score = 0.0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_text_result_hit(
+                result.0.as_ptr(),
+                index as u32,
+                &mut id_ptr,
+                &mut id_length,
+                &mut score,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        if id_ptr.is_null() {
+            return Err(Error::message(
+                "native text result returned a null document ID",
+            ));
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(id_ptr.cast::<u8>(), id_length as usize) };
+        hits.push(TextHit {
+            document_id: String::from_utf8(bytes.to_vec())
+                .map_err(|_| Error::message("native text result returned invalid UTF-8"))?,
+            score,
+        });
+    }
+    Ok(TextSearchResult { hits })
 }
 
 struct NativeTextResult(NonNull<sys::sk_text_result>);
