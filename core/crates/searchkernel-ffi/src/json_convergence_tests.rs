@@ -5,6 +5,8 @@ use searchkernel_json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };
+use searchkernel_testkit::{ExpectedCall, ScriptedBackend, ScriptedResult};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -34,7 +36,67 @@ fn context() -> Arc<IndexContext> {
             ..Default::default()
         },
     );
-    let fields = builder.create_vector(&[field]);
+    let extra_fields = [
+        (
+            "brand",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "sku",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "price",
+            api::FieldKind::Float64,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "popularity",
+            api::FieldKind::Int64,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "in_stock",
+            api::FieldKind::Bool,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "image_url",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "description",
+            api::FieldKind::Text,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "category",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+        ),
+        (
+            "tags",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Multi,
+        ),
+    ];
+    let mut field_offsets = vec![field];
+    for (name, kind, cardinality) in extra_fields {
+        let name = builder.create_string(name);
+        field_offsets.push(api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(name),
+                kind,
+                cardinality,
+                ..Default::default()
+            },
+        ));
+    }
+    let fields = builder.create_vector(&field_offsets);
     let definition = api::IndexDefinition::create(
         &mut builder,
         &api::IndexDefinitionArgs {
@@ -111,6 +173,93 @@ fn native_and_json_requests_converge_at_the_canonical_dispatcher() {
 
     assert!(handle::close(native_handle));
     assert!(handle::close(json_handle));
+}
+
+#[test]
+fn successful_dispatch_encodes_each_backend_operation() {
+    let cases = [
+        "write.insert.skrq",
+        "write.upsert.skrq",
+        "write.patch-set.skrq",
+        "write.delete.skrq",
+        "write.get.skrq",
+        "search.defaults.skrq",
+        "analyze.text-request.skrq",
+    ];
+    let directory =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../searchkernel-json/tests/fixtures/requests");
+
+    for case in cases {
+        let request = fs::read(directory.join(case)).expect("read representative request");
+        let recording = Arc::new(RecordingBackend::new());
+        let recording_handle = crate::test_support::register_index(context(), recording.clone());
+        let recording_state = handle::lookup(recording_handle).unwrap();
+        assert!(dispatch::dispatch(&recording_state, &request).is_ok());
+        let operation = recording
+            .take_calls()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("{case} did not reach a backend operation"));
+        assert!(handle::close(recording_handle));
+
+        let expected_response = match &operation {
+            searchkernel_ir::OperationIr::Insert(request) => {
+                ScriptedResult::Insert(searchkernel_ir::InsertResult {
+                    id: request.document().id().as_str().to_owned(),
+                })
+            }
+            searchkernel_ir::OperationIr::Upsert(request) => {
+                ScriptedResult::Upsert(searchkernel_ir::UpsertResult {
+                    id: request.document().id().as_str().to_owned(),
+                })
+            }
+            searchkernel_ir::OperationIr::Patch(request) => {
+                ScriptedResult::Patch(searchkernel_ir::PatchResult {
+                    id: request.id().as_str().to_owned(),
+                })
+            }
+            searchkernel_ir::OperationIr::Delete(request) => {
+                ScriptedResult::Delete(searchkernel_ir::DeleteResult {
+                    id: request.id().as_str().to_owned(),
+                    deleted: true,
+                })
+            }
+            searchkernel_ir::OperationIr::Get(_) => {
+                ScriptedResult::Get(searchkernel_ir::GetResult { document: None })
+            }
+            searchkernel_ir::OperationIr::Search(_) => {
+                ScriptedResult::Search(searchkernel_ir::SearchResult {
+                    hits: Vec::new(),
+                    total_hits: searchkernel_ir::TotalHits {
+                        value: 0,
+                        relation: searchkernel_ir::TotalHitsRelation::Exact,
+                    },
+                    facets: Vec::new(),
+                })
+            }
+            searchkernel_ir::OperationIr::Analyze(_) => {
+                ScriptedResult::Analyze(searchkernel_ir::AnalyzeResult { tokens: Vec::new() })
+            }
+        };
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+            operation,
+            expected_response,
+        )]));
+        let handle_value = crate::test_support::register_index(context(), backend);
+        let state = handle::lookup(handle_value).unwrap();
+        let response = dispatch::dispatch(&state, &request).unwrap();
+        assert!(matches!(
+            crate::test_support::decode_response(&response),
+            Ok(crate::test_support::DecodedResponse::Insert(_))
+                | Ok(crate::test_support::DecodedResponse::Upsert(_))
+                | Ok(crate::test_support::DecodedResponse::Patch(_))
+                | Ok(crate::test_support::DecodedResponse::Delete(_))
+                | Ok(crate::test_support::DecodedResponse::Get(_))
+                | Ok(crate::test_support::DecodedResponse::Search(_))
+                | Ok(crate::test_support::DecodedResponse::Analyze(_))
+        ));
+        assert!(handle::close(handle_value));
+    }
 }
 
 #[test]
