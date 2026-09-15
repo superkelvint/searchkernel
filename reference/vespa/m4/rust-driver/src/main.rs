@@ -1,10 +1,10 @@
 //! M4 acceptance driver.
 //!
 //! Protocol is intentionally tiny. This driver receives *raw* UTF-8 text/query
-//! strings. The searchkernel-vespa M4 implementation is responsible for invoking
+//! strings. The searchkernel-vespa-engine M4 implementation is responsible for invoking
 //! M3 linguistics before crossing the native boundary.
 
-use searchkernel_vespa::{Engine, TextDocument, TextQuery};
+use searchkernel_vespa_engine::{Engine, TextDocument, TextQuery};
 use std::io::{self, BufRead, Write};
 
 fn from_hex(hex: &str) -> String {

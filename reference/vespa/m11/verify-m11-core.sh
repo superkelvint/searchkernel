@@ -13,7 +13,7 @@ prepare_hardening_sdk
 build_m11_driver
 
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m11
-cargo test --quiet -p searchkernel-vespa --all-targets --all-features
+cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
 
 TARGET="$ROOT/target/vespa-verifier/m11/core"
 rm -rf "$TARGET"

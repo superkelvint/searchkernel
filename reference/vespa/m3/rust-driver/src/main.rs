@@ -1,4 +1,4 @@
-use searchkernel_vespa::{
+use searchkernel_vespa_engine::{
     Language, Linguistics, LinguisticsOptions, StemMode,
 };
 use std::io::{self, BufRead};

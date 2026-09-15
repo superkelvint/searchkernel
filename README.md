@@ -46,7 +46,7 @@ If you are new to the codebase, start with the [codebase reading guide](docs/rea
 - **Mutable.** Put, update, and delete are normal operations, not workarounds.
 - **Durable.** Indexes survive restarts and recover on reopen.
 - **Rust-first.** The Rust API is the primary interface. JavaScript, PHP, Go, and Python are built on top of it, not alongside it — a capability shows up in a binding because it exists in the Rust API first, not the other way around.
-- **A thin wrapper.** Whatever Vespa can do, Search Kernel can expose. Whatever Vespa doesn't do, Search Kernel doesn't invent. See [architecture.md](./architecture.md) for the reasoning behind that rule and where the boundary sits.
+- **A thin wrapper.** Whatever Vespa can do, Search Kernel can expose. Whatever Vespa doesn't do, Search Kernel doesn't invent. See [architecture.md](docs/architecture.md) for the reasoning behind that rule and where the boundary sits.
 
 ## What it is not
 
@@ -85,6 +85,18 @@ version `25.12.19`.
 
 All bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
 
+## Repository layout
+
+```text
+api/               normative Portable API schemas
+core/              embeddable Rust crates and native SDK
+clients/           non-Rust language clients
+searchkerneld/     daemon and HTTP transport host
+searchkernel-web/  administration dashboard
+tools/             generators and build tooling
+reference/         frozen contracts and verifiers
+```
+
 ## Status
 
 Under active development. The core workflow — open, index, search, update, delete, reopen — is the current focus, in Rust first. Performance, memory use, and durability are being measured, not assumed.
@@ -93,7 +105,7 @@ The API will change before it stabilizes.
 
 ## License
 
-Apache License 2.0, matching Vespa's license. See [LICENSE](./LICENSE).
+Apache License 2.0, matching Vespa's license.
 
 ## Contributing
 

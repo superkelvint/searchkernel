@@ -1,4 +1,4 @@
-use searchkernel_vespa::{
+use searchkernel_vespa_engine::{
     hardening::{self, Action},
     ConfigCompiler, Engine, Field, FieldType, Query, Schema, TextDocument, TextQuery,
 };

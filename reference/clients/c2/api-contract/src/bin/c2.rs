@@ -1,5 +1,5 @@
-use searchkernel_core::api;
-use searchkernel_core::*;
+use searchkernel_ir::api;
+use searchkernel_ir::*;
 
 struct CompileOnlyBackend;
 

@@ -1,6 +1,6 @@
-use searchkernel_vespa::Engine;
+use searchkernel_vespa_engine::Engine;
 use std::path::PathBuf;
-type Result<T> = std::result::Result<T, searchkernel_vespa::Error>;
+type Result<T> = std::result::Result<T, searchkernel_vespa_engine::Error>;
 
 fn run() -> Result<()> {
     let mut args = std::env::args_os().skip(1);

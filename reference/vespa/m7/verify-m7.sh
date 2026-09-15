@@ -7,7 +7,7 @@ require_pinned_vespa
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
 "$SCRIPT_DIR/check-immutable.sh"
-for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do check_fixture_literals --keys text,value,yql "$s" "$ROOT/crates/searchkernel-vespa/src" "$ROOT/crates/searchkernel-vespa-sys/src" "$ROOT/native/vespa"; done
+for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do check_fixture_literals --keys text,value,yql "$s" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"; done
 reference/vespa/m6/verify-m6.sh
 run_workspace_quality
 cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m7

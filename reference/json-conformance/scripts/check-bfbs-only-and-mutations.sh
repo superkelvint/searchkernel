@@ -13,8 +13,8 @@ make_bfbs() {
 }
 probe="$tmp/probe"; make_bfbs probe "$probe"; mkdir -p "$probe/out"
 ( cd "$tmp/run"; "$binary" generate --bfbs-root "$probe/bfbs" --output-root "$probe/out" )
-opmap="$probe/out/reference/json-conformance/generated/operation-map.json"; client="$probe/out/crates/searchkernel-client/src/generated.rs"; schema="$probe/out/reference/json-conformance/generated/searchkernel.schema.json"
-json_generated="$probe/out/crates/searchkernel-json/src/generated.rs"
+opmap="$probe/out/reference/json-conformance/generated/operation-map.json"; client="$probe/out/core/crates/searchkernel-client/src/generated.rs"; schema="$probe/out/reference/json-conformance/generated/searchkernel.schema.json"
+json_generated="$probe/out/core/crates/searchkernel-json/src/generated.rs"
 [[ -f "$opmap" && -f "$client" && -f "$schema" && -f "$json_generated" ]] || { echo 'BFBS-only probe generation missing artifacts' >&2; exit 1; }
 python3 - "$opmap" "$schema" <<'PY2'
 import json,sys
@@ -32,7 +32,7 @@ orphan="$tmp/orphan"; make_bfbs orphan "$orphan"; mkdir -p "$orphan/out"
 set +e; ( cd "$tmp/run"; "$binary" generate --bfbs-root "$orphan/bfbs" --output-root "$orphan/out" ) >"$orphan/stdout" 2>"$orphan/stderr"; status=$?; set -e
 [[ $status -ne 0 ]] || { echo 'bindgen accepted unpaired VerifierOrphanRequest' >&2; exit 1; }
 grep -q 'VerifierOrphanRequest' "$orphan/stderr" "$orphan/stdout" || { echo 'orphan diagnostic did not identify VerifierOrphanRequest' >&2; exit 1; }
-bad="$tmp/bad"; mkdir -p "$bad/bfbs" "$bad/out"; printf 'not-bfbs\n' > "$bad/bfbs/searchkernel_ffi_request.bfbs"; cp "$root/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs" "$bad/bfbs/"
+bad="$tmp/bad"; mkdir -p "$bad/bfbs" "$bad/out"; printf 'not-bfbs\n' > "$bad/bfbs/searchkernel_ffi_request.bfbs"; cp "$root/core/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs" "$bad/bfbs/"
 set +e; ( cd "$tmp/run"; "$binary" generate --bfbs-root "$bad/bfbs" --output-root "$bad/out" ) >"$bad/stdout" 2>"$bad/stderr"; status=$?; set -e
 [[ $status -ne 0 ]] || { echo 'bindgen accepted malformed BFBS' >&2; exit 1; }
 echo 'C6 BFBS-only + mutation/fail-closed generation PASS'

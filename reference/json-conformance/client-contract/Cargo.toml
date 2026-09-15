@@ -7,4 +7,4 @@ publish = false
 [workspace]
 
 [dependencies]
-searchkernel-client = { path = "../../../crates/searchkernel-client" }
+searchkernel-client = { path = "../../../core/crates/searchkernel-client" }

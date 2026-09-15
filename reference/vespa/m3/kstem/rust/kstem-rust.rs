@@ -1,6 +1,6 @@
-#[path = "../../../../../crates/searchkernel-vespa/src/linguistics/data.rs"]
+#[path = "../../../../../core/crates/searchkernel-vespa-engine/src/linguistics/data.rs"]
 mod data;
-#[path = "../../../../../crates/searchkernel-vespa/src/linguistics/stemmer.rs"]
+#[path = "../../../../../core/crates/searchkernel-vespa-engine/src/linguistics/stemmer.rs"]
 mod stemmer;
 
 use std::io::{self, BufRead, BufWriter, Write};

@@ -12,8 +12,8 @@ require_pinned_vespa
 "$SCRIPT_DIR/check-immutable.sh"
 
 for scenario in "$SCRIPT_DIR/scenarios"/[0-9][0-9]-*.json; do
-  check_fixture_literals --keys text,query "$scenario" "$ROOT/crates/searchkernel-vespa/src" \
-    "$ROOT/crates/searchkernel-vespa-sys/src" "$ROOT/native/vespa"
+  check_fixture_literals --keys text,query "$scenario" "$ROOT/core/crates/searchkernel-vespa-engine/src" \
+    "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"
 done
 
 if [[ -x reference/vespa/m5/verify-m5.sh ]]; then

@@ -1,7 +1,7 @@
 /target/
 **/target/
 /upstream/
-/native/sdk
+/core/native/sdk
 /reference/vespa/api-contract/Cargo.lock
 /reference/vespa/m1/rust-driver/Cargo.lock
 /reference/vespa/m2/rust-driver/Cargo.lock

@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[allow(warnings)]
-#[path = "../../../../crates/searchkernel-ffi/generated/mod.rs"]
+#[path = "../../../../core/crates/searchkernel-ffi/generated/mod.rs"]
 mod ffi_generated;
 
 use ffi_generated::search_kernel::ffi::v1 as wire;
@@ -59,7 +59,7 @@ impl Transport for ScriptedTransport {
 
 fn fixture(name: &str) -> Vec<u8> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../crates/searchkernel-json/tests/fixtures/responses");
+        .join("../../../core/crates/searchkernel-json/tests/fixtures/responses");
     std::fs::read(root.join(name)).unwrap()
 }
 

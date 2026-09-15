@@ -11,8 +11,8 @@ CONFIG="$SDK/share/embedded_crud_cfg"
 mkdir -p "$TARGET"
 
 check_fixture_literals "$ROOT/m2/scenarios/01-crud-attribute-search.json" \
-    "$REPO_ROOT/crates/searchkernel-vespa/src" \
-    "$REPO_ROOT/crates/searchkernel-vespa-sys/src" "$REPO_ROOT/native/vespa"
+    "$REPO_ROOT/core/crates/searchkernel-vespa-engine/src" \
+    "$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src" "$REPO_ROOT/core/native/vespa"
 
 cargo check --quiet --manifest-path "$ROOT/api-contract/Cargo.toml" --bin m2
 cargo build --quiet --manifest-path "$ROOT/m2/rust-driver/Cargo.toml"

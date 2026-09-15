@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-output="$root/crates/searchkernel-json/bfbs"
+output="$root/core/crates/searchkernel-json/bfbs"
 
 if [[ -n "${FLATC_PATH:-}" ]]; then
     flatc_bin=$FLATC_PATH

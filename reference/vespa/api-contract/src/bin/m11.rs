@@ -1,4 +1,4 @@
-use searchkernel_vespa::{Engine, Query, TextDocument, TextQuery};
+use searchkernel_vespa_engine::{Engine, Query, TextDocument, TextQuery};
 
 fn assert_send_sync<T: Send + Sync>() {}
 

@@ -27,14 +27,14 @@ Read these files in this order:
 1. [README.md](../README.md) — what the project is for.
 2. [docs/architecture.md](architecture.md) — the architectural boundaries.
 3. [api/README.md](../api/README.md) — the language-neutral data contract.
-4. [crates/README.md](../crates/README.md) — the Rust crate map.
-5. [crates/searchkernel/README.md](../crates/searchkernel/README.md) — the API
+4. [core/crates/README.md](../core/crates/README.md) — the Rust crate map.
+5. [core/crates/searchkernel/README.md](../core/crates/searchkernel/README.md) — the API
    an application uses.
-6. [crates/searchkernel-core/README.md](../crates/searchkernel-core/README.md)
+6. [core/crates/searchkernel-ir/README.md](../core/crates/searchkernel-ir/README.md)
    — the semantic center.
-7. [crates/searchkernel-vespa/README.md](../crates/searchkernel-vespa/README.md)
+7. [core/crates/searchkernel-vespa-engine/README.md](../core/crates/searchkernel-vespa-engine/README.md)
    — the Vespa-specific adapter.
-8. [native/vespa/README.md](../native/vespa/README.md) — the C++ boundary.
+8. [core/native/vespa/README.md](../core/native/vespa/README.md) — the C++ boundary.
 
 Then trace one complete operation. Search is the best first example because it
 passes through every important layer.
@@ -45,28 +45,28 @@ passes through every important layer.
 api/
   FlatBuffers schemas shared by all languages
 
-crates/searchkernel/
+core/crates/searchkernel/
   Product-facing Rust API and fluent builders
 
-crates/searchkernel-core/
+core/crates/searchkernel-ir/
   Validation, defaults, normalization, owned IR, and portable results
 
-crates/searchkernel-api/
+core/crates/searchkernel-protocol/
   Generated Rust views of the FlatBuffers schemas
 
-crates/searchkernel-testkit/
+core/crates/searchkernel-testkit/
   Recording backends, scripted backends, and semantic conformance tools
 
-crates/searchkernel-vespa/
+core/crates/searchkernel-vespa-engine/
   Safe Rust wrapper for the native adapter, linguistics, and config generation
 
-crates/searchkernel-vespa-sys/
+core/crates/searchkernel-vespa-bindings/
   Raw Rust declarations for the native ABI
 
-crates/searchkernel-ffi/
+core/crates/searchkernel-ffi/
   C ABI framing, verification, dispatch, and buffer ownership
 
-native/vespa/
+core/native/vespa/
   Search Kernel-owned C++ adapter around Vespa
 
 upstream/vespa/
@@ -101,16 +101,16 @@ backend-specific details.
 
 Read:
 
-- `crates/searchkernel/src/lib.rs`
-- `crates/searchkernel/src/index.rs`
-- `crates/searchkernel/src/search.rs`
-- `crates/searchkernel/src/filter.rs`
-- `crates/searchkernel/src/schema.rs`
-- `crates/searchkernel/src/patch.rs`
+- `core/crates/searchkernel/src/lib.rs`
+- `core/crates/searchkernel/src/index.rs`
+- `core/crates/searchkernel/src/search.rs`
+- `core/crates/searchkernel/src/filter.rs`
+- `core/crates/searchkernel/src/schema.rs`
+- `core/crates/searchkernel/src/patch.rs`
 
 ### 2. Portable FlatBuffers values
 
-`crates/searchkernel/src/wire.rs` converts public Rust values into the tables
+`core/crates/searchkernel/src/wire.rs` converts public Rust values into the tables
 defined in `api/searchkernel.fbs`.
 
 FlatBuffers values are messages stored in bytes. The generated Rust types are
@@ -120,12 +120,12 @@ not the long-lived internal model.
 Read:
 
 - `api/searchkernel.fbs`
-- `crates/searchkernel/src/wire.rs`
-- `crates/searchkernel-api/src/generated/`
+- `core/crates/searchkernel/src/wire.rs`
+- `core/crates/searchkernel-protocol/src/generated/`
 
 ### 3. Owned Search Kernel IR
 
-`crates/searchkernel-core` validates the FlatBuffers view and creates owned
+`core/crates/searchkernel-ir` validates the FlatBuffers view and creates owned
 values. An IR value has no dependency on the original byte buffer and no
 dependency on Vespa.
 
@@ -139,9 +139,9 @@ For example, a search request becomes an owned `SearchRequestIr` containing:
 
 Read:
 
-- `crates/searchkernel-core/src/model.rs`
-- `crates/searchkernel-core/src/api_to_ir.rs`
-- `crates/searchkernel-core/src/backend.rs`
+- `core/crates/searchkernel-ir/src/model.rs`
+- `core/crates/searchkernel-ir/src/api_to_ir.rs`
+- `core/crates/searchkernel-ir/src/backend.rs`
 
 This is the key boundary in the whole project:
 
@@ -159,7 +159,7 @@ Use this path when learning the code.
 ### Step 1: the caller builds a request
 
 The caller starts at `Index::search` in
-`crates/searchkernel/src/index.rs`. That returns a `SearchBuilder` from
+`core/crates/searchkernel/src/index.rs`. That returns a `SearchBuilder` from
 `search.rs`.
 
 Each builder method stores one piece of caller intent:
@@ -225,7 +225,7 @@ The result is an owned `SearchRequestIr`.
 
 ### Step 4: the backend executes the IR
 
-The `Backend` trait in `searchkernel-core/src/backend.rs` accepts IR. The
+The `Backend` trait in `searchkernel-ir/src/backend.rs` accepts IR. The
 public facade does not fabricate IR directly, and the backend does not decide
 what omitted wire fields mean.
 
@@ -241,7 +241,7 @@ for Vespa in native acceptance tests.
 ### Step 5: results come back through an ownership boundary
 
 The backend returns owned core result values. The public crate converts those
-values in `crates/searchkernel/src/result.rs`:
+values in `core/crates/searchkernel/src/result.rs`:
 
 ```text
 core Value
@@ -270,7 +270,7 @@ Index::upsert
 ```
 
 `insert`, `patch`, `delete`, and `get` use the same pattern. Start in
-`crates/searchkernel/src/index.rs`, then follow the matching `wire` function,
+`core/crates/searchkernel/src/index.rs`, then follow the matching `wire` function,
 the matching `IndexContext::*_to_ir` method, and finally the corresponding
 `Backend` method.
 
@@ -283,18 +283,18 @@ The high-level facade and the native adapter are intentionally separate.
 
 ```text
 searchkernel
-  -> searchkernel-core
+  -> searchkernel-ir
   -> backend implementation
-  -> searchkernel-vespa
-  -> searchkernel-vespa-sys
-  -> native/vespa C++ adapter
+  -> searchkernel-vespa-engine
+  -> searchkernel-vespa-bindings
+  -> core/native/vespa C++ adapter
   -> Vespa C++
 ```
 
-`searchkernel-vespa-sys` contains raw function declarations and opaque native
-handle types. `searchkernel-vespa` is the safe Rust wrapper around them.
+`searchkernel-vespa-bindings` contains raw function declarations and opaque native
+handle types. `searchkernel-vespa-engine` is the safe Rust wrapper around them.
 
-The C++ adapter in `native/vespa` is the only layer that should include Vespa
+The C++ adapter in `core/native/vespa` is the only layer that should include Vespa
 C++ headers or use Vespa implementation classes. Rust sees Search Kernel-owned
 values and opaque handles instead.
 
@@ -316,7 +316,7 @@ Java request/configuration plane.
 
 ### Linguistics
 
-Read `crates/searchkernel-vespa/src/linguistics.rs` first, then
+Read `core/crates/searchkernel-vespa-engine/src/linguistics.rs` first, then
 `linguistics/stemmer.rs`.
 
 The main concepts are:
@@ -331,7 +331,7 @@ it with the pinned Vespa source and oracle behavior.
 
 ### Configuration
 
-Read `crates/searchkernel-vespa/src/schema.rs` in this order:
+Read `core/crates/searchkernel-vespa-engine/src/schema.rs` in this order:
 
 ```text
 Schema and Field builders
@@ -351,7 +351,7 @@ Tests are organized by what they prove.
 
 ### Public API tests
 
-`crates/searchkernel/tests/api.rs` checks that fluent public calls cross the
+`core/crates/searchkernel/tests/api.rs` checks that fluent public calls cross the
 core boundary as the expected IR. It commonly uses `RecordingBackend` and
 `ScriptedBackend`.
 
@@ -360,7 +360,7 @@ Vespa executed a query.
 
 ### Core semantic tests
 
-`crates/searchkernel-core/tests/semantics.rs` is the detailed semantic matrix.
+`core/crates/searchkernel-ir/tests/semantics.rs` is the detailed semantic matrix.
 It covers defaults, presence, malformed unions, validation, errors, and owned
 result encoding.
 
@@ -370,7 +370,7 @@ tests, not by whichever implementation currently exists.
 
 ### Vespa adapter tests
 
-`crates/searchkernel-vespa/src/lib.rs`, `schema.rs`, and `linguistics.rs`
+`core/crates/searchkernel-vespa-engine/src/lib.rs`, `schema.rs`, and `linguistics.rs`
 contain focused adapter tests. These check native conversion, configuration
 generation, and compatibility behavior.
 
@@ -420,7 +420,7 @@ When modifying a capability:
 3. Follow the matching API-to-IR converter.
 4. Find the core semantic test or frozen contract.
 5. Follow the backend method.
-6. If native, continue through `searchkernel-vespa` and `native/vespa`.
+6. If native, continue through `searchkernel-vespa-engine` and `core/native/vespa`.
 7. Change the smallest layer that owns the behavior.
 8. Run focused tests first, then the workspace checks.
 

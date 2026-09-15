@@ -7,7 +7,7 @@ COMMON_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REFERENCE_ROOT="$(cd "$COMMON_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$REFERENCE_ROOT/../.." && pwd)"
 PIN_FILE="$REFERENCE_ROOT/PINNED_VESPA.json"
-SDK="${SK_NATIVE_SDK:-$REPO_ROOT/native/sdk/linux-x86_64}"
+SDK="${SK_NATIVE_SDK:-$REPO_ROOT/core/native/sdk/linux-x86_64}"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target/vespa-verifier/cargo}"
 if [[ -d "$SDK" ]]; then
   SDK="$(cd "$SDK" && pwd -P)"
@@ -70,7 +70,9 @@ require_native_driver() {
   local binary="$1"
   shift
   [[ -x "$binary" ]] || fail_verification "driver binary is missing or not executable: $binary"
-  if ldd "$binary" | grep -q 'libsearchkernel_vespa'; then
+  # Read the complete ldd output. With pipefail enabled, grep -q can make ldd
+  # exit on SIGPIPE after finding the library and falsely report failure.
+  if ldd "$binary" | grep 'libsearchkernel_vespa' >/dev/null; then
     :
   else
     echo "native driver is not dynamically linked to libsearchkernel_vespa: $binary" >&2
@@ -79,7 +81,7 @@ require_native_driver() {
   fi
   local symbol
   for symbol in "$@"; do
-    nm -D "$binary" 2>/dev/null | grep -q "$symbol" ||
+    nm -D "$binary" 2>/dev/null | grep "$symbol" >/dev/null ||
       fail_verification "native driver does not reference required symbol: $symbol"
   done
 }

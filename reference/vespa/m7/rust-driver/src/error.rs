@@ -1,4 +1,4 @@
-use searchkernel_vespa::{ConfigCompiler, Engine, Field, FieldType, Query, Schema};
+use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Query, Schema};
 use serde_json::Value;
 use std::{fs, path::PathBuf};
 fn q(v: &Value) -> Query {

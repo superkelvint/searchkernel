@@ -182,7 +182,7 @@ Production code must not:
 - branch on scenario ids, document ids, query strings or expected results;
 - invoke the direct C++ oracle as the implementation;
 - patch tracked files in `upstream/vespa`;
-- introduce a dependency from `searchkernel-vespa` to `searchkernel-core`.
+- introduce a dependency from `searchkernel-vespa-engine` to `searchkernel-ir`.
 
 ## Verification
 
@@ -191,7 +191,7 @@ After the harness is frozen, `verify-m4.sh` proves:
 1. M3 cumulative verification passes;
 2. the frozen M4 API contract compiles;
 3. fmt/clippy/workspace tests pass;
-4. the Rust scenario driver uses the real `searchkernel-vespa` engine path;
+4. the Rust scenario driver uses the real `searchkernel-vespa-engine` engine path;
 5. Rust results match direct-C++ frozen goldens;
 6. phrase-position checks pass;
 7. update and delete visibility checks pass;

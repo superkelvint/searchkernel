@@ -18,11 +18,11 @@ if req != want_req: raise SystemExit(f'RequestPayload mismatch\nFBS={req}\nmap={
 resp_without_error=[x for x in resp if x != expected['error_response']]
 if resp.count(expected['error_response']) != 1: raise SystemExit(f'ResponsePayload must contain Error exactly once: {resp}')
 if resp_without_error != [x['response'] for x in ops]: raise SystemExit(f'ResponsePayload normal variants mismatch\nFBS={resp_without_error}\nmap={[x["response"] for x in ops]}')
-dispatch=(root/'crates/searchkernel-ffi/src/dispatch.rs').read_text()
+dispatch=(root/'core/crates/searchkernel-ffi/src/dispatch.rs').read_text()
 for op in ops:
     token='REQUEST_'+op['operation'].upper()
     if token not in dispatch: raise SystemExit(f'dispatcher missing {token}')
-client=(root/'crates/searchkernel-client/src/generated.rs').read_text()
+client=(root/'core/crates/searchkernel-client/src/generated.rs').read_text()
 for op in ops:
     if not re.search(rf'\bfn\s+{re.escape(op["operation"])}\s*\(',client): raise SystemExit(f'generated client missing {op["operation"]}')
 print('C6 operation coverage PASS')

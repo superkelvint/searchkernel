@@ -1,7 +1,7 @@
-use searchkernel_vespa::{Engine, TextDocument, TextQuery, TextSearchResult};
+use searchkernel_vespa_engine::{Engine, TextDocument, TextQuery, TextSearchResult};
 
 #[allow(dead_code)]
-fn m4_surface(engine: &Engine) -> searchkernel_vespa::Result<()> {
+fn m4_surface(engine: &Engine) -> searchkernel_vespa_engine::Result<()> {
     engine.put_text(TextDocument {
         id: "id:test:typea::compile-only",
         field: "title",

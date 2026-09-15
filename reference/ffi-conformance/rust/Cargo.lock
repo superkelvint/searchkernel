@@ -276,27 +276,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkernel-api"
-version = "0.1.0"
-dependencies = [
- "flatbuffers",
-]
-
-[[package]]
-name = "searchkernel-core"
-version = "0.1.0"
-dependencies = [
- "flatbuffers",
- "searchkernel-api",
-]
-
-[[package]]
 name = "searchkernel-ffi"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
  "flatbuffers",
- "searchkernel-core",
+ "searchkernel-ir",
 ]
 
 [[package]]
@@ -305,9 +290,24 @@ version = "0.0.0"
 dependencies = [
  "flatbuffers",
  "libc",
- "searchkernel-core",
  "searchkernel-ffi",
+ "searchkernel-ir",
  "searchkernel-testkit",
+]
+
+[[package]]
+name = "searchkernel-ir"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
+ "searchkernel-protocol",
+]
+
+[[package]]
+name = "searchkernel-protocol"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
 ]
 
 [[package]]
@@ -315,7 +315,7 @@ name = "searchkernel-testkit"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
- "searchkernel-core",
+ "searchkernel-ir",
  "serde_json",
 ]
 

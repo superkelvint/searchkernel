@@ -1,4 +1,4 @@
-use searchkernel_vespa::{
+use searchkernel_vespa_engine::{
     ConfigCompiler, Engine, Field, FieldType, Query, RangeBound, Schema, TextDocument,
 };
 use serde::Deserialize;

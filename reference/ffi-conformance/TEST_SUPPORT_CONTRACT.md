@@ -22,19 +22,19 @@ pub enum RequestKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DecodedResponse {
-    Insert(searchkernel_core::InsertResult),
-    Upsert(searchkernel_core::UpsertResult),
-    Patch(searchkernel_core::PatchResult),
-    Delete(searchkernel_core::DeleteResult),
-    Get(searchkernel_core::GetResult),
-    Search(searchkernel_core::SearchResult),
-    Analyze(searchkernel_core::AnalyzeResult),
-    Error(searchkernel_core::PortableError),
+    Insert(searchkernel_ir::InsertResult),
+    Upsert(searchkernel_ir::UpsertResult),
+    Patch(searchkernel_ir::PatchResult),
+    Delete(searchkernel_ir::DeleteResult),
+    Get(searchkernel_ir::GetResult),
+    Search(searchkernel_ir::SearchResult),
+    Analyze(searchkernel_ir::AnalyzeResult),
+    Error(searchkernel_ir::PortableError),
 }
 
 pub fn register_index(
-    context: std::sync::Arc<searchkernel_core::IndexContext>,
-    backend: std::sync::Arc<dyn searchkernel_core::Backend>,
+    context: std::sync::Arc<searchkernel_ir::IndexContext>,
+    backend: std::sync::Arc<dyn searchkernel_ir::Backend>,
 ) -> sk_handle_t;
 
 pub fn live_handle_count() -> usize;
@@ -60,6 +60,6 @@ The helper functions above exist only so the checked-in verifier can construct
 and inspect the normative FlatBuffers envelopes without making the production C
 ABI larger.
 
-The verifier still supplies the real C3 `RecordingBackend` / `ScriptedBackend` and independently computes expected IR through `searchkernel-core`.
+The verifier still supplies the real C3 `RecordingBackend` / `ScriptedBackend` and independently computes expected IR through `searchkernel-ir`.
 
 Production dispatch must not call into `test_support`.

@@ -87,7 +87,7 @@ if [[ ! -f "$STAMP" || "$(cat "$STAMP")" != "$REVISION" ]]; then
 
   # Bootstrap only the Maven metadata/plugins required by the Java build.
   # Vespa's bootstrap.sh also generates dist/vtag.map, but that file is a
-  # native/CMake build artifact.  The M3 Java oracle does not need it, and
+  # core/native/CMake build artifact.  The M3 Java oracle does not need it, and
   # the verifier must not mutate the pinned upstream checkout unnecessarily.
 
   (

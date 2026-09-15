@@ -2,14 +2,14 @@
 
 ## Goal
 
-Remove the dependency on pre-generated Java configuration for the supported low-level `searchkernel-vespa` schema subset.
+Remove the dependency on pre-generated Java configuration for the supported low-level `searchkernel-vespa-engine` schema subset.
 
 M6 owns only the low-level embedded-Vespa schema/configuration model. It does not define the C-series product schema.
 
 Required path:
 
 ```text
-searchkernel-vespa Schema
+searchkernel-vespa-engine Schema
         ↓
 ConfigCompiler
         ↓
@@ -110,7 +110,7 @@ Rules:
 - The manifest is private implementation plumbing, not a public schema language.
 - Production code must not parse `.sd` files.
 
-The native/safe engine bootstrap may consume this manifest on either side of the private Rust/native boundary, but the resulting `DocumentDB` must use the compiled document type and fields. The document type must not remain hard-coded to the historical `typea` fixture.
+The core/native/safe engine bootstrap may consume this manifest on either side of the private Rust/native boundary, but the resulting `DocumentDB` must use the compiled document type and fields. The document type must not remain hard-coded to the historical `typea` fixture.
 
 ## Oracle
 
@@ -243,8 +243,8 @@ M6 acceptance rejects:
 - hard-coded scenario IDs or field values;
 - a dummy `searchkernel-schema.json` that is not the actual compiled schema;
 - a native document type hard-coded to `typea`;
-- high-level C-series product semantics in `searchkernel-vespa`;
-- importing `searchkernel-core` into the M-series.
+- high-level C-series product semantics in `searchkernel-vespa-engine`;
+- importing `searchkernel-ir` into the M-series.
 
 ## Definition of done
 

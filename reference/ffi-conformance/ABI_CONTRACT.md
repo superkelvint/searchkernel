@@ -122,11 +122,11 @@ No Rust panic may unwind over the C ABI. Unexpected panic is translated to `SK_S
 
 ## Production dependency boundary
 
-Normal `searchkernel-ffi` dependencies may include `searchkernel-core`, `searchkernel-api`, and FlatBuffers infrastructure. They may not include:
+Normal `searchkernel-ffi` dependencies may include `searchkernel-ir`, `searchkernel-protocol`, and FlatBuffers infrastructure. They may not include:
 
-- `searchkernel-vespa`
-- `searchkernel-vespa-sys`
-- `searchkernel-vespa-backend`
+- `searchkernel-vespa-engine`
+- `searchkernel-vespa-bindings`
+- `searchkernel-ir-adapter`
 - `searchkernel-testkit`
 
 `searchkernel-testkit` is allowed only for tests / the `ffi-test-support` feature used by this verifier.

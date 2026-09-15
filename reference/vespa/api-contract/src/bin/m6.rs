@@ -1,4 +1,4 @@
-use searchkernel_vespa::{ConfigCompiler, Field, FieldType, Schema};
+use searchkernel_vespa_engine::{ConfigCompiler, Field, FieldType, Schema};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schema = Schema::new("typea")

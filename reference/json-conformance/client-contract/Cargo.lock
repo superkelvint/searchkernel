@@ -28,13 +28,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkernel-api"
-version = "0.1.0"
-dependencies = [
- "flatbuffers",
-]
-
-[[package]]
 name = "searchkernel-c6-client-contract"
 version = "0.0.0"
 dependencies = [
@@ -46,15 +39,22 @@ name = "searchkernel-client"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
- "searchkernel-core",
+ "searchkernel-ir",
 ]
 
 [[package]]
-name = "searchkernel-core"
+name = "searchkernel-ir"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
- "searchkernel-api",
+ "searchkernel-protocol",
+]
+
+[[package]]
+name = "searchkernel-protocol"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
 ]
 
 [[package]]

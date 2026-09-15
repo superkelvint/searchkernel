@@ -2,9 +2,9 @@
 set -euo pipefail
 M4="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$M4/../../.." && pwd)"
-RUST="$ROOT/crates/searchkernel-vespa"
-SYS="$ROOT/crates/searchkernel-vespa-sys"
-NATIVE="$ROOT/native/vespa"
+RUST="$ROOT/core/crates/searchkernel-vespa-engine"
+SYS="$ROOT/core/crates/searchkernel-vespa-bindings"
+NATIVE="$ROOT/core/native/vespa"
 SCEN="$ROOT/reference/vespa/m4/scenarios/cases.json"
 
 [[ -d "$RUST" && -d "$SYS" && -d "$NATIVE" ]] || {
@@ -12,8 +12,8 @@ SCEN="$ROOT/reference/vespa/m4/scenarios/cases.json"
   exit 1
 }
 
-if grep -nE 'searchkernel-core|searchkernel_core' "$RUST/Cargo.toml" >/dev/null 2>&1; then
-  echo "M-series firewall violated: searchkernel-vespa depends on searchkernel-core" >&2
+if grep -nE 'searchkernel-ir|searchkernel_ir' "$RUST/Cargo.toml" >/dev/null 2>&1; then
+  echo "M-series firewall violated: searchkernel-vespa-engine depends on searchkernel-ir" >&2
   exit 1
 fi
 
@@ -39,7 +39,7 @@ fi
 source "$ROOT/reference/vespa/common/verify-common.sh"
 check_fixture_literals "$SCEN" "$RUST/src" "$SYS/src" "$NATIVE"
 
-# Vespa headers belong only to native/vespa, never the safe Rust crate.
+# Vespa headers belong only to core/native/vespa, never the safe Rust crate.
 if grep -RInE '#include[[:space:]]*[<\"]vespa/' "$RUST" "$SYS" --include='*.rs' 2>/dev/null; then
   echo "Vespa C++ headers leaked outside native adapter" >&2
   exit 1
@@ -47,7 +47,7 @@ fi
 
 # Raw extern declarations belong in sys/raw layer, not safe wrapper.
 if grep -RInE 'extern[[:space:]]+"C"' "$RUST/src" 2>/dev/null; then
-  echo "raw FFI found in safe searchkernel-vespa crate" >&2
+  echo "raw FFI found in safe searchkernel-vespa-engine crate" >&2
   exit 1
 fi
 

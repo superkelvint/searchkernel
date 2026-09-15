@@ -119,7 +119,7 @@ Every stem returned by a Vespa `StemList` is preserved in list order.
 
 ## Rust API frozen by the verifier
 
-The compile fixture and Rust conformance driver freeze this public `searchkernel-vespa` surface:
+The compile fixture and Rust conformance driver freeze this public `searchkernel-vespa-engine` surface:
 
 ```rust
 Language::English
@@ -181,7 +181,7 @@ Production code must not:
 - branch on M3 scenario IDs or fixture strings;
 - use a toy ASCII/whitespace tokenizer;
 - implement search/BM25;
-- depend on `searchkernel-core`;
+- depend on `searchkernel-ir`;
 - substitute a different stemmer merely because common examples happen to agree.
 
 ## Definition of done

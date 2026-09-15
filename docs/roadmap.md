@@ -20,7 +20,7 @@ The final semantic runtime architecture is:
 Portable API (FlatBuffers contract)
    │
    ▼
-searchkernel-core (*_to_ir)
+searchkernel-ir (*_to_ir)
    │
    ▼
 owned Search Kernel IR
@@ -64,7 +64,7 @@ The client/runtime architecture is:
                        │
               canonical FB dispatcher
                        │
-              searchkernel-core
+              searchkernel-ir
 ```
 
 The same daemon also supports direct binary HTTP:
@@ -90,7 +90,7 @@ canonical FlatBuffers
   ↓
 one shared dispatcher
   ↓
-searchkernel-core
+searchkernel-ir
 ```
 
 There must not be independent:
@@ -185,9 +185,9 @@ Establish:
 ```text
 searchkernel
     ↓
-searchkernel-vespa
+searchkernel-vespa-engine
     ↓
-searchkernel-vespa-sys
+searchkernel-vespa-bindings
     ↓
 native ABI
 ```
@@ -277,7 +277,7 @@ The M-series continues the work already started by M0–M2.
 Its product is:
 
 ```text
-searchkernel-vespa
+searchkernel-vespa-engine
 ```
 
 This is a safe, relatively faithful Rust interface to the embedded Vespa C++ search engine. It uses Vespa terminology where appropriate and does not try to provide the high-level product API.
@@ -388,7 +388,7 @@ Search Kernel does not invent different durability semantics; it documents and v
 
 Remove the dependency on pre-generated Java configuration for the supported low-level schema subset.
 
-This milestone defines the configuration model required by `searchkernel-vespa`; it does **not** define the high-level Search Kernel product schema.
+This milestone defines the configuration model required by `searchkernel-vespa-engine`; it does **not** define the high-level Search Kernel product schema.
 
 Initial capabilities:
 
@@ -409,7 +409,7 @@ Compile this representation into the configuration required to construct and run
 Conceptually:
 
 ```text
-searchkernel-vespa schema/config
+searchkernel-vespa-engine schema/config
         ↓
 embedded configuration compiler
         ↓
@@ -446,7 +446,7 @@ exists
 Compilation is:
 
 ```text
-searchkernel-vespa query
+searchkernel-vespa-engine query
     ↓
 field-aware query analysis
     ↓
@@ -531,7 +531,7 @@ For ranking assets such as constants or models, embedded operation uses explicit
 
 ## M11 — Low-level wrapper hardening
 
-Harden `searchkernel-vespa` independently of the high-level product.
+Harden `searchkernel-vespa-engine` independently of the high-level product.
 
 Cover:
 
@@ -556,8 +556,8 @@ The C-series is orthogonal to the M-series.
 Its product is the portable Search Kernel application API and everything needed to expose that API consistently across languages and transports:
 
 ```text
-searchkernel-api / generated FlatBuffers artifacts
-searchkernel-core
+searchkernel-protocol / generated FlatBuffers artifacts
+searchkernel-ir
 searchkernel
 searchkernel-ffi
 searchkernel-json
@@ -566,7 +566,7 @@ searchkernel-bindgen
 language packages
 ```
 
-The C-series must remain runnable and verifiable without linking `searchkernel-vespa`.
+The C-series must remain runnable and verifiable without linking `searchkernel-vespa-engine`.
 
 It may use recording and scripted test backends, but must never grow a fake production search engine.
 
@@ -579,7 +579,7 @@ canonical FlatBuffers request
         ↓
 shared dispatcher
         ↓
-searchkernel-core (*_to_ir)
+searchkernel-ir (*_to_ir)
         ↓
 Search Kernel IR
 ```
@@ -657,7 +657,7 @@ C6 consumes BFBS rather than implementing another `.fbs` parser.
 Implement:
 
 ```text
-searchkernel-core
+searchkernel-ir
 ```
 
 This crate performs Portable API → IR conversion and owns the Search Kernel IR:
@@ -1329,14 +1329,14 @@ The I-series is the only place the C-series and M-series meet.
 Its core implementation is:
 
 ```text
-searchkernel-vespa-backend
+searchkernel-ir-adapter
 ```
 
 which may depend on both:
 
 ```text
-searchkernel-core
-searchkernel-vespa
+searchkernel-ir
+searchkernel-vespa-engine
 ```
 
 No other crate should need to understand both public object models.
@@ -1354,8 +1354,8 @@ Create the integration crate and freeze the backend boundary.
 Prove:
 
 ```text
-C-series crates do not import searchkernel-vespa
-M-series crates do not import searchkernel-core
+C-series crates do not import searchkernel-vespa-engine
+M-series crates do not import searchkernel-ir
 integration crate imports both
 ```
 
@@ -1370,7 +1370,7 @@ Compile:
 ```text
 ResolvedIndexDefinition
     ↓
-searchkernel-vespa configuration
+searchkernel-vespa-engine configuration
 ```
 
 Map high-level index creation/opening onto the low-level engine lifecycle.
@@ -1447,7 +1447,7 @@ Examples:
 .group_by("product_id")
 ```
 
-High-level facet semantics remain owned by `searchkernel-core`.
+High-level facet semantics remain owned by `searchkernel-ir`.
 
 ---
 
@@ -1761,7 +1761,7 @@ BFBS regenerated
 +
 searchkernel-bindgen outputs regenerated
 +
-searchkernel-core semantics updated
+searchkernel-ir semantics updated
 +
 affected generated client/runtime artifacts refreshed
 +

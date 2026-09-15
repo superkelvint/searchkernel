@@ -17,7 +17,7 @@ FlatBuffers contract
     │
     ▼
 API → IR conversion
-    │  searchkernel-core / *_to_ir
+    │  searchkernel-ir / *_to_ir
     ▼
 Search Kernel IR
     │  owned backend-independent Rust model
@@ -36,7 +36,7 @@ describes the fully validated and explicit meaning of that request. Backend
 lowering describes how that meaning is represented by the execution engine.
 
 The Portable API and FlatBuffers contract are the language-neutral boundary.
-`searchkernel-core` performs API → IR conversion through `*_to_ir` functions.
+`searchkernel-ir` performs API → IR conversion through `*_to_ir` functions.
 The Search Kernel IR is an owned, backend-independent Rust model. The backend
 interface receives that IR, and Vespa lowering translates it through `lower_*`
 functions into the Vespa model and runtime.

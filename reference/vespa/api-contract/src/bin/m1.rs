@@ -1,4 +1,4 @@
-use searchkernel_vespa::{Engine, Error};
+use searchkernel_vespa_engine::{Engine, Error};
 use std::path::Path;
 type Result<T> = std::result::Result<T, Error>;
 

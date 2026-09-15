@@ -5,6 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-searchkernel-vespa = { path = "../../../../crates/searchkernel-vespa" }
+searchkernel-vespa-engine = { path = "../../../../core/crates/searchkernel-vespa-engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

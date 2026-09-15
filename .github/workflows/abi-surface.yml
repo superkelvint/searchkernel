@@ -20,5 +20,8 @@ jobs:
       - name: Run ABI surface regression tests
         run: python3 tools/test_check_abi_surface.py
 
+      - name: Check repository layout
+        run: bash tools/check-layout.sh
+
       - name: Check public Vespa ABI header
-        run: python3 tools/check_abi_surface.py native/vespa/searchkernel_vespa.h
+        run: python3 tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h

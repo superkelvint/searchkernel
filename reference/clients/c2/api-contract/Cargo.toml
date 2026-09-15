@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-searchkernel-api = { path = "../../../../crates/searchkernel-api" }
-searchkernel-core = { path = "../../../../crates/searchkernel-core", features = ["test-support"] }
+searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol" }
+searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir", features = ["test-support"] }
 
 [workspace]

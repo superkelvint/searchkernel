@@ -4,7 +4,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 here=$(c6_here); root=$(c6_root); binary=$(bindgen_binary)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 out1="$tmp/out1"; out2="$tmp/out2"; mkdir -p "$out1" "$out2"
-fixture_root="$root/crates/searchkernel-json/tests/fixtures"; bfbs_root="$root/crates/searchkernel-json/bfbs"
+fixture_root="$root/core/crates/searchkernel-json/tests/fixtures"; bfbs_root="$root/core/crates/searchkernel-json/bfbs"
 run_generate() { "$binary" generate --bfbs-root "$bfbs_root" --fixture-root "$fixture_root" --output-root "$1"; }
 run_generate "$out1"; run_generate "$out2"
 diff -ru --strip-trailing-cr "$out1" "$out2"

@@ -43,10 +43,13 @@ prefer the first until real usage proves the second is necessary.
 
 ```text
 searchkernel2/
-├── crates/                 # Rust implementation
-├── native/
-│   ├── vespa/              # our C/C++ adapter
-│   └── sdk/                # generated/prebuilt native SDK
+├── api/                    # normative language-neutral Portable API
+├── core/
+│   ├── crates/              # embeddable Rust implementation
+│   └── native/              # C/C++ adapter and generated native SDK
+├── clients/                # non-Rust language clients
+├── searchkerneld/          # daemon and transport host
+├── searchkernel-web/       # administration dashboard
 ├── upstream/
 │   └── vespa/              # pinned upstream Vespa checkout; read-only
 ├── reference/
@@ -87,14 +90,14 @@ build artifacts may exist.
 If the checkout is wrong or tracked source is dirty, report it. Do not fix a
 milestone by patching Vespa itself.
 
-### `native/vespa/` is our adaptation layer
+### `core/native/vespa/` is our adaptation layer
 
 All Search Kernel-specific C/C++ integration belongs here.
 
-If the Vespa API is awkward, adapt it in `native/vespa/`; do not spread Vespa
+If the Vespa API is awkward, adapt it in `core/native/vespa/`; do not spread Vespa
 headers/types into Rust or modify upstream source.
 
-### `native/sdk/` is generated
+### `core/native/sdk/` is generated
 
 Normal Rust work consumes the prebuilt SDK and should not require a Vespa build
 or Docker session.
@@ -141,7 +144,7 @@ these files only when explicitly asked to author or repair a verifier.
 For a reviewer, the useful checks are:
 
 ```bash
-git diff -- reference/vespa reference/clients reference/integration
+git diff -- reference/
 git diff <verifier-freeze-commit>..HEAD -- reference/
 ```
 
@@ -297,7 +300,7 @@ When two implementations are similarly straightforward, prefer the one that:
 - follows the frozen API;
 - stays close to real Vespa semantics;
 - keeps the native boundary narrow;
-- isolates upstream churn inside `native/vespa/`;
+- isolates upstream churn inside `core/native/vespa/`;
 - leaves the next known milestone additive.
 
 The goal is the smallest **good** implementation.
@@ -423,7 +426,7 @@ cargo test --workspace
 Agents may inspect `upstream/vespa/` at any time.
 
 Do not enter Docker or rebuild the SDK unless the task actually requires a
-change to `native/vespa/`, SDK construction, or a native capability absent from
+change to `core/native/vespa/`, SDK construction, or a native capability absent from
 the current SDK.
 
 When a native rebuild is required, use repository tooling against the pinned
@@ -443,7 +446,7 @@ Vespa fidelity
 - no Rust reimplementation or fixture-specific shortcut
 
 Boundary
-- Vespa types stay behind native/vespa
+- Vespa types stay behind core/native/vespa
 - raw unsafe stays in the sys/raw layer
 - ownership and errors are explicit
 - exceptions/panics cannot cross the ABI

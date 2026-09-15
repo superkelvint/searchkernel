@@ -64,19 +64,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkernel-api"
-version = "0.1.0"
-dependencies = [
- "flatbuffers",
-]
-
-[[package]]
 name = "searchkernel-c6-client-behavior"
 version = "0.0.0"
 dependencies = [
  "flatbuffers",
  "searchkernel-client",
- "searchkernel-core",
+ "searchkernel-ir",
  "searchkernel-json",
  "serde_json",
 ]
@@ -86,15 +79,15 @@ name = "searchkernel-client"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
- "searchkernel-core",
+ "searchkernel-ir",
 ]
 
 [[package]]
-name = "searchkernel-core"
+name = "searchkernel-ir"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
- "searchkernel-api",
+ "searchkernel-protocol",
 ]
 
 [[package]]
@@ -103,9 +96,16 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "flatbuffers",
- "searchkernel-api",
+ "searchkernel-protocol",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "searchkernel-protocol"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
 ]
 
 [[package]]

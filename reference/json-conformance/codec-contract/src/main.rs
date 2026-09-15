@@ -39,7 +39,7 @@ fn assert_no_wire_discriminators(value: &Value) {
 
 fn fixtures(kind: &str, extension: &str) -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../crates/searchkernel-json/tests/fixtures")
+        .join("../../../core/crates/searchkernel-json/tests/fixtures")
         .join(kind);
     let mut paths = std::fs::read_dir(root)
         .unwrap()

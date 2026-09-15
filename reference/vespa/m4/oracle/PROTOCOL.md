@@ -77,4 +77,4 @@ Reply `OK` and exit zero.
 ## Required path
 
 The oracle process directly instantiates/uses pinned Vespa C++ classes. It must
-not link or call Search Kernel Rust or `native/vespa` implementation code.
+not link or call Search Kernel Rust or `core/native/vespa` implementation code.

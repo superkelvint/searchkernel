@@ -1,8 +1,0 @@
-[package]
-name = "searchkernel-api"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-flatbuffers = "=25.12.19"

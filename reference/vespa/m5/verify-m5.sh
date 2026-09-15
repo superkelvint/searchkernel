@@ -11,11 +11,11 @@ mkdir -p "$TARGET"
 "$ROOT/m4/verify-m4.sh"
 
 for scenario in "$ROOT/m5/scenarios"/*.json; do
-    check_fixture_literals "$scenario" "$REPO_ROOT/crates/searchkernel-vespa/src" \
-        "$REPO_ROOT/crates/searchkernel-vespa-sys/src" "$REPO_ROOT/native/vespa"
+    check_fixture_literals "$scenario" "$REPO_ROOT/core/crates/searchkernel-vespa-engine/src" \
+        "$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src" "$REPO_ROOT/core/native/vespa"
 done
 
-if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-core|searchkernel-testkit|serde_json|HashMap|HashSet' \
+if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-ir|searchkernel-testkit|serde_json|HashMap|HashSet' \
     "$ROOT/m5/rust-driver"; then
     echo "M5 driver has a forbidden dependency or persistence shortcut" >&2
     exit 1

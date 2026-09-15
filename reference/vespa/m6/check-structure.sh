@@ -5,7 +5,7 @@ cd "$ROOT"
 
 bad=0
 existing_roots=()
-for dir in crates/searchkernel-vespa crates/searchkernel-vespa-sys native/vespa; do
+for dir in core/crates/searchkernel-vespa-engine core/crates/searchkernel-vespa-bindings core/native/vespa; do
   [[ -e "$dir" ]] && existing_roots+=("$dir")
 done
 
@@ -21,17 +21,17 @@ check_absent() {
 check_absent 'Command::new\("java"\)|Command::new\("mvn"\)|JNI_CreateJavaVM|libjvm'
 check_absent 'reference/vespa/m6/(expected|scenarios|oracle)|reference/vespa/m4/fixture'
 
-for manifest in crates/searchkernel-vespa/Cargo.toml crates/searchkernel-vespa-sys/Cargo.toml; do
-  if [[ -f "$manifest" ]] && grep -n 'searchkernel-core' "$manifest"; then
-    echo 'M-series dependency firewall violated: searchkernel-core dependency found' >&2
+for manifest in core/crates/searchkernel-vespa-engine/Cargo.toml core/crates/searchkernel-vespa-bindings/Cargo.toml; do
+  if [[ -f "$manifest" ]] && grep -n 'searchkernel-ir' "$manifest"; then
+    echo 'M-series dependency firewall violated: searchkernel-ir dependency found' >&2
     bad=1
   fi
 done
 
 # M6 removes the historical native document-type fixture identity. Production
 # native adapter sources may no longer hard-code "typea". Tests/reference files
-# are intentionally outside native/vespa production sources checked here.
-if [[ -d native/vespa ]]; then
+# are intentionally outside core/native/vespa production sources checked here.
+if [[ -d core/native/vespa ]]; then
   while IFS= read -r -d '' file; do
     case "$file" in
       */test/*|*/tests/*|*_test.cc|*_test.cpp|*_test.cxx) continue ;;
@@ -40,12 +40,12 @@ if [[ -d native/vespa ]]; then
       echo "M6 forbids hard-coded historical document type in native production source: $file" >&2
       bad=1
     fi
-  done < <(find native/vespa -type f \( -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \) -print0)
+  done < <(find core/native/vespa -type f \( -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \) -print0)
 fi
 
 # The compiler must produce the frozen private manifest, not merely validate and
 # discard document_type.
-if [[ -d crates/searchkernel-vespa/src ]] && ! grep -R -q 'searchkernel-schema\.json' crates/searchkernel-vespa/src --include='*.rs'; then
+if [[ -d core/crates/searchkernel-vespa-engine/src ]] && ! grep -R -q 'searchkernel-schema\.json' core/crates/searchkernel-vespa-engine/src --include='*.rs'; then
   echo 'M6 compiler does not reference required searchkernel-schema.json manifest' >&2
   bad=1
 fi

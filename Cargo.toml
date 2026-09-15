@@ -1,14 +1,15 @@
 [workspace]
 members = [
-    "crates/searchkernel-api",
-    "crates/searchkernel-core",
-    "crates/searchkernel",
-    "crates/searchkernel-vespa-sys",
-    "crates/searchkernel-vespa",
-    "crates/searchkernel-testkit",
-    "crates/searchkernel-ffi",
-    "crates/searchkernel-json",
-    "crates/searchkernel-client",
+    "core/crates/searchkernel-protocol",
+    "core/crates/searchkernel-ir",
+    "core/crates/searchkernel",
+    "core/crates/searchkernel-vespa-bindings",
+    "core/crates/searchkernel-vespa-engine",
+    "core/crates/searchkernel-testkit",
+    "core/crates/searchkernel-ffi",
+    "core/crates/searchkernel-json",
+    "core/crates/searchkernel-client",
+    "core/crates/searchkernel-ir-adapter",
     "tools/searchkernel-bindgen",
 ]
 resolver = "2"

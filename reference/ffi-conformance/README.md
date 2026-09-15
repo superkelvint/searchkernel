@@ -23,7 +23,7 @@ The verifier intentionally does not test search behavior. `searchkernel-testkit`
 C5 must provide:
 
 ```text
-crates/searchkernel-ffi/
+core/crates/searchkernel-ffi/
     Cargo.toml
     include/searchkernel_ffi.h
     src/...

@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use flatbuffers::{root, FlatBufferBuilder, WIPOffset};
-    use searchkernel_core::{api, Backend, IndexContext, OperationIr, PortableError};
+    use searchkernel_ir::{api, Backend, IndexContext, OperationIr, PortableError};
     use searchkernel_ffi::test_support::{
         decode_response, live_buffer_count, live_handle_count, register_index, wrap_request,
         wrap_request_with_protocol, wrap_unknown_operation, DecodedResponse, RequestKind,
@@ -482,53 +482,53 @@ mod tests {
         }
     }
 
-    fn document_result() -> searchkernel_core::DocumentResult {
+    fn document_result() -> searchkernel_ir::DocumentResult {
         let mut fields = BTreeMap::new();
         fields.insert(
             "title".to_owned(),
-            searchkernel_core::Value::String("Wireless Headphones".to_owned()),
+            searchkernel_ir::Value::String("Wireless Headphones".to_owned()),
         );
-        searchkernel_core::DocumentResult {
+        searchkernel_ir::DocumentResult {
             id: "doc-1".to_owned(),
             fields,
         }
     }
 
-    fn search_result() -> searchkernel_core::SearchResult {
+    fn search_result() -> searchkernel_ir::SearchResult {
         let doc = document_result();
-        searchkernel_core::SearchResult {
-            hits: vec![searchkernel_core::Hit {
+        searchkernel_ir::SearchResult {
+            hits: vec![searchkernel_ir::Hit {
                 id: doc.id.clone(),
                 score: Some(1.25),
                 fields: doc.fields,
-                highlights: vec![searchkernel_core::HighlightResult {
+                highlights: vec![searchkernel_ir::HighlightResult {
                     field: "title".to_owned(),
-                    fragments: vec![searchkernel_core::HighlightFragment {
+                    fragments: vec![searchkernel_ir::HighlightFragment {
                         text: "Wireless Headphones".to_owned(),
-                        matches: vec![searchkernel_core::HighlightSpan {
+                        matches: vec![searchkernel_ir::HighlightSpan {
                             start_byte: 9,
                             end_byte: 19,
                         }],
                     }],
                 }],
             }],
-            total_hits: searchkernel_core::TotalHits {
+            total_hits: searchkernel_ir::TotalHits {
                 value: 1,
-                relation: searchkernel_core::TotalHitsRelation::Exact,
+                relation: searchkernel_ir::TotalHitsRelation::Exact,
             },
-            facets: vec![searchkernel_core::FacetResult {
+            facets: vec![searchkernel_ir::FacetResult {
                 field: "brand".to_owned(),
-                values: vec![searchkernel_core::FacetValue {
-                    value: searchkernel_core::Value::String("Sony".to_owned()),
+                values: vec![searchkernel_ir::FacetValue {
+                    value: searchkernel_ir::Value::String("Sony".to_owned()),
                     count: 1,
                 }],
             }],
         }
     }
 
-    fn analyze_result() -> searchkernel_core::AnalyzeResult {
-        searchkernel_core::AnalyzeResult {
-            tokens: vec![searchkernel_core::AnalyzedToken {
+    fn analyze_result() -> searchkernel_ir::AnalyzeResult {
+        searchkernel_ir::AnalyzeResult {
+            tokens: vec![searchkernel_ir::AnalyzedToken {
                 surface: "Running".to_owned(),
                 term: "running".to_owned(),
                 position: 0,
@@ -558,28 +558,28 @@ mod tests {
             (
                 RequestKind::Insert,
                 insert_bytes(),
-                ScriptedResult::Insert(searchkernel_core::InsertResult {
+                ScriptedResult::Insert(searchkernel_ir::InsertResult {
                     id: "doc-1".to_owned(),
                 }),
             ),
             (
                 RequestKind::Upsert,
                 upsert_bytes(),
-                ScriptedResult::Upsert(searchkernel_core::UpsertResult {
+                ScriptedResult::Upsert(searchkernel_ir::UpsertResult {
                     id: "doc-1".to_owned(),
                 }),
             ),
             (
                 RequestKind::Patch,
                 patch_bytes(),
-                ScriptedResult::Patch(searchkernel_core::PatchResult {
+                ScriptedResult::Patch(searchkernel_ir::PatchResult {
                     id: "doc-1".to_owned(),
                 }),
             ),
             (
                 RequestKind::Delete,
                 delete_bytes(),
-                ScriptedResult::Delete(searchkernel_core::DeleteResult {
+                ScriptedResult::Delete(searchkernel_ir::DeleteResult {
                     id: "doc-1".to_owned(),
                     deleted: true,
                 }),
@@ -587,7 +587,7 @@ mod tests {
             (
                 RequestKind::Get,
                 get_bytes(),
-                ScriptedResult::Get(searchkernel_core::GetResult {
+                ScriptedResult::Get(searchkernel_ir::GetResult {
                     document: Some(document_result()),
                 }),
             ),
@@ -678,9 +678,9 @@ mod tests {
         let mut metadata = BTreeMap::new();
         metadata.insert("source".to_owned(), "scripted".to_owned());
         let expected_error = PortableError {
-            code: searchkernel_core::ErrorCode::Unavailable,
+            code: searchkernel_ir::ErrorCode::Unavailable,
             message: "backend temporarily unavailable".to_owned(),
-            details: vec![searchkernel_core::ErrorDetail {
+            details: vec![searchkernel_ir::ErrorDetail {
                 code: "backend_unavailable".to_owned(),
                 path: Some("search".to_owned()),
                 message: "backend temporarily unavailable".to_owned(),
@@ -713,27 +713,27 @@ mod tests {
         let script = vec![
             ExpectedCall::success(
                 expected_operation(&context, RequestKind::Delete, &delete_inner),
-                ScriptedResult::Delete(searchkernel_core::DeleteResult {
+                ScriptedResult::Delete(searchkernel_ir::DeleteResult {
                     id: "doc-1".to_owned(),
                     deleted: false,
                 }),
             ),
             ExpectedCall::success(
                 expected_operation(&context, RequestKind::Get, &get_inner),
-                ScriptedResult::Get(searchkernel_core::GetResult { document: None }),
+                ScriptedResult::Get(searchkernel_ir::GetResult { document: None }),
             ),
             ExpectedCall::success(
                 expected_operation(&context, RequestKind::Search, &search_inner),
-                ScriptedResult::Search(searchkernel_core::SearchResult {
+                ScriptedResult::Search(searchkernel_ir::SearchResult {
                     hits: vec![],
-                    total_hits: searchkernel_core::TotalHits {
+                    total_hits: searchkernel_ir::TotalHits {
                         value: 100,
-                        relation: searchkernel_core::TotalHitsRelation::LowerBound,
+                        relation: searchkernel_ir::TotalHitsRelation::LowerBound,
                     },
-                    facets: vec![searchkernel_core::FacetResult {
+                    facets: vec![searchkernel_ir::FacetResult {
                         field: "brand".to_owned(),
-                        values: vec![searchkernel_core::FacetValue {
-                            value: searchkernel_core::Value::String("Sony".to_owned()),
+                        values: vec![searchkernel_ir::FacetValue {
+                            value: searchkernel_ir::Value::String("Sony".to_owned()),
                             count: 7,
                         }],
                     }],
@@ -756,7 +756,7 @@ mod tests {
                 assert_eq!(actual.total_hits.value, 100);
                 assert_eq!(
                     actual.total_hits.relation,
-                    searchkernel_core::TotalHitsRelation::LowerBound
+                    searchkernel_ir::TotalHitsRelation::LowerBound
                 );
                 assert_eq!(actual.facets.len(), 1);
                 assert_eq!(actual.facets[0].field, "brand");
@@ -1073,13 +1073,13 @@ mod tests {
     struct PanicBackend;
 
     impl Backend for PanicBackend {
-        fn insert(&self, _: searchkernel_core::InsertRequestIr) -> searchkernel_core::Result<searchkernel_core::InsertResult> { panic!("intentional verifier panic") }
-        fn upsert(&self, _: searchkernel_core::UpsertRequestIr) -> searchkernel_core::Result<searchkernel_core::UpsertResult> { panic!("intentional verifier panic") }
-        fn patch(&self, _: searchkernel_core::PatchRequestIr) -> searchkernel_core::Result<searchkernel_core::PatchResult> { panic!("intentional verifier panic") }
-        fn delete(&self, _: searchkernel_core::DeleteRequestIr) -> searchkernel_core::Result<searchkernel_core::DeleteResult> { panic!("intentional verifier panic") }
-        fn get(&self, _: searchkernel_core::GetRequestIr) -> searchkernel_core::Result<searchkernel_core::GetResult> { panic!("intentional verifier panic") }
-        fn search(&self, _: searchkernel_core::SearchRequestIr) -> searchkernel_core::Result<searchkernel_core::SearchResult> { panic!("intentional verifier panic") }
-        fn analyze(&self, _: searchkernel_core::AnalyzeRequestIr) -> searchkernel_core::Result<searchkernel_core::AnalyzeResult> { panic!("intentional verifier panic") }
+        fn insert(&self, _: searchkernel_ir::InsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::InsertResult> { panic!("intentional verifier panic") }
+        fn upsert(&self, _: searchkernel_ir::UpsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::UpsertResult> { panic!("intentional verifier panic") }
+        fn patch(&self, _: searchkernel_ir::PatchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::PatchResult> { panic!("intentional verifier panic") }
+        fn delete(&self, _: searchkernel_ir::DeleteRequestIr) -> searchkernel_ir::Result<searchkernel_ir::DeleteResult> { panic!("intentional verifier panic") }
+        fn get(&self, _: searchkernel_ir::GetRequestIr) -> searchkernel_ir::Result<searchkernel_ir::GetResult> { panic!("intentional verifier panic") }
+        fn search(&self, _: searchkernel_ir::SearchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::SearchResult> { panic!("intentional verifier panic") }
+        fn analyze(&self, _: searchkernel_ir::AnalyzeRequestIr) -> searchkernel_ir::Result<searchkernel_ir::AnalyzeResult> { panic!("intentional verifier panic") }
     }
 
     #[test]
@@ -1104,13 +1104,13 @@ mod tests {
     }
 
     impl Backend for BlockingBackend {
-        fn insert(&self, _: searchkernel_core::InsertRequestIr) -> searchkernel_core::Result<searchkernel_core::InsertResult> { unreachable!() }
-        fn upsert(&self, _: searchkernel_core::UpsertRequestIr) -> searchkernel_core::Result<searchkernel_core::UpsertResult> { unreachable!() }
-        fn patch(&self, _: searchkernel_core::PatchRequestIr) -> searchkernel_core::Result<searchkernel_core::PatchResult> { unreachable!() }
-        fn delete(&self, _: searchkernel_core::DeleteRequestIr) -> searchkernel_core::Result<searchkernel_core::DeleteResult> { unreachable!() }
-        fn get(&self, _: searchkernel_core::GetRequestIr) -> searchkernel_core::Result<searchkernel_core::GetResult> { unreachable!() }
-        fn analyze(&self, _: searchkernel_core::AnalyzeRequestIr) -> searchkernel_core::Result<searchkernel_core::AnalyzeResult> { unreachable!() }
-        fn search(&self, _: searchkernel_core::SearchRequestIr) -> searchkernel_core::Result<searchkernel_core::SearchResult> {
+        fn insert(&self, _: searchkernel_ir::InsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::InsertResult> { unreachable!() }
+        fn upsert(&self, _: searchkernel_ir::UpsertRequestIr) -> searchkernel_ir::Result<searchkernel_ir::UpsertResult> { unreachable!() }
+        fn patch(&self, _: searchkernel_ir::PatchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::PatchResult> { unreachable!() }
+        fn delete(&self, _: searchkernel_ir::DeleteRequestIr) -> searchkernel_ir::Result<searchkernel_ir::DeleteResult> { unreachable!() }
+        fn get(&self, _: searchkernel_ir::GetRequestIr) -> searchkernel_ir::Result<searchkernel_ir::GetResult> { unreachable!() }
+        fn analyze(&self, _: searchkernel_ir::AnalyzeRequestIr) -> searchkernel_ir::Result<searchkernel_ir::AnalyzeResult> { unreachable!() }
+        fn search(&self, _: searchkernel_ir::SearchRequestIr) -> searchkernel_ir::Result<searchkernel_ir::SearchResult> {
             self.entered.wait();
             self.release.wait();
             Ok(search_result())

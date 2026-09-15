@@ -217,26 +217,26 @@ checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 name = "searchkernel-m6-driver"
 version = "0.0.0"
 dependencies = [
- "searchkernel-vespa",
+ "searchkernel-vespa-engine",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "searchkernel-vespa"
-version = "0.1.0"
-dependencies = [
- "searchkernel-vespa-sys",
- "unicode-general-category",
- "unicode-normalization",
-]
-
-[[package]]
-name = "searchkernel-vespa-sys"
+name = "searchkernel-vespa-bindings"
 version = "0.1.0"
 dependencies = [
  "bindgen",
  "cc",
+]
+
+[[package]]
+name = "searchkernel-vespa-engine"
+version = "0.1.0"
+dependencies = [
+ "searchkernel-vespa-bindings",
+ "unicode-general-category",
+ "unicode-normalization",
 ]
 
 [[package]]

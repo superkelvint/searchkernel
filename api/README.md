@@ -10,8 +10,8 @@ boundary between callers and Search Kernel.
 2. Read `searchkernel_ffi_request.fbs` and `searchkernel_ffi_response.fbs` for
    the small request/response envelopes used by the native ABI.
 3. Follow the Rust conversion code in
-   `crates/searchkernel-core/src/api_to_ir.rs` and
-   `crates/searchkernel-core/src/ir_to_api.rs`.
+   `core/crates/searchkernel-ir/src/api_to_ir.rs` and
+   `core/crates/searchkernel-ir/src/ir_to_api.rs`.
 
 ## Concepts to know
 

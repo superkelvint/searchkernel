@@ -2,14 +2,14 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 root="$(repo_root)"
-src="$root/crates/searchkernel-ffi/src"
+src="$root/core/crates/searchkernel-ffi/src"
 [[ -d "$src" ]] || fail "missing $src"
 
 if grep -RInE --include='*.rs' '(root_unchecked|get_root_unchecked|root_as_.*unchecked)' "$src"; then
   fail "unchecked FlatBuffers parsing is forbidden in searchkernel-ffi"
 fi
 
-if grep -RInE --include='*.rs' 'searchkernel[_-]vespa' "$src" "$root/crates/searchkernel-ffi/Cargo.toml" "$root/crates/searchkernel-ffi/build.rs" 2>/dev/null; then
+if grep -RInE --include='*.rs' 'searchkernel[_-]vespa' "$src" "$root/core/crates/searchkernel-ffi/Cargo.toml" "$root/core/crates/searchkernel-ffi/build.rs" 2>/dev/null; then
   fail "Vespa dependency/reference found in searchkernel-ffi"
 fi
 

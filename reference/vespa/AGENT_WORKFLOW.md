@@ -98,6 +98,6 @@ Before implementation, review and commit the verifier specification. For a
 reviewer, inspect reference changes with:
 
 ```sh
-git diff -- reference/vespa reference/clients reference/integration
+git diff -- reference/
 git diff <verifier-freeze-commit>..HEAD -- reference/
 ```

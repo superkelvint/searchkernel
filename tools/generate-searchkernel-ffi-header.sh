@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-OUTPUT="$ROOT/crates/searchkernel-ffi/include/searchkernel_ffi.h"
+OUTPUT="$ROOT/core/crates/searchkernel-ffi/include/searchkernel_ffi.h"
 REFERENCE="$ROOT/reference/ffi-conformance/include/searchkernel_ffi.h"
 
 command -v cbindgen >/dev/null 2>&1 || {
@@ -11,8 +11,8 @@ command -v cbindgen >/dev/null 2>&1 || {
 }
 
 cbindgen \
-  --config "$ROOT/crates/searchkernel-ffi/cbindgen.toml" \
-  "$ROOT/crates/searchkernel-ffi" \
+  --config "$ROOT/core/crates/searchkernel-ffi/cbindgen.toml" \
+  "$ROOT/core/crates/searchkernel-ffi" \
   --output "$OUTPUT"
 
 cmp -s "$OUTPUT" "$REFERENCE" || {

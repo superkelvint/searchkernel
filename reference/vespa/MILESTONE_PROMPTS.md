@@ -41,7 +41,7 @@ Implement the exact Rust API frozen in reference/vespa/API_CONTRACT.md.
 Safely own the M0 native engine from Rust.
 
 Do not create a fake Rust engine.
-Do not bypass searchkernel-vespa-sys.
+Do not bypass searchkernel-vespa-bindings.
 Do not change the API contract.
 Do not expose raw pointers or Vespa C++ types publicly.
 ```

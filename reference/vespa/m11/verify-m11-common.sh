@@ -26,7 +26,7 @@ PY
     SK_NATIVE_SDK="$M11_SDK" \
     SK_NATIVE_BUILD_DIR="$M11_BUILD" \
     SK_NATIVE_ENABLE_FAILPOINTS=1 \
-      "$ROOT/native/vespa/build-sdk.sh"
+      "$ROOT/core/native/vespa/build-sdk.sh"
   fi
   [[ -d "$M11_SDK_CONFIG" ]] || fail_verification "missing M11 SDK config: $M11_SDK_CONFIG"
   require_sdk_manifest "$M11_SDK/manifest.json"

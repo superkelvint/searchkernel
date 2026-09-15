@@ -35,12 +35,12 @@ agent. That verifier-authoring commit is the specification freeze boundary.
 Expected repository shape:
 
 ```text
-crates/
+core/crates/
     searchkernel/
-    searchkernel-vespa/
-    searchkernel-vespa-sys/
+    searchkernel-vespa-engine/
+    searchkernel-vespa-bindings/
 
-native/
+core/native/
     sdk/
         linux-x86_64/
             include/searchkernel_vespa.h
@@ -58,13 +58,13 @@ reference/
 By default the verifier expects:
 
 ```text
-native/sdk/linux-x86_64
+core/native/sdk/linux-x86_64
 ```
 
 Override with:
 
 ```sh
-export SK_NATIVE_SDK=/absolute/path/to/native/sdk/linux-x86_64
+export SK_NATIVE_SDK=/absolute/path/to/core/native/sdk/linux-x86_64
 ```
 
 The SDK must be usable without a Vespa source checkout or Vespa development

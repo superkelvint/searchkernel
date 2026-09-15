@@ -1,4 +1,4 @@
-use searchkernel_vespa::{Engine, Error};
+use searchkernel_vespa_engine::{Engine, Error};
 use std::error::Error as StdError;
 use std::io::Write;
 use std::path::{Path, PathBuf};

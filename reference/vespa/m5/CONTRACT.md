@@ -4,7 +4,7 @@
 
 Prove that the embedded Vespa engine preserves the M2 `typea.attr1` logical
 state across graceful engine and process lifetimes. M5 uses only the direct
-`searchkernel-vespa` safe wrapper and the existing native M2 mutation/search
+`searchkernel-vespa-engine` safe wrapper and the existing native M2 mutation/search
 path.
 
 ## Graceful process-boundary scenario

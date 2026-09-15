@@ -7,5 +7,5 @@ publish = false
 [workspace]
 
 [dependencies]
-searchkernel-json = { path = "../../../crates/searchkernel-json" }
+searchkernel-json = { path = "../../../core/crates/searchkernel-json" }
 serde_json = "1"

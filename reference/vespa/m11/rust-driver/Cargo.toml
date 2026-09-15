@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-searchkernel-vespa = { path = "../../../../crates/searchkernel-vespa", features = ["hardening"] }
+searchkernel-vespa-engine = { path = "../../../../core/crates/searchkernel-vespa-engine", features = ["hardening"] }
 
 [[bin]]
 name = "searchkernel-m11-driver"

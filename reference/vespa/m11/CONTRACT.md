@@ -1,6 +1,6 @@
 # M11 — Low-Level Wrapper Hardening
 
-M11 hardens the standalone `searchkernel-vespa` wrapper and the current M0–M7
+M11 hardens the standalone `searchkernel-vespa-engine` wrapper and the current M0–M7
 native surface. It adds no search semantics and has no dependency on the
 C-series. M8–M10 are not present in this checkout and are intentionally not
 recreated here.

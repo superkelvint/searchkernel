@@ -18,7 +18,7 @@ run_lane() {
   local sdk="$TARGET/$lane/sdk"
   local build="$TARGET/$lane/native-build"
   SK_NATIVE_SDK="$sdk" SK_NATIVE_BUILD_DIR="$build" \
-    "$ROOT/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
+    "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
   export SK_NATIVE_SDK="$sdk"
   export CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"

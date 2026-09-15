@@ -1,4 +1,4 @@
-use searchkernel_vespa::{Engine, Query, RangeBound, Result, TextSearchResult};
+use searchkernel_vespa_engine::{Engine, Query, RangeBound, Result, TextSearchResult};
 
 fn execute(engine: &Engine) -> Result<()> {
     let term = Query::Term {

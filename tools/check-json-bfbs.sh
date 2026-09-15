@@ -28,6 +28,6 @@ trap 'rm -rf "$temporary"' EXIT
     "$root/api/searchkernel_ffi_response.fbs"
 
 cmp "$temporary/searchkernel_ffi_request.bfbs" \
-    "$root/crates/searchkernel-json/bfbs/searchkernel_ffi_request.bfbs"
+    "$root/core/crates/searchkernel-json/bfbs/searchkernel_ffi_request.bfbs"
 cmp "$temporary/searchkernel_ffi_response.bfbs" \
-    "$root/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs"
+    "$root/core/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs"

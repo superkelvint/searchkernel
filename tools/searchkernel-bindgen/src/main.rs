@@ -52,18 +52,26 @@ fn run() -> Result<(), String> {
     ensure_client_template_coverage(&operations)?;
     ensure_output_root(&arguments.output_root)?;
 
-    write_file(
-        &arguments
-            .output_root
-            .join("crates/searchkernel-client/src/generated.rs"),
-        generate_client(&operations, &request_schema, &response_schema).as_bytes(),
-    )?;
-    write_file(
-        &arguments
-            .output_root
-            .join("crates/searchkernel-json/src/generated.rs"),
-        generate_json_codec(&request_schema, &response_schema).as_bytes(),
-    )?;
+    let generated_client = generate_client(&operations, &request_schema, &response_schema);
+    let generated_json = generate_json_codec(&request_schema, &response_schema);
+    for relative in [
+        "core/crates/searchkernel-client/src/generated.rs",
+        "core/crates/searchkernel-client/src/generated.rs",
+    ] {
+        write_file(
+            &arguments.output_root.join(relative),
+            generated_client.as_bytes(),
+        )?;
+    }
+    for relative in [
+        "core/crates/searchkernel-json/src/generated.rs",
+        "core/crates/searchkernel-json/src/generated.rs",
+    ] {
+        write_file(
+            &arguments.output_root.join(relative),
+            generated_json.as_bytes(),
+        )?;
+    }
 
     let generated_root = arguments
         .output_root

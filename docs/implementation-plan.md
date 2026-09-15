@@ -3,7 +3,7 @@
 Search Kernel is a Rust interface to Vespa's local C++ search engine.
 
 The final API architecture is Portable API (FlatBuffers) → `*_to_ir` in
-`searchkernel-core` → owned Search Kernel IR → backend interface → `lower_*`
+`searchkernel-ir` → owned Search Kernel IR → backend interface → `lower_*`
 Vespa representation → execution. Milestone labels in this document are
 verification history, not architectural layers.
 
@@ -292,7 +292,7 @@ Calling the Java oracle from production code does not count.
 Package the existing working embedded Vespa engine into:
 
 ```text
-native/sdk/<target>/
+core/native/sdk/<target>/
 ```
 
 usable outside the Vespa build environment.
@@ -458,25 +458,30 @@ The I-series explicitly names cross-track dependencies when integration requires
 ```text
 searchkernel2/
 ├── api/
-│   └── searchkernel.proto
-├── crates/
-│   ├── searchkernel-api/
-│   ├── searchkernel-core/
-│   ├── searchkernel/
-│   ├── searchkernel-ffi/
-│   ├── searchkernel-testkit/
-│   ├── searchkernel-vespa/
-│   ├── searchkernel-vespa-sys/
-│   └── searchkernel-vespa-backend/
-├── bindings/
+│   └── *.fbs
+├── core/
+│   ├── crates/
+│   │   ├── searchkernel-protocol/
+│   │   ├── searchkernel-ir/
+│   │   ├── searchkernel/
+│   │   ├── searchkernel-ffi/
+│   │   ├── searchkernel-testkit/
+│   │   ├── searchkernel-client/
+│   │   ├── searchkernel-json/
+│   │   ├── searchkernel-vespa-engine/
+│   │   ├── searchkernel-vespa-bindings/
+│   │   └── searchkernel-ir-adapter/
+│   └── native/
+│       ├── vespa/
+│       └── sdk/
+├── clients/
 │   ├── python/
-│   ├── node/
+│   ├── javascript/
 │   ├── php/
 │   ├── go/
-│   └── ...
-├── native/
-│   ├── vespa/
-│   └── sdk/
+│   └── java/
+├── searchkerneld/
+├── searchkernel-web/
 ├── upstream/
 │   └── vespa/
 ├── reference/
@@ -487,8 +492,7 @@ searchkernel2/
 │   └── searchkernel-bindgen/
 ├── docs/
 ├── AGENTS.md
-├── implementation-plan.md
-└── roadmap.md
+└── README.md
 ```
 
 ## 7.2 Dependency firewall
@@ -500,11 +504,11 @@ C-series
 
 searchkernel
     ↓
-searchkernel-core
+searchkernel-ir
     ↓
-searchkernel-api
+searchkernel-protocol
 
-NO dependency on searchkernel-vespa
+NO dependency on searchkernel-vespa-engine
 ```
 
 and:
@@ -512,19 +516,19 @@ and:
 ```text
 M-series
 
-searchkernel-vespa
+searchkernel-vespa-engine
     ↓
-searchkernel-vespa-sys
+searchkernel-vespa-bindings
     ↓
 native ABI / Vespa C++
 
-NO dependency on searchkernel-core
+NO dependency on searchkernel-ir
 ```
 
 Only:
 
 ```text
-searchkernel-vespa-backend
+searchkernel-ir-adapter
 ```
 
 may depend on both.
@@ -561,7 +565,7 @@ native search results
 
 Do not expose an `index.vespa()` escape hatch from the product API.
 
-Applications that deliberately want the low-level API use `searchkernel-vespa` directly.
+Applications that deliberately want the low-level API use `searchkernel-vespa-engine` directly.
 
 ---
 
@@ -736,7 +740,7 @@ Preserve selected data directories for future upgrade testing.
 
 Stop depending on precompiled configuration fixtures for the supported low-level schema subset.
 
-This milestone defines the representation needed by `searchkernel-vespa`, not the C-series product schema.
+This milestone defines the representation needed by `searchkernel-vespa-engine`, not the C-series product schema.
 
 ### Initial concepts
 
@@ -755,7 +759,7 @@ stored/summary
 ### Implementation boundary
 
 ```text
-searchkernel-vespa config model
+searchkernel-vespa-engine config model
     ↓
 embedded compiler
     ↓
@@ -795,7 +799,7 @@ Exists
 ### Processing
 
 ```text
-searchkernel-vespa Query
+searchkernel-vespa-engine Query
     ↓
 M6 field metadata
     ↓
@@ -909,7 +913,7 @@ Ranking evaluation remains C++.
 
 ### Goal
 
-Harden `searchkernel-vespa` independently.
+Harden `searchkernel-vespa-engine` independently.
 
 Exercise:
 
@@ -957,7 +961,7 @@ Freeze the language-neutral semantic request/response model.
 ### Artifact
 
 ```text
-api/searchkernel.proto
+api/*.fbs
 ```
 
 ### Initial messages
@@ -1025,7 +1029,7 @@ Implement Search Kernel product semantics without a backend.
 ### Crate
 
 ```text
-searchkernel-core
+searchkernel-ir
 ```
 
 ### Responsibilities
@@ -1161,7 +1165,7 @@ let results = index
 
 Compile fixtures plus C3 canonical-request/result scenarios.
 
-The Rust package must still build without `searchkernel-vespa`.
+The Rust package must still build without `searchkernel-vespa-engine`.
 
 ---
 
@@ -1309,7 +1313,7 @@ reference/integration/iN/
 The integration implementation belongs in:
 
 ```text
-searchkernel-vespa-backend
+searchkernel-ir-adapter
 ```
 
 ## I1 — Adapter skeleton and firewall
@@ -1323,8 +1327,8 @@ Create the composition boundary without yet mapping significant functionality.
 Enforce the dependency rule:
 
 ```text
-C-series crates -> no searchkernel-vespa dependency
-M-series crates -> no searchkernel-core dependency
+C-series crates -> no searchkernel-vespa-engine dependency
+M-series crates -> no searchkernel-ir dependency
 integration crate -> may depend on both
 ```
 
@@ -1468,7 +1472,7 @@ M9
 
 Compile high-level facet/group operations onto native grouping.
 
-Keep facet semantics owned by `searchkernel-core`.
+Keep facet semantics owned by `searchkernel-ir`.
 
 ---
 

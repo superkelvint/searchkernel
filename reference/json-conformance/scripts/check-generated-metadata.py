@@ -57,7 +57,7 @@ def validate(instance,schema,root,path='$'):
 manifest=json.loads((generated/'manifest.json').read_text())
 if manifest.get('generated_by')!='searchkernel-bindgen' or manifest.get('format_version')!=1: raise SystemExit('invalid manifest header')
 for name in ['searchkernel_ffi_request.bfbs','searchkernel_ffi_response.bfbs']:
-    want=hashlib.sha256((root/'crates/searchkernel-json/bfbs'/name).read_bytes()).hexdigest()
+    want=hashlib.sha256((root/'core/crates/searchkernel-json/bfbs'/name).read_bytes()).hexdigest()
     try: got=manifest['bfbs'][name]['sha256']
     except Exception as exc: raise SystemExit(f'manifest missing hash for {name}: {exc}')
     if got != want: raise SystemExit(f'manifest hash mismatch for {name}')
@@ -71,7 +71,7 @@ for filename,obj in [('searchkernel.schema.json',schema),('openapi-components.js
         if f'"{forbidden}"' in rendered: raise SystemExit(f'{filename} exposes {forbidden}')
 components=openapi.get('components',{}).get('schemas')
 if not isinstance(components,dict) or not components: raise SystemExit('openapi components.schemas must be non-empty')
-rb=sorted((root/'crates/searchkernel-json/tests/fixtures/requests').glob('*.skrq')); sb=sorted((root/'crates/searchkernel-json/tests/fixtures/responses').glob('*.skrs'))
+rb=sorted((root/'core/crates/searchkernel-json/tests/fixtures/requests').glob('*.skrq')); sb=sorted((root/'core/crates/searchkernel-json/tests/fixtures/responses').glob('*.skrs'))
 rj=sorted((generated/'requests').glob('*.json')); sj=sorted((generated/'responses').glob('*.json'))
 if [p.stem for p in rj] != [p.stem for p in rb]: raise SystemExit('request JSON fixture names mismatch SKRQ corpus')
 if [p.stem for p in sj] != [p.stem for p in sb]: raise SystemExit('response JSON fixture names mismatch SKRS corpus')

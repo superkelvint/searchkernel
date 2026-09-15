@@ -1,4 +1,4 @@
-use searchkernel_vespa::{ConfigCompiler, Engine, Field, FieldType, Schema, TextDocument, TextQuery};
+use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Schema, TextDocument, TextQuery};
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;

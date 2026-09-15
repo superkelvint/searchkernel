@@ -12,7 +12,7 @@ api/searchkernel_ffi_response.fbs
        │
        │ flatc 25.12.19 -b --schema
        ▼
-crates/searchkernel-json/bfbs/
+core/crates/searchkernel-json/bfbs/
        │
        ▼
 searchkernel-bindgen
@@ -70,8 +70,8 @@ Rules:
 `GENERATED_PATHS.txt` freezes the checked-in generated tree:
 
 ```text
-crates/searchkernel-client/src/generated.rs
-crates/searchkernel-json/src/generated.rs
+core/crates/searchkernel-client/src/generated.rs
+core/crates/searchkernel-json/src/generated.rs
 reference/json-conformance/generated/
 ```
 
@@ -108,7 +108,7 @@ Hashes must equal the exact committed BFBS bytes.
 
 ## Generated portable client API
 
-C6 provides `crates/searchkernel-client/` with this frozen minimum public API:
+C6 provides `core/crates/searchkernel-client/` with this frozen minimum public API:
 
 ```rust
 pub trait Transport {
