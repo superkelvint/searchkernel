@@ -1,0 +1,1 @@
+{"id":"m11-failures","actions":["native_error","std_exception","bad_alloc","unknown_exception","block"],"boundaries":["open_before_native_create","open_after_native_create","mutation_before_native_call","mutation_after_native_call","search_before_match","search_after_match","result_before_copy","result_after_allocation","destroy_before_native_release"]}

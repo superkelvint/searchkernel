@@ -1,0 +1,2 @@
+halt_on_error=1
+print_stacktrace=1

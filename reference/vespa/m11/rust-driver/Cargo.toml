@@ -1,0 +1,11 @@
+[package]
+name = "searchkernel-m11-driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+searchkernel-vespa = { path = "../../../../crates/searchkernel-vespa", features = ["hardening"] }
+
+[[bin]]
+name = "searchkernel-m11-driver"
+path = "src/main.rs"

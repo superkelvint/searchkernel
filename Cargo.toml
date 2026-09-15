@@ -16,6 +16,7 @@ exclude = [
     "reference/vespa/m4/rust-driver",
     "reference/vespa/m6/rust-driver",
     "reference/vespa/m7/rust-driver",
+    "reference/vespa/m11/rust-driver",
 ]
 
 [workspace.package]

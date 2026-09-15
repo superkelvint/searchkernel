@@ -1,0 +1,1 @@
+{"id":"m11-concurrency","mutation_workers":8,"search_workers":4,"aggregate_operations":800000,"disjoint_write_partitions":true,"exact_quiescent_state":true}
