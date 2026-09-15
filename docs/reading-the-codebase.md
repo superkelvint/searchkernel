@@ -54,6 +54,12 @@ core/crates/searchkernel-ir/
 core/crates/searchkernel-protocol/
   Generated Rust views of the FlatBuffers schemas
 
+core/crates/searchkernel-client/
+  Generated portable client transport types
+
+core/crates/searchkernel-json/
+  FlatBuffers JSON conversion and generated JSON support
+
 core/crates/searchkernel-testkit/
   Recording backends, scripted backends, and semantic conformance tools
 
@@ -68,6 +74,18 @@ core/crates/searchkernel-ffi/
 
 core/native/vespa/
   Search Kernel-owned C++ adapter around Vespa
+
+core/native/sdk/
+  Generated/prebuilt native SDK consumed by the Rust bindings
+
+clients/
+  Non-Rust language client package roots
+
+searchkerneld/
+  Daemon and HTTP transport host
+
+searchkernel-web/
+  Administration dashboard
 
 upstream/vespa/
   Pinned, read-only Vespa source used as behavioral authority

@@ -25,7 +25,7 @@ Do not introduce a dependency on text indexing, linguistics, BM25, or later quer
 
 # Goal
 
-Verify that the embedded Vespa engine exposed through `searchkernel-vespa` behaves as a persistent local index across process and engine lifetimes.
+Verify that the embedded Vespa engine exposed through `searchkernel-vespa-engine` behaves as a persistent local index across process and engine lifetimes.
 
 M5 establishes:
 
@@ -56,9 +56,9 @@ The M5 acceptance path is:
 ```text
 Rust
     ↓
-searchkernel-vespa
+searchkernel-vespa-engine
     ↓
-searchkernel-vespa-sys
+searchkernel-vespa-bindings
     ↓
 native Search Kernel ABI
     ↓
@@ -68,7 +68,7 @@ real Vespa persistence/index state
 Forbidden:
 
 ```text
-searchkernel-core
+searchkernel-ir
 searchkernel
 searchkernel-testkit
 

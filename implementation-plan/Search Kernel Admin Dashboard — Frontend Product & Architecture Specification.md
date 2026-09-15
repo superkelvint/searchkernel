@@ -75,7 +75,7 @@ canonical FlatBuffers
     ↓
 shared dispatcher
     ↓
-searchkernel-core
+searchkernel-ir
     ↓
 Search Kernel IR
     ↓
@@ -2172,7 +2172,7 @@ http://localhost:xxxx/
 Static assets:
 
 ```text
-dashboard/dist/
+searchkernel-web/dist/
 ├── index.html
 └── assets/
 ```
@@ -2214,7 +2214,7 @@ Production remains same-origin.
 Recommended:
 
 ```text
-dashboard/
+searchkernel-web/
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -3398,7 +3398,7 @@ This should become the product's defining UX principle.
                   shared dispatcher
                             │
                             ▼
-                  searchkernel-core
+                  searchkernel-ir
                             │
                     Search Kernel IR
                             │

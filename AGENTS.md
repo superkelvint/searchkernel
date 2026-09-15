@@ -53,7 +53,11 @@ searchkernel2/
 ├── upstream/
 │   └── vespa/              # pinned upstream Vespa checkout; read-only
 ├── reference/
-│   └── vespa/              # contracts, golden data, oracles, verifiers
+│   ├── api-conformance/    # Portable API semantic corpus
+│   ├── clients/            # client contracts and scenarios
+│   ├── ffi-conformance/    # native ABI contract and verifier
+│   ├── json-conformance/   # JSON/BFBS generation contract and verifier
+│   └── vespa/              # Vespa lifecycle contracts and verifiers
 ├── tools/
 ├── docs/
 └── AGENTS.md

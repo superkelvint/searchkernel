@@ -18,4 +18,6 @@ api/*.fbs
     -> searchkernel-vespa-bindings
 ```
 
-Native adapter sources and the generated SDK are under `core/native/`.
+The portable JSON and client crates (`searchkernel-json` and
+`searchkernel-client`) also live under `core/crates/`. Native adapter sources
+and the generated SDK are under `core/native/`.

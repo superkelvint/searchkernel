@@ -3,7 +3,7 @@
 Implement the product-facing Rust API in:
 
 ```text
-crates/searchkernel/
+core/crates/searchkernel/
 ```
 
 M0–C3 are complete. Do not regress them.
@@ -40,7 +40,7 @@ search execution
 Vespa translation
 ```
 
-Those remain owned by `searchkernel-core` or the backend.
+Those remain owned by `searchkernel-ir` or the backend.
 
 ---
 
@@ -51,9 +51,9 @@ Allowed:
 ```text
 searchkernel
     ↓
-searchkernel-core
+searchkernel-ir
     ↓
-searchkernel-api
+searchkernel-protocol
 ```
 
 For tests:
@@ -69,15 +69,15 @@ Forbidden:
 ```text
 searchkernel
     X
-searchkernel-vespa
+searchkernel-vespa-engine
 
 searchkernel
     X
-searchkernel-vespa-sys
+searchkernel-vespa-bindings
 
 searchkernel
     X
-searchkernel-vespa-backend
+searchkernel-ir-adapter
 ```
 
 C4 must build and test with no native SDK and no Vespa installation.
@@ -268,7 +268,7 @@ must **not** fill Search Kernel defaults in C4.
 
 It produces a portable field with omitted optional capabilities/analyzer/cardinality where appropriate.
 
-`searchkernel-core` remains the sole owner of defaults and validation.
+`searchkernel-ir` remains the sole owner of defaults and validation.
 
 ---
 
@@ -358,7 +358,7 @@ unsupported integer representation
 invalid multi-value structure
 ```
 
-represent it faithfully where possible and allow `searchkernel-core` to return the canonical semantic error.
+represent it faithfully where possible and allow `searchkernel-ir` to return the canonical semantic error.
 
 The top-level document must serialize as an object/map.
 
@@ -391,7 +391,7 @@ index.delete("sku-42")?;
 
 Do not reinterpret or normalize IDs.
 
-Canonical validity remains owned by `searchkernel-core`.
+Canonical validity remains owned by `searchkernel-ir`.
 
 ---
 
@@ -931,7 +931,7 @@ query normalization
 
 The facade constructs portable intent.
 
-`searchkernel-core` decides its meaning.
+`searchkernel-ir` decides its meaning.
 
 This rule is central.
 
@@ -1153,7 +1153,7 @@ Keep `searchkernel` small.
 Suggested shape:
 
 ```text
-crates/searchkernel/src/
+core/crates/searchkernel/src/
     lib.rs
     index.rs
     schema.rs
@@ -1241,4 +1241,4 @@ all acceptance commands pass
 
 The governing rule is:
 
-> **C4 decides how Search Kernel feels to Rust programmers. `searchkernel-core` remains the sole authority on what their requests mean.**
+> **C4 decides how Search Kernel feels to Rust programmers. `searchkernel-ir` remains the sole authority on what their requests mean.**

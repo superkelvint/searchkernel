@@ -8,10 +8,10 @@ not part of the final architecture.
 Implement:
 
 ```text
-searchkernel-core
+searchkernel-ir
 ```
 
-`searchkernel-core` performs API → IR conversion from the Portable API's
+`searchkernel-ir` performs API → IR conversion from the Portable API's
 FlatBuffers contract into the canonical Search Kernel IR.
 
 It owns:
@@ -58,7 +58,7 @@ FlatBuffers contract
         │
         ▼
 API → IR conversion
-searchkernel-core
+searchkernel-ir
 *_to_ir
         │
         ▼
@@ -95,25 +95,25 @@ It does not decide **what the operation means**.
 Allowed:
 
 ```text
-searchkernel-core
+searchkernel-ir
     ↓
-searchkernel-api
+searchkernel-protocol
 ```
 
 Forbidden:
 
 ```text
-searchkernel-core
+searchkernel-ir
     X
-searchkernel-vespa
+searchkernel-vespa-engine
 
-searchkernel-core
+searchkernel-ir
     X
-searchkernel-vespa-sys
+searchkernel-vespa-bindings
 
-searchkernel-core
+searchkernel-ir
     X
-searchkernel-vespa-backend
+searchkernel-ir-adapter
 ```
 
 No Vespa type or term may appear in the C2 public API.
@@ -2984,9 +2984,9 @@ default_search_fields.fields
 `verify-c2.sh` must prove:
 
 ```text
-searchkernel-core depends on searchkernel-api
+searchkernel-ir depends on searchkernel-protocol
 
-searchkernel-core does not depend on a Vespa crate
+searchkernel-ir does not depend on a Vespa crate
 
 no Vespa crate is reachable through the C2 dependency graph
 

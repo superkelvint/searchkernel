@@ -274,7 +274,8 @@ Where appropriate:
 - prevent the fake backend from being compiled into acceptance drivers;
 - reject fixture IDs or values appearing in production source;
 - reject Vespa headers outside the native adapter;
-- reject raw FFI outside the sys crate;
+- reject raw FFI outside `searchkernel-vespa-bindings` and the portable FFI
+  boundary;
 - compile the frozen API fixture;
 - review `reference/vespa/` changes against the verifier/specification commit;
 - run a separate reviewer looking specifically for bypasses.
@@ -368,7 +369,7 @@ Check that the executable actually links the Search Kernel native library.
 - fake Rust engine;
 - shelling out to another process;
 - raw pointer in public API;
-- bypassing the sys/safe-wrapper layering.
+- bypassing the bindings/safe-wrapper layering.
 
 ---
 
@@ -475,19 +476,19 @@ searchkernel2/
 │       ├── vespa/
 │       └── sdk/
 ├── clients/
-│   ├── python/
-│   ├── javascript/
-│   ├── php/
-│   ├── go/
-│   └── java/
+│   └── README.md
 ├── searchkerneld/
+│   └── README.md
 ├── searchkernel-web/
+│   └── README.md
 ├── upstream/
 │   └── vespa/
 ├── reference/
-│   ├── vespa/
+│   ├── api-conformance/
 │   ├── clients/
-│   └── integration/
+│   ├── ffi-conformance/
+│   ├── json-conformance/
+│   └── vespa/
 ├── tools/
 │   └── searchkernel-bindgen/
 ├── docs/
@@ -1302,13 +1303,9 @@ Run the same portable conformance scenarios.
 
 # 10. I-series — Integration
 
-The I-series is the only series that depends on both M and C artifacts.
-
-Its harness lives under:
-
-```text
-reference/integration/iN/
-```
+The I-series is the only series that depends on both M and C artifacts. Its
+acceptance artifacts belong under the appropriate `reference/` conformance
+area when an integration milestone is added.
 
 The integration implementation belongs in:
 

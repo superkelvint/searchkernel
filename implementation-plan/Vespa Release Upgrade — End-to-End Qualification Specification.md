@@ -21,7 +21,7 @@ The suite verifies the complete embedded path:
 ```text
 Search Kernel Rust API
         ↓
-searchkernel-vespa
+searchkernel-vespa-engine
         ↓
 native ABI
         ↓
@@ -342,7 +342,7 @@ Also verify the native dependency boundary:
 
 ```text
 no Vespa headers leak into public Rust API
-no new raw FFI outside searchkernel-vespa-sys
+no new raw FFI outside searchkernel-vespa-bindings
 no Vespa C++ type crosses the Search Kernel ABI
 ```
 
@@ -1038,9 +1038,9 @@ The acceptance path must use:
 ```text
 real Search Kernel high-level API
         ↓
-real searchkernel-vespa-backend
+real searchkernel-ir-adapter
         ↓
-real searchkernel-vespa
+real searchkernel-vespa-engine
         ↓
 candidate Vespa
 ```

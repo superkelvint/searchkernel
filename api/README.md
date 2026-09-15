@@ -15,7 +15,7 @@ boundary between callers and Search Kernel.
 
 ## Concepts to know
 
-- FlatBuffers tables are borrowed views over bytes. The core crate converts
+- FlatBuffers tables are borrowed views over bytes. `searchkernel-ir` converts
   them into owned Rust values before backend execution.
 - Optional fields preserve presence. Missing and explicitly supplied default
   values are not automatically treated as the same thing.
@@ -23,8 +23,8 @@ boundary between callers and Search Kernel.
   incomplete unions are rejected at the boundary.
 - The schemas describe the portable contract; they do not implement search.
 
-Generated Rust code belongs under the API crate and should not be edited by
-hand.
+Generated Rust protocol code belongs under
+`core/crates/searchkernel-protocol/` and should not be edited by hand.
 
 ## JSON tooling
 
