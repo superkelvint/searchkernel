@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "numeric-presence-unset",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {"name":"category","type":"string","attribute":true,"summary":true},
+      {"name":"qty","type":"integer","attribute":true,"summary":true},
+      {"name":"price","type":"float","attribute":true,"summary":true},
+      {"name":"active","type":"boolean","attribute":true,"summary":true}
+    ]
+  },
+  "documents": [
+    {
+      "id":"id:test:typea::p1",
+      "fields":{
+        "category":{"string":"books"},
+        "qty":{"integer":2},
+        "price":{"float":10.0},
+        "active":{"boolean":true}
+      }
+    },
+    {
+      "id":"id:test:typea::p2",
+      "fields":{
+        "category":{"string":"books"},
+        "qty":{"integer":5},
+        "active":{"boolean":false}
+      }
+    },
+    {
+      "id":"id:test:typea::p3",
+      "fields":{
+        "category":{"string":"games"},
+        "price":{"float":15.25},
+        "active":{"boolean":true}
+      }
+    },
+    {
+      "id":"id:test:typea::p4",
+      "fields":{
+        "category":{"string":"tools"},
+        "active":{"boolean":true}
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id":"integer-exists",
+      "op":"search",
+      "request":{
+        "query":{"exists":{"field":"qty"}},
+        "limit":10,
+        "offset":0,
+        "sort":[{"field":"qty","order":"ascending"}],
+        "summary":{"fields":["qty"]}
+      }
+    },
+    {
+      "id":"float-full-range",
+      "op":"search",
+      "request":{
+        "query":{
+          "attribute_range":{
+            "field":"price",
+            "lower":{"unbounded":true},
+            "upper":{"unbounded":true}
+          }
+        },
+        "limit":10,
+        "offset":0,
+        "sort":[{"field":"price","order":"ascending"}],
+        "summary":{"fields":["price"]}
+      }
+    }
+  ]
+}

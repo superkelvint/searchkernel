@@ -1,0 +1,1 @@
+{"hits":[{"document_id":"id:test:typea::d","score_bits":"0x0000000000000000","summary":{"qty":{"type":"integer","value":20}}},{"document_id":"id:test:typea::c","score_bits":"0x0000000000000000","summary":{"qty":{"type":"integer","value":30}}}],"id":"limit-offset-sort-summary","total_hit_count":5}

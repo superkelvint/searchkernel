@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "id": "multi-key-sort",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "priority",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::m1",
+      "fields": {
+        "qty": {
+          "integer": 10
+        },
+        "priority": {
+          "integer": 1
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::m2",
+      "fields": {
+        "qty": {
+          "integer": 10
+        },
+        "priority": {
+          "integer": 3
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::m3",
+      "fields": {
+        "qty": {
+          "integer": 20
+        },
+        "priority": {
+          "integer": 2
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "exists": {
+        "field": "qty"
+      }
+    },
+    "rank_profile": "default",
+    "limit": 3,
+    "offset": 0,
+    "sort": [
+      {
+        "field": "qty",
+        "order": "ascending"
+      },
+      {
+        "field": "priority",
+        "order": "descending"
+      }
+    ],
+    "summary": {
+      "fields": [
+        "qty",
+        "priority"
+      ]
+    }
+  }
+}

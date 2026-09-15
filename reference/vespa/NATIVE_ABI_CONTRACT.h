@@ -7,10 +7,10 @@
 extern "C" {
 #endif
 
-/* ABI v2 uses only opaque handles and fixed-width primitive arguments. */
+/* ABI v4 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 3U
+#define SK_NATIVE_ABI_VERSION 4U
 
 uint32_t sk_native_abi_version(void);
 

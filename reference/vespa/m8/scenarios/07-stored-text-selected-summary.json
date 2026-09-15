@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "id": "stored-text-selected-summary",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "title",
+        "type": "text",
+        "index": true,
+        "attribute": false,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::s1",
+      "fields": {
+        "title": {
+          "text": "stored value",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 6,
+              "term": "store"
+            },
+            {
+              "position": 1,
+              "byte_start": 7,
+              "byte_len": 5,
+              "term": "valu"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::s2",
+      "fields": {
+        "title": {
+          "text": "other value",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 5,
+              "term": "other"
+            },
+            {
+              "position": 1,
+              "byte_start": 6,
+              "byte_len": 5,
+              "term": "valu"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "term": {
+        "field": "title",
+        "text": "stored",
+        "analysis": [
+          "store"
+        ]
+      }
+    },
+    "rank_profile": "default",
+    "limit": 10,
+    "offset": 0,
+    "sort": [],
+    "summary": {
+      "fields": [
+        "title"
+      ]
+    }
+  }
+}

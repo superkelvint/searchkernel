@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "unknown-sort-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "sort": [
+          {
+            "field": "missing",
+            "order": "ascending"
+          }
+        ]
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "sort-text-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "term": {
+            "field": "title",
+            "text": "fox"
+          }
+        },
+        "sort": [
+          {
+            "field": "title",
+            "order": "ascending"
+          }
+        ]
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "sort-string-deferred-to-m9",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "sku",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "sort": [
+          {
+            "field": "sku",
+            "order": "ascending"
+          }
+        ]
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "unknown-summary-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "summary": {
+          "fields": [
+            "missing"
+          ]
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "summary-not-stored",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": false
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "summary": {
+          "fields": [
+            "qty"
+          ]
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "empty-summary-fields",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "summary": {
+          "fields": []
+        }
+      },
+      "expected_error": "invalid_request"
+    },
+    {
+      "id": "duplicate-summary-fields",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          }
+        ]
+      },
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "summary": {
+          "fields": [
+            "qty",
+            "qty"
+          ]
+        }
+      },
+      "expected_error": "invalid_request"
+    }
+  ]
+}

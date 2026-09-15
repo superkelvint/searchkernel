@@ -1,0 +1,1408 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "unknown-mutation-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "put": {
+          "id": "id:test:typea::x",
+          "fields": {
+            "missing": {
+              "integer": 1
+            }
+          }
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "mutation-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "put": {
+          "id": "id:test:typea::x",
+          "fields": {
+            "title": {
+              "string": "x"
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "wrong-mutation-type",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "put": {
+          "id": "id:test:typea::x",
+          "fields": {
+            "qty": {
+              "string": "seven"
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_value_type"
+    },
+    {
+      "id": "equals-unknown-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_equals": {
+              "field": "missing",
+              "value": {
+                "integer": 1
+              }
+            }
+          }
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "equals-wrong-type",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_equals": {
+              "field": "qty",
+              "value": {
+                "string": "7"
+              }
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_value_type"
+    },
+    {
+      "id": "range-string",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "category",
+              "lower": {
+                "included": {
+                  "string": "a"
+                }
+              },
+              "upper": {
+                "included": {
+                  "string": "z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "range-boolean",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "active",
+              "lower": {
+                "included": {
+                  "boolean": false
+                }
+              },
+              "upper": {
+                "included": {
+                  "boolean": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "range-mixed-bound-type",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "price",
+              "lower": {
+                "included": {
+                  "float": 1.0
+                }
+              },
+              "upper": {
+                "included": {
+                  "integer": 10
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_value_type"
+    },
+    {
+      "id": "sort-boolean",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "sort": [
+            {
+              "field": "active",
+              "order": "ascending"
+            }
+          ]
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "sort-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "term": {
+              "field": "title",
+              "text": "x"
+            }
+          },
+          "sort": [
+            {
+              "field": "title",
+              "order": "ascending"
+            }
+          ]
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "group-unknown-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "missing",
+          "aggregations": []
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "group-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "title",
+          "aggregations": []
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "group-float-unsupported",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "price",
+          "aggregations": []
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "aggregate-unknown-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "category",
+          "aggregations": [
+            {
+              "sum": "missing"
+            }
+          ]
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "aggregate-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "category",
+          "aggregations": [
+            {
+              "sum": "title"
+            }
+          ]
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "aggregate-non-numeric",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "category",
+          "aggregations": [
+            {
+              "sum": "category"
+            }
+          ]
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "non-finite-float",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "put": {
+          "id": "id:test:typea::x",
+          "fields": {
+            "price": {
+              "float_bits": "0x7ff0000000000000"
+            }
+          }
+        }
+      },
+      "expected_error": "invalid_float"
+    },
+    {
+      "id": "update-unknown-field",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::existing",
+          "fields": {
+            "category": {
+              "string": "books"
+            },
+            "qty": {
+              "integer": 2
+            },
+            "price": {
+              "float": 10.0
+            },
+            "active": {
+              "boolean": true
+            }
+          }
+        }
+      ],
+      "operation": {
+        "update": {
+          "id": "id:test:typea::existing",
+          "assign": {
+            "missing": {
+              "integer": 1
+            }
+          }
+        }
+      },
+      "expected_error": "unknown_field"
+    },
+    {
+      "id": "update-non-attribute",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::existing",
+          "fields": {
+            "category": {
+              "string": "books"
+            },
+            "qty": {
+              "integer": 2
+            },
+            "price": {
+              "float": 10.0
+            },
+            "active": {
+              "boolean": true
+            }
+          }
+        }
+      ],
+      "operation": {
+        "update": {
+          "id": "id:test:typea::existing",
+          "assign": {
+            "title": {
+              "string": "x"
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_field_capability"
+    },
+    {
+      "id": "update-wrong-type",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::existing",
+          "fields": {
+            "category": {
+              "string": "books"
+            },
+            "qty": {
+              "integer": 2
+            },
+            "price": {
+              "float": 10.0
+            },
+            "active": {
+              "boolean": true
+            }
+          }
+        }
+      ],
+      "operation": {
+        "update": {
+          "id": "id:test:typea::existing",
+          "assign": {
+            "qty": {
+              "string": "x"
+            }
+          }
+        }
+      },
+      "expected_error": "wrong_value_type"
+    },
+    {
+      "id": "update-non-finite-float",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::existing",
+          "fields": {
+            "category": {
+              "string": "books"
+            },
+            "qty": {
+              "integer": 2
+            },
+            "price": {
+              "float": 10.0
+            },
+            "active": {
+              "boolean": true
+            }
+          }
+        }
+      ],
+      "operation": {
+        "update": {
+          "id": "id:test:typea::existing",
+          "assign": {
+            "price": {
+              "float_bits": "0x7ff0000000000000"
+            }
+          }
+        }
+      },
+      "expected_error": "invalid_float"
+    },
+    {
+      "id": "group-boolean-unsupported",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "group": {
+          "query": {
+            "exists": {
+              "field": "qty"
+            }
+          },
+          "group_by": "active",
+          "aggregations": []
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "query-non-finite-float",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "price",
+              "lower": {
+                "included": {
+                  "float_bits": "0x7ff0000000000000"
+                }
+              },
+              "upper": "unbounded"
+            }
+          }
+        }
+      },
+      "expected_error": "invalid_float"
+    },
+    {
+      "id": "empty-attribute-document",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "operation": {
+        "put": {
+          "id": "id:test:typea::empty",
+          "fields": {}
+        }
+      },
+      "expected_error": "invalid_request"
+    },
+    {
+      "id": "empty-attribute-update",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "category",
+            "type": "string",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "qty",
+            "type": "integer",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "price",
+            "type": "float",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "active",
+            "type": "boolean",
+            "attribute": true,
+            "summary": true
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::existing",
+          "fields": {
+            "category": {
+              "string": "books"
+            },
+            "qty": {
+              "integer": 2
+            },
+            "price": {
+              "float": 10.0
+            },
+            "active": {
+              "boolean": true
+            }
+          }
+        }
+      ],
+      "operation": {
+        "update": {
+          "id": "id:test:typea::existing",
+          "assign": {}
+        }
+      },
+      "expected_error": "invalid_request"
+    }
+  ]
+}

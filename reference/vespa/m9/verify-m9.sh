@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"; cd "$ROOT"
+source "$ROOT/reference/vespa/common/verify-common.sh"
+require_pinned_vespa
+"$SCRIPT_DIR/validate_scenarios.py"
+"$SCRIPT_DIR/validate_expected.py"
+"$SCRIPT_DIR/check-immutable.sh"
+for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
+  check_fixture_literals --keys string "$s" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" "$ROOT/core/native/vespa"
+done
+reference/vespa/m8/verify-m8.sh
+run_workspace_quality
+cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m9
+"$SCRIPT_DIR/check-structure.sh"
+
+cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
+require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m9-driver" sk_engine_open
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
+  id="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["id"])' "$s")"
+  "$SCRIPT_DIR/oracle/run-cpp-oracle.sh" "$s" | "$SCRIPT_DIR/canonicalize.py" > "$TMP/oracle-$id.json"
+  "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/oracle-$id.json"
+  cfg="$TMP/$id-cfg"; data="$TMP/$id-data"; mkdir -p "$data"
+  cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m9-driver -- "$s" "$cfg" "$data" | "$SCRIPT_DIR/canonicalize.py" > "$TMP/rust-$id.json"
+  "$SCRIPT_DIR/compare.py" "$SCRIPT_DIR/expected/$id.json" "$TMP/rust-$id.json"
+  "$SCRIPT_DIR/compare.py" "$TMP/oracle-$id.json" "$TMP/rust-$id.json"
+done
+
+ERRORS="$SCRIPT_DIR/scenarios/errors.json"
+python3 - "$ERRORS" <<'PY' > "$TMP/error-jobs"
+import json,sys
+for c in json.load(open(sys.argv[1],encoding='utf-8'))['cases']:
+ print(c['id'],c['expected_error'])
+PY
+while read -r id expected; do
+  cfg="$TMP/error-$id-cfg"; data="$TMP/error-$id-data"; mkdir -p "$data"
+  actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m9-error -- "$ERRORS" "$id" "$cfg" "$data")"
+  [[ "$actual" == "$expected" ]] || { echo "M9 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
+done < "$TMP/error-jobs"
+
+echo 'M9 verification passed'

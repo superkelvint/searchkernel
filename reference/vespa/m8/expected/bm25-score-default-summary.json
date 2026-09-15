@@ -1,0 +1,1 @@
+{"hits":[{"document_id":"id:test:typea::t2","score_bits":"0x3fe2216bc9a05d88","summary":{"title":{"type":"string","value":"fox fox"}}},{"document_id":"id:test:typea::t1","score_bits":"0x3fe0c0e876432c4d","summary":{"title":{"type":"string","value":"fox"}}}],"id":"bm25-score-default-summary","total_hit_count":2}

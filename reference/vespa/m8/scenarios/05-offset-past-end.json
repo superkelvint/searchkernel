@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "id": "offset-past-end",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::a",
+      "fields": {
+        "qty": {
+          "integer": 40
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::b",
+      "fields": {
+        "qty": {
+          "integer": 10
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::c",
+      "fields": {
+        "qty": {
+          "integer": 30
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::d",
+      "fields": {
+        "qty": {
+          "integer": 20
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::e",
+      "fields": {
+        "qty": {
+          "integer": 50
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "exists": {
+        "field": "qty"
+      }
+    },
+    "rank_profile": "default",
+    "limit": 3,
+    "offset": 10,
+    "sort": [
+      {
+        "field": "qty",
+        "order": "ascending"
+      }
+    ],
+    "summary": "none"
+  }
+}

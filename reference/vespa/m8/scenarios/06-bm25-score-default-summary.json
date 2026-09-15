@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "id": "bm25-score-default-summary",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "title",
+        "type": "text",
+        "index": true,
+        "attribute": false,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::t1",
+      "fields": {
+        "title": {
+          "text": "fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::t2",
+      "fields": {
+        "title": {
+          "text": "fox fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            },
+            {
+              "position": 1,
+              "byte_start": 4,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::t3",
+      "fields": {
+        "title": {
+          "text": "turtle",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 6,
+              "term": "turtle"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "term": {
+        "field": "title",
+        "text": "fox",
+        "analysis": [
+          "fox"
+        ]
+      }
+    },
+    "rank_profile": "bm25",
+    "limit": 10,
+    "offset": 0,
+    "sort": [],
+    "summary": "default"
+  }
+}

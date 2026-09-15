@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"; cd "$ROOT"
+bad=0
+roots=(core/crates/searchkernel-vespa-engine core/crates/searchkernel-vespa-bindings core/native/vespa)
+for d in "${roots[@]}"; do
+  if [[ ! -d "$d" ]]; then
+    echo "M8 production source root is missing: $d" >&2
+    bad=1
+  fi
+done
+check_absent(){ local p="$1"; if grep -R -n -E "$p" "${roots[@]}" --include='*.rs' --include='*.cc' --include='*.cpp' --include='*.h' --include='*.hpp' 2>/dev/null; then echo "forbidden M8 production pattern: $p" >&2; bad=1; fi; }
+check_present_native(){ local p="$1"; if ! grep -R -q -E "$p" core/native/vespa --include='*.cc' --include='*.cpp' --include='*.h' --include='*.hpp' 2>/dev/null; then echo "M8 native adapter is missing expected local Vespa path marker: $p" >&2; bad=1; fi; }
+check_absent 'Command::new\("java"\)|Command::new\("mvn"\)|JNI_CreateJavaVM|libjvm'
+check_absent 'reference/vespa/m8/(expected|scenarios|oracle)'
+check_absent 'std::process::Command|popen\(|system\('
+for manifest in core/crates/searchkernel-vespa-engine/Cargo.toml core/crates/searchkernel-vespa-bindings/Cargo.toml; do
+  if [[ ! -f "$manifest" ]]; then
+    echo "M8 production manifest is missing: $manifest" >&2
+    bad=1
+  elif grep -n 'searchkernel-ir' "$manifest"; then
+    echo 'M-series dependency firewall violated' >&2
+    bad=1
+  fi
+done
+# Defense in depth. Runtime scenarios remain the primary proof.
+check_present_native 'maxhits|\.maxhits'
+check_present_native 'offset|\.offset'
+check_present_native 'sortSpec'
+check_present_native 'totalHitCount'
+check_present_native 'getDocsums|DocsumRequest'
+exit "$bad"

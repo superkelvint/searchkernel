@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "id": "typed-equality-filtering",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "category",
+        "type": "string",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "price",
+        "type": "float",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::p1",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 2
+        },
+        "price": {
+          "float": 10.0
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p2",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 5
+        },
+        "price": {
+          "float": 20.5
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p3",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 3
+        },
+        "price": {
+          "float": 15.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p4",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 7
+        },
+        "price": {
+          "float": 30.0
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p5",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 1
+        },
+        "price": {
+          "float": 5.5
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "string",
+      "op": "search",
+      "request": {
+        "query": {
+          "attribute_equals": {
+            "field": "category",
+            "value": {
+              "string": "books"
+            }
+          }
+        },
+        "limit": 10,
+        "offset": 0,
+        "sort": [
+          {
+            "field": "qty",
+            "order": "ascending"
+          }
+        ],
+        "summary": "none"
+      }
+    },
+    {
+      "id": "integer",
+      "op": "search",
+      "request": {
+        "query": {
+          "attribute_equals": {
+            "field": "qty",
+            "value": {
+              "integer": 3
+            }
+          }
+        },
+        "limit": 10,
+        "offset": 0,
+        "sort": [],
+        "summary": "none"
+      }
+    },
+    {
+      "id": "float",
+      "op": "search",
+      "request": {
+        "query": {
+          "attribute_equals": {
+            "field": "price",
+            "value": {
+              "float": 15.25
+            }
+          }
+        },
+        "limit": 10,
+        "offset": 0,
+        "sort": [],
+        "summary": "none"
+      }
+    },
+    {
+      "id": "boolean",
+      "op": "search",
+      "request": {
+        "query": {
+          "attribute_equals": {
+            "field": "active",
+            "value": {
+              "boolean": true
+            }
+          }
+        },
+        "limit": 10,
+        "offset": 0,
+        "sort": [
+          {
+            "field": "qty",
+            "order": "ascending"
+          }
+        ],
+        "summary": "none"
+      }
+    }
+  ]
+}

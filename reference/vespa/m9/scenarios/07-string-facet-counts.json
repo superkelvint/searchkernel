@@ -1,0 +1,475 @@
+{
+  "version": 1,
+  "id": "string-facet-counts",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "category",
+        "type": "string",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "price",
+        "type": "float",
+        "attribute": true,
+        "summary": true
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::p1",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 2
+        },
+        "price": {
+          "float": 10.0
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p2",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 5
+        },
+        "price": {
+          "float": 20.5
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p3",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 3
+        },
+        "price": {
+          "float": 15.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p4",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 7
+        },
+        "price": {
+          "float": 30.0
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p5",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 1
+        },
+        "price": {
+          "float": 5.5
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p6",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 6
+        },
+        "price": {
+          "float": 6.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p7",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 7
+        },
+        "price": {
+          "float": 7.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p8",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 8
+        },
+        "price": {
+          "float": 8.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p9",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 9
+        },
+        "price": {
+          "float": 9.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p10",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 10
+        },
+        "price": {
+          "float": 10.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p11",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 11
+        },
+        "price": {
+          "float": 11.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p12",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 12
+        },
+        "price": {
+          "float": 12.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p13",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 13
+        },
+        "price": {
+          "float": 13.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p14",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 14
+        },
+        "price": {
+          "float": 14.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p15",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 15
+        },
+        "price": {
+          "float": 15.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p16",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 16
+        },
+        "price": {
+          "float": 16.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p17",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 17
+        },
+        "price": {
+          "float": 17.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p18",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 18
+        },
+        "price": {
+          "float": 18.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p19",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 19
+        },
+        "price": {
+          "float": 19.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p20",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 20
+        },
+        "price": {
+          "float": 20.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p21",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 21
+        },
+        "price": {
+          "float": 21.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p22",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 22
+        },
+        "price": {
+          "float": 22.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p23",
+      "fields": {
+        "category": {
+          "string": "tools"
+        },
+        "qty": {
+          "integer": 23
+        },
+        "price": {
+          "float": 23.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p24",
+      "fields": {
+        "category": {
+          "string": "books"
+        },
+        "qty": {
+          "integer": 24
+        },
+        "price": {
+          "float": 24.25
+        },
+        "active": {
+          "boolean": false
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::p25",
+      "fields": {
+        "category": {
+          "string": "games"
+        },
+        "qty": {
+          "integer": 25
+        },
+        "price": {
+          "float": 25.25
+        },
+        "active": {
+          "boolean": true
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "groups",
+      "op": "group",
+      "request": {
+        "query": {
+          "exists": {
+            "field": "qty"
+          }
+        },
+        "group_by": "category",
+        "aggregations": []
+      }
+    }
+  ]
+}

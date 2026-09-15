@@ -1,0 +1,1 @@
+{"id":"string-facet-counts","steps":[{"groups":[{"aggregations":[],"count":9,"key":{"type":"string","value":"books"}},{"aggregations":[],"count":9,"key":{"type":"string","value":"games"}},{"aggregations":[],"count":7,"key":{"type":"string","value":"tools"}}],"id":"groups","op":"group"}]}

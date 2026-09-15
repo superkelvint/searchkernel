@@ -1,0 +1,1 @@
+{"version":1,"document_type":"typea","fields":[{"name":"category","type":"string","attribute":true,"summary":true},{"name":"qty","type":"integer","attribute":true,"summary":true},{"name":"price","type":"float","attribute":true,"summary":true},{"name":"active","type":"boolean","attribute":true,"summary":true}]}

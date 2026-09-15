@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "id": "range-filter-pagination",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::a",
+      "fields": {
+        "qty": {
+          "integer": 40
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::b",
+      "fields": {
+        "qty": {
+          "integer": 10
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::c",
+      "fields": {
+        "qty": {
+          "integer": 30
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::d",
+      "fields": {
+        "qty": {
+          "integer": 20
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::e",
+      "fields": {
+        "qty": {
+          "integer": 50
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "range": {
+        "field": "qty",
+        "lower": {
+          "included": 15
+        },
+        "upper": {
+          "included": 45
+        }
+      }
+    },
+    "rank_profile": "default",
+    "limit": 1,
+    "offset": 1,
+    "sort": [
+      {
+        "field": "qty",
+        "order": "descending"
+      }
+    ],
+    "summary": {
+      "fields": [
+        "qty"
+      ]
+    }
+  }
+}

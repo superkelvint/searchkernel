@@ -54,7 +54,11 @@ def main() -> int:
         raise SystemExit(f"usage: {sys.argv[0]} [--keys KEY,...] SCENARIO SOURCE...")
     scenario = Path(args[0])
     needles = sorted({needle for root in load(scenario) for needle in fixture_values(root, keys)})
-    for source_root in map(Path, args[1:]):
+    source_roots = [Path(value) for value in args[1:]]
+    for source_root in source_roots:
+        if not source_root.exists():
+            raise SystemExit(f"source root does not exist: {source_root}")
+    for source_root in source_roots:
         for source in source_files(source_root):
             contents = source.read_text(encoding="utf-8", errors="replace")
             if source.suffix == ".rs":

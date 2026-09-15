@@ -1,0 +1,1 @@
+{"version":1,"document_type":"typea","fields":[{"name":"qty","type":"integer","attribute":true,"summary":true},{"name":"priority","type":"integer","attribute":true,"summary":true}]}
