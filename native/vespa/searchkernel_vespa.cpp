@@ -32,6 +32,7 @@
 #include <vespa/searchcore/proton/persistenceengine/ipersistenceengineowner.h>
 #include <vespa/searchcore/proton/persistenceengine/persistenceengine.h>
 #include <vespa/searchcore/proton/server/bootstrapconfig.h>
+#include <vespa/searchcore/proton/server/configstore.h>
 #include <vespa/searchcore/proton/server/documentdb.h>
 #include <vespa/searchcore/proton/server/documentdbconfigmanager.h>
 #include <vespa/searchcore/proton/server/fileconfigmanager.h>
@@ -836,6 +837,10 @@ class EmbeddedEngine {
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
     DocumentDB::SP _db;
+    // Non-owning while _db owns the config store. The embedded wrapper prunes
+    // superseded snapshots after a completed close so read-only reopen does
+    // not accumulate one config directory per engine generation.
+    proton::ConfigStore *_config_store = nullptr;
     PersistenceOwner _persistence_owner;
     AcceptAllWrites _write_filter;
     EmbeddedResourceUsageNotifier _resource_usage_notifier;
@@ -1574,6 +1579,7 @@ public:
             config_store = std::make_unique<proton::MemoryConfigStore>();
         }
 
+        auto config_store_ptr = config_store.get();
         _db = DocumentDB::create(
             data_dir, config.getConfig(),
             vespalib::SocketSpec::from_host_port("localhost", static_cast<int>(_tls_port)).spec(),
@@ -1584,6 +1590,7 @@ public:
             std::move(config_store),
             std::make_shared<vespalib::ThreadStackExecutor>(16),
             _hw_info, std::shared_ptr<search::diskindex::IPostingListCache>());
+        _config_store = config_store_ptr;
         _db->start();
         _db->waitForOnlineState();
         const auto replay_serial = _db->getFeedHandler().getSerialNum();
@@ -1643,6 +1650,10 @@ public:
             _handler.reset();
             if (_db) {
                 _db->close();
+                if (_config_store) {
+                    _config_store->prune(std::numeric_limits<uint64_t>::max());
+                    _config_store = nullptr;
+                }
                 _db.reset();
             }
             _shared_service.shutdown();
@@ -1666,10 +1677,15 @@ public:
             _handler.reset();
             if (_db) {
                 _db->close();
+                if (_config_store) {
+                    _config_store->prune(std::numeric_limits<uint64_t>::max());
+                    _config_store = nullptr;
+                }
                 _db.reset();
             }
             _shared_service.shutdown_noexcept();
         } catch (...) {
+            _config_store = nullptr;
             _db.reset();
             _handler.reset();
             try {
