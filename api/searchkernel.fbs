@@ -1,4 +1,4 @@
-// Search Kernel portable API model, translated from api/searchkernel.proto.
+// Search Kernel portable API model. This schema is the normative contract.
 //
 // This schema is internal plumbing. Application developers should use idiomatic
 // language clients rather than generated FlatBuffers APIs directly.
