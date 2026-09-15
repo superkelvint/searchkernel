@@ -13,6 +13,34 @@
       "name": "title_exact",
       "summary": true,
       "type": "text"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "sku",
+      "summary": true,
+      "type": "string"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "qty",
+      "summary": true,
+      "type": "integer"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "price",
+      "summary": true,
+      "type": "float"
+    },
+    {
+      "attribute": true,
+      "index": false,
+      "name": "active",
+      "summary": true,
+      "type": "boolean"
     }
   ],
   "id": "two-text-fields",
