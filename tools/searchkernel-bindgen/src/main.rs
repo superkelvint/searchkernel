@@ -502,7 +502,10 @@ fn generate_client(
     request_schema: &Schema<'_>,
     response_schema: &Schema<'_>,
 ) -> String {
-    let mut output = GENERATED_CLIENT.to_owned();
+    let mut output = GENERATED_CLIENT.replace(
+        "    // __BFBS_CLIENT_ENUMS__",
+        &client_enums(request_schema, response_schema),
+    );
     output.push_str("\n\n// BFBS-derived client inventory.\n");
     for schema in [request_schema, response_schema] {
         for object in schema.objects().iter() {
@@ -533,6 +536,56 @@ fn generate_client(
         );
     }
     output
+}
+
+fn client_enums(request: &Schema<'_>, response: &Schema<'_>) -> String {
+    let mut enums = BTreeSet::new();
+    let mut definitions = Vec::new();
+    for schema in [request, response] {
+        for enumeration in schema.enums().iter().filter(|item| !item.is_union()) {
+            let name = short_type_name(enumeration.name());
+            if enums.insert(name.clone()) {
+                let mut variants = Vec::new();
+                for value in enumeration.values().iter() {
+                    let variant = enum_variant_name(value.name());
+                    if !variants.contains(&variant) {
+                        variants.push(variant);
+                    }
+                }
+                if variants.is_empty() {
+                    continue;
+                }
+                let default = variants
+                    .iter()
+                    .position(|variant| variant == "Unspecified")
+                    .unwrap_or(0);
+                let mut definition = format!(
+                    "    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n    pub enum {name} {{\n"
+                );
+                for (index, variant) in variants.iter().enumerate() {
+                    if index == default {
+                        definition.push_str("        #[default]\n");
+                    }
+                    definition.push_str(&format!("        {variant},\n"));
+                }
+                definition.push_str("    }\n");
+                definitions.push(definition);
+            }
+        }
+    }
+    definitions.join("\n")
+}
+
+fn enum_variant_name(value: &str) -> String {
+    let short = value
+        .rsplit_once("_V1_")
+        .map(|(_, suffix)| suffix)
+        .unwrap_or(value);
+    short
+        .rsplit_once('_')
+        .map(|(_, variant)| variant)
+        .unwrap_or(short)
+        .to_owned()
 }
 
 fn manifest(request: &[u8], response: &[u8], operations: &[Operation]) -> Value {
@@ -597,7 +650,7 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
                     continue;
                 }
                 fields.insert(name.clone(), field_schema(schema, &short_name, &field));
-                if field.required() {
+                if field.required() || response_json_required(&short_name, &name) {
                     required.push(name);
                 }
             }
@@ -621,7 +674,7 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
             )
         })
         .collect::<serde_json::Map<_, _>>();
-    let response_union = operations
+    let mut response_union = operations
         .iter()
         .map(|operation| {
             (
@@ -630,15 +683,40 @@ fn json_schema(operations: &[Operation], request: &Schema<'_>, response: &Schema
             )
         })
         .collect::<serde_json::Map<_, _>>();
-    json!({
+    response_union.insert(
+        "error".to_owned(),
+        json!({"$ref": "#/definitions/search_kernel._v1._error"}),
+    );
+    let request_document = json!({
+        "type":"object",
+        "additionalProperties":false,
+        "required":["protocol_version","request"],
+        "properties":{
+            "protocol_version":{"const":1,"type":"integer"},
+            "request":{"type":"object","minProperties":1,"maxProperties":1,"additionalProperties":false,"properties":request_union}
+        }
+    });
+    let response_document = json!({
+        "type":"object",
+        "additionalProperties":false,
+        "required":["protocol_version","response"],
+        "properties":{
+            "protocol_version":{"const":1,"type":"integer"},
+            "response":{"type":"object","minProperties":1,"maxProperties":1,"additionalProperties":false,"properties":response_union}
+        }
+    });
+    let mut document = json!({
         "$schema": "https://json-schema.org/draft/2019-09/schema",
         "title": "Search Kernel canonical HTTP JSON",
         "x-searchkernel-generated-by": "searchkernel-bindgen",
-        "operations": operations.iter().map(|operation| operation.name.clone()).collect::<Vec<_>>(),
-        "definitions": definitions,
-        "request": {"type":"object","additionalProperties":false,"required":["protocol_version","request"],"properties":{"protocol_version":{"const":1,"type":"integer"},"request":{"type":"object","minProperties":1,"maxProperties":1,"properties":request_union}}},
-        "response": {"type":"object","additionalProperties":false,"required":["protocol_version","response"],"properties":{"protocol_version":{"const":1,"type":"integer"},"response":{"type":"object","minProperties":1,"maxProperties":1,"properties":response_union}}}
-    })
+        "x-searchkernel-operations": operations.iter().map(|operation| operation.name.clone()).collect::<Vec<_>>(),
+        "$defs": definitions,
+        "request": request_document.clone(),
+        "response": response_document.clone(),
+        "oneOf": [request_document, response_document]
+    });
+    rewrite_refs(&mut document, "#/definitions/", "#/$defs/");
+    document
 }
 
 fn field_schema(schema: &Schema<'_>, object_name: &str, field: &Field<'_>) -> Value {
@@ -652,9 +730,11 @@ fn field_schema(schema: &Schema<'_>, object_name: &str, field: &Field<'_>) -> Va
             | ("Hit", "fields")
             | ("ValueObject", "fields")
             | ("Analyzer", "options")
-            | ("ErrorDetail", "metadata")
     ) {
         return json!({"type":"object","additionalProperties":{"$ref":"#/definitions/search_kernel._v1._value"}});
+    }
+    if matches!((object_name, name.as_str()), ("ErrorDetail", "metadata")) {
+        return json!({"type":"object","additionalProperties":{"type":"string"}});
     }
     let ty = field.type_();
     let enum_name = match (object_name, name.as_str()) {
@@ -665,6 +745,7 @@ fn field_schema(schema: &Schema<'_>, object_name: &str, field: &Field<'_>) -> Va
         ("SortExpr", "direction") => Some("SortDirection"),
         ("SortExpr", "missing") => Some("MissingPlacement"),
         ("FacetRequest", "sort") => Some("FacetSort"),
+        ("Error", "code") => Some("ErrorCode"),
         _ => None,
     };
     if let Some(enum_name) = enum_name {
@@ -684,8 +765,8 @@ fn field_schema(schema: &Schema<'_>, object_name: &str, field: &Field<'_>) -> Va
         | BaseType::UByte
         | BaseType::UShort
         | BaseType::UInt => json!({"type":"integer"}),
-        BaseType::Long => json!({"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"}),
-        BaseType::ULong => json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$"}),
+        BaseType::Long => signed_decimal_schema(),
+        BaseType::ULong => unsigned_decimal_schema(),
         BaseType::Float | BaseType::Double => json!({"type":"number"}),
         BaseType::String => json!({"type":"string"}),
         BaseType::Vector | BaseType::Vector64 | BaseType::Array => {
@@ -764,13 +845,104 @@ fn public_value_schema(_schema: &Schema<'_>) -> Value {
         "type":"object", "minProperties":1, "maxProperties":1, "additionalProperties":false,
         "properties": {
             "none": {"type":"object","additionalProperties":false,"maxProperties":0}, "null": {"type":"null"}, "bool": {"type":"boolean"},
-            "int64": {"type":"string","pattern":"^-?(0|[1-9][0-9]*)$"},
-            "uint64": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"}, "float64": {"type":"number"},
+            "int64": signed_decimal_schema(),
+            "uint64": unsigned_decimal_schema(), "float64": {"type":"number"},
             "string": {"type":"string"}, "bytes": {"type":"string","contentEncoding":"base64"},
             "list": {"type":"array","items":{"$ref":value_ref}},
             "object": {"type":"object","additionalProperties":{"$ref":value_ref}}
         }
     })
+}
+
+fn response_json_required(object_name: &str, field_name: &str) -> bool {
+    match object_name {
+        "InsertResult" | "UpsertResult" | "PatchResult" => field_name == "id",
+        "DeleteResult" => matches!(field_name, "id" | "deleted"),
+        "SearchResult" => field_name == "total_hits",
+        "TotalHits" => matches!(field_name, "value" | "relation"),
+        "Hit" => field_name == "id",
+        "FacetResult" => field_name == "field",
+        "FacetValue" => matches!(field_name, "value" | "count"),
+        "HighlightResult" => field_name == "field",
+        "HighlightFragment" => field_name == "text",
+        "Error" => matches!(field_name, "code" | "message" | "retryable"),
+        "ErrorDetail" => matches!(field_name, "code" | "message"),
+        "DescribeResult" => field_name == "index",
+        "InspectQueryResult" => field_name == "resolved_request",
+        "AnalyzedToken" => matches!(
+            field_name,
+            "surface" | "term" | "position" | "start_byte" | "end_byte"
+        ),
+        "FieldDefinition" => matches!(field_name, "name" | "kind" | "cardinality"),
+        _ => false,
+    }
+}
+
+fn signed_decimal_schema() -> Value {
+    json!({
+        "type": "string",
+        "pattern": format!("^(?:{}|-{})$", decimal_range_pattern("9223372036854775807", true), decimal_range_pattern("9223372036854775808", false))
+    })
+}
+
+fn unsigned_decimal_schema() -> Value {
+    json!({
+        "type": "string",
+        "pattern": format!("^{}$", decimal_range_pattern("18446744073709551615", true))
+    })
+}
+
+fn decimal_range_pattern(maximum: &str, include_zero: bool) -> String {
+    let mut alternatives = Vec::new();
+    if include_zero {
+        alternatives.push("0".to_owned());
+    }
+    for length in 1..maximum.len() {
+        alternatives.push(if length == 1 {
+            "[1-9]".to_owned()
+        } else {
+            format!("[1-9][0-9]{{{}}}", length - 1)
+        });
+    }
+    alternatives.push(fixed_length_decimal_range_pattern(maximum));
+    format!("(?:{})", alternatives.join("|"))
+}
+
+fn fixed_length_decimal_range_pattern(maximum: &str) -> String {
+    fn visit(digits: &[u8], position: usize, prefix: &mut String, output: &mut Vec<String>) {
+        if position == digits.len() {
+            output.push(prefix.clone());
+            return;
+        }
+        let maximum_digit = digits[position] - b'0';
+        if maximum_digit > 0 {
+            let lower = if position == 0 { 1 } else { 0 };
+            if lower < maximum_digit {
+                let saved_len = prefix.len();
+                prefix.push('[');
+                prefix.push(char::from(b'0' + lower));
+                if maximum_digit - 1 != lower {
+                    prefix.push('-');
+                    prefix.push(char::from(b'0' + maximum_digit - 1));
+                }
+                prefix.push(']');
+                if position + 1 == digits.len() {
+                    output.push(prefix.clone());
+                } else {
+                    prefix.push_str(&format!("[0-9]{{{}}}", digits.len() - position - 1));
+                    output.push(prefix.clone());
+                }
+                prefix.truncate(saved_len);
+            }
+        }
+        prefix.push(char::from(b'0' + maximum_digit));
+        visit(digits, position + 1, prefix, output);
+        prefix.pop();
+    }
+
+    let mut output = Vec::new();
+    visit(maximum.as_bytes(), 0, &mut String::new(), &mut output);
+    format!("(?:{})", output.join("|"))
 }
 
 fn public_array_schema(object_name: &str) -> Option<Value> {
@@ -885,21 +1057,29 @@ fn openapi_components(
                 continue;
             }
             let mut properties = serde_json::Map::new();
+            let mut required = Vec::new();
             for field in object.fields().iter() {
                 let field_name = snake_case(field.name());
                 if !field_name.ends_with("_type") {
                     let mut property = field_schema(schema, &short_name, &field);
                     rewrite_definition_refs(&mut property);
                     properties.insert(field_name, property);
+                    if field.required()
+                        || response_json_required(&short_name, &snake_case(field.name()))
+                    {
+                        required.push(snake_case(field.name()));
+                    }
                 }
             }
-            schemas.entry(name).or_insert_with(|| {
-                json!({
-                    "type":"object",
-                    "additionalProperties":false,
-                    "properties":properties
-                })
+            let mut definition = json!({
+                "type":"object",
+                "additionalProperties":false,
+                "properties":properties
             });
+            if !required.is_empty() {
+                definition["required"] = json!(required);
+            }
+            schemas.entry(name).or_insert_with(|| definition);
         }
     }
     json!({
@@ -921,6 +1101,25 @@ fn rewrite_definition_refs(value: &mut Value) {
         Value::Array(values) => {
             for child in values {
                 rewrite_definition_refs(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn rewrite_refs(value: &mut Value, from: &str, to: &str) {
+    match value {
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                rewrite_refs(child, from, to);
+            }
+            if let Some(Value::String(reference)) = object.get_mut("$ref") {
+                *reference = reference.replace(from, to);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                rewrite_refs(child, from, to);
             }
         }
         _ => {}

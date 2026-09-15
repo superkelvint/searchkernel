@@ -5614,11 +5614,11 @@ fn insert<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_InsertRequest", "insert")?;
-    let document = document(b, required(o, "document", "insert")?)?;
+    let document = field(o, "document").map(|value| document(b, value)).transpose()?;
     Ok(offset(api::InsertRequest::create(
         b,
         &api::InsertRequestArgs {
-            document: Some(document),
+            document,
         },
     )))
 }
@@ -5628,11 +5628,11 @@ fn upsert<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_UpsertRequest", "upsert")?;
-    let document = document(b, required(o, "document", "upsert")?)?;
+    let document = field(o, "document").map(|value| document(b, value)).transpose()?;
     Ok(offset(api::UpsertRequest::create(
         b,
         &api::UpsertRequestArgs {
-            document: Some(document),
+            document,
         },
     )))
 }
@@ -5642,10 +5642,10 @@ fn delete<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_DeleteRequest", "delete")?;
-    let id = b.create_string(&string(required(o, "id", "delete")?, "delete.id")?);
+    let id = optional_string(o, "id", "delete")?.map(|value| b.create_string(&value));
     Ok(offset(api::DeleteRequest::create(
         b,
-        &api::DeleteRequestArgs { id: Some(id) },
+        &api::DeleteRequestArgs { id },
     )))
 }
 
@@ -5654,8 +5654,7 @@ fn get<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_GetRequest", "get")?;
-    let id_text = string(required(o, "id", "get")?, "get.id")?;
-    let id = b.create_string(&id_text);
+    let id = optional_string(o, "id", "get")?.map(|value| b.create_string(&value));
     let projection = match field(o, "projection") {
         None => None,
         Some(value) => Some(projection(b, value, "get.projection")?),
@@ -5663,7 +5662,7 @@ fn get<'a>(
     Ok(offset(api::GetRequest::create(
         b,
         &api::GetRequestArgs {
-            id: Some(id),
+            id,
             projection,
         },
     )))
@@ -5674,8 +5673,7 @@ fn patch<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_PatchRequest", "patch")?;
-    let id_text = string(required(o, "id", "patch")?, "patch.id")?;
-    let id = b.create_string(&id_text);
+    let id = optional_string(o, "id", "patch")?.map(|value| b.create_string(&value));
     let operations = match field(o, "operations") {
         None => None,
         Some(value) if is_absent_vector(value, "patch.operations")? => None,
@@ -5695,7 +5693,7 @@ fn patch<'a>(
     Ok(offset(api::PatchRequest::create(
         b,
         &api::PatchRequestArgs {
-            id: Some(id),
+            id,
             operations,
         },
     )))
@@ -5738,14 +5736,13 @@ fn set_field<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SetField<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_SetField", "set_field")?;
-    let field_text = string(required(o, "field", "set_field")?, "set_field.field")?;
-    let field = b.create_string(&field_text);
-    let value = value(b, required(o, "value", "set_field")?)?;
+    let field_offset = optional_string(o, "field", "set_field")?.map(|value| b.create_string(&value));
+    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
     Ok(api::SetField::create(
         b,
         &api::SetFieldArgs {
-            field: Some(field),
-            value: Some(value),
+            field: field_offset,
+            value,
         },
     ))
 }
@@ -5755,13 +5752,10 @@ fn unset_field<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::UnsetField<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_UnsetField", "unset_field")?;
-    let field = b.create_string(&string(
-        required(o, "field", "unset_field")?,
-        "unset_field.field",
-    )?);
+    let field = optional_string(o, "field", "unset_field")?.map(|value| b.create_string(&value));
     Ok(api::UnsetField::create(
         b,
-        &api::UnsetFieldArgs { field: Some(field) },
+        &api::UnsetFieldArgs { field },
     ))
 }
 
@@ -5992,15 +5986,12 @@ fn search_field<'a>(
 ) -> Result<WIPOffset<api::SearchField<'a>>, JsonCodecError> {
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V1_SearchField", path)?;
-    let field = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
+    let field = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let weight = optional_f64(o, "weight", path)?;
     Ok(api::SearchField::create(
         b,
         &api::SearchFieldArgs {
-            field: Some(field),
+            field,
             weight: weight.as_ref(),
         },
     ))
@@ -6121,49 +6112,51 @@ fn filter<'a>(
     let (expr_type, expr) = match kind {
         "filter_and" => {
             let object = object(payload, path)?;
-            let clauses = required(object, "clauses", path)?;
-            let items = if is_absent_vector(clauses, &format!("{path}.clauses"))? {
-                None
-            } else {
-                let values = array(clauses, &format!("{path}.clauses"))?;
-                let items = values
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| filter(b, v, &format!("{path}.clauses[{i}]")))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Some(b.create_vector(&items))
+            let clauses = field(object, "clauses");
+            let items = match clauses {
+                None => None,
+                Some(clauses) if is_absent_vector(clauses, &format!("{path}.clauses"))? => None,
+                Some(clauses) => {
+                    let values = array(clauses, &format!("{path}.clauses"))?;
+                    let items = values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| filter(b, v, &format!("{path}.clauses[{i}]")))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(b.create_vector(&items))
+                }
             };
             let value = api::FilterAnd::create(b, &api::FilterAndArgs { clauses: items });
             (api::FilterExprKind::FilterAnd, offset(value))
         }
         "filter_or" => {
             let object = object(payload, path)?;
-            let clauses = required(object, "clauses", path)?;
-            let items = if is_absent_vector(clauses, &format!("{path}.clauses"))? {
-                None
-            } else {
-                let values = array(clauses, &format!("{path}.clauses"))?;
-                let items = values
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| filter(b, v, &format!("{path}.clauses[{i}]")))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Some(b.create_vector(&items))
+            let clauses = field(object, "clauses");
+            let items = match clauses {
+                None => None,
+                Some(clauses) if is_absent_vector(clauses, &format!("{path}.clauses"))? => None,
+                Some(clauses) => {
+                    let values = array(clauses, &format!("{path}.clauses"))?;
+                    let items = values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| filter(b, v, &format!("{path}.clauses[{i}]")))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(b.create_vector(&items))
+                }
             };
             let value = api::FilterOr::create(b, &api::FilterOrArgs { clauses: items });
             (api::FilterExprKind::FilterOr, offset(value))
         }
         "filter_not" => {
             let object = object(payload, path)?;
-            let clause = filter(
-                b,
-                required(object, "clause", path)?,
-                &format!("{path}.clause"),
-            )?;
+            let clause = field(object, "clause")
+                .map(|value| filter(b, value, &format!("{path}.clause")))
+                .transpose()?;
             let value = api::FilterNot::create(
                 b,
                 &api::FilterNotArgs {
-                    clause: Some(clause),
+                    clause,
                 },
             );
             (api::FilterExprKind::FilterNot, offset(value))
@@ -6205,18 +6198,18 @@ fn comparison<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterComparison<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_FilterComparison", path)?;
-    let field = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
-    let op = parse_comparison(required(o, "op", path)?, &format!("{path}.op"))?;
-    let value = value(b, required(o, "value", path)?)?;
+    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
+    let op = field(o, "op")
+        .map(|value| parse_comparison(value, &format!("{path}.op")))
+        .transpose()?
+        .unwrap_or(api::ComparisonOp::Unspecified);
+    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
     Ok(api::FilterComparison::create(
         b,
         &api::FilterComparisonArgs {
-            field: Some(field),
+            field: field_offset,
             op,
-            value: Some(value),
+            value,
         },
     ))
 }
@@ -6227,10 +6220,7 @@ fn range<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterRange<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_FilterRange", path)?;
-    let field_offset = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
+    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let lower = field(o, "lower").map(|v| value(b, v)).transpose()?;
     let upper = field(o, "upper").map(|v| value(b, v)).transpose()?;
     let include_lower = optional_bool(o, "include_lower", path)?;
@@ -6238,7 +6228,7 @@ fn range<'a>(
     Ok(api::FilterRange::create(
         b,
         &api::FilterRangeArgs {
-            field: Some(field_offset),
+            field: field_offset,
             lower,
             upper,
             include_lower: include_lower.as_ref(),
@@ -6253,13 +6243,10 @@ fn exists<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterExists<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_FilterExists", path)?;
-    let field = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
+    let field = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     Ok(api::FilterExists::create(
         b,
-        &api::FilterExistsArgs { field: Some(field) },
+        &api::FilterExistsArgs { field },
     ))
 }
 
@@ -6270,10 +6257,7 @@ fn sort<'a>(
 ) -> Result<WIPOffset<api::SortExpr<'a>>, JsonCodecError> {
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V1_SortExpr", path)?;
-    let field_offset = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
+    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let direction = field(o, "direction")
         .map(|v| parse_direction(v, &format!("{path}.direction")))
         .transpose()?
@@ -6286,7 +6270,7 @@ fn sort<'a>(
     Ok(api::SortExpr::create(
         b,
         &api::SortExprArgs {
-            field: Some(field_offset),
+            field: field_offset,
             direction,
             missing: missing.as_ref(),
         },
@@ -6300,10 +6284,7 @@ fn facet<'a>(
 ) -> Result<WIPOffset<api::FacetRequest<'a>>, JsonCodecError> {
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V1_FacetRequest", path)?;
-    let field_offset = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
+    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let limit = optional_u32(o, "limit", path)?;
     let sort = field(o, "sort")
         .map(|v| parse_facet_sort(v, &format!("{path}.sort")).map(api::OptionalFacetSort::new))
@@ -6311,7 +6292,7 @@ fn facet<'a>(
     Ok(api::FacetRequest::create(
         b,
         &api::FacetRequestArgs {
-            field: Some(field_offset),
+            field: field_offset,
             limit: limit.as_ref(),
             sort: sort.as_ref(),
         },
@@ -6388,49 +6369,51 @@ fn query_expr<'a>(
         ),
         "query_and" => {
             let object = object(payload, path)?;
-            let clauses = required(object, "clauses", path)?;
-            let values = if is_absent_vector(clauses, &format!("{path}.clauses"))? {
-                None
-            } else {
-                let items = array(clauses, &format!("{path}.clauses"))?;
-                let values = items
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| query_expr(b, v, &format!("{path}.clauses[{i}]")))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Some(b.create_vector(&values))
+            let clauses = field(object, "clauses");
+            let values = match clauses {
+                None => None,
+                Some(clauses) if is_absent_vector(clauses, &format!("{path}.clauses"))? => None,
+                Some(clauses) => {
+                    let items = array(clauses, &format!("{path}.clauses"))?;
+                    let values = items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| query_expr(b, v, &format!("{path}.clauses[{i}]")))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(b.create_vector(&values))
+                }
             };
             let node = api::QueryAnd::create(b, &api::QueryAndArgs { clauses: values });
             (api::QueryExprKind::QueryAnd, offset(node))
         }
         "query_or" => {
             let object = object(payload, path)?;
-            let clauses = required(object, "clauses", path)?;
-            let values = if is_absent_vector(clauses, &format!("{path}.clauses"))? {
-                None
-            } else {
-                let items = array(clauses, &format!("{path}.clauses"))?;
-                let values = items
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| query_expr(b, v, &format!("{path}.clauses[{i}]")))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Some(b.create_vector(&values))
+            let clauses = field(object, "clauses");
+            let values = match clauses {
+                None => None,
+                Some(clauses) if is_absent_vector(clauses, &format!("{path}.clauses"))? => None,
+                Some(clauses) => {
+                    let items = array(clauses, &format!("{path}.clauses"))?;
+                    let values = items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| query_expr(b, v, &format!("{path}.clauses[{i}]")))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(b.create_vector(&values))
+                }
             };
             let node = api::QueryOr::create(b, &api::QueryOrArgs { clauses: values });
             (api::QueryExprKind::QueryOr, offset(node))
         }
         "query_not" => {
             let object = object(payload, path)?;
-            let clause = query_expr(
-                b,
-                required(object, "clause", path)?,
-                &format!("{path}.clause"),
-            )?;
+            let clause = field(object, "clause")
+                .map(|value| query_expr(b, value, &format!("{path}.clause")))
+                .transpose()?;
             let node = api::QueryNot::create(
                 b,
                 &api::QueryNotArgs {
-                    clause: Some(clause),
+                    clause,
                 },
             );
             (api::QueryExprKind::QueryNot, offset(node))
@@ -6452,16 +6435,13 @@ fn term_query<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::TermQuery<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_TermQuery", path)?;
-    let field = b.create_string(&string(
-        required(o, "field", path)?,
-        &format!("{path}.field"),
-    )?);
-    let value = value(b, required(o, "value", path)?)?;
+    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
+    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
     Ok(api::TermQuery::create(
         b,
         &api::TermQueryArgs {
-            field: Some(field),
-            value: Some(value),
+            field: field_offset,
+            value,
         },
     ))
 }
@@ -6537,13 +6517,11 @@ fn analyze_field_target<'a>(
         "SearchKernel_V1_AnalyzeFieldTarget",
         "analyze.target.field",
     )?;
-    let field = b.create_string(&string(
-        required(o, "field", "analyze.target.field")?,
-        "analyze.target.field.field",
-    )?);
+    let field = optional_string(o, "field", "analyze.target.field")?
+        .map(|value| b.create_string(&value));
     Ok(api::AnalyzeFieldTarget::create(
         b,
-        &api::AnalyzeFieldTargetArgs { field: Some(field) },
+        &api::AnalyzeFieldTargetArgs { field },
     ))
 }
 
@@ -6609,17 +6587,13 @@ fn inspect_query<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V1_InspectQueryRequest", "inspect_query")?;
-    let request = search(
-        b,
-        object(
-            required(o, "request", "inspect_query")?,
-            "inspect_query.request",
-        )?,
-    )?;
+    let request = field(o, "request")
+        .map(|value| object(value, "inspect_query.request").and_then(|value| search(b, value)))
+        .transpose()?;
     Ok(offset(api::InspectQueryRequest::create(
         b,
         &api::InspectQueryRequestArgs {
-            request: Some(request),
+            request,
         },
     )))
 }

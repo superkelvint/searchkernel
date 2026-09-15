@@ -61,6 +61,37 @@ fn canonical_symbolic_union_json_is_accepted() {
 }
 
 #[test]
+fn semantic_missing_fields_are_preserved_for_core_validation() {
+    let json = br#"{
+        "protocol_version": 1,
+        "request": {"insert": {}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("codec must preserve absent document");
+    let output = request_flatbuffer_to_json(&bytes).expect("request JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn lower_only_range_is_preserved() {
+    let json = br#"{
+        "protocol_version": 1,
+        "request": {"search": {"filter": {"filter_range": {
+            "field": "price",
+            "lower": {"float64": 10.0}
+        }}}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("lower-only range is portable");
+    let output = request_flatbuffer_to_json(&bytes).expect("request JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
 fn official_flatbuffers_union_json_is_rejected() {
     let json = br#"{
         "protocol_version": 1,

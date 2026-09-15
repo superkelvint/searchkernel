@@ -9,4 +9,6 @@ publish = false
 [dependencies]
 searchkernel-client = { path = "../../../crates/searchkernel-client" }
 searchkernel-core = { path = "../../../crates/searchkernel-core" }
+searchkernel-json = { path = "../../../crates/searchkernel-json" }
 flatbuffers = "=25.12.19"
+serde_json = "1"

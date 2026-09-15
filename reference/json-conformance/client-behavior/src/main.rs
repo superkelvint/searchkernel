@@ -1,9 +1,12 @@
 use flatbuffers::{FlatBufferBuilder, UnionWIPOffset, WIPOffset};
 use searchkernel_client::model::{
-    AnalyzeRequest, DeleteRequest, DescribeRequest, GetRequest, InsertRequest,
-    InspectQueryRequest, PatchRequest, SearchRequest, UpsertRequest,
+    AnalyzeRequest, AnalyzeTarget, DeleteRequest, DescribeRequest, FacetRequest, FilterExpr,
+    GetRequest, HighlightRequest, InsertRequest, InspectQueryRequest, PatchOperation, PatchRequest,
+    QueryExpr, RankingPolicy, SearchField, SearchFieldSelection, SearchRequest, SortExpr,
+    UpsertRequest, Value, ComparisonOp, FacetSort, MissingPlacement, SortDirection,
 };
 use searchkernel_client::{Client, ClientError, Transport};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +71,57 @@ fn request_kind(bytes: &[u8]) -> wire::RequestPayload {
     flatbuffers::root::<wire::RequestEnvelope<'_>>(bytes)
         .expect("valid SKRQ")
         .payload_type()
+}
+
+fn decoded_request(bytes: &[u8]) -> serde_json::Value {
+    let json = searchkernel_json::request_flatbuffer_to_json(bytes)
+        .expect("client request must decode as canonical JSON");
+    serde_json::from_slice(&json).expect("canonical request JSON must be valid")
+}
+
+fn assert_request(bytes: &[u8], expected: serde_json::Value) {
+    assert_eq!(decoded_request(bytes), expected);
+}
+
+fn exists_filter(field: &str) -> FilterExpr {
+    FilterExpr::Exists {
+        field: field.to_owned(),
+    }
+}
+
+fn comparison_filter(field: &str, op: ComparisonOp, value: Value) -> FilterExpr {
+    FilterExpr::Comparison {
+        field: field.to_owned(),
+        op,
+        value,
+    }
+}
+
+fn range_filter(field: &str, lower: Value, upper: Value) -> FilterExpr {
+    FilterExpr::Range {
+        field: field.to_owned(),
+        lower: Some(lower),
+        upper: Some(upper),
+        include_lower: Some(true),
+        include_upper: Some(false),
+    }
+}
+
+fn lower_only_range_filter(field: &str, lower: Value) -> FilterExpr {
+    FilterExpr::Range {
+        field: field.to_owned(),
+        lower: Some(lower),
+        upper: None,
+        include_lower: None,
+        include_upper: None,
+    }
+}
+
+fn term_query(field: &str, value: Value) -> QueryExpr {
+    QueryExpr::Term {
+        field: field.to_owned(),
+        value,
+    }
 }
 
 fn finish_response<'a>(
@@ -285,9 +339,12 @@ macro_rules! payload_decode_case {
     ($method:ident, $request:ty, $kind:ident, $response_builder:ident) => {{
         let transport_a = ScriptedTransport::new($response_builder("c6-alpha"));
         let client_a = Client::new(transport_a.clone());
-        let result_a = client_a
-            .$method(<$request>::default())
-            .unwrap_or_else(|_| panic!("{} failed to decode first matching SKRS", stringify!($method)));
+        let result_a = client_a.$method(<$request>::default()).unwrap_or_else(|_| {
+            panic!(
+                "{} failed to decode first matching SKRS",
+                stringify!($method)
+            )
+        });
         assert_ne!(
             result_a,
             Default::default(),
@@ -304,9 +361,12 @@ macro_rules! payload_decode_case {
 
         let transport_b = ScriptedTransport::new($response_builder("c6-beta"));
         let client_b = Client::new(transport_b.clone());
-        let result_b = client_b
-            .$method(<$request>::default())
-            .unwrap_or_else(|_| panic!("{} failed to decode second matching SKRS", stringify!($method)));
+        let result_b = client_b.$method(<$request>::default()).unwrap_or_else(|_| {
+            panic!(
+                "{} failed to decode second matching SKRS",
+                stringify!($method)
+            )
+        });
         assert_ne!(
             result_b,
             Default::default(),
@@ -326,6 +386,18 @@ macro_rules! payload_decode_case {
             "wrong SKRQ for second {} call",
             stringify!($method)
         );
+    }};
+}
+
+macro_rules! request_shape_case {
+    ($method:ident, $request:expr, $response_builder:ident, $expected:expr) => {{
+        let transport = ScriptedTransport::new($response_builder("nested-request"));
+        let client = Client::new(transport.clone());
+        client
+            .$method($request)
+            .unwrap_or_else(|_| panic!("{} failed for non-default request", stringify!($method)));
+        let request = transport.take_single_request();
+        assert_request(&request, $expected);
     }};
 }
 
@@ -378,6 +450,316 @@ fn main() {
         InspectQueryRequest,
         SearchKernel_V1_InspectQueryRequest,
         inspect_query_response
+    );
+
+    // Non-default requests must preserve their complete portable structure.
+    request_shape_case!(
+        patch,
+        PatchRequest {
+            id: Some("sku-42".to_owned()),
+            operations: vec![
+                PatchOperation::Set {
+                    field: Some("price".to_owned()),
+                    value: Some(Value::Float64(399.99)),
+                },
+                PatchOperation::Unset {
+                    field: Some("image_url".to_owned()),
+                },
+            ],
+        },
+        patch_response,
+        serde_json::json!({"protocol_version": 1, "request": {"patch": {
+            "id": "sku-42",
+            "operations": [
+                {"set_field": {"field": "price", "value": {"float64": 399.99}}},
+                {"unset_field": {"field": "image_url"}}
+            ]
+        }}})
+    );
+
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(FilterExpr::And(vec![exists_filter("brand")])),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_and": {"clauses": [{"filter_exists": {"field": "brand"}}]}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(lower_only_range_filter("price", Value::Float64(10.0))),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_range": {
+                "field": "price", "lower": {"float64": 10.0}
+            }}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(FilterExpr::Or(vec![
+                exists_filter("brand"),
+                exists_filter("price")
+            ])),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_or": {"clauses": [
+                {"filter_exists": {"field": "brand"}},
+                {"filter_exists": {"field": "price"}}
+            ]}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(FilterExpr::Not(Box::new(exists_filter("brand")))),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_not": {"clause": {"filter_exists": {"field": "brand"}}}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(comparison_filter(
+                "brand",
+                ComparisonOp::Eq,
+                Value::String("Sony".to_owned())
+            )),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_comparison": {
+                "field": "brand", "op": "eq", "value": {"string": "Sony"}
+            }}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(range_filter(
+                "price",
+                Value::Float64(10.0),
+                Value::Float64(100.0)
+            )),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x",
+            "filter": {"filter_range": {
+                "field": "price", "lower": {"float64": 10.0}, "upper": {"float64": 100.0},
+                "include_lower": true, "include_upper": false
+            }}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            filter: Some(exists_filter("brand")),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x", "filter": {"filter_exists": {"field": "brand"}}
+        }}})
+    );
+
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            query_expr: Some(term_query("title", Value::String("wireless".to_owned()))),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x", "query_expr": {"term_query": {
+                "field": "title", "value": {"string": "wireless"}
+            }}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query_expr: Some(QueryExpr::And(vec![
+                term_query("title", Value::String("wireless".to_owned())),
+                term_query("brand", Value::String("Sony".to_owned())),
+            ])),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query_expr": {"query_and": {"clauses": [
+                {"term_query": {"field": "title", "value": {"string": "wireless"}}},
+                {"term_query": {"field": "brand", "value": {"string": "Sony"}}}
+            ]}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query_expr: Some(QueryExpr::Or(vec![term_query(
+                "title",
+                Value::String("a".to_owned())
+            )])),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query_expr": {"query_or": {"clauses": [
+                {"term_query": {"field": "title", "value": {"string": "a"}}}
+            ]}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query_expr: Some(QueryExpr::Not(Box::new(term_query(
+                "title",
+                Value::String("wireless".to_owned()),
+            )))),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query_expr": {"query_not": {"clause": {"term_query": {
+                "field": "title", "value": {"string": "wireless"}
+            }}}}
+        }}})
+    );
+
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            ranking: Some(RankingPolicy::DefaultRelevanceV1),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x", "ranking": {"default_relevance_v1": {}}
+        }}})
+    );
+    request_shape_case!(
+        search,
+        SearchRequest {
+            query: Some("x".to_owned()),
+            ranking: Some(RankingPolicy::Bm25Ranking),
+            ..Default::default()
+        },
+        search_response,
+        serde_json::json!({"protocol_version": 1, "request": {"search": {
+            "query": "x", "ranking": {"bm25_ranking": {}}
+        }}})
+    );
+
+    request_shape_case!(
+        analyze,
+        AnalyzeRequest {
+            target: AnalyzeTarget::Analyzer(searchkernel_client::model::Analyzer {
+                name: Some("standard".to_owned()),
+                version: 1,
+                options: BTreeMap::new(),
+            }),
+            text: Some("Running".to_owned()),
+            language: None,
+        },
+        analyze_response,
+        serde_json::json!({"protocol_version": 1, "request": {"analyze": {
+            "target": {"analyzer": {"name": "standard", "options": {}, "version": 1}},
+            "text": "Running"
+        }}})
+    );
+    request_shape_case!(
+        analyze,
+        AnalyzeRequest {
+            target: AnalyzeTarget::Field("title".to_owned()),
+            text: Some("Running".to_owned()),
+            language: Some("en".to_owned()),
+        },
+        analyze_response,
+        serde_json::json!({"protocol_version": 1, "request": {"analyze": {
+            "target": {"field": {"field": "title"}},
+            "text": "Running", "language": "en"
+        }}})
+    );
+
+    request_shape_case!(
+        inspect_query,
+        InspectQueryRequest {
+            request: Some(SearchRequest {
+                query: Some("wireless".to_owned()),
+                search_fields: Some(SearchFieldSelection {
+                    fields: vec![SearchField {
+                        field: "title".to_owned(),
+                        weight: Some(2.0)
+                    }]
+                }),
+                filter: Some(FilterExpr::Not(Box::new(exists_filter("brand")))),
+                sort: vec![SortExpr {
+                    field: "price".to_owned(),
+                    direction: SortDirection::Desc,
+                    missing: Some(MissingPlacement::First)
+                }],
+                facets: vec![FacetRequest {
+                    field: "brand".to_owned(),
+                    limit: Some(10),
+                    sort: Some(FacetSort::CountDesc)
+                }],
+                ranking: Some(RankingPolicy::Bm25Ranking),
+                limit: Some(5),
+                offset: Some(20),
+                projection: Some(searchkernel_client::model::FieldProjection {
+                    fields: vec!["title".to_owned(), "price".to_owned()]
+                }),
+                highlighting: Some(HighlightRequest {
+                    fields: vec!["title".to_owned()]
+                }),
+                language: Some("en".to_owned()),
+                query_expr: Some(term_query("title", Value::String("wireless".to_owned()))),
+            }),
+        },
+        inspect_query_response,
+        serde_json::json!({"protocol_version": 1, "request": {"inspect_query": {
+            "request": {
+                "query": "wireless",
+                "search_fields": [{"field": "title", "weight": 2.0}],
+                "filter": {"filter_not": {"clause": {"filter_exists": {"field": "brand"}}}},
+                "sort": [{"field": "price", "direction": "desc", "missing": "first"}],
+                "facets": [{"field": "brand", "limit": 10, "sort": "count_desc"}],
+                "ranking": {"bm25_ranking": {}},
+                "limit": 5, "offset": 20,
+                "projection": ["title", "price"],
+                "highlighting": ["title"],
+                "language": "en",
+                "query_expr": {"term_query": {"field": "title", "value": {"string": "wireless"}}}
+            }
+        }}})
     );
 
     // Portable Search Kernel errors must remain portable client errors.

@@ -1,6 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "definitions": {
+  "$defs": {
     "search_kernel._f_f_i._v1._request_envelope": {
       "additionalProperties": false,
       "properties": {
@@ -10,22 +9,22 @@
           "minProperties": 1,
           "properties": {
             "analyze": {
-              "$ref": "#/definitions/search_kernel._v1._analyze_request"
+              "$ref": "#/$defs/search_kernel._v1._analyze_request"
             },
             "delete": {
-              "$ref": "#/definitions/search_kernel._v1._delete_request"
+              "$ref": "#/$defs/search_kernel._v1._delete_request"
             },
             "describe": {
-              "$ref": "#/definitions/search_kernel._v1._describe_request"
+              "$ref": "#/$defs/search_kernel._v1._describe_request"
             },
             "get": {
-              "$ref": "#/definitions/search_kernel._v1._get_request"
+              "$ref": "#/$defs/search_kernel._v1._get_request"
             },
             "insert": {
-              "$ref": "#/definitions/search_kernel._v1._insert_request"
+              "$ref": "#/$defs/search_kernel._v1._insert_request"
             },
             "inspect_query": {
-              "$ref": "#/definitions/search_kernel._v1._inspect_query_request"
+              "$ref": "#/$defs/search_kernel._v1._inspect_query_request"
             },
             "none": {
               "additionalProperties": false,
@@ -33,13 +32,13 @@
               "type": "object"
             },
             "patch": {
-              "$ref": "#/definitions/search_kernel._v1._patch_request"
+              "$ref": "#/$defs/search_kernel._v1._patch_request"
             },
             "search": {
-              "$ref": "#/definitions/search_kernel._v1._search_request"
+              "$ref": "#/$defs/search_kernel._v1._search_request"
             },
             "upsert": {
-              "$ref": "#/definitions/search_kernel._v1._upsert_request"
+              "$ref": "#/$defs/search_kernel._v1._upsert_request"
             }
           },
           "type": "object"
@@ -59,25 +58,25 @@
           "minProperties": 1,
           "properties": {
             "analyze": {
-              "$ref": "#/definitions/search_kernel._v1._analyze_result"
+              "$ref": "#/$defs/search_kernel._v1._analyze_result"
             },
             "delete": {
-              "$ref": "#/definitions/search_kernel._v1._delete_result"
+              "$ref": "#/$defs/search_kernel._v1._delete_result"
             },
             "describe": {
-              "$ref": "#/definitions/search_kernel._v1._describe_result"
+              "$ref": "#/$defs/search_kernel._v1._describe_result"
             },
             "error": {
-              "$ref": "#/definitions/search_kernel._v1._error"
+              "$ref": "#/$defs/search_kernel._v1._error"
             },
             "get": {
-              "$ref": "#/definitions/search_kernel._v1._get_result"
+              "$ref": "#/$defs/search_kernel._v1._get_result"
             },
             "insert": {
-              "$ref": "#/definitions/search_kernel._v1._insert_result"
+              "$ref": "#/$defs/search_kernel._v1._insert_result"
             },
             "inspect_query": {
-              "$ref": "#/definitions/search_kernel._v1._inspect_query_result"
+              "$ref": "#/$defs/search_kernel._v1._inspect_query_result"
             },
             "none": {
               "additionalProperties": false,
@@ -85,13 +84,13 @@
               "type": "object"
             },
             "patch": {
-              "$ref": "#/definitions/search_kernel._v1._patch_result"
+              "$ref": "#/$defs/search_kernel._v1._patch_result"
             },
             "search": {
-              "$ref": "#/definitions/search_kernel._v1._search_result"
+              "$ref": "#/$defs/search_kernel._v1._search_result"
             },
             "upsert": {
-              "$ref": "#/definitions/search_kernel._v1._upsert_result"
+              "$ref": "#/$defs/search_kernel._v1._upsert_result"
             }
           },
           "type": "object"
@@ -123,10 +122,10 @@
           "minProperties": 1,
           "properties": {
             "analyzer": {
-              "$ref": "#/definitions/search_kernel._v1._analyzer"
+              "$ref": "#/$defs/search_kernel._v1._analyzer"
             },
             "field": {
-              "$ref": "#/definitions/search_kernel._v1._analyze_field_target"
+              "$ref": "#/$defs/search_kernel._v1._analyze_field_target"
             },
             "none": {
               "additionalProperties": false,
@@ -147,7 +146,7 @@
       "properties": {
         "tokens": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._analyzed_token"
+            "$ref": "#/$defs/search_kernel._v1._analyzed_token"
           },
           "type": "array"
         }
@@ -173,6 +172,13 @@
           "type": "string"
         }
       },
+      "required": [
+        "end_byte",
+        "position",
+        "start_byte",
+        "surface",
+        "term"
+      ],
       "type": "object"
     },
     "search_kernel._v1._analyzer": {
@@ -183,7 +189,7 @@
         },
         "options": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "object"
         },
@@ -241,6 +247,10 @@
           "type": "string"
         }
       },
+      "required": [
+        "deleted",
+        "id"
+      ],
       "type": "object"
     },
     "search_kernel._v1._describe_request": {
@@ -252,9 +262,12 @@
       "additionalProperties": false,
       "properties": {
         "index": {
-          "$ref": "#/definitions/search_kernel._v1._index_definition"
+          "$ref": "#/$defs/search_kernel._v1._index_definition"
         }
       },
+      "required": [
+        "index"
+      ],
       "type": "object"
     },
     "search_kernel._v1._document": {
@@ -262,7 +275,7 @@
       "properties": {
         "fields": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "object"
         },
@@ -276,11 +289,23 @@
       "additionalProperties": false,
       "properties": {
         "code": {
-          "type": "integer"
+          "enum": [
+            "unspecified",
+            "invalid_argument",
+            "not_found",
+            "already_exists",
+            "failed_precondition",
+            "conflict",
+            "unsupported",
+            "resource_exhausted",
+            "internal",
+            "unavailable"
+          ],
+          "type": "string"
         },
         "details": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._error_detail"
+            "$ref": "#/$defs/search_kernel._v1._error_detail"
           },
           "type": "array"
         },
@@ -291,6 +316,11 @@
           "type": "boolean"
         }
       },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
       "type": "object"
     },
     "search_kernel._v1._error_detail": {
@@ -304,7 +334,7 @@
         },
         "metadata": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "type": "string"
           },
           "type": "object"
         },
@@ -312,6 +342,10 @@
           "type": "string"
         }
       },
+      "required": [
+        "code",
+        "message"
+      ],
       "type": "object"
     },
     "search_kernel._v1._facet_request": {
@@ -346,31 +380,38 @@
         },
         "values": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._facet_value"
+            "$ref": "#/$defs/search_kernel._v1._facet_value"
           },
           "type": "array"
         }
       },
+      "required": [
+        "field"
+      ],
       "type": "object"
     },
     "search_kernel._v1._facet_value": {
       "additionalProperties": false,
       "properties": {
         "count": {
-          "pattern": "^(0|[1-9][0-9]*)$",
+          "pattern": "^(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|[1-9][0-9]{18}|(?:1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0][0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
           "type": "string"
         },
         "value": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
+      "required": [
+        "count",
+        "value"
+      ],
       "type": "object"
     },
     "search_kernel._v1._field_definition": {
       "additionalProperties": false,
       "properties": {
         "analyzer": {
-          "$ref": "#/definitions/search_kernel._v1._analyzer"
+          "$ref": "#/$defs/search_kernel._v1._analyzer"
         },
         "cardinality": {
           "enum": [
@@ -410,6 +451,11 @@
           "type": "boolean"
         }
       },
+      "required": [
+        "cardinality",
+        "kind",
+        "name"
+      ],
       "type": "object"
     },
     "search_kernel._v1._field_projection": {
@@ -423,7 +469,7 @@
       "properties": {
         "clauses": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._filter_expr"
+            "$ref": "#/$defs/search_kernel._v1._filter_expr"
           },
           "type": "array"
         }
@@ -449,7 +495,7 @@
           "type": "string"
         },
         "value": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
       "type": "object"
@@ -469,22 +515,22 @@
       "minProperties": 1,
       "properties": {
         "filter_and": {
-          "$ref": "#/definitions/search_kernel._v1._filter_and"
+          "$ref": "#/$defs/search_kernel._v1._filter_and"
         },
         "filter_comparison": {
-          "$ref": "#/definitions/search_kernel._v1._filter_comparison"
+          "$ref": "#/$defs/search_kernel._v1._filter_comparison"
         },
         "filter_exists": {
-          "$ref": "#/definitions/search_kernel._v1._filter_exists"
+          "$ref": "#/$defs/search_kernel._v1._filter_exists"
         },
         "filter_not": {
-          "$ref": "#/definitions/search_kernel._v1._filter_not"
+          "$ref": "#/$defs/search_kernel._v1._filter_not"
         },
         "filter_or": {
-          "$ref": "#/definitions/search_kernel._v1._filter_or"
+          "$ref": "#/$defs/search_kernel._v1._filter_or"
         },
         "filter_range": {
-          "$ref": "#/definitions/search_kernel._v1._filter_range"
+          "$ref": "#/$defs/search_kernel._v1._filter_range"
         },
         "none": {
           "additionalProperties": false,
@@ -498,7 +544,7 @@
       "additionalProperties": false,
       "properties": {
         "clause": {
-          "$ref": "#/definitions/search_kernel._v1._filter_expr"
+          "$ref": "#/$defs/search_kernel._v1._filter_expr"
         }
       },
       "type": "object"
@@ -508,7 +554,7 @@
       "properties": {
         "clauses": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._filter_expr"
+            "$ref": "#/$defs/search_kernel._v1._filter_expr"
           },
           "type": "array"
         }
@@ -528,10 +574,10 @@
           "type": "boolean"
         },
         "lower": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         },
         "upper": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
       "type": "object"
@@ -552,7 +598,7 @@
           "type": "string"
         },
         "projection": {
-          "$ref": "#/definitions/search_kernel._v1._field_projection"
+          "$ref": "#/$defs/search_kernel._v1._field_projection"
         }
       },
       "type": "object"
@@ -561,7 +607,7 @@
       "additionalProperties": false,
       "properties": {
         "document": {
-          "$ref": "#/definitions/search_kernel._v1._document"
+          "$ref": "#/$defs/search_kernel._v1._document"
         }
       },
       "type": "object"
@@ -571,7 +617,7 @@
       "properties": {
         "matches": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._highlight_span"
+            "$ref": "#/$defs/search_kernel._v1._highlight_span"
           },
           "type": "array"
         },
@@ -579,6 +625,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "text"
+      ],
       "type": "object"
     },
     "search_kernel._v1._highlight_request": {
@@ -595,11 +644,14 @@
         },
         "fragments": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._highlight_fragment"
+            "$ref": "#/$defs/search_kernel._v1._highlight_fragment"
           },
           "type": "array"
         }
       },
+      "required": [
+        "field"
+      ],
       "type": "object"
     },
     "search_kernel._v1._highlight_span": {
@@ -619,13 +671,13 @@
       "properties": {
         "fields": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "object"
         },
         "highlights": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._highlight_result"
+            "$ref": "#/$defs/search_kernel._v1._highlight_result"
           },
           "type": "array"
         },
@@ -636,17 +688,20 @@
           "type": "number"
         }
       },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
     "search_kernel._v1._index_definition": {
       "additionalProperties": false,
       "properties": {
         "default_search_fields": {
-          "$ref": "#/definitions/search_kernel._v1._search_field_selection"
+          "$ref": "#/$defs/search_kernel._v1._search_field_selection"
         },
         "fields": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._field_definition"
+            "$ref": "#/$defs/search_kernel._v1._field_definition"
           },
           "type": "array"
         },
@@ -660,7 +715,7 @@
       "additionalProperties": false,
       "properties": {
         "document": {
-          "$ref": "#/definitions/search_kernel._v1._document"
+          "$ref": "#/$defs/search_kernel._v1._document"
         }
       },
       "type": "object"
@@ -672,13 +727,16 @@
           "type": "string"
         }
       },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
     "search_kernel._v1._inspect_query_request": {
       "additionalProperties": false,
       "properties": {
         "request": {
-          "$ref": "#/definitions/search_kernel._v1._search_request"
+          "$ref": "#/$defs/search_kernel._v1._search_request"
         }
       },
       "type": "object"
@@ -687,16 +745,19 @@
       "additionalProperties": false,
       "properties": {
         "resolved_request": {
-          "$ref": "#/definitions/search_kernel._v1._search_request"
+          "$ref": "#/$defs/search_kernel._v1._search_request"
         }
       },
+      "required": [
+        "resolved_request"
+      ],
       "type": "object"
     },
     "search_kernel._v1._int64_value": {
       "additionalProperties": false,
       "properties": {
         "value": {
-          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "pattern": "^(?:(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|(?:[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6]|9223372036854775807))|-(?:[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|(?:[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7]|9223372036854775808)))$",
           "type": "string"
         }
       },
@@ -767,10 +828,10 @@
           "type": "object"
         },
         "set_field": {
-          "$ref": "#/definitions/search_kernel._v1._set_field"
+          "$ref": "#/$defs/search_kernel._v1._set_field"
         },
         "unset_field": {
-          "$ref": "#/definitions/search_kernel._v1._unset_field"
+          "$ref": "#/$defs/search_kernel._v1._unset_field"
         }
       },
       "type": "object"
@@ -783,7 +844,7 @@
         },
         "operations": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._patch_operation"
+            "$ref": "#/$defs/search_kernel._v1._patch_operation"
           },
           "type": "array"
         }
@@ -797,6 +858,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
     "search_kernel._v1._query_and": {
@@ -804,7 +868,7 @@
       "properties": {
         "clauses": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._query_expr"
+            "$ref": "#/$defs/search_kernel._v1._query_expr"
           },
           "type": "array"
         }
@@ -822,16 +886,16 @@
           "type": "object"
         },
         "query_and": {
-          "$ref": "#/definitions/search_kernel._v1._query_and"
+          "$ref": "#/$defs/search_kernel._v1._query_and"
         },
         "query_not": {
-          "$ref": "#/definitions/search_kernel._v1._query_not"
+          "$ref": "#/$defs/search_kernel._v1._query_not"
         },
         "query_or": {
-          "$ref": "#/definitions/search_kernel._v1._query_or"
+          "$ref": "#/$defs/search_kernel._v1._query_or"
         },
         "term_query": {
-          "$ref": "#/definitions/search_kernel._v1._term_query"
+          "$ref": "#/$defs/search_kernel._v1._term_query"
         }
       },
       "type": "object"
@@ -840,7 +904,7 @@
       "additionalProperties": false,
       "properties": {
         "clause": {
-          "$ref": "#/definitions/search_kernel._v1._query_expr"
+          "$ref": "#/$defs/search_kernel._v1._query_expr"
         }
       },
       "type": "object"
@@ -850,7 +914,7 @@
       "properties": {
         "clauses": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._query_expr"
+            "$ref": "#/$defs/search_kernel._v1._query_expr"
           },
           "type": "array"
         }
@@ -863,10 +927,10 @@
       "minProperties": 1,
       "properties": {
         "bm25_ranking": {
-          "$ref": "#/definitions/search_kernel._v1._bm25_ranking"
+          "$ref": "#/$defs/search_kernel._v1._bm25_ranking"
         },
         "default_relevance_v1": {
-          "$ref": "#/definitions/search_kernel._v1._default_relevance_v1"
+          "$ref": "#/$defs/search_kernel._v1._default_relevance_v1"
         },
         "none": {
           "additionalProperties": false,
@@ -890,7 +954,7 @@
     },
     "search_kernel._v1._search_field_selection": {
       "items": {
-        "$ref": "#/definitions/search_kernel._v1._search_field"
+        "$ref": "#/$defs/search_kernel._v1._search_field"
       },
       "type": "array"
     },
@@ -899,15 +963,15 @@
       "properties": {
         "facets": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._facet_request"
+            "$ref": "#/$defs/search_kernel._v1._facet_request"
           },
           "type": "array"
         },
         "filter": {
-          "$ref": "#/definitions/search_kernel._v1._filter_expr"
+          "$ref": "#/$defs/search_kernel._v1._filter_expr"
         },
         "highlighting": {
-          "$ref": "#/definitions/search_kernel._v1._highlight_request"
+          "$ref": "#/$defs/search_kernel._v1._highlight_request"
         },
         "language": {
           "type": "string"
@@ -923,23 +987,23 @@
           "type": "integer"
         },
         "projection": {
-          "$ref": "#/definitions/search_kernel._v1._field_projection"
+          "$ref": "#/$defs/search_kernel._v1._field_projection"
         },
         "query": {
           "type": "string"
         },
         "query_expr": {
-          "$ref": "#/definitions/search_kernel._v1._query_expr"
+          "$ref": "#/$defs/search_kernel._v1._query_expr"
         },
         "ranking": {
-          "$ref": "#/definitions/search_kernel._v1._ranking_policy"
+          "$ref": "#/$defs/search_kernel._v1._ranking_policy"
         },
         "search_fields": {
-          "$ref": "#/definitions/search_kernel._v1._search_field_selection"
+          "$ref": "#/$defs/search_kernel._v1._search_field_selection"
         },
         "sort": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._sort_expr"
+            "$ref": "#/$defs/search_kernel._v1._sort_expr"
           },
           "type": "array"
         }
@@ -951,20 +1015,23 @@
       "properties": {
         "facets": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._facet_result"
+            "$ref": "#/$defs/search_kernel._v1._facet_result"
           },
           "type": "array"
         },
         "hits": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._hit"
+            "$ref": "#/$defs/search_kernel._v1._hit"
           },
           "type": "array"
         },
         "total_hits": {
-          "$ref": "#/definitions/search_kernel._v1._total_hits"
+          "$ref": "#/$defs/search_kernel._v1._total_hits"
         }
       },
+      "required": [
+        "total_hits"
+      ],
       "type": "object"
     },
     "search_kernel._v1._set_field": {
@@ -974,7 +1041,7 @@
           "type": "string"
         },
         "value": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
       "type": "object"
@@ -1035,7 +1102,7 @@
           "type": "string"
         },
         "value": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
       "type": "object"
@@ -1052,17 +1119,21 @@
           "type": "string"
         },
         "value": {
-          "pattern": "^(0|[1-9][0-9]*)$",
+          "pattern": "^(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|[1-9][0-9]{18}|(?:1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0][0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
           "type": "string"
         }
       },
+      "required": [
+        "relation",
+        "value"
+      ],
       "type": "object"
     },
     "search_kernel._v1._u_int64_value": {
       "additionalProperties": false,
       "properties": {
         "value": {
-          "pattern": "^(0|[1-9][0-9]*)$",
+          "pattern": "^(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|[1-9][0-9]{18}|(?:1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0][0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
           "type": "string"
         }
       },
@@ -1081,7 +1152,7 @@
       "additionalProperties": false,
       "properties": {
         "document": {
-          "$ref": "#/definitions/search_kernel._v1._document"
+          "$ref": "#/$defs/search_kernel._v1._document"
         }
       },
       "type": "object"
@@ -1093,6 +1164,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
     "search_kernel._v1._value": {
@@ -1111,12 +1185,12 @@
           "type": "number"
         },
         "int64": {
-          "pattern": "^-?(0|[1-9][0-9]*)$",
+          "pattern": "^(?:(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|(?:[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6]|9223372036854775807))|-(?:[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|(?:[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7]|9223372036854775808)))$",
           "type": "string"
         },
         "list": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "array"
         },
@@ -1130,7 +1204,7 @@
         },
         "object": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "object"
         },
@@ -1138,7 +1212,7 @@
           "type": "string"
         },
         "uint64": {
-          "pattern": "^(0|[1-9][0-9]*)$",
+          "pattern": "^(?:0|[1-9]|[1-9][0-9]{1}|[1-9][0-9]{2}|[1-9][0-9]{3}|[1-9][0-9]{4}|[1-9][0-9]{5}|[1-9][0-9]{6}|[1-9][0-9]{7}|[1-9][0-9]{8}|[1-9][0-9]{9}|[1-9][0-9]{10}|[1-9][0-9]{11}|[1-9][0-9]{12}|[1-9][0-9]{13}|[1-9][0-9]{14}|[1-9][0-9]{15}|[1-9][0-9]{16}|[1-9][0-9]{17}|[1-9][0-9]{18}|(?:1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0][0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
           "type": "string"
         }
       },
@@ -1151,7 +1225,7 @@
           "type": "string"
         },
         "value": {
-          "$ref": "#/definitions/search_kernel._v1._value"
+          "$ref": "#/$defs/search_kernel._v1._value"
         }
       },
       "required": [
@@ -1164,7 +1238,7 @@
       "properties": {
         "values": {
           "items": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "array"
         }
@@ -1176,7 +1250,7 @@
       "properties": {
         "fields": {
           "additionalProperties": {
-            "$ref": "#/definitions/search_kernel._v1._value"
+            "$ref": "#/$defs/search_kernel._v1._value"
           },
           "type": "object"
         }
@@ -1184,16 +1258,109 @@
       "type": "object"
     }
   },
-  "operations": [
-    "insert",
-    "upsert",
-    "patch",
-    "delete",
-    "get",
-    "search",
-    "analyze",
-    "describe",
-    "inspect_query"
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "request": {
+          "additionalProperties": false,
+          "maxProperties": 1,
+          "minProperties": 1,
+          "properties": {
+            "analyze": {
+              "$ref": "#/$defs/search_kernel._v1._analyze_request"
+            },
+            "delete": {
+              "$ref": "#/$defs/search_kernel._v1._delete_request"
+            },
+            "describe": {
+              "$ref": "#/$defs/search_kernel._v1._describe_request"
+            },
+            "get": {
+              "$ref": "#/$defs/search_kernel._v1._get_request"
+            },
+            "insert": {
+              "$ref": "#/$defs/search_kernel._v1._insert_request"
+            },
+            "inspect_query": {
+              "$ref": "#/$defs/search_kernel._v1._inspect_query_request"
+            },
+            "patch": {
+              "$ref": "#/$defs/search_kernel._v1._patch_request"
+            },
+            "search": {
+              "$ref": "#/$defs/search_kernel._v1._search_request"
+            },
+            "upsert": {
+              "$ref": "#/$defs/search_kernel._v1._upsert_request"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "response": {
+          "additionalProperties": false,
+          "maxProperties": 1,
+          "minProperties": 1,
+          "properties": {
+            "analyze": {
+              "$ref": "#/$defs/search_kernel._v1._analyze_result"
+            },
+            "delete": {
+              "$ref": "#/$defs/search_kernel._v1._delete_result"
+            },
+            "describe": {
+              "$ref": "#/$defs/search_kernel._v1._describe_result"
+            },
+            "error": {
+              "$ref": "#/$defs/search_kernel._v1._error"
+            },
+            "get": {
+              "$ref": "#/$defs/search_kernel._v1._get_result"
+            },
+            "insert": {
+              "$ref": "#/$defs/search_kernel._v1._insert_result"
+            },
+            "inspect_query": {
+              "$ref": "#/$defs/search_kernel._v1._inspect_query_result"
+            },
+            "patch": {
+              "$ref": "#/$defs/search_kernel._v1._patch_result"
+            },
+            "search": {
+              "$ref": "#/$defs/search_kernel._v1._search_result"
+            },
+            "upsert": {
+              "$ref": "#/$defs/search_kernel._v1._upsert_result"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "response"
+      ],
+      "type": "object"
+    }
   ],
   "request": {
     "additionalProperties": false,
@@ -1203,35 +1370,36 @@
         "type": "integer"
       },
       "request": {
+        "additionalProperties": false,
         "maxProperties": 1,
         "minProperties": 1,
         "properties": {
           "analyze": {
-            "$ref": "#/definitions/search_kernel._v1._analyze_request"
+            "$ref": "#/$defs/search_kernel._v1._analyze_request"
           },
           "delete": {
-            "$ref": "#/definitions/search_kernel._v1._delete_request"
+            "$ref": "#/$defs/search_kernel._v1._delete_request"
           },
           "describe": {
-            "$ref": "#/definitions/search_kernel._v1._describe_request"
+            "$ref": "#/$defs/search_kernel._v1._describe_request"
           },
           "get": {
-            "$ref": "#/definitions/search_kernel._v1._get_request"
+            "$ref": "#/$defs/search_kernel._v1._get_request"
           },
           "insert": {
-            "$ref": "#/definitions/search_kernel._v1._insert_request"
+            "$ref": "#/$defs/search_kernel._v1._insert_request"
           },
           "inspect_query": {
-            "$ref": "#/definitions/search_kernel._v1._inspect_query_request"
+            "$ref": "#/$defs/search_kernel._v1._inspect_query_request"
           },
           "patch": {
-            "$ref": "#/definitions/search_kernel._v1._patch_request"
+            "$ref": "#/$defs/search_kernel._v1._patch_request"
           },
           "search": {
-            "$ref": "#/definitions/search_kernel._v1._search_request"
+            "$ref": "#/$defs/search_kernel._v1._search_request"
           },
           "upsert": {
-            "$ref": "#/definitions/search_kernel._v1._upsert_request"
+            "$ref": "#/$defs/search_kernel._v1._upsert_request"
           }
         },
         "type": "object"
@@ -1251,35 +1419,39 @@
         "type": "integer"
       },
       "response": {
+        "additionalProperties": false,
         "maxProperties": 1,
         "minProperties": 1,
         "properties": {
           "analyze": {
-            "$ref": "#/definitions/search_kernel._v1._analyze_result"
+            "$ref": "#/$defs/search_kernel._v1._analyze_result"
           },
           "delete": {
-            "$ref": "#/definitions/search_kernel._v1._delete_result"
+            "$ref": "#/$defs/search_kernel._v1._delete_result"
           },
           "describe": {
-            "$ref": "#/definitions/search_kernel._v1._describe_result"
+            "$ref": "#/$defs/search_kernel._v1._describe_result"
+          },
+          "error": {
+            "$ref": "#/$defs/search_kernel._v1._error"
           },
           "get": {
-            "$ref": "#/definitions/search_kernel._v1._get_result"
+            "$ref": "#/$defs/search_kernel._v1._get_result"
           },
           "insert": {
-            "$ref": "#/definitions/search_kernel._v1._insert_result"
+            "$ref": "#/$defs/search_kernel._v1._insert_result"
           },
           "inspect_query": {
-            "$ref": "#/definitions/search_kernel._v1._inspect_query_result"
+            "$ref": "#/$defs/search_kernel._v1._inspect_query_result"
           },
           "patch": {
-            "$ref": "#/definitions/search_kernel._v1._patch_result"
+            "$ref": "#/$defs/search_kernel._v1._patch_result"
           },
           "search": {
-            "$ref": "#/definitions/search_kernel._v1._search_result"
+            "$ref": "#/$defs/search_kernel._v1._search_result"
           },
           "upsert": {
-            "$ref": "#/definitions/search_kernel._v1._upsert_result"
+            "$ref": "#/$defs/search_kernel._v1._upsert_result"
           }
         },
         "type": "object"
@@ -1292,5 +1464,16 @@
     "type": "object"
   },
   "title": "Search Kernel canonical HTTP JSON",
-  "x-searchkernel-generated-by": "searchkernel-bindgen"
+  "x-searchkernel-generated-by": "searchkernel-bindgen",
+  "x-searchkernel-operations": [
+    "insert",
+    "upsert",
+    "patch",
+    "delete",
+    "get",
+    "search",
+    "analyze",
+    "describe",
+    "inspect_query"
+  ]
 }

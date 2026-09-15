@@ -69,6 +69,21 @@ fn malformed_response_is_rejected() {
 }
 
 #[test]
+fn response_payload_required_fields_are_enforced_by_the_codec() {
+    for input in [
+        br#"{"protocol_version":1,"response":{"insert":{}}}"#.as_slice(),
+        br#"{"protocol_version":1,"response":{"search":{}}}"#.as_slice(),
+        br#"{"protocol_version":1,"response":{"error":{}}}"#.as_slice(),
+    ] {
+        assert!(
+            response_json_to_flatbuffer(input).is_err(),
+            "response missing required fields was accepted: {}",
+            String::from_utf8_lossy(input)
+        );
+    }
+}
+
+#[test]
 fn canonical_scalar_policy_round_trips() {
     let json = br#"{
       "protocol_version": 1,
