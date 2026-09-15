@@ -130,7 +130,8 @@ fn write_generated_files(
     write_config(directory, "attributes.cfg", &derived_config.attributes())?;
     write_config(directory, "summary.cfg", &derived_config.summary())?;
     write_config(directory, "rank-profiles.cfg", &rank_profiles(schema))?;
-    write_config(directory, "juniperrc.cfg", "")
+    write_config(directory, "juniperrc.cfg", "")?;
+    write_config(directory, "proton.cfg", &derived_config.proton())
 }
 
 #[derive(Debug)]
@@ -247,6 +248,13 @@ impl<'a> DerivedConfig<'a> {
             ));
         }
         output
+    }
+
+    fn proton(&self) -> String {
+        format!(
+            "documentdb[1]\ndocumentdb[0].inputdoctypename {}\ndocumentdb[0].document_id_attribute true\n",
+            quoted(&self.schema.document_type)
+        )
     }
 }
 
@@ -674,6 +682,7 @@ mod tests {
             "summary.cfg",
             "rank-profiles.cfg",
             "juniperrc.cfg",
+            "proton.cfg",
             "searchkernel-schema.json",
         ] {
             assert_eq!(

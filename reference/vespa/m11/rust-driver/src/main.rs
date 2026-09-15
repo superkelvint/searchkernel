@@ -161,6 +161,11 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("after-call failure incorrectly rolled back native mutation");
     }
 
+    let failure_query = Query::Equals {
+        field: "qty".to_owned(),
+        value: 8,
+    };
+
     for (name, action, expected) in [
         ("search_before_match", Action::StdException, 2),
         ("search_after_match", Action::UnknownException, 2),
@@ -168,14 +173,21 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         ("result_before_copy", Action::StdException, 2),
     ] {
         hardening::set(&engine, name, 1, action)?;
-        let error = engine.search("qty", 8, 10).expect_err("failure injection must fail");
+        let error = match engine.search_query(&failure_query, "default") {
+            Ok(result) => {
+                panic!("failure injection unexpectedly succeeded at {name}: {result:?}")
+            }
+            Err(error) => error,
+        };
         if error.code() != expected {
             panic!("failpoint returned code {}, expected {expected}", error.code());
         }
     }
     hardening::set(&engine, "search_before_match", 1, Action::Block)?;
     let blocked_engine = Arc::clone(&engine);
-    let blocked_search = thread::spawn(move || blocked_engine.search("qty", 8, 10));
+    let blocked_search = thread::spawn(move || {
+        blocked_engine.search_query(&failure_query, "default")
+    });
     for _ in 0..100 {
         if hardening::is_blocked(&engine, "search_before_match")? {
             break;
