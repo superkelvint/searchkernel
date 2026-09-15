@@ -175,7 +175,7 @@ impl<'a> DerivedConfig<'a> {
         let mut output = format!("indexfield[{}]\n", indexed.len());
         for (index, field) in indexed.iter().enumerate() {
             output.push_str(&format!(
-                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures true\n",
+                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
                 quoted(&field.name)
             ));
         }
@@ -301,17 +301,6 @@ impl FieldType {
 
 fn validate_schema(schema: &Schema) -> Result<()> {
     validate_name(&schema.document_type, "document type")?;
-    if schema
-        .fields
-        .iter()
-        .filter(|field| field.field_type == FieldType::Text)
-        .count()
-        > 1
-    {
-        return Err(Error::message(
-            "M6 supports exactly one indexed text field; multiple text fields are not supported",
-        ));
-    }
     for (index, field) in schema.fields.iter().enumerate() {
         validate_name(&field.name, &format!("field at index {index}"))?;
         if RESERVED_FIELD_NAMES.contains(&field.name.as_str()) {
@@ -622,13 +611,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_multiple_text_fields_until_ranking_supports_them() {
+    fn compiles_multiple_indexed_text_fields() {
         let schema = Schema::new("products")
-            .field(Field::new("title", FieldType::Text).indexed())
-            .field(Field::new("description", FieldType::Text).indexed());
-        assert!(ConfigCompiler
-            .compile_to(&schema, temporary_path("multiple-text-fields"))
-            .is_err());
+            .field(Field::new("title", FieldType::Text).indexed().summary())
+            .field(
+                Field::new("description", FieldType::Text)
+                    .indexed()
+                    .attribute()
+                    .summary(),
+            );
+        let path = compile(schema, "multiple-text-fields");
+        let index = fs::read_to_string(path.join("indexschema.cfg")).expect("index config");
+        assert!(index.contains("indexfield[0].name \"title\""));
+        assert!(index.contains("indexfield[1].name \"description\""));
+        let _ = fs::remove_dir_all(path);
     }
 
     #[test]
@@ -653,7 +649,7 @@ mod tests {
             fs::read_to_string(path.join("rank-profiles.cfg")).expect("rank profiles");
         assert!(index.contains("indexfield[0].name \"title\""));
         assert!(index.contains("indexfield[0].positions true"));
-        assert!(index.contains("indexfield[0].interleavedfeatures true"));
+        assert!(index.contains("indexfield[0].interleavedfeatures false"));
         assert!(attributes.contains("attribute[0].datatype STRING"));
         assert!(attributes.contains("attribute[1].datatype INT32"));
         assert!(attributes.contains("attribute[2].datatype DOUBLE"));

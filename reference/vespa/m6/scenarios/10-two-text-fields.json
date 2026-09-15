@@ -1,0 +1,26 @@
+{
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": true,
+      "type": "text"
+    },
+    {
+      "attribute": true,
+      "index": true,
+      "name": "title_exact",
+      "summary": true,
+      "type": "text"
+    }
+  ],
+  "id": "two-text-fields",
+  "schema": "typea",
+  "smoke": {
+    "field": "title_exact",
+    "kind": "text",
+    "query": "vespa",
+    "text": "Vespa search"
+  }
+}

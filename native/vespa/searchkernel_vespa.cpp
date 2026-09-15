@@ -433,7 +433,15 @@ public:
                                              filesystem_error.message());
                 }
                 const auto filename = entry->path().filename().string();
-                if (filename != ".searchkernel.lock" &&
+                const bool is_directory = entry->is_directory(filesystem_error);
+                if (filesystem_error) {
+                    throw std::runtime_error("could not inspect index data path '" + path.string() + "': " +
+                                             filesystem_error.message());
+                }
+                // Files placed beside the index (for example a driver's redirected
+                // JSON output) are not Vespa state.  Engine state is rooted in the
+                // document-type and transaction-log directories.
+                if (is_directory && filename != ".searchkernel.lock" &&
                     !filename.starts_with(".searchkernel-schema.tmp")) {
                     _had_existing_state = true;
                     break;
@@ -962,7 +970,13 @@ class EmbeddedEngine {
             require_config_value(values, prefix + "phrases", "false");
             require_config_value(values, prefix + "positions", "true");
             require_config_value(values, prefix + "averageelementlen", "512");
-            require_config_value(values, prefix + "interleavedfeatures", "true");
+            const auto interleaved = config_value(values, prefix + "interleavedfeatures");
+            const bool legacy_text_only = std::none_of(
+                manifest.fields.begin(), manifest.fields.end(),
+                [](const auto &candidate) { return candidate.attribute; });
+            if (interleaved != "false" && !(legacy_text_only && interleaved == "true")) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
             ++index;
         }
     }
@@ -1144,18 +1158,15 @@ class EmbeddedEngine {
             }
             manifest.fields.push_back({std::move(name), std::move(type), indexed, attribute, summary});
         }
-        if (std::count_if(manifest.fields.begin(), manifest.fields.end(), [](const auto &field) {
-                return field.type == "text";
-            }) > 1) {
-            throw std::invalid_argument(
-                "generated schema supports exactly one indexed text field");
-        }
         validate_generated_configuration(manifest, config_dir);
         return manifest;
     }
 
     static std::shared_ptr<const DocumenttypesConfig>
-    make_documenttypes_config(const SchemaManifest &manifest) {
+    make_documenttypes_config(const SchemaManifest &manifest, bool legacy) {
+        if (legacy) {
+            return std::make_shared<DocumenttypesConfig>();
+        }
         document::new_config_builder::NewConfigBuilder builder;
         auto &document_type = builder.document(manifest.document_type);
         for (const auto &field : manifest.fields) {
@@ -1172,6 +1183,28 @@ class EmbeddedEngine {
             }
         }
         return std::make_shared<DocumenttypesConfig>(builder.config());
+    }
+
+    static const document::DataType *manifest_type(const std::string &type) {
+        if (type == "text" || type == "string") return document::DataType::STRING;
+        if (type == "integer") return document::DataType::INT;
+        if (type == "float") return document::DataType::DOUBLE;
+        if (type == "boolean") return document::DataType::BOOL;
+        throw std::invalid_argument("unsupported generated schema field type: " + type);
+    }
+
+    static DocumentType make_document_type(const SchemaManifest &manifest) {
+        DocumentType type(manifest.document_type, 0);
+        int32_t field_id = 1;
+        for (const auto &field : manifest.fields) {
+            type.addField(document::Field(field.name, field_id++, *manifest_type(field.type)));
+        }
+        return type;
+    }
+
+    static bool is_legacy_state(const std::string &data_dir, bool had_existing_state) {
+        return had_existing_state &&
+               !std::filesystem::exists(std::filesystem::path(data_dir) / ".searchkernel-schema");
     }
 
 
@@ -1234,8 +1267,11 @@ public:
           _schema_identity(validate_or_persist_schema_identity(
               data_dir, config_dir, _manifest, _data_lock.had_existing_state())),
           _document_type(_manifest.document_type),
-          _document_types(make_documenttypes_config(_manifest)),
-          _repo(std::make_shared<DocumentTypeRepo>(*_document_types)),
+          _document_types(make_documenttypes_config(
+              _manifest, is_legacy_state(data_dir, _data_lock.had_existing_state()))),
+          _repo(is_legacy_state(data_dir, _data_lock.had_existing_state())
+                    ? std::make_shared<DocumentTypeRepo>(make_document_type(_manifest))
+                    : std::make_shared<DocumentTypeRepo>(*_document_types)),
           _doc_type(_repo->getDocumentType(_document_type)),
           _wire_service(),
           _db_owner(),

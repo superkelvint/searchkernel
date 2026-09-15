@@ -1,0 +1,11 @@
+schema typea {
+
+  document typea {
+    field title type string {
+      indexing: index | summary
+    }
+    field title_exact type string {
+      indexing: index | attribute | summary
+    }
+  }
+}
