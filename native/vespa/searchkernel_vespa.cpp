@@ -1,4 +1,7 @@
 #include "searchkernel_vespa.h"
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+#include "searchkernel_vespa_test.h"
+#endif
 #include "file_descriptor.h"
 #include "transport_owner.h"
 
@@ -75,6 +78,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <condition_variable>
 #include <filesystem>
 #include <fcntl.h>
 #include <fstream>
@@ -89,6 +93,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <shared_mutex>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -128,6 +133,118 @@ using vespa::config::search::core::ProtonConfig;
 using cloud::config::filedistribution::FiledistributorrpcConfig;
 
 namespace {
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+class FailpointController {
+    struct Entry {
+        uint32_t trigger = 0;
+        uint32_t action = 0;
+        uint32_t hits = 0;
+        bool blocked = false;
+        bool armed = false;
+    };
+
+    mutable std::mutex _mutex;
+    std::condition_variable _condition;
+    std::map<std::string, Entry> _entries;
+
+    static bool known(std::string_view name) noexcept {
+        static constexpr std::array<std::string_view, 9> names = {
+            "open_before_native_create", "open_after_native_create",
+            "mutation_before_native_call", "mutation_after_native_call",
+            "search_before_match", "search_after_match", "result_before_copy",
+            "result_after_allocation", "destroy_before_native_release"};
+        return std::find(names.begin(), names.end(), name) != names.end();
+    }
+
+public:
+    void set(const char *name, uint32_t trigger, uint32_t action) {
+        if (!name || !known(name)) {
+            throw std::invalid_argument("unknown hardening failpoint");
+        }
+        if (trigger == 0) {
+            throw std::invalid_argument("hardening failpoint hit must be non-zero");
+        }
+        if (action < SK_TEST_FAILPOINT_ERROR || action > SK_TEST_FAILPOINT_BLOCK) {
+            throw std::invalid_argument("unsupported hardening failpoint action");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        _entries[name] = Entry{trigger, action, 0, false, true};
+    }
+
+    void clear(const char *name) {
+        if (!name) {
+            throw std::invalid_argument("hardening failpoint name must not be null");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto entry = _entries.find(name);
+        if (entry != _entries.end()) {
+            entry->second.armed = false;
+            entry->second.blocked = false;
+        }
+        _condition.notify_all();
+    }
+
+    void release(const char *name) {
+        if (!name) {
+            throw std::invalid_argument("hardening failpoint name must not be null");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto entry = _entries.find(name);
+        if (entry == _entries.end() || !entry->second.blocked) {
+            throw std::invalid_argument("hardening failpoint is not blocked");
+        }
+        entry->second.blocked = false;
+        entry->second.armed = false;
+        _condition.notify_all();
+    }
+
+    bool is_blocked(const char *name) const {
+        if (!name) {
+            throw std::invalid_argument("hardening failpoint name must not be null");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto entry = _entries.find(name);
+        return entry != _entries.end() && entry->second.blocked;
+    }
+
+    void hit(std::string_view name) const {
+        auto *self = const_cast<FailpointController *>(this);
+        std::unique_lock<std::mutex> guard(self->_mutex);
+        auto entry = self->_entries.find(std::string(name));
+        if (entry == self->_entries.end() || !entry->second.armed) {
+            return;
+        }
+        ++entry->second.hits;
+        if (entry->second.hits != entry->second.trigger) {
+            return;
+        }
+        const auto action = entry->second.action;
+        entry->second.armed = false;
+        if (action == SK_TEST_FAILPOINT_BLOCK) {
+            entry->second.blocked = true;
+            self->_condition.notify_all();
+            self->_condition.wait(guard, [&] { return !entry->second.blocked; });
+            return;
+        }
+        guard.unlock();
+        switch (action) {
+        case SK_TEST_FAILPOINT_ERROR:
+            throw std::invalid_argument("hardening failpoint error");
+        case SK_TEST_FAILPOINT_STD_EXCEPTION:
+            throw std::runtime_error("hardening failpoint std::exception");
+        case SK_TEST_FAILPOINT_BAD_ALLOC:
+            throw std::bad_alloc();
+        case SK_TEST_FAILPOINT_UNKNOWN_EXCEPTION:
+            throw 0;
+        default:
+            throw std::invalid_argument("unsupported hardening failpoint action");
+        }
+    }
+};
+
+FailpointController OPEN_FAILPOINTS;
+#endif
 
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
 constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
@@ -672,6 +789,9 @@ struct TextHit {
 
 struct TextResult {
     std::vector<TextHit> hits;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController *failpoints = nullptr;
+#endif
 };
 
 std::string query_stack_dump(int32_t value, const std::string &field) {
@@ -725,11 +845,22 @@ class EmbeddedEngine {
     // successful creation separate so a retry only re-attempts activation.
     std::vector<uint64_t> _created_buckets;
     std::vector<uint64_t> _prepared_buckets;
-    uint64_t _next_timestamp = 1;
+    std::atomic<uint64_t> _next_timestamp{1};
     bool _initialized = false;
     enum class State { Open, Closing, Closed, Failed };
     std::atomic<State> _state{State::Open};
-    mutable std::mutex _operation_mutex;
+    // The lifecycle gate protects the lifetime of _db and the other native
+    // resources. Shared holders are deliberately allowed to overlap; Vespa
+    // owns operation-level concurrency. Close and cleanup take the exclusive
+    // holder and therefore cannot race an active operation.
+    mutable std::shared_mutex _lifecycle_mutex;
+    // This container is owned by this adapter rather than Vespa. Hold this
+    // narrow lock only while preparing a previously unseen bucket; native feed
+    // calls themselves remain concurrent and are serialized by Vespa as needed.
+    mutable std::mutex _bucket_mutex;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    mutable FailpointController _failpoints;
+#endif
 
     static std::string read_identity_file(const std::filesystem::path &path) {
         std::ifstream input(path, std::ios::binary);
@@ -906,7 +1037,9 @@ class EmbeddedEngine {
             StackDumpCreator::create(*tree)));
         request->ranking = rank_profile;
         request->maxhits = 100;
+        failpoint("search_before_match");
         auto reply = _db->match(*request, vespalib::ThreadBundle::trivial());
+        failpoint("search_after_match");
         if (!reply) {
             throw std::runtime_error("Vespa matcher returned no reply");
         }
@@ -936,10 +1069,17 @@ class EmbeddedEngine {
     }
 
     uint64_t next_timestamp() {
-        if (_next_timestamp == std::numeric_limits<uint64_t>::max()) {
-            throw std::runtime_error("mutation timestamp space exhausted");
+        auto timestamp = _next_timestamp.load(std::memory_order_relaxed);
+        for (;;) {
+            if (timestamp == std::numeric_limits<uint64_t>::max()) {
+                throw std::runtime_error("mutation timestamp space exhausted");
+            }
+            if (_next_timestamp.compare_exchange_weak(
+                    timestamp, timestamp + 1, std::memory_order_relaxed,
+                    std::memory_order_relaxed)) {
+                return timestamp;
+            }
         }
-        return _next_timestamp++;
     }
 
     static std::map<std::string, std::string> read_config(const std::filesystem::path &path) {
@@ -1379,6 +1519,28 @@ public:
           _created_buckets(),
           _prepared_buckets() {}
 
+    void failpoint(const char *name) const {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        _failpoints.hit(name);
+#else
+        (void)name;
+#endif
+    }
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController &failpoints() const noexcept { return _failpoints; }
+
+    void set_failpoint(const char *name, uint32_t hit, uint32_t action) {
+        _failpoints.set(name, hit, action);
+    }
+
+    void clear_failpoint(const char *name) { _failpoints.clear(name); }
+
+    void release_failpoint(const char *name) { _failpoints.release(name); }
+
+    bool failpoint_is_blocked(const char *name) const { return _failpoints.is_blocked(name); }
+#endif
+
     void initialize(const std::string &data_dir, const std::string &config_dir) {
         std::filesystem::create_directories(data_dir);
         if (_doc_type == nullptr) {
@@ -1462,7 +1624,7 @@ public:
     }
 
     void close() {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::unique_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         const auto current = _state.load(std::memory_order_acquire);
         if (current == State::Closed || current == State::Failed) {
             throw std::invalid_argument("engine is already closed");
@@ -1496,25 +1658,24 @@ public:
             // Mutex acquisition may itself report a system error. Keep it
             // inside this boundary because this function is called from a
             // noexcept destructor after a failed graceful close.
-            std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+            std::unique_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
             if (_handler) {
                 _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
                                            DocTypeName(_document_type));
             }
-        } catch (...) {
-        }
-        _handler.reset();
-        try {
+            _handler.reset();
             if (_db) {
                 _db->close();
                 _db.reset();
             }
-        } catch (...) {
-            _db.reset();
-        }
-        try {
             _shared_service.shutdown_noexcept();
         } catch (...) {
+            _db.reset();
+            _handler.reset();
+            try {
+                _shared_service.shutdown_noexcept();
+            } catch (...) {
+            }
         }
     }
 
@@ -1531,37 +1692,46 @@ public:
     }
 
     void put(const std::string &id, const std::string &field, int32_t value) {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
-        prepare_bucket(bucket);
+        {
+            std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
+            prepare_bucket(bucket);
+        }
+        failpoint("mutation_before_native_call");
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
                                        make_document(document_id, field, value));
+        failpoint("mutation_after_native_call");
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
     void update(const std::string &id, const std::string &field, int32_t value) {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
+        failpoint("mutation_before_native_call");
         auto result = _persistence.update(
             bucket_for(document_id), Timestamp(next_timestamp()),
             make_update(document_id, field, value));
+        failpoint("mutation_after_native_call");
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
     bool remove(const std::string &id) {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
+        failpoint("mutation_before_native_call");
         auto result = _persistence.remove(
             bucket_for(document_id), Timestamp(next_timestamp()),
             document_id);
+        failpoint("mutation_after_native_call");
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
@@ -1570,7 +1740,7 @@ public:
 
     std::vector<std::string> search(const std::string &field, int32_t value,
                                     uint32_t limit) const {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         require_integer_field(field);
         auto request = std::make_shared<SearchRequest>();
@@ -1672,31 +1842,38 @@ public:
     }
 
     void put_text(const TextDocument &text) {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
-        prepare_bucket(bucket);
+        {
+            std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
+            prepare_bucket(bucket);
+        }
+        failpoint("mutation_before_native_call");
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
                                        make_text_document(text));
+        failpoint("mutation_after_native_call");
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
     void update_text(const TextUpdate &text) {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
+        failpoint("mutation_before_native_call");
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
                                           make_text_update(text));
+        failpoint("mutation_after_native_call");
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         require_text_field(text.field);
         if (text.terms.size() >
@@ -1728,12 +1905,14 @@ public:
     std::vector<TextHit> search_query(VespaQueryBuilder &builder,
                                       const std::string &rank_profile,
                                       const std::string &source) const {
-        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         return match_tree(builder.build(), rank_profile, source);
     }
 
     std::vector<QueryFieldMetadata> query_field_metadata() const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
         std::vector<QueryFieldMetadata> metadata;
         metadata.reserve(_manifest.fields.size());
         for (const auto &field : _manifest.fields) {
@@ -1763,6 +1942,9 @@ struct ValueRequest {
 
 struct ErrorResult {
     std::vector<std::string> ids;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController *failpoints = nullptr;
+#endif
 };
 
 void clear_error(uint8_t *error, uint32_t error_capacity) noexcept {
@@ -1798,6 +1980,14 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INTERNAL, exception.what());
     } catch (...) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INTERNAL, "unknown native exception");
+    }
+}
+
+template <typename Handle>
+void destroy_noexcept(Handle *handle) noexcept {
+    try {
+        delete handle;
+    } catch (...) {
     }
 }
 
@@ -1996,6 +2186,9 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
                          "engine open arguments must not be null");
     }
     return invoke(error, error_capacity, [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        OPEN_FAILPOINTS.hit("open_before_native_create");
+#endif
         std::error_code filesystem_error;
         const std::filesystem::path data_path(data_dir);
         if (std::filesystem::exists(data_path, filesystem_error) &&
@@ -2018,6 +2211,9 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
         engine->impl = std::make_unique<EmbeddedEngine>(data_dir,
                                                         config_path.string());
         engine->impl->initialize(data_dir, config_path.string());
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        OPEN_FAILPOINTS.hit("open_after_native_create");
+#endif
         *out_engine = engine.release();
     });
 }
@@ -2033,6 +2229,14 @@ extern "C" int32_t sk_engine_close(sk_engine *engine, uint8_t *error,
 
 extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
     try {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (engine && engine->impl) {
+            try {
+                engine->impl->failpoint("destroy_before_native_release");
+            } catch (...) {
+            }
+        }
+#endif
         delete engine;
     } catch (...) {
     }
@@ -2063,7 +2267,9 @@ extern "C" int32_t sk_document_create(const char *id, const char *field,
     });
 }
 
-extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT { delete document; }
+extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT {
+    destroy_noexcept(document);
+}
 
 extern "C" int32_t sk_document_update_create(const char *id, const char *field,
                                                int32_t value,
@@ -2092,7 +2298,7 @@ extern "C" int32_t sk_document_update_create(const char *id, const char *field,
 }
 
 extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCEPT {
-    delete update;
+    destroy_noexcept(update);
 }
 
 extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
@@ -2124,7 +2330,7 @@ extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
 }
 
 extern "C" void sk_search_request_destroy(sk_search_request *request) SK_NOEXCEPT {
-    delete request;
+    destroy_noexcept(request);
 }
 
 extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
@@ -2187,6 +2393,10 @@ extern "C" int32_t sk_engine_search(const sk_engine *engine,
         auto result = std::make_unique<sk_search_result>();
         result->ids = engine->impl->search(request->field, request->value,
                                            request->limit);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        engine->impl->failpoint("result_after_allocation");
+        result->failpoints = &engine->impl->failpoints();
+#endif
         *out_result = result.release();
     });
 }
@@ -2213,14 +2423,19 @@ extern "C" int32_t sk_search_result_id(const sk_search_result *result,
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "result index is out of bounds");
     }
-    clear_error(error, error_capacity);
-    *out_id = result->ids[index].data();
-    *out_length = static_cast<uint32_t>(result->ids[index].size());
-    return SK_NATIVE_STATUS_OK;
+    return invoke(error, error_capacity, [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->failpoints) {
+            result->failpoints->hit("result_before_copy");
+        }
+#endif
+        *out_id = result->ids[index].data();
+        *out_length = static_cast<uint32_t>(result->ids[index].size());
+    });
 }
 
 extern "C" void sk_search_result_destroy(sk_search_result *result) SK_NOEXCEPT {
-    delete result;
+    destroy_noexcept(result);
 }
 
 namespace {
@@ -2432,7 +2647,7 @@ extern "C" int32_t sk_text_document_add_occurrences(
 }
 
 extern "C" void sk_text_document_destroy(sk_text_document *document) SK_NOEXCEPT {
-    delete document;
+    destroy_noexcept(document);
 }
 
 extern "C" int32_t sk_text_update_create(
@@ -2469,7 +2684,7 @@ extern "C" int32_t sk_text_update_add_occurrences(
 }
 
 extern "C" void sk_text_update_destroy(sk_text_update *update) SK_NOEXCEPT {
-    delete update;
+    destroy_noexcept(update);
 }
 
 extern "C" int32_t sk_text_request_create(
@@ -2505,7 +2720,7 @@ extern "C" int32_t sk_text_request_add_terms(
 }
 
 extern "C" void sk_text_request_destroy(sk_text_request *request) SK_NOEXCEPT {
-    delete request;
+    destroy_noexcept(request);
 }
 
 extern "C" int32_t sk_engine_put_text(sk_engine *engine,
@@ -2545,6 +2760,10 @@ extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
     return invoke(error, error_capacity, [&] {
         auto result = std::make_unique<sk_text_result>();
         result->hits = engine->impl->search_text(*request);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        engine->impl->failpoint("result_after_allocation");
+        result->failpoints = &engine->impl->failpoints();
+#endif
         *out_result = result.release();
     });
 }
@@ -2575,15 +2794,20 @@ extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "text result index is out of bounds");
     }
-    clear_error(error, error_capacity);
-    *out_id = result->hits[index].id.data();
-    *out_length = static_cast<uint32_t>(result->hits[index].id.size());
-    *out_score = result->hits[index].score;
-    return SK_NATIVE_STATUS_OK;
+    return invoke(error, error_capacity, [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->failpoints) {
+            result->failpoints->hit("result_before_copy");
+        }
+#endif
+        *out_id = result->hits[index].id.data();
+        *out_length = static_cast<uint32_t>(result->hits[index].id.size());
+        *out_score = result->hits[index].score;
+    });
 }
 
 extern "C" void sk_text_result_destroy(sk_text_result *result) SK_NOEXCEPT {
-    delete result;
+    destroy_noexcept(result);
 }
 
 extern "C" int32_t sk_query_create(const sk_engine *engine, sk_query **out_query,
@@ -2682,7 +2906,7 @@ extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
 }
 
 extern "C" void sk_query_destroy(sk_query *query) SK_NOEXCEPT {
-    delete query;
+    destroy_noexcept(query);
 }
 
 extern "C" int32_t sk_engine_search_query(const sk_engine *engine,
@@ -2702,6 +2926,83 @@ extern "C" int32_t sk_engine_search_query(const sk_engine *engine,
     return invoke(error, error_capacity, [&] {
         auto result = std::make_unique<sk_text_result>();
         result->hits = engine->impl->search_query(query->builder, rank_profile, source);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        engine->impl->failpoint("result_after_allocation");
+        result->failpoints = &engine->impl->failpoints();
+#endif
         *out_result = result.release();
     });
 }
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+extern "C" int32_t sk_test_failpoint_set(sk_engine *engine, const char *name,
+                                            uint32_t hit, uint32_t action,
+                                            uint8_t *error,
+                                            uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "failpoint set arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { engine->impl->set_failpoint(name, hit, action); });
+}
+
+extern "C" int32_t sk_test_failpoint_set_open(const char *name, uint32_t hit,
+                                                 uint32_t action, uint8_t *error,
+                                                 uint32_t error_capacity) SK_NOEXCEPT {
+    if (!name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "open failpoint arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { OPEN_FAILPOINTS.set(name, hit, action); });
+}
+
+extern "C" int32_t sk_test_failpoint_clear(sk_engine *engine, const char *name,
+                                              uint8_t *error,
+                                              uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "failpoint clear arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { engine->impl->clear_failpoint(name); });
+}
+
+extern "C" int32_t sk_test_failpoint_clear_open(const char *name, uint8_t *error,
+                                                   uint32_t error_capacity) SK_NOEXCEPT {
+    if (!name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "open failpoint arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] { OPEN_FAILPOINTS.clear(name); });
+}
+
+extern "C" int32_t sk_test_failpoint_release(sk_engine *engine, const char *name,
+                                                uint8_t *error,
+                                                uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "failpoint release arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { engine->impl->release_failpoint(name); });
+}
+
+extern "C" int32_t sk_test_failpoint_is_blocked(const sk_engine *engine,
+                                                   const char *name,
+                                                   uint8_t *out_blocked,
+                                                   uint8_t *error,
+                                                   uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_blocked) {
+        *out_blocked = 0;
+    }
+    if (!engine || !engine->impl || !name || !out_blocked) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "failpoint status arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        *out_blocked = engine->impl->failpoint_is_blocked(name) ? 1 : 0;
+    });
+}
+#endif

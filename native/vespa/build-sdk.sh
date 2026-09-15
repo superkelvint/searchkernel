@@ -6,6 +6,14 @@ VESPA_ROOT=${VESPA_ROOT:-$ROOT/upstream/vespa}
 SDK=${SK_NATIVE_SDK:-$ROOT/native/sdk/linux-x86_64}
 BUILD=${SK_NATIVE_BUILD_DIR:-$ROOT/target/native-sdk}
 CXX=${CXX:-c++}
+ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
+EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
+EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
+SANITIZER=${SK_NATIVE_SANITIZER:-none}
+FAILPOINT_DEFINES=
+if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+    FAILPOINT_DEFINES=-DSK_ENABLE_HARDENING_FAILPOINTS
+fi
 
 LINK_FILE=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt
 FLAGS_FILE=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/flags.make
@@ -59,7 +67,8 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # libabigail to compare the types reachable from the exported C functions.
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
-$CXX $DEFINES $INCLUDES $CXX_FLAGS -Wno-inline -std=gnu++23 -fPIC \
+$CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES \
+    -Wno-inline -std=gnu++23 -fPIC \
     -O2 -g \
     -fvisibility=hidden \
     -I"$ROOT/native/vespa" -c "$ROOT/native/vespa/searchkernel_vespa.cpp" \
@@ -83,7 +92,12 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed 's#-rdynamic##g')
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed \
     "s|-Wl,-rpath,[^ ]*|-Wl,--disable-new-dtags,-rpath,'\$ORIGIN'|g")
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed "s#-lLLVM-21#$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1#")
-LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$ROOT/native/vespa/searchkernel_vespa.map"
+MAP_FILE=$ROOT/native/vespa/searchkernel_vespa.map
+if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+    MAP_FILE=$ROOT/native/vespa/searchkernel_vespa_test.map
+fi
+LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$MAP_FILE"
+LINK_ARGS="$LINK_ARGS $EXTRA_LINK_FLAGS"
 # The source link command belongs to a Vespa unit-test executable.  The
 # adapter-owned replacements below do not need its test-only libraries.
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
@@ -107,7 +121,23 @@ if [ -n "$UNEXPECTED_SYMBOLS" ]; then
 fi
 
 cp "$ROOT/native/vespa/searchkernel_vespa.h" "$SDK/include/searchkernel_vespa.h"
+if [ "$ENABLE_FAILPOINTS" = 1 ]; then
+    cp "$ROOT/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
+fi
 cp "$ROOT/native/vespa/manifest.json" "$SDK/manifest.json"
+python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+import json
+import sys
+
+path, failpoints, sanitizer = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    manifest = json.load(stream)
+manifest["hardening_failpoints"] = failpoints == "1"
+manifest["sanitizer"] = sanitizer
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(manifest, stream, indent=2, sort_keys=True)
+    stream.write("\n")
+PY
 cp "$ROOT/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 
 # Bundle the exact Vespa and third-party shared libraries used by the pinned

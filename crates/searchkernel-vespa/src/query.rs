@@ -2,6 +2,10 @@
 
 use crate::{Error, Result};
 
+pub(crate) const MAX_QUERY_DEPTH: usize = 256;
+pub(crate) const MAX_QUERY_NODES: usize = 65_536;
+pub(crate) const MAX_YQL_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A bound of an integer attribute range.
 pub enum RangeBound {
@@ -41,7 +45,9 @@ pub enum Query {
 impl Query {
     /// Parse the supported YQL subset into the same model used by typed callers.
     pub fn from_yql(yql: &str) -> Result<Self> {
-        Ok(yql::parse(yql)?.query)
+        let query = yql::parse(yql)?.query;
+        validate_query(&query)?;
+        Ok(query)
     }
 }
 
@@ -56,6 +62,24 @@ pub(crate) fn parse_yql(yql: &str) -> Result<ParsedYql> {
 }
 
 pub(crate) fn validate_query(query: &Query) -> Result<()> {
+    let mut nodes = 0;
+    validate_query_at(query, 0, &mut nodes)
+}
+
+fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<()> {
+    if depth > MAX_QUERY_DEPTH {
+        return Err(invalid_query(format!(
+            "query nesting exceeds maximum depth {MAX_QUERY_DEPTH}"
+        )));
+    }
+    *nodes = nodes
+        .checked_add(1)
+        .ok_or_else(|| invalid_query("query node count overflowed"))?;
+    if *nodes > MAX_QUERY_NODES {
+        return Err(invalid_query(format!(
+            "query contains more than {MAX_QUERY_NODES} nodes"
+        )));
+    }
     match query {
         Query::Term { field, text } | Query::Phrase { field, text } => {
             if field.is_empty() || text.is_empty() {
@@ -68,11 +92,16 @@ pub(crate) fn validate_query(query: &Query) -> Result<()> {
                     "boolean query must contain at least one child",
                 ));
             }
+            if children.len() > MAX_QUERY_NODES {
+                return Err(invalid_query(format!(
+                    "boolean query contains more than {MAX_QUERY_NODES} children"
+                )));
+            }
             for child in children {
-                validate_query(child)?;
+                validate_query_at(child, depth + 1, nodes)?;
             }
         }
-        Query::Not(child) => validate_query(child)?,
+        Query::Not(child) => validate_query_at(child, depth + 1, nodes)?,
         Query::Equals { field, .. } | Query::Exists { field } => {
             if field.is_empty() {
                 return Err(invalid_query("numeric query field must not be empty"));
@@ -114,6 +143,12 @@ mod yql {
     }
 
     pub(super) fn parse(input: &str) -> Result<super::ParsedYql> {
+        if input.len() > super::MAX_YQL_BYTES {
+            return Err(invalid_yql_error(format!(
+                "YQL exceeds maximum size {} bytes",
+                super::MAX_YQL_BYTES
+            )));
+        }
         let mut parser = Parser::new(input)?;
         parser.parse_statement()
     }
@@ -121,6 +156,7 @@ mod yql {
     struct Parser {
         tokens: Vec<Token>,
         position: usize,
+        depth: usize,
     }
 
     impl Parser {
@@ -128,6 +164,7 @@ mod yql {
             Ok(Self {
                 tokens: lex(input)?,
                 position: 0,
+                depth: 0,
             })
         }
 
@@ -200,7 +237,8 @@ mod yql {
 
         fn parse_unary(&mut self) -> Result<Query> {
             if self.take_simple(Token::Bang) {
-                return Ok(Query::Not(Box::new(self.parse_unary()?)));
+                let child = self.with_depth(|parser| parser.parse_unary())?;
+                return Ok(Query::Not(Box::new(child)));
             }
             self.parse_primary()
         }
@@ -210,9 +248,11 @@ mod yql {
                 return self.parse_annotated_range();
             }
             if self.take_simple(Token::LParen) {
-                let query = self.parse_or()?;
-                self.expect_simple(Token::RParen, "expected `)`")?;
-                return Ok(query);
+                return self.with_depth(|parser| {
+                    let query = parser.parse_or()?;
+                    parser.expect_simple(Token::RParen, "expected `)`")?;
+                    Ok(query)
+                });
             }
             if self.peek_keyword("range") && self.peek_n(1) == &Token::LParen {
                 self.expect_keyword("range")?;
@@ -338,6 +378,20 @@ mod yql {
 
         fn peek(&self) -> &Token {
             &self.tokens[self.position]
+        }
+
+        fn with_depth<T>(&mut self, operation: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+            self.depth += 1;
+            if self.depth > super::MAX_QUERY_DEPTH {
+                self.depth -= 1;
+                return Err(invalid_yql_error(format!(
+                    "query nesting exceeds maximum depth {}",
+                    super::MAX_QUERY_DEPTH
+                )));
+            }
+            let result = operation(self);
+            self.depth -= 1;
+            result
         }
 
         fn peek_n(&self, offset: usize) -> &Token {
@@ -675,7 +729,49 @@ mod yql {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_yql, validate_query, Query, RangeBound};
+    use super::{
+        parse_yql, validate_query, Query, RangeBound, MAX_QUERY_DEPTH, MAX_QUERY_NODES,
+        MAX_YQL_BYTES,
+    };
+
+    fn nested_not(depth: usize) -> Query {
+        let mut query = Query::Term {
+            field: "title".to_owned(),
+            text: "fox".to_owned(),
+        };
+        for _ in 0..depth {
+            query = Query::Not(Box::new(query));
+        }
+        query
+    }
+
+    #[test]
+    fn query_depth_is_bounded_before_lowering() {
+        assert!(validate_query(&nested_not(MAX_QUERY_DEPTH + 1)).is_err());
+        assert!(validate_query(&nested_not(MAX_QUERY_DEPTH)).is_ok());
+    }
+
+    #[test]
+    fn query_node_count_is_bounded() {
+        let query = Query::And(
+            (0..MAX_QUERY_NODES)
+                .map(|_| Query::Term {
+                    field: "title".to_owned(),
+                    text: "fox".to_owned(),
+                })
+                .collect(),
+        );
+        assert!(validate_query(&query).is_err());
+    }
+
+    #[test]
+    fn yql_input_size_is_bounded() {
+        let yql = format!(
+            "select * from sources * where title contains \"{}\"",
+            "x".repeat(MAX_YQL_BYTES)
+        );
+        assert!(Query::from_yql(&yql).is_err());
+    }
 
     #[test]
     fn yql_respects_boolean_precedence() {

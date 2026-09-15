@@ -1,9 +1,13 @@
+#![deny(unsafe_op_in_unsafe_fn)]
 #![allow(non_camel_case_types)]
 
 mod abi;
 pub use abi::EXPECTED_ABI;
 
 include!("bindings.rs");
+
+#[cfg(feature = "hardening")]
+pub mod hardening;
 
 #[cfg(test)]
 unsafe extern "C" {
@@ -64,6 +68,47 @@ mod text_soa_abi_regression_tests {
             *mut u8,
             u32,
         ) -> i32 = sk_text_request_add_terms;
+    }
+
+    #[test]
+    fn malformed_text_memory_preconditions_are_controlled_errors() {
+        let id = CString::new("id").unwrap();
+        let field = CString::new("title").unwrap();
+        let mut document = std::ptr::null_mut();
+        let mut error = [0_u8; SK_ERROR_MESSAGE_CAPACITY as usize];
+        let status = unsafe {
+            // SAFETY: the null pointer is an intentional ABI precondition
+            // probe; the native function must reject length-one null input
+            // without dereferencing it.
+            sk_text_document_create(
+                id.as_ptr(),
+                field.as_ptr(),
+                std::ptr::null(),
+                1,
+                &mut document,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+        assert!(document.is_null());
+
+        let invalid_utf8 = [0xff_u8];
+        let status = unsafe {
+            // SAFETY: the byte array is live for this call and intentionally
+            // contains invalid UTF-8 to exercise native validation.
+            sk_text_document_create(
+                id.as_ptr(),
+                field.as_ptr(),
+                invalid_utf8.as_ptr(),
+                invalid_utf8.len() as u32,
+                &mut document,
+                error.as_mut_ptr(),
+                error.len() as u32,
+            )
+        };
+        assert_eq!(status, SK_NATIVE_STATUS_INVALID_ARGUMENT as i32);
+        assert!(document.is_null());
     }
 
     #[test]

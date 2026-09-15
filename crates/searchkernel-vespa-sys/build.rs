@@ -67,9 +67,15 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_OUTPUT");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_CHECK");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_LINK_FLAGS");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_SANITIZER");
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     println!("cargo:rerun-if-changed={}", header.display());
+    println!("cargo:rerun-if-changed=../../native/vespa/searchkernel_vespa_test.h");
+    println!("cargo:rerun-if-changed=../../native/vespa/searchkernel_vespa_test.map");
     println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
     println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
     println!("cargo:rerun-if-changed=query_lifetime_test.cc");

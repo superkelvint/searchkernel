@@ -10,3 +10,6 @@ searchkernel-vespa-sys = { path = "../searchkernel-vespa-sys" }
 # compatibility authority if this independently pinned table ever diverges.
 unicode-general-category = "=1.1.0"
 unicode-normalization = "0.1.25"
+
+[features]
+hardening = ["searchkernel-vespa-sys/hardening"]

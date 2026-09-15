@@ -1,3 +1,4 @@
+#![deny(unsafe_op_in_unsafe_fn)]
 //! Safe Vespa-specific adapter for the private Search Kernel ABI.
 
 mod linguistics;
@@ -10,6 +11,134 @@ pub use linguistics::{
 };
 pub use query::{Query, RangeBound};
 pub use schema::{ConfigCompiler, Field, FieldType, Schema};
+
+#[cfg(feature = "hardening")]
+pub mod hardening {
+    use super::{check, cstring, Engine, NativeError, Result};
+    use searchkernel_vespa_sys as sys;
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum Action {
+        Error,
+        StdException,
+        BadAlloc,
+        UnknownException,
+        Block,
+    }
+
+    impl Action {
+        fn native(self) -> u32 {
+            match self {
+                Self::Error => sys::hardening::SK_TEST_FAILPOINT_ERROR,
+                Self::StdException => sys::hardening::SK_TEST_FAILPOINT_STD_EXCEPTION,
+                Self::BadAlloc => sys::hardening::SK_TEST_FAILPOINT_BAD_ALLOC,
+                Self::UnknownException => sys::hardening::SK_TEST_FAILPOINT_UNKNOWN_EXCEPTION,
+                Self::Block => sys::hardening::SK_TEST_FAILPOINT_BLOCK,
+            }
+        }
+    }
+
+    pub fn set(engine: &Engine, name: &str, hit: u32, action: Action) -> Result<()> {
+        let name = cstring(name)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary C
+            // string/error buffer remain valid for this call only.
+            sys::hardening::sk_test_failpoint_set(
+                engine.handle.as_ptr(),
+                name.as_ptr(),
+                hit,
+                action.native(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn set_open(name: &str, hit: u32, action: Action) -> Result<()> {
+        let name = cstring(name)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: the temporary C string/error buffer remain valid for
+            // the duration of this test-control call.
+            sys::hardening::sk_test_failpoint_set_open(
+                name.as_ptr(),
+                hit,
+                action.native(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn clear(engine: &Engine, name: &str) -> Result<()> {
+        let name = cstring(name)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary C
+            // string/error buffer remain valid for this call only.
+            sys::hardening::sk_test_failpoint_clear(
+                engine.handle.as_ptr(),
+                name.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn clear_open(name: &str) -> Result<()> {
+        let name = cstring(name)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: the temporary C string/error buffer remain valid for
+            // the duration of this test-control call.
+            sys::hardening::sk_test_failpoint_clear_open(
+                name.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn release(engine: &Engine, name: &str) -> Result<()> {
+        let name = cstring(name)?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary C
+            // string/error buffer remain valid for this call only.
+            sys::hardening::sk_test_failpoint_release(
+                engine.handle.as_ptr(),
+                name.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn is_blocked(engine: &Engine, name: &str) -> Result<bool> {
+        let name = cstring(name)?;
+        let mut blocked = 0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary C
+            // string/error buffer remain valid for this call only.
+            sys::hardening::sk_test_failpoint_is_blocked(
+                engine.handle.as_ptr(),
+                name.as_ptr(),
+                &mut blocked,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        Ok(blocked != 0)
+    }
+}
 
 use searchkernel_vespa_sys as sys;
 use std::ffi::{CString, NulError};
@@ -136,6 +265,18 @@ fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<NonNull<T>, Error> {
 pub struct Engine {
     handle: NonNull<sys::sk_engine>,
 }
+
+// SAFETY: the native adapter owns the pointed-to engine and protects its
+// lifetime with an exclusive lifecycle gate. Supported operations are safe to
+// invoke concurrently according to the wrapper contract; the only mutable
+// adapter-owned bookkeeping is protected inside the native implementation.
+unsafe impl Send for Engine {}
+
+// SAFETY: all methods borrow Engine immutably and the native adapter permits
+// concurrent supported operations while close/destruction requires exclusive
+// ownership. Rust's borrow rules prevent Drop from racing an outstanding
+// shared borrow; Arc<Engine> can therefore safely share this owner.
+unsafe impl Sync for Engine {}
 
 impl Engine {
     /// Open a native engine using its data and generated configuration directories.

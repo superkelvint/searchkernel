@@ -1,0 +1,6 @@
+SEARCHKERNEL_2 {
+    global:
+        sk_*;
+    local:
+        *;
+};
