@@ -1,0 +1,3 @@
+[customize]
+dockerfile = ".yolobox.Dockerfile"
+docker = true
