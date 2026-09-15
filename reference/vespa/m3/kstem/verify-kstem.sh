@@ -18,6 +18,7 @@ for file in corpus.txt expected.tsv PINNED_SOURCE.txt FROZEN.sha256; do
     }
 done
 
+# Verify the frozen corpus and golden are unchanged.
 (
     cd "$frozen"
     sha256sum -c FROZEN.sha256

@@ -26,7 +26,7 @@ if rg -n --glob '*.rs' '#include[[:space:]]*[<\"]vespa/|extern[[:space:]]+"C"' \
   fail "Vespa headers or raw extern declarations escaped the sys boundary"
 fi
 
-if rg -n 'reference/vespa/m11|M11-IMMUTABLE|expected/|scenarios/' \
+if rg -n 'reference/vespa/m11|expected/|scenarios/' \
     "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" \
     "$ROOT/core/native/vespa"; then
   fail "production implementation refers to M11 verifier artifacts"

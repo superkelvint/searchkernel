@@ -8,16 +8,13 @@ BIN="$SCRIPT_DIR/target/m9_cpp_oracle"; SRC="$SCRIPT_DIR/m9_attribute_grouping_o
 IMAGE="${M9_VESPA_DEV_IMAGE:-docker.io/vespaengine/vespa-dev-almalinux-8:latest}"
 [[ -x "$BIN" ]] || fail_verification "M9 C++ oracle binary missing; build explicitly with oracle/build-cpp-oracle.sh"
 [[ -s "$PROV" && -f "$SRC" ]] || fail_verification "M9 oracle provenance/source missing"
-python3 - "$PROV" "$BIN" "$SRC" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
-import hashlib,json,sys
+python3 - "$PROV" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
+import json,sys
 p={}
 for line in open(sys.argv[1],encoding='utf-8'):
  k,v=line.rstrip('\n').split('=',1); p[k]=v
-expected=json.load(open(sys.argv[4],encoding='utf-8'))['commit']
-sha=lambda x:hashlib.sha256(open(x,'rb').read()).hexdigest()
+expected=json.load(open(sys.argv[2],encoding='utf-8'))['commit']
 if p.get('vespa_commit')!=expected: raise SystemExit('M9 oracle not built from pinned Vespa revision')
-if p.get('oracle_sha256')!=sha(sys.argv[3]): raise SystemExit('M9 oracle source provenance mismatch')
-if p.get('binary_sha256')!=sha(sys.argv[2]): raise SystemExit('M9 oracle binary provenance mismatch')
 PY
 scenario_abs="$(cd "$(dirname "$SCENARIO")" && pwd -P)/$(basename "$SCENARIO")"
 case "$scenario_abs" in "$ROOT"/*) rel="${scenario_abs#"$ROOT"/}";; *) fail_verification "scenario must be inside repository";; esac

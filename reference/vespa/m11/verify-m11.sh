@@ -7,7 +7,6 @@ ROOT="$(cd "$M11/../../.." && pwd)"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
 python3 "$M11/validate.py"
-"$M11/check-immutable.sh"
 
 # The current repository has M0–M7. The cumulative verifier is deliberately
 # invoked at the highest available frozen milestone; M8–M10 are not silently

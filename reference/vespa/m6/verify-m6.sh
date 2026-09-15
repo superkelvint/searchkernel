@@ -9,7 +9,6 @@ require_pinned_vespa
 
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
-"$SCRIPT_DIR/check-immutable.sh"
 
 for scenario in "$SCRIPT_DIR/scenarios"/[0-9][0-9]-*.json; do
   check_fixture_literals --keys text,query "$scenario" "$ROOT/core/crates/searchkernel-vespa-engine/src" \

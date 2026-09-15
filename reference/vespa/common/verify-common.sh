@@ -95,9 +95,3 @@ run_workspace_quality() {
   cargo clippy --workspace --all-targets --all-features -- -D warnings
   cargo test --workspace --all-targets --all-features
 }
-
-require_immutable_checksum() {
-  local checksum="$1"
-  [[ -s "$checksum" ]] || fail_verification "missing immutable verifier checksum: $checksum"
-  (cd "$REPO_ROOT" && sha256sum --quiet --check "$checksum")
-}

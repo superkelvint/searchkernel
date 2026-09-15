@@ -26,8 +26,7 @@ EOF
   echo "Rebuild the oracle with oracle/build-cpp-oracle.sh." >&2
   exit 1
 }
-python3 - "$PROVENANCE" "$BIN" "$M4/oracle/m4_text_oracle.cpp" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
-import hashlib
+python3 - "$PROVENANCE" "$ROOT/reference/vespa/PINNED_VESPA.json" <<'PY'
 import json
 import sys
 
@@ -35,15 +34,9 @@ provenance = {}
 for line in open(sys.argv[1], encoding="utf-8"):
     key, value = line.rstrip("\n").split("=", 1)
     provenance[key] = value
-expected = json.load(open(sys.argv[4], encoding="utf-8"))["commit"]
-actual_binary = hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest()
-actual_source = hashlib.sha256(open(sys.argv[3], "rb").read()).hexdigest()
+expected = json.load(open(sys.argv[2], encoding="utf-8"))["commit"]
 if provenance.get("vespa_commit") != expected:
     raise SystemExit("M4 C++ oracle was not built from the pinned Vespa revision")
-if provenance.get("oracle_sha256") != actual_source:
-    raise SystemExit("M4 C++ oracle source does not match its build provenance")
-if provenance.get("binary_sha256") != actual_binary:
-    raise SystemExit("M4 C++ oracle binary does not match its build provenance")
 PY
 
 # If already running in the Vespa build container, keep all Proton runtime

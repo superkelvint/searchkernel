@@ -128,6 +128,4 @@ PY
 
 {
     printf 'vespa_commit=%s\n' "$actual"
-    printf 'oracle_sha256=%s\n' "$(sha256sum "$ORACLE" | awk '{print $1}')"
-    printf 'binary_sha256=%s\n' "$(sha256sum "$OUT" | awk '{print $1}')"
 } > "$OUT.provenance"

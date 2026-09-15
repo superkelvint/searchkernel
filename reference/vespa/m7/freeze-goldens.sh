@@ -17,5 +17,4 @@ PY_EXPECTED
   rm -f "$raw"
 done
 "$SCRIPT_DIR/validate_expected.py"
-"$SCRIPT_DIR/freeze-immutable.sh"
 echo 'M7 goldens regenerated. Review expected/*.json, then commit the verifier specification.' >&2

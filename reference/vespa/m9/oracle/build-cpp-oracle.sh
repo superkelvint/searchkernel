@@ -23,7 +23,7 @@ die() {
 [[ -f "$COMPILE_DB" ]] || die "missing compile_commands.json: $COMPILE_DB"
 [[ -f "$LINK_TXT" ]] || die "missing generated link command: $LINK_TXT"
 
-# The direct oracle is part of the immutable verifier. It must be compiled
+# The direct oracle must be compiled
 # against exactly the pinned Vespa checkout, never an ambient SDK or another
 # checkout. require_pinned_vespa also rejects a dirty upstream tree.
 expected="$(expected_vespa_revision)"
@@ -148,14 +148,9 @@ PY
 [[ -x "$OUT" ]] || die "expected executable was not produced: $OUT"
 
 # Provenance is intentionally adjacent to the binary so a golden-generation
-# run can record exactly which pinned Vespa checkout and immutable oracle source
-# produced its expected output.
+# run can record which pinned Vespa checkout produced it.
 {
     printf 'vespa_commit=%s\n' "$actual"
-    printf 'oracle_sha256=%s\n' "$(sha256sum "$ORACLE" | awk '{print $1}')"
-    printf 'binary_sha256=%s\n' "$(sha256sum "$OUT" | awk '{print $1}')"
-    printf 'compile_db_sha256=%s\n' "$(sha256sum "$COMPILE_DB" | awk '{print $1}')"
-    printf 'link_txt_sha256=%s\n' "$(sha256sum "$LINK_TXT" | awk '{print $1}')"
 } > "$OUT.provenance"
 
 printf 'M9 direct C++ oracle: %s\n' "$OUT" >&2

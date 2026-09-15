@@ -72,13 +72,6 @@ if (( need_classpaths )) || [[ ! -f "$CLASSPATH_VALIDATION_STAMP" || \
   check_class com/yahoo/prelude/IndexFacts.class
   printf '%s\n' "$actual" > "$CLASSPATH_VALIDATION_STAMP"
 fi
-SOURCE_STAMP="$BUILD/query-oracle-source.sha256"
-SOURCE_HASH="$(sha256sum "$ORACLE_SOURCE" | awk '{print $1}')"
-QUERY_CLASS="$BUILD/classes/searchkernel/m7/QueryOracle.class"
-if (( need_classpaths )) || [[ ! -s "$BUILD/runtime-classpath.txt" || ! -f "$QUERY_CLASS" || \
-      ! -f "$SOURCE_STAMP" || "$(cat "$SOURCE_STAMP")" != "$SOURCE_HASH" ]]; then
-  rm -rf "$BUILD/classes"; mkdir -p "$BUILD/classes"
-  javac -Xlint:all,-path -Werror -cp "$CP" -d "$BUILD/classes" "$ORACLE_SOURCE"
-  printf '%s\n' "$SOURCE_HASH" > "$SOURCE_STAMP"
-  printf '%s\n' "$CP" > "$BUILD/runtime-classpath.txt"
-fi
+rm -rf "$BUILD/classes"; mkdir -p "$BUILD/classes"
+javac -Xlint:all,-path -Werror -cp "$CP" -d "$BUILD/classes" "$ORACLE_SOURCE"
+printf '%s\n' "$CP" > "$BUILD/runtime-classpath.txt"

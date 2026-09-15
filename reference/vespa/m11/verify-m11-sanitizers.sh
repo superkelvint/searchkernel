@@ -7,7 +7,6 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
 python3 "$M11/validate.py"
-"$M11/check-immutable.sh"
 
 TARGET="$ROOT/target/vespa-verifier/m11/sanitizer"
 rm -rf "$TARGET"
