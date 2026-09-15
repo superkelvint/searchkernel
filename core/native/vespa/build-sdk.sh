@@ -160,7 +160,8 @@ fi
 # header whenever the SDK is rebuilt. This is intentionally a hard failure:
 # the header is the ABI source of truth, while ordinary consumers use the
 # checked-in bindings and do not need libclang.
-SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
+SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
+    "$ROOT/tools/check-vespa-bindings.sh"
 
 # The upstream build tree also contains unit-test support libraries. Keep
 # those out of the distributable SDK even when they share a directory with
