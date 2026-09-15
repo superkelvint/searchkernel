@@ -24,38 +24,42 @@ run_lane() {
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
+  local config="$TARGET/$lane/config"
+  rm -rf "$config"
+  LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$binary" compile "$config"
   local options="$(tr '\n' ':' < "$M11/sanitizer/${lane%%-*}.options" 2>/dev/null || true)"
   local ubsan_options="$(tr '\n' ':' < "$M11/sanitizer/ubsan.options")"
   local lsan="$M11/sanitizer/lsan.supp"
   local tsan="$M11/sanitizer/tsan.supp"
   case "$lane" in
     asan-ubsan)
-      ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" malformed "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/data"
-      ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        "$binary" malformed "$config" "$TARGET/$lane/data"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" failures "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/failures"
-      ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        "$binary" failures "$config" "$TARGET/$lane/failures"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" lifecycle "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/lifecycle"
-      ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        "$binary" lifecycle "$config" "$TARGET/$lane/lifecycle"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" reopen "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/reopen"
-      ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        "$binary" reopen "$config" "$TARGET/$lane/reopen"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" concurrency "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/concurrency"
+        "$binary" concurrency "$config" "$TARGET/$lane/concurrency"
       ;;
     tsan)
       TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" concurrency "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/data"
+        "$binary" concurrency "$config" "$TARGET/$lane/data"
       TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" lifecycle "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/lifecycle"
+        "$binary" lifecycle "$config" "$TARGET/$lane/lifecycle"
       TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" reopen "$sdk/share/embedded_crud_cfg" "$TARGET/$lane/reopen"
+        "$binary" reopen "$config" "$TARGET/$lane/reopen"
       ;;
   esac
 }

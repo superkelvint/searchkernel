@@ -7,7 +7,8 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 
 M11_SDK="${M11_SDK:-$ROOT/target/vespa-verifier/m11/sdk/hardening}"
 M11_BUILD="${M11_BUILD:-$ROOT/target/vespa-verifier/m11/native-build/hardening}"
-M11_CONFIG="$M11_SDK/share/embedded_crud_cfg"
+M11_SDK_CONFIG="$M11_SDK/share/embedded_crud_cfg"
+M11_CONFIG="${M11_CONFIG:-$ROOT/target/vespa-verifier/m11/config}"
 M11_CARGO_TARGET="$CARGO_TARGET_DIR"
 M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
 
@@ -27,7 +28,7 @@ PY
     SK_NATIVE_ENABLE_FAILPOINTS=1 \
       "$ROOT/native/vespa/build-sdk.sh"
   fi
-  [[ -d "$M11_CONFIG" ]] || fail_verification "missing M11 generated config: $M11_CONFIG"
+  [[ -d "$M11_SDK_CONFIG" ]] || fail_verification "missing M11 SDK config: $M11_SDK_CONFIG"
   require_sdk_manifest "$M11_SDK/manifest.json"
 }
 
@@ -39,6 +40,10 @@ build_m11_driver() {
   require_native_driver "$M11_DRIVER" \
     sk_engine_open sk_engine_close sk_engine_destroy sk_engine_search \
     sk_test_failpoint_set sk_test_failpoint_is_blocked
+  rm -rf "$M11_CONFIG"
+  mkdir -p "$(dirname "$M11_CONFIG")"
+  LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$M11_DRIVER" compile "$M11_CONFIG"
 }
 
 run_m11_driver() {

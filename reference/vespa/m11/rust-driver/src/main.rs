@@ -394,6 +394,11 @@ fn main() {
     let mut args = env::args_os();
     let _program = args.next();
     let mode = args.next().expect("mode");
+    if mode == "compile" {
+        let config = PathBuf::from(args.next().expect("config directory"));
+        ConfigCompiler.compile_to(&schema(), config).expect("compile M11 schema");
+        return;
+    }
     let config = PathBuf::from(args.next().expect("config directory"));
     let data = PathBuf::from(args.next().expect("data directory"));
     let result = match mode.to_string_lossy().as_ref() {
