@@ -59,7 +59,11 @@ range(integer_field, LOWER, UPPER)
 range(integer_field, -Infinity, Infinity)
 ```
 
-Normal parentheses and Vespa/YQL boolean precedence must be honored.
+Normal parentheses and Vespa/YQL boolean precedence must be honored. For an
+`AND`, canonicalization must place positive children first and negated
+children afterward, matching Vespa's `buildAnd()` representation. Multiple
+negative siblings are represented as separate `Not(...)` children in the M7
+one-child `Not` model.
 
 The following are explicitly outside M7 even though full Vespa YQL can express them:
 
@@ -247,6 +251,7 @@ unbounded range
 integer exists
 YQL precedence
 named YQL source syntax acceptance; source selection/rejection
+YQL AND/NOT canonicalization
 ```
 
 Scenario 13's canonical `Query` expectation intentionally verifies only that

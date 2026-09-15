@@ -1,0 +1,1 @@
+{"id":"yql-and-not-normalization","query":{"children":[{"field":"title","kind":"term","text":"quartz"},{"child":{"field":"title","kind":"term","text":"scarlet"},"kind":"not"},{"child":{"field":"title","kind":"term","text":"quiet"},"kind":"not"}],"kind":"and"},"schema":"typea"}

@@ -47,12 +47,25 @@ public final class QueryOracle {
         for(int i=0;i<c.getItemCount();i++){ if(i>0)b.append(','); b.append(canon(c.getItem(i))); }
         return b.append("]}").toString();
     }
+    private static String negative(Item item) {
+        return "{\"kind\":\"not\",\"child\":"+canon(item)+"}";
+    }
     private static String canonNot(NotItem n) {
         Item pos=n.getPositiveItem();
-        if (n.negativeItems().size()!=1) throw new IllegalArgumentException("M7 oracle supports one negative child per NotItem");
-        String neg="{\"kind\":\"not\",\"child\":"+canon(n.negativeItems().get(0))+"}";
-        if (pos instanceof TrueItem) return neg;
-        return "{\"kind\":\"and\",\"children\":["+canon(pos)+","+neg+"]}";
+        StringBuilder b=new StringBuilder("{\"kind\":\"and\",\"children\":[");
+        boolean hasPositive=!(pos instanceof TrueItem);
+        boolean hasChild=false;
+        if (hasPositive) {
+            b.append(canon(pos));
+            hasChild=true;
+        }
+        for (Item negative : n.negativeItems()) {
+            if (hasChild) b.append(',');
+            b.append(negative(negative));
+            hasChild=true;
+        }
+        if (!hasPositive && n.negativeItems().size()==1) return negative(n.negativeItems().get(0));
+        return b.append("]}").toString();
     }
     private static String canon(Item item) {
         if (item instanceof NotItem n) return canonNot(n);

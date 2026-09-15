@@ -184,7 +184,17 @@ mod yql {
             if children.len() == 1 {
                 Ok(children.pop().expect("one child was inserted"))
             } else {
-                Ok(Query::And(children))
+                let mut positives = Vec::with_capacity(children.len());
+                let mut negatives = Vec::new();
+                for child in children {
+                    if matches!(child, Query::Not(_)) {
+                        negatives.push(child);
+                    } else {
+                        positives.push(child);
+                    }
+                }
+                positives.extend(negatives);
+                Ok(Query::And(positives))
             }
         }
 
@@ -872,6 +882,31 @@ mod tests {
 
         let wildcard = parse_yql("select * from sources * where title contains \"fox\"").unwrap();
         assert_eq!(wildcard.source, "*");
+    }
+
+    #[test]
+    fn yql_normalizes_and_negatives_after_positive_children() {
+        let parsed = Query::from_yql(
+            "select * from sources * where !(title contains \"scarlet\") and title contains \"quartz\" and !(title contains \"quiet\")",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            Query::And(vec![
+                Query::Term {
+                    field: "title".into(),
+                    text: "quartz".into(),
+                },
+                Query::Not(Box::new(Query::Term {
+                    field: "title".into(),
+                    text: "scarlet".into(),
+                })),
+                Query::Not(Box::new(Query::Term {
+                    field: "title".into(),
+                    text: "quiet".into(),
+                })),
+            ])
+        );
     }
 
     #[test]

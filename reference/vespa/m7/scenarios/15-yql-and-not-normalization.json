@@ -1,0 +1,75 @@
+{
+  "documents": [
+    {
+      "field": "title",
+      "id": "quartz",
+      "kind": "text",
+      "value": "quartz"
+    },
+    {
+      "field": "title",
+      "id": "scarlet-quartz",
+      "kind": "text",
+      "value": "scarlet quartz"
+    },
+    {
+      "field": "title",
+      "id": "quiet-quartz",
+      "kind": "text",
+      "value": "quiet quartz"
+    },
+    {
+      "field": "title",
+      "id": "scarlet-quiet-quartz",
+      "kind": "text",
+      "value": "scarlet quiet quartz"
+    },
+    {
+      "field": "title",
+      "id": "stone",
+      "kind": "text",
+      "value": "stone"
+    }
+  ],
+  "expected_hits": [
+    "quartz"
+  ],
+  "fields": [
+    {
+      "attribute": false,
+      "index": true,
+      "name": "title",
+      "summary": false,
+      "type": "text"
+    }
+  ],
+  "id": "yql-and-not-normalization",
+  "schema": "typea",
+  "typed": {
+    "children": [
+      {
+        "field": "title",
+        "kind": "term",
+        "text": "quartz"
+      },
+      {
+        "child": {
+          "field": "title",
+          "kind": "term",
+          "text": "scarlet"
+        },
+        "kind": "not"
+      },
+      {
+        "child": {
+          "field": "title",
+          "kind": "term",
+          "text": "quiet"
+        },
+        "kind": "not"
+      }
+    ],
+    "kind": "and"
+  },
+  "yql": "select * from sources * where !(title contains \"scarlet\") and title contains \"quartz\" and !(title contains \"quiet\")"
+}
