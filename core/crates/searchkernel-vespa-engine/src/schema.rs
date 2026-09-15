@@ -291,7 +291,7 @@ impl FieldType {
     fn attribute_type(self) -> &'static str {
         match self {
             Self::Text | Self::String => "STRING",
-            Self::Integer => "INT32",
+            Self::Integer => "INT64",
             Self::Float => "DOUBLE",
             Self::Boolean => "BOOL",
         }
@@ -334,20 +334,20 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 return Err(Error::message(format!(
                     "text field '{}' must be indexed",
                     field.name
-                )))
+                )));
             }
             FieldType::Text => {}
             _ if field.indexed => {
                 return Err(Error::message(format!(
                     "non-text field '{}' may not be indexed",
                     field.name
-                )))
+                )));
             }
             _ if !field.attribute => {
                 return Err(Error::message(format!(
                     "non-text field '{}' must be an attribute",
                     field.name
-                )))
+                )));
             }
             _ => {}
         }
@@ -476,14 +476,14 @@ impl TemporaryDirectory {
                     return Ok(Self {
                         path: candidate,
                         installed: false,
-                    })
+                    });
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(error) => {
                     return Err(Error::message(format!(
                         "could not create temporary configuration directory '{}': {error}",
                         candidate.display()
-                    )))
+                    )));
                 }
             }
         }
@@ -659,7 +659,7 @@ mod tests {
         assert!(index.contains("indexfield[0].positions true"));
         assert!(index.contains("indexfield[0].interleavedfeatures false"));
         assert!(attributes.contains("attribute[0].datatype STRING"));
-        assert!(attributes.contains("attribute[1].datatype INT32"));
+        assert!(attributes.contains("attribute[1].datatype INT64"));
         assert!(attributes.contains("attribute[2].datatype DOUBLE"));
         assert!(attributes.contains("attribute[3].datatype BOOL"));
         assert!(summary.contains("classes[0].fields[0].name \"documentid\""));

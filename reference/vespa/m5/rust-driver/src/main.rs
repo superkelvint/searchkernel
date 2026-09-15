@@ -1,4 +1,4 @@
-use searchkernel_vespa_engine::{Engine, Error};
+use searchkernel_vespa_engine::{Document, DocumentUpdate, Engine, Error, Query, SearchRequest};
 use std::error::Error as StdError;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,8 +15,9 @@ fn open(data_dir: &Path, config_dir: &Path) -> Result<Engine> {
     Engine::open(data_dir, config_dir).map_err(|error| Box::new(error) as Box<dyn StdError>)
 }
 
-fn search(engine: &Engine, value: i32) -> Result<Vec<String>> {
-    let mut ids = engine.search("attr1", value, 10)?;
+fn search(engine: &Engine, value: i64) -> Result<Vec<String>> {
+    let mut ids: Vec<String> = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?
+        .hits.into_iter().map(|hit| hit.document_id).collect();
     ids.sort();
     Ok(ids)
 }
@@ -30,13 +31,13 @@ fn array(values: &[String]) -> String {
     format!("[{values}]")
 }
 
-fn put(engine: &mut Engine, id: &str, value: i32) -> Result<()> {
-    engine.put(id, "attr1", value)?;
+fn put(engine: &Engine, id: &str, value: i64) -> Result<()> {
+    engine.put(Document::new(id).field("attr1", value))?;
     Ok(())
 }
 
-fn update(engine: &mut Engine, id: &str, value: i32) -> Result<()> {
-    engine.update(id, "attr1", value)?;
+fn update(engine: &Engine, id: &str, value: i64) -> Result<()> {
+    engine.update(DocumentUpdate::new(id).assign("attr1", value))?;
     Ok(())
 }
 
@@ -51,7 +52,7 @@ fn graceful_seed(data_dir: &Path, config_dir: &Path) -> Result<()> {
     let after_put_30 = search(&engine, 30)?;
 
     update(&mut engine, DOC2, 10)?;
-    let was_found = engine.remove(DOC3)?;
+    let was_found = engine.delete(DOC3)?;
     let after_update_delete_10 = search(&engine, 10)?;
     let after_update_delete_20 = search(&engine, 20)?;
     let after_update_delete_30 = search(&engine, 30)?;

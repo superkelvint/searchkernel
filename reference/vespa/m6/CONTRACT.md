@@ -194,7 +194,7 @@ Selected cases exercise existing verified paths:
 Text:
     compile
     open
-    put_text
+    put(Document)
     term search
 
 Integer:
@@ -206,7 +206,7 @@ Integer:
 Alternate document type:
     compile products schema
     independent Engine::open
-    put_text
+    put(Document)
     term search
 ```
 

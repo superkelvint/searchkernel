@@ -1,1 +1,1 @@
-pub const EXPECTED_ABI: u32 = 2;
+pub const EXPECTED_ABI: u32 = 3;

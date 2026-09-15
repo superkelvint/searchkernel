@@ -10,10 +10,12 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 ffi-test-support = []
+production = ["dep:searchkernel"]
 
 [dependencies]
 flatbuffers = "=25.12.19"
 searchkernel-ir = { path = "../searchkernel-ir" }
+searchkernel = { path = "../searchkernel", optional = true }
 
 [build-dependencies]
 cbindgen = "0.29.4"

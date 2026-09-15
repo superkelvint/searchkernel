@@ -17,8 +17,25 @@ pub const SK_QUERY_BOUND_INCLUDED: u32 = 1;
 pub const SK_QUERY_BOUND_EXCLUDED: u32 = 2;
 pub const SK_QUERY_FIELD_TEXT: u32 = 1;
 pub const SK_QUERY_FIELD_INTEGER: u32 = 2;
+pub const SK_QUERY_FIELD_STRING: u32 = 3;
+pub const SK_QUERY_FIELD_FLOAT: u32 = 4;
+pub const SK_QUERY_FIELD_BOOLEAN: u32 = 5;
+pub const SK_QUERY_FIELD_ATTRIBUTE: u32 = 6;
+pub const SK_VALUE_STRING: u32 = 1;
+pub const SK_VALUE_INTEGER: u32 = 2;
+pub const SK_VALUE_FLOAT: u32 = 3;
+pub const SK_VALUE_BOOLEAN: u32 = 4;
+pub const SK_SORT_ASCENDING: u32 = 1;
+pub const SK_SORT_DESCENDING: u32 = 2;
+pub const SK_SUMMARY_NONE: u32 = 0;
+pub const SK_SUMMARY_DEFAULT: u32 = 1;
+pub const SK_SUMMARY_FIELDS: u32 = 2;
+pub const SK_AGGREGATION_SUM: u32 = 1;
+pub const SK_AGGREGATION_MIN: u32 = 2;
+pub const SK_AGGREGATION_MAX: u32 = 3;
+pub const SK_AGGREGATION_AVERAGE: u32 = 4;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 2;
+pub const SK_NATIVE_ABI_VERSION: u32 = 3;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -69,6 +86,24 @@ pub struct sk_text_result {
 pub struct sk_query {
     _unused: [u8; 0],
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_local_search_request { _unused: [u8; 0] }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_local_search_result { _unused: [u8; 0] }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_attribute_document { _unused: [u8; 0] }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_attribute_update { _unused: [u8; 0] }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_local_grouping_request { _unused: [u8; 0] }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_local_grouping_result { _unused: [u8; 0] }
 unsafe extern "C" {
     pub fn sk_native_abi_version() -> u32;
 }
@@ -95,7 +130,7 @@ unsafe extern "C" {
     pub fn sk_document_create(
         document_id: *const ::std::os::raw::c_char,
         field: *const ::std::os::raw::c_char,
-        value: i32,
+        value: i64,
         out_document: *mut *mut sk_document,
         out_error: *mut u8,
         out_error_capacity: u32,
@@ -105,10 +140,35 @@ unsafe extern "C" {
     pub fn sk_document_destroy(document: *mut sk_document);
 }
 unsafe extern "C" {
+    pub fn sk_document_create_empty(
+        document_id: *const ::std::os::raw::c_char,
+        out_document: *mut *mut sk_document,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_add_string(
+        document: *mut sk_document, field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char, out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_add_integer(
+        document: *mut sk_document, field: *const ::std::os::raw::c_char,
+        value: i64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_add_float(
+        document: *mut sk_document, field: *const ::std::os::raw::c_char,
+        value: f64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_add_boolean(
+        document: *mut sk_document, field: *const ::std::os::raw::c_char,
+        value: u8, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_document_update_create(
         document_id: *const ::std::os::raw::c_char,
         field: *const ::std::os::raw::c_char,
-        value: i32,
+        value: i64,
         out_update: *mut *mut sk_document_update,
         out_error: *mut u8,
         out_error_capacity: u32,
@@ -118,9 +178,38 @@ unsafe extern "C" {
     pub fn sk_document_update_destroy(update: *mut sk_document_update);
 }
 unsafe extern "C" {
+    pub fn sk_document_update_create_empty(
+        document_id: *const ::std::os::raw::c_char,
+        out_update: *mut *mut sk_document_update,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_assign_string(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char, out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_assign_integer(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        value: i64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_assign_float(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        value: f64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_assign_boolean(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        value: u8, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_clear(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_search_request_create(
         field: *const ::std::os::raw::c_char,
-        value: i32,
+        value: i64,
         limit: u32,
         out_request: *mut *mut sk_search_request,
         out_error: *mut u8,
@@ -142,6 +231,39 @@ unsafe extern "C" {
     pub fn sk_engine_update(
         engine: *mut sk_engine,
         update: *const sk_document_update,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_engine_get(
+        engine: *const sk_engine,
+        document_id: *const ::std::os::raw::c_char,
+        out_document: *mut *mut sk_document,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_field_count(
+        document: *const sk_document,
+        out_count: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_field(
+        document: *const sk_document,
+        index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_name_length: *mut u32,
+        out_kind: *mut u32,
+        out_string: *mut *const ::std::os::raw::c_char,
+        out_string_length: *mut u32,
+        out_integer: *mut i64,
+        out_float: *mut f64,
+        out_boolean: *mut u8,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -350,7 +472,7 @@ unsafe extern "C" {
     pub fn sk_query_add_equals(
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
-        value: i32,
+        value: i64,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -360,9 +482,9 @@ unsafe extern "C" {
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
         lower_kind: u32,
-        lower_value: i32,
+        lower_value: i64,
         upper_kind: u32,
-        upper_value: i32,
+        upper_value: i64,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -380,4 +502,154 @@ unsafe extern "C" {
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_request_create(
+        rank_profile: *const ::std::os::raw::c_char, limit: u32, offset: u32,
+        summary_kind: u32, out_request: *mut *mut sk_local_search_request,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_request_add_sort(
+        request: *mut sk_local_search_request, field: *const ::std::os::raw::c_char,
+        order: u32, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_request_add_summary_field(
+        request: *mut sk_local_search_request, field: *const ::std::os::raw::c_char,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_request_destroy(request: *mut sk_local_search_request);
+    pub fn sk_engine_search_local(
+        engine: *const sk_engine, query: *const sk_query,
+        request: *const sk_local_search_request,
+        out_result: *mut *mut sk_local_search_result,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_result_total_hit_count(result: *const sk_local_search_result) -> u64;
+    pub fn sk_local_search_result_hit_count(result: *const sk_local_search_result) -> u32;
+    pub fn sk_local_search_result_hit(
+        result: *const sk_local_search_result, index: u32,
+        out_id: *mut *const ::std::os::raw::c_char, out_id_length: *mut u32,
+        out_score: *mut f64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_result_summary_count(result: *const sk_local_search_result, hit_index: u32) -> u32;
+    pub fn sk_local_search_result_summary_name(
+        result: *const sk_local_search_result, hit_index: u32, summary_index: u32,
+        out_name: *mut *const ::std::os::raw::c_char, out_length: *mut u32,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_result_summary_value(
+        result: *const sk_local_search_result, hit_index: u32, summary_index: u32,
+        out_kind: *mut u32, out_string: *mut *const ::std::os::raw::c_char,
+        out_string_length: *mut u32, out_integer: *mut i64, out_float: *mut f64,
+        out_boolean: *mut u8, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_search_result_destroy(result: *mut sk_local_search_result);
+    pub fn sk_query_add_attribute_string_equals(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_query_add_attribute_float_equals(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char, value: f64,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_query_add_attribute_boolean_equals(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char, value: u8,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_query_add_attribute_exists(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_query_add_attribute_integer_range(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char,
+        lower_kind: u32, lower_value: i64, upper_kind: u32, upper_value: i64,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_query_add_attribute_float_range(
+        query: *mut sk_query, field: *const ::std::os::raw::c_char,
+        lower_kind: u32, lower_value: f64, upper_kind: u32, upper_value: f64,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_create(
+        document_id: *const ::std::os::raw::c_char,
+        out_document: *mut *mut sk_attribute_document,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_add_string(
+        document: *mut sk_attribute_document, field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_add_integer(
+        document: *mut sk_attribute_document, field: *const ::std::os::raw::c_char,
+        value: i64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_add_float(
+        document: *mut sk_attribute_document, field: *const ::std::os::raw::c_char,
+        value: f64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_add_boolean(
+        document: *mut sk_attribute_document, field: *const ::std::os::raw::c_char,
+        value: u8, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_document_destroy(document: *mut sk_attribute_document);
+    pub fn sk_attribute_update_create(
+        document_id: *const ::std::os::raw::c_char,
+        out_update: *mut *mut sk_attribute_update,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_update_add_string(
+        update: *mut sk_attribute_update, field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_update_add_integer(
+        update: *mut sk_attribute_update, field: *const ::std::os::raw::c_char,
+        value: i64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_update_add_float(
+        update: *mut sk_attribute_update, field: *const ::std::os::raw::c_char,
+        value: f64, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_update_add_boolean(
+        update: *mut sk_attribute_update, field: *const ::std::os::raw::c_char,
+        value: u8, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_attribute_update_destroy(update: *mut sk_attribute_update);
+    pub fn sk_engine_put_attributes(
+        engine: *mut sk_engine, document: *const sk_attribute_document,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_engine_update_attributes(
+        engine: *mut sk_engine, update: *const sk_attribute_update,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_request_create(
+        group_field: *const ::std::os::raw::c_char,
+        out_request: *mut *mut sk_local_grouping_request,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_request_add_aggregation(
+        request: *mut sk_local_grouping_request, kind: u32,
+        field: *const ::std::os::raw::c_char, out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_request_destroy(request: *mut sk_local_grouping_request);
+    pub fn sk_engine_group_local(
+        engine: *const sk_engine, query: *const sk_query,
+        request: *const sk_local_grouping_request,
+        out_result: *mut *mut sk_local_grouping_result,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_result_group_count(result: *const sk_local_grouping_result) -> u32;
+    pub fn sk_local_grouping_result_group(
+        result: *const sk_local_grouping_result, group_index: u32,
+        out_key_kind: *mut u32, out_key_string: *mut *const ::std::os::raw::c_char,
+        out_key_string_length: *mut u32, out_key_integer: *mut i64, out_count: *mut u64,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_result_aggregation_count(result: *const sk_local_grouping_result, group_index: u32) -> u32;
+    pub fn sk_local_grouping_result_aggregation(
+        result: *const sk_local_grouping_result, group_index: u32, aggregation_index: u32,
+        out_kind: *mut u32, out_integer: *mut i64, out_float: *mut f64,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_local_grouping_result_destroy(result: *mut sk_local_grouping_result);
 }

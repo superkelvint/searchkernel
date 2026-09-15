@@ -25,6 +25,14 @@
 
 #define SK_STATUS_PANIC 7
 
+#define SK_STATUS_ALREADY_EXISTS 8
+
+#define SK_STATUS_NOT_FOUND 9
+
+#define SK_STATUS_CORRUPT_INDEX 10
+
+#define SK_STATUS_INCOMPATIBLE_INDEX 11
+
 typedef uint32_t sk_status_t;
 
 typedef uint64_t sk_handle_t;
@@ -54,6 +62,37 @@ sk_status_t sk_call(sk_handle_t handle,
                     uint64_t *out_allocation_id);
 
 sk_status_t sk_close(sk_handle_t handle);
+
+/**
+ * Create an on-disk index from its canonical FlatBuffers definition.
+ *
+ * # Safety
+ *
+ * `path` must be a valid NUL-terminated C string. `definition` must point to
+ * `definition_len` readable bytes, and `out_handle` must point to writable
+ * storage for one handle. The optional error buffer must be writable for its
+ * declared capacity.
+ */
+sk_status_t sk_create(const char *path,
+                      const uint8_t *definition,
+                      size_t definition_len,
+                      sk_handle_t *out_handle,
+                      uint8_t *error,
+                      size_t error_capacity);
+
+/**
+ * Reopen an existing index using its durable manifest.
+ *
+ * # Safety
+ *
+ * `path` must be a valid NUL-terminated C string and `out_handle` must point
+ * to writable storage for one handle. The optional error buffer must be
+ * writable for its declared capacity.
+ */
+sk_status_t sk_open(const char *path,
+                    sk_handle_t *out_handle,
+                    uint8_t *error,
+                    size_t error_capacity);
 
 /**
  * # Safety

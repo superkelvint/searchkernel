@@ -10,7 +10,7 @@ extern "C" {
 /* ABI v2 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 2U
+#define SK_NATIVE_ABI_VERSION 3U
 
 uint32_t sk_native_abi_version(void);
 
@@ -24,7 +24,7 @@ int32_t sk_engine_open(
 void sk_engine_destroy(sk_engine *engine);
 
 /* M2 operations. The opaque request/document constructors may remain private
- * to the Rust sys crate, but these operation symbols are required so the
+ * to the Rust bindings crate, but these operation symbols are required so the
  * verifier can prove the final Rust executable references the real native
  * path. */
 typedef struct sk_document sk_document;

@@ -1,9 +1,10 @@
-use searchkernel_vespa_engine::Engine;
+use searchkernel_vespa_engine::{Document, DocumentUpdate, Engine, Query, SearchRequest};
 use std::path::PathBuf;
 type Result<T> = std::result::Result<T, searchkernel_vespa_engine::Error>;
 
-fn search_ids(engine: &Engine, value: i32) -> Result<Vec<String>> {
-    let mut ids = engine.search("attr1", value, 10)?;
+fn search_ids(engine: &Engine, value: i64) -> Result<Vec<String>> {
+    let mut ids = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?.hits
+        .into_iter().map(|hit| hit.document_id).collect();
     ids.sort();
     Ok(ids)
 }
@@ -26,12 +27,12 @@ fn run() -> Result<()> {
     let _ = std::fs::remove_dir_all(&data_dir);
     let mut engine = Engine::open(&data_dir, &config_dir)?;
 
-    engine.put("id:test:typea::1", "attr1", 10)?;
-    engine.put("id:test:typea::2", "attr1", 20)?;
+    engine.put(Document::new("id:test:typea::1").field("attr1", 10_i64))?;
+    engine.put(Document::new("id:test:typea::2").field("attr1", 20_i64))?;
     let s1 = search_ids(&engine, 10)?;
-    engine.update("id:test:typea::2", "attr1", 10)?;
+    engine.update(DocumentUpdate::new("id:test:typea::2").assign("attr1", 10_i64))?;
     let s2 = search_ids(&engine, 10)?;
-    let removed = engine.remove("id:test:typea::1")?;
+    let removed = engine.delete("id:test:typea::1")?;
     let s3 = search_ids(&engine, 10)?;
     let s4 = search_ids(&engine, 20)?;
 

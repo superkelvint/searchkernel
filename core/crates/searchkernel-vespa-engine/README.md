@@ -1,6 +1,6 @@
 # `searchkernel-vespa-engine`
 
-This crate is the Vespa-specific Rust adapter. It owns the safe wrapper around
+This crate is the safe low-level Rust engine API. It owns the wrapper around
 the private native ABI, the small schema/config compiler, and the Rust
 replacement for the linguistics needed by the embedded engine.
 
@@ -24,3 +24,10 @@ replacement for the linguistics needed by the embedded engine.
 - Linguistics must preserve Vespa-compatible token values and source spans.
 - Configuration is generated into a temporary directory and installed only
   after successful rendering.
+
+The stable M-layer operations are `Engine::put(Document)`,
+`Engine::update(DocumentUpdate)`, `Engine::get`, `Engine::delete`, and
+`Engine::search(SearchRequest)`. `put` is complete document replacement;
+`update` applies field-level `Assign` or `Clear` mutations. `delete` returns
+Vespa's native `RemoveResult::wasFound` value, so `false` means that no
+document with the requested ID existed at removal time.

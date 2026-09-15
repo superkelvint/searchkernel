@@ -17,11 +17,15 @@
 #include <vespa/document/datatype/documenttype.h>
 #include <vespa/document/fieldvalue/document.h>
 #include <vespa/document/fieldvalue/intfieldvalue.h>
+#include <vespa/document/fieldvalue/longfieldvalue.h>
+#include <vespa/document/fieldvalue/boolfieldvalue.h>
+#include <vespa/document/fieldvalue/doublefieldvalue.h>
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
 #include <vespa/document/repo/newconfigbuilder.h>
 #include <vespa/document/update/assignvalueupdate.h>
+#include <vespa/document/update/clearvalueupdate.h>
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/update/fieldupdate.h>
 #include <vespa/fnet/transport.h>
@@ -31,6 +35,7 @@
 #include <vespa/searchcore/proton/persistenceengine/i_resource_write_filter.h>
 #include <vespa/searchcore/proton/persistenceengine/ipersistenceengineowner.h>
 #include <vespa/searchcore/proton/persistenceengine/persistenceengine.h>
+#include <vespa/searchcore/proton/persistenceengine/i_document_retriever.h>
 #include <vespa/searchcore/proton/server/bootstrapconfig.h>
 #include <vespa/searchcore/proton/server/configstore.h>
 #include <vespa/searchcore/proton/server/documentdb.h>
@@ -52,6 +57,20 @@
 #include <vespa/searchlib/common/i_document_id_provider.h>
 #include <vespa/searchlib/engine/searchreply.h>
 #include <vespa/searchlib/engine/searchrequest.h>
+#include <vespa/searchlib/engine/docsumreply.h>
+#include <vespa/searchlib/engine/docsumrequest.h>
+#include <vespa/searchlib/aggregation/averageaggregationresult.h>
+#include <vespa/searchlib/aggregation/countaggregationresult.h>
+#include <vespa/searchlib/aggregation/group.h>
+#include <vespa/searchlib/aggregation/grouping.h>
+#include <vespa/searchlib/aggregation/groupinglevel.h>
+#include <vespa/searchlib/aggregation/maxaggregationresult.h>
+#include <vespa/searchlib/aggregation/minaggregationresult.h>
+#include <vespa/searchlib/aggregation/sumaggregationresult.h>
+#include <vespa/searchlib/expression/attributenode.h>
+#include <vespa/searchlib/expression/floatresultnode.h>
+#include <vespa/searchlib/expression/integerresultnode.h>
+#include <vespa/searchlib/expression/stringresultnode.h>
 #include <vespa/searchlib/common/fileheadercontext.h>
 #include <vespa/searchlib/util/fileheadertk.h>
 #include <vespa/searchlib/common/serialized_query_tree.h>
@@ -67,6 +86,8 @@
 #include <vespa/vespalib/util/threadstackexecutor.h>
 #include <vespa/vespalib/data/fileheader.h>
 #include <vespa/vespalib/data/slime/slime.h>
+#include <vespa/vespalib/objects/nbostream.h>
+#include <vespa/vespalib/objects/nboserializer.h>
 #include <vespa/vespalib/util/host_name.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
@@ -76,19 +97,26 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <condition_variable>
+#include <cmath>
 #include <filesystem>
 #include <fcntl.h>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
+#include <initializer_list>
+#include <locale>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -118,6 +146,22 @@ using proton::PersistenceHandlerProxy;
 using vespa::config::search::core::ProtonConfigBuilder;
 using search::engine::SearchReply;
 using search::engine::SearchRequest;
+using search::engine::DocsumReply;
+using search::engine::DocsumRequest;
+using search::aggregation::AggregationResult;
+using search::aggregation::AverageAggregationResult;
+using search::aggregation::CountAggregationResult;
+using search::aggregation::Group;
+using search::aggregation::Grouping;
+using search::aggregation::GroupingLevel;
+using search::aggregation::MaxAggregationResult;
+using search::aggregation::MinAggregationResult;
+using search::aggregation::SumAggregationResult;
+using search::expression::AttributeNode;
+using search::expression::FloatResultNode;
+using search::expression::HoldString;
+using search::expression::Int64ResultNode;
+using search::expression::StringResultNode;
 using search::SerializedQueryTree;
 using search::query::QueryBuilder;
 using VespaQueryBuilder = QueryBuilder<proton::matching::ProtonNodeTypes>;
@@ -245,6 +289,41 @@ public:
 };
 
 FailpointController OPEN_FAILPOINTS;
+
+class TimingProbe {
+public:
+    using Clock = std::chrono::steady_clock;
+
+    class Scope {
+        const char *_name;
+        Clock::time_point _start;
+
+    public:
+        explicit Scope(const char *name) noexcept
+            : _name(name), _start(Clock::now()) {}
+
+        ~Scope() noexcept {
+            TimingProbe::record(_name, Clock::now() - _start);
+        }
+    };
+
+    static bool enabled() noexcept {
+        static const bool value = [] {
+            const char *setting = std::getenv("SK_ENGINE_TIMING");
+            return setting && std::string_view(setting) == "1";
+        }();
+        return value;
+    }
+
+    static Clock::time_point now() noexcept { return Clock::now(); }
+
+    static void record(const char *name, Clock::duration elapsed) noexcept {
+        if (!enabled()) return;
+        const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+        std::fprintf(stderr, "searchkernel_timing phase=%s elapsed_us=%lld\n", name,
+                     static_cast<long long>(elapsed_us));
+    }
+};
 #endif
 
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
@@ -795,7 +874,103 @@ struct TextResult {
 #endif
 };
 
-std::string query_stack_dump(int32_t value, const std::string &field) {
+struct OwnedValue {
+    uint32_t kind = 0;
+    std::string string;
+    int64_t integer = 0;
+    double floating = 0.0;
+    bool boolean = false;
+};
+
+struct DocumentFieldState {
+    std::string name;
+    OwnedValue value;
+};
+
+struct ValueDocument {
+    std::string id;
+    std::string field;
+    int64_t value = 0;
+    std::vector<DocumentFieldState> fields;
+};
+
+struct ValueUpdate {
+    std::string id;
+    std::string field;
+    int64_t value = 0;
+    std::vector<std::pair<std::string, std::optional<OwnedValue>>> fields;
+};
+
+struct AttributeDocumentState {
+    std::string id;
+    std::vector<std::pair<std::string, OwnedValue>> fields;
+};
+
+struct AttributeUpdateState {
+    std::string id;
+    std::vector<std::pair<std::string, OwnedValue>> assignments;
+};
+
+struct LocalSearchRequestState {
+    std::string rank_profile;
+    uint32_t limit = 10;
+    uint32_t offset = 0;
+    uint32_t summary_kind = SK_SUMMARY_NONE;
+    std::vector<std::pair<std::string, uint32_t>> sort;
+    std::vector<std::string> summary_fields;
+};
+
+struct LocalHitState {
+    std::string id;
+    double score = 0.0;
+    std::vector<std::pair<std::string, OwnedValue>> summary;
+};
+
+struct LocalSearchResultState {
+    uint64_t total_hit_count = 0;
+    std::vector<LocalHitState> hits;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController *failpoints = nullptr;
+#endif
+};
+
+struct LocalAggregationSpec {
+    uint32_t kind = 0;
+    std::string field;
+};
+
+struct LocalGroupingRequestState {
+    std::string group_field;
+    std::vector<LocalAggregationSpec> aggregations;
+};
+
+struct LocalGroupState {
+    OwnedValue key;
+    uint64_t count = 0;
+    std::vector<OwnedValue> aggregations;
+};
+
+struct LocalGroupingResultState {
+    std::vector<LocalGroupState> groups;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController *failpoints = nullptr;
+#endif
+};
+
+struct NativeQueryState {
+    std::vector<QueryFieldMetadata> fields;
+    mutable VespaQueryBuilder builder;
+    uint32_t next_term_id = 1;
+
+    int32_t allocate_term_id() {
+        if (next_term_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+            throw std::invalid_argument("query term ID cannot be represented by Vespa");
+        }
+        return static_cast<int32_t>(next_term_id++);
+    }
+};
+
+std::string query_stack_dump(int64_t value, const std::string &field) {
     VespaQueryBuilder builder;
     builder.addNumberTerm(std::to_string(value), field, 1, Weight(1));
     auto tree = builder.build();
@@ -903,6 +1078,9 @@ class EmbeddedEngine {
     static std::string validate_or_persist_schema_identity(
         const std::string &data_dir, const std::string &config_dir,
         const SchemaManifest &manifest, bool had_existing_state) {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope timing("schema_identity");
+#endif
         const auto path = std::filesystem::path(data_dir) / ".searchkernel-schema";
         const auto expected = schema_identity(manifest, config_dir);
         if (std::filesystem::exists(path)) {
@@ -946,6 +1124,9 @@ class EmbeddedEngine {
             }
             return expected;
         }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope persistence_timing("schema_persistence");
+#endif
         auto temporary_path = path.string() + ".tmp.XXXXXX";
         FileDescriptor fd(::mkstemp(temporary_path.data()));
         if (fd.get() < 0) {
@@ -1021,6 +1202,176 @@ class EmbeddedEngine {
         if (field.type != "text" || !field.index) {
             throw std::invalid_argument("text operation requires an indexed text field: " + name);
         }
+    }
+
+    const ManifestField &require_attribute_field(const std::string &name,
+                                                 std::initializer_list<std::string_view> types = {}) const {
+        const auto &field = require_manifest_field(name);
+        if (!field.attribute) {
+            throw std::invalid_argument("field is not an attribute: " + name);
+        }
+        if (types.size() != 0 && std::find(types.begin(), types.end(), field.type) == types.end()) {
+            throw std::invalid_argument("unsupported attribute field type: " + name);
+        }
+        return field;
+    }
+
+    std::unique_ptr<document::FieldValue> make_attribute_value(
+        const std::string &field_name, const OwnedValue &value) const {
+        const auto &field = require_attribute_field(field_name);
+        const auto &vespa_field = _doc_type->getField(field_name);
+        if (field.type == "string") {
+            if (value.kind != SK_VALUE_STRING) throw std::invalid_argument("wrong value type for attribute: " + field_name);
+            return std::make_unique<document::StringFieldValue>(value.string);
+        }
+        if (field.type == "integer") {
+            if (value.kind != SK_VALUE_INTEGER) {
+                throw std::invalid_argument("wrong value type for attribute: " + field_name);
+            }
+            return std::make_unique<document::LongFieldValue>(value.integer);
+        }
+        if (field.type == "float") {
+            if (value.kind != SK_VALUE_FLOAT || !std::isfinite(value.floating)) throw std::invalid_argument("wrong value type for attribute: " + field_name);
+            return std::make_unique<document::DoubleFieldValue>(value.floating);
+        }
+        if (field.type == "boolean") {
+            if (value.kind != SK_VALUE_BOOLEAN) throw std::invalid_argument("wrong value type for attribute: " + field_name);
+            return std::make_unique<document::BoolFieldValue>(value.boolean);
+        }
+        (void)vespa_field;
+        throw std::invalid_argument("unsupported attribute field type: " + field_name);
+    }
+
+    std::shared_ptr<Document> make_attribute_document(const AttributeDocumentState &source) const {
+        if (source.fields.empty()) throw std::invalid_argument("attribute document must not be empty");
+        const DocumentId id(internal_document_id(source.id, _document_type));
+        auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
+        for (const auto &[name, value] : source.fields) {
+            document->setFieldValue(_doc_type->getField(name), make_attribute_value(name, value));
+        }
+        return document;
+    }
+
+    std::unique_ptr<document::FieldValue> make_document_value(
+        const std::string &field_name, const OwnedValue &value) const {
+        const auto &field = require_manifest_field(field_name);
+        if (field.type == "text" || field.type == "string") {
+            if (value.kind != SK_VALUE_STRING) {
+                throw std::invalid_argument("wrong string value type for field: " + field_name);
+            }
+            return std::make_unique<document::StringFieldValue>(value.string);
+        }
+        if (field.type == "integer") {
+            if (value.kind != SK_VALUE_INTEGER) {
+                throw std::invalid_argument("wrong integer value type for field: " + field_name);
+            }
+            return std::make_unique<document::LongFieldValue>(value.integer);
+        }
+        if (field.type == "float") {
+            if (value.kind != SK_VALUE_FLOAT || !std::isfinite(value.floating)) {
+                throw std::invalid_argument("wrong float value type for field: " + field_name);
+            }
+            return std::make_unique<document::DoubleFieldValue>(value.floating);
+        }
+        if (field.type == "boolean") {
+            if (value.kind != SK_VALUE_BOOLEAN) {
+                throw std::invalid_argument("wrong boolean value type for field: " + field_name);
+            }
+            return std::make_unique<document::BoolFieldValue>(value.boolean);
+        }
+        throw std::invalid_argument("unsupported document field type: " + field_name);
+    }
+
+    std::shared_ptr<Document> make_value_document(const ValueDocument &source) const {
+        if (source.fields.empty()) throw std::invalid_argument("document must not be empty");
+        const DocumentId id(internal_document_id(source.id, _document_type));
+        auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
+        for (const auto &[name, value] : source.fields) {
+            document->setFieldValue(_doc_type->getField(name), make_document_value(name, value));
+        }
+        return document;
+    }
+
+    std::shared_ptr<document::DocumentUpdate>
+    make_value_update(const ValueUpdate &source) const {
+        if (source.fields.empty()) throw std::invalid_argument("document update must not be empty");
+        const DocumentId id(internal_document_id(source.id, _document_type));
+        auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
+        for (const auto &[name, value] : source.fields) {
+            const auto &field = _doc_type->getField(name);
+            document::FieldUpdate field_update(field);
+            if (value) {
+                field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
+                    make_document_value(name, *value)));
+            } else {
+                field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
+            }
+            update->addUpdate(std::move(field_update));
+        }
+        return update;
+    }
+
+    ValueDocument get_value_document(const std::string &external_id) const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        validate_document_id(external_id.c_str());
+        const DocumentId id(internal_document_id(external_id, _document_type));
+        auto ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        search::IDocumentMetaStore::DocId lid = 0;
+        if (!meta_store_guard->get().getLid(id.getGlobalId(), lid)) {
+            return {external_id, {}, 0, {}};
+        }
+        auto retrievers = _db->getDocumentRetrievers(storage::spi::ReadConsistency::STRONG);
+        if (!retrievers || retrievers->empty()) {
+            throw std::runtime_error("Vespa DocumentDB has no document retriever");
+        }
+        auto document = (*retrievers)[0]->getDocument(lid, id);
+        if (!document) return {external_id, {}, 0, {}};
+        ValueDocument result;
+        result.id = external_id;
+        for (auto iterator = document->begin(); iterator != document->end(); ++iterator) {
+            const auto &field = *iterator;
+            auto value = document->getValue(field);
+            if (!value) continue;
+            OwnedValue owned;
+            switch (value->type()) {
+            case document::FieldValue::Type::STRING:
+                owned.kind = SK_VALUE_STRING;
+                owned.string = value->getAsString();
+                break;
+            case document::FieldValue::Type::LONG:
+                owned.kind = SK_VALUE_INTEGER;
+                owned.integer = value->getAsLong();
+                break;
+            case document::FieldValue::Type::DOUBLE:
+                owned.kind = SK_VALUE_FLOAT;
+                owned.floating = value->getAsDouble();
+                break;
+            case document::FieldValue::Type::BOOL:
+                owned.kind = SK_VALUE_BOOLEAN;
+                owned.boolean = value->getAsLong() != 0;
+                break;
+            default:
+                throw std::invalid_argument("unsupported retrieved document field type: " + field.getName());
+            }
+            result.fields.push_back({field.getName(), std::move(owned)});
+        }
+        return result;
+    }
+
+    std::shared_ptr<document::DocumentUpdate> make_attribute_update(const AttributeUpdateState &source) const {
+        if (source.assignments.empty()) throw std::invalid_argument("attribute update must not be empty");
+        const DocumentId id(internal_document_id(source.id, _document_type));
+        auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
+        for (const auto &[name, value] : source.assignments) {
+            const auto &field = _doc_type->getField(name);
+            document::FieldUpdate field_update(field);
+            field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(make_attribute_value(name, value)));
+            update->addUpdate(std::move(field_update));
+        }
+        return update;
     }
 
     std::vector<TextHit> match_tree(std::unique_ptr<search::query::Node> tree,
@@ -1163,7 +1514,7 @@ class EmbeddedEngine {
 
     static std::string manifest_attribute_type(const std::string &type) {
         if (type == "text" || type == "string") return "STRING";
-        if (type == "integer") return "INT32";
+        if (type == "integer") return "INT64";
         if (type == "float") return "DOUBLE";
         if (type == "boolean") return "BOOL";
         throw std::invalid_argument("inconsistent generated configuration");
@@ -1276,8 +1627,9 @@ class EmbeddedEngine {
         const auto text_field = std::find_if(
             manifest.fields.begin(), manifest.fields.end(),
             [](const auto &field) { return field.type == "text"; });
+        const size_t profile_count = config_section_count(values, "rankprofile");
         const size_t expected_profiles = text_field == manifest.fields.end() ? 1 : 2;
-        if (config_section_count(values, "rankprofile") != expected_profiles) {
+        if (profile_count != expected_profiles && !(text_field == manifest.fields.end() && profile_count == 2)) {
             throw std::invalid_argument("inconsistent generated configuration");
         }
         require_config_value(values, "rankprofile[0].name", "default");
@@ -1291,6 +1643,21 @@ class EmbeddedEngine {
             require_config_value(
                 values, "rankprofile[1].fef.property[0].value",
                 "bm25(" + text_field->name + ")");
+        } else if (profile_count == 2) {
+            const auto price = std::find_if(
+                manifest.fields.begin(), manifest.fields.end(),
+                [](const auto &field) { return field.name == "price" && field.type == "float" && field.attribute; });
+            if (price == manifest.fields.end()) {
+                throw std::invalid_argument("attribute_price rank profile requires a float price attribute");
+            }
+            require_config_value(values, "rankprofile[1].name", "attribute_price");
+            if (config_section_count(values, "rankprofile[1].fef.property") != 1) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+            require_config_value(values, "rankprofile[1].fef.property[0].name",
+                                 "vespa.rank.firstphase");
+            require_config_value(values, "rankprofile[1].fef.property[0].value",
+                                 "attribute(price)");
         }
     }
 
@@ -1330,6 +1697,9 @@ class EmbeddedEngine {
     }
 
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope timing("schema_validation");
+#endif
         const auto path = std::filesystem::path(config_dir) / "searchkernel-schema.json";
         if (!std::filesystem::is_regular_file(path)) {
             throw std::invalid_argument("generated schema manifest is missing");
@@ -1402,7 +1772,7 @@ class EmbeddedEngine {
             if (field.type == "text" || field.type == "string") {
                 document_type.addField(field.name, builder.stringTypeRef());
             } else if (field.type == "integer") {
-                document_type.addField(field.name, builder.intTypeRef());
+                document_type.addField(field.name, builder.longTypeRef());
             } else if (field.type == "float") {
                 document_type.addField(field.name, builder.doubleTypeRef());
             } else if (field.type == "boolean") {
@@ -1416,7 +1786,7 @@ class EmbeddedEngine {
 
     static const document::DataType *manifest_type(const std::string &type) {
         if (type == "text" || type == "string") return document::DataType::STRING;
-        if (type == "integer") return document::DataType::INT;
+        if (type == "integer") return document::DataType::LONG;
         if (type == "float") return document::DataType::DOUBLE;
         if (type == "boolean") return document::DataType::BOOL;
         throw std::invalid_argument("unsupported generated schema field type: " + type);
@@ -1463,33 +1833,37 @@ class EmbeddedEngine {
     }
 
     std::shared_ptr<Document> make_document(const DocumentId &id, const std::string &field_name,
-                                            int32_t value) const {
+                                            int64_t value) const {
         require_integer_field(field_name);
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
-        if (field.getDataType().getId() != document::DataType::T_INT) {
-            throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+        if (field.getDataType().getId() != document::DataType::T_LONG) {
+            throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
         }
-        document->setFieldValue(field, std::make_unique<document::IntFieldValue>(value));
+        document->setFieldValue(field, std::make_unique<document::LongFieldValue>(value));
         return document;
     }
 
     std::shared_ptr<document::DocumentUpdate>
-    make_update(const DocumentId &id, const std::string &field_name, int32_t value) const {
+    make_update(const DocumentId &id, const std::string &field_name, int64_t value) const {
         require_integer_field(field_name);
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
-        if (field.getDataType().getId() != document::DataType::T_INT) {
-            throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+        if (field.getDataType().getId() != document::DataType::T_LONG) {
+            throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
         }
         document::FieldUpdate field_update(field);
         field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
-            std::make_unique<document::IntFieldValue>(value)));
+            std::make_unique<document::LongFieldValue>(value)));
         update->addUpdate(std::move(field_update));
         return update;
     }
 
 public:
+    ValueDocument get_value_document_for_abi(const std::string &external_id) const {
+        return get_value_document(external_id);
+    }
+
     EmbeddedEngine(const std::string &data_dir, const std::string &config_dir)
         : _manifest(read_schema_manifest(config_dir)),
           _data_lock(data_dir),
@@ -1547,6 +1921,9 @@ public:
 #endif
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope initialize_timing("initialize_total");
+#endif
         std::filesystem::create_directories(data_dir);
         if (_doc_type == nullptr) {
             throw std::runtime_error("generated document type was not added to DocumentTypeRepo: " +
@@ -1580,19 +1957,46 @@ public:
         }
 
         auto config_store_ptr = config_store.get();
-        _db = DocumentDB::create(
-            data_dir, config.getConfig(),
-            vespalib::SocketSpec::from_host_port("localhost", static_cast<int>(_tls_port)).spec(),
-            _query_limiter, DocTypeName(_document_type), bucket_space(),
-            *proton_config, _db_owner, _shared_service, _tls, _wire_service,
-            _file_header_context,
-            std::make_shared<search::attribute::Interlock>(),
-            std::move(config_store),
-            std::make_shared<vespalib::ThreadStackExecutor>(16),
-            _hw_info, std::shared_ptr<search::diskindex::IPostingListCache>());
+        std::shared_ptr<vespalib::ThreadStackExecutor> write_executor;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        {
+            TimingProbe::Scope write_executor_timing("write_executor");
+            write_executor = std::make_shared<vespalib::ThreadStackExecutor>(16);
+        }
+        {
+            TimingProbe::Scope create_timing("documentdb_create");
+#endif
+            if (!write_executor) {
+                write_executor = std::make_shared<vespalib::ThreadStackExecutor>(16);
+            }
+            _db = DocumentDB::create(
+                data_dir, config.getConfig(),
+                vespalib::SocketSpec::from_host_port("localhost", static_cast<int>(_tls_port)).spec(),
+                _query_limiter, DocTypeName(_document_type), bucket_space(),
+                *proton_config, _db_owner, _shared_service, _tls, _wire_service,
+                _file_header_context,
+                std::make_shared<search::attribute::Interlock>(),
+                std::move(config_store),
+                write_executor,
+                _hw_info, std::shared_ptr<search::diskindex::IPostingListCache>());
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        }
+#endif
         _config_store = config_store_ptr;
-        _db->start();
-        _db->waitForOnlineState();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        {
+            TimingProbe::Scope start_timing("documentdb_start");
+#endif
+            _db->start();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        }
+        {
+            TimingProbe::Scope online_timing("documentdb_wait_online");
+#endif
+            _db->waitForOnlineState();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        }
+#endif
         const auto replay_serial = _db->getFeedHandler().getSerialNum();
         if (replay_serial == std::numeric_limits<uint64_t>::max()) {
             throw std::runtime_error("native feed serial space exhausted");
@@ -1605,10 +2009,23 @@ public:
         _handler = std::make_shared<PersistenceHandlerProxy>(_db);
         _persistence.putHandler(_persistence.getWLock(), bucket_space(),
                                 DocTypeName(_document_type), _handler);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        {
+            TimingProbe::Scope persistence_timing("persistence_initialize");
+            auto initialized = _persistence.initialize();
+            if (initialized.hasError()) {
+                throw std::runtime_error(initialized.getErrorMessage());
+            }
+        }
+#else
         auto initialized = _persistence.initialize();
         if (initialized.hasError()) {
             throw std::runtime_error(initialized.getErrorMessage());
         }
+#endif
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope cluster_timing("cluster_bucket_init");
+#endif
         auto state = single_node_cluster_state();
         auto state_result = _persistence.setClusterState(bucket_space(), state);
         if (state_result.hasError()) {
@@ -1631,6 +2048,9 @@ public:
     }
 
     void close() {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope timing("close");
+#endif
         std::unique_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         const auto current = _state.load(std::memory_order_acquire);
         if (current == State::Closed || current == State::Failed) {
@@ -1645,18 +2065,45 @@ public:
             throw std::runtime_error("engine is already closing");
         }
         try {
-            _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
-                                       DocTypeName(_document_type));
+            {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+                TimingProbe::Scope remove_handler_timing("close_remove_handler");
+#endif
+                _persistence.removeHandler(_persistence.getWLock(), bucket_space(),
+                                           DocTypeName(_document_type));
+            }
             _handler.reset();
             if (_db) {
-                _db->close();
+                {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+                    TimingProbe::Scope db_timing("close_db");
+#endif
+                    _db->close();
+                }
                 if (_config_store) {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+                    TimingProbe::Scope config_prune_timing("close_config_prune");
+#endif
                     _config_store->prune(std::numeric_limits<uint64_t>::max());
                     _config_store = nullptr;
                 }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+                {
+                    TimingProbe::Scope db_reset_timing("close_db_reset");
+#endif
                 _db.reset();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+                }
+#endif
             }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+            {
+                TimingProbe::Scope shutdown_timing("close_shared_service_shutdown");
+#endif
             _shared_service.shutdown();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+            }
+#endif
             _state.store(State::Closed, std::memory_order_release);
         } catch (...) {
             _state.store(State::Failed, std::memory_order_release);
@@ -1696,6 +2143,9 @@ public:
     }
 
     ~EmbeddedEngine() noexcept {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope timing("destruction");
+#endif
         if (_initialized && _state.load(std::memory_order_acquire) == State::Open) {
             try {
                 close();
@@ -1707,7 +2157,7 @@ public:
         }
     }
 
-    void put(const std::string &id, const std::string &field, int32_t value) {
+    void put(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
@@ -1725,7 +2175,7 @@ public:
         }
     }
 
-    void update(const std::string &id, const std::string &field, int32_t value) {
+    void update(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
@@ -1754,7 +2204,7 @@ public:
         return result.wasFound();
     }
 
-    std::vector<std::string> search(const std::string &field, int32_t value,
+    std::vector<std::string> search(const std::string &field, int64_t value,
                                     uint32_t limit) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
@@ -1917,6 +2367,199 @@ public:
         return match_tree(builder.build(), text.rank_profile, "*");
     }
 
+    std::string id_for_gid(const document::GlobalId &gid) const {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        const auto *provider = dynamic_cast<const search::IDocumentIdProvider *>(&guard->get());
+        if (!provider) throw std::runtime_error("Vespa DocumentDB does not provide document IDs");
+        search::IDocumentMetaStore::DocId lid = 0;
+        if (!guard->get().getLid(gid, lid)) throw std::runtime_error("Vespa result GID has no document ID");
+        const auto id = provider->get_document_id_string_view(lid);
+        if (id.empty()) throw std::runtime_error("Vespa result document ID is empty");
+        return external_document_id(id, _document_type);
+    }
+
+    OwnedValue summary_value(const std::string &field_name,
+                             const vespalib::slime::Inspector &value) const {
+        const auto &field = require_manifest_field(field_name);
+        OwnedValue result;
+        if (field.type == "text" || field.type == "string") {
+            if (value.type() != vespalib::slime::STRING::instance) throw std::runtime_error("unexpected string summary type");
+            result.kind = SK_VALUE_STRING;
+            result.string = value.asString().make_string();
+        } else if (field.type == "integer") {
+            if (value.type() != vespalib::slime::LONG::instance) throw std::runtime_error("unexpected integer summary type");
+            result.kind = SK_VALUE_INTEGER;
+            result.integer = value.asLong();
+        } else if (field.type == "float") {
+            if (value.type() != vespalib::slime::DOUBLE::instance) throw std::runtime_error("unexpected float summary type");
+            result.kind = SK_VALUE_FLOAT;
+            result.floating = value.asDouble();
+        } else if (field.type == "boolean") {
+            if (value.type() != vespalib::slime::BOOL::instance) throw std::runtime_error("unexpected boolean summary type");
+            result.kind = SK_VALUE_BOOLEAN;
+            result.boolean = value.asBool();
+        } else {
+            throw std::runtime_error("unsupported summary field type");
+        }
+        return result;
+    }
+
+    LocalSearchResultState search_local(const NativeQueryState &query,
+                                        const LocalSearchRequestState &options) const {
+        if (options.rank_profile.empty()) throw std::invalid_argument("rank profile must not be empty");
+        auto tree = query.builder.build();
+        if (!tree) throw std::invalid_argument("could not build query tree");
+        validate_rank_profile(options.rank_profile.c_str());
+        SearchRequest request;
+        request.setTimeout(60s);
+        request.ranking = options.rank_profile;
+        request.offset = options.offset;
+        request.maxhits = options.limit;
+        for (const auto &[field, order] : options.sort) {
+            (void)require_attribute_field(field, {"string", "integer", "float"});
+            if (!request.sortSpec.empty()) request.sortSpec.push_back(' ');
+            request.sortSpec.push_back(order == SK_SORT_ASCENDING ? '+' : '-');
+            request.sortSpec += field;
+        }
+        if (options.summary_kind == SK_SUMMARY_FIELDS) {
+            if (options.summary_fields.empty()) {
+                throw std::invalid_argument("explicit summary field list must not be empty");
+            }
+            for (const auto &field_name : options.summary_fields) {
+                const auto &field = require_manifest_field(field_name);
+                if (!field.summary) {
+                    throw std::invalid_argument("field is not a summary field: " + field_name);
+                }
+            }
+        }
+        request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
+        auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
+        LocalSearchResultState result;
+        result.total_hit_count = reply->totalHitCount;
+        result.hits.reserve(reply->hits.size());
+        for (const auto &hit : reply->hits) {
+            result.hits.push_back({id_for_gid(hit.gid), hit.metric, {}});
+        }
+        if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
+            DocsumRequest docsum_request;
+            docsum_request.resultClassName = "default";
+            for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
+            if (options.summary_kind == SK_SUMMARY_FIELDS) {
+                docsum_request.setFields(options.summary_fields);
+            }
+            auto docsum = _db->getDocsums(docsum_request);
+            if (!docsum || !docsum->hasResult()) throw std::runtime_error("Vespa docsum returned no result");
+            const auto &root = docsum->root();
+            for (size_t index = 0; index < result.hits.size(); ++index) {
+                const auto &doc = root["docsums"][index]["docsum"];
+                if (options.summary_kind == SK_SUMMARY_FIELDS) {
+                    for (const auto &name : options.summary_fields) {
+                        const auto &value = doc[vespalib::Memory(name)];
+                        if (value.valid()) result.hits[index].summary.emplace_back(name, summary_value(name, value));
+                    }
+                } else {
+                    for (const auto &field : _manifest.fields) {
+                        if (!field.summary) continue;
+                        const auto &value = doc[vespalib::Memory(field.name)];
+                        if (value.valid()) result.hits[index].summary.emplace_back(field.name, summary_value(field.name, value));
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    LocalGroupingResultState group_local(const NativeQueryState &query,
+                                         const LocalGroupingRequestState &options) const {
+        const auto &group_field = require_attribute_field(options.group_field, {"string", "integer"});
+        auto tree = query.builder.build();
+        if (!tree) throw std::invalid_argument("could not build query tree");
+        SearchRequest request;
+        request.setTimeout(60s);
+        request.ranking = "default";
+        request.maxhits = 0;
+        request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
+        auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
+        level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_field.name)));
+        for (const auto &spec : options.aggregations) {
+            const auto &field = require_attribute_field(spec.field, {"integer", "float"});
+            std::unique_ptr<AggregationResult> aggregation;
+            if (spec.kind == SK_AGGREGATION_SUM) aggregation = std::make_unique<SumAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_MIN) aggregation = std::make_unique<MinAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_MAX) aggregation = std::make_unique<MaxAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_AVERAGE) aggregation = std::make_unique<AverageAggregationResult>();
+            else throw std::invalid_argument("unsupported aggregation kind");
+            aggregation->setExpression(std::make_unique<AttributeNode>(field.name));
+            level.addResult(std::move(aggregation));
+        }
+        Grouping grouping;
+        grouping.setFirstLevel(0).setLastLevel(1).addLevel(std::move(level));
+        vespalib::nbostream buffer;
+        vespalib::NBOSerializer output(buffer);
+        uint32_t grouping_count = 1;
+        output << grouping_count;
+        grouping.serialize(output);
+        request.groupSpec.assign(buffer.data(), buffer.data() + buffer.size());
+        auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
+        if (!reply->hits.empty()) throw std::runtime_error("native grouping returned ordinary hits");
+        if (reply->groupResult.empty()) throw std::runtime_error("native grouping result is empty");
+        vespalib::nbostream result_buffer(reply->groupResult.data(), reply->groupResult.size());
+        vespalib::NBOSerializer input(result_buffer);
+        uint32_t result_count = 0;
+        input >> result_count;
+        if (result_count != 1) throw std::runtime_error("unexpected native grouping result count");
+        Grouping result_grouping;
+        result_grouping.deserialize(input);
+        LocalGroupingResultState result;
+        const auto &root = result_grouping.getRoot();
+        result.groups.reserve(root.getChildrenSize());
+        for (uint32_t index = 0; index < root.getChildrenSize(); ++index) {
+            const auto &group = root.getChild(index);
+            LocalGroupState output_group;
+            const auto &key = group.getId();
+            if (key.getClass().inherits(StringResultNode::classId)) {
+                HoldString value(key);
+                output_group.key.kind = SK_VALUE_STRING;
+                output_group.key.string = std::string(value);
+            } else if (key.getClass().inherits(Int64ResultNode::classId)) {
+                output_group.key.kind = SK_VALUE_INTEGER;
+                output_group.key.integer = key.getInteger();
+            } else {
+                throw std::runtime_error("unsupported native grouping key type");
+            }
+            const auto &count = group.getAggregationResult(0);
+            if (!count.getClass().inherits(CountAggregationResult::classId)) throw std::runtime_error("native grouping count is missing");
+            output_group.count = static_cast<const CountAggregationResult &>(count).getCount();
+            for (size_t aggregation_index = 0; aggregation_index < options.aggregations.size(); ++aggregation_index) {
+                const auto &aggregation = group.getAggregationResult(aggregation_index + 1);
+                const auto emit = [&](const auto &node) {
+                    OwnedValue value;
+                    if (node.getClass().inherits(Int64ResultNode::classId)) {
+                        value.kind = SK_VALUE_INTEGER;
+                        value.integer = node.getInteger();
+                    } else if (node.getClass().inherits(FloatResultNode::classId)) {
+                        value.kind = SK_VALUE_FLOAT;
+                        value.floating = node.getFloat();
+                    } else {
+                        throw std::runtime_error("unsupported native aggregate result type");
+                    }
+                    output_group.aggregations.push_back(std::move(value));
+                };
+                if (aggregation.getClass().inherits(SumAggregationResult::classId)) emit(static_cast<const SumAggregationResult &>(aggregation).getSum());
+                else if (aggregation.getClass().inherits(MinAggregationResult::classId)) emit(static_cast<const MinAggregationResult &>(aggregation).getMin());
+                else if (aggregation.getClass().inherits(MaxAggregationResult::classId)) emit(static_cast<const MaxAggregationResult &>(aggregation).getMax());
+                else if (aggregation.getClass().inherits(AverageAggregationResult::classId)) emit(static_cast<const AverageAggregationResult &>(aggregation).getAverage());
+                else throw std::runtime_error("unsupported native aggregation result");
+            }
+            result.groups.push_back(std::move(output_group));
+        }
+        return result;
+    }
+
 public:
     std::vector<TextHit> search_query(VespaQueryBuilder &builder,
                                       const std::string &rank_profile,
@@ -1924,6 +2567,64 @@ public:
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         require_open();
         return match_tree(builder.build(), rank_profile, source);
+    }
+
+    void put_attributes(const AttributeDocumentState &document) {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        const DocumentId id(internal_document_id(document.id, _document_type));
+        const Bucket bucket = bucket_for(id);
+        {
+            std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
+            prepare_bucket(bucket);
+        }
+        auto result = _persistence.put(bucket, Timestamp(next_timestamp()), make_attribute_document(document));
+        if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+    }
+
+    void update_attributes(const AttributeUpdateState &update) {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        const DocumentId id(internal_document_id(update.id, _document_type));
+        auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()), make_attribute_update(update));
+        if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+    }
+
+    void put_document(const ValueDocument &document) {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        const DocumentId id(internal_document_id(document.id, _document_type));
+        const Bucket bucket = bucket_for(id);
+        {
+            std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
+            prepare_bucket(bucket);
+        }
+        auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
+                                       make_value_document(document));
+        if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+    }
+
+    void update_document(const ValueUpdate &update) {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        const DocumentId id(internal_document_id(update.id, _document_type));
+        auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
+                                          make_value_update(update));
+        if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+    }
+
+    LocalSearchResultState search_local_result(const NativeQueryState &query,
+                                                const LocalSearchRequestState &request) const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        return search_local(query, request);
+    }
+
+    LocalGroupingResultState group_local_result(const NativeQueryState &query,
+                                                 const LocalGroupingRequestState &request) const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        require_open();
+        return group_local(query, request);
     }
 
     std::vector<QueryFieldMetadata> query_field_metadata() const {
@@ -1938,23 +2639,12 @@ public:
     }
 };
 
-struct ValueDocument {
-    std::string id;
-    std::string field;
-    int32_t value;
-};
-
-struct ValueUpdate {
-    std::string id;
-    std::string field;
-    int32_t value;
-};
-
 struct ValueRequest {
     std::string field;
-    int32_t value;
+    int64_t value;
     uint32_t limit;
 };
+
 
 struct ErrorResult {
     std::vector<std::string> ids;
@@ -2010,19 +2700,6 @@ void destroy_noexcept(Handle *handle) noexcept {
 std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
                             size_t maximum, const char *what);
 
-struct NativeQueryState {
-    std::vector<QueryFieldMetadata> fields;
-    mutable VespaQueryBuilder builder;
-    uint32_t next_term_id = 1;
-
-    int32_t allocate_term_id() {
-        if (next_term_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
-            throw std::invalid_argument("query term ID cannot be represented by Vespa");
-        }
-        return static_cast<int32_t>(next_term_id++);
-    }
-};
-
 void validate_query_field(const NativeQueryState &query, uint32_t kind,
                           const char *field) {
     if (!field) {
@@ -2049,6 +2726,26 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
         if (metadata->type != "integer" || !metadata->attribute) {
             throw std::invalid_argument(
                 "integer operation requires an integer attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_STRING:
+        if (metadata->type != "string" || !metadata->attribute) {
+            throw std::invalid_argument("string operation requires a string attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_FLOAT:
+        if (metadata->type != "float" || !metadata->attribute) {
+            throw std::invalid_argument("float operation requires a float attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_BOOLEAN:
+        if (metadata->type != "boolean" || !metadata->attribute) {
+            throw std::invalid_argument("boolean operation requires a boolean attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_ATTRIBUTE:
+        if (!metadata->attribute || metadata->type == "text") {
+            throw std::invalid_argument("attribute operation requires an attribute field: " + std::string(field));
         }
         break;
     default:
@@ -2143,12 +2840,12 @@ void add_query_text(NativeQueryState &query, uint32_t kind, const char *field,
 }
 
 std::unique_ptr<search::NumericRangeSpec> make_query_range(
-    uint32_t lower_kind, int32_t lower_value,
-    uint32_t upper_kind, int32_t upper_value) {
+    uint32_t lower_kind, int64_t lower_value,
+    uint32_t upper_kind, int64_t upper_value) {
     auto spec = std::make_unique<search::NumericRangeSpec>();
     spec->valid = true;
     spec->valid_integers = true;
-    const auto set_bound = [](uint32_t kind, int32_t value, bool lower,
+    const auto set_bound = [](uint32_t kind, int64_t value, bool lower,
                               search::NumericRangeSpec &range) {
         auto &integer_limit = lower ? range.int64_lower_limit : range.int64_upper_limit;
         auto &fp_limit = lower ? range.fp_lower_limit : range.fp_upper_limit;
@@ -2186,6 +2883,12 @@ struct sk_text_update : TextUpdate {};
 struct sk_text_request : TextRequest {};
 struct sk_text_result : TextResult {};
 struct sk_query : NativeQueryState {};
+struct sk_local_search_request : LocalSearchRequestState {};
+struct sk_local_search_result : LocalSearchResultState {};
+struct sk_attribute_document : AttributeDocumentState {};
+struct sk_attribute_update : AttributeUpdateState {};
+struct sk_local_grouping_request : LocalGroupingRequestState {};
+struct sk_local_grouping_result : LocalGroupingResultState {};
 
 extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
     return SK_NATIVE_ABI_VERSION;
@@ -2202,6 +2905,9 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
                          "engine open arguments must not be null");
     }
     return invoke(error, error_capacity, [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        TimingProbe::Scope open_timing("open_total");
+#endif
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         OPEN_FAILPOINTS.hit("open_before_native_create");
 #endif
@@ -2224,8 +2930,15 @@ extern "C" int32_t sk_engine_open(const char *data_dir, const char *config_dir,
             throw std::invalid_argument("engine config path is not a directory: " + config_path.string());
         }
         auto engine = std::make_unique<sk_engine>();
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        {
+            TimingProbe::Scope constructor_timing("constructor");
+#endif
         engine->impl = std::make_unique<EmbeddedEngine>(data_dir,
                                                         config_path.string());
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        }
+#endif
         engine->impl->initialize(data_dir, config_path.string());
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         OPEN_FAILPOINTS.hit("open_after_native_create");
@@ -2259,7 +2972,7 @@ extern "C" void sk_engine_destroy(sk_engine *engine) SK_NOEXCEPT {
 }
 
 extern "C" int32_t sk_document_create(const char *id, const char *field,
-                                        int32_t value, sk_document **out,
+                                        int64_t value, sk_document **out,
                                         uint8_t *error,
                                         uint32_t error_capacity) SK_NOEXCEPT {
     if (out) {
@@ -2287,8 +3000,76 @@ extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT {
     destroy_noexcept(document);
 }
 
+extern "C" int32_t sk_document_create_empty(const char *id, sk_document **out,
+                                              uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!out || !id) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                      "document arguments must not be null");
+    return invoke(error, error_capacity, [&] {
+        validate_document_id(id);
+        if (*id == '\0') throw std::invalid_argument("document ID must not be empty");
+        auto document = std::make_unique<sk_document>();
+        document->id = id;
+        *out = document.release();
+    });
+}
+
+template <typename Add>
+int32_t add_document_value(sk_document *document, const char *field,
+                           uint8_t *error, uint32_t error_capacity, Add &&add) noexcept {
+    if (!document || !field) return set_error(error, error_capacity,
+                                              SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                              "document value arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (*field == '\0') throw std::invalid_argument("document field must not be empty");
+        OwnedValue value = add();
+        auto existing = std::find_if(document->fields.begin(), document->fields.end(),
+                                     [field](const auto &entry) { return entry.name == field; });
+        if (existing != document->fields.end()) {
+            existing->value = std::move(value);
+        } else {
+            document->fields.push_back({field, std::move(value)});
+        }
+    });
+}
+
+extern "C" int32_t sk_document_add_string(sk_document *document, const char *field,
+                                            const char *value, uint8_t *error,
+                                            uint32_t error_capacity) SK_NOEXCEPT {
+    if (!value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "document string value must not be null");
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_STRING; result.string = value; return result;
+    });
+}
+
+extern "C" int32_t sk_document_add_integer(sk_document *document, const char *field,
+                                             int64_t value, uint8_t *error,
+                                             uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_INTEGER; result.integer = value; return result;
+    });
+}
+
+extern "C" int32_t sk_document_add_float(sk_document *document, const char *field,
+                                           double value, uint8_t *error,
+                                           uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_FLOAT; result.floating = value; return result;
+    });
+}
+
+extern "C" int32_t sk_document_add_boolean(sk_document *document, const char *field,
+                                             uint8_t value, uint8_t *error,
+                                             uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_BOOLEAN; result.boolean = value != 0; return result;
+    });
+}
+
 extern "C" int32_t sk_document_update_create(const char *id, const char *field,
-                                               int32_t value,
+                                               int64_t value,
                                                sk_document_update **out,
                                                uint8_t *error,
                                                uint32_t error_capacity) SK_NOEXCEPT {
@@ -2317,7 +3098,79 @@ extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCE
     destroy_noexcept(update);
 }
 
-extern "C" int32_t sk_search_request_create(const char *field, int32_t value,
+extern "C" int32_t sk_document_update_create_empty(
+    const char *id, sk_document_update **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!out || !id) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                      "update arguments must not be null");
+    return invoke(error, error_capacity, [&] {
+        validate_document_id(id);
+        if (*id == '\0') throw std::invalid_argument("document ID must not be empty");
+        auto update = std::make_unique<sk_document_update>();
+        update->id = id;
+        *out = update.release();
+    });
+}
+
+template <typename Add>
+int32_t add_update_value(sk_document_update *update, const char *field,
+                         uint8_t *error, uint32_t error_capacity, Add &&add) noexcept {
+    if (!update || !field) return set_error(error, error_capacity,
+                                            SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                            "update value arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (*field == '\0') throw std::invalid_argument("update field must not be empty");
+        auto value = add();
+        auto existing = std::find_if(update->fields.begin(), update->fields.end(),
+                                     [field](const auto &entry) { return entry.first == field; });
+        if (existing != update->fields.end()) existing->second = std::move(value);
+        else update->fields.emplace_back(field, std::move(value));
+    });
+}
+
+extern "C" int32_t sk_document_update_assign_string(
+    sk_document_update *update, const char *field, const char *value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "update string value must not be null");
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_STRING; result.string = value; return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" int32_t sk_document_update_assign_integer(
+    sk_document_update *update, const char *field, int64_t value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_INTEGER; result.integer = value; return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" int32_t sk_document_update_assign_float(
+    sk_document_update *update, const char *field, double value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_FLOAT; result.floating = value; return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" int32_t sk_document_update_assign_boolean(
+    sk_document_update *update, const char *field, uint8_t value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result; result.kind = SK_VALUE_BOOLEAN; result.boolean = value != 0; return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" int32_t sk_document_update_clear(sk_document_update *update, const char *field,
+                                              uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity,
+                            [] { return std::optional<OwnedValue>(); });
+}
+
+extern "C" int32_t sk_search_request_create(const char *field, int64_t value,
                                               uint32_t limit,
                                               sk_search_request **out,
                                               uint8_t *error,
@@ -2357,7 +3210,11 @@ extern "C" int32_t sk_engine_put(sk_engine *engine, const sk_document *document,
                          "put arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        engine->impl->put(document->id, document->field, document->value);
+        if (!document->fields.empty()) {
+            engine->impl->put_document(*document);
+        } else {
+            engine->impl->put(document->id, document->field, document->value);
+        }
     });
 }
 
@@ -2370,7 +3227,73 @@ extern "C" int32_t sk_engine_update(sk_engine *engine,
                          "update arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        engine->impl->update(update->id, update->field, update->value);
+        if (!update->fields.empty()) {
+            engine->impl->update_document(*update);
+        } else {
+            engine->impl->update(update->id, update->field, update->value);
+        }
+    });
+}
+
+extern "C" int32_t sk_engine_get(const sk_engine *engine, const char *id,
+                                  sk_document **out_document, uint8_t *error,
+                                  uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_document) *out_document = nullptr;
+    if (!engine || !engine->impl || !id || !out_document) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "get arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto document = engine->impl->get_value_document_for_abi(id);
+        if (!document.fields.empty()) {
+            *out_document = std::make_unique<sk_document>(std::move(document)).release();
+        }
+    });
+}
+
+extern "C" int32_t sk_document_field_count(const sk_document *document,
+                                             uint32_t *out_count, uint8_t *error,
+                                             uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !out_count) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "document field count arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (document->fields.size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::runtime_error("document field count exceeds native capacity");
+        }
+        *out_count = static_cast<uint32_t>(document->fields.size());
+    });
+}
+
+extern "C" int32_t sk_document_field(const sk_document *document, uint32_t index,
+                                      const char **out_name, uint32_t *out_name_length,
+                                      uint32_t *out_kind, const char **out_string,
+                                      uint32_t *out_string_length, int64_t *out_integer,
+                                      double *out_float, uint8_t *out_boolean,
+                                      uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !out_name || !out_name_length || !out_kind || !out_string ||
+        !out_string_length || !out_integer || !out_float || !out_boolean) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "document field arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (index >= document->fields.size()) {
+            throw std::invalid_argument("document field index is out of range");
+        }
+        const auto &field = document->fields[index];
+        if (field.name.size() > std::numeric_limits<uint32_t>::max() ||
+            field.value.string.size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::runtime_error("document field value exceeds native capacity");
+        }
+        *out_name = field.name.data();
+        *out_name_length = static_cast<uint32_t>(field.name.size());
+        *out_kind = field.value.kind;
+        *out_string = field.value.string.data();
+        *out_string_length = static_cast<uint32_t>(field.value.string.size());
+        *out_integer = field.value.integer;
+        *out_float = field.value.floating;
+        *out_boolean = field.value.boolean ? 1 : 0;
     });
 }
 
@@ -2453,6 +3376,233 @@ extern "C" int32_t sk_search_result_id(const sk_search_result *result,
 extern "C" void sk_search_result_destroy(sk_search_result *result) SK_NOEXCEPT {
     destroy_noexcept(result);
 }
+
+template <typename Container>
+void append_owned_value(Container &container, const char *field, OwnedValue value) {
+    validate_field_name(field);
+    if (*field == '\0') throw std::invalid_argument("attribute field must not be empty");
+    container.emplace_back(field, std::move(value));
+}
+
+extern "C" int32_t sk_local_search_request_create(
+    const char *rank_profile, uint32_t limit, uint32_t offset,
+    uint32_t summary_kind, sk_local_search_request **out_request,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_request) *out_request = nullptr;
+    if (!rank_profile || !out_request) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local search request arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_rank_profile(rank_profile);
+        if (*rank_profile == '\0') throw std::invalid_argument("rank profile must not be empty");
+        if (limit > MAX_SEARCH_LIMIT) throw std::invalid_argument("search limit is too large");
+        if (summary_kind != SK_SUMMARY_NONE && summary_kind != SK_SUMMARY_DEFAULT && summary_kind != SK_SUMMARY_FIELDS) throw std::invalid_argument("unsupported summary kind");
+        auto request = std::make_unique<sk_local_search_request>();
+        request->rank_profile = rank_profile;
+        request->limit = limit;
+        request->offset = offset;
+        request->summary_kind = summary_kind;
+        *out_request = request.release();
+    });
+}
+
+extern "C" int32_t sk_local_search_request_add_sort(
+    sk_local_search_request *request, const char *field, uint32_t order,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local sort arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (order != SK_SORT_ASCENDING && order != SK_SORT_DESCENDING) throw std::invalid_argument("unsupported sort order");
+        request->sort.emplace_back(field, order);
+    });
+}
+
+extern "C" int32_t sk_local_search_request_add_summary_field(
+    sk_local_search_request *request, const char *field,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local summary arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (request->summary_kind != SK_SUMMARY_FIELDS) throw std::invalid_argument("summary fields require Fields summary mode");
+        if (std::find(request->summary_fields.begin(), request->summary_fields.end(), field) != request->summary_fields.end()) throw std::invalid_argument("summary fields must not contain duplicates");
+        request->summary_fields.emplace_back(field);
+    });
+}
+
+extern "C" void sk_local_search_request_destroy(sk_local_search_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
+
+extern "C" int32_t sk_engine_search_local(
+    const sk_engine *engine, const sk_query *query,
+    const sk_local_search_request *request, sk_local_search_result **out_result,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_result) *out_result = nullptr;
+    if (!engine || !engine->impl || !query || !request || !out_result) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local search arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_local_search_result>();
+        static_cast<LocalSearchResultState &>(*result) = engine->impl->search_local_result(*query, *request);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        engine->impl->failpoint("result_after_allocation");
+        result->failpoints = &engine->impl->failpoints();
+#endif
+        *out_result = result.release();
+    });
+}
+
+extern "C" uint64_t sk_local_search_result_total_hit_count(const sk_local_search_result *result) SK_NOEXCEPT { return result ? result->total_hit_count : 0; }
+extern "C" uint32_t sk_local_search_result_hit_count(const sk_local_search_result *result) SK_NOEXCEPT { return result ? static_cast<uint32_t>(result->hits.size()) : 0; }
+
+extern "C" int32_t sk_local_search_result_hit(
+    const sk_local_search_result *result, uint32_t index, const char **out_id,
+    uint32_t *out_id_length, double *out_score, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_id) *out_id = nullptr;
+    if (out_id_length) *out_id_length = 0;
+    if (out_score) *out_score = 0.0;
+    if (!result || !out_id || !out_id_length || !out_score) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local hit arguments are invalid");
+    if (index >= result->hits.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local hit index is out of bounds");
+    return invoke(error, error_capacity, [&] {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->failpoints) result->failpoints->hit("result_before_copy");
+#endif
+        *out_id = result->hits[index].id.data();
+        *out_id_length = static_cast<uint32_t>(result->hits[index].id.size());
+        *out_score = result->hits[index].score;
+    });
+}
+
+extern "C" uint32_t sk_local_search_result_summary_count(const sk_local_search_result *result, uint32_t hit_index) SK_NOEXCEPT {
+    return result && hit_index < result->hits.size() ? static_cast<uint32_t>(result->hits[hit_index].summary.size()) : 0;
+}
+
+extern "C" int32_t sk_local_search_result_summary_name(
+    const sk_local_search_result *result, uint32_t hit_index, uint32_t summary_index,
+    const char **out_name, uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_name || !out_length || hit_index >= result->hits.size() || summary_index >= result->hits[hit_index].summary.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "summary name arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        const auto &name = result->hits[hit_index].summary[summary_index].first;
+        *out_name = name.data();
+        *out_length = static_cast<uint32_t>(name.size());
+    });
+}
+
+extern "C" int32_t sk_local_search_result_summary_value(
+    const sk_local_search_result *result, uint32_t hit_index, uint32_t summary_index,
+    uint32_t *out_kind, const char **out_string, uint32_t *out_string_length,
+    int64_t *out_integer, double *out_float, uint8_t *out_boolean,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_kind) *out_kind = 0;
+    if (out_string) *out_string = nullptr;
+    if (out_string_length) *out_string_length = 0;
+    if (out_integer) *out_integer = 0;
+    if (out_float) *out_float = 0.0;
+    if (out_boolean) *out_boolean = 0;
+    if (!result || !out_kind || !out_string || !out_string_length || !out_integer || !out_float || !out_boolean || hit_index >= result->hits.size() || summary_index >= result->hits[hit_index].summary.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "summary value arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        const auto &value = result->hits[hit_index].summary[summary_index].second;
+        *out_kind = value.kind;
+        *out_string = value.string.data();
+        *out_string_length = static_cast<uint32_t>(value.string.size());
+        *out_integer = value.integer;
+        *out_float = value.floating;
+        *out_boolean = value.boolean;
+    });
+}
+
+extern "C" void sk_local_search_result_destroy(sk_local_search_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
+
+extern "C" int32_t sk_attribute_document_create(
+    const char *id, sk_attribute_document **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!id || !out) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute document arguments are invalid");
+    return invoke(error, error_capacity, [&] { validate_document_id(id); auto document = std::make_unique<sk_attribute_document>(); document->id = id; *out = document.release(); });
+}
+
+extern "C" int32_t sk_attribute_document_add_string(sk_attribute_document *document, const char *field, const char *value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !field || !value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute string arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_STRING; v.string = value; append_owned_value(document->fields, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_document_add_integer(sk_attribute_document *document, const char *field, int64_t value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute integer arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_INTEGER; v.integer = value; append_owned_value(document->fields, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_document_add_float(sk_attribute_document *document, const char *field, double value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute float arguments are invalid");
+    return invoke(error, error_capacity, [&] { if (!std::isfinite(value)) throw std::invalid_argument("attribute float value must be finite"); OwnedValue v; v.kind = SK_VALUE_FLOAT; v.floating = value; append_owned_value(document->fields, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_document_add_boolean(sk_attribute_document *document, const char *field, uint8_t value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute boolean arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_BOOLEAN; v.boolean = value != 0; append_owned_value(document->fields, field, std::move(v)); });
+}
+extern "C" void sk_attribute_document_destroy(sk_attribute_document *document) SK_NOEXCEPT { destroy_noexcept(document); }
+
+extern "C" int32_t sk_attribute_update_create(const char *id, sk_attribute_update **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!id || !out) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute update arguments are invalid");
+    return invoke(error, error_capacity, [&] { validate_document_id(id); auto update = std::make_unique<sk_attribute_update>(); update->id = id; *out = update.release(); });
+}
+extern "C" int32_t sk_attribute_update_add_string(sk_attribute_update *update, const char *field, const char *value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field || !value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute string update arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_STRING; v.string = value; append_owned_value(update->assignments, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_update_add_integer(sk_attribute_update *update, const char *field, int64_t value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute integer update arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_INTEGER; v.integer = value; append_owned_value(update->assignments, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_update_add_float(sk_attribute_update *update, const char *field, double value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute float update arguments are invalid");
+    return invoke(error, error_capacity, [&] { if (!std::isfinite(value)) throw std::invalid_argument("attribute float value must be finite"); OwnedValue v; v.kind = SK_VALUE_FLOAT; v.floating = value; append_owned_value(update->assignments, field, std::move(v)); });
+}
+extern "C" int32_t sk_attribute_update_add_boolean(sk_attribute_update *update, const char *field, uint8_t value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute boolean update arguments are invalid");
+    return invoke(error, error_capacity, [&] { OwnedValue v; v.kind = SK_VALUE_BOOLEAN; v.boolean = value != 0; append_owned_value(update->assignments, field, std::move(v)); });
+}
+extern "C" void sk_attribute_update_destroy(sk_attribute_update *update) SK_NOEXCEPT { destroy_noexcept(update); }
+
+extern "C" int32_t sk_engine_put_attributes(sk_engine *engine, const sk_attribute_document *document, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl || !document) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute put arguments are invalid");
+    return invoke(error, error_capacity, [&] { engine->impl->put_attributes(*document); });
+}
+extern "C" int32_t sk_engine_update_attributes(sk_engine *engine, const sk_attribute_update *update, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl || !update) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute update arguments are invalid");
+    return invoke(error, error_capacity, [&] { engine->impl->update_attributes(*update); });
+}
+
+extern "C" int32_t sk_local_grouping_request_create(const char *field, sk_local_grouping_request **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!field || !out) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "grouping request arguments are invalid");
+    return invoke(error, error_capacity, [&] { validate_field_name(field); auto request = std::make_unique<sk_local_grouping_request>(); request->group_field = field; *out = request.release(); });
+}
+extern "C" int32_t sk_local_grouping_request_add_aggregation(sk_local_grouping_request *request, uint32_t kind, const char *field, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "grouping aggregation arguments are invalid");
+    return invoke(error, error_capacity, [&] { validate_field_name(field); if (kind < SK_AGGREGATION_SUM || kind > SK_AGGREGATION_AVERAGE) throw std::invalid_argument("unsupported aggregation kind"); request->aggregations.push_back({kind, field}); });
+}
+extern "C" void sk_local_grouping_request_destroy(sk_local_grouping_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
+extern "C" int32_t sk_engine_group_local(const sk_engine *engine, const sk_query *query, const sk_local_grouping_request *request, sk_local_grouping_result **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!engine || !engine->impl || !query || !request || !out) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "local grouping arguments are invalid");
+    return invoke(error, error_capacity, [&] { auto result = std::make_unique<sk_local_grouping_result>(); static_cast<LocalGroupingResultState &>(*result) = engine->impl->group_local_result(*query, *request); *out = result.release(); });
+}
+extern "C" uint32_t sk_local_grouping_result_group_count(const sk_local_grouping_result *result) SK_NOEXCEPT { return result ? static_cast<uint32_t>(result->groups.size()) : 0; }
+extern "C" int32_t sk_local_grouping_result_group(const sk_local_grouping_result *result, uint32_t index, uint32_t *out_key_kind, const char **out_key_string, uint32_t *out_key_string_length, int64_t *out_key_integer, uint64_t *out_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_key_kind) *out_key_kind = 0;
+    if (out_key_string) *out_key_string = nullptr;
+    if (out_key_string_length) *out_key_string_length = 0;
+    if (out_key_integer) *out_key_integer = 0;
+    if (out_count) *out_count = 0;
+    if (!result || !out_key_kind || !out_key_string || !out_key_string_length || !out_key_integer || !out_count || index >= result->groups.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "group result arguments are invalid");
+    return invoke(error, error_capacity, [&] { const auto &group = result->groups[index]; *out_key_kind = group.key.kind; *out_key_string = group.key.string.data(); *out_key_string_length = static_cast<uint32_t>(group.key.string.size()); *out_key_integer = group.key.integer; *out_count = group.count; });
+}
+extern "C" uint32_t sk_local_grouping_result_aggregation_count(const sk_local_grouping_result *result, uint32_t index) SK_NOEXCEPT { return result && index < result->groups.size() ? static_cast<uint32_t>(result->groups[index].aggregations.size()) : 0; }
+extern "C" int32_t sk_local_grouping_result_aggregation(const sk_local_grouping_result *result, uint32_t group_index, uint32_t aggregation_index, uint32_t *out_kind, int64_t *out_integer, double *out_float, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_kind) *out_kind = 0;
+    if (out_integer) *out_integer = 0;
+    if (out_float) *out_float = 0.0;
+    if (!result || !out_kind || !out_integer || !out_float || group_index >= result->groups.size() || aggregation_index >= result->groups[group_index].aggregations.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "aggregation result arguments are invalid");
+    return invoke(error, error_capacity, [&] { const auto &value = result->groups[group_index].aggregations[aggregation_index]; *out_kind = value.kind; *out_integer = value.integer; *out_float = value.floating; });
+}
+extern "C" void sk_local_grouping_result_destroy(sk_local_grouping_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
 
 namespace {
 
@@ -2889,7 +4039,7 @@ extern "C" int32_t sk_query_add_text(sk_query *query, uint32_t kind,
 }
 
 extern "C" int32_t sk_query_add_equals(sk_query *query, const char *field,
-                                        int32_t value, uint8_t *error,
+                                        int64_t value, uint8_t *error,
                                         uint32_t error_capacity) SK_NOEXCEPT {
     if (!query || !field) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
@@ -2904,8 +4054,8 @@ extern "C" int32_t sk_query_add_equals(sk_query *query, const char *field,
 }
 
 extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
-                                       uint32_t lower_kind, int32_t lower_value,
-                                       uint32_t upper_kind, int32_t upper_value,
+                                       uint32_t lower_kind, int64_t lower_value,
+                                       uint32_t upper_kind, int64_t upper_value,
                                        uint8_t *error,
                                        uint32_t error_capacity) SK_NOEXCEPT {
     if (!query || !field) {
@@ -2918,6 +4068,89 @@ extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
         auto range = search::query::Range(make_query_range(
             lower_kind, lower_value, upper_kind, upper_value));
         query->builder.addRangeTerm(range, field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_string_equals(
+    sk_query *query, const char *field, const char *value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field || !value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "string equality arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_STRING, field);
+        query->builder.addStringTerm(value, field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_float_equals(
+    sk_query *query, const char *field, double value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "float equality arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        if (!std::isfinite(value)) throw std::invalid_argument("attribute float value must be finite");
+        validate_query_field(*query, SK_QUERY_FIELD_FLOAT, field);
+        std::ostringstream text;
+        text.imbue(std::locale::classic());
+        text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+        query->builder.addNumberTerm(text.str(), field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_boolean_equals(
+    sk_query *query, const char *field, uint8_t value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "boolean equality arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_BOOLEAN, field);
+        query->builder.addNumberTerm(value ? "1" : "0", field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_exists(
+    sk_query *query, const char *field, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute exists arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        query->builder.addRangeTerm(search::query::Range("[;]"), field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_integer_range(
+    sk_query *query, const char *field, uint32_t lower_kind,
+    int64_t lower_value, uint32_t upper_kind, int64_t upper_value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "integer range arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        query->builder.addRangeTerm(search::query::Range(make_query_range(lower_kind, lower_value, upper_kind, upper_value)), field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_attribute_float_range(
+    sk_query *query, const char *field, uint32_t lower_kind,
+    double lower_value, uint32_t upper_kind, double upper_value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "float range arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        if ((lower_kind != SK_QUERY_BOUND_UNBOUNDED && !std::isfinite(lower_value)) ||
+            (upper_kind != SK_QUERY_BOUND_UNBOUNDED && !std::isfinite(upper_value))) {
+            throw std::invalid_argument("attribute float bound must be finite");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_FLOAT, field);
+        const auto delimiter = [](uint32_t kind, bool lower) {
+            if (kind == SK_QUERY_BOUND_UNBOUNDED) return lower ? '[' : ']';
+            if (kind == SK_QUERY_BOUND_INCLUDED) return lower ? '[' : ']';
+            if (kind == SK_QUERY_BOUND_EXCLUDED) return lower ? '<' : '>';
+            throw std::invalid_argument("unsupported attribute range bound kind");
+        };
+        std::ostringstream text;
+        text.imbue(std::locale::classic());
+        text << delimiter(lower_kind, true);
+        if (lower_kind != SK_QUERY_BOUND_UNBOUNDED) text << std::setprecision(std::numeric_limits<double>::max_digits10) << lower_value;
+        text << ';';
+        if (upper_kind != SK_QUERY_BOUND_UNBOUNDED) text << std::setprecision(std::numeric_limits<double>::max_digits10) << upper_value;
+        text << delimiter(upper_kind, false);
+        query->builder.addRangeTerm(search::query::Range(text.str()), field, query->allocate_term_id(), Weight(1));
     });
 }
 

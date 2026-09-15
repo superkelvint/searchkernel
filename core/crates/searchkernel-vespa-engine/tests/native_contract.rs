@@ -1,5 +1,6 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Engine, Field, FieldType, Query, RangeBound, Schema, TextDocument, TextQuery,
+    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, Schema, SearchRequest,
+    TextDocument, TextQuery,
 };
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -145,7 +146,7 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "attributes.cfg",
-            "attribute[0].datatype INT32",
+            "attribute[0].datatype LONG",
             "attribute[0].datatype DOUBLE",
         ),
         (
@@ -231,8 +232,12 @@ fn runtime_operations_enforce_manifest_field_semantics() {
             "bm25",
         )
         .is_err());
-    assert!(engine.put("wrong-integer-type", "title", 1).is_err());
-    assert!(engine.search("title", 1, 10).is_err());
+    assert!(engine
+        .put(Document::new("wrong-integer-type").field("title", 1_i64))
+        .is_err());
+    assert!(engine
+        .search(SearchRequest::new(Query::equals("title", 1)).limit(10))
+        .is_err());
 
     engine.close().expect("close semantic test engine");
     let _ = fs::remove_dir_all(config);
@@ -358,24 +363,21 @@ fn native_query_can_outlive_engine() {
 }
 
 #[test]
-fn low_level_query_range_accepts_full_signed_i32_domain() {
+fn low_level_query_range_accepts_full_signed_i64_domain() {
     let (config, data) = compile_config(
         "query-signed-range",
         &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
     );
     let engine = Engine::open(&data, &config).expect("open signed range config");
     engine
-        .put("minimum", "qty", i32::MIN)
+        .put(Document::new("minimum").field("qty", i64::MIN))
         .expect("insert minimum integer");
     let result = engine
-        .search_query(
-            &Query::Range {
-                field: "qty".to_owned(),
-                lower: RangeBound::Included(i32::MIN),
-                upper: RangeBound::Included(i32::MIN),
-            },
-            "default",
-        )
+        .search(SearchRequest::new(Query::Range {
+            field: "qty".to_owned(),
+            lower: RangeBound::Included(i64::MIN),
+            upper: RangeBound::Included(i64::MIN),
+        }))
         .expect("search minimum integer");
     assert_eq!(result.hits.len(), 1);
     assert_eq!(result.hits[0].document_id, "minimum");
@@ -605,7 +607,7 @@ fn reopening_after_a_second_write_preserves_the_first_document() {
     for cycle in 0..2 {
         let engine = Engine::open(&data, &config).expect("open persistent engine");
         engine
-            .put(&format!("reopen-{cycle:04}"), "qty", cycle)
+            .put(Document::new(format!("reopen-{cycle:04}")).field("qty", i64::from(cycle)))
             .expect("persist document");
         engine.close().expect("close persistent engine");
 
@@ -613,10 +615,13 @@ fn reopening_after_a_second_write_preserves_the_first_document() {
         for document in 0..=cycle {
             let id = format!("reopen-{document:04}");
             let hits = engine
-                .search("qty", document, 1_000_000)
-                .expect("search document");
+                .search(
+                    SearchRequest::new(Query::equals("qty", i64::from(document))).limit(1_000_000),
+                )
+                .expect("search document")
+                .hits;
             assert!(
-                hits.iter().any(|hit| hit == &id),
+                hits.iter().any(|hit| hit.document_id == id),
                 "reopen cycle {cycle} lost {id}"
             );
         }

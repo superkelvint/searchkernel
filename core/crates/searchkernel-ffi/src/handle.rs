@@ -8,7 +8,7 @@ pub(crate) struct HandleState {
 }
 
 struct Registry {
-    #[cfg(feature = "ffi-test-support")]
+    #[cfg(any(feature = "ffi-test-support", feature = "production"))]
     next: u64,
     entries: BTreeMap<u64, Arc<HandleState>>,
 }
@@ -18,7 +18,7 @@ static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| {
         Mutex::new(Registry {
-            #[cfg(feature = "ffi-test-support")]
+            #[cfg(any(feature = "ffi-test-support", feature = "production"))]
             next: 1,
             entries: BTreeMap::new(),
         })
@@ -32,15 +32,17 @@ fn lock_registry() -> std::sync::MutexGuard<'static, Registry> {
     }
 }
 
-#[cfg(feature = "ffi-test-support")]
+#[cfg(any(feature = "ffi-test-support", feature = "production"))]
 pub(crate) fn register(context: Arc<IndexContext>, backend: Arc<dyn Backend>) -> u64 {
     let mut registry = lock_registry();
     let handle = registry.next;
-    assert_ne!(handle, 0, "handle counter wrapped");
-    registry.next = registry
-        .next
-        .checked_add(1)
-        .expect("handle counter exhausted");
+    if handle == 0 {
+        return 0;
+    }
+    let Some(next) = registry.next.checked_add(1) else {
+        return 0;
+    };
+    registry.next = next;
     registry
         .entries
         .insert(handle, Arc::new(HandleState { context, backend }));

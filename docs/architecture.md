@@ -120,7 +120,7 @@ let engine = Engine::open(path, config)?;
 
 engine.put(document)?;
 engine.update(update)?;
-engine.remove(id)?;
+engine.delete(id)?;
 
 let result = engine.search(request)?;
 ```

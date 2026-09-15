@@ -1,5 +1,5 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Engine, Field, FieldType, Query, RangeBound, Schema, TextDocument,
+    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, Schema, SearchRequest,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -58,8 +58,8 @@ fn schema(s: &Scenario) -> Schema {
 fn bound(v: &Value) -> RangeBound {
     match v["kind"].as_str().unwrap() {
         "unbounded" => RangeBound::Unbounded,
-        "included" => RangeBound::Included(v["value"].as_i64().unwrap() as i32),
-        "excluded" => RangeBound::Excluded(v["value"].as_i64().unwrap() as i32),
+        "included" => RangeBound::Included(v["value"].as_i64().unwrap()),
+        "excluded" => RangeBound::Excluded(v["value"].as_i64().unwrap()),
         _ => panic!("bad bound"),
     }
 }
@@ -92,7 +92,7 @@ fn query(v: &Value) -> Query {
         "not" => Query::Not(Box::new(query(&v["child"]))),
         "equals" => Query::Equals {
             field: v["field"].as_str().unwrap().into(),
-            value: v["value"].as_i64().unwrap() as i32,
+            value: v["value"].as_i64().unwrap(),
         },
         "range" => Query::Range {
             field: v["field"].as_str().unwrap().into(),
@@ -114,6 +114,7 @@ fn canon_bound(b: &RangeBound) -> Value {
 }
 fn canon(q: &Query) -> Value {
     match q {
+        Query::True => json!({"kind":"true"}),
         Query::Term { field, text } => json!({"kind":"term","field":field,"text":text}),
         Query::Phrase { field, text } => json!({"kind":"phrase","field":field,"text":text}),
         Query::And(xs) => json!({"kind":"and","children":xs.iter().map(canon).collect::<Vec<_>>()}),
@@ -134,26 +135,15 @@ fn populate(engine: &mut Engine, s: &Scenario) {
     let mut created = HashSet::new();
     for d in &s.documents {
         if created.insert(d.id.clone()) {
-            match d.kind.as_str() {
-                "text" => engine
-                    .put_text(TextDocument {
-                        id: &d.id,
-                        field: &d.field,
-                        text: d.value.as_str().unwrap(),
-                    })
-                    .expect("put text"),
-                "integer" => engine
-                    .put(&d.id, &d.field, d.value.as_i64().unwrap() as i32)
-                    .expect("put int"),
-                _ => panic!(),
+            let mut document = Document::new(&d.id);
+            for field in s.documents.iter().filter(|field| field.id == d.id) {
+                document = match field.kind.as_str() {
+                    "text" => document.field(&field.field, field.value.as_str().unwrap()),
+                    "integer" => document.field(&field.field, field.value.as_i64().unwrap()),
+                    _ => panic!(),
+                };
             }
-        } else {
-            match d.kind.as_str() {
-                "integer" => engine
-                    .update(&d.id, &d.field, d.value.as_i64().unwrap() as i32)
-                    .expect("update int"),
-                _ => panic!("only integer secondary fields are supported"),
-            }
+            engine.put(document).expect("put document");
         }
     }
 }
@@ -188,9 +178,9 @@ fn main() {
             let mut e = Engine::open(&data, &cfg).expect("open");
             populate(&mut e, &s);
             let result = if a[5] == "typed" {
-                e.search_query(&query(&s.typed), "default")
+                e.search(SearchRequest::new(query(&s.typed)))
             } else {
-                e.search_yql(&s.yql, "default")
+                e.search(SearchRequest::new(Query::from_yql(&s.yql).expect("parse yql")))
             }
             .expect("query");
             let mut hits = result

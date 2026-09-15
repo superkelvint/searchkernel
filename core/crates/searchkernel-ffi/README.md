@@ -4,6 +4,12 @@ This crate exposes the small C ABI used by non-Rust callers. It frames
 FlatBuffers requests, verifies them, routes them through `searchkernel-ir`,
 and returns owned response buffers.
 
+The opt-in `production` feature adds `sk_create` and `sk_open` lifecycle
+entry points. `sk_create` accepts canonical FlatBuffers `IndexDefinition`
+bytes and creates a durable index; `sk_open` reopens one from its persisted
+`IndexManifest`. The default transport-only build leaves these bootstrap
+operations unsupported so the C6 dependency firewall remains effective.
+
 ## Start reading here
 
 1. Read `include/searchkernel_ffi.h` for the C-facing contract.

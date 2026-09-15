@@ -37,13 +37,17 @@ require_pinned_vespa() {
   expected="$(expected_vespa_revision)"
   [[ -d "$vespa/.git" || -f "$vespa/.git" ]] ||
     fail_verification "missing pinned Vespa checkout: $vespa"
-  actual="$(git -C "$vespa" rev-parse HEAD 2>/dev/null)" ||
+  # The verifier is commonly run as root inside the Vespa build container
+  # while the checkout is owned by the image's unprivileged build user. Tell
+  # Git exactly which checkout is being inspected; this does not relax the
+  # pinned-revision or clean-tree checks below.
+  actual="$(git -c safe.directory="$vespa" -C "$vespa" rev-parse HEAD 2>/dev/null)" ||
     fail_verification "cannot determine Vespa checkout revision: $vespa"
   [[ "$actual" == "$expected" ]] ||
     fail_verification "expected Vespa $expected, found $actual"
-  git -C "$vespa" diff --quiet -- ||
+  git -c safe.directory="$vespa" -C "$vespa" diff --quiet -- ||
     fail_verification "tracked Vespa source is dirty: $vespa"
-  git -C "$vespa" diff --cached --quiet -- ||
+  git -c safe.directory="$vespa" -C "$vespa" diff --cached --quiet -- ||
     fail_verification "staged Vespa source changes found: $vespa"
 }
 
@@ -57,7 +61,7 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as stream:
     manifest = json.load(stream)
-assert manifest.get("native_abi_version") == 2, manifest
+assert manifest.get("native_abi_version") == 3, manifest
 assert manifest.get("vespa_commit") == sys.argv[2], manifest
 PY
 }

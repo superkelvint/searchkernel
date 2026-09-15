@@ -1,4 +1,4 @@
-use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Query, Schema};
+use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Query, Schema, SearchRequest};
 use serde_json::Value;
 use std::{fs, path::PathBuf};
 fn q(v: &Value) -> Query {
@@ -11,7 +11,7 @@ fn q(v: &Value) -> Query {
         "or" => Query::Or(v["children"].as_array().unwrap().iter().map(q).collect()),
         "equals" => Query::Equals {
             field: v["field"].as_str().unwrap().into(),
-            value: v["value"].as_i64().unwrap() as i32,
+            value: v["value"].as_i64().unwrap(),
         },
         _ => panic!("unsupported error fixture query"),
     }
@@ -66,9 +66,9 @@ fn main() {
     let e = Engine::open(&data, &cfg).unwrap();
     let path = &a[1];
     let r = if path == "typed" {
-        e.search_query(&q(&c["typed"]), "default").map(|_| ())
+        e.search(SearchRequest::new(q(&c["typed"]))).map(|_| ())
     } else {
-        e.search_yql(c["yql"].as_str().unwrap(), "default")
+        e.search(SearchRequest::new(Query::from_yql(c["yql"].as_str().unwrap())?))
             .map(|_| ())
     };
     match r {

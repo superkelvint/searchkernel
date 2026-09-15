@@ -2,6 +2,8 @@
 
 use crate::{Error, Result};
 
+pub use crate::document::ScalarValue as Value;
+
 pub(crate) const MAX_QUERY_DEPTH: usize = 256;
 pub(crate) const MAX_QUERY_NODES: usize = 65_536;
 pub(crate) const MAX_YQL_BYTES: usize = 4 * 1024 * 1024;
@@ -10,13 +12,22 @@ pub(crate) const MAX_YQL_BYTES: usize = 4 * 1024 * 1024;
 /// A bound of an integer attribute range.
 pub enum RangeBound {
     Unbounded,
-    Included(i32),
-    Excluded(i32),
+    Included(i64),
+    Excluded(i64),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+/// A bound of an attribute range.
+pub enum AttributeBound {
+    Unbounded,
+    Included(Value),
+    Excluded(Value),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 /// A low-level query which is lowered directly to Vespa query nodes.
 pub enum Query {
+    True,
     Term {
         field: String,
         text: String,
@@ -30,7 +41,7 @@ pub enum Query {
     Not(Box<Query>),
     Equals {
         field: String,
-        value: i32,
+        value: i64,
     },
     Range {
         field: String,
@@ -40,9 +51,53 @@ pub enum Query {
     Exists {
         field: String,
     },
+    AttributeEquals {
+        field: String,
+        value: Value,
+    },
+    AttributeRange {
+        field: String,
+        lower: AttributeBound,
+        upper: AttributeBound,
+    },
 }
 
 impl Query {
+    pub fn term(field: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::Term {
+            field: field.into(),
+            text: text.into(),
+        }
+    }
+
+    pub fn phrase(field: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::Phrase {
+            field: field.into(),
+            text: text.into(),
+        }
+    }
+
+    pub fn equals(field: impl Into<String>, value: i64) -> Self {
+        Self::Equals {
+            field: field.into(),
+            value,
+        }
+    }
+
+    pub fn range(field: impl Into<String>, lower: RangeBound, upper: RangeBound) -> Self {
+        Self::Range {
+            field: field.into(),
+            lower,
+            upper,
+        }
+    }
+
+    pub fn exists(field: impl Into<String>) -> Self {
+        Self::Exists {
+            field: field.into(),
+        }
+    }
+
     /// Parse the supported YQL subset into the same model used by typed callers.
     pub fn from_yql(yql: &str) -> Result<Self> {
         let query = yql::parse(yql)?.query;
@@ -51,7 +106,7 @@ impl Query {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParsedYql {
     pub source: String,
     pub query: Query,
@@ -81,6 +136,7 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
         )));
     }
     match query {
+        Query::True => {}
         Query::Term { field, text } | Query::Phrase { field, text } => {
             if field.is_empty() || text.is_empty() {
                 return Err(invalid_query("text query field and text must not be empty"));
@@ -107,10 +163,25 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 return Err(invalid_query("numeric query field must not be empty"));
             }
         }
-        Query::Range { field, .. } => {
+        Query::Range { field, .. } | Query::AttributeRange { field, .. } => {
             if field.is_empty() {
                 return Err(invalid_query("range query field must not be empty"));
             }
+        }
+        Query::AttributeEquals { field, value } => {
+            if field.is_empty() {
+                return Err(invalid_query("attribute query field must not be empty"));
+            }
+            validate_value(value)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_value(value: &Value) -> Result<()> {
+    if let Value::Float(value) = value {
+        if !value.is_finite() {
+            return Err(invalid_query("attribute float value must be finite"));
         }
     }
     Ok(())
@@ -188,12 +259,12 @@ mod yql {
             match self.peek() {
                 Token::End => {}
                 Token::Identifier(name) if is_unsupported_clause(name) => {
-                    return Err(unsupported(format!("unsupported YQL clause `{name}`")))
+                    return Err(unsupported(format!("unsupported YQL clause `{name}`")));
                 }
                 _ => {
                     return Err(invalid_yql_error(
                         "unexpected tokens after query expression",
-                    ))
+                    ));
                 }
             }
             Ok(super::ParsedYql { source, query })
@@ -475,7 +546,7 @@ mod yql {
             }
         }
 
-        fn take_signed_integer(&mut self) -> Result<Option<i32>> {
+        fn take_signed_integer(&mut self) -> Result<Option<i64>> {
             let negative = self.take_simple(Token::Minus);
             let Some(magnitude) = self.take_integer_magnitude() else {
                 if negative {
@@ -490,7 +561,7 @@ mod yql {
     #[derive(Debug, Clone, Copy)]
     enum Endpoint {
         Unbounded,
-        Included(i32),
+        Included(i64),
     }
 
     fn apply_bounds(
@@ -593,7 +664,7 @@ mod yql {
                     let value = std::str::from_utf8(&bytes[start..index])
                         .expect("ASCII digits are valid UTF-8")
                         .parse::<u64>()
-                        .map_err(|_| invalid_yql_error("integer literal is outside i32 range"))?;
+                        .map_err(|_| invalid_yql_error("integer literal is outside i64 range"))?;
                     tokens.push(Token::Integer(value));
                 }
                 byte if is_identifier_start(byte) => {
@@ -615,21 +686,21 @@ mod yql {
         Ok(tokens)
     }
 
-    fn signed_integer(magnitude: u64, negative: bool) -> Result<i32> {
-        const I32_MAX: u64 = i32::MAX as u64;
-        const I32_MIN_MAGNITUDE: u64 = I32_MAX + 1;
+    fn signed_integer(magnitude: u64, negative: bool) -> Result<i64> {
+        const I64_MAX: u64 = i64::MAX as u64;
+        const I64_MIN_MAGNITUDE: u64 = I64_MAX + 1;
         if negative {
-            if magnitude == I32_MIN_MAGNITUDE {
-                Ok(i32::MIN)
-            } else if magnitude <= I32_MAX {
-                Ok(-(magnitude as i32))
+            if magnitude == I64_MIN_MAGNITUDE {
+                Ok(i64::MIN)
+            } else if magnitude <= I64_MAX {
+                Ok(-(magnitude as i64))
             } else {
-                Err(invalid_yql_error("integer literal is outside i32 range"))
+                Err(invalid_yql_error("integer literal is outside i64 range"))
             }
-        } else if magnitude <= I32_MAX {
-            Ok(magnitude as i32)
+        } else if magnitude <= I64_MAX {
+            Ok(magnitude as i64)
         } else {
-            Err(invalid_yql_error("integer literal is outside i32 range"))
+            Err(invalid_yql_error("integer literal is outside i64 range"))
         }
     }
 
@@ -668,7 +739,7 @@ mod yql {
                     index += 1;
                 }
                 byte if byte < 0x20 => {
-                    return Err(invalid_yql_error("control character in string"))
+                    return Err(invalid_yql_error("control character in string"));
                 }
                 _ => {
                     let character = input_char_at(bytes, index)?;
@@ -1006,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn yql_accepts_negative_i32_values() {
+    fn yql_accepts_negative_i64_values() {
         assert_eq!(
             Query::from_yql("select * from sources * where qty = -10").unwrap(),
             Query::Equals {
@@ -1015,10 +1086,11 @@ mod tests {
             }
         );
         assert_eq!(
-            Query::from_yql("select * from sources * where range(qty, -2147483648, -1)").unwrap(),
+            Query::from_yql("select * from sources * where range(qty, -9223372036854775808, -1)")
+                .unwrap(),
             Query::Range {
                 field: "qty".into(),
-                lower: RangeBound::Included(i32::MIN),
+                lower: RangeBound::Included(i64::MIN),
                 upper: RangeBound::Included(-1)
             }
         );

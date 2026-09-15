@@ -1,6 +1,7 @@
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
-    ConfigCompiler, Engine, Field, FieldType, Query, Schema, TextDocument, TextQuery,
+    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, Query, Schema,
+    SearchRequest,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -36,6 +37,25 @@ fn error_message(error: impl std::fmt::Display) -> String {
     error.to_string().replace('\n', " ")
 }
 
+fn put(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
+    engine.put(Document::new(id).field("qty", value))?;
+    Ok(())
+}
+
+fn update(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
+    engine.update(DocumentUpdate::new(id).assign("qty", value))?;
+    Ok(())
+}
+
+fn search_ids(engine: &Engine, value: i64, limit: u32) -> AnyResult<Vec<String>> {
+    Ok(engine
+        .search(SearchRequest::new(Query::equals("qty", value)).limit(limit))?
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect())
+}
+
 fn lifecycle(config: &Path, root: &Path) -> AnyResult<()> {
     for cycle in 0..1_000 {
         let data = root.join(format!("cycle-{cycle}"));
@@ -51,13 +71,13 @@ fn reopen(config: &Path, data: &Path) -> AnyResult<()> {
     for cycle in 0..250 {
         let engine = open(config, data)?;
         let id = format!("reopen-{cycle:04}");
-        engine.put(&id, "qty", cycle)?;
+        put(&engine, &id, cycle)?;
         expected.insert(id, cycle);
         engine.close()?;
 
         let engine = open(config, data)?;
         for (id, value) in &expected {
-            let hits = engine.search("qty", *value, 1_000_000)?;
+            let hits = search_ids(&engine, *value, 1_000_000)?;
             if !hits.iter().any(|hit| hit == id) {
                 panic!("reopen cycle {cycle} lost {id}");
             }
@@ -71,18 +91,15 @@ fn reopen(config: &Path, data: &Path) -> AnyResult<()> {
 fn malformed(config: &Path, data: &Path) -> AnyResult<()> {
     let engine = Arc::new(open(config, data)?);
     let cases = [
-        engine.put("", "qty", 1).err().map(error_message),
-        engine.put("bad", "missing", 1).err().map(error_message),
-        engine.search("missing", 1, 1).err().map(error_message),
+        put(&engine, "", 1).err().map(error_message),
+        put(&engine, "bad", 1).err().map(error_message),
+        engine.search(SearchRequest::new(Query::equals("missing", 1)).limit(1)).err().map(error_message),
         engine
-            .search_text(TextQuery::Term { field: "qty", text: "x" }, "default")
+            .search(SearchRequest::new(Query::term("qty", "x")))
             .err()
             .map(error_message),
         engine
-            .search_query(
-                &Query::And(Vec::new()),
-                "default",
-            )
+            .search(SearchRequest::new(Query::And(Vec::new())))
             .err()
             .map(error_message),
         Query::from_yql("select * from sources * where qty = 999999999999")
@@ -96,7 +113,7 @@ fn malformed(config: &Path, data: &Path) -> AnyResult<()> {
         field: "missing".to_owned(),
         text: "x".to_owned(),
     };
-    if engine.search_query(&invalid_query, "default").is_ok() {
+    if engine.search(SearchRequest::new(invalid_query)).is_ok() {
         panic!("unknown query field unexpectedly succeeded");
     }
     let mut deep = Query::Term {
@@ -106,7 +123,7 @@ fn malformed(config: &Path, data: &Path) -> AnyResult<()> {
     for _ in 0..257 {
         deep = Query::Not(Box::new(deep));
     }
-    if engine.search_query(&deep, "default").is_ok() {
+    if engine.search(SearchRequest::new(deep)).is_ok() {
         panic!("deep query unexpectedly succeeded");
     }
     let wide = Query::And(
@@ -117,7 +134,7 @@ fn malformed(config: &Path, data: &Path) -> AnyResult<()> {
             })
             .collect(),
     );
-    if engine.search_query(&wide, "default").is_ok() {
+    if engine.search(SearchRequest::new(wide)).is_ok() {
         panic!("wide query unexpectedly succeeded");
     }
     if Query::from_yql(&"x".repeat(4 * 1024 * 1024 + 1)).is_ok() {
@@ -146,18 +163,18 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
 
     let engine = Arc::new(open(config, data)?);
     hardening::set(&engine, "mutation_before_native_call", 1, Action::Error)?;
-    if engine.put("before", "qty", 7).is_ok() {
+    if put(&engine, "before", 7).is_ok() {
         panic!("before-call failure unexpectedly succeeded");
     }
-    if !engine.search("qty", 7, 10)?.is_empty() {
+    if !search_ids(&engine, 7, 10)?.is_empty() {
         panic!("before-call failure changed state");
     }
 
     hardening::set(&engine, "mutation_after_native_call", 1, Action::StdException)?;
-    if engine.put("after", "qty", 8).is_ok() {
+    if put(&engine, "after", 8).is_ok() {
         panic!("after-call failure unexpectedly succeeded");
     }
-    if !engine.search("qty", 8, 10)?.iter().any(|id| id == "after") {
+    if !search_ids(&engine, 8, 10)?.iter().any(|id| id == "after") {
         panic!("after-call failure incorrectly rolled back native mutation");
     }
 
@@ -173,7 +190,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
         ("result_before_copy", Action::StdException, 2),
     ] {
         hardening::set(&engine, name, 1, action)?;
-        let error = match engine.search_query(&failure_query, "default") {
+        let error = match engine.search(SearchRequest::new(failure_query.clone())) {
             Ok(result) => {
                 panic!("failure injection unexpectedly succeeded at {name}: {result:?}")
             }
@@ -186,7 +203,7 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     hardening::set(&engine, "search_before_match", 1, Action::Block)?;
     let blocked_engine = Arc::clone(&engine);
     let blocked_search = thread::spawn(move || {
-        blocked_engine.search_query(&failure_query, "default")
+        blocked_engine.search(SearchRequest::new(failure_query.clone()))
     });
     for _ in 0..100 {
         if hardening::is_blocked(&engine, "search_before_match")? {
@@ -263,15 +280,15 @@ fn resources(config: &Path, data: &Path) -> AnyResult<()> {
     for cycle in 0..5 {
         let engine = open(config, data)?;
         if cycle == 0 {
-            engine.put("resource", "qty", 1)?;
+            put(&engine, "resource", 1)?;
         }
-        engine.search("qty", 1, 10)?;
+        search_ids(&engine, 1, 10)?;
         engine.close()?;
     }
     let baseline = resource_snapshot(data)?;
     for _ in 0..100 {
         let engine = open(config, data)?;
-        engine.search("qty", 1, 10)?;
+        search_ids(&engine, 1, 10)?;
         engine.close()?;
     }
     let final_state = resource_snapshot(data)?;
@@ -306,23 +323,23 @@ fn stress(config: &Path, data: &Path) -> AnyResult<()> {
         match next_random(&mut state) % 4 {
             0 => {
                 let value = (next_random(&mut state) % 32) as i32;
-                engine.put(&id, "qty", value)?;
+                put(&engine, &id, i64::from(value))?;
                 model.insert(id, value);
             }
             1 if model.contains_key(&id) => {
                 let value = (next_random(&mut state) % 32) as i32;
-                engine.update(&id, "qty", value)?;
+                update(&engine, &id, i64::from(value))?;
                 model.insert(id, value);
             }
             2 if model.remove(&id).is_some() => {
-                engine.remove(&id)?;
+                engine.delete(&id)?;
             }
             _ => {
                 let value = (next_random(&mut state) % 32) as i32;
                 if model.contains_key(&id) {
-                    engine.update(&id, "qty", value)?;
+                    update(&engine, &id, i64::from(value))?;
                 } else {
-                    engine.put(&id, "qty", value)?;
+                    put(&engine, &id, i64::from(value))?;
                 }
                 model.insert(id, value);
             }
@@ -334,7 +351,7 @@ fn stress(config: &Path, data: &Path) -> AnyResult<()> {
                     .filter_map(|(id, actual)| (*actual == value).then_some(id.clone()))
                     .collect();
                 expected.sort();
-                let mut actual = engine.search("qty", value, 1_000_000)?;
+                let mut actual = search_ids(&engine, i64::from(value), 1_000_000)?;
                 actual.sort();
                 if actual != expected {
                     panic!("seed={SEED} operation={operation} state mismatch");
@@ -348,7 +365,7 @@ fn stress(config: &Path, data: &Path) -> AnyResult<()> {
 
 fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
     let engine = Arc::new(open(config, data)?);
-    engine.put_text(TextDocument { id: "stable-text", field: "title", text: "stable fox" })?;
+    engine.put(Document::new("stable-text").field("title", "stable fox"))?;
     let mut workers = Vec::new();
     for worker in 0..8u32 {
         let engine = Arc::clone(&engine);
@@ -357,12 +374,12 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
                 let slot = (operation / 4) % 100;
                 let id = format!("writer-{worker:02}-{slot:03}");
                 match operation % 4 {
-                    0 => engine.put(&id, "qty", 1)?,
-                    1 => engine.update(&id, "qty", 2)?,
+                    0 => put(&engine, &id, 1)?,
+                    1 => update(&engine, &id, 2)?,
                     2 => {
-                        engine.remove(&id)?;
+                        engine.delete(&id)?;
                     }
-                    _ => engine.put(&id, "qty", 3)?,
+                    _ => put(&engine, &id, 3)?,
                 }
             }
             Ok(())
@@ -373,11 +390,8 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
         let engine = Arc::clone(&engine);
         readers.push(thread::spawn(move || -> AnyResult<()> {
             for _ in 0..50_000 {
-                let _ = engine.search("qty", 3, 1_000)?;
-                let result = engine.search_text(
-                    TextQuery::Term { field: "title", text: "fox" },
-                    "default",
-                )?;
+                let _ = search_ids(&engine, 3, 1_000)?;
+                let result = engine.search(SearchRequest::new(Query::term("title", "fox")))?;
                 if result.hits.iter().any(|hit| hit.document_id != "stable-text") {
                     panic!("impossible text hit");
                 }
@@ -393,7 +407,7 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
     }
     let engine = Arc::try_unwrap(engine)
         .map_err(|_| "engine owners remain")?;
-    let final_hits = engine.search("qty", 3, 1_000_000)?;
+    let final_hits = search_ids(&engine, 3, 1_000_000)?;
     if final_hits.len() != 8 * 100 {
         panic!("final state has {} qty=3 documents", final_hits.len());
     }

@@ -130,3 +130,8 @@ Normal `searchkernel-ffi` dependencies may include `searchkernel-ir`, `searchker
 - `searchkernel-testkit`
 
 `searchkernel-testkit` is allowed only for tests / the `ffi-test-support` feature used by this verifier.
+
+The opt-in `production` feature supplies `sk_create(path, definition_bytes)`
+and `sk_open(path)` lifecycle entry points. It is intentionally excluded from
+the transport-only dependency verification above; the default FFI build must
+remain independent of the Vespa integration layer.

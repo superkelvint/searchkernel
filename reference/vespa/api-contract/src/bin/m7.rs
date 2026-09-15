@@ -1,4 +1,4 @@
-use searchkernel_vespa_engine::{Engine, Query, RangeBound, Result, TextSearchResult};
+use searchkernel_vespa_engine::{Engine, Query, RangeBound, Result, SearchRequest, SearchResult};
 
 fn execute(engine: &Engine) -> Result<()> {
     let term = Query::Term {
@@ -29,20 +29,16 @@ fn execute(engine: &Engine) -> Result<()> {
     };
     let exists = Query::Exists { field: "qty".into() };
 
-    let _: TextSearchResult = engine.search_query(&boolean, "default")?;
-    let _: TextSearchResult = engine.search_query(&equals, "default")?;
-    let _: TextSearchResult = engine.search_query(&range, "default")?;
-    let _: TextSearchResult = engine.search_query(&unbounded, "default")?;
-    let _: TextSearchResult = engine.search_query(&exists, "default")?;
+    let _: SearchResult = engine.search(SearchRequest::new(boolean))?;
+    let _: SearchResult = engine.search(SearchRequest::new(equals))?;
+    let _: SearchResult = engine.search(SearchRequest::new(range))?;
+    let _: SearchResult = engine.search(SearchRequest::new(unbounded))?;
+    let _: SearchResult = engine.search(SearchRequest::new(exists))?;
 
     let parsed = Query::from_yql(
         "select * from sources * where title contains \"fox\" and qty = 10",
     )?;
-    let _: TextSearchResult = engine.search_query(&parsed, "default")?;
-    let _: TextSearchResult = engine.search_yql(
-        "select * from sources * where title contains \"fox\"",
-        "default",
-    )?;
+    let _: SearchResult = engine.search(SearchRequest::new(parsed))?;
     Ok(())
 }
 

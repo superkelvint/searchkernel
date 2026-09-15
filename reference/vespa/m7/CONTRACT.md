@@ -108,8 +108,8 @@ The semantic shape is:
 ```text
 RangeBound
   Unbounded
-  Included(i32)
-  Excluded(i32)
+  Included(i64)
+  Excluded(i64)
 
 Query
   Term { field, text }

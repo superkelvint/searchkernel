@@ -1,4 +1,4 @@
-use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Schema, TextDocument, TextQuery};
+use searchkernel_vespa_engine::{ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, Query, Schema, SearchRequest};
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
@@ -25,7 +25,7 @@ struct FieldSpec {
 enum Smoke {
     Open,
     Text { field: String, text: String, query: String },
-    Integer { field: String, value: i32 },
+    Integer { field: String, value: i64 },
 }
 
 fn load(path: &str) -> Scenario {
@@ -78,14 +78,14 @@ fn main() {
             match scenario.smoke {
                 Smoke::Open => {}
                 Smoke::Text { field, text, query } => {
-                    engine.put_text(TextDocument { id: "m6-doc", field: &field, text: &text }).expect("put text");
-                    let result = engine.search_text(TextQuery::Term { field: &field, text: &query }, "default").expect("search text");
+                    engine.put(Document::new("m6-doc").field(&field, text)).expect("put text");
+                    let result = engine.search(SearchRequest::new(Query::term(&field, query))).expect("search text");
                     assert!(result.hits.iter().any(|h| h.document_id == "m6-doc"), "text smoke hit missing");
                 }
                 Smoke::Integer { field, value } => {
-                    engine.put("m6-doc", &field, value).expect("put integer");
-                    let hits = engine.search(&field, value, 10).expect("search integer");
-                    assert!(hits.iter().any(|id| id == "m6-doc"), "integer smoke hit missing");
+                    engine.put(Document::new("m6-doc").field(&field, value)).expect("put integer");
+                    let hits = engine.search(SearchRequest::new(Query::equals(&field, value)).limit(10)).expect("search integer");
+                    assert!(hits.hits.iter().any(|hit| hit.document_id == "m6-doc"), "integer smoke hit missing");
                 }
             }
         }

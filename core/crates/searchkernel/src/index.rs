@@ -3,12 +3,17 @@ use crate::error::{Error, Result};
 use crate::patch::Patch;
 use crate::result;
 use crate::schema::IndexDefinition;
+use crate::schema::{Analyzer, Field, FieldKind, SearchField};
 use crate::search::SearchBuilder;
 use crate::wire;
 use searchkernel_ir::{api, Backend, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
+
+const MANIFEST_FORMAT_VERSION: u32 = 1;
+const NATIVE_ABI_VERSION: u32 = 3;
+const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
 pub struct Index {
     pub(crate) context: Arc<IndexContext>,
@@ -25,6 +30,63 @@ impl Clone for Index {
 }
 
 impl Index {
+    /// Construct an index from the canonical FlatBuffers index-definition
+    /// payload used by the native bootstrap. This is intentionally hidden from
+    /// the ergonomic Rust API; the portable wire definition is validated by
+    /// `searchkernel-ir` before it reaches the product lifecycle.
+    #[doc(hidden)]
+    pub fn create_from_definition_bytes(
+        path: impl AsRef<std::path::Path>,
+        bytes: &[u8],
+    ) -> Result<Self> {
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(bytes)
+            .map_err(|error| Error::Serialization(format!("invalid index definition: {error}")))?;
+        let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::Portable)?;
+        Self::create(path, definition_from_ir(&ir))
+    }
+
+    /// Create a new on-disk index and persist all information required to
+    /// reopen it safely.
+    pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
+        let root = path.as_ref();
+        if root.exists() {
+            return Err(Error::AlreadyExists(root.display().to_string()));
+        }
+        std::fs::create_dir_all(root).map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let data = root.join("data");
+        let config = root.join("config");
+        std::fs::create_dir_all(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let schema = engine_schema(&definition)?;
+        searchkernel_vespa_engine::ConfigCompiler
+            .compile_to(&schema, &config)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let manifest = IndexManifest::for_definition(&definition, &config)?;
+        manifest.write(root)?;
+        let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        Self::from_backend(definition, Arc::new(backend))
+    }
+
+    /// Reopen an existing index using its durable manifest.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let root = path.as_ref();
+        if !root.is_dir() {
+            return Err(Error::NotFound(root.display().to_string()));
+        }
+        let manifest = IndexManifest::read(root)?;
+        let definition = manifest.definition()?;
+        let config = root.join("config");
+        if !root.join("data").is_dir() || !config.is_dir() {
+            return Err(Error::CorruptIndex(
+                "index data/config directories are missing".into(),
+            ));
+        }
+        manifest.validate_config(&config)?;
+        let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        Self::from_backend(definition, Arc::new(backend))
+    }
+
     /// Construct an index around a backend for tests and infrastructure.
     ///
     /// This is hidden from normal API documentation because production
@@ -40,6 +102,14 @@ impl Index {
             context: Arc::new(context),
             backend,
         })
+    }
+
+    /// Consume the product handle for a native host that owns the FFI
+    /// registry. This is deliberately hidden; normal callers keep using the
+    /// `Index` owner and never handle the backend trait object directly.
+    #[doc(hidden)]
+    pub fn into_backend_parts(self) -> (Arc<IndexContext>, Arc<dyn Backend>) {
+        (self.context, self.backend)
     }
 
     /// Insert a new document.
@@ -147,6 +217,357 @@ impl Index {
             Error::infrastructure(format!("invalid generated get request: {error}"))
         })
     }
+}
+
+#[derive(Debug, Clone)]
+struct IndexManifest {
+    value: serde_json::Value,
+}
+
+impl IndexManifest {
+    fn for_definition(definition: &IndexDefinition, config: &std::path::Path) -> Result<Self> {
+        Ok(Self {
+            value: serde_json::json!({
+                "format_version": MANIFEST_FORMAT_VERSION,
+                "searchkernel_version": env!("CARGO_PKG_VERSION"),
+                "native_abi_version": NATIVE_ABI_VERSION,
+                "vespa_revision": VESPA_REVISION,
+                "portable_index_definition": definition_json(definition),
+                "resolved_engine_config_identity": config_identity(config)?,
+            }),
+        })
+    }
+
+    fn write(&self, root: &std::path::Path) -> Result<()> {
+        let directory = root.join("manifest");
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let bytes = serde_json::to_vec_pretty(&self.value)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        std::fs::write(directory.join("index.json"), bytes)
+            .map_err(|error| Error::Infrastructure(error.to_string()))
+    }
+
+    fn read(root: &std::path::Path) -> Result<Self> {
+        let path = root.join("manifest/index.json");
+        let bytes = std::fs::read(&path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Error::CorruptIndex(path.display().to_string())
+            } else {
+                Error::Infrastructure(error.to_string())
+            }
+        })?;
+        let value = serde_json::from_slice(&bytes)
+            .map_err(|error| Error::CorruptIndex(error.to_string()))?;
+        let manifest = Self { value };
+        manifest.validate_identity()?;
+        Ok(manifest)
+    }
+
+    fn validate_identity(&self) -> Result<()> {
+        let object = self
+            .value
+            .as_object()
+            .ok_or_else(|| Error::CorruptIndex("manifest root is not an object".into()))?;
+        let version = object
+            .get("format_version")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| Error::CorruptIndex("manifest format_version is missing".into()))?;
+        if version != u64::from(MANIFEST_FORMAT_VERSION) {
+            return Err(Error::IncompatibleIndex(format!(
+                "manifest format version {version}"
+            )));
+        }
+        let abi = object
+            .get("native_abi_version")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| Error::CorruptIndex("manifest native_abi_version is missing".into()))?;
+        if abi != u64::from(NATIVE_ABI_VERSION) {
+            return Err(Error::IncompatibleIndex(format!(
+                "native ABI version {abi}"
+            )));
+        }
+        let searchkernel_version = object
+            .get("searchkernel_version")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                Error::CorruptIndex("manifest searchkernel_version is missing".into())
+            })?;
+        let vespa_revision = object
+            .get("vespa_revision")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::CorruptIndex("manifest vespa_revision is missing".into()))?;
+        if searchkernel_version != env!("CARGO_PKG_VERSION") || vespa_revision != VESPA_REVISION {
+            return Err(Error::IncompatibleIndex(
+                "manifest identity does not match this build".into(),
+            ));
+        }
+        if !object
+            .get("portable_index_definition")
+            .is_some_and(serde_json::Value::is_object)
+        {
+            return Err(Error::CorruptIndex(
+                "manifest portable_index_definition is invalid".into(),
+            ));
+        }
+        if !object
+            .get("resolved_engine_config_identity")
+            .is_some_and(serde_json::Value::is_object)
+        {
+            return Err(Error::CorruptIndex(
+                "manifest resolved_engine_config_identity is invalid".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_config(&self, config: &std::path::Path) -> Result<()> {
+        for name in [
+            "searchkernel-schema.json",
+            "indexschema.cfg",
+            "attributes.cfg",
+            "summary.cfg",
+            "rank-profiles.cfg",
+            "juniperrc.cfg",
+            "proton.cfg",
+        ] {
+            if !config.join(name).is_file() {
+                return Err(Error::CorruptIndex(format!(
+                    "resolved engine configuration is missing {name}"
+                )));
+            }
+        }
+        let expected = self
+            .value
+            .get("resolved_engine_config_identity")
+            .ok_or_else(|| Error::CorruptIndex("manifest config identity is missing".into()))?;
+        let actual = config_identity(config)?;
+        if expected != &actual {
+            return Err(Error::IncompatibleIndex(
+                "resolved engine configuration differs".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn definition(&self) -> Result<IndexDefinition> {
+        definition_from_json(
+            self.value
+                .get("portable_index_definition")
+                .ok_or_else(|| Error::CorruptIndex("portable definition is missing".into()))?,
+        )
+    }
+}
+
+fn definition_json(definition: &IndexDefinition) -> serde_json::Value {
+    serde_json::json!({
+        "name": definition.name,
+        "fields": definition.fields.iter().map(|field| serde_json::json!({
+            "name": field.name,
+            "kind": format!("{:?}", field.kind),
+            "multi": field.multi,
+            "stored": field.stored,
+            "searchable": field.searchable,
+            "filterable": field.filterable,
+            "sortable": field.sortable,
+            "facetable": field.facetable,
+            "analyzer": field.analyzer.map(|value| format!("{:?}", value)),
+        })).collect::<Vec<_>>(),
+        "default_search_fields": definition.default_search_fields.as_ref().map(|fields| fields.iter().map(|field| serde_json::json!({"field": field.field, "weight": field.weight})).collect::<Vec<_>>()),
+    })
+}
+
+fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
+    let mut result = IndexDefinition::new();
+    if let Some(name) = definition.name() {
+        result = result.name(name.as_str());
+    }
+    for field in definition.fields() {
+        let mut value = match field.kind() {
+            searchkernel_ir::FieldKind::Text => Field::text(field.name().as_str()),
+            searchkernel_ir::FieldKind::Keyword => Field::keyword(field.name().as_str()),
+            searchkernel_ir::FieldKind::Int64 => Field::int64(field.name().as_str()),
+            searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
+            searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
+        };
+        if matches!(
+            field.cardinality(),
+            searchkernel_ir::FieldCardinality::Multi
+        ) {
+            value = value.multi();
+        }
+        let capabilities = field.capabilities();
+        value = value
+            .stored(capabilities.stored())
+            .searchable(capabilities.searchable())
+            .filterable(capabilities.filterable())
+            .sortable(capabilities.sortable())
+            .facetable(capabilities.facetable());
+        if matches!(
+            field.analyzer(),
+            Some(searchkernel_ir::AnalyzerIdentity::StandardV1)
+        ) {
+            value = value.analyzer(Analyzer::standard_v1());
+        }
+        result = result.field(value);
+    }
+    result.default_search_fields(
+        definition
+            .default_search_fields()
+            .iter()
+            .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get())),
+    )
+}
+
+fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| Error::CorruptIndex("portable definition is not an object".into()))?;
+    let mut definition = IndexDefinition::new();
+    if let Some(name) = object.get("name").and_then(serde_json::Value::as_str) {
+        definition = definition.name(name);
+    }
+    let fields = object
+        .get("fields")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| Error::CorruptIndex("portable definition fields are missing".into()))?;
+    for field in fields {
+        let metadata = field
+            .as_object()
+            .ok_or_else(|| Error::CorruptIndex("manifest field is not an object".into()))?;
+        let name = metadata
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::CorruptIndex("manifest field name is missing".into()))?;
+        let kind = match metadata.get("kind").and_then(serde_json::Value::as_str) {
+            Some("Text") => Field::text(name),
+            Some("Keyword") => Field::keyword(name),
+            Some("Int64") => Field::int64(name),
+            Some("Float64") => Field::float64(name),
+            Some("Bool") => Field::bool(name),
+            _ => return Err(Error::CorruptIndex("manifest field kind is invalid".into())),
+        };
+        let mut field = kind;
+        if let Some(analyzer) = metadata.get("analyzer") {
+            if !analyzer.is_null() {
+                let analyzer = analyzer.as_str().ok_or_else(|| {
+                    Error::CorruptIndex("manifest field analyzer is invalid".into())
+                })?;
+                field = match analyzer {
+                    "StandardV1" => field.analyzer(Analyzer::standard_v1()),
+                    _ => {
+                        return Err(Error::CorruptIndex(
+                            "manifest field analyzer is invalid".into(),
+                        ))
+                    }
+                };
+            }
+        }
+        if metadata
+            .get("multi")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            field = field.multi();
+        }
+        for (key, setter) in [
+            ("stored", 0_u8),
+            ("searchable", 1),
+            ("filterable", 2),
+            ("sortable", 3),
+            ("facetable", 4),
+        ] {
+            if let Some(value) = metadata.get(key).and_then(serde_json::Value::as_bool) {
+                field = match setter {
+                    0 => field.stored(value),
+                    1 => field.searchable(value),
+                    2 => field.filterable(value),
+                    3 => field.sortable(value),
+                    _ => field.facetable(value),
+                };
+            }
+        }
+        definition = definition.field(field);
+    }
+    if let Some(search_fields) = object
+        .get("default_search_fields")
+        .and_then(serde_json::Value::as_array)
+    {
+        let mut fields = Vec::with_capacity(search_fields.len());
+        for search_field in search_fields {
+            let search_field = search_field.as_object().ok_or_else(|| {
+                Error::CorruptIndex("manifest search field is not an object".into())
+            })?;
+            let name = search_field
+                .get("field")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    Error::CorruptIndex("manifest search field name is missing".into())
+                })?;
+            let mut field = SearchField::new(name);
+            if let Some(weight) = search_field
+                .get("weight")
+                .and_then(serde_json::Value::as_f64)
+            {
+                field = field.weight(weight);
+            }
+            fields.push(field);
+        }
+        definition = definition.default_search_fields(fields);
+    }
+    Ok(definition)
+}
+
+fn config_identity(config: &std::path::Path) -> Result<serde_json::Value> {
+    let mut files = serde_json::Map::new();
+    for name in [
+        "searchkernel-schema.json",
+        "indexschema.cfg",
+        "attributes.cfg",
+        "summary.cfg",
+        "rank-profiles.cfg",
+        "juniperrc.cfg",
+        "proton.cfg",
+    ] {
+        let path = config.join(name);
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        files.insert(name.into(), serde_json::Value::String(contents));
+    }
+    Ok(serde_json::Value::Object(files))
+}
+
+fn engine_schema(definition: &IndexDefinition) -> Result<searchkernel_vespa_engine::Schema> {
+    let name = definition.name.as_deref().unwrap_or("searchkernel");
+    let mut schema = searchkernel_vespa_engine::Schema::new(name);
+    for field in &definition.fields {
+        let kind = match field.kind {
+            FieldKind::Text => searchkernel_vespa_engine::FieldType::Text,
+            FieldKind::Keyword => searchkernel_vespa_engine::FieldType::String,
+            FieldKind::Int64 => searchkernel_vespa_engine::FieldType::Integer,
+            FieldKind::Float64 => searchkernel_vespa_engine::FieldType::Float,
+            FieldKind::Bool => searchkernel_vespa_engine::FieldType::Boolean,
+        };
+        let mut native = searchkernel_vespa_engine::Field::new(&field.name, kind);
+        if field
+            .searchable
+            .unwrap_or(matches!(field.kind, FieldKind::Text))
+        {
+            native = native.indexed();
+        }
+        if field.filterable.unwrap_or(false)
+            || field.sortable.unwrap_or(false)
+            || field.facetable.unwrap_or(false)
+            || !matches!(field.kind, FieldKind::Text)
+        {
+            native = native.attribute();
+        }
+        if field.stored.unwrap_or(false) {
+            native = native.summary();
+        }
+        schema = schema.field(native);
+    }
+    Ok(schema)
 }
 
 #[cfg(test)]

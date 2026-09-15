@@ -3,7 +3,7 @@
   "created_by": "Search Kernel M5 verifier",
   "searchkernel_version": "0.1.0",
   "searchkernel_git_commit": "7ec21655f2c5a311aa2fe4fe65861f9a8f2e3487",
-  "native_abi_version": 2,
+  "native_abi_version": 3,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
   "target": "linux-x86_64",
   "config": "core/native/sdk/linux-x86_64/share/embedded_crud_cfg",

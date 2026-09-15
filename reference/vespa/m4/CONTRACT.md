@@ -148,24 +148,22 @@ Do not add a Rust scoring implementation merely to make scores observable.
 
 ## Public M4 surface
 
-The frozen compile fixture defines only the small low-level text API needed for
-this milestone. M4 must not introduce a general query framework ahead of M7.
+The frozen compile fixture defines the stable low-level document and query API.
+M4 exercises the text subset of that API; it must not introduce portable
+product ergonomics into the Vespa-facing layer.
 
-The intended additive surface is conceptually:
+The intended surface is:
 
 ```rust
 TextDocument { id, field, text }
 TextQuery::Term { field, text }
 TextQuery::Phrase { field, text }
-TextSearchResult { document_ids }
-
-Engine::put_text(...)
-Engine::update_text(...)
-Engine::search_text(...)
+Engine::put(Document)
+Engine::update(DocumentUpdate)
+Engine::search(SearchRequest)
 ```
 
-Deletion reuses the previously committed M2 mutation API rather than creating a
-text-specific delete subsystem.
+Deletion is `Engine::delete`; it returns Vespa's `wasFound` result.
 
 The compile fixture is normative if syntax differs from this prose.
 

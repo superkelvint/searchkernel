@@ -1,6 +1,6 @@
 {
   "scenario": "native-open-close",
-  "abi_version": 2,
+  "abi_version": 3,
   "open_count": 2,
   "status": "ok"
 }

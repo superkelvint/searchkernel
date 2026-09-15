@@ -524,7 +524,9 @@ name = "searchkernel"
 version = "0.1.0"
 dependencies = [
  "searchkernel-ir",
+ "searchkernel-ir-adapter",
  "searchkernel-testkit",
+ "searchkernel-vespa-engine",
  "serde",
  "serde_json",
 ]
@@ -554,6 +556,7 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "flatbuffers",
+ "searchkernel",
  "searchkernel-ir",
  "searchkernel-json",
  "searchkernel-testkit",

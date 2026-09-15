@@ -4,7 +4,7 @@
 //! strings. The searchkernel-vespa-engine M4 implementation is responsible for invoking
 //! M3 linguistics before crossing the native boundary.
 
-use searchkernel_vespa_engine::{Engine, TextDocument, TextQuery};
+use searchkernel_vespa_engine::{Document, DocumentUpdate, Engine, Query, SearchRequest};
 use std::io::{self, BufRead, Write};
 
 fn from_hex(hex: &str) -> String {
@@ -37,21 +37,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "PUT" | "UPDATE" => {
                 assert_eq!(p.len(), 3);
                 let text = from_hex(p[2]);
-                let doc = TextDocument {
-                    id: p[1],
-                    field: "title",
-                    text: &text,
-                };
                 if p[0] == "PUT" {
-                    engine.put_text(doc)?;
+                    engine.put(Document::new(p[1]).field("title", text))?;
                 } else {
-                    engine.update_text(doc)?;
+                    engine.update(DocumentUpdate::new(p[1]).assign("title", text))?;
                 }
                 writeln!(stdout, "OK")?;
             }
             "DELETE" => {
                 assert_eq!(p.len(), 2);
-                engine.remove(p[1])?;
+                engine.delete(p[1])?;
                 writeln!(stdout, "OK")?;
             }
             "TERM" | "PHRASE" => {
@@ -60,11 +55,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let rank_profile = p[2];
                 let text = from_hex(p[3]);
                 let query = if p[0] == "TERM" {
-                    TextQuery::Term { field: "title", text: &text }
+                    Query::term("title", text)
                 } else {
-                    TextQuery::Phrase { field: "title", text: &text }
+                    Query::phrase("title", text)
                 };
-                let result = engine.search_text(query, rank_profile)?;
+                let result = engine.search(SearchRequest::new(query).rank_profile(rank_profile))?;
                 write!(stdout, "RESULT\t{}\t", search_id)?;
                 for (i, hit) in result.hits.iter().enumerate() {
                     if i > 0 { write!(stdout, ";")?; }

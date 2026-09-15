@@ -11,7 +11,9 @@ fn main() {
     let sdk = fs::canonicalize(&sdk)
         .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
     let lib_dir = sdk.join("lib");
-    let header = sdk.join("include/searchkernel_vespa.h");
+    let header = env::var_os("SK_NATIVE_ABI_HEADER")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sdk.join("include/searchkernel_vespa.h"));
     let rust_abi =
         fs::read_to_string(manifest_dir.join("src/abi.rs")).expect("read Rust native ABI version");
     let expected_abi = rust_abi
@@ -60,11 +62,13 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
-    // Make binaries using the sys crate runnable without requiring callers to
-    // arrange LD_LIBRARY_PATH themselves. The SDK path is already the path
-    // selected for linking, so it is the correct runtime search location too.
+    // Make binaries using the raw bindings crate runnable without requiring
+    // callers to arrange LD_LIBRARY_PATH themselves. The SDK path is already
+    // the path selected for linking, so it is the correct runtime search
+    // location too.
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_OUTPUT");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_CHECK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");
@@ -120,11 +124,11 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
     bindgen::Builder::default()
         .header(header.to_string_lossy())
         .allowlist_type(
-            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query)",
+            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result)",
         )
         .allowlist_function("sk_.*")
         .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER)))",
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN)|SORT_(ASCENDING|DESCENDING)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE))",
         )
         .layout_tests(true)
         .generate_comments(false)

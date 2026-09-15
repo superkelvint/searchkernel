@@ -33,4 +33,5 @@ The executable must dynamically depend on `libsearchkernel_vespa.so`.
 - a Rust-only fake engine;
 - opening only the old standalone C++ test executable;
 - shelling out to a Vespa process;
-- requiring users of `searchkernel` to call the sys crate directly.
+- requiring users of `searchkernel` to call `searchkernel-vespa-bindings`
+  directly.
