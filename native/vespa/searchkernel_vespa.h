@@ -29,6 +29,18 @@ extern "C" {
 #define SK_TEXT_QUERY_TERM 1U
 #define SK_TEXT_QUERY_PHRASE 2U
 
+#define SK_QUERY_NODE_AND 1U
+#define SK_QUERY_NODE_OR 2U
+#define SK_QUERY_NODE_NOT 3U
+#define SK_QUERY_NODE_TRUE 4U
+#define SK_QUERY_TEXT_TERM 5U
+#define SK_QUERY_TEXT_PHRASE 6U
+#define SK_QUERY_BOUND_UNBOUNDED 0U
+#define SK_QUERY_BOUND_INCLUDED 1U
+#define SK_QUERY_BOUND_EXCLUDED 2U
+#define SK_QUERY_FIELD_TEXT 1U
+#define SK_QUERY_FIELD_INTEGER 2U
+
 /*
  * This is a primitive-only ABI. The semantic objects are opaque handles; the
  * only non-opaque values are fixed-width scalars and borrowed byte ranges.
@@ -46,6 +58,7 @@ typedef struct sk_text_document sk_text_document;
 typedef struct sk_text_update sk_text_update;
 typedef struct sk_text_request sk_text_request;
 typedef struct sk_text_result sk_text_result;
+typedef struct sk_query sk_query;
 
 /*
  * Diagnostics are caller-owned bytes rather than a public error struct. The
@@ -182,6 +195,53 @@ SK_API int32_t sk_text_result_hit(const sk_text_result *result, uint32_t index,
                                   double *out_score, uint8_t *out_error,
                                   uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_text_result_destroy(sk_text_result *result) SK_NOEXCEPT;
+
+/*
+ * Query construction is prefix ordered and uses only opaque handles,
+ * fixed-width tags/scalars, and borrowed primitive byte arrays. The native
+ * adapter owns the Vespa query tree and copies all supplied values. Query
+ * handles also snapshot the field metadata needed for validation, so their
+ * lifetime is independent of the engine used to create them.
+ *
+ * A query handle may be passed to sk_engine_search_query() at most once.
+ * That call consumes the completed query tree while building the native
+ * execution tree; after it returns, regardless of status, the handle must not
+ * be searched again or extended with more query nodes. Destroy it with
+ * sk_query_destroy().
+ */
+SK_API int32_t sk_query_create(const sk_engine *engine, sk_query **out_query,
+                               uint8_t *out_error,
+                               uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_operator(sk_query *query, uint32_t kind,
+                                      uint32_t child_count, uint8_t *out_error,
+                                      uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_validate_field(const sk_query *query, uint32_t kind,
+                                       const char *field, uint8_t *out_error,
+                                       uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_true(sk_query *query, uint8_t *out_error,
+                                 uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_text(sk_query *query, uint32_t kind,
+                                 const char *field, const uint8_t *term_bytes,
+                                 uint32_t term_bytes_length,
+                                 const uint32_t *term_lengths,
+                                 uint32_t term_count, uint8_t *out_error,
+                                 uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_equals(sk_query *query, const char *field,
+                                   int32_t value, uint8_t *out_error,
+                                   uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_range(sk_query *query, const char *field,
+                                  uint32_t lower_kind, int32_t lower_value,
+                                  uint32_t upper_kind, int32_t upper_value,
+                                  uint8_t *out_error,
+                                  uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API void sk_query_destroy(sk_query *query) SK_NOEXCEPT;
+SK_API int32_t sk_engine_search_query(const sk_engine *engine,
+                                      const sk_query *query,
+                                      const char *rank_profile,
+                                      const char *source,
+                                      sk_text_result **out_result,
+                                      uint8_t *out_error,
+                                      uint32_t out_error_capacity) SK_NOEXCEPT;
 
 #ifdef __cplusplus
 }

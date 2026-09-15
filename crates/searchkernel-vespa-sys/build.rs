@@ -72,6 +72,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", header.display());
     println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
     println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
+    println!("cargo:rerun-if-changed=query_lifetime_test.cc");
     println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
     println!("cargo:rerun-if-changed=native_header_namespace_check.cc");
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
@@ -88,6 +89,12 @@ fn main() {
         .include(manifest_dir.join("../../native/vespa"))
         .warnings(true)
         .compile("searchkernel_transport_lifecycle_test");
+    cc::Build::new()
+        .cpp(true)
+        .file(manifest_dir.join("query_lifetime_test.cc"))
+        .include(sdk.join("include"))
+        .warnings(true)
+        .compile("searchkernel_query_lifetime_test");
     cc::Build::new()
         .cpp(true)
         .file(manifest_dir.join("abi_noexcept_check.cc"))
@@ -107,11 +114,11 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
     bindgen::Builder::default()
         .header(header.to_string_lossy())
         .allowlist_type(
-            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result)",
+            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query)",
         )
         .allowlist_function("sk_.*")
         .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE))",
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER)))",
         )
         .layout_tests(true)
         .generate_comments(false)

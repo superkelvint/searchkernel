@@ -2,6 +2,7 @@ use searchkernel_vespa::{
     ConfigCompiler, Engine, Field, FieldType, Query, RangeBound, Schema, TextDocument, TextQuery,
 };
 use std::collections::BTreeMap;
+use std::ffi::CString;
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,13 @@ fn compile_config(label: &str, schema: &Schema) -> (PathBuf, PathBuf) {
         .compile_to(schema, &config)
         .expect("compile generated config");
     (config, data)
+}
+
+unsafe extern "C" {
+    fn searchkernel_query_outlives_engine_regression(
+        data_dir: *const std::os::raw::c_char,
+        config_dir: *const std::os::raw::c_char,
+    ) -> i32;
 }
 
 fn replace_once(path: &Path, before: &str, after: &str) {
@@ -329,6 +337,24 @@ fn yql_search_uses_the_same_query_as_typed_search() {
     engine.close().expect("close source-equivalence engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_query_can_outlive_engine() {
+    let (config_path, data_path) = compile_config(
+        "query-lifetime",
+        &Schema::new("typea").field(Field::new("title", FieldType::Text).indexed()),
+    );
+    let config = CString::new(config_path.to_str().expect("config path is UTF-8")).unwrap();
+    let data = CString::new(data_path.to_str().expect("data path is UTF-8")).unwrap();
+    let result =
+        unsafe { searchkernel_query_outlives_engine_regression(data.as_ptr(), config.as_ptr()) };
+    assert_eq!(
+        result, 0,
+        "query lifetime regression failed with code {result}"
+    );
+    let _ = fs::remove_dir_all(config_path);
+    let _ = fs::remove_dir_all(data_path);
 }
 
 #[test]

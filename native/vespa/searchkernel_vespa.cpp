@@ -51,7 +51,9 @@
 #include <vespa/searchlib/common/fileheadercontext.h>
 #include <vespa/searchlib/util/fileheadertk.h>
 #include <vespa/searchlib/common/serialized_query_tree.h>
+#include <vespa/searchlib/query/numeric_range_spec.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
+#include <vespa/searchlib/query/tree/range.h>
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/vdslib/distribution/distribution.h>
@@ -112,6 +114,7 @@ using search::engine::SearchReply;
 using search::engine::SearchRequest;
 using search::SerializedQueryTree;
 using search::query::QueryBuilder;
+using VespaQueryBuilder = QueryBuilder<proton::matching::ProtonNodeTypes>;
 using search::query::StackDumpCreator;
 using search::query::Weight;
 using search::transactionlog::TransLogServer;
@@ -140,6 +143,13 @@ constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
     "host",           "documentid",     "position",      "split_foreach", "tokenize",
     "if",             "else",           "switch",        "case",      "sddocname",
     "relevancy",      "rankfeatures",  "summaryfeatures"};
+
+struct QueryFieldMetadata {
+    std::string name;
+    std::string type;
+    bool index = false;
+    bool attribute = false;
+};
 
 bool is_identifier(std::string_view value) noexcept {
     if (value.empty()) return false;
@@ -665,7 +675,7 @@ struct TextResult {
 };
 
 std::string query_stack_dump(int32_t value, const std::string &field) {
-    QueryBuilder<proton::matching::ProtonNodeTypes> builder;
+    VespaQueryBuilder builder;
     builder.addNumberTerm(std::to_string(value), field, 1, Weight(1));
     auto tree = builder.build();
     if (!tree) {
@@ -771,8 +781,34 @@ class EmbeddedEngine {
             return expected;
         }
 
+        // M5 persisted indexes predate Search Kernel's private schema marker.
+        // They remain valid legacy Vespa state; once a marker exists, however,
+        // it is always compared above before any engine initialization.
         if (had_existing_state) {
-            throw std::invalid_argument("index data exists but schema identity is missing");
+            const auto data_directory = std::filesystem::path(data_dir);
+            std::error_code filesystem_error;
+            for (std::filesystem::directory_iterator entry(data_directory, filesystem_error), end;
+                 entry != end; entry.increment(filesystem_error)) {
+                if (filesystem_error) {
+                    throw std::runtime_error("could not inspect index data path '" +
+                                             data_directory.string() + "': " +
+                                             filesystem_error.message());
+                }
+                if (!entry->is_directory(filesystem_error)) {
+                    if (filesystem_error) {
+                        throw std::runtime_error("could not inspect index data path '" +
+                                                 data_directory.string() + "': " +
+                                                 filesystem_error.message());
+                    }
+                    continue;
+                }
+                const auto name = entry->path().filename().string();
+                if (name != "tmp" && name != manifest.document_type) {
+                    throw std::invalid_argument(
+                        "index data was created with a different generated schema");
+                }
+            }
+            return expected;
         }
         auto temporary_path = path.string() + ".tmp.XXXXXX";
         FileDescriptor fd(::mkstemp(temporary_path.data()));
@@ -849,6 +885,54 @@ class EmbeddedEngine {
         if (field.type != "text" || !field.index) {
             throw std::invalid_argument("text operation requires an indexed text field: " + name);
         }
+    }
+
+    std::vector<TextHit> match_tree(std::unique_ptr<search::query::Node> tree,
+                                    const std::string &rank_profile,
+                                    const std::string &source) const {
+        if (!tree) {
+            throw std::invalid_argument("could not build query tree");
+        }
+        if (source != "*" && source != _document_type) {
+            throw std::invalid_argument("unsupported query source: " + source);
+        }
+        validate_rank_profile(rank_profile.c_str());
+        if (rank_profile.empty()) {
+            throw std::invalid_argument("query rank profile must not be empty");
+        }
+        auto request = std::make_shared<SearchRequest>();
+        request->setTimeout(60s);
+        request->setSerializedQueryTree(SerializedQueryTree::fromStackDump(
+            StackDumpCreator::create(*tree)));
+        request->ranking = rank_profile;
+        request->maxhits = 100;
+        auto reply = _db->match(*request, vespalib::ThreadBundle::trivial());
+        if (!reply) {
+            throw std::runtime_error("Vespa matcher returned no reply");
+        }
+
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) {
+            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        }
+        auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        const auto *document_id_provider =
+            dynamic_cast<const search::IDocumentIdProvider *>(&meta_store_guard->get());
+        if (!document_id_provider) {
+            throw std::runtime_error("Vespa DocumentDB does not provide document IDs");
+        }
+        std::vector<TextHit> hits;
+        hits.reserve(reply->hits.size());
+        for (const auto &hit : reply->hits) {
+            search::IDocumentMetaStore::DocId lid = 0;
+            if (meta_store_guard->get().getLid(hit.gid, lid)) {
+                auto id = document_id_provider->get_document_id_string_view(lid);
+                if (!id.empty()) {
+                    hits.push_back({external_document_id(id, _document_type), hit.metric});
+                }
+            }
+        }
+        return hits;
     }
 
     uint64_t next_timestamp() {
@@ -1619,7 +1703,7 @@ public:
             static_cast<size_t>(std::numeric_limits<int>::max() - 2)) {
             throw std::invalid_argument("text term count cannot be represented by Vespa");
         }
-        QueryBuilder<proton::matching::ProtonNodeTypes> builder;
+        VespaQueryBuilder builder;
         if (text.kind == SK_TEXT_QUERY_TERM) {
             if (text.terms.size() != 1) {
                 throw std::invalid_argument("term query must contain exactly one term");
@@ -1637,44 +1721,25 @@ public:
         } else {
             throw std::invalid_argument("unsupported text query kind");
         }
-        auto tree = builder.build();
-        if (!tree) {
-            throw std::invalid_argument("could not build text query: " + builder.error());
-        }
+        return match_tree(builder.build(), text.rank_profile, "*");
+    }
 
-        auto request = std::make_shared<SearchRequest>();
-        request->setTimeout(60s);
-        request->setSerializedQueryTree(SerializedQueryTree::fromStackDump(
-            StackDumpCreator::create(*tree)));
-        request->ranking = text.rank_profile;
-        request->maxhits = 100;
-        auto reply = _db->match(*request, vespalib::ThreadBundle::trivial());
-        if (!reply) {
-            throw std::runtime_error("Vespa matcher returned no reply");
-        }
+public:
+    std::vector<TextHit> search_query(VespaQueryBuilder &builder,
+                                      const std::string &rank_profile,
+                                      const std::string &source) const {
+        std::lock_guard<std::mutex> operation_lock(_operation_mutex);
+        require_open();
+        return match_tree(builder.build(), rank_profile, source);
+    }
 
-        auto *ready_sub_db = _db->getReadySubDB();
-        if (!ready_sub_db) {
-            throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+    std::vector<QueryFieldMetadata> query_field_metadata() const {
+        std::vector<QueryFieldMetadata> metadata;
+        metadata.reserve(_manifest.fields.size());
+        for (const auto &field : _manifest.fields) {
+            metadata.push_back({field.name, field.type, field.index, field.attribute});
         }
-        auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
-        const auto *document_id_provider =
-            dynamic_cast<const search::IDocumentIdProvider *>(&meta_store_guard->get());
-        if (!document_id_provider) {
-            throw std::runtime_error("Vespa DocumentDB does not provide document IDs");
-        }
-        std::vector<TextHit> hits;
-        hits.reserve(reply->hits.size());
-        for (const auto &hit : reply->hits) {
-            search::IDocumentMetaStore::DocId lid = 0;
-            if (meta_store_guard->get().getLid(hit.gid, lid)) {
-                auto id = document_id_provider->get_document_id_string_view(lid);
-                if (!id.empty()) {
-                    hits.push_back({external_document_id(id, _document_type), hit.metric});
-                }
-            }
-        }
-        return hits;
+        return metadata;
     }
 };
 
@@ -1736,6 +1801,171 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
     }
 }
 
+std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
+                            size_t maximum, const char *what);
+
+struct NativeQueryState {
+    std::vector<QueryFieldMetadata> fields;
+    mutable VespaQueryBuilder builder;
+    uint32_t next_term_id = 1;
+
+    int32_t allocate_term_id() {
+        if (next_term_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+            throw std::invalid_argument("query term ID cannot be represented by Vespa");
+        }
+        return static_cast<int32_t>(next_term_id++);
+    }
+};
+
+void validate_query_field(const NativeQueryState &query, uint32_t kind,
+                          const char *field) {
+    if (!field) {
+        throw std::invalid_argument("query field must not be null");
+    }
+    validate_field_name(field);
+    if (*field == '\0') {
+        throw std::invalid_argument("query field must not be empty");
+    }
+    const auto metadata = std::find_if(
+        query.fields.begin(), query.fields.end(),
+        [field](const auto &candidate) { return candidate.name == field; });
+    if (metadata == query.fields.end()) {
+        throw std::invalid_argument("unknown generated schema field: " + std::string(field));
+    }
+    switch (kind) {
+    case SK_QUERY_FIELD_TEXT:
+        if (metadata->type != "text" || !metadata->index) {
+            throw std::invalid_argument(
+                "text operation requires an indexed text field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_INTEGER:
+        if (metadata->type != "integer" || !metadata->attribute) {
+            throw std::invalid_argument(
+                "integer operation requires an integer attribute field: " + std::string(field));
+        }
+        break;
+    default:
+        throw std::invalid_argument("unsupported query field kind");
+    }
+}
+
+void add_query_operator(NativeQueryState &query, uint32_t kind, uint32_t child_count) {
+    if (child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("query child count cannot be represented by Vespa");
+    }
+    const auto count = static_cast<int>(child_count);
+    switch (kind) {
+    case SK_QUERY_NODE_AND:
+        query.builder.addAnd(count);
+        break;
+    case SK_QUERY_NODE_OR:
+        query.builder.addOr(count);
+        break;
+    case SK_QUERY_NODE_NOT:
+        if (child_count != 1) {
+            throw std::invalid_argument("NOT query must contain exactly one child");
+        }
+        query.builder.addAndNot(2);
+        query.builder.add_true_node();
+        break;
+    default:
+        throw std::invalid_argument("unsupported query operator");
+    }
+}
+
+void add_query_text(NativeQueryState &query, uint32_t kind, const char *field,
+                    const uint8_t *term_bytes, uint32_t term_bytes_length,
+                    const uint32_t *term_lengths, uint32_t term_count) {
+    if (!field) {
+        throw std::invalid_argument("query field must not be null");
+    }
+    validate_field_name(field);
+    if (*field == '\0') {
+        throw std::invalid_argument("query field must not be empty");
+    }
+    validate_query_field(query, SK_QUERY_FIELD_TEXT, field);
+    if (kind != SK_QUERY_TEXT_TERM && kind != SK_QUERY_TEXT_PHRASE) {
+        throw std::invalid_argument("unsupported query text kind");
+    }
+    if ((kind == SK_QUERY_TEXT_TERM && term_count != 1) ||
+        (kind == SK_QUERY_TEXT_PHRASE && term_count == 0)) {
+        throw std::invalid_argument("invalid number of terms for query text kind");
+    }
+    if (term_count > MAX_TEXT_TERMS) {
+        throw std::invalid_argument("query text term count is too large");
+    }
+    if (term_count > 0 && !term_lengths) {
+        throw std::invalid_argument("query text term lengths must not be null");
+    }
+    if (term_count > 0 && !term_bytes) {
+        throw std::invalid_argument("query text term bytes must not be null");
+    }
+    size_t total_bytes = 0;
+    for (uint32_t index = 0; index < term_count; ++index) {
+        const auto length = term_lengths[index];
+        if (length == 0 || length > MAX_TEXT_TERM_BYTES ||
+            length > MAX_TOTAL_TEXT_TERM_BYTES - total_bytes) {
+            throw std::invalid_argument("query text term bytes are too large or empty");
+        }
+        total_bytes += length;
+    }
+    if (total_bytes != term_bytes_length) {
+        throw std::invalid_argument("query text term lengths do not match term bytes");
+    }
+    if (term_bytes_length > 0 && !term_bytes) {
+        throw std::invalid_argument("query text term bytes must not be null");
+    }
+    std::vector<std::string> terms;
+    terms.reserve(term_count);
+    size_t term_offset = 0;
+    for (uint32_t index = 0; index < term_count; ++index) {
+        const auto length = term_lengths[index];
+        terms.push_back(copy_text_bytes(term_bytes + term_offset, length,
+                                        MAX_TEXT_TERM_BYTES, "query text term"));
+        term_offset += length;
+    }
+    if (kind == SK_QUERY_TEXT_TERM) {
+        query.builder.addStringTerm(terms[0], field, query.allocate_term_id(), Weight(1));
+    } else {
+        query.builder.addPhrase(static_cast<int>(terms.size()), field,
+                                query.allocate_term_id(), Weight(1));
+        for (const auto &term : terms) {
+            query.builder.addStringTerm(term, field, query.allocate_term_id(), Weight(1));
+        }
+    }
+}
+
+std::unique_ptr<search::NumericRangeSpec> make_query_range(
+    uint32_t lower_kind, int32_t lower_value,
+    uint32_t upper_kind, int32_t upper_value) {
+    auto spec = std::make_unique<search::NumericRangeSpec>();
+    spec->valid = true;
+    spec->valid_integers = true;
+    const auto set_bound = [](uint32_t kind, int32_t value, bool lower,
+                              search::NumericRangeSpec &range) {
+        auto &integer_limit = lower ? range.int64_lower_limit : range.int64_upper_limit;
+        auto &fp_limit = lower ? range.fp_lower_limit : range.fp_upper_limit;
+        auto &inclusive = lower ? range.lower_inclusive : range.upper_inclusive;
+        if (kind == SK_QUERY_BOUND_UNBOUNDED) {
+            integer_limit = lower ? std::numeric_limits<int64_t>::min()
+                                   : std::numeric_limits<int64_t>::max();
+            fp_limit = lower ? -std::numeric_limits<double>::infinity()
+                              : std::numeric_limits<double>::infinity();
+            inclusive = true;
+        } else if (kind == SK_QUERY_BOUND_INCLUDED || kind == SK_QUERY_BOUND_EXCLUDED) {
+            integer_limit = value;
+            fp_limit = value;
+            inclusive = (kind == SK_QUERY_BOUND_INCLUDED);
+        } else {
+            throw std::invalid_argument("unsupported query range bound");
+        }
+    };
+    set_bound(lower_kind, lower_value, true, *spec);
+    set_bound(upper_kind, upper_value, false, *spec);
+    return spec;
+}
+
 } // namespace
 
 struct sk_engine {
@@ -1749,6 +1979,7 @@ struct sk_text_document : TextDocument {};
 struct sk_text_update : TextUpdate {};
 struct sk_text_request : TextRequest {};
 struct sk_text_result : TextResult {};
+struct sk_query : NativeQueryState {};
 
 extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
     return SK_NATIVE_ABI_VERSION;
@@ -2353,4 +2584,124 @@ extern "C" int32_t sk_text_result_hit(const sk_text_result *result,
 
 extern "C" void sk_text_result_destroy(sk_text_result *result) SK_NOEXCEPT {
     delete result;
+}
+
+extern "C" int32_t sk_query_create(const sk_engine *engine, sk_query **out_query,
+                                    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_query) {
+        *out_query = nullptr;
+    }
+    if (!engine || !engine->impl || !out_query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query create arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto query = std::make_unique<sk_query>();
+        query->fields = engine->impl->query_field_metadata();
+        *out_query = query.release();
+    });
+}
+
+extern "C" int32_t sk_query_add_operator(sk_query *query, uint32_t kind,
+                                           uint32_t child_count, uint8_t *error,
+                                           uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query operator arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] { add_query_operator(*query, kind, child_count); });
+}
+
+extern "C" int32_t sk_query_validate_field(const sk_query *query, uint32_t kind,
+                                              const char *field, uint8_t *error,
+                                              uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query field arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { validate_query_field(*query, kind, field); });
+}
+
+extern "C" int32_t sk_query_add_true(sk_query *query, uint8_t *error,
+                                      uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query true arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] { query->builder.add_true_node(); });
+}
+
+extern "C" int32_t sk_query_add_text(sk_query *query, uint32_t kind,
+                                      const char *field, const uint8_t *term_bytes,
+                                      uint32_t term_bytes_length,
+                                      const uint32_t *term_lengths,
+                                      uint32_t term_count, uint8_t *error,
+                                      uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query text arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_query_text(*query, kind, field, term_bytes, term_bytes_length,
+                       term_lengths, term_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_equals(sk_query *query, const char *field,
+                                        int32_t value, uint8_t *error,
+                                        uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query equality arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        query->builder.addNumberTerm(std::to_string(value), field,
+                                     query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
+                                       uint32_t lower_kind, int32_t lower_value,
+                                       uint32_t upper_kind, int32_t upper_value,
+                                       uint8_t *error,
+                                       uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query range arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        auto range = search::query::Range(make_query_range(
+            lower_kind, lower_value, upper_kind, upper_value));
+        query->builder.addRangeTerm(range, field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" void sk_query_destroy(sk_query *query) SK_NOEXCEPT {
+    delete query;
+}
+
+extern "C" int32_t sk_engine_search_query(const sk_engine *engine,
+                                           const sk_query *query,
+                                           const char *rank_profile,
+                                           const char *source,
+                                           sk_text_result **out_result,
+                                           uint8_t *error,
+                                           uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_result) {
+        *out_result = nullptr;
+    }
+    if (!engine || !engine->impl || !query || !rank_profile || !source || !out_result) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query search arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_text_result>();
+        result->hits = engine->impl->search_query(query->builder, rank_profile, source);
+        *out_result = result.release();
+    });
 }

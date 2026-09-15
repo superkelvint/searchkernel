@@ -6,6 +6,17 @@ pub const SK_NATIVE_STATUS_INTERNAL: u32 = 2;
 pub const SK_NATIVE_STATUS_OUT_OF_MEMORY: u32 = 3;
 pub const SK_TEXT_QUERY_TERM: u32 = 1;
 pub const SK_TEXT_QUERY_PHRASE: u32 = 2;
+pub const SK_QUERY_NODE_AND: u32 = 1;
+pub const SK_QUERY_NODE_OR: u32 = 2;
+pub const SK_QUERY_NODE_NOT: u32 = 3;
+pub const SK_QUERY_NODE_TRUE: u32 = 4;
+pub const SK_QUERY_TEXT_TERM: u32 = 5;
+pub const SK_QUERY_TEXT_PHRASE: u32 = 6;
+pub const SK_QUERY_BOUND_UNBOUNDED: u32 = 0;
+pub const SK_QUERY_BOUND_INCLUDED: u32 = 1;
+pub const SK_QUERY_BOUND_EXCLUDED: u32 = 2;
+pub const SK_QUERY_FIELD_TEXT: u32 = 1;
+pub const SK_QUERY_FIELD_INTEGER: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
 pub const SK_NATIVE_ABI_VERSION: u32 = 2;
 #[repr(C)]
@@ -51,6 +62,11 @@ pub struct sk_text_request {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_text_result {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_query {
     _unused: [u8; 0],
 }
 unsafe extern "C" {
@@ -283,4 +299,85 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_text_result_destroy(result: *mut sk_text_result);
+}
+unsafe extern "C" {
+    pub fn sk_query_create(
+        engine: *const sk_engine,
+        out_query: *mut *mut sk_query,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_operator(
+        query: *mut sk_query,
+        kind: u32,
+        child_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_validate_field(
+        query: *const sk_query,
+        kind: u32,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_true(
+        query: *mut sk_query,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_text(
+        query: *mut sk_query,
+        kind: u32,
+        field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        term_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_equals(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        value: i32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_range(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        lower_kind: u32,
+        lower_value: i32,
+        upper_kind: u32,
+        upper_value: i32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_destroy(query: *mut sk_query);
+}
+unsafe extern "C" {
+    pub fn sk_engine_search_query(
+        engine: *const sk_engine,
+        query: *const sk_query,
+        rank_profile: *const ::std::os::raw::c_char,
+        source: *const ::std::os::raw::c_char,
+        out_result: *mut *mut sk_text_result,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }

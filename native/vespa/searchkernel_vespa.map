@@ -32,6 +32,15 @@ SEARCHKERNEL_2 {
         sk_text_result_size;
         sk_text_result_hit;
         sk_text_result_destroy;
+        sk_query_create;
+        sk_query_add_operator;
+        sk_query_validate_field;
+        sk_query_add_true;
+        sk_query_add_text;
+        sk_query_add_equals;
+        sk_query_add_range;
+        sk_query_destroy;
+        sk_engine_search_query;
     local:
         *;
 };
