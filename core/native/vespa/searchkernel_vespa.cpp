@@ -2466,6 +2466,7 @@ public:
         }
         if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
             DocsumRequest docsum_request;
+            docsum_request.setTimeout(60s);
             docsum_request.resultClassName = "default";
             for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
             if (options.summary_kind == SK_SUMMARY_FIELDS) {

@@ -431,10 +431,17 @@ fn lower_query(query: &QueryIr, fields: &[searchkernel_ir::SearchFieldIr]) -> Re
     match query {
         QueryIr::MatchAll => Ok(Query::True),
         QueryIr::Text(text) => {
+            let term_count = searchkernel_vespa_engine::Linguistics
+                .analyze_query(
+                    text,
+                    searchkernel_vespa_engine::LinguisticsOptions::default(),
+                )
+                .terms
+                .len();
             let clauses = fields
                 .iter()
                 .map(|field| {
-                    if text.split_whitespace().count() > 1 {
+                    if term_count > 1 {
                         Query::phrase(field.field().as_str(), text)
                     } else {
                         Query::term(field.field().as_str(), text)
@@ -629,16 +636,20 @@ mod tests {
     }
 
     #[test]
-    fn multi_word_text_lowers_to_a_phrase() {
-        let query = lower_query(
-            &QueryIr::Text("wireless headphones".into()),
-            &[SearchFieldIr::new(
+    fn analyzed_multi_term_text_lowers_to_a_phrase() {
+        let search_field = || {
+            vec![SearchFieldIr::new(
                 field("title"),
                 SearchFieldWeight::new(1.0).unwrap(),
-            )],
-        )
-        .unwrap();
-        assert_eq!(query, Query::phrase("title", "wireless headphones"));
+            )]
+        };
+        for text in ["wireless headphones", "foo-bar", "can't"] {
+            let query = lower_query(&QueryIr::Text(text.into()), &search_field()).unwrap();
+            assert_eq!(query, Query::phrase("title", text));
+        }
+
+        let query = lower_query(&QueryIr::Text("headphones".into()), &search_field()).unwrap();
+        assert_eq!(query, Query::term("title", "headphones"));
     }
 
     #[test]
