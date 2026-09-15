@@ -54,14 +54,18 @@ require_pinned_vespa() {
 require_sdk_manifest() {
   local manifest="$1"
   local expected
+  local expected_abi
   expected="$(expected_vespa_revision)"
-  python3 - "$manifest" "$expected" <<'PY'
+  expected_abi="$(sed -n 's/^#define SK_NATIVE_ABI_VERSION \([0-9][0-9]*\)U$/\1/p' \
+    "$REFERENCE_ROOT/NATIVE_ABI_CONTRACT.h")"
+  [[ -n "$expected_abi" ]] || fail_verification "native ABI version is missing from the contract"
+  python3 - "$manifest" "$expected" "$expected_abi" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as stream:
     manifest = json.load(stream)
-assert manifest.get("native_abi_version") == 3, manifest
+assert manifest.get("native_abi_version") == int(sys.argv[3]), manifest
 assert manifest.get("vespa_commit") == sys.argv[2], manifest
 PY
 }

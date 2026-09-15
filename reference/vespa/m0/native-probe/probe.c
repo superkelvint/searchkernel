@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
     }
 
     uint32_t abi = sk_native_abi_version();
-    if (abi != 2) {
+    if (abi != 4) {
         fprintf(stderr, "unexpected native ABI: %u\n", abi);
         return 1;
     }
