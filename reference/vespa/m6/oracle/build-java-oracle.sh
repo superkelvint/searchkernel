@@ -7,6 +7,7 @@ ROOT="$(cd "$M6/../../.." && pwd)"
 VESPA_ROOT="$ROOT/upstream/vespa"
 BUILD="$M6/oracle/target"
 TOOLS="$BUILD/tools"
+ORACLE_SOURCE="$M6/oracle/src/searchkernel/m6/SchemaOracle.java"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 fail() { echo "m6 java oracle: $*" >&2; exit 1; }
@@ -48,6 +49,7 @@ mvn_install() {
 }
 
 STAMP="$BUILD/config-model-revision.txt"
+need_classpaths=0
 if [[ ! -f "$STAMP" || "$(cat "$STAMP")" != "$actual" ]]; then
   echo "Bootstrapping pinned Vespa Maven metadata/plugins" >&2
   (cd "$VESPA_ROOT/dependency-versions" && mvn_install)
@@ -63,26 +65,30 @@ if [[ ! -f "$STAMP" || "$(cat "$STAMP")" != "$actual" ]]; then
     install
 
   printf '%s\n' "$actual" > "$STAMP"
+  need_classpaths=1
 fi
 
 # config-model is an OSGi/container module. Some APIs it references are Maven
 # provided-scope dependencies. A standalone oracle needs both compile/provided
-# and runtime dependencies. Regenerating these classpath files is cheap once
-# the pinned dependency closure is installed.
+# and runtime dependencies. Keep the generated classpaths across scenarios;
+# they are invalidated when the pinned Vespa revision changes.
 COMPILE_CP_FILE="$BUILD/classpath-compile.txt"
 RUNTIME_CP_FILE="$BUILD/classpath-runtime.txt"
 
-"$MAVEN" --batch-mode --no-snapshot-updates \
-  -f "$VESPA_ROOT/config-model/pom.xml" \
-  -DincludeScope=compile \
-  -Dmdep.outputFile="$COMPILE_CP_FILE" \
-  dependency:build-classpath
+[[ -s "$COMPILE_CP_FILE" && -s "$RUNTIME_CP_FILE" ]] || need_classpaths=1
+if (( need_classpaths )); then
+  "$MAVEN" --batch-mode --no-snapshot-updates \
+    -f "$VESPA_ROOT/config-model/pom.xml" \
+    -DincludeScope=compile \
+    -Dmdep.outputFile="$COMPILE_CP_FILE" \
+    dependency:build-classpath
 
-"$MAVEN" --batch-mode --no-snapshot-updates \
-  -f "$VESPA_ROOT/config-model/pom.xml" \
-  -DincludeScope=runtime \
-  -Dmdep.outputFile="$RUNTIME_CP_FILE" \
-  dependency:build-classpath
+  "$MAVEN" --batch-mode --no-snapshot-updates \
+    -f "$VESPA_ROOT/config-model/pom.xml" \
+    -DincludeScope=runtime \
+    -Dmdep.outputFile="$RUNTIME_CP_FILE" \
+    dependency:build-classpath
+fi
 
 [[ -s "$COMPILE_CP_FILE" ]] || fail "missing generated compile/provided classpath"
 [[ -s "$RUNTIME_CP_FILE" ]] || fail "missing generated runtime classpath"
@@ -107,11 +113,22 @@ check_class() {
   [[ "$found" -eq 0 ]] || fail "required class missing from standalone oracle classpath: $class_path"
 }
 
-check_class "com/yahoo/config/model/api/ModelContext.class"
-check_class "com/yahoo/io/reader/NamedReader.class"
+CLASSPATH_VALIDATION_STAMP="$BUILD/classpath-validation-revision.txt"
+if (( need_classpaths )) || [[ ! -f "$CLASSPATH_VALIDATION_STAMP" || \
+      "$(cat "$CLASSPATH_VALIDATION_STAMP")" != "$actual" ]]; then
+  check_class "com/yahoo/config/model/api/ModelContext.class"
+  check_class "com/yahoo/io/reader/NamedReader.class"
+  printf '%s\n' "$actual" > "$CLASSPATH_VALIDATION_STAMP"
+fi
 
-rm -rf "$BUILD/classes"
-mkdir -p "$BUILD/classes"
-javac -Xlint:all,-path -Werror -cp "$CP" -d "$BUILD/classes" \
-  "$M6/oracle/src/searchkernel/m6/SchemaOracle.java"
-printf '%s\n' "$CP" > "$BUILD/runtime-classpath.txt"
+SOURCE_STAMP="$BUILD/schema-oracle-source.sha256"
+SOURCE_HASH="$(sha256sum "$ORACLE_SOURCE" | awk '{print $1}')"
+SCHEMA_CLASS="$BUILD/classes/searchkernel/m6/SchemaOracle.class"
+if (( need_classpaths )) || [[ ! -s "$BUILD/runtime-classpath.txt" || ! -f "$SCHEMA_CLASS" || \
+      ! -f "$SOURCE_STAMP" || "$(cat "$SOURCE_STAMP")" != "$SOURCE_HASH" ]]; then
+  rm -rf "$BUILD/classes"
+  mkdir -p "$BUILD/classes"
+  javac -Xlint:all,-path -Werror -cp "$CP" -d "$BUILD/classes" "$ORACLE_SOURCE"
+  printf '%s\n' "$SOURCE_HASH" > "$SOURCE_STAMP"
+  printf '%s\n' "$CP" > "$BUILD/runtime-classpath.txt"
+fi
