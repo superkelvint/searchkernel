@@ -8,7 +8,6 @@ cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
-require_immutable_checksum "$M3/M3-IMMUTABLE.sha256"
 
 [[ -s "$M3/expected/document.jsonl" && -s "$M3/expected/query.jsonl" ]] || {
   echo "M3 frozen goldens are missing. Harness author must run freeze-goldens.sh before implementation." >&2

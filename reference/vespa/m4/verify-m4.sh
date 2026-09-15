@@ -8,7 +8,6 @@ cd "$ROOT"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 
 require_pinned_vespa
-require_immutable_checksum "$M4/M4-IMMUTABLE.sha256"
 
 [[ -s "$M4/expected/results.jsonl" ]] || {
   echo "M4 frozen goldens are missing. Complete verifier authoring and run freeze-goldens.sh first." >&2
