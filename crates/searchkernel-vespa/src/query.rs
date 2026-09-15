@@ -232,7 +232,6 @@ mod yql {
             let text = self.take_string().ok_or_else(|| {
                 invalid_yql_error("contains requires a quoted term or phrase expression")
             })?;
-            require_one_query_position(&text, "term")?;
             Ok(Query::Term { field, text })
         }
 
@@ -297,9 +296,6 @@ mod yql {
                 }
             }
             self.expect_simple(Token::RParen, "expected `)` after phrase terms")?;
-            for term in &terms {
-                require_one_query_position(term, "phrase")?;
-            }
             Ok(terms)
         }
 
@@ -471,16 +467,6 @@ mod yql {
             }
         }
         (lower, upper)
-    }
-
-    fn require_one_query_position(text: &str, kind: &str) -> Result<()> {
-        let analysis = crate::Linguistics.analyze_query(text, Default::default());
-        if analysis.terms.len() != 1 {
-            return Err(unsupported(format!(
-                "{kind} literal must analyze to exactly one query position; use phrase(...)"
-            )));
-        }
-        Ok(())
     }
 
     fn lex(input: &str) -> Result<Vec<Token>> {
@@ -780,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_closed_bounds_and_multi_position_literals_are_unsupported() {
+    fn explicit_closed_bounds_are_unsupported_but_text_is_preserved_raw() {
         let closed = Query::from_yql(
             "select * from sources * where ({bounds:\"closed\"}range(qty, 10, 20))",
         )
@@ -788,17 +774,40 @@ mod tests {
         .to_string();
         assert!(closed.starts_with("unsupported_yql:"));
 
-        let term = Query::from_yql("select * from sources * where title contains \"brown fox\"")
-            .unwrap_err()
-            .to_string();
-        assert!(term.starts_with("unsupported_yql:"));
+        let term =
+            Query::from_yql("select * from sources * where title contains \"brown fox\"").unwrap();
+        assert_eq!(
+            term,
+            Query::Term {
+                field: "title".into(),
+                text: "brown fox".into(),
+            }
+        );
 
         let phrase = Query::from_yql(
             "select * from sources * where title contains phrase(\"new york\", \"hotel\")",
         )
-        .unwrap_err()
-        .to_string();
-        assert!(phrase.starts_with("unsupported_yql:"));
+        .unwrap();
+        assert_eq!(
+            phrase,
+            Query::Phrase {
+                field: "title".into(),
+                text: "new york hotel".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn yql_does_not_analyze_text_before_field_validation() {
+        let query = Query::from_yql("select * from sources * where missing contains \"brown fox\"")
+            .unwrap();
+        assert_eq!(
+            query,
+            Query::Term {
+                field: "missing".into(),
+                text: "brown fox".into(),
+            }
+        );
     }
 
     #[test]

@@ -247,6 +247,14 @@ fn low_level_query_validates_fields_before_text_analysis() {
         .expect_err("unknown query field must be rejected");
     assert!(unknown.to_string().contains("unknown"));
 
+    let unknown_yql = engine
+        .search_yql(
+            "select * from sources * where missing contains \"two words\"",
+            "default",
+        )
+        .expect_err("YQL must validate its field before analyzing text");
+    assert!(unknown_yql.to_string().contains("unknown"));
+
     let wrong_type = engine
         .search_query(
             &Query::Term {
