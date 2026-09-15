@@ -567,6 +567,60 @@ mod tests {
     use crate::{Analyzer, Field, SearchField};
     use searchkernel_ir::{AnalyzerIdentity, FieldCardinality, FieldKind};
     use searchkernel_testkit::RecordingBackend;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("searchkernel-index-test-{label}-{nonce}"))
+    }
+
+    fn write_config(config: &std::path::Path) {
+        std::fs::create_dir_all(config).unwrap();
+        for name in [
+            "searchkernel-schema.json",
+            "indexschema.cfg",
+            "attributes.cfg",
+            "summary.cfg",
+            "rank-profiles.cfg",
+            "juniperrc.cfg",
+            "proton.cfg",
+        ] {
+            std::fs::write(config.join(name), format!("{name}\n")).unwrap();
+        }
+    }
+
+    fn manifest_definition() -> IndexDefinition {
+        IndexDefinition::new()
+            .name("catalog")
+            .field(
+                Field::text("title")
+                    .multi()
+                    .stored(true)
+                    .searchable(true)
+                    .filterable(false)
+                    .sortable(false)
+                    .facetable(false)
+                    .analyzer(Analyzer::standard_v1()),
+            )
+            .field(
+                Field::keyword("brand")
+                    .stored(false)
+                    .searchable(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(Field::int64("quantity"))
+            .field(Field::float64("price"))
+            .field(Field::bool("enabled"))
+            .default_search_fields([
+                SearchField::new("title"),
+                SearchField::new("brand").weight(2.0),
+            ])
+    }
 
     #[test]
     fn schema_options_and_default_search_fields_reach_core() {
@@ -644,5 +698,124 @@ mod tests {
         assert_eq!(fields[4].kind(), FieldKind::Bool);
         assert_eq!(fields[4].cardinality(), FieldCardinality::Multi);
         assert!(!fields[4].capabilities().sortable());
+    }
+
+    #[test]
+    fn manifest_round_trips_definition_and_config_identity() {
+        let root = temporary_path("manifest-round-trip");
+        let config = root.join("config");
+        write_config(&config);
+        let definition = manifest_definition();
+
+        let manifest = IndexManifest::for_definition(&definition, &definition, &config).unwrap();
+        manifest.write(&root).unwrap();
+        let loaded = IndexManifest::read(&root).unwrap();
+        loaded.validate_config(&config).unwrap();
+
+        assert_eq!(loaded.definition().unwrap(), definition);
+        assert_eq!(loaded.value["format_version"], MANIFEST_FORMAT_VERSION);
+        assert_eq!(loaded.value["native_abi_version"], NATIVE_ABI_VERSION);
+
+        std::fs::write(config.join("proton.cfg"), "changed\n").unwrap();
+        assert!(matches!(
+            loaded.validate_config(&config),
+            Err(Error::IncompatibleIndex(message)) if message == "resolved engine configuration differs"
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manifest_validation_rejects_identity_and_structure_corruption() {
+        let root = temporary_path("manifest-validation");
+        let config = root.join("config");
+        write_config(&config);
+        let definition = manifest_definition();
+        let manifest = IndexManifest::for_definition(&definition, &definition, &config).unwrap();
+
+        let cases = [
+            ("format_version", serde_json::json!(999), true),
+            ("native_abi_version", serde_json::json!(999), true),
+            ("searchkernel_version", serde_json::json!(999), false),
+            ("vespa_revision", serde_json::json!(999), false),
+            (
+                "portable_index_definition",
+                serde_json::json!("invalid"),
+                false,
+            ),
+            (
+                "resolved_index_definition",
+                serde_json::json!("invalid"),
+                false,
+            ),
+            (
+                "resolved_engine_config_identity",
+                serde_json::json!("invalid"),
+                false,
+            ),
+        ];
+        for (key, value, incompatible) in cases {
+            let mut corrupted = manifest.clone();
+            corrupted.value[key] = value;
+            let result = corrupted.validate_identity();
+            assert!(result.is_err(), "manifest mutation {key} was accepted");
+            assert_eq!(
+                matches!(result, Err(Error::IncompatibleIndex(_))),
+                incompatible,
+                "unexpected error class for manifest mutation {key}"
+            );
+        }
+
+        for value in [serde_json::json!(null), serde_json::json!({})] {
+            let result = IndexManifest { value }.validate_identity();
+            assert!(matches!(result, Err(Error::CorruptIndex(_))));
+        }
+
+        let malformed = root.join("malformed");
+        std::fs::create_dir_all(malformed.join("manifest")).unwrap();
+        std::fs::write(malformed.join("manifest/index.json"), b"not-json").unwrap();
+        assert!(matches!(
+            IndexManifest::read(&malformed),
+            Err(Error::CorruptIndex(_))
+        ));
+
+        let missing = root.join("missing");
+        std::fs::create_dir_all(&missing).unwrap();
+        assert!(matches!(
+            IndexManifest::read(&missing),
+            Err(Error::CorruptIndex(_))
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manifest_definition_decoder_rejects_malformed_fields() {
+        let invalid_definitions = [
+            serde_json::json!(null),
+            serde_json::json!({}),
+            serde_json::json!({"fields": [null]}),
+            serde_json::json!({"fields": [{"name": "title"}]}),
+            serde_json::json!({"fields": [{"name": "title", "kind": "Unknown"}]}),
+            serde_json::json!({
+                "fields": [{"name": "title", "kind": "Text", "analyzer": 1}]
+            }),
+            serde_json::json!({
+                "fields": [{"name": "title", "kind": "Text", "analyzer": "Unknown"}]
+            }),
+            serde_json::json!({
+                "fields": [{"name": "title", "kind": "Text"}],
+                "default_search_fields": [null]
+            }),
+            serde_json::json!({
+                "fields": [{"name": "title", "kind": "Text"}],
+                "default_search_fields": [{}]
+            }),
+        ];
+
+        for value in invalid_definitions {
+            assert!(matches!(
+                definition_from_json(&value),
+                Err(Error::CorruptIndex(_))
+            ));
+        }
     }
 }

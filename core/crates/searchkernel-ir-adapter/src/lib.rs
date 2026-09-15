@@ -604,9 +604,10 @@ fn unsupported(message: impl Into<String>) -> PortableError {
 mod tests {
     use super::*;
     use searchkernel_ir::{
-        AnalyzerIdentity, FieldCapabilities, FieldCardinality, FieldIr, FieldKind, FieldName,
-        HighlightingIr, IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, QueryIr,
-        RankingPolicyIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
+        AnalyzerIdentity, ComparisonIr, ComparisonOp, FieldCapabilities, FieldCardinality, FieldIr,
+        FieldKind, FieldName, FieldValueIr, HighlightingIr, IndexDefinitionIr, LanguageHint,
+        MissingPlacement, PrefixPolicy, QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr,
+        SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -717,6 +718,249 @@ mod tests {
         .unwrap();
         let error = validate_index_definition(&definition).unwrap_err();
         assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    }
+
+    #[test]
+    fn field_value_lowering_covers_scalars_arrays_and_type_errors() {
+        let scalars = [
+            (
+                ScalarValueIr::Bool(true),
+                FieldValue::Scalar(ScalarValue::Boolean(true)),
+            ),
+            (
+                ScalarValueIr::Int64(-7),
+                FieldValue::Scalar(ScalarValue::Integer(-7)),
+            ),
+            (
+                ScalarValueIr::Float64(2.5),
+                FieldValue::Scalar(ScalarValue::Float(2.5)),
+            ),
+            (
+                ScalarValueIr::String("title".into()),
+                FieldValue::Scalar(ScalarValue::String("title".into())),
+            ),
+        ];
+        for (input, expected) in scalars {
+            assert_eq!(
+                lower_field_value(&FieldValueIr::Single(input)),
+                Ok(expected)
+            );
+        }
+
+        let arrays = [
+            (
+                vec![
+                    ScalarValueIr::String("a".into()),
+                    ScalarValueIr::String("b".into()),
+                ],
+                FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Strings(vec![
+                    "a".into(),
+                    "b".into(),
+                ])),
+            ),
+            (
+                vec![ScalarValueIr::Int64(1), ScalarValueIr::Int64(2)],
+                FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Integers(vec![1, 2])),
+            ),
+            (
+                vec![ScalarValueIr::Float64(1.0), ScalarValueIr::Float64(2.0)],
+                FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Floats(vec![
+                    1.0, 2.0,
+                ])),
+            ),
+            (
+                vec![ScalarValueIr::Bool(true), ScalarValueIr::Bool(false)],
+                FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Booleans(vec![
+                    true, false,
+                ])),
+            ),
+        ];
+        for (input, expected) in arrays {
+            assert_eq!(lower_field_value(&FieldValueIr::Multi(input)), Ok(expected));
+        }
+        assert_eq!(
+            lower_field_value(&FieldValueIr::Multi(Vec::new())),
+            Ok(FieldValue::Array(
+                searchkernel_vespa_engine::ArrayValue::Strings(Vec::new())
+            ))
+        );
+        let error = lower_field_value(&FieldValueIr::Multi(vec![
+            ScalarValueIr::String("a".into()),
+            ScalarValueIr::Int64(1),
+        ]))
+        .unwrap_err();
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    }
+
+    #[test]
+    fn query_and_filter_lowering_covers_supported_variants() {
+        let title = field("title");
+        let price = field("price");
+        assert_eq!(lower_query(&QueryIr::MatchAll, &[]).unwrap(), Query::True);
+        assert_eq!(
+            lower_query(
+                &QueryIr::Text("fox".into()),
+                &[SearchFieldIr::new(
+                    title.clone(),
+                    SearchFieldWeight::new(1.0).unwrap(),
+                )]
+            )
+            .unwrap(),
+            Query::term("title", "fox")
+        );
+        assert_eq!(
+            lower_query(
+                &QueryIr::Text("fox hound".into()),
+                &[
+                    SearchFieldIr::new(title.clone(), SearchFieldWeight::new(1.0).unwrap()),
+                    SearchFieldIr::new(field("body"), SearchFieldWeight::new(1.0).unwrap()),
+                ],
+            )
+            .unwrap(),
+            Query::Or(vec![
+                Query::phrase("title", "fox hound"),
+                Query::phrase("body", "fox hound"),
+            ])
+        );
+        assert!(lower_query(&QueryIr::Text("fox".into()), &[]).is_err());
+        assert_eq!(
+            lower_query(
+                &QueryIr::Term {
+                    field: price.clone(),
+                    value: ScalarValueIr::Int64(10),
+                },
+                &[],
+            )
+            .unwrap(),
+            Query::equals("price", 10)
+        );
+        assert_eq!(
+            lower_query(
+                &QueryIr::Term {
+                    field: title.clone(),
+                    value: ScalarValueIr::String("fox".into()),
+                },
+                &[],
+            )
+            .unwrap(),
+            Query::term("title", "fox")
+        );
+        assert!(lower_query(
+            &QueryIr::Term {
+                field: price.clone(),
+                value: ScalarValueIr::Float64(1.0),
+            },
+            &[],
+        )
+        .is_err());
+        assert_eq!(
+            lower_query(
+                &QueryIr::And(vec![
+                    QueryIr::MatchAll,
+                    QueryIr::Not(Box::new(QueryIr::MatchAll,))
+                ]),
+                &[],
+            )
+            .unwrap(),
+            Query::And(vec![Query::True, Query::Not(Box::new(Query::True))])
+        );
+
+        let eq_int = FilterIr::Comparison(ComparisonIr::new(
+            price.clone(),
+            ComparisonOp::Eq,
+            ScalarValueIr::Int64(10),
+        ));
+        let ne_string = FilterIr::Comparison(ComparisonIr::new(
+            title.clone(),
+            ComparisonOp::Ne,
+            ScalarValueIr::String("fox".into()),
+        ));
+        assert_eq!(
+            lower_filter(&FilterIr::Exists {
+                field: title.clone()
+            })
+            .unwrap(),
+            Query::exists("title")
+        );
+        assert_eq!(lower_filter(&eq_int).unwrap(), Query::equals("price", 10));
+        assert_eq!(
+            lower_filter(&ne_string).unwrap(),
+            Query::Not(Box::new(Query::AttributeEquals {
+                field: "title".into(),
+                value: VespaValue::String("fox".into()),
+            }))
+        );
+        assert_eq!(
+            lower_filter(&FilterIr::And(vec![
+                eq_int.clone(),
+                FilterIr::Not(Box::new(ne_string.clone()))
+            ]))
+            .unwrap(),
+            Query::And(vec![
+                Query::equals("price", 10),
+                Query::Not(Box::new(Query::Not(Box::new(Query::AttributeEquals {
+                    field: "title".into(),
+                    value: VespaValue::String("fox".into()),
+                })))),
+            ])
+        );
+        assert_eq!(
+            lower_filter(&FilterIr::Range(RangeIr::new(
+                price.clone(),
+                Some(ScalarValueIr::Int64(1)),
+                Some(ScalarValueIr::Int64(5)),
+                true,
+                false,
+            )))
+            .unwrap(),
+            Query::range("price", RangeBound::Included(1), RangeBound::Excluded(5),)
+        );
+        assert!(lower_filter(&FilterIr::Comparison(ComparisonIr::new(
+            price,
+            ComparisonOp::Gt,
+            ScalarValueIr::Float64(1.0),
+        )))
+        .is_err());
+    }
+
+    #[test]
+    fn value_conversion_preserves_all_native_value_shapes() {
+        use searchkernel_vespa_engine::ArrayValue;
+
+        let values = [
+            (
+                FieldValue::Scalar(ScalarValue::String("a".into())),
+                Value::String("a".into()),
+            ),
+            (FieldValue::Scalar(ScalarValue::Integer(1)), Value::Int64(1)),
+            (
+                FieldValue::Scalar(ScalarValue::Float(1.5)),
+                Value::Float64(1.5),
+            ),
+            (
+                FieldValue::Scalar(ScalarValue::Boolean(true)),
+                Value::Bool(true),
+            ),
+            (
+                FieldValue::Array(ArrayValue::Strings(vec!["a".into()])),
+                Value::List(vec![Value::String("a".into())]),
+            ),
+            (
+                FieldValue::Array(ArrayValue::Integers(vec![1])),
+                Value::List(vec![Value::Int64(1)]),
+            ),
+            (
+                FieldValue::Array(ArrayValue::Floats(vec![1.5])),
+                Value::List(vec![Value::Float64(1.5)]),
+            ),
+            (
+                FieldValue::Array(ArrayValue::Booleans(vec![true])),
+                Value::List(vec![Value::Bool(true)]),
+            ),
+        ];
+        for (native, expected) in values {
+            assert_eq!(value_to_ir(&native), expected);
+        }
     }
 
     fn lower_search_request_for_test(request: SearchRequestIr) -> PortableError {
