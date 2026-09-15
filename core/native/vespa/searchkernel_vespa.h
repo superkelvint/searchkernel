@@ -95,7 +95,7 @@ typedef struct sk_local_grouping_result sk_local_grouping_result;
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
 /* This ABI revision reflects removal of all public aggregate structs. */
-#define SK_NATIVE_ABI_VERSION 3U
+#define SK_NATIVE_ABI_VERSION 4U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -130,6 +130,12 @@ SK_API int32_t sk_document_add_float(sk_document *document, const char *field,
 SK_API int32_t sk_document_add_boolean(sk_document *document, const char *field,
                                        uint8_t value, uint8_t *out_error,
                                        uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_annotate_text(
+    sk_document *document, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 
 SK_API int32_t sk_document_update_create(const char *document_id, const char *field,
                                          int64_t value,
@@ -160,6 +166,12 @@ SK_API int32_t sk_document_update_assign_boolean(sk_document_update *update,
 SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                         uint8_t *out_error,
                                         uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_annotate_text(
+    sk_document_update *update, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 
 SK_API int32_t sk_search_request_create(const char *field, int64_t value,
                                         uint32_t limit,

@@ -885,6 +885,7 @@ struct OwnedValue {
 struct DocumentFieldState {
     std::string name;
     OwnedValue value;
+    std::vector<TextOccurrence> occurrences;
 };
 
 struct ValueDocument {
@@ -899,7 +900,12 @@ struct ValueUpdate {
     std::string field;
     int64_t value = 0;
     std::vector<std::pair<std::string, std::optional<OwnedValue>>> fields;
+    std::vector<std::pair<std::string, std::vector<TextOccurrence>>> annotated_fields;
 };
+
+void append_text_occurrences(TextDocument &, const uint8_t *, uint32_t,
+                             const uint32_t *, const uint32_t *, const uint32_t *,
+                             uint32_t);
 
 struct AttributeDocumentState {
     std::string id;
@@ -1253,11 +1259,18 @@ class EmbeddedEngine {
     }
 
     std::unique_ptr<document::FieldValue> make_document_value(
-        const std::string &field_name, const OwnedValue &value) const {
+        const std::string &field_name, const OwnedValue &value,
+        const std::vector<TextOccurrence> *occurrences = nullptr) const {
         const auto &field = require_manifest_field(field_name);
         if (field.type == "text" || field.type == "string") {
             if (value.kind != SK_VALUE_STRING) {
                 throw std::invalid_argument("wrong string value type for field: " + field_name);
+            }
+            if (field.type == "text" && occurrences) {
+                TextDocument analyzed;
+                analyzed.text = value.string;
+                analyzed.occurrences = *occurrences;
+                return make_text_value(analyzed);
             }
             return std::make_unique<document::StringFieldValue>(value.string);
         }
@@ -1286,8 +1299,10 @@ class EmbeddedEngine {
         if (source.fields.empty()) throw std::invalid_argument("document must not be empty");
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
-        for (const auto &[name, value] : source.fields) {
-            document->setFieldValue(_doc_type->getField(name), make_document_value(name, value));
+        for (const auto &entry : source.fields) {
+            const auto *occurrences = entry.occurrences.empty() ? nullptr : &entry.occurrences;
+            document->setFieldValue(_doc_type->getField(entry.name),
+                                    make_document_value(entry.name, entry.value, occurrences));
         }
         return document;
     }
@@ -1301,8 +1316,14 @@ class EmbeddedEngine {
             const auto &field = _doc_type->getField(name);
             document::FieldUpdate field_update(field);
             if (value) {
+                const auto annotated = std::find_if(
+                    source.annotated_fields.begin(), source.annotated_fields.end(),
+                    [&name](const auto &entry) { return entry.first == name; });
+                const auto *occurrences = annotated == source.annotated_fields.end()
+                                               ? nullptr
+                                               : &annotated->second;
                 field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
-                    make_document_value(name, *value)));
+                    make_document_value(name, *value, occurrences)));
             } else {
                 field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
             }
@@ -1356,7 +1377,7 @@ class EmbeddedEngine {
             default:
                 throw std::invalid_argument("unsupported retrieved document field type: " + field.getName());
             }
-            result.fields.push_back({field.getName(), std::move(owned)});
+            result.fields.push_back({field.getName(), std::move(owned), {}});
         }
         return result;
     }
@@ -3029,7 +3050,7 @@ int32_t add_document_value(sk_document *document, const char *field,
         if (existing != document->fields.end()) {
             existing->value = std::move(value);
         } else {
-            document->fields.push_back({field, std::move(value)});
+            document->fields.push_back({field, std::move(value), {}});
         }
     });
 }
@@ -3065,6 +3086,33 @@ extern "C" int32_t sk_document_add_boolean(sk_document *document, const char *fi
                                              uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result; result.kind = SK_VALUE_BOOLEAN; result.boolean = value != 0; return result;
+    });
+}
+
+extern "C" int32_t sk_document_annotate_text(
+    sk_document *document, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "document annotation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto existing = std::find_if(document->fields.begin(), document->fields.end(),
+                                     [field](const auto &entry) { return entry.name == field; });
+        if (existing == document->fields.end()) {
+            throw std::invalid_argument("document text field must be added before annotation");
+        }
+        if (existing->value.kind != SK_VALUE_STRING) {
+            throw std::invalid_argument("document annotation requires a string field");
+        }
+        TextDocument analyzed;
+        analyzed.text = existing->value.string;
+        append_text_occurrences(analyzed, term_bytes, term_bytes_length, term_lengths,
+                                byte_starts, byte_lengths, occurrence_count);
+        existing->occurrences = std::move(analyzed.occurrences);
     });
 }
 
@@ -3168,6 +3216,38 @@ extern "C" int32_t sk_document_update_clear(sk_document_update *update, const ch
                                               uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity,
                             [] { return std::optional<OwnedValue>(); });
+}
+
+extern "C" int32_t sk_document_update_annotate_text(
+    sk_document_update *update, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "update annotation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto existing = std::find_if(update->fields.begin(), update->fields.end(),
+                                     [field](const auto &entry) { return entry.first == field; });
+        if (existing == update->fields.end() || !existing->second ||
+            existing->second->kind != SK_VALUE_STRING) {
+            throw std::invalid_argument("a string assignment is required before annotation");
+        }
+        TextDocument analyzed;
+        analyzed.text = existing->second->string;
+        append_text_occurrences(analyzed, term_bytes, term_bytes_length, term_lengths,
+                                byte_starts, byte_lengths, occurrence_count);
+        auto annotated = std::find_if(update->annotated_fields.begin(),
+                                      update->annotated_fields.end(),
+                                      [field](const auto &entry) { return entry.first == field; });
+        if (annotated == update->annotated_fields.end()) {
+            update->annotated_fields.emplace_back(field, std::move(analyzed.occurrences));
+        } else {
+            annotated->second = std::move(analyzed.occurrences);
+        }
+    });
 }
 
 extern "C" int32_t sk_search_request_create(const char *field, int64_t value,
@@ -3636,8 +3716,7 @@ void initialize_text_document(TextDocument &document, const char *id, const char
     document.text = copy_text_bytes(text, text_length, MAX_TEXT_BYTES, "text");
 }
 
-template <typename TextDocumentType>
-void append_text_occurrences(TextDocumentType &document, const uint8_t *term_bytes,
+void append_text_occurrences(TextDocument &document, const uint8_t *term_bytes,
                              uint32_t term_bytes_length, const uint32_t *term_lengths,
                              const uint32_t *byte_starts, const uint32_t *byte_lengths,
                              uint32_t occurrence_count) {

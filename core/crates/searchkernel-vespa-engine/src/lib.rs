@@ -626,6 +626,9 @@ impl Engine {
         let native = NativeDocument(require_ptr(native, "document")?);
         for (field, value) in document.fields() {
             add_document_field(native.0.as_ptr(), field, value)?;
+            if let Some(analysis) = document.text_analysis().get(field) {
+                add_text_annotation(native.0.as_ptr(), field, analysis, false)?;
+            }
         }
         let mut error = NativeError::new();
         let status = unsafe {
@@ -661,6 +664,9 @@ impl Engine {
         let native = NativeUpdate(require_ptr(native, "document update")?);
         for (field, mutation) in update.fields() {
             add_update_field(native.0.as_ptr(), field, mutation)?;
+            if let Some(analysis) = update.text_analysis().get(field) {
+                add_text_annotation(native.0.as_ptr(), field, analysis, true)?;
+            }
         }
         let mut error = NativeError::new();
         let status = unsafe {
@@ -1426,6 +1432,47 @@ fn add_update_field(
             return Err(Error::message(
                 "array document updates require a multi-valued schema",
             ));
+        }
+    };
+    check(status, &error)
+}
+
+fn add_text_annotation<T>(
+    handle: *mut T,
+    field: &str,
+    analysis: &DocumentAnalysis,
+    update: bool,
+) -> Result<(), Error> {
+    let occurrences = text_occurrences(analysis)?;
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        if update {
+            sys::sk_document_update_annotate_text(
+                handle.cast(),
+                field.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        } else {
+            sys::sk_document_annotate_text(
+                handle.cast(),
+                field.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
         }
     };
     check(status, &error)

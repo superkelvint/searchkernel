@@ -11,9 +11,82 @@ use searchkernel_ir::{
     SearchRequestIr, SearchResult, TotalHitsRelation, UpsertRequestIr, UpsertResult, Value,
 };
 use searchkernel_vespa_engine::{
-    Document, DocumentUpdate, Engine, FieldValue, Query, RangeBound, ScalarValue, SearchRequest,
-    SortField, SortOrder, TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
+    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue, Query,
+    RangeBound, ScalarValue, Schema, SearchRequest, SortField, SortOrder,
+    TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
+
+/// Compile the resolved portable definition into the M-layer configuration.
+///
+/// This is deliberately owned by the adapter: the product layer must resolve
+/// portable defaults into IR before the Vespa schema is generated.  M does not
+/// currently expose collection fields through its generic document ABI, so a
+/// multi-valued definition is rejected before any on-disk state is created.
+pub fn compile_index_definition(
+    definition: &searchkernel_ir::IndexDefinitionIr,
+    config_dir: impl AsRef<std::path::Path>,
+) -> Result<()> {
+    validate_index_definition(definition)?;
+    let mut schema = Schema::new(
+        definition
+            .name()
+            .map_or("searchkernel", searchkernel_ir::IndexName::as_str),
+    );
+    for field in definition.fields() {
+        if matches!(
+            field.cardinality(),
+            searchkernel_ir::FieldCardinality::Multi
+        ) {
+            return Err(unsupported(format!(
+                "multi-valued field `{}` is not supported by the current M document/config ABI",
+                field.name().as_str()
+            )));
+        }
+        let kind = match field.kind() {
+            searchkernel_ir::FieldKind::Text => FieldType::Text,
+            searchkernel_ir::FieldKind::Keyword => FieldType::String,
+            searchkernel_ir::FieldKind::Int64 => FieldType::Integer,
+            searchkernel_ir::FieldKind::Float64 => FieldType::Float,
+            searchkernel_ir::FieldKind::Bool => FieldType::Boolean,
+        };
+        let capabilities = field.capabilities();
+        let mut native = Field::new(field.name().as_str(), kind);
+        if capabilities.searchable() {
+            native = native.indexed();
+        }
+        if capabilities.filterable()
+            || capabilities.sortable()
+            || capabilities.facetable()
+            || !matches!(field.kind(), searchkernel_ir::FieldKind::Text)
+        {
+            native = native.attribute();
+        }
+        if capabilities.stored() {
+            native = native.summary();
+        }
+        schema = schema.field(native);
+    }
+    ConfigCompiler
+        .compile_to(&schema, config_dir)
+        .map_err(native_error)
+}
+
+/// Validate the subset of the portable schema that the current M ABI can
+/// execute without losing document values.
+pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr) -> Result<()> {
+    if let Some(field) = definition.fields().iter().find(|field| {
+        matches!(
+            field.cardinality(),
+            searchkernel_ir::FieldCardinality::Multi
+        )
+    }) {
+        return Err(unsupported(format!(
+            "multi-valued field `{}` is not supported by the current M document/config ABI",
+            field.name().as_str()
+        )));
+    }
+    Ok(())
+}
 
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
@@ -43,6 +116,12 @@ impl Backend for VespaBackend {
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult> {
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
+        if self.engine.get(&id).map_err(native_error)?.is_some() {
+            return Err(PortableError::new(
+                searchkernel_ir::ErrorCode::AlreadyExists,
+                format!("document already exists: {id}"),
+            ));
+        }
         self.engine.put(document).map_err(native_error)?;
         Ok(InsertResult { id })
     }
@@ -59,7 +138,15 @@ impl Backend for VespaBackend {
         for operation in request.operations() {
             match operation {
                 PatchOperationIr::Set { field, value } => {
-                    update = update.assign(field.as_str(), lower_field_value(value)?);
+                    let lowered = lower_field_value(value)?;
+                    update = update.assign(field.as_str(), lowered.clone());
+                    if let FieldValueIr::Single(ScalarValueIr::String(text)) = value {
+                        let analysis = searchkernel_vespa_engine::Linguistics.analyze_document(
+                            text,
+                            searchkernel_vespa_engine::LinguisticsOptions::default(),
+                        );
+                        update = update.annotate_text(field.as_str(), analysis);
+                    }
                 }
                 PatchOperationIr::Unset { field } => update = update.clear(field.as_str()),
             }
@@ -86,29 +173,31 @@ impl Backend for VespaBackend {
             .engine
             .get(request.id().as_str())
             .map_err(native_error)?;
+        let Some(document) = document else {
+            return Ok(GetResult { document: None });
+        };
+        let projection = request.projection().fields();
+        let fields = document
+            .fields()
+            .iter()
+            .filter(|(name, _)| {
+                projection.is_empty()
+                    || projection
+                        .iter()
+                        .any(|field| field.as_str() == name.as_str())
+            })
+            .map(|(name, value)| (name.clone(), value_to_ir(value)))
+            .collect();
         Ok(GetResult {
-            document: document.map(|document| searchkernel_ir::DocumentResult {
+            document: Some(searchkernel_ir::DocumentResult {
                 id: document.id().to_owned(),
-                fields: document
-                    .fields()
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value_to_ir(value)))
-                    .collect(),
+                fields,
             }),
         })
     }
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
-        if !request.facets().is_empty()
-            || !matches!(
-                request.highlighting(),
-                searchkernel_ir::HighlightingIr::Disabled
-            )
-        {
-            return Err(unsupported(
-                "facets and highlighting are not yet lowered by the M API",
-            ));
-        }
+        validate_search_request(&request)?;
         let query = lower_search_query(&request)?;
         let mut m_request = SearchRequest::new(query)
             .limit(request.limit())
@@ -187,7 +276,18 @@ impl Backend for VespaBackend {
 fn lower_document(document: &DocumentIr) -> Result<Document> {
     let mut result = Document::new(document.id().as_str());
     for (field, value) in document.fields() {
-        result = result.field(field.as_str(), lower_field_value(value)?);
+        let lowered = lower_field_value(value)?;
+        result = result.field(field.as_str(), lowered.clone());
+        if matches!(lowered, FieldValue::Scalar(ScalarValue::String(_))) {
+            let analysis = searchkernel_vespa_engine::Linguistics.analyze_document(
+                match value {
+                    FieldValueIr::Single(ScalarValueIr::String(value)) => value,
+                    _ => unreachable!("string annotation only follows a scalar string"),
+                },
+                searchkernel_vespa_engine::LinguisticsOptions::default(),
+            );
+            result = result.annotate_text(field.as_str(), analysis);
+        }
     }
     Ok(result)
 }
@@ -290,13 +390,56 @@ fn lower_search_query(request: &SearchRequestIr) -> Result<Query> {
     }
 }
 
+fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
+    if !request.facets().is_empty()
+        || !matches!(
+            request.highlighting(),
+            searchkernel_ir::HighlightingIr::Disabled
+        )
+    {
+        return Err(unsupported(
+            "facets and highlighting are not yet lowered by the M API",
+        ));
+    }
+    if request
+        .search_fields()
+        .iter()
+        .any(|field| field.weight().get() != 1.0)
+    {
+        return Err(unsupported(
+            "weighted search fields are not yet represented by the M query model",
+        ));
+    }
+    if request
+        .sort()
+        .iter()
+        .any(|sort| matches!(sort.missing(), searchkernel_ir::MissingPlacement::First))
+    {
+        return Err(unsupported(
+            "missing-first sorting is not yet represented by the M query model",
+        ));
+    }
+    if request.language().is_some() {
+        return Err(unsupported(
+            "per-request language is not yet represented by the M query model",
+        ));
+    }
+    Ok(())
+}
+
 fn lower_query(query: &QueryIr, fields: &[searchkernel_ir::SearchFieldIr]) -> Result<Query> {
     match query {
         QueryIr::MatchAll => Ok(Query::True),
         QueryIr::Text(text) => {
             let clauses = fields
                 .iter()
-                .map(|field| Query::term(field.field().as_str(), text))
+                .map(|field| {
+                    if text.split_whitespace().count() > 1 {
+                        Query::phrase(field.field().as_str(), text)
+                    } else {
+                        Query::term(field.field().as_str(), text)
+                    }
+                })
                 .collect::<Vec<_>>();
             match clauses.as_slice() {
                 [] => Err(unsupported("text query has no searchable fields")),
@@ -429,9 +572,143 @@ fn value_to_ir(value: &FieldValue) -> Value {
 }
 
 fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
-    PortableError::new(searchkernel_ir::ErrorCode::Internal, error.to_string())
+    let message = error.to_string();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("unsupported") || lower.contains("not supported") {
+        PortableError::unsupported("m_native", None::<String>, message)
+    } else if error.code() == 1
+        || lower.contains("invalid")
+        || lower.contains("must not")
+        || lower.contains("must contain")
+        || lower.contains("unknown")
+        || lower.contains("requires an")
+    {
+        PortableError::invalid("backend_request", None::<String>, message)
+    } else {
+        PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
+    }
 }
 
 fn unsupported(message: impl Into<String>) -> PortableError {
     PortableError::unsupported("m_lowering", None::<String>, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use searchkernel_ir::{
+        AnalyzerIdentity, FieldCapabilities, FieldCardinality, FieldIr, FieldKind, FieldName,
+        HighlightingIr, IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, QueryIr,
+        RankingPolicyIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
+    };
+
+    fn field(name: &str) -> FieldName {
+        FieldName::parse(name).unwrap()
+    }
+
+    fn request(
+        search_fields: Vec<SearchFieldIr>,
+        sort: Vec<SortIr>,
+        language: Option<LanguageHint>,
+    ) -> SearchRequestIr {
+        SearchRequestIr::new(
+            QueryIr::Text("wireless headphones".into()),
+            search_fields,
+            None,
+            sort,
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            20,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            language,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    }
+
+    #[test]
+    fn multi_word_text_lowers_to_a_phrase() {
+        let query = lower_query(
+            &QueryIr::Text("wireless headphones".into()),
+            &[SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(query, Query::phrase("title", "wireless headphones"));
+    }
+
+    #[test]
+    fn unsupported_search_semantics_are_rejected_instead_of_dropped() {
+        let weighted = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(2.0).unwrap(),
+            )],
+            Vec::new(),
+            None,
+        );
+        assert_eq!(
+            lower_search_request_for_test(weighted).code,
+            searchkernel_ir::ErrorCode::Unsupported
+        );
+
+        let missing_first = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            vec![SortIr::new(
+                field("price"),
+                SortDirection::Asc,
+                MissingPlacement::First,
+            )],
+            None,
+        );
+        assert_eq!(
+            lower_search_request_for_test(missing_first).code,
+            searchkernel_ir::ErrorCode::Unsupported
+        );
+
+        let language = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            Vec::new(),
+            Some(LanguageHint::parse("en").unwrap()),
+        );
+        assert_eq!(
+            lower_search_request_for_test(language).code,
+            searchkernel_ir::ErrorCode::Unsupported
+        );
+    }
+
+    #[test]
+    fn multi_valued_schema_is_rejected_before_m_configuration() {
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                field("tags"),
+                FieldKind::Keyword,
+                FieldCardinality::Multi,
+                None::<AnalyzerIdentity>,
+                FieldCapabilities::new(false, false, true, false, false),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let error = validate_index_definition(&definition).unwrap_err();
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    }
+
+    fn lower_search_request_for_test(request: SearchRequestIr) -> PortableError {
+        validate_search_request(&request).unwrap_err()
+    }
 }

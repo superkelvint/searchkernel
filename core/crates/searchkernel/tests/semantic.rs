@@ -68,6 +68,12 @@ fn field_value(value: &FieldValueIr) -> Value {
 impl Backend for StatefulBackend {
     fn insert(&self, request: InsertRequestIr) -> searchkernel_ir::Result<InsertResult> {
         let id = request.document().id().as_str().to_owned();
+        if self.documents.lock().unwrap().contains_key(&id) {
+            return Err(searchkernel_ir::PortableError::new(
+                searchkernel_ir::ErrorCode::AlreadyExists,
+                format!("document already exists: {id}"),
+            ));
+        }
         self.store(request.document());
         Ok(InsertResult { id })
     }
@@ -163,6 +169,11 @@ fn public_api_round_trips_crud_and_match_all_search() {
     assert_eq!(
         index.get::<Product>("sku-1").unwrap(),
         Some(product.clone())
+    );
+    let error = index.insert("sku-1", &product).unwrap_err();
+    assert_eq!(
+        error.portable().unwrap().code,
+        searchkernel_ir::ErrorCode::AlreadyExists
     );
 
     let clone = index.clone();

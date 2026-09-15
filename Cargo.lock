@@ -526,7 +526,6 @@ dependencies = [
  "searchkernel-ir",
  "searchkernel-ir-adapter",
  "searchkernel-testkit",
- "searchkernel-vespa-engine",
  "serde",
  "serde_json",
 ]

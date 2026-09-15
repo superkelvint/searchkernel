@@ -35,7 +35,7 @@ pub const SK_AGGREGATION_MIN: u32 = 2;
 pub const SK_AGGREGATION_MAX: u32 = 3;
 pub const SK_AGGREGATION_AVERAGE: u32 = 4;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 3;
+pub const SK_NATIVE_ABI_VERSION: u32 = 4;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -163,6 +163,13 @@ unsafe extern "C" {
         document: *mut sk_document, field: *const ::std::os::raw::c_char,
         value: u8, out_error: *mut u8, out_error_capacity: u32,
     ) -> i32;
+    pub fn sk_document_annotate_text(
+        document: *mut sk_document, field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8, term_bytes_length: u32,
+        term_lengths: *const u32, byte_starts: *const u32,
+        byte_lengths: *const u32, occurrence_count: u32,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_document_update_create(
@@ -203,6 +210,13 @@ unsafe extern "C" {
     ) -> i32;
     pub fn sk_document_update_clear(
         update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        out_error: *mut u8, out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_document_update_annotate_text(
+        update: *mut sk_document_update, field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8, term_bytes_length: u32,
+        term_lengths: *const u32, byte_starts: *const u32,
+        byte_lengths: *const u32, occurrence_count: u32,
         out_error: *mut u8, out_error_capacity: u32,
     ) -> i32;
 }

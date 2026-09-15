@@ -1,5 +1,6 @@
 //! Idiomatic, Vespa-facing document and mutation values.
 
+use crate::linguistics::DocumentAnalysis;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -238,6 +239,7 @@ fn array_from_scalars<T: IntoScalarValue>(values: Vec<T>) -> ArrayValue {
 pub struct Document {
     id: String,
     fields: BTreeMap<String, FieldValue>,
+    text_analysis: BTreeMap<String, DocumentAnalysis>,
 }
 
 impl Document {
@@ -245,6 +247,7 @@ impl Document {
         Self {
             id: id.into(),
             fields: BTreeMap::new(),
+            text_analysis: BTreeMap::new(),
         }
     }
 
@@ -253,11 +256,23 @@ impl Document {
         self
     }
 
+    /// Attach Vespa-compatible term annotations to a string field. The
+    /// field's schema still determines whether these annotations are used as
+    /// full-text indexing data or ignored as an exact string value.
+    pub fn annotate_text(mut self, name: impl Into<String>, analysis: DocumentAnalysis) -> Self {
+        self.text_analysis.insert(name.into(), analysis);
+        self
+    }
+
     pub fn id(&self) -> &str {
         &self.id
     }
     pub fn fields(&self) -> &BTreeMap<String, FieldValue> {
         &self.fields
+    }
+
+    pub(crate) fn text_analysis(&self) -> &BTreeMap<String, DocumentAnalysis> {
+        &self.text_analysis
     }
 }
 
@@ -271,6 +286,7 @@ pub enum FieldUpdate {
 pub struct DocumentUpdate {
     id: String,
     fields: BTreeMap<String, FieldUpdate>,
+    text_analysis: BTreeMap<String, DocumentAnalysis>,
 }
 
 impl DocumentUpdate {
@@ -278,6 +294,7 @@ impl DocumentUpdate {
         Self {
             id: id.into(),
             fields: BTreeMap::new(),
+            text_analysis: BTreeMap::new(),
         }
     }
 
@@ -292,11 +309,21 @@ impl DocumentUpdate {
         self
     }
 
+    /// Attach Vespa-compatible term annotations to a string assignment.
+    pub fn annotate_text(mut self, name: impl Into<String>, analysis: DocumentAnalysis) -> Self {
+        self.text_analysis.insert(name.into(), analysis);
+        self
+    }
+
     pub fn id(&self) -> &str {
         &self.id
     }
     pub fn fields(&self) -> &BTreeMap<String, FieldUpdate> {
         &self.fields
+    }
+
+    pub(crate) fn text_analysis(&self) -> &BTreeMap<String, DocumentAnalysis> {
+        &self.text_analysis
     }
 }
 
