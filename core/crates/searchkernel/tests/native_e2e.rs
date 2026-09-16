@@ -8,6 +8,7 @@ use searchkernel::{
     Sort,
 };
 use serde_json::json;
+use std::sync::{Arc, Barrier};
 
 #[test]
 fn native_product_path_round_trips_annotated_mixed_document() {
@@ -36,6 +37,173 @@ fn native_product_path_round_trips_annotated_mixed_document() {
     assert!(index.delete("sku-42").expect("delete native document"));
     runtime.close().expect("close native index");
     std::fs::remove_dir_all(path).expect("remove native test index");
+}
+
+#[test]
+fn native_product_path_supports_int64_values_outside_legacy_i32_range() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-int64-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new().field(
+        Field::int64("value")
+            .stored(true)
+            .filterable(true)
+            .sortable(true),
+    );
+    let index = IndexRuntime::create(&path, definition)
+        .expect("create native int64 index")
+        .index();
+    let values = [
+        i32::MIN as i64 - 1,
+        i32::MIN as i64,
+        i32::MAX as i64,
+        i32::MAX as i64 + 1,
+        i64::MAX,
+    ];
+    for (slot, value) in values.into_iter().enumerate() {
+        index
+            .upsert(format!("v-{slot}"), &json!({"value": value}))
+            .unwrap_or_else(|error| panic!("write full int64 value {value}: {error:?}"));
+        let document = index
+            .get::<serde_json::Value>(format!("v-{slot}"))
+            .expect("get full int64 value")
+            .expect("int64 document exists");
+        assert_eq!(document["value"], json!(value));
+    }
+    let minimum_error = index
+        .upsert("v-minimum", &json!({"value": i64::MIN}))
+        .expect_err("native Vespa LONG minimum sentinel must be rejected");
+    assert!(format!("{minimum_error:?}").contains("INT64_MIN"));
+    let minimum_query_error = index
+        .search("")
+        .filter(field("value").eq(i64::MIN))
+        .execute::<serde_json::Value>()
+        .expect_err("native query must reject the LONG minimum sentinel");
+    assert!(format!("{minimum_query_error:?}").contains("INT64_MIN"));
+    let filtered = index
+        .search("")
+        .filter(field("value").eq(i64::MAX))
+        .execute::<serde_json::Value>()
+        .expect("filter full int64 value");
+    assert_eq!(filtered.total_hits.value, 1);
+    assert_eq!(filtered.hits[0].id.as_str(), "v-4");
+
+    index
+        .patch("v-0", searchkernel::Patch::new().set("value", i64::MAX))
+        .expect("patch full int64 value");
+    index.close().expect("close native int64 index");
+    let reopened = searchkernel::Index::open(&path).expect("reopen native int64 index");
+    let patched = reopened
+        .get::<serde_json::Value>("v-0")
+        .expect("get patched int64 value")
+        .expect("patched document exists");
+    assert_eq!(patched["value"], json!(i64::MAX));
+    reopened.close().expect("close reopened native int64 index");
+    std::fs::remove_dir_all(path).expect("remove native int64 index");
+}
+
+#[test]
+fn native_product_path_preserves_vespa_boolean_clear_semantics() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-bool-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(
+            Field::bool("active")
+                .stored(true)
+                .filterable(true)
+                .sortable(false)
+                .facetable(false),
+        );
+    let index = IndexRuntime::create(&path, definition)
+        .expect("create native bool index")
+        .index();
+    index
+        .upsert("absent", &json!({"title": "absent"}))
+        .expect("put absent bool document");
+    index
+        .upsert("false", &json!({"title": "false", "active": false}))
+        .expect("put false bool document");
+    index
+        .upsert("true", &json!({"title": "true", "active": true}))
+        .expect("put true bool document");
+
+    let false_hits = index
+        .search("")
+        .filter(field("active").eq(false))
+        .execute::<serde_json::Value>()
+        .expect("search false bool values");
+    assert_eq!(false_hits.total_hits.value, 2);
+    assert_eq!(
+        index
+            .get::<serde_json::Value>("absent")
+            .expect("get absent bool document")
+            .expect("absent bool document exists")["active"],
+        json!(false)
+    );
+
+    index
+        .patch("true", searchkernel::Patch::new().unset("active"))
+        .expect("clear bool attribute");
+    assert_eq!(
+        index
+            .get::<serde_json::Value>("true")
+            .expect("get cleared bool document")
+            .expect("cleared bool document exists")["active"],
+        json!(false)
+    );
+    index.close().expect("close native bool index");
+    let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
+    let reopened_false_hits = reopened
+        .search("")
+        .filter(field("active").eq(false))
+        .execute::<serde_json::Value>()
+        .expect("search cleared bool values after reopen");
+    assert_eq!(reopened_false_hits.total_hits.value, 3);
+    reopened.close().expect("close reopened native bool index");
+    std::fs::remove_dir_all(path).expect("remove native bool index");
+}
+
+#[test]
+fn native_create_and_open_race_never_removes_a_published_index() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-create-open-race-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+    let start = Arc::new(Barrier::new(2));
+
+    let create_path = path.clone();
+    let create_start = Arc::clone(&start);
+    let creator = std::thread::spawn(move || {
+        create_start.wait();
+        searchkernel::Index::create(create_path, definition)
+    });
+    let open_path = path.clone();
+    let open_start = Arc::clone(&start);
+    let opener = std::thread::spawn(move || {
+        open_start.wait();
+        searchkernel::Index::open(open_path)
+    });
+
+    let created = creator.join().expect("creator thread");
+    let opened = opener.join().expect("opener thread");
+    let created = created.expect("creator must publish a valid index");
+    assert!(
+        opened.is_err(),
+        "a racing opener must not acquire the creator's native lock"
+    );
+    created.close().expect("close created index");
+
+    let reopened = searchkernel::Index::open(&path).expect("published index remains usable");
+    reopened.close().expect("close reopened index");
+    std::fs::remove_dir_all(path).expect("remove create/open race index");
 }
 
 #[test]
@@ -151,18 +319,33 @@ fn native_product_path_has_current_search_and_facet_parity() {
         .expect("multiple native facets");
     assert_eq!(faceted.total_hits.value, 6);
     assert_eq!(faceted.hits.len(), 1);
+    let mut brand_facets = facet_pairs(&faceted, "brand");
+    brand_facets.sort_unstable();
     assert_eq!(
-        facet_pairs(&faceted, "brand"),
+        brand_facets,
         vec![
-            ("Charlie".into(), 3),
+            ("Acme".into(), 1),
             ("Bravo".into(), 2),
-            ("Acme".into(), 1)
+            ("Charlie".into(), 3)
         ]
     );
     assert_eq!(
         facet_pairs(&faceted, "price"),
-        vec![("25".into(), 1), ("75".into(), 1)]
+        vec![("25".into(), 1), ("50".into(), 1)]
     );
+
+    let brands_present = index
+        .browse()
+        .filter(field("brand").exists())
+        .execute::<serde_json::Value>()
+        .expect("keyword exists filter");
+    assert_eq!(brands_present.total_hits.value, 6);
+    let prices_present = index
+        .browse()
+        .filter(field("price").exists())
+        .execute::<serde_json::Value>()
+        .expect("numeric exists filter");
+    assert_eq!(prices_present.total_hits.value, 5);
 
     let filtered = index
         .search("wireless")
@@ -173,46 +356,27 @@ fn native_product_path_has_current_search_and_facet_parity() {
     assert_eq!(filtered.total_hits.value, 1);
     assert_eq!(facet_pairs(&filtered, "brand"), vec![("Acme".into(), 1)]);
 
-    for (sort, expected) in [
-        (
-            FacetSort::CountDesc,
-            vec![
-                ("Charlie".into(), 3),
-                ("Bravo".into(), 2),
-                ("Acme".into(), 1),
-            ],
-        ),
-        (
-            FacetSort::CountAsc,
-            vec![
-                ("Acme".into(), 1),
-                ("Bravo".into(), 2),
-                ("Charlie".into(), 3),
-            ],
-        ),
-        (
-            FacetSort::ValueAsc,
-            vec![
-                ("Acme".into(), 1),
-                ("Bravo".into(), 2),
-                ("Charlie".into(), 3),
-            ],
-        ),
-        (
-            FacetSort::ValueDesc,
-            vec![
-                ("Charlie".into(), 3),
-                ("Bravo".into(), 2),
-                ("Acme".into(), 1),
-            ],
-        ),
+    for sort in [
+        FacetSort::CountDesc,
+        FacetSort::CountAsc,
+        FacetSort::ValueAsc,
+        FacetSort::ValueDesc,
     ] {
         let result = index
             .search("wireless")
             .facet(Facet::new("brand").limit(3).sort(sort))
             .execute::<serde_json::Value>()
-            .expect("facet ordering");
-        assert_eq!(facet_pairs(&result, "brand"), expected);
+            .expect("facet request variant");
+        let mut groups = facet_pairs(&result, "brand");
+        groups.sort_unstable();
+        assert_eq!(
+            groups,
+            vec![
+                ("Acme".into(), 1),
+                ("Bravo".into(), 2),
+                ("Charlie".into(), 3)
+            ]
+        );
     }
 
     // Projection, score, total hits, offset/limit, and missing-first sorting

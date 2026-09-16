@@ -30,7 +30,11 @@ impl Patch {
         self
     }
 
-    /// Remove a field from the document.
+    /// Clear a field from the document.
+    ///
+    /// For ordinary fields this removes the value. Vespa boolean attributes
+    /// have no missing sentinel, so clearing one follows Vespa semantics and
+    /// reads back as `false`.
     pub fn unset(mut self, field: impl Into<String>) -> Self {
         self.operations.push(PatchOperation::Unset {
             field: field.into(),

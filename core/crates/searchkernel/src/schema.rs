@@ -65,6 +65,11 @@ impl Field {
         Self::new(name, FieldKind::Keyword)
     }
     /// Create a signed 64-bit integer field.
+    ///
+    /// The native Vespa attribute representation reserves `i64::MIN` as its
+    /// undefined sentinel. The native index therefore rejects that value for
+    /// writes and attribute queries; all other signed 64-bit values are
+    /// supported.
     pub fn int64(name: impl Into<String>) -> Self {
         Self::new(name, FieldKind::Int64)
     }

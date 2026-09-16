@@ -25,7 +25,7 @@ const NATIVE_ABI_VERSION: u32 = 5;
 #[cfg(feature = "native")]
 const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", test))]
 fn create_directory_transaction<T>(
     root: &std::path::Path,
     initialize: impl FnOnce(&std::path::Path) -> Result<T>,
@@ -59,6 +59,50 @@ fn create_directory_transaction<T>(
     }
 }
 
+#[cfg(feature = "native")]
+fn create_staging_directory(root: &std::path::Path) -> Result<std::path::PathBuf> {
+    if root.exists() {
+        return Err(Error::already_exists(root.display().to_string()));
+    }
+    let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|error| Error::Infrastructure(error.to_string()))?;
+    let name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::infrastructure("index path has an invalid final component"))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| Error::infrastructure(error.to_string()))?
+        .as_nanos();
+    let staging = parent.join(format!(
+        ".{name}.searchkernel-creating-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&staging).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::already_exists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+    Ok(staging)
+}
+
+#[cfg(feature = "native")]
+fn publish_staging_directory(staging: &std::path::Path, root: &std::path::Path) -> Result<()> {
+    std::fs::rename(staging, root).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::already_exists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+    let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| Error::Infrastructure(error.to_string()))
+}
+
 struct IndexInner {
     context: Arc<IndexContext>,
     definition: Arc<IndexDefinition>,
@@ -83,7 +127,7 @@ impl Index {
     /// the ergonomic Rust API; the portable wire definition is validated by
     /// `searchkernel-ir` before it reaches the product lifecycle.
     #[doc(hidden)]
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", feature = "internal-api"))]
     pub fn create_from_definition_bytes(
         path: impl AsRef<std::path::Path>,
         bytes: &[u8],
@@ -120,22 +164,45 @@ impl Index {
         resolved_ir: searchkernel_ir::IndexDefinitionIr,
         resolved_definition: IndexDefinition,
     ) -> Result<Self> {
-        create_directory_transaction(root, |root| {
-            let data = root.join("data");
-            let config = root.join("config");
-            std::fs::create_dir(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
-            searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
+        let staging = create_staging_directory(root)?;
+        let initialize = (|| {
+            let staging_data = staging.join("data");
+            let staging_config = staging.join("config");
+            std::fs::create_dir(&staging_data)
+                .map_err(|error| Error::Infrastructure(error.to_string()))?;
+            searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &staging_config)
                 .map_err(Error::from_ir)?;
             let manifest = IndexManifest::for_definitions(
                 &portable_definition_bytes,
                 &resolved_definition,
-                &config,
+                &staging_config,
             )?;
-            manifest.write(root)?;
-            let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
-                .map_err(|error| Error::Infrastructure(error.to_string()))?;
-            Self::from_owned_backend(resolved_definition, BackendSession::new(Box::new(backend)))
-        })
+            manifest.write(&staging)?;
+            Ok::<(), Error>(())
+        })();
+        if let Err(error) = initialize {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        // Publish the complete on-disk description before opening Vespa. The
+        // native backend retains its data-directory path for asynchronous
+        // flushes, so it must be opened at the final path rather than at the
+        // temporary staging path.
+        if let Err(error) = publish_staging_directory(&staging, root) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        let backend = match searchkernel_ir_adapter::VespaBackend::open(
+            root.join("data"),
+            root.join("config"),
+        ) {
+            Ok(backend) => backend,
+            Err(error) => {
+                let _ = std::fs::remove_dir_all(root);
+                return Err(Error::Infrastructure(error.to_string()));
+            }
+        };
+        Self::from_owned_backend(resolved_definition, BackendSession::new(Box::new(backend)))
     }
 
     /// Reopen an existing index using its durable manifest.
@@ -202,6 +269,7 @@ impl Index {
 
     /// Transfer the shared lifecycle state to the native handle registry.
     #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
     pub fn into_session_parts(self) -> (Arc<IndexContext>, Arc<BackendSession>) {
         (
             Arc::clone(&self.inner.context),
@@ -704,7 +772,20 @@ impl IndexManifest {
             .map_err(|error| {
                 Error::corrupt_index(format!("invalid portable index definition: {error}"))
             })?;
-            searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+            let portable = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+            let resolved_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+                &manifest.resolved_definition_bytes,
+            )
+            .map_err(|error| {
+                Error::corrupt_index(format!("invalid resolved index definition: {error}"))
+            })?;
+            let resolved =
+                searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
+            if portable != resolved {
+                return Err(Error::incompatible_index(
+                    "portable and resolved index definitions differ",
+                ));
+            }
         }
         manifest.definition()?;
         Ok(manifest)
@@ -872,7 +953,6 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)
 }
 
-#[cfg(feature = "native")]
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
     if let Some(name) = definition.name() {
@@ -937,11 +1017,11 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| Error::corrupt_index("manifest field name is missing"))?;
         let kind = match metadata.get("kind").and_then(serde_json::Value::as_str) {
-            Some("Text") => Field::text(name),
-            Some("Keyword") => Field::keyword(name),
-            Some("Int64") => Field::int64(name),
-            Some("Float64") => Field::float64(name),
-            Some("Bool") => Field::bool(name),
+            Some("text" | "Text") => Field::text(name),
+            Some("keyword" | "Keyword") => Field::keyword(name),
+            Some("int64" | "Int64") => Field::int64(name),
+            Some("float64" | "Float64") => Field::float64(name),
+            Some("bool" | "Bool") => Field::bool(name),
             _ => return Err(Error::corrupt_index("manifest field kind is invalid")),
         };
         let mut field = kind;
@@ -949,7 +1029,7 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
             if !analyzer.is_null() {
                 if let Some(analyzer) = analyzer.as_str() {
                     field = match analyzer {
-                        "StandardV1" => field.analyzer(Analyzer::standard_v1()),
+                        "standard-v1" | "StandardV1" => field.analyzer(Analyzer::standard_v1()),
                         _ => {
                             return Err(Error::corrupt_index("manifest field analyzer is invalid"))
                         }
@@ -1312,6 +1392,46 @@ mod tests {
     }
 
     #[test]
+    fn manifest_rejects_valid_but_mismatched_portable_definition() {
+        let root = temporary_path("manifest-mismatched-definition");
+        let config = root.join("config");
+        write_config(&config);
+        let resolved_definition = manifest_definition();
+        let portable_definition = IndexDefinition::new().field(Field::text("different"));
+        let manifest = IndexManifest::for_definitions(
+            &wire::definition(&portable_definition),
+            &resolved_definition,
+            &config,
+        )
+        .unwrap();
+        manifest.write(&root).unwrap();
+
+        assert!(matches!(
+            IndexManifest::read(&root),
+            Err(Error::Search {
+                code: crate::ErrorCode::IncompatibleIndex,
+                message,
+                ..
+            }) if message == "incompatible index: portable and resolved index definitions differ"
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(feature = "native")]
+    fn staged_creation_publishes_only_a_complete_index_directory() {
+        let root = temporary_path("staged-create");
+        let staging = create_staging_directory(&root).unwrap();
+        std::fs::write(staging.join("in-progress"), b"not yet public").unwrap();
+        assert!(!root.exists());
+
+        publish_staging_directory(&staging, &root).unwrap();
+        assert!(root.join("in-progress").is_file());
+        assert!(!staging.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn legacy_manifest_with_old_abi_is_still_readable() {
         let root = temporary_path("legacy-manifest");
         let config = root.join("config");
@@ -1339,6 +1459,18 @@ mod tests {
 
         let loaded = IndexManifest::read(&root).unwrap();
         assert_eq!(loaded.definition().unwrap().index_name(), Some("legacy"));
+
+        let stable_definition = serde_json::json!({
+            "fields": [{
+                "name": "title",
+                "kind": "text",
+                "analyzer": "standard-v1"
+            }]
+        });
+        assert_eq!(
+            definition_from_json(&stable_definition).unwrap().fields()[0],
+            Field::text("title").analyzer(Analyzer::standard_v1())
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1404,6 +1536,8 @@ mod tests {
                 .unwrap();
 
         let mut provenance = manifest.clone();
+        provenance.value["provenance"]["created_by_searchkernel_version"] =
+            serde_json::json!("0.0.0");
         provenance.value["provenance"]["created_by_native_abi"] = serde_json::json!(4);
         provenance.value["provenance"]["created_by_vespa_revision"] =
             serde_json::json!("older-revision");
@@ -1528,6 +1662,21 @@ mod tests {
         assert!(
             matches!(error, Error::Infrastructure(message) if message == "forced initialization failure")
         );
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn invalid_native_schema_is_rejected_before_directory_creation() {
+        let root = temporary_path("invalid-native-schema");
+        let error = match Index::create(
+            &root,
+            IndexDefinition::new().field(Field::text("title").searchable(false)),
+        ) {
+            Ok(_) => panic!("invalid native schema was accepted"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code(), crate::ErrorCode::Unsupported);
         assert!(!root.exists());
     }
 }

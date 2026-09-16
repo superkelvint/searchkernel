@@ -94,7 +94,14 @@ impl Backend for StatefulBackend {
                     fields.insert(field.as_str().to_owned(), value.clone());
                 }
                 PatchOperationIr::Unset { field } => {
-                    fields.remove(field.as_str());
+                    if field.as_str() == "in_stock" {
+                        fields.insert(
+                            field.as_str().to_owned(),
+                            FieldValueIr::Single(searchkernel_ir::ScalarValueIr::Bool(false)),
+                        );
+                    } else {
+                        fields.remove(field.as_str());
+                    }
                 }
             }
         }
@@ -175,11 +182,18 @@ fn public_api_round_trips_crud_and_match_all_search() {
 
     let clone = index.clone();
     clone
-        .patch("sku-1", Patch::new().set("price", 450.0).unset("brand"))
+        .patch(
+            "sku-1",
+            Patch::new()
+                .set("price", 450.0)
+                .unset("brand")
+                .unset("in_stock"),
+        )
         .unwrap();
     let patched: JsonValue = index.get("sku-1").unwrap().unwrap();
     assert_eq!(patched["price"], 450.0);
     assert!(patched.get("brand").is_none());
+    assert_eq!(patched["in_stock"], false);
 
     index.upsert("sku-1", &product).unwrap();
     index.upsert("sku-2", &product).unwrap();

@@ -84,20 +84,46 @@ pub fn compile_index_definition(
 /// Validate the subset of the portable schema that the current M ABI can
 /// execute without losing document values.
 pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr) -> Result<()> {
-    if let Some(field) = definition.fields().iter().find(|field| {
-        matches!(
+    for (index, field) in definition.fields().iter().enumerate() {
+        if matches!(
             field.cardinality(),
             searchkernel_ir::FieldCardinality::Multi
-        )
-    }) {
-        return Err(PortableError::unsupported(
-            "multi_valued_fields_not_supported",
-            Some("fields"),
-            format!(
-                "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
-                field.name().as_str()
-            ),
-        ));
+        ) {
+            return Err(PortableError::unsupported(
+                "multi_valued_fields_not_supported",
+                Some("fields"),
+                format!(
+                    "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
+                    field.name().as_str()
+                ),
+            ));
+        }
+
+        let field_path = format!("fields[{index}]");
+        if matches!(field.kind(), searchkernel_ir::FieldKind::Text)
+            && !field.capabilities().searchable()
+        {
+            return Err(PortableError::unsupported(
+                "unsupported_field_capability",
+                Some(format!("{field_path}.searchable")),
+                format!(
+                    "text field `{}` must be searchable in the current native schema",
+                    field.name().as_str()
+                ),
+            ));
+        }
+        if matches!(field.kind(), searchkernel_ir::FieldKind::Float64)
+            && field.capabilities().facetable()
+        {
+            return Err(PortableError::unsupported(
+                "unsupported_field_capability",
+                Some(format!("{field_path}.facetable")),
+                format!(
+                    "float field `{}` cannot be facetable in the current native schema",
+                    field.name().as_str()
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -463,6 +489,9 @@ fn lower_search_options(
         .offset(request.offset())
         .rank_profile(ranking_profile(request.ranking())?)
         .language(language);
+    if let Some(timeout) = request.timeout() {
+        m_request = m_request.timeout(timeout);
+    }
     for sort in request.sort() {
         m_request = m_request.sort(lower_sort(sort));
     }
@@ -717,6 +746,11 @@ fn lower_attribute_value(value: &ScalarValueIr) -> Result<VespaValue> {
 }
 
 fn integer_query_value(value: i64) -> Result<i64> {
+    if value == i64::MIN {
+        return Err(unsupported(
+            "INT64_MIN is reserved as Vespa's undefined integer attribute sentinel",
+        ));
+    }
     Ok(value)
 }
 
@@ -790,6 +824,7 @@ fn lower_facets(
                     value: value_to_ir(&FieldValue::Scalar(match &group.key {
                         VespaValue::String(value) => ScalarValue::String(value.clone()),
                         VespaValue::Integer(value) => ScalarValue::Integer(*value),
+                        VespaValue::Boolean(value) => ScalarValue::Boolean(*value),
                         _ => return Err(PortableError::unsupported(
                             "facet_key_type_not_supported",
                             Some("facets"),
@@ -952,6 +987,60 @@ mod tests {
         .unwrap();
         let error = validate_index_definition(&definition).unwrap_err();
         assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    }
+
+    #[test]
+    fn unsupported_schema_capabilities_are_rejected_before_m_configuration() {
+        for (kind, capabilities, expected_path) in [
+            (
+                FieldKind::Text,
+                FieldCapabilities::new(true, false, false, false, false),
+                "fields[0].searchable",
+            ),
+            (
+                FieldKind::Float64,
+                FieldCapabilities::new(true, false, true, true, true),
+                "fields[0].facetable",
+            ),
+        ] {
+            let definition = IndexDefinitionIr::new(
+                None,
+                vec![FieldIr::new(
+                    field("value"),
+                    kind,
+                    FieldCardinality::Single,
+                    None::<AnalyzerIdentity>,
+                    capabilities,
+                )],
+                Vec::new(),
+                RankingPolicyIr::DefaultRelevanceV1,
+                PrefixPolicy::Disabled,
+                TypoPolicy::Disabled,
+            )
+            .unwrap();
+            let error = validate_index_definition(&definition).unwrap_err();
+            assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+            assert_eq!(error.details[0].code, "unsupported_field_capability");
+            assert_eq!(error.details[0].path.as_deref(), Some(expected_path));
+        }
+
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                field("active"),
+                FieldKind::Bool,
+                FieldCardinality::Single,
+                None::<AnalyzerIdentity>,
+                FieldCapabilities::new(true, false, true, true, true),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        validate_index_definition(&definition)
+            .expect("single-valued boolean capabilities are supported");
     }
 
     #[test]
@@ -1446,7 +1535,8 @@ mod tests {
             Some(LanguageHint::parse("en-US").unwrap()),
             PrefixPolicy::Disabled,
             TypoPolicy::Disabled,
-        );
+        )
+        .with_timeout(Some(std::time::Duration::from_millis(123)));
 
         validate_search_request(&request).unwrap();
         let language = analysis_options(request.language()).unwrap();
@@ -1457,6 +1547,7 @@ mod tests {
         assert_eq!(lowered.rank_profile, "default");
         assert_eq!(lowered.limit, 3);
         assert_eq!(lowered.offset, 2);
+        assert_eq!(lowered.timeout, std::time::Duration::from_millis(123));
         assert_eq!(lowered.language, language);
         assert_eq!(
             lowered.sort,
