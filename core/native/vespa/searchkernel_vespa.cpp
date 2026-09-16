@@ -2707,6 +2707,11 @@ public:
         request.groupSpec.assign(buffer.data(), buffer.data() + buffer.size());
     }
 
+    void set_grouping_spec(SearchRequest &request,
+                           const LocalGroupingRequestState &grouping) const {
+        set_grouping_spec(request, std::vector<LocalGroupingRequestState>{grouping});
+    }
+
     LocalGroupingResultState decode_grouping(const Grouping &result_grouping,
                                              const LocalGroupingRequestState &options) const {
         LocalGroupingResultState result;
@@ -2935,13 +2940,6 @@ public:
 
     LocalGroupingResultState group_local(const NativeQueryState &query,
                                          const LocalGroupingRequestState &options) const {
-        const auto &group_field = require_manifest_field(options.group_field);
-        if (!group_field.attribute) {
-            throw std::invalid_argument("field is not an attribute: " + options.group_field);
-        }
-        if (group_field.type != "string" && group_field.type != "integer") {
-            throw UnsupportedNativeError("grouping key type is not supported by the M grouping path: " + options.group_field);
-        }
         auto tree = query.builder.build();
         if (!tree) throw std::invalid_argument("could not build query tree");
         SearchRequest request;
@@ -2949,48 +2947,7 @@ public:
         request.ranking = "default";
         request.maxhits = 0;
         request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
-        auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
-        level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_field.name)));
-        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
-                               ? -1
-                               : static_cast<int64_t>(options.max_groups));
-        switch (options.order) {
-        case SK_GROUP_ORDER_COUNT_ASC:
-            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), true);
-            break;
-        case SK_GROUP_ORDER_COUNT_DESC:
-            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), false);
-            break;
-        case SK_GROUP_ORDER_VALUE_ASC:
-            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), true);
-            break;
-        case SK_GROUP_ORDER_VALUE_DESC:
-            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), false);
-            break;
-        case SK_GROUP_ORDER_NONE:
-            break;
-        default:
-            throw std::invalid_argument("unsupported grouping order");
-        }
-        for (const auto &spec : options.aggregations) {
-            const auto &field = require_attribute_field(spec.field, {"integer", "float"});
-            std::unique_ptr<AggregationResult> aggregation;
-            if (spec.kind == SK_AGGREGATION_SUM) aggregation = std::make_unique<SumAggregationResult>();
-            else if (spec.kind == SK_AGGREGATION_MIN) aggregation = std::make_unique<MinAggregationResult>();
-            else if (spec.kind == SK_AGGREGATION_MAX) aggregation = std::make_unique<MaxAggregationResult>();
-            else if (spec.kind == SK_AGGREGATION_AVERAGE) aggregation = std::make_unique<AverageAggregationResult>();
-            else throw std::invalid_argument("unsupported aggregation kind");
-            aggregation->setExpression(std::make_unique<AttributeNode>(field.name));
-            level.addResult(std::move(aggregation));
-        }
-        Grouping grouping;
-        grouping.setFirstLevel(0).setLastLevel(1).addLevel(std::move(level));
-        vespalib::nbostream buffer;
-        vespalib::NBOSerializer output(buffer);
-        uint32_t grouping_count = 1;
-        output << grouping_count;
-        grouping.serialize(output);
-        request.groupSpec.assign(buffer.data(), buffer.data() + buffer.size());
+        set_grouping_spec(request, options);
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         if (!reply->hits.empty()) throw std::runtime_error("native grouping returned ordinary hits");
@@ -3002,96 +2959,7 @@ public:
         if (result_count != 1) throw std::runtime_error("unexpected native grouping result count");
         Grouping result_grouping;
         result_grouping.deserialize(input);
-        LocalGroupingResultState result;
-        const auto &root = result_grouping.getRoot();
-        if (options.order != SK_GROUP_ORDER_NONE && root.getChildrenSize() > 1) {
-            // Vespa's grouping post-processing restores group-id order for
-            // serialization. Reapply the requested native order to the
-            // already computed groups before exposing them through the
-            // generic M result contract.
-            auto groups = root.groups();
-            auto compare_value = [](const auto *left, const auto *right) {
-                return left->cmpId(*right) < 0;
-            };
-            auto compare_count = [](const auto *left, const auto *right, bool ascending) {
-                const auto &left_result = left->getAggregationResult(0);
-                const auto &right_result = right->getAggregationResult(0);
-                const auto &left_count = static_cast<const CountAggregationResult &>(left_result);
-                const auto &right_count = static_cast<const CountAggregationResult &>(right_result);
-                if (left_count.getCount() != right_count.getCount()) {
-                    return ascending ? left_count.getCount() < right_count.getCount()
-                                     : left_count.getCount() > right_count.getCount();
-                }
-                return left->cmpId(*right) < 0;
-            };
-            switch (options.order) {
-            case SK_GROUP_ORDER_COUNT_ASC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_count(left, right, true);
-                          });
-                break;
-            case SK_GROUP_ORDER_COUNT_DESC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_count(left, right, false);
-                          });
-                break;
-            case SK_GROUP_ORDER_VALUE_ASC:
-                std::sort(groups, groups + root.getChildrenSize(), compare_value);
-                break;
-            case SK_GROUP_ORDER_VALUE_DESC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_value(right, left);
-                          });
-                break;
-            default:
-                break;
-            }
-        }
-        result.groups.reserve(root.getChildrenSize());
-        for (uint32_t index = 0; index < root.getChildrenSize(); ++index) {
-            const auto &group = root.getChild(index);
-            LocalGroupState output_group;
-            const auto &key = group.getId();
-            if (key.getClass().inherits(StringResultNode::classId)) {
-                HoldString value(key);
-                output_group.key.kind = SK_VALUE_STRING;
-                output_group.key.string = std::string(value);
-            } else if (key.getClass().inherits(Int64ResultNode::classId)) {
-                output_group.key.kind = SK_VALUE_INTEGER;
-                output_group.key.integer = key.getInteger();
-            } else {
-                throw std::runtime_error("unsupported native grouping key type");
-            }
-            const auto &count = group.getAggregationResult(0);
-            if (!count.getClass().inherits(CountAggregationResult::classId)) throw std::runtime_error("native grouping count is missing");
-            output_group.count = static_cast<const CountAggregationResult &>(count).getCount();
-            for (size_t aggregation_index = 0; aggregation_index < options.aggregations.size(); ++aggregation_index) {
-                const auto &aggregation = group.getAggregationResult(aggregation_index + 1);
-                const auto emit = [&](const auto &node) {
-                    OwnedValue value;
-                    if (node.getClass().inherits(Int64ResultNode::classId)) {
-                        value.kind = SK_VALUE_INTEGER;
-                        value.integer = node.getInteger();
-                    } else if (node.getClass().inherits(FloatResultNode::classId)) {
-                        value.kind = SK_VALUE_FLOAT;
-                        value.floating = node.getFloat();
-                    } else {
-                        throw std::runtime_error("unsupported native aggregate result type");
-                    }
-                    output_group.aggregations.push_back(std::move(value));
-                };
-                if (aggregation.getClass().inherits(SumAggregationResult::classId)) emit(static_cast<const SumAggregationResult &>(aggregation).getSum());
-                else if (aggregation.getClass().inherits(MinAggregationResult::classId)) emit(static_cast<const MinAggregationResult &>(aggregation).getMin());
-                else if (aggregation.getClass().inherits(MaxAggregationResult::classId)) emit(static_cast<const MaxAggregationResult &>(aggregation).getMax());
-                else if (aggregation.getClass().inherits(AverageAggregationResult::classId)) emit(static_cast<const AverageAggregationResult &>(aggregation).getAverage());
-                else throw std::runtime_error("unsupported native aggregation result");
-            }
-            result.groups.push_back(std::move(output_group));
-        }
-        return result;
+        return decode_grouping(result_grouping, options);
     }
 
 public:

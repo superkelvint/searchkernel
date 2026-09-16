@@ -308,16 +308,25 @@ fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
     let count_desc = engine
         .group(
             &GroupingRequest::new(Query::True, "category")
-                .max_groups(1)
+                .max_groups(2)
                 .order(GroupingOrder::CountDescending),
         )
         .expect("execute count-desc grouping");
-    assert_eq!(count_desc.groups.len(), 1);
+    assert_eq!(count_desc.groups, faceted.facets[0].groups);
+
+    let limited = engine
+        .group(
+            &GroupingRequest::new(Query::True, "category")
+                .max_groups(1)
+                .order(GroupingOrder::CountDescending),
+        )
+        .expect("execute limited count-desc grouping");
+    assert_eq!(limited.groups.len(), 1);
     assert_eq!(
-        count_desc.groups[0].key,
+        limited.groups[0].key,
         searchkernel_vespa_engine::Value::String("books".into())
     );
-    assert_eq!(count_desc.groups[0].count, 2);
+    assert_eq!(limited.groups[0].count, 2);
 
     let value_asc = engine
         .group(
