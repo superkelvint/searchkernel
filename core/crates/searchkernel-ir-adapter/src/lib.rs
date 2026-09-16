@@ -722,6 +722,9 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
         searchkernel_vespa_engine::ErrorKind::Internal => {
             PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
         }
+        searchkernel_vespa_engine::ErrorKind::DeadlineExceeded => {
+            PortableError::new(searchkernel_ir::ErrorCode::DeadlineExceeded, message)
+        }
     }
 }
 

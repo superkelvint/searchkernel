@@ -14,6 +14,7 @@ pub enum ErrorCode {
     ResourceExhausted,
     Internal,
     Unavailable,
+    DeadlineExceeded,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

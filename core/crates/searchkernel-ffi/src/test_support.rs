@@ -472,6 +472,7 @@ fn decode_error_code(code: api::ErrorCode) -> Result<searchkernel_ir::ErrorCode,
         api::ErrorCode::ResourceExhausted => Ok(searchkernel_ir::ErrorCode::ResourceExhausted),
         api::ErrorCode::Internal => Ok(searchkernel_ir::ErrorCode::Internal),
         api::ErrorCode::Unavailable => Ok(searchkernel_ir::ErrorCode::Unavailable),
+        api::ErrorCode::DeadlineExceeded => Ok(searchkernel_ir::ErrorCode::DeadlineExceeded),
         _ => Err("unknown error code".to_owned()),
     }
 }

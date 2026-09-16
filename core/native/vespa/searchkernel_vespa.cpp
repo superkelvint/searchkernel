@@ -946,6 +946,7 @@ struct LocalSearchRequestState {
     std::string rank_profile;
     uint32_t limit = 10;
     uint32_t offset = 0;
+    uint64_t timeout_millis = 60000;
     uint32_t summary_kind = SK_SUMMARY_NONE;
     struct Sort {
         std::string field;
@@ -979,6 +980,12 @@ struct LocalSearchResultState {
 class UnsupportedNativeError final : public std::runtime_error {
 public:
     explicit UnsupportedNativeError(const std::string &message)
+        : std::runtime_error(message) {}
+};
+
+class DeadlineExceededNativeError final : public std::runtime_error {
+public:
+    explicit DeadlineExceededNativeError(const std::string &message)
         : std::runtime_error(message) {}
 };
 
@@ -2801,7 +2808,7 @@ public:
         if (!tree) throw std::invalid_argument("could not build query tree");
         validate_rank_profile(options.rank_profile.c_str());
         SearchRequest request;
-        request.setTimeout(60s);
+        request.setTimeout(std::chrono::milliseconds(options.timeout_millis));
         request.ranking = options.rank_profile;
         request.propertiesMap.lookupCreate(search::MapNames::RANK)
             .add("vespa.matching.numthreadspersearch", "1");
@@ -2855,6 +2862,9 @@ public:
         request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
+        if (reply->coverage.wasDegradedByTimeout()) {
+            throw DeadlineExceededNativeError("search execution deadline exceeded");
+        }
         LocalSearchResultState result;
         result.total_hit_count = reply->totalHitCount;
         const auto &features = reply->match_features;
@@ -2875,7 +2885,7 @@ public:
         }
         if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
             DocsumRequest docsum_request;
-            docsum_request.setTimeout(60s);
+            docsum_request.setTimeout(std::chrono::milliseconds(options.timeout_millis));
             docsum_request.resultClassName = "default";
             docsum_request.ranking = options.rank_profile;
             for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
@@ -3206,6 +3216,8 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
         return set_error(error, error_capacity, SK_NATIVE_STATUS_OUT_OF_MEMORY, nullptr);
     } catch (const UnsupportedNativeError &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_UNSUPPORTED, exception.what());
+    } catch (const DeadlineExceededNativeError &exception) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_DEADLINE_EXCEEDED, exception.what());
     } catch (const std::invalid_argument &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
@@ -4381,6 +4393,21 @@ extern "C" int32_t sk_generic_search_request_create(
         request->offset = offset;
         request->summary_kind = summary_kind;
         *out_request = request.release();
+    });
+}
+
+extern "C" int32_t sk_generic_search_request_set_timeout(
+    sk_generic_search_request *request, uint64_t timeout_millis,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic search request is null");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (timeout_millis > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+            throw std::invalid_argument("search timeout is too large");
+        }
+        request->timeout_millis = timeout_millis;
     });
 }
 

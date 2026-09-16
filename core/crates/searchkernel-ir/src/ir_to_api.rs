@@ -73,6 +73,7 @@ fn error_code(code: ErrorCode) -> api::ErrorCode {
         ErrorCode::ResourceExhausted => api::ErrorCode::ResourceExhausted,
         ErrorCode::Internal => api::ErrorCode::Internal,
         ErrorCode::Unavailable => api::ErrorCode::Unavailable,
+        ErrorCode::DeadlineExceeded => api::ErrorCode::DeadlineExceeded,
     }
 }
 
@@ -287,6 +288,9 @@ fn search_request_offset<'a>(
         .language
         .as_ref()
         .map(|value| builder.create_string(value.as_str()));
+    let timeout = request
+        .timeout
+        .map(|value| api::OptionalUInt64::new(value.as_millis() as u64));
 
     api::SearchRequest::create(
         builder,
@@ -303,6 +307,7 @@ fn search_request_offset<'a>(
             highlighting,
             language,
             query_expr,
+            timeout: timeout.as_ref(),
         },
     )
 }

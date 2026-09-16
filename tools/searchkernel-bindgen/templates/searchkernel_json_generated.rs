@@ -1809,6 +1809,10 @@ pub(crate) mod schema {
                 name: "value",
                 schema: "integer",
             }]),
+            "SearchKernel_V1_OptionalUInt64" => Some(&[FieldMetadata {
+                name: "value",
+                schema: "integer",
+            }]),
             "SearchKernel_V1_PatchOperation" => Some(&[
                 FieldMetadata {
                     name: "operation",
@@ -1930,6 +1934,10 @@ pub(crate) mod schema {
                 FieldMetadata {
                     name: "sort",
                     schema: "array:ref:#/definitions/SearchKernel_V1_SortExpr",
+                },
+                FieldMetadata {
+                    name: "timeout",
+                    schema: "ref:#/definitions/SearchKernel_V1_OptionalUInt64",
                 },
             ]),
             "SearchKernel_V1_SearchResult" => Some(&[
@@ -2224,6 +2232,7 @@ pub(crate) mod schema {
             "SearchKernel_V1_OptionalFacetSort" => Some(&["value"]),
             "SearchKernel_V1_OptionalMissingPlacement" => Some(&["value"]),
             "SearchKernel_V1_OptionalUInt32" => Some(&["value"]),
+            "SearchKernel_V1_OptionalUInt64" => Some(&["value"]),
             "SearchKernel_V1_PatchOperation" => Some(&["operation", "operation_type"]),
             "SearchKernel_V1_PatchOperationKind" => Some(&[]),
             "SearchKernel_V1_PatchRequest" => Some(&["id", "operations"]),
@@ -2250,6 +2259,7 @@ pub(crate) mod schema {
                 "ranking",
                 "search_fields",
                 "sort",
+                "timeout",
             ]),
             "SearchKernel_V1_SearchResult" => Some(&["facets", "hits", "total_hits"]),
             "SearchKernel_V1_SetField" => Some(&["field", "value"]),
@@ -2991,6 +3001,12 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<serde_json::Value>,
     }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    pub(crate) struct JsonSearchKernelV1OptionalUInt64 {
+        #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
+        pub value: Option<serde_json::Value>,
+    }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV1PatchOperation {
@@ -3140,6 +3156,8 @@ pub(crate) mod json_types {
             skip_serializing_if = "Option::is_none"
         )]
         pub query_expr: Option<Box<JsonSearchKernelV1QueryExpr>>,
+        #[serde(rename = "timeout", default, skip_serializing_if = "Option::is_none")]
+        pub timeout: Option<Box<JsonSearchKernelV1OptionalUInt64>>,
         #[serde(rename = "ranking", default, skip_serializing_if = "Option::is_none")]
         pub ranking: Option<Box<JsonSearchKernelV1RankingPolicy>>,
         #[serde(
@@ -3391,6 +3409,8 @@ pub(crate) mod json_types {
             skip_serializing_if = "Option::is_none"
         )]
         pub query_expr: Option<serde_json::Value>,
+        #[serde(rename = "timeout", default, skip_serializing_if = "Option::is_none")]
+        pub timeout: Option<serde_json::Value>,
         #[serde(rename = "ranking", default, skip_serializing_if = "Option::is_none")]
         pub ranking: Option<serde_json::Value>,
         #[serde(
@@ -3841,6 +3861,13 @@ fn u32_value(value: &Value, path: &str) -> Result<u32, JsonCodecError> {
         .ok_or_else(|| contract(format!("`{path}` must be an unsigned 32-bit integer")))
 }
 
+fn u64_value(value: &Value, path: &str) -> Result<u64, JsonCodecError> {
+    let value = non_null(value, path)?;
+    value
+        .as_u64()
+        .ok_or_else(|| contract(format!("`{path}` must be an unsigned 64-bit integer")))
+}
+
 fn f64_value(value: &Value, path: &str) -> Result<f64, JsonCodecError> {
     let value = non_null(value, path)?;
     let number = value
@@ -3902,6 +3929,16 @@ fn optional_u32(
 ) -> Result<Option<api::OptionalUInt32>, JsonCodecError> {
     field(object, name)
         .map(|v| u32_value(v, &format!("{path}.{name}")).map(api::OptionalUInt32::new))
+        .transpose()
+}
+
+fn optional_u64(
+    object: &Map<String, Value>,
+    name: &str,
+    path: &str,
+) -> Result<Option<api::OptionalUInt64>, JsonCodecError> {
+    field(object, name)
+        .map(|v| u64_value(v, &format!("{path}.{name}")).map(api::OptionalUInt64::new))
         .transpose()
 }
 
@@ -5349,6 +5386,9 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
     if let Some(v) = value.query_expr() {
         out.insert("query_expr".to_owned(), query_json(v)?);
     }
+    if let Some(v) = value.timeout() {
+        out.insert("timeout".to_owned(), Value::Number(v.value().into()));
+    }
     Ok(Value::Object(out))
 }
 
@@ -6048,6 +6088,7 @@ fn search<'a>(
     let query_expr = field(o, "query_expr")
         .map(|v| query_expr(b, v, "search.query_expr"))
         .transpose()?;
+    let timeout = optional_u64(o, "timeout", "search")?;
     Ok(api::SearchRequest::create(
         b,
         &api::SearchRequestArgs {
@@ -6063,6 +6104,7 @@ fn search<'a>(
             highlighting,
             language,
             query_expr,
+            timeout: timeout.as_ref(),
         },
     ))
 }

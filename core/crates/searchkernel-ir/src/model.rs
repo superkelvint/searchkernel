@@ -2,6 +2,7 @@
 
 use crate::error::{PortableError, Result};
 use std::fmt;
+use std::time::Duration;
 
 macro_rules! validated_string_type {
     ($name:ident, $detail:literal, $description:literal) => {
@@ -671,6 +672,7 @@ pub struct SearchRequestIr {
     pub(crate) projection: ProjectionIr,
     pub(crate) highlighting: HighlightingIr,
     pub(crate) language: Option<LanguageHint>,
+    pub(crate) timeout: Option<Duration>,
     pub(crate) prefix_policy: PrefixPolicy,
     pub(crate) typo_policy: TypoPolicy,
 }
@@ -705,6 +707,7 @@ impl SearchRequestIr {
             projection,
             highlighting,
             language,
+            timeout: None,
             prefix_policy,
             typo_policy,
         }
@@ -752,6 +755,16 @@ impl SearchRequestIr {
 
     pub fn language(&self) -> Option<&LanguageHint> {
         self.language.as_ref()
+    }
+
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     pub fn prefix_policy(&self) -> PrefixPolicy {

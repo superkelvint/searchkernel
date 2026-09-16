@@ -15,6 +15,7 @@ pub enum ErrorCode {
     ResourceExhausted,
     Internal,
     Unavailable,
+    DeadlineExceeded,
     CorruptIndex,
     IncompatibleIndex,
 }
@@ -155,6 +156,7 @@ impl Error {
             searchkernel_ir::ErrorCode::ResourceExhausted => ErrorCode::ResourceExhausted,
             searchkernel_ir::ErrorCode::Internal => ErrorCode::Internal,
             searchkernel_ir::ErrorCode::Unavailable => ErrorCode::Unavailable,
+            searchkernel_ir::ErrorCode::DeadlineExceeded => ErrorCode::DeadlineExceeded,
         };
         Self::Search {
             code,

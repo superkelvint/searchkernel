@@ -68,6 +68,7 @@ extern "C" {
 #define SK_GROUP_ORDER_COUNT_DESC 2U
 #define SK_GROUP_ORDER_VALUE_ASC 3U
 #define SK_GROUP_ORDER_VALUE_DESC 4U
+#define SK_NATIVE_STATUS_DEADLINE_EXCEEDED 5U
 
 /*
  * This is a primitive-only ABI. The semantic objects are opaque handles; the
@@ -406,6 +407,9 @@ SK_API void sk_local_search_result_destroy(sk_local_search_result *result) SK_NO
 SK_API int32_t sk_generic_search_request_create(
     const char *rank_profile, uint32_t limit, uint32_t offset,
     uint32_t summary_kind, sk_generic_search_request **out_request,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_request_set_timeout(
+    sk_generic_search_request *request, uint64_t timeout_millis,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,

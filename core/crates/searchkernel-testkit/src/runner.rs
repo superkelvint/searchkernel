@@ -1918,6 +1918,10 @@ impl WireBuilder {
             .get("offset")
             .and_then(JsonValue::as_u64)
             .map(|v| api::OptionalUInt32::new(v as u32));
+        let timeout = input
+            .get("timeout")
+            .and_then(JsonValue::as_u64)
+            .map(api::OptionalUInt64::new);
         let projection = input
             .get("projection")
             .map(|v| self.projection(v))
@@ -1949,6 +1953,7 @@ impl WireBuilder {
                 highlighting,
                 language,
                 query_expr,
+                timeout: timeout.as_ref(),
             },
         ))
     }

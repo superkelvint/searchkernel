@@ -32,6 +32,7 @@ impl<'a> SearchRequest<'a> {
     pub const VT_HIGHLIGHTING: ::flatbuffers::VOffsetT = 22;
     pub const VT_LANGUAGE: ::flatbuffers::VOffsetT = 24;
     pub const VT_QUERY_EXPR: ::flatbuffers::VOffsetT = 26;
+    pub const VT_TIMEOUT: ::flatbuffers::VOffsetT = 28;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -48,6 +49,9 @@ impl<'a> SearchRequest<'a> {
         args: &'args SearchRequestArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<SearchRequest<'bldr>> {
         let mut builder = SearchRequestBuilder::new(_fbb);
+        if let Some(x) = args.timeout {
+            builder.add_timeout(x);
+        }
         if let Some(x) = args.query_expr {
             builder.add_query_expr(x);
         }
@@ -227,6 +231,16 @@ impl<'a> SearchRequest<'a> {
             )
         }
     }
+    #[inline]
+    pub fn timeout(&self) -> Option<&'a OptionalUInt64> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab
+                .get::<OptionalUInt64>(SearchRequest::VT_TIMEOUT, None)
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for SearchRequest<'_> {
@@ -280,6 +294,7 @@ impl ::flatbuffers::Verifiable for SearchRequest<'_> {
                 Self::VT_QUERY_EXPR,
                 false,
             )?
+            .visit_field::<OptionalUInt64>("timeout", Self::VT_TIMEOUT, false)?
             .finish();
         Ok(())
     }
@@ -305,6 +320,7 @@ pub struct SearchRequestArgs<'a> {
     pub highlighting: Option<::flatbuffers::WIPOffset<HighlightRequest<'a>>>,
     pub language: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub query_expr: Option<::flatbuffers::WIPOffset<QueryExpr<'a>>>,
+    pub timeout: Option<&'a OptionalUInt64>,
 }
 impl<'a> Default for SearchRequestArgs<'a> {
     #[inline]
@@ -322,6 +338,7 @@ impl<'a> Default for SearchRequestArgs<'a> {
             highlighting: None,
             language: None,
             query_expr: None,
+            timeout: None,
         }
     }
 }
@@ -426,6 +443,11 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> SearchRequestBuilder<'a, 'b, 
             );
     }
     #[inline]
+    pub fn add_timeout(&mut self, timeout: &OptionalUInt64) {
+        self.fbb_
+            .push_slot_always::<&OptionalUInt64>(SearchRequest::VT_TIMEOUT, timeout);
+    }
+    #[inline]
     pub fn new(
         _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
     ) -> SearchRequestBuilder<'a, 'b, A> {
@@ -457,6 +479,7 @@ impl ::core::fmt::Debug for SearchRequest<'_> {
         ds.field("highlighting", &self.highlighting());
         ds.field("language", &self.language());
         ds.field("query_expr", &self.query_expr());
+        ds.field("timeout", &self.timeout());
         ds.finish()
     }
 }

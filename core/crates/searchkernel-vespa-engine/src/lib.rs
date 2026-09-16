@@ -180,6 +180,7 @@ use std::ffi::{CString, NulError};
 use std::fs;
 use std::path::Path;
 use std::ptr::{self, NonNull};
+use std::time::Duration;
 
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
 const RESERVED_RANK_PROPERTIES: &[&str] = &["vespa.matching.numthreadspersearch"];
@@ -283,6 +284,7 @@ pub struct SearchRequest {
     pub summary: SummaryRequest,
     pub language: LinguisticsOptions,
     pub facets: Vec<FacetRequest>,
+    pub timeout: Duration,
 }
 
 impl SearchRequest {
@@ -299,6 +301,7 @@ impl SearchRequest {
             summary: SummaryRequest::None,
             language: LinguisticsOptions::default(),
             facets: Vec::new(),
+            timeout: Duration::from_secs(60),
         }
     }
 
@@ -316,6 +319,12 @@ impl SearchRequest {
 
     pub fn source(mut self, source: Source) -> Self {
         self.source = source;
+        self
+    }
+
+    /// Limit the time the native engine may spend executing this search.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
         self
     }
 
@@ -475,6 +484,7 @@ pub enum ErrorKind {
     InvalidArgument,
     ResourceExhausted,
     Unsupported,
+    DeadlineExceeded,
     Internal,
 }
 
@@ -493,6 +503,7 @@ impl Error {
                 1 => ErrorKind::InvalidArgument,
                 3 => ErrorKind::ResourceExhausted,
                 4 => ErrorKind::Unsupported,
+                5 => ErrorKind::DeadlineExceeded,
                 _ => ErrorKind::Internal,
             },
             code,
@@ -914,6 +925,18 @@ impl Engine {
         check(status, &error)?;
         let native_request =
             NativeGenericSearchRequest(require_ptr(native_request, "generic search request")?);
+        let timeout_millis = u64::try_from(request.timeout.as_millis())
+            .map_err(|_| Error::message("search timeout is too large to encode"))?;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_generic_search_request_set_timeout(
+                native_request.0.as_ptr(),
+                timeout_millis,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
         for sort in &request.sort {
             let field = cstring(&sort.field)?;
             let order = match sort.order {
@@ -2205,8 +2228,8 @@ fn native_bound(bound: &RangeBound) -> (u32, i64) {
 mod tests {
     use super::{
         check, cstring, length_u32, native_error, path_cstring, require_ptr, text_occurrences,
-        text_query_terms, validate_term_query, Document, DocumentAnalysis, DocumentTerm, Error,
-        ErrorKind, NativeError, Query, QueryAnalysis, QueryTerm, SearchRequest, SortField,
+        text_query_terms, validate_term_query, Document, DocumentAnalysis, DocumentTerm, Duration,
+        Error, ErrorKind, NativeError, Query, QueryAnalysis, QueryTerm, SearchRequest, SortField,
         SortOrder, Source, SummaryRequest,
     };
 
@@ -2290,7 +2313,8 @@ mod tests {
             .limit(4)
             .offset(2)
             .sort(ascending.clone())
-            .fields(["title", "body"]);
+            .fields(["title", "body"])
+            .timeout(Duration::from_millis(200));
         assert_eq!(search.rank_profile, "title_rank");
         assert_eq!(search.limit, 4);
         assert_eq!(search.offset, 2);
@@ -2299,6 +2323,7 @@ mod tests {
             search.summary,
             SummaryRequest::Fields(vec!["title".into(), "body".into()])
         );
+        assert_eq!(search.timeout, Duration::from_millis(200));
 
         let search = SearchRequest::new(Query::True)
             .rank_profile("local_rank")

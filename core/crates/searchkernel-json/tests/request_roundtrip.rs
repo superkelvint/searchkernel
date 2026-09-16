@@ -92,6 +92,20 @@ fn lower_only_range_is_preserved() {
 }
 
 #[test]
+fn engine_timeout_is_preserved_in_canonical_json() {
+    let json = br#"{
+        "protocol_version": 1,
+        "request": {"search": {"query": "foo", "timeout": 200}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("timeout request JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("request JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
 fn official_flatbuffers_union_json_is_rejected() {
     let json = br#"{
         "protocol_version": 1,

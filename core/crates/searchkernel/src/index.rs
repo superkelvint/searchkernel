@@ -369,6 +369,7 @@ impl Index {
             language: normalized
                 .language()
                 .map(|language| language.as_str().to_owned()),
+            timeout: normalized.timeout(),
         })
     }
 

@@ -11,13 +11,13 @@ pub const ENUM_MIN_ERROR_CODE: u8 = 0;
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
-pub const ENUM_MAX_ERROR_CODE: u8 = 9;
+pub const ENUM_MAX_ERROR_CODE: u8 = 10;
 #[deprecated(
     since = "2.0.0",
     note = "Use associated constants instead. This will no longer be generated in 2021."
 )]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 10] = [
+pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 11] = [
     ErrorCode::Unspecified,
     ErrorCode::InvalidArgument,
     ErrorCode::NotFound,
@@ -28,6 +28,7 @@ pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 10] = [
     ErrorCode::ResourceExhausted,
     ErrorCode::Internal,
     ErrorCode::Unavailable,
+    ErrorCode::DeadlineExceeded,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -45,9 +46,10 @@ impl ErrorCode {
     pub const ResourceExhausted: Self = Self(7);
     pub const Internal: Self = Self(8);
     pub const Unavailable: Self = Self(9);
+    pub const DeadlineExceeded: Self = Self(10);
 
     pub const ENUM_MIN: u8 = 0;
-    pub const ENUM_MAX: u8 = 9;
+    pub const ENUM_MAX: u8 = 10;
     pub const ENUM_VALUES: &'static [Self] = &[
         Self::Unspecified,
         Self::InvalidArgument,
@@ -59,6 +61,7 @@ impl ErrorCode {
         Self::ResourceExhausted,
         Self::Internal,
         Self::Unavailable,
+        Self::DeadlineExceeded,
     ];
     /// Returns the variant's name or "" if unknown.
     pub fn variant_name(self) -> Option<&'static str> {
@@ -73,6 +76,7 @@ impl ErrorCode {
             Self::ResourceExhausted => Some("ResourceExhausted"),
             Self::Internal => Some("Internal"),
             Self::Unavailable => Some("Unavailable"),
+            Self::DeadlineExceeded => Some("DeadlineExceeded"),
             _ => None,
         }
     }

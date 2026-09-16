@@ -37,6 +37,10 @@ struct OptionalUInt32 {
   value:uint;
 }
 
+struct OptionalUInt64 {
+  value:ulong;
+}
+
 // -----------------------------------------------------------------------------
 // Common values
 // -----------------------------------------------------------------------------
@@ -420,6 +424,10 @@ table SearchRequest {
   // Kept last so future schema evolution follows FlatBuffers append-only rules.
   // This corresponds to protobuf SearchRequest.query_expr (field number 15).
   query_expr:QueryExpr;
+
+  // Optional engine execution deadline, in milliseconds. This is not a
+  // transport/client cancellation signal.
+  timeout:OptionalUInt64;
 }
 
 enum TotalHitsRelation:ubyte {
@@ -537,7 +545,8 @@ enum ErrorCode:ubyte {
   Unsupported = 6,
   ResourceExhausted = 7,
   Internal = 8,
-  Unavailable = 9
+  Unavailable = 9,
+  DeadlineExceeded = 10
 }
 
 table StringEntry {

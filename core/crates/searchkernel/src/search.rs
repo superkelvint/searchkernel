@@ -2,6 +2,7 @@ use crate::filter::Filter;
 use crate::index::Index;
 use crate::result::SearchResult;
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// The direction in which a sort field is ordered.
@@ -152,6 +153,7 @@ pub struct InspectedQuery {
     pub projection: Vec<String>,
     pub highlighting: Option<Vec<String>>,
     pub language: Option<String>,
+    pub timeout: Option<Duration>,
 }
 
 /// A fluent search request.
@@ -170,6 +172,7 @@ pub struct SearchBuilder {
     pub(crate) projection: Option<Vec<String>>,
     pub(crate) highlighting: Option<Vec<String>>,
     pub(crate) language: Option<String>,
+    pub(crate) timeout: Option<Duration>,
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u32>,
 }
@@ -187,6 +190,7 @@ impl SearchBuilder {
             projection: None,
             highlighting: None,
             language: None,
+            timeout: None,
             limit: None,
             offset: None,
         }
@@ -259,6 +263,14 @@ impl SearchBuilder {
     /// Set the language hint used by the backend.
     pub fn language(mut self, language: impl Into<String>) -> Self {
         self.language = Some(language.into());
+        self
+    }
+
+    /// Stop the engine from spending more than this duration on the search.
+    /// This is part of the portable request and is distinct from cancelling a
+    /// client-side future.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 
@@ -351,5 +363,22 @@ mod tests {
 
         let inspected = request.inspect().expect("inspect search");
         assert_eq!(inspected.query, "headphones");
+    }
+
+    #[test]
+    fn search_builder_preserves_engine_timeout() {
+        let index = Index::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let inspected = index
+            .search("headphones")
+            .timeout(Duration::from_millis(200))
+            .inspect()
+            .expect("inspect search");
+
+        assert_eq!(inspected.timeout, Some(Duration::from_millis(200)));
     }
 }

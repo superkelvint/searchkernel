@@ -40,6 +40,8 @@ pub mod search_kernel {
         pub use self::optional_double_generated::*;
         mod optional_uint_32_generated;
         pub use self::optional_uint_32_generated::*;
+        mod optional_uint_64_generated;
+        pub use self::optional_uint_64_generated::*;
         mod null_value_value_generated;
         pub use self::null_value_value_generated::*;
         mod bool_value_generated;

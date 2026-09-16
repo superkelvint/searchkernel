@@ -10,6 +10,7 @@ use crate::search::{
 use crate::{Error, Result};
 use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
+use std::time::Duration;
 
 pub(crate) fn definition(definition: &IndexDefinition) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
@@ -181,6 +182,11 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
         .language
         .as_deref()
         .map(|value| builder.create_string(value));
+    let timeout = request
+        .timeout
+        .map(timeout_millis)
+        .transpose()?
+        .map(api::OptionalUInt64::new);
     let root = api::SearchRequest::create(
         &mut builder,
         &api::SearchRequestArgs {
@@ -196,10 +202,27 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
             highlighting,
             language,
             query_expr: None,
+            timeout: timeout.as_ref(),
         },
     );
     builder.finish(root, None);
     Ok(builder.finished_data().to_vec())
+}
+
+fn timeout_millis(timeout: Duration) -> Result<u64> {
+    let millis = u64::try_from(timeout.as_millis()).map_err(|_| {
+        Error::search(
+            crate::ErrorCode::InvalidArgument,
+            "search timeout is too large to encode",
+        )
+    })?;
+    if !timeout.is_zero() && millis == 0 {
+        return Err(Error::search(
+            crate::ErrorCode::InvalidArgument,
+            "search timeout must be at least one millisecond",
+        ));
+    }
+    Ok(millis)
 }
 
 fn index_definition<'a>(
@@ -778,7 +801,8 @@ mod tests {
             .offset(2)
             .projection(["title"])
             .highlight(["title"])
-            .language("en-us");
+            .language("en-us")
+            .timeout(Duration::from_millis(200));
         let bytes = search(&request).expect("search request encoding");
         let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
             .expect("encoded search request");
@@ -797,6 +821,21 @@ mod tests {
         assert_eq!(encoded.projection().unwrap().fields().unwrap().len(), 1);
         assert_eq!(encoded.highlighting().unwrap().fields().unwrap().len(), 1);
         assert_eq!(encoded.language(), Some("en-us"));
+        assert_eq!(encoded.timeout().unwrap().value(), 200);
+    }
+
+    #[test]
+    fn search_encoder_rejects_sub_millisecond_timeout() {
+        let index = test_index();
+        let request = index.search("headphones").timeout(Duration::from_nanos(1));
+
+        assert!(matches!(
+            search(&request),
+            Err(Error::Search {
+                code: crate::ErrorCode::InvalidArgument,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::model::{
 };
 use searchkernel_protocol::v1 as api;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 #[derive(Clone, Copy)]
 pub enum WriteRequestRef<'a> {
@@ -196,6 +197,9 @@ impl IndexContext {
             None => None,
             Some(v) => Some(parse_language(v, "language")?),
         };
+        let timeout = request
+            .timeout()
+            .map(|value| Duration::from_millis(value.value()));
         Ok(SearchRequestIr {
             query,
             search_fields,
@@ -208,6 +212,7 @@ impl IndexContext {
             projection: self.projection_to_ir(request.projection())?,
             highlighting: self.highlighting_to_ir(request.highlighting())?,
             language,
+            timeout,
             prefix_policy: PrefixPolicy::Disabled,
             typo_policy: TypoPolicy::Disabled,
         })

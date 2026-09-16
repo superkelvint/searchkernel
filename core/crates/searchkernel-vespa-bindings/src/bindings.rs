@@ -43,6 +43,7 @@ pub const SK_GROUP_ORDER_COUNT_ASC: u32 = 1;
 pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
 pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
+pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
 pub const SK_NATIVE_ABI_VERSION: u32 = 5;
 #[repr(C)]
@@ -748,6 +749,14 @@ unsafe extern "C" {
         offset: u32,
         summary_kind: u32,
         out_request: *mut *mut sk_generic_search_request,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_set_timeout(
+        request: *mut sk_generic_search_request,
+        timeout_millis: u64,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

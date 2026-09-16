@@ -75,6 +75,7 @@ SEARCHKERNEL_2 {
         sk_local_search_result_match_feature_value;
         sk_local_search_result_destroy;
         sk_generic_search_request_create;
+        sk_generic_search_request_set_timeout;
         sk_generic_search_request_add_sort;
         sk_generic_search_request_add_summary_field;
         sk_generic_search_request_add_query_feature;

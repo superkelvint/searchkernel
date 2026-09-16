@@ -78,7 +78,7 @@ pub mod model {
         pub filter: Option<FilterExpr>, pub sort: Vec<SortExpr>, pub facets: Vec<FacetRequest>,
         pub ranking: Option<RankingPolicy>, pub limit: Option<u32>, pub offset: Option<u32>,
         pub projection: Option<FieldProjection>, pub highlighting: Option<HighlightRequest>,
-        pub language: Option<String>, pub query_expr: Option<QueryExpr>,
+        pub language: Option<String>, pub query_expr: Option<QueryExpr>, pub timeout: Option<u64>,
     }
     #[derive(Debug, Clone, PartialEq, Default)]
     pub enum AnalyzeTarget { #[default] None, Analyzer(Analyzer), Field(String) }
@@ -343,8 +343,8 @@ fn encode_get(value: model::GetRequest) -> Result<Vec<u8>, String> {
 fn model_search<'a>(mut b: &mut FlatBufferBuilder<'a>, value: model::SearchRequest) -> Result<flatbuffers::WIPOffset<wire::SearchRequest<'a>>, String> {
     let query = value.query.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
     let search_fields = value.search_fields.map(|value| model_selection(&mut b, value)).transpose()?; let filter = value.filter.map(|value| model_filter(&mut b, value)).transpose()?; let sort = model_sort(&mut b, value.sort)?; let facets = model_facets(&mut b, value.facets)?; let ranking = value.ranking.map(|value| model_ranking(&mut b, value)).transpose()?; let projection = value.projection.map(|value| model_projection(&mut b, value)); let highlighting = value.highlighting.map(|value| model_highlighting(&mut b, value)); let query_expr = value.query_expr.map(|value| model_query(&mut b, value)).transpose()?;
-    let limit = value.limit.map(wire::OptionalUInt32::new); let offset = value.offset.map(wire::OptionalUInt32::new);
-    Ok(wire::SearchRequest::create(b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr }))
+    let limit = value.limit.map(wire::OptionalUInt32::new); let offset = value.offset.map(wire::OptionalUInt32::new); let timeout = value.timeout.map(wire::OptionalUInt64::new);
+    Ok(wire::SearchRequest::create(b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr, timeout: timeout.as_ref() }))
 }
 fn encode_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
     let mut b = FlatBufferBuilder::new(); let request = model_search(&mut b, value)?;
@@ -517,7 +517,7 @@ fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::Search
         ranking: value.ranking().map(|ranking| match ranking.policy_type() { wire::RankingPolicyKind::DefaultRelevanceV1 => Ok(model::RankingPolicy::DefaultRelevanceV1), wire::RankingPolicyKind::Bm25Ranking => Ok(model::RankingPolicy::Bm25Ranking), _ => Err(DecodeError::Protocol("unknown ranking discriminator".to_owned())) }).transpose()?,
         limit: value.limit().map(|value| value.value()), offset: value.offset().map(|value| value.value()),
         projection: value.projection().map(decode_projection), highlighting: value.highlighting().map(decode_highlighting),
-        language: value.language().map(ToOwned::to_owned), query_expr: value.query_expr().map(decode_query).transpose()?,
+        language: value.language().map(ToOwned::to_owned), query_expr: value.query_expr().map(decode_query).transpose()?, timeout: value.timeout().map(|value| value.value()),
     })
 }
 fn decode_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> { Ok(model::Analyzer { name: value.name().map(ToOwned::to_owned), version: value.version(), options: decode_entries(value.options())? }) }
