@@ -514,7 +514,7 @@ fn native_boolean_attributes_support_sorting_and_faceting() {
 }
 
 #[test]
-fn native_grouping_preserves_vespa_serialized_group_order() {
+fn native_grouping_applies_requested_group_order_before_limit() {
     let config = temporary_path("group-order-config");
     let data = temporary_path("group-order-data");
     let schema = Schema::new("typea").field(
@@ -551,8 +551,8 @@ fn native_grouping_preserves_vespa_serialized_group_order() {
             .map(|group| (&group.key, group.count))
             .collect::<Vec<_>>(),
         vec![
-            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
             (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
+            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
         ]
     );
 
