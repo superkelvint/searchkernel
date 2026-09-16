@@ -1,0 +1,10 @@
+docker run --rm -it \
+  --privileged \
+  --pids-limit -1 \
+  -v "$PWD":/work \
+  -w /work/upstream/vespa \
+  docker.io/vespaengine/vespa-dev-almalinux-8:latest \
+  /bin/bash
+
+
+  VESPA_DEPS=/opt/vespa-deps   SK_NATIVE_SDK="$PWD/target/vespa-verifier/m11/sdk/hardening"   SK_NATIVE_BUILD_DIR="$PWD/target/vespa-verifier/m11/native-build/hardening"   SK_NATIVE_ENABLE_FAILPOINTS=1   core/native/vespa/build-sdk.sh
