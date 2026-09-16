@@ -49,8 +49,9 @@ recoverable Rust error.
 ## Fixture
 
 `fixtures/persisted-v1` is a Linux x86-64 compatibility fixture created with
-the pinned Vespa revision and native ABI version 5. It contains puts for four
-documents, an update, a delete, and the final logical state:
+native ABI version 4 and the pinned Vespa revision. The current ABI 5 engine
+must open it without rewriting its provenance or persisted bytes. It contains
+puts for four documents, an update, a delete, and the final logical state:
 
 ```text
 doc2.attr1 = 10

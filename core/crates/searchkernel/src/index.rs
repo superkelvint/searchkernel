@@ -12,7 +12,11 @@ use serde::Serialize;
 use std::sync::Arc;
 
 #[cfg(feature = "native")]
-const MANIFEST_FORMAT_VERSION: u32 = 2;
+const MANIFEST_FORMAT_VERSION: u32 = 3;
+#[cfg(feature = "native")]
+const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 2;
+#[cfg(feature = "native")]
+const STORAGE_COMPATIBILITY_GENERATION: u32 = 1;
 #[cfg(feature = "native")]
 const NATIVE_ABI_VERSION: u32 = 5;
 #[cfg(feature = "native")]
@@ -52,33 +56,25 @@ fn create_directory_transaction<T>(
     }
 }
 
-pub struct Index {
-    pub(crate) context: Arc<IndexContext>,
-    pub(crate) session: Arc<BackendSession>,
-    pub(crate) definition: Arc<IndexDefinition>,
-}
-
-impl Clone for Index {
-    fn clone(&self) -> Self {
-        Self {
-            context: Arc::clone(&self.context),
-            session: Arc::clone(&self.session),
-            definition: Arc::clone(&self.definition),
-        }
-    }
-}
-
-/// The owning lifecycle for an [`Index`] and all handles derived from it.
-///
-/// `IndexRuntime` is deliberately not cloneable.  Clone the [`Index`] returned
-/// by [`IndexRuntime::index`] when an operation handle must be shared.
-pub struct IndexRuntime {
+struct IndexInner {
     context: Arc<IndexContext>,
     definition: Arc<IndexDefinition>,
     session: Arc<BackendSession>,
 }
 
-impl IndexRuntime {
+#[derive(Clone)]
+pub struct Index {
+    inner: Arc<IndexInner>,
+}
+
+/// Compatibility alias for the provisional runtime/handle split.
+///
+/// There is no separate lifecycle owner: `IndexRuntime` and `Index` now share
+/// the same close state and all operations can use `Index::close` directly.
+#[doc(hidden)]
+pub type IndexRuntime = Index;
+
+impl Index {
     /// Construct an index from the canonical FlatBuffers index-definition
     /// payload used by the native bootstrap. This is intentionally hidden from
     /// the ergonomic Rust API; the portable wire definition is validated by
@@ -110,8 +106,7 @@ impl IndexRuntime {
             std::fs::create_dir(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
             searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
                 .map_err(Error::from_ir)?;
-            let manifest =
-                IndexManifest::for_definition(&definition, &resolved_definition, &config)?;
+            let manifest = IndexManifest::for_definition(&definition, &config)?;
             manifest.write(root)?;
             let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
                 .map_err(|error| Error::Infrastructure(error.to_string()))?;
@@ -140,7 +135,7 @@ impl IndexRuntime {
         Self::from_owned_backend(definition, BackendSession::new(Box::new(backend)))
     }
 
-    /// Construct a runtime around a backend for tests and infrastructure.
+    /// Construct an index around a backend for tests and infrastructure.
     ///
     /// This is hidden from normal API documentation because production
     /// lifecycle is supplied by a later integration milestone.
@@ -162,63 +157,39 @@ impl IndexRuntime {
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);
         Ok(Self {
-            session,
-            context,
-            definition,
+            inner: Arc::new(IndexInner {
+                session,
+                context,
+                definition,
+            }),
         })
     }
 
-    /// Return a cloneable operation handle for this runtime.
+    /// Return a cloneable operation handle.
     pub fn index(&self) -> Index {
-        Index {
-            context: Arc::clone(&self.context),
-            session: Arc::clone(&self.session),
-            definition: Arc::clone(&self.definition),
-        }
+        self.clone()
     }
 
-    /// Gracefully close the native/backend runtime after draining operations.
-    pub fn close(self) -> Result<()> {
-        self.session.close().map_err(Error::from_ir)
+    /// Gracefully close this index and all of its clones after draining active
+    /// operations.
+    pub fn close(&self) -> Result<()> {
+        self.inner.session.close().map_err(Error::from_ir)
     }
 
-    /// Transfer the runtime's shared owner to the native handle registry.
+    /// Transfer the shared lifecycle state to the native handle registry.
     #[doc(hidden)]
     pub fn into_session_parts(self) -> (Arc<IndexContext>, Arc<BackendSession>) {
-        let runtime = std::mem::ManuallyDrop::new(self);
-        (Arc::clone(&runtime.context), Arc::clone(&runtime.session))
-    }
-}
-
-impl Drop for IndexRuntime {
-    fn drop(&mut self) {
-        self.session.best_effort_close();
+        (
+            Arc::clone(&self.inner.context),
+            Arc::clone(&self.inner.session),
+        )
     }
 }
 
 impl Index {
-    /// Construct a handle around a backend for tests and infrastructure.
-    ///
-    /// This hidden constructor has no public lifecycle surface. Production
-    /// callers must use [`IndexRuntime`] and derive handles with
-    /// [`IndexRuntime::index`].
-    #[doc(hidden)]
-    pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
-        let bytes = wire::definition(&definition);
-        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
-            |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
-        )?;
-        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
-        let effective_definition = definition_from_ir(context.definition());
-        Ok(Self {
-            session: BackendSession::from_backend(backend),
-            context: Arc::new(context),
-            definition: Arc::new(effective_definition),
-        })
-    }
-
     fn with_backend<T>(&self, callback: impl FnOnce(&dyn Backend) -> Result<T>) -> Result<T> {
-        self.session
+        self.inner
+            .session
             .execute(callback)
             .map_err(|_| Error::index_closed())?
     }
@@ -231,7 +202,11 @@ impl Index {
                 serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
             let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
             let request = self.root_insert(&request_bytes)?;
-            let ir_request = self.context.insert_to_ir(request).map_err(Error::from_ir)?;
+            let ir_request = self
+                .inner
+                .context
+                .insert_to_ir(request)
+                .map_err(Error::from_ir)?;
             backend.insert(ir_request).map_err(Error::from_ir)?;
             Ok(())
         })
@@ -245,7 +220,11 @@ impl Index {
                 serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
             let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
             let request = self.root_upsert(&request_bytes)?;
-            let ir_request = self.context.upsert_to_ir(request).map_err(Error::from_ir)?;
+            let ir_request = self
+                .inner
+                .context
+                .upsert_to_ir(request)
+                .map_err(Error::from_ir)?;
             backend.upsert(ir_request).map_err(Error::from_ir)?;
             Ok(())
         })
@@ -257,7 +236,11 @@ impl Index {
             let document_id = id.into();
             let request_bytes = wire::patch(document_id.as_str(), &patch)?;
             let request = self.root_patch(&request_bytes)?;
-            let ir_request = self.context.patch_to_ir(request).map_err(Error::from_ir)?;
+            let ir_request = self
+                .inner
+                .context
+                .patch_to_ir(request)
+                .map_err(Error::from_ir)?;
             backend.patch(ir_request).map_err(Error::from_ir)?;
             Ok(())
         })
@@ -269,7 +252,11 @@ impl Index {
             let document_id = id.into();
             let request_bytes = wire::delete(document_id.as_str());
             let request = self.root_delete(&request_bytes)?;
-            let ir_request = self.context.delete_to_ir(request).map_err(Error::from_ir)?;
+            let ir_request = self
+                .inner
+                .context
+                .delete_to_ir(request)
+                .map_err(Error::from_ir)?;
             let delete_result = backend.delete(ir_request).map_err(Error::from_ir)?;
             Ok(delete_result.deleted)
         })
@@ -302,7 +289,12 @@ impl Index {
             let request_bytes = wire::get(document_id.as_str(), projection.as_deref());
             let request = self.root_get(&request_bytes)?;
             let get_result = backend
-                .get(self.context.get_to_ir(request).map_err(Error::from_ir)?)
+                .get(
+                    self.inner
+                        .context
+                        .get_to_ir(request)
+                        .map_err(Error::from_ir)?,
+                )
                 .map_err(Error::from_ir)?;
             get_result
                 .document
@@ -324,7 +316,7 @@ impl Index {
 
     /// Return the effective schema and search defaults for this index.
     pub fn describe(&self) -> Result<IndexDefinition> {
-        self.with_backend(|_| Ok((*self.definition).clone()))
+        self.with_backend(|_| Ok((*self.inner.definition).clone()))
     }
 
     /// Start a linguistic analysis request.
@@ -341,6 +333,7 @@ impl Index {
                         Error::infrastructure(format!("invalid generated analyze request: {error}"))
                     })?;
             let ir_request = self
+                .inner
                 .context
                 .analyze_to_ir(wire_request)
                 .map_err(Error::from_ir)?;
@@ -373,6 +366,7 @@ impl Index {
                         Error::infrastructure(format!("invalid generated search request: {error}"))
                     })?;
             let normalized = self
+                .inner
                 .context
                 .inspect_query(wire_request)
                 .map_err(Error::from_ir)?;
@@ -468,6 +462,7 @@ impl Index {
                         Error::infrastructure(format!("invalid generated search request: {error}"))
                     })?;
             let ir_request = self
+                .inner
                 .context
                 .search_to_ir(wire_request)
                 .map_err(Error::from_ir)?;
@@ -511,25 +506,28 @@ impl Index {
 #[derive(Debug, Clone)]
 struct IndexManifest {
     value: serde_json::Value,
+    definition_bytes: Vec<u8>,
 }
 
 #[cfg(feature = "native")]
 impl IndexManifest {
     fn for_definition(
         portable_definition: &IndexDefinition,
-        resolved_definition: &IndexDefinition,
         config: &std::path::Path,
     ) -> Result<Self> {
         Ok(Self {
             value: serde_json::json!({
-                "format_version": MANIFEST_FORMAT_VERSION,
-                "searchkernel_version": env!("CARGO_PKG_VERSION"),
-                "native_abi_version": NATIVE_ABI_VERSION,
-                "vespa_revision": VESPA_REVISION,
-                "portable_index_definition": definition_json(portable_definition),
-                "resolved_index_definition": definition_json(resolved_definition),
+                "manifest_format_version": MANIFEST_FORMAT_VERSION,
+                "storage_compatibility_generation": STORAGE_COMPATIBILITY_GENERATION,
+                "provenance": {
+                    "created_by_searchkernel_version": env!("CARGO_PKG_VERSION"),
+                    "created_by_native_abi": NATIVE_ABI_VERSION,
+                    "created_by_vespa_revision": VESPA_REVISION,
+                },
+                "canonical_index_definition": "index-definition.bfbs",
                 "resolved_engine_config_identity": config_identity(config)?,
             }),
+            definition_bytes: wire::definition(portable_definition),
         })
     }
 
@@ -539,6 +537,11 @@ impl IndexManifest {
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         let bytes = serde_json::to_vec_pretty(&self.value)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        std::fs::write(
+            directory.join("index-definition.bfbs"),
+            &self.definition_bytes,
+        )
+        .map_err(|error| Error::Infrastructure(error.to_string()))?;
         std::fs::write(directory.join("index.json"), bytes)
             .map_err(|error| Error::Infrastructure(error.to_string()))
     }
@@ -552,10 +555,30 @@ impl IndexManifest {
                 Error::Infrastructure(error.to_string())
             }
         })?;
-        let value = serde_json::from_slice(&bytes)
+        let value: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|error| Error::corrupt_index(error.to_string()))?;
-        let manifest = Self { value };
+        let version = value
+            .get("manifest_format_version")
+            .or_else(|| value.get("format_version"))
+            .and_then(serde_json::Value::as_u64);
+        let definition_bytes = if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+            let path = root.join("manifest/index-definition.bfbs");
+            std::fs::read(&path).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    Error::corrupt_index(path.display().to_string())
+                } else {
+                    Error::Infrastructure(error.to_string())
+                }
+            })?
+        } else {
+            Vec::new()
+        };
+        let manifest = Self {
+            value,
+            definition_bytes,
+        };
         manifest.validate_identity()?;
+        manifest.definition()?;
         Ok(manifest)
     }
 
@@ -565,51 +588,82 @@ impl IndexManifest {
             .as_object()
             .ok_or_else(|| Error::corrupt_index("manifest root is not an object"))?;
         let version = object
-            .get("format_version")
+            .get("manifest_format_version")
+            .or_else(|| object.get("format_version"))
             .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| Error::corrupt_index("manifest format_version is missing"))?;
-        if version != u64::from(MANIFEST_FORMAT_VERSION) {
-            return Err(Error::incompatible_index(format!(
-                "manifest format version {version}"
-            )));
-        }
-        let abi = object
-            .get("native_abi_version")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| Error::corrupt_index("manifest native_abi_version is missing"))?;
-        if abi != u64::from(NATIVE_ABI_VERSION) {
-            return Err(Error::incompatible_index(format!(
-                "native ABI version {abi}"
-            )));
-        }
-        let searchkernel_version = object
-            .get("searchkernel_version")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::corrupt_index("manifest searchkernel_version is missing"))?;
-        let vespa_revision = object
-            .get("vespa_revision")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::corrupt_index("manifest vespa_revision is missing"))?;
-        if searchkernel_version != env!("CARGO_PKG_VERSION") || vespa_revision != VESPA_REVISION {
-            return Err(Error::incompatible_index(
-                "manifest identity does not match this build",
-            ));
-        }
-        if !object
-            .get("portable_index_definition")
-            .is_some_and(serde_json::Value::is_object)
-        {
-            return Err(Error::corrupt_index(
-                "manifest portable_index_definition is invalid",
-            ));
-        }
-        if !object
-            .get("resolved_index_definition")
-            .is_some_and(serde_json::Value::is_object)
-        {
-            return Err(Error::corrupt_index(
-                "manifest resolved_index_definition is invalid",
-            ));
+            .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
+        match version {
+            value if value == u64::from(MANIFEST_FORMAT_VERSION) => {
+                let generation = object
+                    .get("storage_compatibility_generation")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or_else(|| {
+                        Error::corrupt_index("manifest storage compatibility generation is missing")
+                    })?;
+                if generation != STORAGE_COMPATIBILITY_GENERATION {
+                    return Err(Error::incompatible_index(format!(
+                        "storage compatibility generation {generation}"
+                    )));
+                }
+                let provenance = object
+                    .get("provenance")
+                    .and_then(serde_json::Value::as_object)
+                    .ok_or_else(|| Error::corrupt_index("manifest provenance is invalid"))?;
+                if !provenance
+                    .get("created_by_searchkernel_version")
+                    .is_some_and(serde_json::Value::is_string)
+                    || !provenance
+                        .get("created_by_native_abi")
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .is_some()
+                    || !provenance
+                        .get("created_by_vespa_revision")
+                        .is_some_and(serde_json::Value::is_string)
+                {
+                    return Err(Error::corrupt_index(
+                        "manifest provenance has invalid fields",
+                    ));
+                }
+                if !object
+                    .get("canonical_index_definition")
+                    .is_some_and(serde_json::Value::is_string)
+                {
+                    return Err(Error::corrupt_index(
+                        "manifest canonical_index_definition is invalid",
+                    ));
+                }
+            }
+            value if value == u64::from(LEGACY_MANIFEST_FORMAT_VERSION) => {
+                for key in [
+                    "searchkernel_version",
+                    "native_abi_version",
+                    "vespa_revision",
+                ] {
+                    if !object.contains_key(key) {
+                        return Err(Error::corrupt_index(format!(
+                            "legacy manifest {key} is missing"
+                        )));
+                    }
+                }
+                if !object
+                    .get("portable_index_definition")
+                    .is_some_and(serde_json::Value::is_object)
+                    || !object
+                        .get("resolved_index_definition")
+                        .is_some_and(serde_json::Value::is_object)
+                {
+                    return Err(Error::corrupt_index(
+                        "legacy manifest index definition is invalid",
+                    ));
+                }
+            }
+            _ => {
+                return Err(Error::incompatible_index(format!(
+                    "manifest format version {version}"
+                )));
+            }
         }
         if !object
             .get("resolved_engine_config_identity")
@@ -652,11 +706,26 @@ impl IndexManifest {
     }
 
     fn definition(&self) -> Result<IndexDefinition> {
-        definition_from_json(
-            self.value
-                .get("resolved_index_definition")
-                .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
-        )
+        let version = self
+            .value
+            .get("manifest_format_version")
+            .or_else(|| self.value.get("format_version"))
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
+        if version == u64::from(MANIFEST_FORMAT_VERSION) {
+            let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+                &self.definition_bytes,
+            )
+            .map_err(|error| Error::corrupt_index(format!("invalid index definition: {error}")))?;
+            let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+            Ok(definition_from_ir(context.definition()))
+        } else {
+            definition_from_json(
+                self.value
+                    .get("resolved_index_definition")
+                    .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
+            )
+        }
     }
 }
 
@@ -671,28 +740,6 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
 }
 
 #[cfg(feature = "native")]
-fn definition_json(definition: &IndexDefinition) -> serde_json::Value {
-    serde_json::json!({
-        "name": definition.name,
-        "fields": definition.fields.iter().map(|field| serde_json::json!({
-            "name": field.name,
-            "kind": format!("{:?}", field.kind),
-            "multi": field.multi,
-            "stored": field.stored,
-            "searchable": field.searchable,
-            "filterable": field.filterable,
-            "sortable": field.sortable,
-            "facetable": field.facetable,
-            "analyzer": field.analyzer.as_ref().map(|value| serde_json::json!({
-                "name": value.name,
-                "version": value.version,
-                "options": value.options,
-            })),
-        })).collect::<Vec<_>>(),
-        "default_search_fields": definition.default_search_fields.as_ref().map(|fields| fields.iter().map(|field| serde_json::json!({"field": field.field, "weight": field.weight})).collect::<Vec<_>>()),
-    })
-}
-
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
     if let Some(name) = definition.name() {
@@ -946,10 +993,7 @@ mod tests {
             .field(Field::int64("quantity"))
             .field(Field::float64("price"))
             .field(Field::bool("enabled"))
-            .default_search_fields([
-                SearchField::new("title"),
-                SearchField::new("brand").weight(2.0),
-            ])
+            .default_search_fields([SearchField::new("title")])
     }
 
     #[test]
@@ -1002,7 +1046,7 @@ mod tests {
         let index = IndexRuntime::from_backend(definition, Arc::new(RecordingBackend::new()))
             .unwrap()
             .index();
-        let description = index.context.describe();
+        let description = index.inner.context.describe();
 
         assert_eq!(description.name().unwrap().as_str(), "catalog");
         assert_eq!(description.fields().len(), 5);
@@ -1039,14 +1083,22 @@ mod tests {
         write_config(&config);
         let definition = manifest_definition();
 
-        let manifest = IndexManifest::for_definition(&definition, &definition, &config).unwrap();
+        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
         manifest.write(&root).unwrap();
         let loaded = IndexManifest::read(&root).unwrap();
         loaded.validate_config(&config).unwrap();
 
-        assert_eq!(loaded.definition().unwrap(), definition);
-        assert_eq!(loaded.value["format_version"], MANIFEST_FORMAT_VERSION);
-        assert_eq!(loaded.value["native_abi_version"], NATIVE_ABI_VERSION);
+        let expected = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        assert_eq!(loaded.definition().unwrap(), expected);
+        assert_eq!(
+            loaded.value["manifest_format_version"],
+            MANIFEST_FORMAT_VERSION
+        );
+        assert_eq!(
+            loaded.value["storage_compatibility_generation"],
+            STORAGE_COMPATIBILITY_GENERATION
+        );
+        assert!(root.join("manifest/index-definition.bfbs").is_file());
 
         std::fs::write(config.join("proton.cfg"), "changed\n").unwrap();
         assert!(matches!(
@@ -1058,54 +1110,106 @@ mod tests {
     }
 
     #[test]
+    fn legacy_manifest_with_old_abi_is_still_readable() {
+        let root = temporary_path("legacy-manifest");
+        let config = root.join("config");
+        write_config(&config);
+        let definition = serde_json::json!({
+            "name": "legacy",
+            "fields": [{"name": "title", "kind": "Text"}],
+            "default_search_fields": [{"field": "title", "weight": 1.0}]
+        });
+        let value = serde_json::json!({
+            "format_version": LEGACY_MANIFEST_FORMAT_VERSION,
+            "searchkernel_version": "0.1.0",
+            "native_abi_version": 4,
+            "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
+            "portable_index_definition": definition.clone(),
+            "resolved_index_definition": definition,
+            "resolved_engine_config_identity": config_identity(&config).unwrap(),
+        });
+        std::fs::create_dir_all(root.join("manifest")).unwrap();
+        std::fs::write(
+            root.join("manifest/index.json"),
+            serde_json::to_vec_pretty(&value).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = IndexManifest::read(&root).unwrap();
+        assert_eq!(loaded.definition().unwrap().index_name(), Some("legacy"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_definition_corruption_is_rejected() {
+        let root = temporary_path("canonical-definition-corruption");
+        let config = root.join("config");
+        write_config(&config);
+        let definition = manifest_definition();
+        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
+        manifest.write(&root).unwrap();
+        std::fs::write(root.join("manifest/index-definition.bfbs"), b"invalid").unwrap();
+
+        assert!(matches!(
+            IndexManifest::read(&root),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn manifest_validation_rejects_identity_and_structure_corruption() {
         let root = temporary_path("manifest-validation");
         let config = root.join("config");
         write_config(&config);
         let definition = manifest_definition();
-        let manifest = IndexManifest::for_definition(&definition, &definition, &config).unwrap();
+        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
 
-        let cases = [
-            ("format_version", serde_json::json!(999), true),
-            ("native_abi_version", serde_json::json!(999), true),
-            ("searchkernel_version", serde_json::json!(999), false),
-            ("vespa_revision", serde_json::json!(999), false),
-            (
-                "portable_index_definition",
-                serde_json::json!("invalid"),
-                false,
-            ),
-            (
-                "resolved_index_definition",
-                serde_json::json!("invalid"),
-                false,
-            ),
-            (
-                "resolved_engine_config_identity",
-                serde_json::json!("invalid"),
-                false,
-            ),
-        ];
-        for (key, value, incompatible) in cases {
-            let mut corrupted = manifest.clone();
-            corrupted.value[key] = value;
-            let result = corrupted.validate_identity();
-            assert!(result.is_err(), "manifest mutation {key} was accepted");
-            assert_eq!(
-                matches!(
-                    result,
-                    Err(Error::Search {
-                        code: crate::ErrorCode::IncompatibleIndex,
-                        ..
-                    })
-                ),
-                incompatible,
-                "unexpected error class for manifest mutation {key}"
-            );
-        }
+        let mut provenance = manifest.clone();
+        provenance.value["provenance"]["created_by_native_abi"] = serde_json::json!(4);
+        provenance.value["provenance"]["created_by_vespa_revision"] =
+            serde_json::json!("older-revision");
+        assert!(provenance.validate_identity().is_ok());
+
+        let mut generation = manifest.clone();
+        generation.value["storage_compatibility_generation"] = serde_json::json!(999);
+        assert!(matches!(
+            generation.validate_identity(),
+            Err(Error::Search {
+                code: crate::ErrorCode::IncompatibleIndex,
+                ..
+            })
+        ));
+
+        let mut malformed_config = manifest.clone();
+        malformed_config.value["resolved_engine_config_identity"] = serde_json::json!("invalid");
+        assert!(matches!(
+            malformed_config.validate_identity(),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
+
+        let mut malformed_provenance = manifest.clone();
+        malformed_provenance.value["provenance"]["created_by_native_abi"] = serde_json::json!("5");
+        assert!(matches!(
+            malformed_provenance.validate_identity(),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
 
         for value in [serde_json::json!(null), serde_json::json!({})] {
-            let result = IndexManifest { value }.validate_identity();
+            let result = IndexManifest {
+                value,
+                definition_bytes: Vec::new(),
+            }
+            .validate_identity();
             assert!(matches!(
                 result,
                 Err(Error::Search {
@@ -1225,7 +1329,7 @@ mod api_tests {
     fn context_for(definition: &IndexDefinition) -> Arc<IndexContext> {
         let (_probe_runtime, probe) =
             runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
-        Arc::clone(&probe.context)
+        Arc::clone(&probe.inner.context)
     }
 
     fn expected_get(

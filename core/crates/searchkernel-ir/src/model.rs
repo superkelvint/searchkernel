@@ -291,6 +291,14 @@ pub struct DocumentIr {
 }
 
 impl DocumentIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(
+        id: DocumentId,
+        fields: std::collections::BTreeMap<FieldName, FieldValueIr>,
+    ) -> Self {
+        Self { id, fields }
+    }
+
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -306,6 +314,11 @@ pub struct InsertRequestIr {
 }
 
 impl InsertRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(document: DocumentIr) -> Self {
+        Self { document }
+    }
+
     pub fn document(&self) -> &DocumentIr {
         &self.document
     }
@@ -317,6 +330,11 @@ pub struct UpsertRequestIr {
 }
 
 impl UpsertRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(document: DocumentIr) -> Self {
+        Self { document }
+    }
+
     pub fn document(&self) -> &DocumentIr {
         &self.document
     }

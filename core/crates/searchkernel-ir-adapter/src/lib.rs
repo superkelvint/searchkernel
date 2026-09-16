@@ -106,6 +106,13 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
 pub struct VespaBackend {
     engine: Engine,
     insert_lock: Mutex<()>,
+    #[cfg(test)]
+    mutation_probe: Option<std::sync::Arc<MutationProbe>>,
+}
+
+#[cfg(test)]
+struct MutationProbe {
+    rendezvous: std::sync::Barrier,
 }
 
 impl VespaBackend {
@@ -122,6 +129,17 @@ impl VespaBackend {
         Self {
             engine,
             insert_lock: Mutex::new(()),
+            #[cfg(test)]
+            mutation_probe: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_mutation_probe(engine: Engine, probe: std::sync::Arc<MutationProbe>) -> Self {
+        Self {
+            engine,
+            insert_lock: Mutex::new(()),
+            mutation_probe: Some(probe),
         }
     }
 
@@ -144,6 +162,10 @@ impl Backend for VespaBackend {
                 format!("document already exists: {id}"),
             ));
         }
+        #[cfg(test)]
+        if let Some(probe) = &self.mutation_probe {
+            probe.rendezvous.wait();
+        }
         self.engine.put(document).map_err(native_error)?;
         Ok(InsertResult { id })
     }
@@ -151,6 +173,14 @@ impl Backend for VespaBackend {
     fn upsert(&self, request: UpsertRequestIr) -> Result<UpsertResult> {
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
+        #[cfg(test)]
+        if let Some(probe) = &self.mutation_probe {
+            probe.rendezvous.wait();
+        }
+        let _mutation_guard = self
+            .insert_lock
+            .lock()
+            .map_err(|_| internal("insert/upsert lock is poisoned"))?;
         self.engine.put(document).map_err(native_error)?;
         Ok(UpsertResult { id })
     }
@@ -1475,5 +1505,89 @@ mod tests {
             ranking_profile(RankingPolicyIr::Bm25).unwrap_err().details[0].code,
             "bm25_ranking_not_supported"
         );
+    }
+
+    #[test]
+    fn insert_and_upsert_are_linearizable_for_one_document_id() {
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-linearizable-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos()
+        ));
+        let data = root.join("data");
+        let config = root.join("config");
+        std::fs::create_dir_all(&data).expect("create test data directory");
+        ConfigCompiler
+            .compile_to(
+                &Schema::new("searchkernel").field(
+                    Field::new("value", FieldType::Integer)
+                        .attribute()
+                        .summary(),
+                ),
+                &config,
+            )
+            .expect("compile test schema");
+        let engine = Engine::open(&data, &config).expect("open test engine");
+        let probe = std::sync::Arc::new(MutationProbe {
+            rendezvous: std::sync::Barrier::new(3),
+        });
+        let backend = std::sync::Arc::new(VespaBackend::with_mutation_probe(engine, probe.clone()));
+
+        let insert_backend = std::sync::Arc::clone(&backend);
+        let insert = std::thread::spawn(move || {
+            insert_backend.insert(InsertRequestIr::new(test_document(1)))
+        });
+        let upsert_backend = std::sync::Arc::clone(&backend);
+        let upsert = std::thread::spawn(move || {
+            upsert_backend.upsert(UpsertRequestIr::new(test_document(2)))
+        });
+
+        probe.rendezvous.wait();
+        assert_eq!(
+            insert
+                .join()
+                .expect("insert thread")
+                .map(|result| result.id),
+            Ok("doc-1".into())
+        );
+        assert_eq!(
+            upsert
+                .join()
+                .expect("upsert thread")
+                .map(|result| result.id),
+            Ok("doc-1".into())
+        );
+
+        let stored = backend
+            .engine
+            .get("doc-1")
+            .expect("read final document")
+            .expect("final document exists");
+        assert_eq!(
+            stored.fields().get("value"),
+            Some(&searchkernel_vespa_engine::FieldValue::Scalar(
+                searchkernel_vespa_engine::ScalarValue::Integer(2),
+            ))
+        );
+
+        let backend = match std::sync::Arc::try_unwrap(backend) {
+            Ok(backend) => backend,
+            Err(_) => panic!("test backend still has owners"),
+        };
+        backend.engine.close().expect("close test engine");
+        std::fs::remove_dir_all(root).expect("remove test index");
+    }
+
+    fn test_document(value: i64) -> searchkernel_ir::DocumentIr {
+        searchkernel_ir::DocumentIr::new(
+            searchkernel_ir::DocumentId::parse("doc-1").expect("valid document ID"),
+            std::collections::BTreeMap::from([(
+                field("value"),
+                FieldValueIr::Single(ScalarValueIr::Int64(value)),
+            )]),
+        )
     }
 }
