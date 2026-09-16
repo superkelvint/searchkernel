@@ -12,7 +12,6 @@ TARGET="$ROOT/target/vespa-verifier/m11/sanitizer"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
 M11_BASE_RUSTFLAGS="${RUSTFLAGS:-}"
-M11_BASE_PRELOAD="${LD_PRELOAD:-}"
 
 run_tsan() {
   local sdk="$1"
@@ -21,6 +20,8 @@ run_tsan() {
   local output="$TARGET/tsan-attempt.log"
   local attempt
   local status
+  local preload
+  local mapping
   # GCC TSan can lose its shadow-map race with ASLR before main() starts.
   # Retry that startup-only failure, while preserving every real TSan report.
   for ((attempt = 1; attempt <= 100; attempt++)); do
@@ -28,18 +29,34 @@ run_tsan() {
       LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
       "$@" >"$output" 2>&1; then
       status=0
-      env LD_PRELOAD="$M11_BASE_PRELOAD" cat "$output"
+      preload="${LD_PRELOAD:-}"
+      unset LD_PRELOAD
+      cat "$output"
+      export LD_PRELOAD="$preload"
       return 0
     else
       status=$?
     fi
-    if ! env LD_PRELOAD="$M11_BASE_PRELOAD" rg -q \
-      'FATAL: ThreadSanitizer: unexpected memory mapping' "$output"; then
-      env LD_PRELOAD="$M11_BASE_PRELOAD" cat "$output"
+    preload="${LD_PRELOAD:-}"
+    unset LD_PRELOAD
+    if rg -q 'FATAL: ThreadSanitizer: unexpected memory mapping' "$output"; then
+      mapping=1
+    else
+      mapping=0
+    fi
+    export LD_PRELOAD="$preload"
+    if [[ "$mapping" == 0 ]]; then
+      preload="${LD_PRELOAD:-}"
+      unset LD_PRELOAD
+      cat "$output"
+      export LD_PRELOAD="$preload"
       return "$status"
     fi
   done
-  env LD_PRELOAD="$M11_BASE_PRELOAD" cat "$output"
+  preload="${LD_PRELOAD:-}"
+  unset LD_PRELOAD
+  cat "$output"
+  export LD_PRELOAD="$preload"
   return "$status"
 }
 
