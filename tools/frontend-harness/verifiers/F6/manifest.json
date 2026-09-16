@@ -1,0 +1,38 @@
+{
+  "milestone": "F6",
+  "title": "Read-only configuration",
+  "depends_on": [
+    "F5"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/configuration"
+  ],
+  "verifier": [
+    "verifiers/F6/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

@@ -1,0 +1,37 @@
+{
+  "milestone": "F0",
+  "title": "Frontend foundation",
+  "depends_on": [],
+  "required_paths": [
+    "searchkernel-web",
+    "clients/typescript"
+  ],
+  "verifier": [
+    "verifiers/F0/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

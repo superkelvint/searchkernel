@@ -10,7 +10,7 @@ The intended layering is:
 ```text
 public Rust API
     -> safe Rust wrapper
-    -> raw FFI/sys crate
+    -> raw bindings/FFI crate
     -> private Search Kernel native ABI
     -> Search Kernel C++ adapter
     -> Vespa C++
@@ -230,7 +230,7 @@ internal classes through the Rust-facing API.
 
 ### Keep `unsafe` at the boundary
 
-Raw FFI belongs in the dedicated sys/raw crate.
+Raw FFI belongs in the dedicated bindings/FFI crates.
 
 The safe wrapper must establish clear invariants for:
 
@@ -451,7 +451,7 @@ Vespa fidelity
 
 Boundary
 - Vespa types stay behind core/native/vespa
-- raw unsafe stays in the sys/raw layer
+- raw unsafe stays in the bindings/FFI layer
 - ownership and errors are explicit
 - exceptions/panics cannot cross the ABI
 
@@ -466,4 +466,22 @@ Quality
 - workspace tests pass
 - milestone verifier passes
 - earlier milestones still pass
+
+## F-series frontend milestones
+
+Frontend dashboard work is documented under `docs/frontend/` and is implemented
+only in `searchkernel-web/`, `clients/typescript/`, and the appropriate daemon
+integration. The immutable acceptance machinery lives in
+`tools/frontend-harness/`.
+
+F-series rules:
+
+- TypeScript must not implement Search Kernel semantics.
+- Portable operations use the generated TypeScript client.
+- Dashboard code must not import internal `core/` crates or raw FlatBuffers.
+- Normal implementation work must not modify milestone verifiers, fixtures,
+  goldens, expected IR, manifests, reviewer contracts, or result schemas.
+- Unsupported capabilities are gated, never emulated.
+- Feature availability is capability-driven, not version-driven.
+- `frontend-accept <F#>` is the authority for F-series completion.
 ```

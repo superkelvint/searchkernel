@@ -1,0 +1,38 @@
+{
+  "milestone": "F7",
+  "title": "Configuration mutation/change planning",
+  "depends_on": [
+    "F6"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/configuration"
+  ],
+  "verifier": [
+    "verifiers/F7/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

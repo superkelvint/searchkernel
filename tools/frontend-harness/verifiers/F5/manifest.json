@@ -1,0 +1,38 @@
+{
+  "milestone": "F5",
+  "title": "Search debugging",
+  "depends_on": [
+    "F4"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/search-debugging"
+  ],
+  "verifier": [
+    "verifiers/F5/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

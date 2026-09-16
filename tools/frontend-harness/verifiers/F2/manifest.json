@@ -1,0 +1,38 @@
+{
+  "milestone": "F2",
+  "title": "Application shell/index workspace",
+  "depends_on": [
+    "F1"
+  ],
+  "required_paths": [
+    "searchkernel-web/src"
+  ],
+  "verifier": [
+    "verifiers/F2/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

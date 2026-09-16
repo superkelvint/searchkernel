@@ -1,0 +1,38 @@
+{
+  "milestone": "F12",
+  "title": "Product hardening",
+  "depends_on": [
+    "F11"
+  ],
+  "required_paths": [
+    "searchkernel-web/package.json"
+  ],
+  "verifier": [
+    "verifiers/F12/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+        "searchkernel-web"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

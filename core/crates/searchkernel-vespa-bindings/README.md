@@ -1,8 +1,8 @@
 # `searchkernel-vespa-bindings`
 
-This is the raw Rust binding crate for the Search Kernel private native ABI.
+This crate provides raw Rust bindings to the Search Kernel private native ABI.
 It links the generated/prebuilt native SDK and exposes opaque handles,
-constants, and function declarations to the safe Vespa adapter.
+constants, and function declarations to `searchkernel-vespa-engine`.
 
 ## Start reading here
 

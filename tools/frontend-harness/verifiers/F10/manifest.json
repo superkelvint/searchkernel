@@ -1,0 +1,38 @@
+{
+  "milestone": "F10",
+  "title": "Operations/diagnostics",
+  "depends_on": [
+    "F9"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/operations"
+  ],
+  "verifier": [
+    "verifiers/F10/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

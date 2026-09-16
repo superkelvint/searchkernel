@@ -35,5 +35,6 @@ public Rust API
     -> Vespa lowering/native execution
 ```
 
-Keep public API code free of Vespa types, keep raw `unsafe` in the sys/FFI
-boundaries, and keep Vespa behavior in the Vespa adapter or native engine.
+Keep public API code free of Vespa types, keep raw `unsafe` in the bindings/FFI
+boundaries, and keep Vespa behavior in the Vespa engine integration or native
+adapter.

@@ -1,0 +1,38 @@
+{
+  "milestone": "F1",
+  "title": "Dashboard development backend",
+  "depends_on": [
+    "F0"
+  ],
+  "required_paths": [
+    "searchkerneld"
+  ],
+  "verifier": [
+    "verifiers/F1/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

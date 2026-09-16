@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["milestone", "candidate_commit", "status", "gates", "blocking_findings", "warnings"],
+  "properties": {
+    "milestone": {"type": "string"},
+    "candidate_commit": {"type": "string"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "gates": {"type": "object"},
+    "blocking_findings": {"type": "array"},
+    "warnings": {"type": "array"}
+  }
+}

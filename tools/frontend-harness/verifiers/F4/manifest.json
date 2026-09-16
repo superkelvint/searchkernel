@@ -1,0 +1,38 @@
+{
+  "milestone": "F4",
+  "title": "Search Lab",
+  "depends_on": [
+    "F3"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/search-lab"
+  ],
+  "verifier": [
+    "verifiers/F4/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}

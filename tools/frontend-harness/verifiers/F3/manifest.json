@@ -1,0 +1,38 @@
+{
+  "milestone": "F3",
+  "title": "Documents",
+  "depends_on": [
+    "F2"
+  ],
+  "required_paths": [
+    "searchkernel-web/src/features/documents"
+  ],
+  "verifier": [
+    "verifiers/F3/verify.sh"
+  ],
+  "required_reviewers": [
+    "architecture",
+    "correctness",
+    "security"
+  ],
+  "required_tests": [
+    "smoke"
+  ],
+  "ci": [
+    {
+      "name": "frontend-package-quality",
+      "cwd": "searchkernel-web",
+      "paths": [
+    "searchkernel-web/package.json"
+      ],
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--runInBand"
+      ]
+    }
+  ],
+  "freeze_commit": "UNSET",
+  "implementation": "NOT_IMPLEMENTED"
+}
