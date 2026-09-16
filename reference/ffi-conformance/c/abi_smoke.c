@@ -17,6 +17,7 @@ int main(void) {
     assert(SK_STATUS_UNSUPPORTED_OPERATION == 5u);
     assert(SK_STATUS_INTERNAL == 6u);
     assert(SK_STATUS_PANIC == 7u);
+    assert(SK_STATUS_INDEX_CLOSED == 12u);
 
     assert(sk_abi_version() == SK_ABI_VERSION);
 

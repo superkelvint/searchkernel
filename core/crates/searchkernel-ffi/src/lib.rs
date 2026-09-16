@@ -395,6 +395,10 @@ mod lifecycle_tests {
                 SK_STATUS_INCOMPATIBLE_INDEX,
             ),
             (
+                searchkernel::Error::search(searchkernel::ErrorCode::IndexClosed, "closed"),
+                SK_STATUS_INDEX_CLOSED,
+            ),
+            (
                 searchkernel::Error::search(searchkernel::ErrorCode::InvalidArgument, "invalid"),
                 SK_STATUS_INVALID_ARGUMENT,
             ),

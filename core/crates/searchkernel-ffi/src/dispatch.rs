@@ -257,4 +257,21 @@ mod tests {
             Err(status::INVALID_REQUEST)
         );
     }
+
+    #[test]
+    fn dispatch_rejects_operations_after_session_close() {
+        let state = test_state();
+        state.session.close().expect("close test session");
+        assert_eq!(
+            dispatch(
+                &state,
+                &transport::frame_request(
+                    transport::REQUEST_DESCRIBE,
+                    transport::PROTOCOL_VERSION,
+                    &describe_request(),
+                ),
+            ),
+            Err(status::INDEX_CLOSED)
+        );
+    }
 }

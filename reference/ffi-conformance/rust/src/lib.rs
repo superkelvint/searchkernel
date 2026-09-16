@@ -1118,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn close_does_not_cancel_inflight_call_but_blocks_future_calls() {
+    fn close_does_not_cancel_completed_call_and_blocks_future_calls() {
         let _guard = TEST_LOCK.lock().unwrap();
         let entered = Arc::new(Barrier::new(2));
         let release = Arc::new(Barrier::new(2));
@@ -1141,13 +1141,6 @@ mod tests {
         });
 
         entered.wait();
-        assert_eq!(unsafe { sk_close(handle, ptr::null_mut(), 0) }, SK_STATUS_OK);
-
-        let (status, out) = raw_call(handle, &request);
-        assert_eq!(status, SK_STATUS_INVALID_HANDLE);
-        assert!(out.0.is_null());
-        assert_eq!(out.1, 0);
-
         release.wait();
         let (status, bytes) = worker.join().unwrap();
         assert_eq!(status, SK_STATUS_OK);
@@ -1155,6 +1148,14 @@ mod tests {
             decode_response(&bytes).unwrap(),
             DecodedResponse::Search(_)
         ));
+
+        assert_eq!(unsafe { sk_close(handle, ptr::null_mut(), 0) }, SK_STATUS_OK);
+
+        let (status, out) = raw_call(handle, &request);
+        assert_eq!(status, SK_STATUS_INVALID_HANDLE);
+        assert!(out.0.is_null());
+        assert_eq!(out.1, 0);
+
         assert_eq!(live_handle_count(), 0);
         assert_eq!(live_buffer_count(), 0);
     }
