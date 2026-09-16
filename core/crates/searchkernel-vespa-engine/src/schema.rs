@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 const NAME_ERROR: &str = "names must match [A-Za-z_][A-Za-z0-9_]*";
 const MAX_SCHEMA_IDENTIFIER_BYTES: usize = 256;
+const MAX_RANK_EXPRESSION_BYTES: usize = 4 * 1024 * 1024;
 const RESERVED_FIELD_NAMES: &[&str] = &[
     "index",
     "index_url",
@@ -82,6 +83,35 @@ impl Field {
 pub struct Schema {
     document_type: String,
     fields: Vec<Field>,
+    rank_profiles: Vec<RankProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A named Vespa rank profile owned by the generated schema configuration.
+pub struct RankProfile {
+    name: String,
+    first_phase: String,
+    match_features: Vec<String>,
+}
+
+impl RankProfile {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            first_phase: String::new(),
+            match_features: Vec::new(),
+        }
+    }
+
+    pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
+        self.first_phase = expression.into();
+        self
+    }
+
+    pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
+        self.match_features.push(expression.into());
+        self
+    }
 }
 
 impl Schema {
@@ -90,12 +120,19 @@ impl Schema {
         Self {
             document_type: document_type.into(),
             fields: Vec::new(),
+            rank_profiles: Vec::new(),
         }
     }
 
     /// Add one field to the schema.
     pub fn field(mut self, field: Field) -> Self {
         self.fields.push(field);
+        self
+    }
+
+    /// Add a named rank profile to the generated Proton configuration.
+    pub fn rank_profile(mut self, profile: RankProfile) -> Self {
+        self.rank_profiles.push(profile);
         self
     }
 }
@@ -352,6 +389,50 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             _ => {}
         }
     }
+    let mut profile_names: Vec<&String> = Vec::with_capacity(schema.rank_profiles.len());
+    for (index, profile) in schema.rank_profiles.iter().enumerate() {
+        validate_name(&profile.name, &format!("rank profile at index {index}"))?;
+        if profile.name == "default" {
+            return Err(Error::message("rank profile 'default' is reserved"));
+        }
+        if profile_names
+            .iter()
+            .any(|name| name.as_str() == profile.name.as_str())
+        {
+            return Err(Error::message(format!(
+                "duplicate rank profile name '{}'",
+                profile.name
+            )));
+        }
+        profile_names.push(&profile.name);
+        validate_rank_expression(&profile.first_phase, "first-phase ranking expression")?;
+        let mut match_features: Vec<&String> = Vec::with_capacity(profile.match_features.len());
+        for expression in &profile.match_features {
+            validate_rank_expression(expression, "match feature expression")?;
+            if match_features
+                .iter()
+                .any(|feature| feature.as_str() == expression.as_str())
+            {
+                return Err(Error::message(format!(
+                    "duplicate match feature expression '{}'",
+                    expression
+                )));
+            }
+            match_features.push(expression);
+        }
+    }
+    Ok(())
+}
+
+fn validate_rank_expression(expression: &str, kind: &str) -> Result<()> {
+    if expression.is_empty() {
+        return Err(Error::message(format!("{kind} must not be empty")));
+    }
+    if expression.len() > MAX_RANK_EXPRESSION_BYTES {
+        return Err(Error::message(format!(
+            "{kind} is too long: maximum length is {MAX_RANK_EXPRESSION_BYTES} bytes"
+        )));
+    }
     Ok(())
 }
 
@@ -394,6 +475,39 @@ fn quoted(value: &str) -> String {
 }
 
 fn rank_profiles(schema: &Schema) -> String {
+    if !schema.rank_profiles.is_empty() {
+        let mut output = format!(
+            "rankprofile[{}]\nrankprofile[0].name \"default\"\n",
+            schema.rank_profiles.len() + 1
+        );
+        for (index, profile) in schema.rank_profiles.iter().enumerate() {
+            let index = index + 1;
+            let property_count = 2 + profile.match_features.len();
+            output.push_str(&format!(
+                "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
+                quoted(&profile.name)
+            ));
+            output.push_str(&format!(
+                "rankprofile[{index}].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[{index}].fef.property[0].value \"rankingExpression({})\"\n",
+                profile.name
+            ));
+            for (feature_index, feature) in profile.match_features.iter().enumerate() {
+                output.push_str(&format!(
+                    "rankprofile[{index}].fef.property[{}].name \"vespa.match.feature\"\nrankprofile[{index}].fef.property[{}].value {}\n",
+                    feature_index + 1,
+                    feature_index + 1,
+                    quoted(feature)
+                ));
+            }
+            let script_index = property_count - 1;
+            output.push_str(&format!(
+                "rankprofile[{index}].fef.property[{script_index}].name \"rankingExpression({}).rankingScript\"\nrankprofile[{index}].fef.property[{script_index}].value {}\n",
+                profile.name,
+                quoted(&profile.first_phase)
+            ));
+        }
+        return output;
+    }
     let text_field = schema
         .fields
         .iter()

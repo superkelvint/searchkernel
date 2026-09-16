@@ -15,7 +15,7 @@ pub use linguistics::{
     QueryTerm, StemMode,
 };
 pub use query::{AttributeBound, Query, RangeBound, Value};
-pub use schema::{ConfigCompiler, Field, FieldType, Schema};
+pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 
 #[cfg(feature = "hardening")]
 pub mod hardening {
@@ -331,6 +331,8 @@ pub struct SearchResult {
 pub struct SearchRequest {
     pub query: Query,
     pub rank_profile: String,
+    pub query_features: Vec<(String, f64)>,
+    pub rank_properties: Vec<(String, String)>,
     pub limit: u32,
     pub offset: u32,
     pub sort: Vec<SortField>,
@@ -342,6 +344,8 @@ impl SearchRequest {
         Self {
             query,
             rank_profile: "default".to_owned(),
+            query_features: Vec::new(),
+            rank_properties: Vec::new(),
             limit: 10,
             offset: 0,
             sort: Vec::new(),
@@ -351,6 +355,16 @@ impl SearchRequest {
 
     pub fn rank_profile(mut self, rank_profile: impl Into<String>) -> Self {
         self.rank_profile = rank_profile.into();
+        self
+    }
+
+    pub fn query_feature(mut self, name: impl Into<String>, value: f64) -> Self {
+        self.query_features.push((name.into(), value));
+        self
+    }
+
+    pub fn rank_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.rank_properties.push((name.into(), value.into()));
         self
     }
 
@@ -732,32 +746,7 @@ impl Engine {
     /// Execute an explicit M-layer request and preserve its Vespa-shaped
     /// result without performing a second query in the adapter.
     pub fn search(&self, request: SearchRequest) -> Result<SearchResult, Error> {
-        let local = LocalSearchRequest {
-            query: request.query,
-            rank_profile: request.rank_profile,
-            limit: request.limit,
-            offset: request.offset,
-            sort: request.sort,
-            summary: request.summary,
-        };
-        let result = self.search_local(&local)?;
-        Ok(SearchResult {
-            total_hits: result.total_hit_count,
-            total_hits_relation: TotalHitsRelation::Exact,
-            hits: result
-                .hits
-                .into_iter()
-                .map(|hit| Hit {
-                    document_id: hit.document_id,
-                    score: hit.score,
-                    fields: hit
-                        .summary
-                        .into_iter()
-                        .map(|(name, value)| (name, FieldValue::Scalar(scalar_value(value))))
-                        .collect(),
-                })
-                .collect(),
-        })
+        self.execute_search(&request)
     }
 
     /// Retrieve the complete document through Vespa's document retriever.
@@ -1072,7 +1061,7 @@ impl Engine {
         let mut native_request = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_local_search_request_create(
+            sys::sk_generic_search_request_create(
                 rank_profile.as_ptr(),
                 request.limit,
                 request.offset,
@@ -1084,7 +1073,7 @@ impl Engine {
         };
         check(status, &error)?;
         let native_request =
-            NativeLocalSearchRequest(require_ptr(native_request, "local search request")?);
+            NativeGenericSearchRequest(require_ptr(native_request, "generic search request")?);
         for sort in &request.sort {
             let field = cstring(&sort.field)?;
             let order = match sort.order {
@@ -1093,10 +1082,15 @@ impl Engine {
             };
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_local_search_request_add_sort(
+                sys::sk_generic_search_request_add_sort(
                     native_request.0.as_ptr(),
                     field.as_ptr(),
                     order,
+                    match sort.missing {
+                        MissingPlacement::Default => sys::SK_SORT_MISSING_DEFAULT,
+                        MissingPlacement::First => sys::SK_SORT_MISSING_FIRST,
+                        MissingPlacement::Last => sys::SK_SORT_MISSING_LAST,
+                    },
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -1108,7 +1102,7 @@ impl Engine {
                 let field = cstring(field)?;
                 let mut error = NativeError::new();
                 let status = unsafe {
-                    sys::sk_local_search_request_add_summary_field(
+                    sys::sk_generic_search_request_add_summary_field(
                         native_request.0.as_ptr(),
                         field.as_ptr(),
                         error.as_mut_ptr(),
@@ -1118,10 +1112,39 @@ impl Engine {
                 check(status, &error)?;
             }
         }
+        for (name, value) in &request.query_features {
+            let name = cstring(name)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_add_query_feature(
+                    native_request.0.as_ptr(),
+                    name.as_ptr(),
+                    *value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
+        for (name, value) in &request.rank_properties {
+            let name = cstring(name)?;
+            let value = cstring(value)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_add_rank_property(
+                    native_request.0.as_ptr(),
+                    name.as_ptr(),
+                    value.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_engine_search_local(
+            sys::sk_engine_search_generic(
                 self.handle.as_ptr(),
                 native_query.0.as_ptr(),
                 native_request.0.as_ptr(),
@@ -1131,90 +1154,27 @@ impl Engine {
             )
         };
         check(status, &error)?;
-        read_local_search_result(require_ptr(native_result, "local search result")?)
+        read_generic_search_result(require_ptr(native_result, "generic search result")?)
     }
 
-    pub fn put_attributes(&self, document: &AttributeDocument) -> Result<(), Error> {
-        if document.fields.is_empty() {
-            return Err(Error::message(
-                "request must contain at least one document field",
-            ));
-        }
-        let id = cstring(&document.document_id)?;
-        let mut native_document = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_attribute_document_create(
-                id.as_ptr(),
-                &mut native_document,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_document =
-            NativeAttributeDocument(require_ptr(native_document, "attribute document")?);
-        for (field, value) in &document.fields {
-            add_attribute_value(native_document.0.as_ptr(), field, value, false)?;
-        }
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_put_attributes(
-                self.handle.as_ptr(),
-                native_document.0.as_ptr(),
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)
-    }
-
-    pub fn update_attributes(&self, update: &AttributeUpdate) -> Result<(), Error> {
-        if update.assignments.is_empty() {
-            return Err(Error::message(
-                "request must contain at least one update assignment",
-            ));
-        }
-        let id = cstring(&update.document_id)?;
-        let mut native_update = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_attribute_update_create(
-                id.as_ptr(),
-                &mut native_update,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_update = NativeAttributeUpdate(require_ptr(native_update, "attribute update")?);
-        for (field, value) in &update.assignments {
-            add_attribute_value(native_update.0.as_ptr(), field, value, true)?;
-        }
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_update_attributes(
-                self.handle.as_ptr(),
-                native_update.0.as_ptr(),
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)
-    }
-
-    pub fn group_local(
-        &self,
-        request: &LocalGroupingRequest,
-    ) -> Result<LocalGroupingResult, Error> {
+    pub fn group(&self, request: &GroupingRequest) -> Result<GroupingResult, Error> {
         query::validate_query(&request.query)?;
-        let native_query = self.create_native_query(&request.query)?;
+        let native_query =
+            self.create_native_query(&request.query, LinguisticsOptions::default())?;
         let group_field = cstring(&request.group_by)?;
         let mut native_request = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_local_grouping_request_create(
+            sys::sk_generic_grouping_request_create(
                 group_field.as_ptr(),
+                request.max_groups.unwrap_or(u32::MAX),
+                match request.order {
+                    GroupingOrder::None => sys::SK_GROUP_ORDER_NONE,
+                    GroupingOrder::CountAscending => sys::SK_GROUP_ORDER_COUNT_ASC,
+                    GroupingOrder::CountDescending => sys::SK_GROUP_ORDER_COUNT_DESC,
+                    GroupingOrder::ValueAscending => sys::SK_GROUP_ORDER_VALUE_ASC,
+                    GroupingOrder::ValueDescending => sys::SK_GROUP_ORDER_VALUE_DESC,
+                },
                 &mut native_request,
                 error.as_mut_ptr(),
                 error.capacity(),
@@ -1222,7 +1182,7 @@ impl Engine {
         };
         check(status, &error)?;
         let native_request =
-            NativeGroupingRequest(require_ptr(native_request, "grouping request")?);
+            NativeGenericGroupingRequest(require_ptr(native_request, "generic grouping request")?);
         for aggregation in &request.aggregations {
             let (kind, field) = match aggregation {
                 Aggregation::Sum(field) => (sys::SK_AGGREGATION_SUM, field),
@@ -1233,7 +1193,7 @@ impl Engine {
             let field = cstring(field)?;
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_local_grouping_request_add_aggregation(
+                sys::sk_generic_grouping_request_add_aggregation(
                     native_request.0.as_ptr(),
                     kind,
                     field.as_ptr(),
@@ -1246,7 +1206,7 @@ impl Engine {
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_engine_group_local(
+            sys::sk_engine_group_generic(
                 self.handle.as_ptr(),
                 native_query.0.as_ptr(),
                 native_request.0.as_ptr(),
@@ -1256,42 +1216,14 @@ impl Engine {
             )
         };
         check(status, &error)?;
-        read_grouping_result(require_ptr(native_result, "grouping result")?)
+        read_generic_grouping_result(require_ptr(native_result, "generic grouping result")?)
     }
 
-    fn create_native_query(&self, query: &Query) -> Result<NativeQuery, Error> {
-        let mut native_query = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_query_create(
-                self.handle.as_ptr(),
-                &mut native_query,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_query = NativeQuery(require_ptr(native_query, "query")?);
-        validate_query_fields(&native_query, query)?;
-        lower_query(&native_query, query)?;
-        Ok(native_query)
-    }
-
-    /// Parse and search a supported YQL query through the typed query compiler.
-    pub fn search_yql(&self, yql: &str, rank_profile: &str) -> Result<TextSearchResult, Error> {
-        let parsed = query::parse_yql(yql)?;
-        self.search_query_with_source(&parsed.query, rank_profile, &parsed.source)
-    }
-
-    fn search_query_with_source(
+    fn create_native_query(
         &self,
         query: &Query,
-        rank_profile: &str,
-        source: &str,
-    ) -> Result<TextSearchResult, Error> {
-        query::validate_query(query)?;
-        let rank_profile = cstring(rank_profile)?;
-        let source = cstring(source)?;
+        language: LinguisticsOptions,
+    ) -> Result<NativeQuery, Error> {
         let mut native_query = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
@@ -1305,23 +1237,8 @@ impl Engine {
         check(status, &error)?;
         let native_query = NativeQuery(require_ptr(native_query, "query")?);
         validate_query_fields(&native_query, query)?;
-        lower_query(&native_query, query)?;
-
-        let mut native_result = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_search_query(
-                self.handle.as_ptr(),
-                native_query.0.as_ptr(),
-                rank_profile.as_ptr(),
-                source.as_ptr(),
-                &mut native_result,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        read_text_result(native_result)
+        lower_query(&native_query, query, language)?;
+        Ok(native_query)
     }
 }
 
@@ -1598,25 +1515,43 @@ fn validate_term_query(analysis: &QueryAnalysis) -> Result<(), Error> {
     }
 }
 
-struct NativeTextDocument(NonNull<sys::sk_text_document>);
-impl Drop for NativeTextDocument {
-    fn drop(&mut self) {
-        unsafe { sys::sk_text_document_destroy(self.0.as_ptr()) };
+fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<(), Error> {
+    let mut query_feature_names = std::collections::BTreeSet::new();
+    for (name, value) in &request.query_features {
+        if name.is_empty() {
+            return Err(Error::message("query feature name must not be empty"));
+        }
+        if name.len() > 256 {
+            return Err(Error::message("query feature name is too long"));
+        }
+        if !value.is_finite() {
+            return Err(Error::message("query feature value must be finite"));
+        }
+        if !query_feature_names.insert(name) {
+            return Err(Error::message(format!("duplicate query feature '{name}'")));
+        }
     }
-}
 
-struct NativeTextUpdate(NonNull<sys::sk_text_update>);
-impl Drop for NativeTextUpdate {
-    fn drop(&mut self) {
-        unsafe { sys::sk_text_update_destroy(self.0.as_ptr()) };
+    let mut rank_property_names = std::collections::BTreeSet::new();
+    for (name, value) in &request.rank_properties {
+        if name.is_empty() || name.len() > 256 {
+            return Err(Error::message(
+                "rank property name must not be empty or too long",
+            ));
+        }
+        if value.is_empty() {
+            return Err(Error::message("rank property value must not be empty"));
+        }
+        if !rank_property_names.insert(name) {
+            return Err(Error::message(format!("duplicate rank property '{name}'")));
+        }
+        if query_feature_names.contains(name) {
+            return Err(Error::message(format!(
+                "rank property collision for key '{name}'"
+            )));
+        }
     }
-}
-
-struct NativeTextRequest(NonNull<sys::sk_text_request>);
-impl Drop for NativeTextRequest {
-    fn drop(&mut self) {
-        unsafe { sys::sk_text_request_destroy(self.0.as_ptr()) };
-    }
+    Ok(())
 }
 
 struct NativeQuery(NonNull<sys::sk_query>);
@@ -1626,126 +1561,58 @@ impl Drop for NativeQuery {
     }
 }
 
-struct NativeLocalSearchRequest(NonNull<sys::sk_local_search_request>);
-impl Drop for NativeLocalSearchRequest {
+struct NativeGenericSearchRequest(NonNull<sys::sk_generic_search_request>);
+impl Drop for NativeGenericSearchRequest {
     fn drop(&mut self) {
-        unsafe { sys::sk_local_search_request_destroy(self.0.as_ptr()) };
+        unsafe { sys::sk_generic_search_request_destroy(self.0.as_ptr()) };
     }
 }
 
-struct NativeAttributeDocument(NonNull<sys::sk_attribute_document>);
-impl Drop for NativeAttributeDocument {
+struct NativeGenericGroupingRequest(NonNull<sys::sk_generic_grouping_request>);
+impl Drop for NativeGenericGroupingRequest {
     fn drop(&mut self) {
-        unsafe { sys::sk_attribute_document_destroy(self.0.as_ptr()) };
+        unsafe { sys::sk_generic_grouping_request_destroy(self.0.as_ptr()) };
     }
 }
 
-struct NativeAttributeUpdate(NonNull<sys::sk_attribute_update>);
-impl Drop for NativeAttributeUpdate {
-    fn drop(&mut self) {
-        unsafe { sys::sk_attribute_update_destroy(self.0.as_ptr()) };
-    }
-}
-
-struct NativeGroupingRequest(NonNull<sys::sk_local_grouping_request>);
-impl Drop for NativeGroupingRequest {
-    fn drop(&mut self) {
-        unsafe { sys::sk_local_grouping_request_destroy(self.0.as_ptr()) };
-    }
-}
-
-fn scalar_value(value: Value) -> ScalarValue {
-    match value {
-        Value::String(value) => ScalarValue::String(value),
-        Value::Integer(value) => ScalarValue::Integer(value),
-        Value::Float(value) => ScalarValue::Float(value),
-        Value::Boolean(value) => ScalarValue::Boolean(value),
-    }
-}
-
-fn add_attribute_value<T>(
-    handle: *mut T,
-    field: &str,
-    value: &Value,
-    update: bool,
-) -> Result<(), Error> {
-    let field = cstring(field)?;
-    let mut error = NativeError::new();
-    let status = unsafe {
-        match (update, value) {
-            (false, Value::String(value)) => {
-                let value = cstring(value)?;
-                sys::sk_attribute_document_add_string(
-                    handle.cast(),
-                    field.as_ptr(),
-                    value.as_ptr(),
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            }
-            (false, Value::Integer(value)) => sys::sk_attribute_document_add_integer(
-                handle.cast(),
-                field.as_ptr(),
-                *value,
+fn read_generic_search_result(
+    pointer: NonNull<sys::sk_generic_search_result>,
+) -> Result<SearchResult, Error> {
+    let result = NativeGenericSearchResult(pointer);
+    let hit_count = unsafe { sys::sk_generic_search_result_hit_count(result.0.as_ptr()) } as usize;
+    let total_hit_count =
+        unsafe { sys::sk_generic_search_result_total_hit_count(result.0.as_ptr()) };
+    let match_feature_count =
+        unsafe { sys::sk_generic_search_result_match_feature_count(result.0.as_ptr()) } as usize;
+    let mut match_feature_names = Vec::with_capacity(match_feature_count);
+    for feature_index in 0..match_feature_count {
+        let mut name = ptr::null();
+        let mut name_length = 0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_generic_search_result_match_feature_name(
+                result.0.as_ptr(),
+                feature_index as u32,
+                &mut name,
+                &mut name_length,
                 error.as_mut_ptr(),
                 error.capacity(),
-            ),
-            (false, Value::Float(value)) => sys::sk_attribute_document_add_float(
-                handle.cast(),
-                field.as_ptr(),
-                *value,
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            (false, Value::Boolean(value)) => sys::sk_attribute_document_add_boolean(
-                handle.cast(),
-                field.as_ptr(),
-                u8::from(*value),
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            (true, Value::String(value)) => {
-                let value = cstring(value)?;
-                sys::sk_attribute_update_add_string(
-                    handle.cast(),
-                    field.as_ptr(),
-                    value.as_ptr(),
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            }
-            (true, Value::Integer(value)) => sys::sk_attribute_update_add_integer(
-                handle.cast(),
-                field.as_ptr(),
-                *value,
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            (true, Value::Float(value)) => sys::sk_attribute_update_add_float(
-                handle.cast(),
-                field.as_ptr(),
-                *value,
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            (true, Value::Boolean(value)) => sys::sk_attribute_update_add_boolean(
-                handle.cast(),
-                field.as_ptr(),
-                u8::from(*value),
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
+            )
+        };
+        check(status, &error)?;
+        if name.is_null() {
+            return Err(Error::message("native match feature returned null name"));
         }
-    };
-    check(status, &error)
-}
-
-fn read_local_search_result(
-    pointer: NonNull<sys::sk_local_search_result>,
-) -> Result<LocalSearchResult, Error> {
-    let result = NativeLocalSearchResult(pointer);
-    let hit_count = unsafe { sys::sk_local_search_result_hit_count(result.0.as_ptr()) } as usize;
-    let total_hit_count = unsafe { sys::sk_local_search_result_total_hit_count(result.0.as_ptr()) };
+        let bytes = unsafe { std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize) };
+        let name = String::from_utf8(bytes.to_vec())
+            .map_err(|_| Error::message("native match feature returned invalid UTF-8 name"))?;
+        if match_feature_names.iter().any(|previous| previous == &name) {
+            return Err(Error::message(
+                "native match features contain duplicate names",
+            ));
+        }
+        match_feature_names.push(name);
+    }
     let mut hits = Vec::with_capacity(hit_count);
     for index in 0..hit_count {
         let mut id = ptr::null();
@@ -1753,7 +1620,7 @@ fn read_local_search_result(
         let mut score = 0.0;
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_local_search_result_hit(
+            sys::sk_generic_search_result_hit(
                 result.0.as_ptr(),
                 index as u32,
                 &mut id,
@@ -1773,7 +1640,7 @@ fn read_local_search_result(
         let document_id = String::from_utf8(id.to_vec())
             .map_err(|_| Error::message("native result returned invalid UTF-8"))?;
         let summaries =
-            unsafe { sys::sk_local_search_result_summary_count(result.0.as_ptr(), index as u32) }
+            unsafe { sys::sk_generic_search_result_summary_count(result.0.as_ptr(), index as u32) }
                 as usize;
         let mut summary = BTreeMap::new();
         for summary_index in 0..summaries {
@@ -1781,7 +1648,7 @@ fn read_local_search_result(
             let mut name_length = 0;
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_local_search_result_summary_name(
+                sys::sk_generic_search_result_summary_name(
                     result.0.as_ptr(),
                     index as u32,
                     summary_index as u32,
@@ -1807,7 +1674,7 @@ fn read_local_search_result(
             let mut boolean = 0;
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_local_search_result_summary_value(
+                sys::sk_generic_search_result_summary_value(
                     result.0.as_ptr(),
                     index as u32,
                     summary_index as u32,
@@ -1842,31 +1709,53 @@ fn read_local_search_result(
             };
             summary.insert(name, value);
         }
-        hits.push(LocalHit {
+        let mut match_features = BTreeMap::new();
+        for (feature_index, feature_name) in match_feature_names.iter().enumerate() {
+            let mut value = 0.0;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_result_match_feature_value(
+                    result.0.as_ptr(),
+                    index as u32,
+                    feature_index as u32,
+                    &mut value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+            match_features.insert(feature_name.clone(), value);
+        }
+        hits.push(Hit {
             document_id,
             score,
-            summary,
+            match_features,
+            fields: summary
+                .into_iter()
+                .map(|(name, value)| (name, FieldValue::Scalar(value)))
+                .collect(),
         });
     }
-    Ok(LocalSearchResult {
-        total_hit_count,
+    Ok(SearchResult {
+        total_hits: total_hit_count,
+        total_hits_relation: TotalHitsRelation::Exact,
         hits,
     })
 }
 
-struct NativeLocalSearchResult(NonNull<sys::sk_local_search_result>);
-impl Drop for NativeLocalSearchResult {
+struct NativeGenericSearchResult(NonNull<sys::sk_generic_search_result>);
+impl Drop for NativeGenericSearchResult {
     fn drop(&mut self) {
-        unsafe { sys::sk_local_search_result_destroy(self.0.as_ptr()) };
+        unsafe { sys::sk_generic_search_result_destroy(self.0.as_ptr()) };
     }
 }
 
-fn read_grouping_result(
-    pointer: NonNull<sys::sk_local_grouping_result>,
-) -> Result<LocalGroupingResult, Error> {
-    let result = NativeGroupingResult(pointer);
+fn read_generic_grouping_result(
+    pointer: NonNull<sys::sk_generic_grouping_result>,
+) -> Result<GroupingResult, Error> {
+    let result = NativeGenericGroupingResult(pointer);
     let group_count =
-        unsafe { sys::sk_local_grouping_result_group_count(result.0.as_ptr()) } as usize;
+        unsafe { sys::sk_generic_grouping_result_group_count(result.0.as_ptr()) } as usize;
     let mut groups = Vec::with_capacity(group_count);
     for group_index in 0..group_count {
         let mut key_kind = 0;
@@ -1876,7 +1765,7 @@ fn read_grouping_result(
         let mut count = 0;
         let mut error = NativeError::new();
         let status = unsafe {
-            sys::sk_local_grouping_result_group(
+            sys::sk_generic_grouping_result_group(
                 result.0.as_ptr(),
                 group_index as u32,
                 &mut key_kind,
@@ -1910,7 +1799,7 @@ fn read_grouping_result(
             }
         };
         let aggregation_count = unsafe {
-            sys::sk_local_grouping_result_aggregation_count(result.0.as_ptr(), group_index as u32)
+            sys::sk_generic_grouping_result_aggregation_count(result.0.as_ptr(), group_index as u32)
         } as usize;
         let mut aggregations = Vec::with_capacity(aggregation_count);
         for aggregation_index in 0..aggregation_count {
@@ -1919,7 +1808,7 @@ fn read_grouping_result(
             let mut float = 0.0;
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_local_grouping_result_aggregation(
+                sys::sk_generic_grouping_result_aggregation(
                     result.0.as_ptr(),
                     group_index as u32,
                     aggregation_index as u32,
@@ -1941,23 +1830,27 @@ fn read_grouping_result(
                 }
             });
         }
-        groups.push(LocalGroup {
+        groups.push(Group {
             key,
             count,
             aggregations,
         });
     }
-    Ok(LocalGroupingResult { groups })
+    Ok(GroupingResult { groups })
 }
 
-struct NativeGroupingResult(NonNull<sys::sk_local_grouping_result>);
-impl Drop for NativeGroupingResult {
+struct NativeGenericGroupingResult(NonNull<sys::sk_generic_grouping_result>);
+impl Drop for NativeGenericGroupingResult {
     fn drop(&mut self) {
-        unsafe { sys::sk_local_grouping_result_destroy(self.0.as_ptr()) };
+        unsafe { sys::sk_generic_grouping_result_destroy(self.0.as_ptr()) };
     }
 }
 
-fn lower_query(native: &NativeQuery, query: &Query) -> Result<(), Error> {
+fn lower_query(
+    native: &NativeQuery,
+    query: &Query,
+    language: LinguisticsOptions,
+) -> Result<(), Error> {
     match query {
         Query::True => {
             let mut error = NativeError::new();
@@ -1967,14 +1860,14 @@ fn lower_query(native: &NativeQuery, query: &Query) -> Result<(), Error> {
             check(status, &error)
         }
         Query::Term { field, text } => {
-            let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
+            let analysis = Linguistics.analyze_query(text, language);
             validate_term_query(&analysis)
                 .map_err(|error| query::invalid_query(format!("term analysis failed: {error}")))?;
             let terms = text_query_terms(&analysis)?;
             add_native_text(native, sys::SK_QUERY_TEXT_TERM, field, &terms)
         }
         Query::Phrase { field, text } => {
-            let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
+            let analysis = Linguistics.analyze_query(text, language);
             if analysis.terms.is_empty() {
                 return Err(query::invalid_query(
                     "phrase must analyze to at least one term",
@@ -1986,20 +1879,20 @@ fn lower_query(native: &NativeQuery, query: &Query) -> Result<(), Error> {
         Query::And(children) => {
             add_native_operator(native, sys::SK_QUERY_NODE_AND, children.len())?;
             for child in children {
-                lower_query(native, child)?;
+                lower_query(native, child, language)?;
             }
             Ok(())
         }
         Query::Or(children) => {
             add_native_operator(native, sys::SK_QUERY_NODE_OR, children.len())?;
             for child in children {
-                lower_query(native, child)?;
+                lower_query(native, child, language)?;
             }
             Ok(())
         }
         Query::Not(child) => {
             add_native_operator(native, sys::SK_QUERY_NODE_NOT, 1)?;
-            lower_query(native, child)
+            lower_query(native, child, language)
         }
         Query::Equals { field, value } => {
             let field = cstring(field)?;
@@ -2341,55 +2234,146 @@ fn native_bound(bound: &RangeBound) -> (u32, i64) {
     }
 }
 
-fn read_text_result(pointer: *mut sys::sk_text_result) -> Result<TextSearchResult, Error> {
-    let result = NativeTextResult(require_ptr(pointer, "text result")?);
-    let size = unsafe { sys::sk_text_result_size(result.0.as_ptr()) } as usize;
-    let mut hits = Vec::with_capacity(size);
-    for index in 0..size {
-        let mut id_ptr = ptr::null();
-        let mut id_length = 0;
-        let mut score = 0.0;
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_result_hit(
-                result.0.as_ptr(),
-                index as u32,
-                &mut id_ptr,
-                &mut id_length,
-                &mut score,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        if id_ptr.is_null() {
-            return Err(Error::message(
-                "native text result returned a null document ID",
-            ));
-        }
-        let bytes = unsafe { std::slice::from_raw_parts(id_ptr.cast::<u8>(), id_length as usize) };
-        hits.push(TextHit {
-            document_id: String::from_utf8(bytes.to_vec())
-                .map_err(|_| Error::message("native text result returned invalid UTF-8"))?,
-            score,
-        });
-    }
-    Ok(TextSearchResult { hits })
-}
-
-struct NativeTextResult(NonNull<sys::sk_text_result>);
-impl Drop for NativeTextResult {
-    fn drop(&mut self) {
-        unsafe { sys::sk_text_result_destroy(self.0.as_ptr()) };
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        length_u32, text_occurrences, text_query_terms, validate_term_query, DocumentAnalysis,
-        DocumentTerm, QueryAnalysis, QueryTerm,
+        check, cstring, length_u32, native_error, path_cstring, require_ptr, text_occurrences,
+        text_query_terms, validate_term_query, Document, DocumentAnalysis, DocumentTerm, Error,
+        ErrorKind, NativeError, Query, QueryAnalysis, QueryTerm, SearchRequest, SortField,
+        SortOrder, Source, SummaryRequest,
     };
+
+    #[test]
+    fn boundary_helpers_preserve_native_error_information() {
+        let error = NativeError::new();
+        assert!(check(0, &error).is_ok());
+        assert_eq!(
+            native_error(&error, 17).to_string(),
+            "native operation failed with status 17"
+        );
+        assert_eq!(native_error(&error, 17).code(), 17);
+        assert_eq!(native_error(&error, 17).kind(), ErrorKind::Internal);
+
+        let mut error = NativeError::new();
+        error.0[..15].copy_from_slice(b"native failure\0");
+        let checked = check(3, &error).expect_err("nonzero status must fail");
+        assert_eq!(checked.to_string(), "native failure");
+        assert_eq!(checked.code(), 3);
+        assert_eq!(checked.kind(), ErrorKind::ResourceExhausted);
+
+        let valid = cstring("field").expect("ordinary strings are portable");
+        assert_eq!(valid.to_bytes(), b"field");
+        let nul = cstring("bad\0field").expect_err("interior NUL must be rejected");
+        assert!(nul.to_string().contains("interior NUL"));
+
+        let valid_path =
+            path_cstring(std::path::Path::new("config")).expect("ordinary paths are portable");
+        assert_eq!(valid_path.to_bytes(), b"config");
+        let invalid_path = path_cstring(std::path::Path::new("bad\0path"))
+            .expect_err("interior NUL in a path must be rejected");
+        assert!(invalid_path.to_string().contains("interior NUL"));
+    }
+
+    #[test]
+    fn boundary_helpers_enforce_native_size_and_pointer_contracts() {
+        assert_eq!(length_u32(0, "items").unwrap(), 0);
+        assert_eq!(length_u32(u32::MAX as usize, "items").unwrap(), u32::MAX);
+        let overflow = length_u32(u32::MAX as usize + 1, "items")
+            .expect_err("values above u32 must be rejected");
+        assert!(overflow.to_string().contains("items count"));
+
+        assert!(require_ptr::<u8>(std::ptr::null_mut(), "result").is_err());
+        let mut value = 1_u8;
+        assert!(require_ptr(&mut value, "result").is_ok());
+    }
+
+    #[test]
+    fn errors_preserve_codes_kinds_and_messages() {
+        for (code, kind) in [
+            (1, ErrorKind::InvalidArgument),
+            (3, ErrorKind::ResourceExhausted),
+            (77, ErrorKind::Internal),
+        ] {
+            let error = Error::native(code, "native failure");
+            assert_eq!(error.code(), code);
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.to_string(), "native failure");
+        }
+
+        let local = Error::message("wrapper failure");
+        assert_eq!(local.code(), 0);
+        assert_eq!(local.kind(), ErrorKind::InvalidArgument);
+        assert_eq!(local.to_string(), "wrapper failure");
+
+        let nul = std::ffi::CString::new(b"bad\0value".as_slice()).expect_err("interior NUL");
+        let nul_error = Error::from_nul(nul);
+        assert_eq!(nul_error.kind(), ErrorKind::InvalidArgument);
+        assert!(nul_error.to_string().contains("interior NUL"));
+    }
+
+    #[test]
+    fn fluent_requests_and_attribute_builders_preserve_configuration() {
+        let ascending = SortField::ascending("title");
+        let descending = SortField::new("score", SortOrder::Descending);
+        assert_eq!(ascending.order, SortOrder::Ascending);
+        assert_eq!(descending.field, "score");
+
+        let search = SearchRequest::new(Query::True)
+            .rank_profile("title_rank")
+            .limit(4)
+            .offset(2)
+            .sort(ascending.clone())
+            .fields(["title", "body"]);
+        assert_eq!(search.rank_profile, "title_rank");
+        assert_eq!(search.limit, 4);
+        assert_eq!(search.offset, 2);
+        assert_eq!(search.sort, vec![ascending]);
+        assert_eq!(
+            search.summary,
+            SummaryRequest::Fields(vec!["title".into(), "body".into()])
+        );
+
+        let search = SearchRequest::new(Query::True)
+            .rank_profile("local_rank")
+            .limit(3)
+            .offset(1)
+            .sort(descending.clone())
+            .summary(SummaryRequest::Default);
+        assert_eq!(search.rank_profile, "local_rank");
+        assert_eq!(search.limit, 3);
+        assert_eq!(search.offset, 1);
+        assert_eq!(search.sort, vec![descending]);
+        assert_eq!(search.summary, SummaryRequest::Default);
+
+        let yql = SearchRequest::from_yql("select * from typea where title contains \"fox\"")
+            .expect("supported YQL should parse");
+        assert_eq!(yql.source, Source::Named("typea".into()));
+        assert_eq!(yql.query, Query::term("title", "fox"));
+
+        let document = Document::new("id:ns:type::1").field("rating", 4_i64);
+        assert_eq!(document.id(), "id:ns:type::1");
+        assert_eq!(document.fields().len(), 1);
+
+        let update = crate::DocumentUpdate::new("id:ns:type::1").assign("rating", 5_i64);
+        assert_eq!(update.id(), "id:ns:type::1");
+        assert_eq!(update.fields().len(), 1);
+    }
+
+    #[test]
+    fn ranking_request_inputs_are_validated_before_native_calls() {
+        let query_feature = SearchRequest::new(Query::True).query_feature("boost", 2.0);
+        super::validate_search_ranking_inputs(&query_feature).expect("finite query feature");
+
+        let rank_property = SearchRequest::new(Query::True).rank_property("model", "v1");
+        super::validate_search_ranking_inputs(&rank_property).expect("non-empty rank property");
+
+        let collision = SearchRequest::new(Query::True)
+            .query_feature("boost", 2.0)
+            .rank_property("boost", "3");
+        let error = super::validate_search_ranking_inputs(&collision)
+            .expect_err("query-feature/rank-property collisions must be rejected");
+        assert!(error.to_string().contains("collision"));
+    }
 
     #[test]
     fn document_analysis_converts_to_native_soa_occurrences() {

@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, Schema, SearchRequest,
-    TextDocument, TextQuery,
+    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, RankProfile, Schema,
+    SearchRequest,
 };
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -59,28 +59,17 @@ fn generated_text_configuration_enables_real_bm25() {
     );
     let engine = Engine::open(&data, &config).expect("open generated BM25 config");
     engine
-        .put_text(TextDocument {
-            id: "repeated",
-            field: "title",
-            text: "fox fox fox",
-        })
+        .put(Document::new("repeated").field("title", "fox fox fox"))
         .expect("insert repeated-term document");
     engine
-        .put_text(TextDocument {
-            id: "single",
-            field: "title",
-            text: "fox",
-        })
+        .put(Document::new("single").field("title", "fox"))
         .expect("insert single-term document");
 
     let result = engine
-        .search_text(
-            TextQuery::Term {
-                field: "title",
-                text: "fox",
-            },
-            "bm25",
-        )
+        .search(SearchRequest::new(Query::Term {
+            field: "title".into(),
+            text: "fox".into(),
+        }))
         .expect("search generated BM25 config");
     let scores: BTreeMap<_, _> = result
         .hits
@@ -94,6 +83,37 @@ fn generated_text_configuration_enables_real_bm25() {
 
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_accepts_custom_profiles_that_resemble_legacy_profiles() {
+    let (text_config, text_data) = compile_config(
+        "custom-bm25-profile",
+        &Schema::new("typea")
+            .field(Field::new("title", FieldType::Text).indexed())
+            .rank_profile(RankProfile::new("bm25").first_phase("bm25(title)")),
+    );
+    let text_engine = Engine::open(&text_data, &text_config)
+        .expect("a custom profile named bm25 uses the generic configuration shape");
+    text_engine
+        .close()
+        .expect("close custom text profile engine");
+
+    let (attribute_config, attribute_data) = compile_config(
+        "custom-attribute-profile",
+        &Schema::new("typea")
+            .field(Field::new("popularity", FieldType::Integer).attribute())
+            .rank_profile(RankProfile::new("popular").first_phase("attribute(popularity)")),
+    );
+    let attribute_engine = Engine::open(&attribute_data, &attribute_config)
+        .expect("a custom attribute-only profile uses the generic configuration shape");
+    attribute_engine
+        .close()
+        .expect("close custom attribute profile engine");
+
+    for path in [text_config, text_data, attribute_config, attribute_data] {
+        let _ = fs::remove_dir_all(path);
+    }
 }
 
 #[test]
@@ -216,21 +236,14 @@ fn runtime_operations_enforce_manifest_field_semantics() {
     let (config, data) = compile_config("field-semantics", &schema);
     let engine = Engine::open(&data, &config).expect("open semantic test config");
 
+    engine
+        .put(Document::new("wrong-text-type").field("sku", "sku"))
+        .expect("generic documents may contain string attributes");
     assert!(engine
-        .put_text(TextDocument {
-            id: "wrong-text-type",
-            field: "sku",
-            text: "sku",
-        })
-        .is_err());
-    assert!(engine
-        .search_text(
-            TextQuery::Term {
-                field: "sku",
-                text: "sku",
-            },
-            "bm25",
-        )
+        .search(SearchRequest::new(Query::Term {
+            field: "sku".into(),
+            text: "sku".into(),
+        }))
         .is_err());
     assert!(engine
         .put(Document::new("wrong-integer-type").field("title", 1_i64))
@@ -250,49 +263,40 @@ fn low_level_query_validates_fields_before_text_analysis() {
     let engine = Engine::open(&data, &config).expect("open query validation config");
 
     let unknown = engine
-        .search_query(
-            &Query::Term {
-                field: "missing".to_owned(),
-                text: "two words".to_owned(),
-            },
-            "default",
-        )
+        .search(SearchRequest::new(Query::Term {
+            field: "missing".to_owned(),
+            text: "two words".to_owned(),
+        }))
         .expect_err("unknown query field must be rejected");
     assert!(unknown.to_string().contains("unknown"));
 
     let unknown_yql = engine
-        .search_yql(
-            "select * from sources * where missing contains \"two words\"",
-            "default",
-        )
-        .expect_err("YQL must validate its field before analyzing text");
+        .search(SearchRequest::new(
+            Query::from_yql("select * from sources * where missing contains \"two words\"")
+                .expect("parse YQL query"),
+        ))
+        .expect_err("YQL query fields must be validated by Engine::search");
     assert!(unknown_yql.to_string().contains("unknown"));
 
     let wrong_type = engine
-        .search_query(
-            &Query::Term {
-                field: "qty".to_owned(),
-                text: "two words".to_owned(),
-            },
-            "default",
-        )
+        .search(SearchRequest::new(Query::Term {
+            field: "qty".to_owned(),
+            text: "two words".to_owned(),
+        }))
         .expect_err("numeric query field must reject text operators");
     assert!(wrong_type.to_string().contains("text"));
 
     let nested_unknown = engine
-        .search_query(
-            &Query::And(vec![
-                Query::Term {
-                    field: "title".to_owned(),
-                    text: "two words".to_owned(),
-                },
-                Query::Term {
-                    field: "missing".to_owned(),
-                    text: "fox".to_owned(),
-                },
-            ]),
-            "default",
-        )
+        .search(SearchRequest::new(Query::And(vec![
+            Query::Term {
+                field: "title".to_owned(),
+                text: "two words".to_owned(),
+            },
+            Query::Term {
+                field: "missing".to_owned(),
+                text: "fox".to_owned(),
+            },
+        ])))
         .expect_err("nested unknown fields must be rejected before text analysis");
     assert!(nested_unknown.to_string().contains("unknown"));
 
@@ -307,11 +311,7 @@ fn yql_search_uses_the_same_query_as_typed_search() {
     let (config, data) = compile_config("query-source-equivalence", &schema);
     let engine = Engine::open(&data, &config).expect("open query source config");
     engine
-        .put_text(TextDocument {
-            id: "fox",
-            field: "title",
-            text: "fox",
-        })
+        .put(Document::new("fox").field("title", "fox"))
         .expect("insert source-equivalence document");
 
     let typed = Query::Term {
@@ -319,25 +319,15 @@ fn yql_search_uses_the_same_query_as_typed_search() {
         text: "fox".to_owned(),
     };
     let typed_result = engine
-        .search_query(&typed, "default")
+        .search(SearchRequest::new(typed.clone()))
         .expect("typed source-equivalence query");
     let yql_result = engine
-        .search_yql(
-            "select * from typea where title contains \"fox\"",
-            "default",
-        )
+        .search(SearchRequest::new(
+            Query::from_yql("select * from typea where title contains \"fox\"")
+                .expect("parse supported YQL"),
+        ))
         .expect("the schema document type is a supported YQL source");
     assert_eq!(typed_result, yql_result);
-
-    let wrong_source = engine
-        .search_yql(
-            "select * from wrong_type where title contains \"fox\"",
-            "default",
-        )
-        .expect_err("an unsupported named YQL source must be rejected");
-    assert!(wrong_source
-        .to_string()
-        .contains("unsupported query source"));
 
     engine.close().expect("close source-equivalence engine");
     let _ = fs::remove_dir_all(config);
@@ -404,28 +394,17 @@ fn data_directories_are_exclusive_and_schema_bound() {
     );
     let engine_b = Engine::open(&data_b, &config_b).expect("open independent index");
     engine_a
-        .put_text(TextDocument {
-            id: "index-a",
-            field: "title",
-            text: "alpha",
-        })
+        .put(Document::new("index-a").field("title", "alpha"))
         .expect("write first independent index");
     engine_b
-        .put_text(TextDocument {
-            id: "index-b",
-            field: "title",
-            text: "beta",
-        })
+        .put(Document::new("index-b").field("title", "beta"))
         .expect("write second independent index");
     assert_eq!(
         engine_a
-            .search_text(
-                TextQuery::Term {
-                    field: "title",
-                    text: "alpha",
-                },
-                "bm25"
-            )
+            .search(SearchRequest::new(Query::Term {
+                field: "title".into(),
+                text: "alpha".into(),
+            }))
             .expect("search first independent index")
             .hits
             .len(),
@@ -433,13 +412,10 @@ fn data_directories_are_exclusive_and_schema_bound() {
     );
     assert_eq!(
         engine_b
-            .search_text(
-                TextQuery::Term {
-                    field: "title",
-                    text: "beta",
-                },
-                "bm25"
-            )
+            .search(SearchRequest::new(Query::Term {
+                field: "title".into(),
+                text: "beta".into(),
+            }))
             .expect("search second independent index")
             .hits
             .len(),
@@ -468,11 +444,7 @@ fn existing_data_without_schema_identity_cannot_be_rebound() {
     let (config_a, data_a) = compile_config("missing-identity", &original_schema);
     let engine = Engine::open(&data_a, &config_a).expect("open original index");
     engine
-        .put_text(TextDocument {
-            id: "persisted",
-            field: "title",
-            text: "persisted data",
-        })
+        .put(Document::new("persisted").field("title", "persisted data"))
         .expect("write persisted data");
     engine.close().expect("close original index");
 

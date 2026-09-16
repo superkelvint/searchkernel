@@ -4,6 +4,7 @@ pub const SK_NATIVE_STATUS_OK: u32 = 0;
 pub const SK_NATIVE_STATUS_INVALID_ARGUMENT: u32 = 1;
 pub const SK_NATIVE_STATUS_INTERNAL: u32 = 2;
 pub const SK_NATIVE_STATUS_OUT_OF_MEMORY: u32 = 3;
+pub const SK_NATIVE_STATUS_UNSUPPORTED: u32 = 4;
 pub const SK_TEXT_QUERY_TERM: u32 = 1;
 pub const SK_TEXT_QUERY_PHRASE: u32 = 2;
 pub const SK_QUERY_NODE_AND: u32 = 1;
@@ -27,6 +28,9 @@ pub const SK_VALUE_FLOAT: u32 = 3;
 pub const SK_VALUE_BOOLEAN: u32 = 4;
 pub const SK_SORT_ASCENDING: u32 = 1;
 pub const SK_SORT_DESCENDING: u32 = 2;
+pub const SK_SORT_MISSING_DEFAULT: u32 = 0;
+pub const SK_SORT_MISSING_FIRST: u32 = 1;
+pub const SK_SORT_MISSING_LAST: u32 = 2;
 pub const SK_SUMMARY_NONE: u32 = 0;
 pub const SK_SUMMARY_DEFAULT: u32 = 1;
 pub const SK_SUMMARY_FIELDS: u32 = 2;
@@ -34,6 +38,11 @@ pub const SK_AGGREGATION_SUM: u32 = 1;
 pub const SK_AGGREGATION_MIN: u32 = 2;
 pub const SK_AGGREGATION_MAX: u32 = 3;
 pub const SK_AGGREGATION_AVERAGE: u32 = 4;
+pub const SK_GROUP_ORDER_NONE: u32 = 0;
+pub const SK_GROUP_ORDER_COUNT_ASC: u32 = 1;
+pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
+pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
+pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
 pub const SK_NATIVE_ABI_VERSION: u32 = 4;
 #[repr(C)]
@@ -116,6 +125,18 @@ pub struct sk_local_grouping_request {
 pub struct sk_local_grouping_result {
     _unused: [u8; 0],
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_generic_search_request {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_generic_grouping_request {
+    _unused: [u8; 0],
+}
+pub type sk_generic_search_result = sk_local_search_result;
+pub type sk_generic_grouping_result = sk_local_grouping_result;
 unsafe extern "C" {
     pub fn sk_native_abi_version() -> u32;
 }
@@ -614,6 +635,24 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_request_add_query_feature(
+        request: *mut sk_local_search_request,
+        name: *const ::std::os::raw::c_char,
+        value: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_request_add_rank_property(
+        request: *mut sk_local_search_request,
+        name: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_local_search_request_destroy(request: *mut sk_local_search_request);
 }
 unsafe extern "C" {
@@ -676,7 +715,169 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_result_match_feature_count(result: *const sk_local_search_result)
+        -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_match_feature_name(
+        result: *const sk_local_search_result,
+        feature_index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_match_feature_value(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        feature_index: u32,
+        out_value: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_local_search_result_destroy(result: *mut sk_local_search_result);
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_create(
+        rank_profile: *const ::std::os::raw::c_char,
+        limit: u32,
+        offset: u32,
+        summary_kind: u32,
+        out_request: *mut *mut sk_generic_search_request,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_sort(
+        request: *mut sk_generic_search_request,
+        field: *const ::std::os::raw::c_char,
+        order: u32,
+        missing: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_summary_field(
+        request: *mut sk_generic_search_request,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_query_feature(
+        request: *mut sk_generic_search_request,
+        name: *const ::std::os::raw::c_char,
+        value: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_rank_property(
+        request: *mut sk_generic_search_request,
+        name: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_destroy(request: *mut sk_generic_search_request);
+}
+unsafe extern "C" {
+    pub fn sk_engine_search_generic(
+        engine: *const sk_engine,
+        query: *const sk_query,
+        request: *const sk_generic_search_request,
+        out_result: *mut *mut sk_generic_search_result,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_total_hit_count(result: *const sk_generic_search_result)
+        -> u64;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_hit_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_hit(
+        result: *const sk_generic_search_result,
+        index: u32,
+        out_id: *mut *const ::std::os::raw::c_char,
+        out_id_length: *mut u32,
+        out_score: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_summary_count(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_summary_name(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        summary_index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_summary_value(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        summary_index: u32,
+        out_kind: *mut u32,
+        out_string: *mut *const ::std::os::raw::c_char,
+        out_string_length: *mut u32,
+        out_integer: *mut i64,
+        out_float: *mut f64,
+        out_boolean: *mut u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_match_feature_count(
+        result: *const sk_generic_search_result,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_match_feature_name(
+        result: *const sk_generic_search_result,
+        feature_index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_match_feature_value(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        feature_index: u32,
+        out_value: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_destroy(result: *mut sk_generic_search_result);
 }
 unsafe extern "C" {
     pub fn sk_query_add_attribute_string_equals(
@@ -913,4 +1114,74 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_local_grouping_result_destroy(result: *mut sk_local_grouping_result);
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_request_create(
+        group_field: *const ::std::os::raw::c_char,
+        max_groups: u32,
+        order: u32,
+        out_request: *mut *mut sk_generic_grouping_request,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_request_add_aggregation(
+        request: *mut sk_generic_grouping_request,
+        kind: u32,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_request_destroy(request: *mut sk_generic_grouping_request);
+}
+unsafe extern "C" {
+    pub fn sk_engine_group_generic(
+        engine: *const sk_engine,
+        query: *const sk_query,
+        request: *const sk_generic_grouping_request,
+        out_result: *mut *mut sk_generic_grouping_result,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_result_group_count(result: *const sk_generic_grouping_result)
+        -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_result_group(
+        result: *const sk_generic_grouping_result,
+        group_index: u32,
+        out_key_kind: *mut u32,
+        out_key_string: *mut *const ::std::os::raw::c_char,
+        out_key_string_length: *mut u32,
+        out_key_integer: *mut i64,
+        out_count: *mut u64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_result_aggregation_count(
+        result: *const sk_generic_grouping_result,
+        group_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_result_aggregation(
+        result: *const sk_generic_grouping_result,
+        group_index: u32,
+        aggregation_index: u32,
+        out_kind: *mut u32,
+        out_integer: *mut i64,
+        out_float: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_grouping_result_destroy(result: *mut sk_generic_grouping_result);
 }

@@ -68,6 +68,7 @@
 #include <vespa/searchlib/aggregation/minaggregationresult.h>
 #include <vespa/searchlib/aggregation/sumaggregationresult.h>
 #include <vespa/searchlib/expression/attributenode.h>
+#include <vespa/searchlib/expression/aggregationrefnode.h>
 #include <vespa/searchlib/expression/floatresultnode.h>
 #include <vespa/searchlib/expression/integerresultnode.h>
 #include <vespa/searchlib/expression/stringresultnode.h>
@@ -920,8 +921,15 @@ struct LocalSearchRequestState {
     uint32_t limit = 10;
     uint32_t offset = 0;
     uint32_t summary_kind = SK_SUMMARY_NONE;
-    std::vector<std::pair<std::string, uint32_t>> sort;
+    struct Sort {
+        std::string field;
+        uint32_t order = SK_SORT_ASCENDING;
+        uint32_t missing = SK_SORT_MISSING_DEFAULT;
+    };
+    std::vector<Sort> sort;
     std::vector<std::string> summary_fields;
+    std::vector<std::pair<std::string, double>> query_features;
+    std::vector<std::pair<std::string, std::string>> rank_properties;
 };
 
 struct LocalHitState {
@@ -933,6 +941,8 @@ struct LocalHitState {
 struct LocalSearchResultState {
     uint64_t total_hit_count = 0;
     std::vector<LocalHitState> hits;
+    std::vector<std::string> match_feature_names;
+    std::vector<double> match_feature_values;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     const FailpointController *failpoints = nullptr;
 #endif
@@ -945,6 +955,8 @@ struct LocalAggregationSpec {
 
 struct LocalGroupingRequestState {
     std::string group_field;
+    uint32_t max_groups = std::numeric_limits<uint32_t>::max();
+    uint32_t order = SK_GROUP_ORDER_NONE;
     std::vector<LocalAggregationSpec> aggregations;
 };
 
@@ -959,6 +971,12 @@ struct LocalGroupingResultState {
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     const FailpointController *failpoints = nullptr;
 #endif
+};
+
+class UnsupportedNativeError final : public std::runtime_error {
+public:
+    explicit UnsupportedNativeError(const std::string &message)
+        : std::runtime_error(message) {}
 };
 
 struct NativeQueryState {
@@ -1658,12 +1676,31 @@ class EmbeddedEngine {
             manifest.fields.begin(), manifest.fields.end(),
             [](const auto &field) { return field.type == "text"; });
         const size_t profile_count = config_section_count(values, "rankprofile");
-        const size_t expected_profiles = text_field == manifest.fields.end() ? 1 : 2;
-        if (profile_count != expected_profiles && !(text_field == manifest.fields.end() && profile_count == 2)) {
-            throw std::invalid_argument("inconsistent generated configuration");
-        }
+        const auto legacy_text_expression = text_field == manifest.fields.end()
+                                                ? std::string()
+                                                : "bm25(" + text_field->name + ")";
+        const auto legacy_property_count =
+            profile_count == 2
+                ? config_section_count(values, "rankprofile[1].fef.property")
+                : 0;
+        const bool legacy_text_profile =
+            profile_count == 2 && text_field != manifest.fields.end() &&
+            config_value(values, "rankprofile[1].name") == "bm25" &&
+            legacy_property_count == 1 &&
+            config_value(values, "rankprofile[1].fef.property[0].name") ==
+                "vespa.rank.firstphase" &&
+            config_value(values, "rankprofile[1].fef.property[0].value") ==
+                legacy_text_expression;
+        const bool legacy_attribute_profile =
+            profile_count == 2 && text_field == manifest.fields.end() &&
+            config_value(values, "rankprofile[1].name") == "attribute_price" &&
+            legacy_property_count == 1 &&
+            config_value(values, "rankprofile[1].fef.property[0].name") ==
+                "vespa.rank.firstphase" &&
+            config_value(values, "rankprofile[1].fef.property[0].value") ==
+                "attribute(price)";
         require_config_value(values, "rankprofile[0].name", "default");
-        if (text_field != manifest.fields.end()) {
+        if (legacy_text_profile) {
             require_config_value(values, "rankprofile[1].name", "bm25");
             if (config_section_count(values, "rankprofile[1].fef.property") != 1) {
                 throw std::invalid_argument("inconsistent generated configuration");
@@ -1971,10 +2008,11 @@ public:
           _schema_identity(validate_or_persist_schema_identity(
               data_dir, config_dir, _manifest, _data_lock.had_existing_state())),
           _document_type(_manifest.document_type),
+          _legacy_state(is_legacy_state(data_dir, _data_lock.had_existing_state())),
           _document_types(make_documenttypes_config(
-              _manifest, is_legacy_state(data_dir, _data_lock.had_existing_state()))),
-          _repo(is_legacy_state(data_dir, _data_lock.had_existing_state())
-                    ? std::make_shared<DocumentTypeRepo>(make_document_type(_manifest))
+              _manifest, _legacy_state)),
+          _repo(_legacy_state
+                    ? std::make_shared<DocumentTypeRepo>(make_document_type(_manifest, true))
                     : std::make_shared<DocumentTypeRepo>(*_document_types)),
           _doc_type(_repo->getDocumentType(_document_type)),
           _wire_service(),
@@ -2523,13 +2561,38 @@ public:
         request.ranking = options.rank_profile;
         request.propertiesMap.lookupCreate(search::MapNames::RANK)
             .add("vespa.matching.numthreadspersearch", "1");
+        auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
+        for (const auto &[name, value] : options.query_features) {
+            std::ostringstream encoded;
+            encoded << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+            rank_properties.add(name, encoded.str());
+        }
+        for (const auto &[name, value] : options.rank_properties) {
+            rank_properties.add(name, value);
+        }
         request.offset = options.offset;
         request.maxhits = options.limit;
-        for (const auto &[field, order] : options.sort) {
-            (void)require_attribute_field(field, {"string", "integer", "float"});
+        for (const auto &sort : options.sort) {
+            const auto &field = require_manifest_field(sort.field);
+            if (!field.attribute) {
+                throw std::invalid_argument("field is not an attribute: " + sort.field);
+            }
+            if (field.type == "boolean") {
+                throw UnsupportedNativeError("boolean sorting is not supported by the M sort path: " + sort.field);
+            }
+            if (field.type != "string" && field.type != "integer" && field.type != "float") {
+                throw std::invalid_argument("unsupported sort field type: " + sort.field);
+            }
             if (!request.sortSpec.empty()) request.sortSpec.push_back(' ');
-            request.sortSpec.push_back(order == SK_SORT_ASCENDING ? '+' : '-');
-            request.sortSpec += field;
+            request.sortSpec.push_back(sort.order == SK_SORT_ASCENDING ? '+' : '-');
+            if (sort.missing == SK_SORT_MISSING_FIRST || sort.missing == SK_SORT_MISSING_LAST) {
+                request.sortSpec += "missing(" + sort.field + "," +
+                                    (sort.missing == SK_SORT_MISSING_FIRST ? "first" : "last") + ")";
+            } else if (sort.missing != SK_SORT_MISSING_DEFAULT) {
+                throw std::invalid_argument("unsupported sort missing placement");
+            } else {
+                request.sortSpec += sort.field;
+            }
         }
         if (options.summary_kind == SK_SUMMARY_FIELDS) {
             if (options.summary_fields.empty()) {
@@ -2547,6 +2610,18 @@ public:
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         LocalSearchResultState result;
         result.total_hit_count = reply->totalHitCount;
+        const auto &features = reply->match_features;
+        if (features.values.size() != features.names.size() * reply->hits.size()) {
+            throw std::runtime_error("native match-feature matrix shape mismatch");
+        }
+        result.match_feature_names = features.names;
+        result.match_feature_values.reserve(features.values.size());
+        for (const auto &value : features.values) {
+            if (!value.is_double()) {
+                throw std::runtime_error("M10 v1 match feature is not a scalar double");
+            }
+            result.match_feature_values.push_back(value.as_double());
+        }
         result.hits.reserve(reply->hits.size());
         for (const auto &hit : reply->hits) {
             result.hits.push_back({id_for_gid(hit.gid), hit.metric, {}});
@@ -2584,7 +2659,13 @@ public:
 
     LocalGroupingResultState group_local(const NativeQueryState &query,
                                          const LocalGroupingRequestState &options) const {
-        const auto &group_field = require_attribute_field(options.group_field, {"string", "integer"});
+        const auto &group_field = require_manifest_field(options.group_field);
+        if (!group_field.attribute) {
+            throw std::invalid_argument("field is not an attribute: " + options.group_field);
+        }
+        if (group_field.type != "string" && group_field.type != "integer") {
+            throw UnsupportedNativeError("grouping key type is not supported by the M grouping path: " + options.group_field);
+        }
         auto tree = query.builder.build();
         if (!tree) throw std::invalid_argument("could not build query tree");
         SearchRequest request;
@@ -2594,6 +2675,27 @@ public:
         request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
         auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
         level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_field.name)));
+        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
+                               ? -1
+                               : static_cast<int64_t>(options.max_groups));
+        switch (options.order) {
+        case SK_GROUP_ORDER_COUNT_ASC:
+            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), true);
+            break;
+        case SK_GROUP_ORDER_COUNT_DESC:
+            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), false);
+            break;
+        case SK_GROUP_ORDER_VALUE_ASC:
+            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), true);
+            break;
+        case SK_GROUP_ORDER_VALUE_DESC:
+            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), false);
+            break;
+        case SK_GROUP_ORDER_NONE:
+            break;
+        default:
+            throw std::invalid_argument("unsupported grouping order");
+        }
         for (const auto &spec : options.aggregations) {
             const auto &field = require_attribute_field(spec.field, {"integer", "float"});
             std::unique_ptr<AggregationResult> aggregation;
@@ -2626,6 +2728,52 @@ public:
         result_grouping.deserialize(input);
         LocalGroupingResultState result;
         const auto &root = result_grouping.getRoot();
+        if (options.order != SK_GROUP_ORDER_NONE && root.getChildrenSize() > 1) {
+            // Vespa's grouping post-processing restores group-id order for
+            // serialization. Reapply the requested native order to the
+            // already computed groups before exposing them through the
+            // generic M result contract.
+            auto groups = root.groups();
+            auto compare_value = [](const auto *left, const auto *right) {
+                return left->cmpId(*right) < 0;
+            };
+            auto compare_count = [](const auto *left, const auto *right, bool ascending) {
+                const auto &left_result = left->getAggregationResult(0);
+                const auto &right_result = right->getAggregationResult(0);
+                const auto &left_count = static_cast<const CountAggregationResult &>(left_result);
+                const auto &right_count = static_cast<const CountAggregationResult &>(right_result);
+                if (left_count.getCount() != right_count.getCount()) {
+                    return ascending ? left_count.getCount() < right_count.getCount()
+                                     : left_count.getCount() > right_count.getCount();
+                }
+                return left->cmpId(*right) < 0;
+            };
+            switch (options.order) {
+            case SK_GROUP_ORDER_COUNT_ASC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_count(left, right, true);
+                          });
+                break;
+            case SK_GROUP_ORDER_COUNT_DESC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_count(left, right, false);
+                          });
+                break;
+            case SK_GROUP_ORDER_VALUE_ASC:
+                std::sort(groups, groups + root.getChildrenSize(), compare_value);
+                break;
+            case SK_GROUP_ORDER_VALUE_DESC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_value(right, left);
+                          });
+                break;
+            default:
+                break;
+            }
+        }
         result.groups.reserve(root.getChildrenSize());
         for (uint32_t index = 0; index < root.getChildrenSize(); ++index) {
             const auto &group = root.getChild(index);
@@ -2790,6 +2938,8 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
         return SK_NATIVE_STATUS_OK;
     } catch (const std::bad_alloc &) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_OUT_OF_MEMORY, nullptr);
+    } catch (const UnsupportedNativeError &exception) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_UNSUPPORTED, exception.what());
     } catch (const std::invalid_argument &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
@@ -3011,6 +3161,75 @@ struct sk_attribute_document : AttributeDocumentState {};
 struct sk_attribute_update : AttributeUpdateState {};
 struct sk_local_grouping_request : LocalGroupingRequestState {};
 struct sk_local_grouping_result : LocalGroupingResultState {};
+struct sk_generic_search_request : sk_local_search_request {};
+struct sk_generic_grouping_request : sk_local_grouping_request {};
+
+namespace {
+
+void add_query_feature(LocalSearchRequestState &request, const char *name, double value) {
+    validate_string_size(name, MAX_SCHEMA_IDENTIFIER_BYTES, "query feature name");
+    if (*name == '\0') throw std::invalid_argument("query feature name must not be empty");
+    if (!std::isfinite(value)) throw std::invalid_argument("query feature value must be finite");
+    if (std::find_if(request.query_features.begin(), request.query_features.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.query_features.end()) {
+        throw std::invalid_argument("duplicate query feature");
+    }
+    if (std::find_if(request.rank_properties.begin(), request.rank_properties.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.rank_properties.end()) {
+        throw std::invalid_argument("rank property collision");
+    }
+    request.query_features.emplace_back(name, value);
+}
+
+void add_rank_property(LocalSearchRequestState &request, const char *name, const char *value) {
+    validate_string_size(name, MAX_SCHEMA_IDENTIFIER_BYTES, "rank property name");
+    validate_string_size(value, MAX_RANK_PROFILE_BYTES, "rank property value");
+    if (*name == '\0') throw std::invalid_argument("rank property name must not be empty");
+    if (*value == '\0') throw std::invalid_argument("rank property value must not be empty");
+    if (std::find_if(request.rank_properties.begin(), request.rank_properties.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.rank_properties.end()) {
+        throw std::invalid_argument("duplicate rank property");
+    }
+    if (std::find_if(request.query_features.begin(), request.query_features.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.query_features.end()) {
+        throw std::invalid_argument("rank property collision");
+    }
+    request.rank_properties.emplace_back(name, value);
+}
+
+uint32_t match_feature_count(const LocalSearchResultState &result) {
+    return static_cast<uint32_t>(result.match_feature_names.size());
+}
+
+void match_feature_name(const LocalSearchResultState &result, uint32_t feature_index,
+                        const char **out_name, uint32_t *out_length) {
+    if (!out_name || !out_length || feature_index >= result.match_feature_names.size()) {
+        throw std::invalid_argument("match feature name arguments are invalid");
+    }
+    const auto &name = result.match_feature_names[feature_index];
+    *out_name = name.data();
+    *out_length = static_cast<uint32_t>(name.size());
+}
+
+void match_feature_value(const LocalSearchResultState &result, uint32_t hit_index,
+                         uint32_t feature_index, double *out_value) {
+    if (!out_value || hit_index >= result.hits.size() ||
+        feature_index >= result.match_feature_names.size()) {
+        throw std::invalid_argument("match feature value arguments are invalid");
+    }
+    const size_t index = static_cast<size_t>(hit_index) * result.match_feature_names.size() +
+                         feature_index;
+    if (index >= result.match_feature_values.size()) {
+        throw std::runtime_error("native match feature matrix is incomplete");
+    }
+    *out_value = result.match_feature_values[index];
+}
+
+} // namespace
 
 extern "C" uint32_t sk_native_abi_version(void) SK_NOEXCEPT {
     return SK_NATIVE_ABI_VERSION;
@@ -3592,7 +3811,7 @@ extern "C" int32_t sk_local_search_request_add_sort(
     return invoke(error, error_capacity, [&] {
         validate_field_name(field);
         if (order != SK_SORT_ASCENDING && order != SK_SORT_DESCENDING) throw std::invalid_argument("unsupported sort order");
-        request->sort.emplace_back(field, order);
+        request->sort.push_back({field, order, SK_SORT_MISSING_DEFAULT});
     });
 }
 
@@ -3606,6 +3825,26 @@ extern "C" int32_t sk_local_search_request_add_summary_field(
         if (std::find(request->summary_fields.begin(), request->summary_fields.end(), field) != request->summary_fields.end()) throw std::invalid_argument("summary fields must not contain duplicates");
         request->summary_fields.emplace_back(field);
     });
+}
+
+extern "C" int32_t sk_local_search_request_add_query_feature(
+    sk_local_search_request *request, const char *name, double value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query feature arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] { add_query_feature(*request, name, value); });
+}
+
+extern "C" int32_t sk_local_search_request_add_rank_property(
+    sk_local_search_request *request, const char *name, const char *value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name || !value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "rank property arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] { add_rank_property(*request, name, value); });
 }
 
 extern "C" void sk_local_search_request_destroy(sk_local_search_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
@@ -3688,6 +3927,38 @@ extern "C" int32_t sk_local_search_result_summary_value(
         *out_float = value.floating;
         *out_boolean = value.boolean;
     });
+}
+
+extern "C" uint32_t sk_local_search_result_match_feature_count(
+    const sk_local_search_result *result) SK_NOEXCEPT {
+    return result ? match_feature_count(*result) : 0;
+}
+
+extern "C" int32_t sk_local_search_result_match_feature_name(
+    const sk_local_search_result *result, uint32_t feature_index,
+    const char **out_name, uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_name || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature name arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { match_feature_name(*result, feature_index, out_name, out_length); });
+}
+
+extern "C" int32_t sk_local_search_result_match_feature_value(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t feature_index, double *out_value, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = 0.0;
+    if (!result || !out_value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature value arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { match_feature_value(*result, hit_index, feature_index, out_value); });
 }
 
 extern "C" void sk_local_search_result_destroy(sk_local_search_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
@@ -3784,6 +4055,255 @@ extern "C" int32_t sk_local_grouping_result_aggregation(const sk_local_grouping_
     return invoke(error, error_capacity, [&] { const auto &value = result->groups[group_index].aggregations[aggregation_index]; *out_kind = value.kind; *out_integer = value.integer; *out_float = value.floating; });
 }
 extern "C" void sk_local_grouping_result_destroy(sk_local_grouping_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
+
+extern "C" int32_t sk_generic_search_request_create(
+    const char *rank_profile, uint32_t limit, uint32_t offset,
+    uint32_t summary_kind, sk_generic_search_request **out_request,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_request) *out_request = nullptr;
+    if (!rank_profile || !out_request) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic search request arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_rank_profile(rank_profile);
+        if (*rank_profile == '\0') throw std::invalid_argument("rank profile must not be empty");
+        if (limit > MAX_SEARCH_LIMIT) throw std::invalid_argument("search limit is too large");
+        if (summary_kind != SK_SUMMARY_NONE && summary_kind != SK_SUMMARY_DEFAULT &&
+            summary_kind != SK_SUMMARY_FIELDS) {
+            throw std::invalid_argument("unsupported summary kind");
+        }
+        auto request = std::make_unique<sk_generic_search_request>();
+        request->rank_profile = rank_profile;
+        request->limit = limit;
+        request->offset = offset;
+        request->summary_kind = summary_kind;
+        *out_request = request.release();
+    });
+}
+
+extern "C" int32_t sk_generic_search_request_add_sort(
+    sk_generic_search_request *request, const char *field, uint32_t order,
+    uint32_t missing, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic sort arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (order != SK_SORT_ASCENDING && order != SK_SORT_DESCENDING) {
+            throw std::invalid_argument("unsupported sort order");
+        }
+        if (missing != SK_SORT_MISSING_DEFAULT && missing != SK_SORT_MISSING_FIRST &&
+            missing != SK_SORT_MISSING_LAST) {
+            throw std::invalid_argument("unsupported sort missing placement");
+        }
+        request->sort.push_back({field, order, missing});
+    });
+}
+
+extern "C" int32_t sk_generic_search_request_add_summary_field(
+    sk_generic_search_request *request, const char *field, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_request_add_summary_field(
+        static_cast<sk_local_search_request *>(request), field, error, error_capacity);
+}
+
+extern "C" int32_t sk_generic_search_request_add_query_feature(
+    sk_generic_search_request *request, const char *name, double value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query feature arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { add_query_feature(*request, name, value); });
+}
+
+extern "C" int32_t sk_generic_search_request_add_rank_property(
+    sk_generic_search_request *request, const char *name, const char *value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name || !value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "rank property arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { add_rank_property(*request, name, value); });
+}
+
+extern "C" void sk_generic_search_request_destroy(
+    sk_generic_search_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
+
+extern "C" int32_t sk_engine_search_generic(
+    const sk_engine *engine, const sk_query *query,
+    const sk_generic_search_request *request,
+    sk_generic_search_result **out_result, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_result) *out_result = nullptr;
+    if (!engine || !engine->impl || !query || !request || !out_result) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic search arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_local_search_result>();
+        static_cast<LocalSearchResultState &>(*result) =
+            engine->impl->search_local_result(*query, *request);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        engine->impl->failpoint("result_after_allocation");
+        result->failpoints = &engine->impl->failpoints();
+#endif
+        *out_result = result.release();
+    });
+}
+
+extern "C" uint64_t sk_generic_search_result_total_hit_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return sk_local_search_result_total_hit_count(
+        static_cast<const sk_local_search_result *>(result));
+}
+extern "C" uint32_t sk_generic_search_result_hit_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return sk_local_search_result_hit_count(static_cast<const sk_local_search_result *>(result));
+}
+extern "C" int32_t sk_generic_search_result_hit(
+    const sk_generic_search_result *result, uint32_t index, const char **out_id,
+    uint32_t *out_id_length, double *out_score, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_hit(static_cast<const sk_local_search_result *>(result), index,
+                                      out_id, out_id_length, out_score, error, error_capacity);
+}
+extern "C" uint32_t sk_generic_search_result_summary_count(
+    const sk_generic_search_result *result, uint32_t hit_index) SK_NOEXCEPT {
+    return sk_local_search_result_summary_count(static_cast<const sk_local_search_result *>(result),
+                                                hit_index);
+}
+extern "C" int32_t sk_generic_search_result_summary_name(
+    const sk_generic_search_result *result, uint32_t hit_index, uint32_t summary_index,
+    const char **out_name, uint32_t *out_length, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_summary_name(static_cast<const sk_local_search_result *>(result),
+                                               hit_index, summary_index, out_name, out_length,
+                                               error, error_capacity);
+}
+extern "C" int32_t sk_generic_search_result_summary_value(
+    const sk_generic_search_result *result, uint32_t hit_index, uint32_t summary_index,
+    uint32_t *out_kind, const char **out_string, uint32_t *out_string_length,
+    int64_t *out_integer, double *out_float, uint8_t *out_boolean, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_summary_value(
+        static_cast<const sk_local_search_result *>(result), hit_index, summary_index, out_kind,
+        out_string, out_string_length, out_integer, out_float, out_boolean, error,
+        error_capacity);
+}
+extern "C" uint32_t sk_generic_search_result_match_feature_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? match_feature_count(*result) : 0;
+}
+extern "C" int32_t sk_generic_search_result_match_feature_name(
+    const sk_generic_search_result *result, uint32_t feature_index, const char **out_name,
+    uint32_t *out_length, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_name || !out_length) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature name arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { match_feature_name(*result, feature_index, out_name, out_length); });
+}
+extern "C" int32_t sk_generic_search_result_match_feature_value(
+    const sk_generic_search_result *result, uint32_t hit_index, uint32_t feature_index,
+    double *out_value, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = 0.0;
+    if (!result || !out_value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature value arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { match_feature_value(*result, hit_index, feature_index, out_value); });
+}
+extern "C" void sk_generic_search_result_destroy(
+    sk_generic_search_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
+
+extern "C" int32_t sk_generic_grouping_request_create(
+    const char *field, uint32_t max_groups, uint32_t order,
+    sk_generic_grouping_request **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!field || !out) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic grouping request arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (order > SK_GROUP_ORDER_VALUE_DESC) {
+            throw std::invalid_argument("unsupported grouping order");
+        }
+        auto request = std::make_unique<sk_generic_grouping_request>();
+        request->group_field = field;
+        request->max_groups = max_groups;
+        request->order = order;
+        *out = request.release();
+    });
+}
+
+extern "C" int32_t sk_generic_grouping_request_add_aggregation(
+    sk_generic_grouping_request *request, uint32_t kind, const char *field,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_grouping_request_add_aggregation(
+        static_cast<sk_local_grouping_request *>(request), kind, field, error, error_capacity);
+}
+extern "C" void sk_generic_grouping_request_destroy(
+    sk_generic_grouping_request *request) SK_NOEXCEPT { destroy_noexcept(request); }
+extern "C" int32_t sk_engine_group_generic(
+    const sk_engine *engine, const sk_query *query,
+    const sk_generic_grouping_request *request,
+    sk_generic_grouping_result **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!engine || !engine->impl || !query || !request || !out) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic grouping arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_local_grouping_result>();
+        static_cast<LocalGroupingResultState &>(*result) =
+            engine->impl->group_local_result(*query, *request);
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        result->failpoints = &engine->impl->failpoints();
+#endif
+        *out = result.release();
+    });
+}
+extern "C" uint32_t sk_generic_grouping_result_group_count(
+    const sk_generic_grouping_result *result) SK_NOEXCEPT {
+    return sk_local_grouping_result_group_count(
+        static_cast<const sk_local_grouping_result *>(result));
+}
+extern "C" int32_t sk_generic_grouping_result_group(
+    const sk_generic_grouping_result *result, uint32_t group_index,
+    uint32_t *out_key_kind, const char **out_key_string,
+    uint32_t *out_key_string_length, int64_t *out_key_integer,
+    uint64_t *out_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_grouping_result_group(
+        static_cast<const sk_local_grouping_result *>(result), group_index, out_key_kind,
+        out_key_string, out_key_string_length, out_key_integer, out_count, error, error_capacity);
+}
+extern "C" uint32_t sk_generic_grouping_result_aggregation_count(
+    const sk_generic_grouping_result *result, uint32_t group_index) SK_NOEXCEPT {
+    return sk_local_grouping_result_aggregation_count(
+        static_cast<const sk_local_grouping_result *>(result), group_index);
+}
+extern "C" int32_t sk_generic_grouping_result_aggregation(
+    const sk_generic_grouping_result *result, uint32_t group_index,
+    uint32_t aggregation_index, uint32_t *out_kind, int64_t *out_integer,
+    double *out_float, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_grouping_result_aggregation(
+        static_cast<const sk_local_grouping_result *>(result), group_index, aggregation_index,
+        out_kind, out_integer, out_float, error, error_capacity);
+}
+extern "C" void sk_generic_grouping_result_destroy(
+    sk_generic_grouping_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
 
 namespace {
 

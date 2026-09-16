@@ -34,3 +34,13 @@ static_assert(noexcept(sk_engine_search_text(nullptr, nullptr, nullptr, nullptr,
 static_assert(noexcept(sk_text_result_size(nullptr)));
 static_assert(noexcept(sk_text_result_hit(nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0)));
 static_assert(noexcept(sk_text_result_destroy(nullptr)));
+static_assert(noexcept(sk_local_search_request_add_query_feature(nullptr, nullptr, 0.0, nullptr, 0)));
+static_assert(noexcept(sk_local_search_request_add_rank_property(nullptr, nullptr, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_local_search_result_match_feature_count(nullptr)));
+static_assert(noexcept(sk_local_search_result_match_feature_name(nullptr, 0, nullptr, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_local_search_result_match_feature_value(nullptr, 0, 0, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_generic_search_request_add_query_feature(nullptr, nullptr, 0.0, nullptr, 0)));
+static_assert(noexcept(sk_generic_search_request_add_rank_property(nullptr, nullptr, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_generic_search_result_match_feature_count(nullptr)));
+static_assert(noexcept(sk_generic_search_result_match_feature_name(nullptr, 0, nullptr, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_generic_search_result_match_feature_value(nullptr, 0, 0, nullptr, nullptr, 0)));

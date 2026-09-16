@@ -124,11 +124,11 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
     bindgen::Builder::default()
         .header(header.to_string_lossy())
         .allowlist_type(
-            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result)",
+            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result|generic_search_request|generic_search_result|generic_grouping_request|generic_grouping_result)",
         )
         .allowlist_function("sk_.*")
         .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN)|SORT_(ASCENDING|DESCENDING)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE))",
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN)|SORT_(ASCENDING|DESCENDING|MISSING_DEFAULT|MISSING_FIRST|MISSING_LAST)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE)|GROUP_ORDER_(NONE|COUNT_ASC|COUNT_DESC|VALUE_ASC|VALUE_DESC))",
         )
         .layout_tests(true)
         .generate_comments(false)
