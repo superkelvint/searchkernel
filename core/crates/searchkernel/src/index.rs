@@ -15,6 +15,39 @@ const MANIFEST_FORMAT_VERSION: u32 = 2;
 const NATIVE_ABI_VERSION: u32 = 4;
 const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
+fn create_directory_transaction<T>(
+    root: &std::path::Path,
+    initialize: impl FnOnce(&std::path::Path) -> Result<T>,
+) -> Result<T> {
+    if root.exists() {
+        return Err(Error::AlreadyExists(root.display().to_string()));
+    }
+    if let Some(parent) = root.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+    }
+    std::fs::create_dir(root).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::AlreadyExists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+
+    match initialize(root) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            if let Err(cleanup_error) = std::fs::remove_dir_all(root) {
+                return Err(Error::Infrastructure(format!(
+                    "{error}; failed to clean up partial index {}: {cleanup_error}",
+                    root.display()
+                )));
+            }
+            Err(error)
+        }
+    }
+}
+
 pub struct Index {
     pub(crate) context: Arc<IndexContext>,
     pub(crate) backend: Arc<dyn Backend>,
@@ -49,24 +82,23 @@ impl Index {
     /// reopen it safely.
     pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
         let root = path.as_ref();
-        if root.exists() {
-            return Err(Error::AlreadyExists(root.display().to_string()));
-        }
-        let resolved_ir = definition_to_ir(&definition)?;
-        searchkernel_ir_adapter::validate_index_definition(&resolved_ir)
-            .map_err(Error::Portable)?;
-        let resolved_definition = definition_from_ir(&resolved_ir);
-        std::fs::create_dir_all(root).map_err(|error| Error::Infrastructure(error.to_string()))?;
-        let data = root.join("data");
-        let config = root.join("config");
-        std::fs::create_dir_all(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
-        searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
-            .map_err(Error::Portable)?;
-        let manifest = IndexManifest::for_definition(&definition, &resolved_definition, &config)?;
-        manifest.write(root)?;
-        let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
-            .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        Self::from_backend(resolved_definition, Arc::new(backend))
+        create_directory_transaction(root, |root| {
+            let resolved_ir = definition_to_ir(&definition)?;
+            searchkernel_ir_adapter::validate_index_definition(&resolved_ir)
+                .map_err(Error::Portable)?;
+            let resolved_definition = definition_from_ir(&resolved_ir);
+            let data = root.join("data");
+            let config = root.join("config");
+            std::fs::create_dir(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
+            searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
+                .map_err(Error::Portable)?;
+            let manifest =
+                IndexManifest::for_definition(&definition, &resolved_definition, &config)?;
+            manifest.write(root)?;
+            let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
+                .map_err(|error| Error::Infrastructure(error.to_string()))?;
+            Self::from_backend(resolved_definition, Arc::new(backend))
+        })
     }
 
     /// Reopen an existing index using its durable manifest.
@@ -817,5 +849,23 @@ mod tests {
                 Err(Error::CorruptIndex(_))
             ));
         }
+    }
+
+    #[test]
+    fn failed_creation_removes_the_claimed_index_directory() {
+        let root = temporary_path("failed-create-cleanup");
+        let error = create_directory_transaction(&root, |root| {
+            std::fs::write(root.join("partial-state"), b"incomplete")
+                .map_err(|error| Error::Infrastructure(error.to_string()))?;
+            Err::<(), _>(Error::Infrastructure(
+                "forced initialization failure".into(),
+            ))
+        })
+        .unwrap_err();
+
+        assert!(
+            matches!(error, Error::Infrastructure(message) if message == "forced initialization failure")
+        );
+        assert!(!root.exists());
     }
 }
