@@ -29,19 +29,19 @@ reference/vespa/api-contract/src/bin/m9.rs
 M9 adds:
 
 ```text
-AttributeDocument
-AttributeUpdate
+Document
+DocumentUpdate
 AttributeBound
 Query::AttributeEquals
 Query::AttributeRange
 Aggregation
 AggregateValue
-LocalGroupingRequest
-LocalGroup
-LocalGroupingResult
-Engine::put_attributes
-Engine::update_attributes
-Engine::group_local
+GroupingRequest
+Group
+GroupingResult
+Engine::put
+Engine::update
+Engine::group
 ```
 
 M8 request/result types remain the local search surface.
@@ -74,15 +74,15 @@ Unknown fields, non-attribute fields, and wrong value types are errors before mu
 
 ## Attribute documents and updates
 
-`AttributeDocument` creates a document containing one or more attribute values.
+`Document` creates a document containing one or more attribute values.
 
-`AttributeUpdate` applies one or more assignment updates to an existing document.
+`DocumentUpdate` applies one or more assignment updates to an existing document.
 
 Updates must travel through Vespa's real document-update/attribute path and become visible to subsequent queries, sorting, ranking, and grouping.
 
 Rust must not retain an authoritative shadow map of attribute values.
 
-An `AttributeDocument` with no fields and an `AttributeUpdate` with no assignments are invalid requests. Duplicate field names within one builder are outside M9 v1 and are not part of the frozen contract; verifier inputs never rely on duplicate assignments. Persisted/current values remain owned by Vespa.
+An empty `Document` and a `DocumentUpdate` with no assignments are invalid requests. Duplicate field names within one builder are outside M9 v1 and are not part of the frozen contract; verifier inputs never rely on duplicate assignments. Persisted/current values remain owned by Vespa.
 
 ## Structured filtering
 
@@ -187,7 +187,7 @@ Integer attribute
 
 Float and Boolean grouping are not required in M9 v1.
 
-A facet is represented by a `LocalGroupingRequest` with no explicit aggregation; `count` is always collected.
+A facet is represented by a `GroupingRequest` with no explicit aggregation; `count` is always collected.
 
 ### Aggregations
 
@@ -227,7 +227,7 @@ The verifier includes a filtered facet scenario to prove the M7/M9 query path fe
 
 ### No regular-hit dependency
 
-`Engine::group_local` must execute with zero requested regular hits. Group output must still be complete.
+`Engine::group` must execute with zero requested regular hits. Group output must still be complete.
 
 This is a normative anti-shortcut requirement: an implementation that fetches regular hits and computes groups/counts/aggregates in Rust cannot satisfy the verifier.
 
@@ -291,8 +291,8 @@ empty attribute update
 unknown attribute field in document
 non-attribute field in document
 wrong mutation value type
-unknown/non-attribute/wrong-type AttributeUpdate assignment
-non-finite Float AttributeUpdate assignment
+unknown/non-attribute/wrong-type DocumentUpdate assignment
+non-finite Float DocumentUpdate assignment
 unknown field in AttributeEquals
 wrong AttributeEquals type
 AttributeRange on String

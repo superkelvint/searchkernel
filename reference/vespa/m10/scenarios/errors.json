@@ -1,0 +1,2039 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "empty-profile-name",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "",
+            "first_phase": "attribute(popularity)",
+            "match_features": []
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "invalid_rank_profile"
+    },
+    {
+      "id": "redefine-default-profile",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "default",
+            "first_phase": "attribute(popularity)",
+            "match_features": []
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "invalid_rank_profile"
+    },
+    {
+      "id": "duplicate-profile-name",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "x",
+            "first_phase": "attribute(popularity)",
+            "match_features": []
+          },
+          {
+            "name": "x",
+            "first_phase": "attribute(popularity)",
+            "match_features": []
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "duplicate_rank_profile"
+    },
+    {
+      "id": "empty-first-phase",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "x",
+            "first_phase": "",
+            "match_features": []
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "invalid_rank_expression"
+    },
+    {
+      "id": "empty-match-feature",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "x",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              ""
+            ]
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "invalid_match_feature"
+    },
+    {
+      "id": "duplicate-match-feature",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "x",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "operation": {
+        "compile": true
+      },
+      "expected_error": "duplicate_match_feature"
+    },
+    {
+      "id": "empty-query-feature-name",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [
+            {
+              "name": "",
+              "value": 1.0
+            }
+          ],
+          "rank_properties": [],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "invalid_query_feature"
+    },
+    {
+      "id": "non-finite-query-feature",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [
+            {
+              "name": "boost",
+              "value_bits": "0x7ff0000000000000"
+            }
+          ],
+          "rank_properties": [],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "invalid_query_feature"
+    },
+    {
+      "id": "duplicate-query-feature",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [
+            {
+              "name": "boost",
+              "value": 1.0
+            },
+            {
+              "name": "boost",
+              "value": 2.0
+            }
+          ],
+          "rank_properties": [],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "duplicate_query_feature"
+    },
+    {
+      "id": "empty-request-rank-property-name",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [],
+          "rank_properties": [
+            {
+              "name": "",
+              "value": "1"
+            }
+          ],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "invalid_rank_property"
+    },
+    {
+      "id": "empty-request-rank-property-value",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [],
+          "rank_properties": [
+            {
+              "name": "boost",
+              "value": ""
+            }
+          ],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "invalid_rank_property"
+    },
+    {
+      "id": "duplicate-request-rank-property",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [],
+          "rank_properties": [
+            {
+              "name": "boost",
+              "value": "1"
+            },
+            {
+              "name": "boost",
+              "value": "2"
+            }
+          ],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "duplicate_rank_property"
+    },
+    {
+      "id": "query-feature-rank-property-collision",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": true
+          },
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": true
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25_title",
+            "first_phase": "bm25(title)",
+            "match_features": [
+              "bm25(title)"
+            ]
+          },
+          {
+            "name": "bm25_body",
+            "first_phase": "bm25(body)",
+            "match_features": [
+              "bm25(body)"
+            ]
+          },
+          {
+            "name": "popularity",
+            "first_phase": "attribute(popularity)",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "query_boost",
+            "first_phase": "query(boost) * attribute(popularity)",
+            "match_features": [
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "expression",
+            "first_phase": "2 * attribute(popularity) + 3",
+            "match_features": [
+              "attribute(popularity)"
+            ]
+          },
+          {
+            "name": "native_title",
+            "first_phase": "nativeRank(title)",
+            "match_features": [
+              "nativeRank(title)",
+              "nativeFieldMatch(title)",
+              "nativeProximity(title)"
+            ]
+          },
+          {
+            "name": "inspect_all",
+            "first_phase": "bm25(title) + query(boost) * attribute(popularity)",
+            "match_features": [
+              "bm25(title)",
+              "query(boost)",
+              "attribute(popularity)"
+            ]
+          }
+        ]
+      },
+      "documents": [
+        {
+          "id": "id:test:typea::d1",
+          "fields": {
+            "title": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 10
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d2",
+          "fields": {
+            "title": {
+              "text": "fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 5
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d3",
+          "fields": {
+            "title": {
+              "text": "turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox fox fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 2,
+                  "byte_start": 8,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 20
+            }
+          }
+        },
+        {
+          "id": "id:test:typea::d4",
+          "fields": {
+            "title": {
+              "text": "fox turtle",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                },
+                {
+                  "position": 1,
+                  "byte_start": 4,
+                  "byte_len": 6,
+                  "term": "turtle"
+                }
+              ]
+            },
+            "body": {
+              "text": "fox",
+              "analysis": [
+                {
+                  "position": 0,
+                  "byte_start": 0,
+                  "byte_len": 3,
+                  "term": "fox"
+                }
+              ]
+            },
+            "popularity": {
+              "integer": 1
+            }
+          }
+        }
+      ],
+      "operation": {
+        "search": {
+          "query": {
+            "exists": {
+              "field": "popularity"
+            }
+          },
+          "rank_profile": "query_boost",
+          "query_features": [
+            {
+              "name": "boost",
+              "value": 1.0
+            }
+          ],
+          "rank_properties": [
+            {
+              "name": "boost",
+              "value": "2"
+            }
+          ],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "rank_property_collision"
+    }
+  ]
+}

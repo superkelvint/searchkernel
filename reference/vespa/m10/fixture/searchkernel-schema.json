@@ -1,0 +1,1 @@
+{"version":1,"document_type":"typea","fields":[{"name":"title","type":"text","index":true,"attribute":false,"summary":true},{"name":"body","type":"text","index":true,"attribute":false,"summary":true},{"name":"popularity","type":"integer","index":false,"attribute":true,"summary":true}]}

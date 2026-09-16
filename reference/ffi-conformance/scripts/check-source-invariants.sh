@@ -13,9 +13,11 @@ if grep -RInE --include='*.rs' 'searchkernel[_-]vespa' "$src" "$root/core/crates
   fail "Vespa dependency/reference found in searchkernel-ffi"
 fi
 
-# The test-support module is allowed to mention the testkit. Production dispatch is not.
-if grep -RInE --include='*.rs' 'searchkernel_testkit' "$src" | grep -v '/test_support.rs:'; then
-  fail "searchkernel-testkit may only be referenced from feature-gated test_support.rs"
+# Feature-gated test-only modules are allowed to mention the testkit. Production
+# dispatch is not.
+if grep -RInE --include='*.rs' 'searchkernel_testkit' "$src" \
+    | grep -v -E '/(test_support|json_convergence_tests)\.rs:'; then
+  fail "searchkernel-testkit may only be referenced from feature-gated test-only modules"
 fi
 
 # Keep the production ABI tiny even if an implementation accidentally adds no_mangle exports.

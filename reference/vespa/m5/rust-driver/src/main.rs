@@ -126,15 +126,16 @@ fn repeated_reopen(data_dir: &Path, config_dir: &Path, cycles: usize) -> Result<
 
     for cycle in 1..=cycles {
         let mut engine = open(data_dir, config_dir)?;
-        update(&mut engine, REPEAT_DOC, cycle as i32)?;
-        let hits = search(&engine, cycle as i32)?;
+        let value = i64::try_from(cycle)?;
+        update(&mut engine, REPEAT_DOC, value)?;
+        let hits = search(&engine, value)?;
         if hits != [REPEAT_DOC.to_owned()] {
             return Err(format!("cycle {cycle} returned unexpected hits: {hits:?}").into());
         }
     }
 
     let engine = open(data_dir, config_dir)?;
-    let final_hits = search(&engine, cycles as i32)?;
+    let final_hits = search(&engine, i64::try_from(cycles)?)?;
     println!(
         "{{\"scenario\":\"m5-repeated-reopen\",\"cycles\":{},\"final_search\":{}}}",
         cycles,

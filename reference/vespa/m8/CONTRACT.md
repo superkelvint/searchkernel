@@ -19,7 +19,7 @@ local SearchReply
   ↓
 optional local DocumentDB::getDocsums
   ↓
-LocalSearchResult
+SearchResult
 ```
 
 M8 does not reproduce any distributed query dispatch or distributed fill/result-merge layer.
@@ -39,17 +39,17 @@ Value
 SortOrder
 SortField
 SummaryRequest
-LocalSearchRequest
-LocalHit
-LocalSearchResult
-Engine::search_local
+SearchRequest
+Hit
+SearchResult
+Engine::search
 ```
 
 This is a low-level Vespa-facing API, not the C-series product search API.
 
 ## Request semantics
 
-`LocalSearchRequest::new(query)` has these defaults:
+`SearchRequest::new(query)` has these defaults:
 
 ```text
 rank_profile = "default"
@@ -59,7 +59,7 @@ sort         = []
 summary      = SummaryRequest::None
 ```
 
-Builder calls replace/append those values exactly as shown by the frozen API fixture. `rank_profile`, `limit`, `offset`, and `summary` replace the previous setting. Each `sort_by` appends one sort key in call order; M8 does not silently deduplicate sort keys.
+Builder calls replace/append those values exactly as shown by the frozen API fixture. `rank_profile`, `limit`, `offset`, and `summary` replace the previous setting. Each `sort` appends one sort key in call order; M8 does not silently deduplicate sort keys.
 
 ### Query
 
@@ -136,7 +136,7 @@ all fields exist
 all requested user fields have summary=true in M6 schema metadata
 ```
 
-`documentid` is not included in the returned summary map because the public hit already exposes `document_id` separately. Vespa-internal/default summary entries such as `rankfeatures` and `summaryfeatures` are also not exposed by M8; M10 owns explicit feature inspection. `LocalHit.summary` contains only user-declared M6 fields with `summary=true` (or the explicitly requested subset).
+`documentid` is not included in the returned fields map because the public hit already exposes `document_id` separately. Vespa-internal/default summary entries such as `rankfeatures` and `summaryfeatures` are also not exposed by M8; M10 owns explicit feature inspection. `Hit.fields` contains only user-declared M6 fields with `summary=true` (or the explicitly requested subset).
 
 The verifier includes a Text field with:
 
@@ -151,9 +151,9 @@ Returning that field proves the implementation actually wraps Vespa's local docs
 ## Result semantics
 
 ```text
-LocalSearchResult {
+SearchResult {
     hits,
-    total_hit_count,
+    total_hits,
 }
 ```
 
@@ -169,7 +169,7 @@ Each hit exposes the real Vespa document ID corresponding to the returned global
 
 ### Scores
 
-`LocalHit.score` is the real Vespa hit rank/metric from the local `SearchReply`.
+`Hit.score` is the real Vespa hit rank/metric from the local `SearchReply`.
 
 The verifier compares scores by IEEE-754 `f64::to_bits()` representation.
 

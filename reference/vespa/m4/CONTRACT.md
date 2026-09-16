@@ -155,9 +155,9 @@ product ergonomics into the Vespa-facing layer.
 The intended surface is:
 
 ```rust
-TextDocument { id, field, text }
-TextQuery::Term { field, text }
-TextQuery::Phrase { field, text }
+Document::new(id).field(field, text)
+Query::Term { field, text }
+Query::Phrase { field, text }
 Engine::put(Document)
 Engine::update(DocumentUpdate)
 Engine::search(SearchRequest)

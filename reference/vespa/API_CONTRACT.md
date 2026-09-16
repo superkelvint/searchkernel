@@ -163,3 +163,57 @@ Python API
 ```
 
 Do not add one of these merely to complete M0–M2.
+
+---
+
+# M10 additions — ranking integration
+
+M10 extends the generic low-level M-series API. It does not introduce a
+milestone-specific ranking request/result family.
+
+```rust
+use searchkernel_vespa_engine::{Field, FieldType, Query, RankProfile, Schema, SearchRequest};
+
+let schema = Schema::new("typea")
+    .field(Field::new("title", FieldType::Text).indexed().summary())
+    .field(Field::new("popularity", FieldType::Integer).attribute().summary())
+    .rank_profile(
+        RankProfile::new("product")
+            .first_phase("bm25(title) + query(boost) * attribute(popularity)")
+            .match_feature("bm25(title)")
+            .match_feature("query(boost)")
+            .match_feature("attribute(popularity)"),
+    );
+
+let request = SearchRequest::new(Query::term("title", "fox"))
+    .rank_profile("product")
+    .query_feature("boost", 2.0)
+    .rank_property("vespa.matching.numthreadspersearch", "1")
+    .limit(10);
+```
+
+The required new public shape is:
+
+```text
+RankProfile::new(name)
+RankProfile::first_phase(expression)
+RankProfile::match_feature(feature)
+Schema::rank_profile(profile)
+SearchRequest::query_feature(name, finite_f64)
+SearchRequest::rank_property(name, value)
+Hit::match_features: BTreeMap<String, f64>
+```
+
+The expression and feature strings are Vespa ranking syntax. The Rust wrapper
+validates wrapper-owned structural constraints but does not parse or evaluate
+ranking expressions.
+
+`SearchRequest::query_feature` is scalar-only in M10 v1. Tensor query inputs are
+not part of this contract.
+
+The same effective property name may not be supplied through both
+`query_feature` and `rank_property` in one request.
+
+Feature inspection returns scalar native match features. A non-scalar/data
+feature is an explicit unsupported-value error in M10 v1; it is never coerced
+or fabricated.

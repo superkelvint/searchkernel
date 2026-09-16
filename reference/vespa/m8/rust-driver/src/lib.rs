@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, LocalSearchRequest, Query,
-    RangeBound, Schema, SortField, SummaryRequest, TextDocument, Value,
+    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue, Query,
+    RangeBound, ScalarValue, Schema, SearchRequest, SortField, SummaryRequest,
 };
 use serde_json::{json, Map, Value as Json};
 use std::fs;
@@ -41,7 +41,9 @@ pub fn compile_schema(root: &Json, config_dir: &Path) {
         schema = schema.field(field);
     }
     fs::create_dir_all(config_dir).unwrap();
-    ConfigCompiler::default().compile_to(&schema, config_dir).unwrap();
+    ConfigCompiler::default()
+        .compile_to(&schema, config_dir)
+        .unwrap();
 }
 
 pub fn populate(engine: &Engine, root: &Json) {
@@ -56,7 +58,9 @@ pub fn populate(engine: &Engine, root: &Json) {
         for (name, encoded) in fields {
             if let Some(value) = encoded.get("integer").and_then(Json::as_i64) {
                 if created {
-                    engine.update(DocumentUpdate::new(id).assign(name, value)).unwrap();
+                    engine
+                        .update(DocumentUpdate::new(id).assign(name, value))
+                        .unwrap();
                 } else {
                     engine.put(Document::new(id).field(name, value)).unwrap();
                     created = true;
@@ -65,7 +69,7 @@ pub fn populate(engine: &Engine, root: &Json) {
                 if created {
                     panic!("M8 verifier does not mix text and integer fields in one document");
                 }
-                engine.put_text(TextDocument { id, field: name, text }).unwrap();
+                engine.put(Document::new(id).field(name, text)).unwrap();
                 created = true;
             } else {
                 panic!("M8 positive scenarios may contain only integer/text fixture values");
@@ -105,7 +109,9 @@ pub fn query(v: &Json) -> Query {
         };
     }
     if let Some(x) = o.get("exists") {
-        return Query::Exists { field: x["field"].as_str().unwrap().into() };
+        return Query::Exists {
+            field: x["field"].as_str().unwrap().into(),
+        };
     }
     panic!("unsupported M8 verifier query: {v}");
 }
@@ -116,54 +122,82 @@ fn summary(v: Option<&Json>) -> SummaryRequest {
         Some(Json::String(s)) if s == "none" => SummaryRequest::None,
         Some(Json::String(s)) if s == "default" => SummaryRequest::Default,
         Some(Json::Object(o)) if o.contains_key("fields") => SummaryRequest::Fields(
-            o["fields"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
+            o["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_string())
+                .collect(),
         ),
         Some(v) => panic!("invalid summary request: {v}"),
     }
 }
 
-pub fn request(v: &Json) -> LocalSearchRequest {
-    let mut out = LocalSearchRequest::new(query(&v["query"]));
-    if let Some(rank) = v.get("rank_profile").and_then(Json::as_str) { out = out.rank_profile(rank); }
-    if let Some(limit) = v.get("limit").and_then(Json::as_u64) { out = out.limit(u32::try_from(limit).unwrap()); }
-    if let Some(offset) = v.get("offset").and_then(Json::as_u64) { out = out.offset(u32::try_from(offset).unwrap()); }
+pub fn request(v: &Json) -> SearchRequest {
+    let mut out = SearchRequest::new(query(&v["query"]));
+    if let Some(rank) = v.get("rank_profile").and_then(Json::as_str) {
+        out = out.rank_profile(rank);
+    }
+    if let Some(limit) = v.get("limit").and_then(Json::as_u64) {
+        out = out.limit(u32::try_from(limit).unwrap());
+    }
+    if let Some(offset) = v.get("offset").and_then(Json::as_u64) {
+        out = out.offset(u32::try_from(offset).unwrap());
+    }
     for s in v.get("sort").and_then(Json::as_array).into_iter().flatten() {
-        let field=s["field"].as_str().unwrap();
+        let field = s["field"].as_str().unwrap();
         out = match s["order"].as_str().unwrap() {
-            "ascending" => out.sort_by(SortField::ascending(field)),
-            "descending" => out.sort_by(SortField::descending(field)),
+            "ascending" => out.sort(SortField::ascending(field)),
+            "descending" => out.sort(SortField::descending(field)),
             other => panic!("invalid sort order {other}"),
         };
     }
     out.summary(summary(v.get("summary")))
 }
 
-fn value(v: &Value) -> Json {
+fn value(v: &FieldValue) -> Json {
     match v {
-        Value::String(x) => json!({"type":"string","value":x}),
-        Value::Integer(x) => json!({"type":"integer","value":x}),
-        Value::Float(x) => json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())}),
-        Value::Boolean(x) => json!({"type":"boolean","value":x}),
+        FieldValue::Scalar(ScalarValue::String(x)) => json!({"type":"string","value":x}),
+        FieldValue::Scalar(ScalarValue::Integer(x)) => json!({"type":"integer","value":x}),
+        FieldValue::Scalar(ScalarValue::Float(x)) => {
+            json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())})
+        }
+        FieldValue::Scalar(ScalarValue::Boolean(x)) => json!({"type":"boolean","value":x}),
+        FieldValue::Array(_) => panic!("M8 summaries do not contain arrays"),
     }
 }
 
-pub fn result_json(id: &str, result: searchkernel_vespa_engine::LocalSearchResult) -> Json {
-    let hits = result.hits.into_iter().map(|h| {
-        let summary: Map<String,Json> = h.summary.iter().map(|(k,v)|(k.clone(),value(v))).collect();
-        json!({
-            "document_id":h.document_id,
-            "score_bits":format!("0x{:016x}",h.score.to_bits()),
-            "summary":summary,
+pub fn result_json(id: &str, result: searchkernel_vespa_engine::SearchResult) -> Json {
+    let hits = result
+        .hits
+        .into_iter()
+        .map(|h| {
+            let summary: Map<String, Json> = h
+                .fields
+                .iter()
+                .map(|(k, v)| (k.clone(), value(v)))
+                .collect();
+            json!({
+                "document_id":h.document_id,
+                "score_bits":format!("0x{:016x}",h.score.to_bits()),
+                "summary":summary,
+            })
         })
-    }).collect::<Vec<_>>();
-    json!({"id":id,"total_hit_count":result.total_hit_count,"hits":hits})
+        .collect::<Vec<_>>();
+    json!({"id":id,"total_hit_count":result.total_hits,"hits":hits})
 }
 
 pub fn classify_error(e: &searchkernel_vespa_engine::Error) -> &'static str {
-    let m=e.to_string().to_ascii_lowercase();
-    if m.contains("unknown") || m.contains("does not exist") { "unknown_field" }
-    else if m.contains("summary") && (m.contains("empty") || m.contains("duplicate")) { "invalid_request" }
-    else if m.contains("unsupported") || m.contains("not supported") || m.contains("field type") { "unsupported_field_type" }
-    else if m.contains("attribute") || m.contains("summary") || m.contains("capability") { "wrong_field_capability" }
-    else { "invalid_request" }
+    let m = e.to_string().to_ascii_lowercase();
+    if m.contains("unknown") || m.contains("does not exist") {
+        "unknown_field"
+    } else if m.contains("summary") && (m.contains("empty") || m.contains("duplicate")) {
+        "invalid_request"
+    } else if m.contains("unsupported") || m.contains("not supported") || m.contains("field type") {
+        "unsupported_field_type"
+    } else if m.contains("attribute") || m.contains("summary") || m.contains("capability") {
+        "wrong_field_capability"
+    } else {
+        "invalid_request"
+    }
 }

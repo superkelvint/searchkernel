@@ -128,11 +128,11 @@ does not contain the YQL source selector, so this method is an expression
 projection rather than a complete source-aware YQL query. It has no schema
 against which to validate a named source.
 
-`Engine::search_query()` performs field-aware validation and native compilation.
-`Engine::search_yql()` parses the complete YQL statement, validates its source
+`Engine::search(SearchRequest)` performs field-aware validation and native compilation.
+`Query::from_yql()` parses the complete YQL statement, validates its source
 selector against the engine's configured document type, and lowers the
-resulting expression through the same path as `search_query()`. It is
-equivalent to `Query::from_yql()` followed by `search_query()` for the query
+resulting expression through the same path as `search()`. It is
+equivalent to `Query::from_yql()` followed by `search()` for the query
 expression and for `sources *` (and the configured document type), but the
 source-validation step is intentionally retained for named sources.
 

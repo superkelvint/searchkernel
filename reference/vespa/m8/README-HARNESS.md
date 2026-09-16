@@ -74,6 +74,6 @@ The scenarios are intentionally not interchangeable smoke tests:
 
 ## Frozen design choices
 
-M8 does not extend the M7 YQL grammar with `ORDER BY`, `LIMIT`, projection, or summaries. A caller may use `Query::from_yql()` for the already-frozen M7 subset and then place the resulting `Query` in `LocalSearchRequest`; request controls remain typed M8 fields.
+M8 does not extend the M7 YQL grammar with `ORDER BY`, `LIMIT`, projection, or summaries. A caller may use `Query::from_yql()` for the already-frozen M7 subset and then place the resulting `Query` in `SearchRequest`; request controls remain typed M8 fields.
 
 M8 supports sorting on Integer attributes only. String/Float sorting is intentionally deferred to M9.
