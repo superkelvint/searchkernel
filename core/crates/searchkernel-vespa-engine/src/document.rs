@@ -329,7 +329,8 @@ impl DocumentUpdate {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArrayValue, Document, FieldValue, ScalarValue};
+    use super::{ArrayValue, Document, DocumentUpdate, FieldUpdate, FieldValue, ScalarValue};
+    use crate::{DocumentAnalysis, DocumentTerm};
 
     #[test]
     fn builder_converts_scalars_and_homogeneous_arrays() {
@@ -346,5 +347,124 @@ mod tests {
             document.fields()["tags"],
             FieldValue::Array(ArrayValue::Strings(vec!["audio".into(), "wireless".into()]))
         );
+    }
+
+    #[test]
+    fn conversions_cover_all_scalar_and_array_shapes() {
+        assert_eq!(
+            ScalarValue::from(String::from("owned")),
+            ScalarValue::String("owned".into())
+        );
+        assert_eq!(
+            ScalarValue::from("borrowed"),
+            ScalarValue::String("borrowed".into())
+        );
+        assert_eq!(ScalarValue::from(-7_i64), ScalarValue::Integer(-7));
+        assert_eq!(ScalarValue::from(-3_i32), ScalarValue::Integer(-3));
+        assert_eq!(ScalarValue::from(2.5_f64), ScalarValue::Float(2.5));
+        assert_eq!(ScalarValue::from(1.25_f32), ScalarValue::Float(1.25));
+        assert_eq!(ScalarValue::from(true), ScalarValue::Boolean(true));
+
+        assert_eq!(
+            ArrayValue::from(vec!["one".to_owned(), "two".to_owned()]),
+            ArrayValue::Strings(vec!["one".into(), "two".into()])
+        );
+        assert_eq!(
+            ArrayValue::from(vec![1_i64, 2]),
+            ArrayValue::Integers(vec![1, 2])
+        );
+        assert_eq!(
+            ArrayValue::from(vec![1.5_f64, 2.5]),
+            ArrayValue::Floats(vec![1.5, 2.5])
+        );
+        assert_eq!(
+            ArrayValue::from(vec![true, false]),
+            ArrayValue::Booleans(vec![true, false])
+        );
+
+        let integer_slice = [4_i32, 5_i32];
+        let document = Document::new("all-shapes")
+            .field("string", String::from("value"))
+            .field("integer", -8_i32)
+            .field("float", 3.25_f32)
+            .field("boolean", false)
+            .field("strings", vec!["a".to_owned(), "b".to_owned()])
+            .field("integers", vec![10_i64, 11])
+            .field("floats", vec![4.5_f64, 5.5])
+            .field("booleans", vec![true, false])
+            .field("empty", Vec::<i64>::new())
+            .field("slice", &integer_slice[..])
+            .field("array", [true, false])
+            .field("explicit", FieldValue::from(vec!["x".to_owned()]));
+
+        assert_eq!(
+            document.fields()["string"],
+            FieldValue::Scalar(ScalarValue::String("value".into()))
+        );
+        assert_eq!(
+            document.fields()["integer"],
+            FieldValue::Scalar(ScalarValue::Integer(-8))
+        );
+        assert_eq!(
+            document.fields()["float"],
+            FieldValue::Scalar(ScalarValue::Float(3.25))
+        );
+        assert_eq!(
+            document.fields()["boolean"],
+            FieldValue::Scalar(ScalarValue::Boolean(false))
+        );
+        assert_eq!(
+            document.fields()["integers"],
+            FieldValue::Array(ArrayValue::Integers(vec![10, 11]))
+        );
+        assert_eq!(
+            document.fields()["floats"],
+            FieldValue::Array(ArrayValue::Floats(vec![4.5, 5.5]))
+        );
+        assert_eq!(
+            document.fields()["booleans"],
+            FieldValue::Array(ArrayValue::Booleans(vec![true, false]))
+        );
+        assert_eq!(
+            document.fields()["empty"],
+            FieldValue::Array(ArrayValue::Strings(Vec::new()))
+        );
+        assert_eq!(
+            document.fields()["slice"],
+            FieldValue::Array(ArrayValue::Integers(vec![4, 5]))
+        );
+        assert_eq!(
+            document.fields()["array"],
+            FieldValue::Array(ArrayValue::Booleans(vec![true, false]))
+        );
+    }
+
+    #[test]
+    fn document_and_update_annotations_preserve_their_entries() {
+        let analysis = DocumentAnalysis {
+            terms: vec![DocumentTerm {
+                original: "Running".into(),
+                term: "run".into(),
+                byte_start: 0,
+                byte_len: 7,
+                position: 1,
+            }],
+        };
+        let document = Document::new("annotated")
+            .field("title", "Running")
+            .annotate_text("title", analysis.clone());
+        assert_eq!(document.text_analysis()["title"], analysis);
+
+        let update = DocumentUpdate::new("annotated")
+            .assign("title", "Running")
+            .clear("obsolete")
+            .annotate_text("title", analysis.clone());
+        assert_eq!(update.id(), "annotated");
+        assert_eq!(
+            update.fields()["title"],
+            FieldUpdate::Assign(FieldValue::Scalar(ScalarValue::String("Running".into())))
+        );
+        assert_eq!(update.fields()["obsolete"], FieldUpdate::Clear);
+        assert_eq!(update.text_analysis()["title"], analysis);
     }
 }

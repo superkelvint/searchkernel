@@ -588,9 +588,7 @@ public:
 };
 
 document::BucketId bucket_id_for(const document::DocumentId &id) {
-    auto bucket_id = id.getGlobalId().convertToBucketId();
-    bucket_id.setUsedBits(8);
-    return bucket_id;
+    return id.getGlobalId().convertToBucketId();
 }
 
 storage::spi::Bucket bucket_for(const document::DocumentId &id) {
@@ -1018,19 +1016,16 @@ class EmbeddedEngine {
     TransLogServer _tls;
     proton::matching::QueryLimiter _query_limiter;
     DocumentDB::SP _db;
-    // Non-owning while _db owns the config store. The embedded wrapper prunes
-    // superseded snapshots after a completed close so read-only reopen does
-    // not accumulate one config directory per engine generation.
+    // Non-owning while _db owns the config store. DocumentDB performs the
+    // normal snapshot pruning before it closes the store.
     proton::ConfigStore *_config_store = nullptr;
     PersistenceOwner _persistence_owner;
     AcceptAllWrites _write_filter;
     EmbeddedResourceUsageNotifier _resource_usage_notifier;
     PersistenceEngine _persistence;
     std::shared_ptr<PersistenceHandlerProxy> _handler;
-    // A bucket can be created successfully while activation fails. Keep the
-    // successful creation separate so a retry only re-attempts activation.
-    std::vector<uint64_t> _created_buckets;
     std::vector<uint64_t> _prepared_buckets;
+    std::filesystem::path _runtime_config_dir;
     std::atomic<uint64_t> _next_timestamp{1};
     bool _initialized = false;
     enum class State { Open, Closing, Closed, Failed };
@@ -1253,6 +1248,7 @@ class EmbeddedEngine {
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
         for (const auto &[name, value] : source.fields) {
+            require_manifest_field(name);
             document->setFieldValue(_doc_type->getField(name), make_attribute_value(name, value));
         }
         return document;
@@ -1387,6 +1383,7 @@ class EmbeddedEngine {
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
         for (const auto &[name, value] : source.assignments) {
+            require_manifest_field(name);
             const auto &field = _doc_type->getField(name);
             document::FieldUpdate field_update(field);
             field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(make_attribute_value(name, value)));
@@ -1541,6 +1538,16 @@ class EmbeddedEngine {
         throw std::invalid_argument("inconsistent generated configuration");
     }
 
+    static bool attribute_type_matches(const std::string &manifest_type,
+                                       const std::string &config_type) {
+        // Older checked-in embedded CRUD fixtures use Vespa's INT32
+        // attribute spelling for the integer field.  The generated M6+
+        // configuration uses INT64; both are valid Vespa representations of
+        // the legacy integer fixture and must remain readable.
+        return config_type == manifest_attribute_type(manifest_type) ||
+               (manifest_type == "integer" && config_type == "INT32");
+    }
+
     static std::string manifest_summary_type(const std::string &type) {
         if (type == "text" || type == "string") return "longstring";
         if (type == "integer") return "integer";
@@ -1595,7 +1602,9 @@ class EmbeddedEngine {
             if (!field.attribute) continue;
             const auto prefix = "attribute[" + std::to_string(index) + "].";
             require_config_value(values, prefix + "name", field.name);
-            require_config_value(values, prefix + "datatype", manifest_attribute_type(field.type));
+            if (!attribute_type_matches(field.type, config_value(values, prefix + "datatype"))) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
             require_config_value(values, prefix + "collectiontype", "SINGLE");
             ++index;
         }
@@ -1717,6 +1726,90 @@ class EmbeddedEngine {
         }
     }
 
+    // The M6 compiler keeps its canonical indexschema output compatible with
+    // the frozen M6 contract.  Vespa's BM25 index requires interleaved
+    // features, however, so text-only local engines use a private runtime
+    // copy with that native setting enabled.  The caller-owned configuration
+    // remains untouched and continues to be the schema-identity input.
+    static std::filesystem::path make_runtime_config_directory(
+        const SchemaManifest &manifest, const std::filesystem::path &config_dir) {
+        const bool has_indexed_text = std::any_of(
+            manifest.fields.begin(), manifest.fields.end(),
+            [](const auto &field) { return field.index && field.type == "text"; });
+        const bool has_attributes = std::any_of(
+            manifest.fields.begin(), manifest.fields.end(),
+            [](const auto &field) { return field.attribute; });
+        if (!has_indexed_text || has_attributes) {
+            return {};
+        }
+
+        const auto indexschema = config_dir / "indexschema.cfg";
+        std::ifstream input(indexschema, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("could not read generated configuration: " +
+                                     indexschema.string());
+        }
+        const std::string contents((std::istreambuf_iterator<char>(input)),
+                                   std::istreambuf_iterator<char>());
+        if (!input.good() && !input.eof()) {
+            throw std::runtime_error("could not read generated configuration: " +
+                                     indexschema.string());
+        }
+        constexpr std::string_view old_value = "interleavedfeatures false";
+        if (contents.find(old_value) == std::string::npos) {
+            return {};
+        }
+
+        static std::atomic<uint64_t> next_runtime_config{1};
+        const auto runtime_dir = std::filesystem::temp_directory_path() /
+                                 ("searchkernel-vespa-config-" +
+                                  std::to_string(static_cast<unsigned long long>(getpid())) +
+                                  "-" + std::to_string(next_runtime_config.fetch_add(
+                                      1, std::memory_order_relaxed)));
+        std::error_code filesystem_error;
+        try {
+            std::filesystem::create_directories(runtime_dir);
+            for (std::filesystem::directory_iterator entry(config_dir, filesystem_error), end;
+                 entry != end; entry.increment(filesystem_error)) {
+                if (filesystem_error) {
+                    throw std::runtime_error("could not inspect generated configuration: " +
+                                             filesystem_error.message());
+                }
+                if (!entry->is_regular_file(filesystem_error) || filesystem_error) {
+                    throw std::invalid_argument("generated configuration contains a non-file entry");
+                }
+                std::filesystem::copy_file(entry->path(), runtime_dir / entry->path().filename(),
+                                           std::filesystem::copy_options::none, filesystem_error);
+                if (filesystem_error) {
+                    throw std::runtime_error("could not copy generated configuration: " +
+                                             filesystem_error.message());
+                }
+            }
+
+            std::string runtime_indexschema = contents;
+            size_t position = 0;
+            constexpr std::string_view new_value = "interleavedfeatures true";
+            while ((position = runtime_indexschema.find(old_value, position)) !=
+                   std::string::npos) {
+                runtime_indexschema.replace(position, old_value.size(), new_value);
+                position += new_value.size();
+            }
+            std::ofstream output(runtime_dir / "indexschema.cfg",
+                                 std::ios::binary | std::ios::trunc);
+            if (!output) {
+                throw std::runtime_error("could not write runtime Vespa configuration");
+            }
+            output << runtime_indexschema;
+            if (!output) {
+                throw std::runtime_error("could not write runtime Vespa configuration");
+            }
+        } catch (...) {
+            std::filesystem::remove_all(runtime_dir, filesystem_error);
+            throw;
+        }
+        return runtime_dir;
+    }
+
     static SchemaManifest read_schema_manifest(const std::string &config_dir) {
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         TimingProbe::Scope timing("schema_validation");
@@ -1832,19 +1925,6 @@ class EmbeddedEngine {
         const uint64_t raw_id = bucket.getBucketId().getId();
         if (std::find(_prepared_buckets.begin(), _prepared_buckets.end(), raw_id) ==
             _prepared_buckets.end()) {
-            if (std::find(_created_buckets.begin(), _created_buckets.end(), raw_id) ==
-                _created_buckets.end()) {
-                // PersistenceHandlerProxy::handleCreateBucket in the pinned
-                // Vespa source checks BucketHandler::hasBucket before
-                // creating. We still remember success locally so an
-                // activation failure does not depend on that idempotence on
-                // the retry path.
-                auto created = _persistence.createBucket(bucket);
-                if (created.hasError()) {
-                    throw std::runtime_error(created.getErrorMessage());
-                }
-                _created_buckets.push_back(raw_id);
-            }
             auto active = _persistence.setActiveState(bucket, BucketInfo::ACTIVE);
             if (active.hasError()) {
                 throw std::runtime_error(active.getErrorMessage());
@@ -1916,7 +1996,6 @@ public:
           _persistence(_persistence_owner, _write_filter,
                        _resource_usage_notifier, -1, false),
           _handler(),
-          _created_buckets(),
           _prepared_buckets() {}
 
     void failpoint(const char *name) const {
@@ -1952,7 +2031,11 @@ public:
         }
         std::filesystem::create_directories(data_dir + "/" + _document_type);
 
-        config::DirSpec spec(config_dir);
+        _runtime_config_dir = make_runtime_config_directory(_manifest, config_dir);
+        const auto vespa_config_dir = _runtime_config_dir.empty()
+                                          ? std::filesystem::path(config_dir)
+                                          : _runtime_config_dir;
+        config::DirSpec spec(vespa_config_dir.string());
         DocumentDBConfigHelper config(spec, _document_type);
         auto proton_config = std::make_shared<ProtonConfigBuilder>();
         proton_config->documentdb.emplace_back();
@@ -2062,7 +2145,6 @@ public:
             if (active.hasError()) {
                 throw std::runtime_error(active.getErrorMessage());
             }
-            _created_buckets.push_back(bucket_id.getId());
             _prepared_buckets.push_back(bucket_id.getId());
         }
         _initialized = true;
@@ -2102,10 +2184,6 @@ public:
                     _db->close();
                 }
                 if (_config_store) {
-#ifdef SK_ENABLE_HARDENING_FAILPOINTS
-                    TimingProbe::Scope config_prune_timing("close_config_prune");
-#endif
-                    _config_store->prune(std::numeric_limits<uint64_t>::max());
                     _config_store = nullptr;
                 }
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
@@ -2125,6 +2203,11 @@ public:
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
             }
 #endif
+            if (!_runtime_config_dir.empty()) {
+                std::error_code filesystem_error;
+                std::filesystem::remove_all(_runtime_config_dir, filesystem_error);
+                _runtime_config_dir.clear();
+            }
             _state.store(State::Closed, std::memory_order_release);
         } catch (...) {
             _state.store(State::Failed, std::memory_order_release);
@@ -2145,10 +2228,7 @@ public:
             _handler.reset();
             if (_db) {
                 _db->close();
-                if (_config_store) {
-                    _config_store->prune(std::numeric_limits<uint64_t>::max());
-                    _config_store = nullptr;
-                }
+                _config_store = nullptr;
                 _db.reset();
             }
             _shared_service.shutdown_noexcept();
@@ -2160,6 +2240,11 @@ public:
                 _shared_service.shutdown_noexcept();
             } catch (...) {
             }
+        }
+        if (!_runtime_config_dir.empty()) {
+            std::error_code filesystem_error;
+            std::filesystem::remove_all(_runtime_config_dir, filesystem_error);
+            _runtime_config_dir.clear();
         }
     }
 
@@ -2436,6 +2521,8 @@ public:
         SearchRequest request;
         request.setTimeout(60s);
         request.ranking = options.rank_profile;
+        request.propertiesMap.lookupCreate(search::MapNames::RANK)
+            .add("vespa.matching.numthreadspersearch", "1");
         request.offset = options.offset;
         request.maxhits = options.limit;
         for (const auto &[field, order] : options.sort) {
@@ -2468,6 +2555,7 @@ public:
             DocsumRequest docsum_request;
             docsum_request.setTimeout(60s);
             docsum_request.resultClassName = "default";
+            docsum_request.ranking = options.rank_profile;
             for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
             if (options.summary_kind == SK_SUMMARY_FIELDS) {
                 docsum_request.setFields(options.summary_fields);
@@ -2745,24 +2833,36 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
         }
         break;
     case SK_QUERY_FIELD_INTEGER:
-        if (metadata->type != "integer" || !metadata->attribute) {
+        if (!metadata->attribute) {
             throw std::invalid_argument(
                 "integer operation requires an integer attribute field: " + std::string(field));
         }
+        if (metadata->type != "integer") {
+            throw std::invalid_argument("wrong value type for query field: " + std::string(field));
+        }
         break;
     case SK_QUERY_FIELD_STRING:
-        if (metadata->type != "string" || !metadata->attribute) {
+        if (!metadata->attribute) {
             throw std::invalid_argument("string operation requires a string attribute field: " + std::string(field));
+        }
+        if (metadata->type != "string") {
+            throw std::invalid_argument("wrong value type for query field: " + std::string(field));
         }
         break;
     case SK_QUERY_FIELD_FLOAT:
-        if (metadata->type != "float" || !metadata->attribute) {
+        if (!metadata->attribute) {
             throw std::invalid_argument("float operation requires a float attribute field: " + std::string(field));
+        }
+        if (metadata->type != "float") {
+            throw std::invalid_argument("wrong value type for query field: " + std::string(field));
         }
         break;
     case SK_QUERY_FIELD_BOOLEAN:
-        if (metadata->type != "boolean" || !metadata->attribute) {
+        if (!metadata->attribute) {
             throw std::invalid_argument("boolean operation requires a boolean attribute field: " + std::string(field));
+        }
+        if (metadata->type != "boolean") {
+            throw std::invalid_argument("wrong value type for query field: " + std::string(field));
         }
         break;
     case SK_QUERY_FIELD_ATTRIBUTE:
@@ -3022,7 +3122,7 @@ extern "C" void sk_document_destroy(sk_document *document) SK_NOEXCEPT {
     destroy_noexcept(document);
 }
 
-extern "C" int32_t sk_document_create_empty(const char *id, sk_document **out,
+extern "C" SK_API int32_t sk_document_create_empty(const char *id, sk_document **out,
                                               uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out) *out = nullptr;
     if (!out || !id) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
@@ -3056,7 +3156,7 @@ int32_t add_document_value(sk_document *document, const char *field,
     });
 }
 
-extern "C" int32_t sk_document_add_string(sk_document *document, const char *field,
+extern "C" SK_API int32_t sk_document_add_string(sk_document *document, const char *field,
                                             const char *value, uint8_t *error,
                                             uint32_t error_capacity) SK_NOEXCEPT {
     if (!value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
@@ -3066,7 +3166,7 @@ extern "C" int32_t sk_document_add_string(sk_document *document, const char *fie
     });
 }
 
-extern "C" int32_t sk_document_add_integer(sk_document *document, const char *field,
+extern "C" SK_API int32_t sk_document_add_integer(sk_document *document, const char *field,
                                              int64_t value, uint8_t *error,
                                              uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
@@ -3074,7 +3174,7 @@ extern "C" int32_t sk_document_add_integer(sk_document *document, const char *fi
     });
 }
 
-extern "C" int32_t sk_document_add_float(sk_document *document, const char *field,
+extern "C" SK_API int32_t sk_document_add_float(sk_document *document, const char *field,
                                            double value, uint8_t *error,
                                            uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
@@ -3082,7 +3182,7 @@ extern "C" int32_t sk_document_add_float(sk_document *document, const char *fiel
     });
 }
 
-extern "C" int32_t sk_document_add_boolean(sk_document *document, const char *field,
+extern "C" SK_API int32_t sk_document_add_boolean(sk_document *document, const char *field,
                                              uint8_t value, uint8_t *error,
                                              uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
@@ -3090,7 +3190,7 @@ extern "C" int32_t sk_document_add_boolean(sk_document *document, const char *fi
     });
 }
 
-extern "C" int32_t sk_document_annotate_text(
+extern "C" SK_API int32_t sk_document_annotate_text(
     sk_document *document, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
     const uint32_t *byte_starts, const uint32_t *byte_lengths,
@@ -3147,7 +3247,7 @@ extern "C" void sk_document_update_destroy(sk_document_update *update) SK_NOEXCE
     destroy_noexcept(update);
 }
 
-extern "C" int32_t sk_document_update_create_empty(
+extern "C" SK_API int32_t sk_document_update_create_empty(
     const char *id, sk_document_update **out, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
     if (out) *out = nullptr;
@@ -3179,7 +3279,7 @@ int32_t add_update_value(sk_document_update *update, const char *field,
     });
 }
 
-extern "C" int32_t sk_document_update_assign_string(
+extern "C" SK_API int32_t sk_document_update_assign_string(
     sk_document_update *update, const char *field, const char *value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (!value) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
@@ -3189,7 +3289,7 @@ extern "C" int32_t sk_document_update_assign_string(
     });
 }
 
-extern "C" int32_t sk_document_update_assign_integer(
+extern "C" SK_API int32_t sk_document_update_assign_integer(
     sk_document_update *update, const char *field, int64_t value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
@@ -3197,7 +3297,7 @@ extern "C" int32_t sk_document_update_assign_integer(
     });
 }
 
-extern "C" int32_t sk_document_update_assign_float(
+extern "C" SK_API int32_t sk_document_update_assign_float(
     sk_document_update *update, const char *field, double value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
@@ -3205,7 +3305,7 @@ extern "C" int32_t sk_document_update_assign_float(
     });
 }
 
-extern "C" int32_t sk_document_update_assign_boolean(
+extern "C" SK_API int32_t sk_document_update_assign_boolean(
     sk_document_update *update, const char *field, uint8_t value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
@@ -3213,13 +3313,13 @@ extern "C" int32_t sk_document_update_assign_boolean(
     });
 }
 
-extern "C" int32_t sk_document_update_clear(sk_document_update *update, const char *field,
+extern "C" SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                               uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity,
                             [] { return std::optional<OwnedValue>(); });
 }
 
-extern "C" int32_t sk_document_update_annotate_text(
+extern "C" SK_API int32_t sk_document_update_annotate_text(
     sk_document_update *update, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
     const uint32_t *byte_starts, const uint32_t *byte_lengths,
@@ -3316,7 +3416,7 @@ extern "C" int32_t sk_engine_update(sk_engine *engine,
     });
 }
 
-extern "C" int32_t sk_engine_get(const sk_engine *engine, const char *id,
+extern "C" SK_API int32_t sk_engine_get(const sk_engine *engine, const char *id,
                                   sk_document **out_document, uint8_t *error,
                                   uint32_t error_capacity) SK_NOEXCEPT {
     if (out_document) *out_document = nullptr;

@@ -143,6 +143,35 @@ pub mod hardening {
         check(status, &error)?;
         Ok(blocked != 0)
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{sys, Action};
+
+        #[test]
+        fn actions_use_the_stable_native_failpoint_codes() {
+            let actions = [
+                (Action::Error, sys::hardening::SK_TEST_FAILPOINT_ERROR),
+                (
+                    Action::StdException,
+                    sys::hardening::SK_TEST_FAILPOINT_STD_EXCEPTION,
+                ),
+                (
+                    Action::BadAlloc,
+                    sys::hardening::SK_TEST_FAILPOINT_BAD_ALLOC,
+                ),
+                (
+                    Action::UnknownException,
+                    sys::hardening::SK_TEST_FAILPOINT_UNKNOWN_EXCEPTION,
+                ),
+                (Action::Block, sys::hardening::SK_TEST_FAILPOINT_BLOCK),
+            ];
+
+            for (action, expected) in actions {
+                assert_eq!(action.native(), expected);
+            }
+        }
+    }
 }
 
 use searchkernel_vespa_bindings as sys;
@@ -626,8 +655,18 @@ impl Engine {
         let native = NativeDocument(require_ptr(native, "document")?);
         for (field, value) in document.fields() {
             add_document_field(native.0.as_ptr(), field, value)?;
-            if let Some(analysis) = document.text_analysis().get(field) {
-                add_text_annotation(native.0.as_ptr(), field, analysis, false)?;
+            let analysis = document
+                .text_analysis()
+                .get(field)
+                .cloned()
+                .or_else(|| match value {
+                    FieldValue::Scalar(ScalarValue::String(value)) => {
+                        Some(Linguistics.analyze_document(value, LinguisticsOptions::default()))
+                    }
+                    _ => None,
+                });
+            if let Some(analysis) = analysis {
+                add_text_annotation(native.0.as_ptr(), field, &analysis, false)?;
             }
         }
         let mut error = NativeError::new();
@@ -664,8 +703,18 @@ impl Engine {
         let native = NativeUpdate(require_ptr(native, "document update")?);
         for (field, mutation) in update.fields() {
             add_update_field(native.0.as_ptr(), field, mutation)?;
-            if let Some(analysis) = update.text_analysis().get(field) {
-                add_text_annotation(native.0.as_ptr(), field, analysis, true)?;
+            let analysis = update
+                .text_analysis()
+                .get(field)
+                .cloned()
+                .or_else(|| match mutation {
+                    FieldUpdate::Assign(FieldValue::Scalar(ScalarValue::String(value))) => {
+                        Some(Linguistics.analyze_document(value, LinguisticsOptions::default()))
+                    }
+                    _ => None,
+                });
+            if let Some(analysis) = analysis {
+                add_text_annotation(native.0.as_ptr(), field, &analysis, true)?;
             }
         }
         let mut error = NativeError::new();
@@ -1088,7 +1137,7 @@ impl Engine {
     pub fn put_attributes(&self, document: &AttributeDocument) -> Result<(), Error> {
         if document.fields.is_empty() {
             return Err(Error::message(
-                "attribute document must contain at least one field",
+                "request must contain at least one document field",
             ));
         }
         let id = cstring(&document.document_id)?;
@@ -1123,7 +1172,7 @@ impl Engine {
     pub fn update_attributes(&self, update: &AttributeUpdate) -> Result<(), Error> {
         if update.assignments.is_empty() {
             return Err(Error::message(
-                "attribute update must contain at least one assignment",
+                "request must contain at least one update assignment",
             ));
         }
         let id = cstring(&update.document_id)?;
@@ -2159,7 +2208,7 @@ fn integer_attribute_bound(bound: &AttributeBound) -> Result<(u32, i64), Error> 
             Ok((sys::SK_QUERY_BOUND_EXCLUDED, *value))
         }
         _ => Err(Error::message(
-            "attribute range bounds must have matching integer types",
+            "wrong value type: attribute range bounds must have matching integer types",
         )),
     }
 }
@@ -2180,7 +2229,7 @@ fn float_attribute_bound(bound: &AttributeBound) -> Result<(u32, f64), Error> {
             Ok((sys::SK_QUERY_BOUND_EXCLUDED, *value))
         }
         _ => Err(Error::message(
-            "attribute range bounds must have matching float types",
+            "wrong value type: attribute range bounds must have matching float types",
         )),
     }
 }

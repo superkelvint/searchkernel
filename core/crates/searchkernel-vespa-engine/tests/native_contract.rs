@@ -146,7 +146,7 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "attributes.cfg",
-            "attribute[0].datatype LONG",
+            "attribute[0].datatype INT64",
             "attribute[0].datatype DOUBLE",
         ),
         (
