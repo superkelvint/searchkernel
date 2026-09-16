@@ -1,9 +1,10 @@
-# M11 — Low-Level Wrapper Hardening
+# M11 v2 — Full-Surface Wrapper Hardening
 
-M11 hardens the standalone `searchkernel-vespa-engine` wrapper and the current M0–M7
-native surface. It adds no search semantics and has no dependency on the
-C-series. M8–M10 are not present in this checkout and are intentionally not
-recreated here.
+M11 hardens the standalone `searchkernel-vespa-engine` wrapper across the
+complete M0–M10 native surface: sorting, document summaries, results, grouping,
+facets, attribute mutation, and ranking. The same torture workload also runs
+through the real `searchkernel-ir-adapter` and production C5 FFI lifecycle and
+call entry points. M11 adds no search semantics.
 
 The safety contract is:
 
@@ -25,5 +26,7 @@ and 4 MiB of YQL input. Existing text, identifier, term, occurrence, and
 search limits remain authoritative.
 
 Acceptance uses the real pinned Vespa engine, the safe Rust wrapper, and the
-instrumented native adapter. It does not use a mock search backend or a second
-semantic search oracle.
+instrumented native adapter, the real IR adapter, and production FFI symbols.
+The driver contains only a deterministic state model and wire builders; it does
+not use a mock search backend or a second semantic search oracle. Failpoints are
+test-SDK-only and are never part of the production SDK.

@@ -1,0 +1,1 @@
+{"id":"m11-c5","abi":"production-c5","lifecycle":["create","open","close"],"operations":["insert","search","get","delete"],"buffer_release":true,"malformed_and_status_paths":true}

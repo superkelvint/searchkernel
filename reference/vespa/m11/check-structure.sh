@@ -10,9 +10,14 @@ fail() { echo "M11 structural check: $*" >&2; bad=1; }
 
 if rg -n --glob '*.rs' --glob '*.toml' \
     'searchkernel-ir|searchkernel_ir|searchkernel-testkit|searchkernel_testkit|searchkernel-ffi|searchkernel_ffi' \
-    "$M11/rust-driver" "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" \
+    "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" \
     "$ROOT/core/crates/searchkernel-vespa-engine/Cargo.toml" "$ROOT/core/crates/searchkernel-vespa-bindings/Cargo.toml"; then
-  fail "forbidden M-series or C-series dependency"
+  fail "forbidden IR/testkit/FFI dependency escaped the native engine boundary"
+fi
+
+if rg -n --glob '*.rs' --glob '*.toml' \
+    'searchkernel-testkit|searchkernel_testkit' "$M11/rust-driver"; then
+  fail "M11 driver uses a testkit or alternate backend"
 fi
 
 if rg -n --glob '*.rs' --glob '*.toml' \

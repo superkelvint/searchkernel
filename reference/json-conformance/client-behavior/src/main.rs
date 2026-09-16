@@ -64,10 +64,14 @@ impl Transport for ScriptedTransport {
 impl AsyncTransport for ScriptedTransport {
     type Error = TestError;
 
-    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        let mut state = self.0.lock().unwrap();
-        state.requests.push(request.to_vec());
-        Ok(state.response.clone())
+    fn call(&self, request: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
+        let transport = self.clone();
+        let request = request.to_vec();
+        async move {
+            let mut state = transport.0.lock().unwrap();
+            state.requests.push(request);
+            Ok(state.response.clone())
+        }
     }
 }
 
@@ -567,8 +571,8 @@ fn async_conformance() {
     impl AsyncTransport for FailingAsyncTransport {
         type Error = TestError;
 
-        async fn call(&self, _: &[u8]) -> Result<Vec<u8>, Self::Error> {
-            Err(TestError)
+        fn call(&self, _: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
+            async { Err(TestError) }
         }
     }
 
@@ -920,6 +924,7 @@ fn main() {
                 }),
                 language: Some("en".to_owned()),
                 query_expr: Some(term_query("title", Value::String("wireless".to_owned()))),
+                timeout: None,
             }),
         },
         inspect_query_response,

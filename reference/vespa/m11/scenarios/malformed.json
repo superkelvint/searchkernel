@@ -1,1 +1,1 @@
-{"id":"m11-malformed","valid_memory_preconditions":true,"cases":["empty_identifier","unknown_field","wrong_field_type","invalid_range","invalid_yql","invalid_utf8","null_length_pair","deep_query","wide_query"]}
+{"id":"m11-malformed","valid_memory_preconditions":true,"cases":["empty_identifier","unknown_field","wrong_field_type","invalid_range","invalid_yql","invalid_utf8","null_length_pair","deep_query","wide_query","unknown_sort","unknown_summary","unknown_facet","unknown_group","oversized_yql"]}

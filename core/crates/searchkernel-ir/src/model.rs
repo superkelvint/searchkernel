@@ -358,6 +358,11 @@ pub struct PatchRequestIr {
 }
 
 impl PatchRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(id: DocumentId, operations: Vec<PatchOperationIr>) -> Self {
+        Self { id, operations }
+    }
+
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -373,6 +378,11 @@ pub struct DeleteRequestIr {
 }
 
 impl DeleteRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(id: DocumentId) -> Self {
+        Self { id }
+    }
+
     pub fn id(&self) -> &DocumentId {
         &self.id
     }
@@ -401,6 +411,11 @@ pub struct GetRequestIr {
 }
 
 impl GetRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(id: DocumentId, projection: ProjectionIr) -> Self {
+        Self { id, projection }
+    }
+
     pub fn id(&self) -> &DocumentId {
         &self.id
     }

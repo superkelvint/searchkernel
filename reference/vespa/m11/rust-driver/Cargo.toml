@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+flatbuffers = "=25.12.19"
+searchkernel = { path = "../../../../core/crates/searchkernel", features = ["native", "internal-api"] }
+searchkernel-ffi = { path = "../../../../core/crates/searchkernel-ffi", features = ["production"] }
+searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir", features = ["test-support"] }
+searchkernel-ir-adapter = { path = "../../../../core/crates/searchkernel-ir-adapter" }
+searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol" }
 searchkernel-vespa-engine = { path = "../../../../core/crates/searchkernel-vespa-engine", features = ["hardening"] }
 
 [[bin]]

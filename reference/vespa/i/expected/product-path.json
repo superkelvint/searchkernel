@@ -1,0 +1,1549 @@
+{
+  "cases": [
+    {
+      "id": "describe-before-feed",
+      "result": {
+        "ok": true,
+        "value": {
+          "debug": "IndexDefinition { name: Some(\"products\"), fields: [Field { name: \"title\", kind: Text, multi: false, stored: Some(true), searchable: Some(true), filterable: Some(false), sortable: Some(false), facetable: Some(false), analyzer: Some(Analyzer { name: \"standard\", version: 1, options: {} }) }, Field { name: \"description\", kind: Text, multi: false, stored: Some(true), searchable: Some(true), filterable: Some(false), sortable: Some(false), facetable: Some(false), analyzer: Some(Analyzer { name: \"standard\", version: 1, options: {} }) }, Field { name: \"brand\", kind: Keyword, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(true), analyzer: None }, Field { name: \"price\", kind: Int64, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(true), analyzer: None }, Field { name: \"rating\", kind: Float64, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(false), analyzer: None }, Field { name: \"active\", kind: Bool, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(false), facetable: Some(false), analyzer: None }], default_search_fields: Some([SearchField { field: \"title\", weight: Some(1.0) }, SearchField { field: \"description\", weight: Some(1.0) }]) }"
+        }
+      }
+    },
+    {
+      "id": "create-duplicate-index",
+      "result": {
+        "error": {
+          "code": "already_exists",
+          "details": [],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "open-missing-index",
+      "result": {
+        "error": {
+          "code": "not_found",
+          "details": [],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "insert-p1",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "insert-p2",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "insert-p3",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "insert-p4",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "insert-p5",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "duplicate-insert",
+      "result": {
+        "error": {
+          "code": "already_exists",
+          "details": [],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "get-full",
+      "result": {
+        "ok": true,
+        "value": {
+          "active": true,
+          "brand": "Acme",
+          "description": "portable audio",
+          "price": 100,
+          "rating": 4.5,
+          "title": "Wireless Headphones"
+        }
+      }
+    },
+    {
+      "id": "get-projection",
+      "result": {
+        "ok": true,
+        "value": {
+          "brand": "Acme",
+          "title": "Wireless Headphones"
+        }
+      }
+    },
+    {
+      "id": "get-missing",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "search-term",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 75,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "brand": "Charlie",
+                "price": 25,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "brand": "Charlie",
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "brand": "Acme",
+                "price": 100,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.1874654439385854
+            },
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 50,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1874654439385854
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "search-phrase",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.13680350591097828
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "search-equality",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 50
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "search-range-closed",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "price": 50
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 100
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "search-range-open",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0017429193899782135
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "search-exists",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "price": 100,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0017429193899782135
+            },
+            {
+              "document": {
+                "price": 50,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0017429193899782135
+            },
+            {
+              "document": {
+                "price": 75,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0017429193899782135
+            },
+            {
+              "document": {
+                "price": 25,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.0017429193899782135
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 4
+          }
+        }
+      }
+    },
+    {
+      "id": "search-and",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Charlie",
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.0017429193899782135
+            },
+            {
+              "document": {
+                "brand": "Charlie",
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.0017429193899782135
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "search-or",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 50
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo",
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Acme",
+                "price": 100
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "search-not",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Acme"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "sort-asc-missing-first",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {},
+              "highlights": [],
+              "id": "p5",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 25
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 50
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 100
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "sort-desc-missing-last",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "price": 100
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 75
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 50
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "price": 25
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.0
+            },
+            {
+              "document": {},
+              "highlights": [],
+              "id": "p5",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "sort-default-missing",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Acme"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Bravo"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Charlie"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.0
+            },
+            {
+              "document": {
+                "brand": "Charlie"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.0
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "pagination-projection",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "brand": "Charlie",
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "brand": "Charlie",
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "facet-count-desc",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [
+            {
+              "field": "brand",
+              "values": [
+                {
+                  "count": 2,
+                  "value": "Bravo"
+                },
+                {
+                  "count": 2,
+                  "value": "Charlie"
+                },
+                {
+                  "count": 1,
+                  "value": "Acme"
+                }
+              ]
+            }
+          ],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "facet-count-asc",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [
+            {
+              "field": "brand",
+              "values": [
+                {
+                  "count": 1,
+                  "value": "Acme"
+                },
+                {
+                  "count": 2,
+                  "value": "Bravo"
+                },
+                {
+                  "count": 2,
+                  "value": "Charlie"
+                }
+              ]
+            }
+          ],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "price": 25,
+                "rating": 4.8,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "rating": 2.0,
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Acme",
+                "description": "portable audio",
+                "price": 100,
+                "rating": 4.5,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.1874654439385854
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Bravo",
+                "description": "portable audio",
+                "price": 50,
+                "rating": 4.0,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1874654439385854
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "facet-value-asc",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [
+            {
+              "field": "brand",
+              "values": [
+                {
+                  "count": 1,
+                  "value": "Acme"
+                },
+                {
+                  "count": 2,
+                  "value": "Bravo"
+                },
+                {
+                  "count": 2,
+                  "value": "Charlie"
+                }
+              ]
+            }
+          ],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "price": 25,
+                "rating": 4.8,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "rating": 2.0,
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Acme",
+                "description": "portable audio",
+                "price": 100,
+                "rating": 4.5,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.1874654439385854
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Bravo",
+                "description": "portable audio",
+                "price": 50,
+                "rating": 4.0,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1874654439385854
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "facet-value-desc",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [
+            {
+              "field": "brand",
+              "values": [
+                {
+                  "count": 2,
+                  "value": "Charlie"
+                },
+                {
+                  "count": 2,
+                  "value": "Bravo"
+                },
+                {
+                  "count": 1,
+                  "value": "Acme"
+                }
+              ]
+            }
+          ],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "price": 25,
+                "rating": 4.8,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "rating": 2.0,
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Acme",
+                "description": "portable audio",
+                "price": 100,
+                "rating": 4.5,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.1874654439385854
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Bravo",
+                "description": "portable audio",
+                "price": 50,
+                "rating": 4.0,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1874654439385854
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "facet-multiple-numeric",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [
+            {
+              "field": "brand",
+              "values": [
+                {
+                  "count": 2,
+                  "value": "Bravo"
+                },
+                {
+                  "count": 2,
+                  "value": "Charlie"
+                },
+                {
+                  "count": 1,
+                  "value": "Acme"
+                }
+              ]
+            },
+            {
+              "field": "price",
+              "values": [
+                {
+                  "count": 1,
+                  "value": -9223372036854775808
+                },
+                {
+                  "count": 1,
+                  "value": 25
+                },
+                {
+                  "count": 1,
+                  "value": 75
+                }
+              ]
+            }
+          ],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "price": 25,
+                "rating": 4.8,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "rating": 2.0,
+                "title": "Wireless Cable"
+              },
+              "highlights": [],
+              "id": "p5",
+              "score": 0.2706681945227484
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Acme",
+                "description": "portable audio",
+                "price": 100,
+                "rating": 4.5,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.1874654439385854
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Bravo",
+                "description": "portable audio",
+                "price": 50,
+                "rating": 4.0,
+                "title": "Wireless Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1874654439385854
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "empty-projection",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {},
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "timeout-supported",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.2706681945227484
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "patch-p2",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "verify-patch",
+      "result": {
+        "ok": true,
+        "value": {
+          "active": true,
+          "brand": "Bravo",
+          "price": 60,
+          "rating": 4.0,
+          "title": "Studio Speaker"
+        }
+      }
+    },
+    {
+      "id": "upsert-p6",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "upsert-replace-p6",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "verify-upsert",
+      "result": {
+        "ok": true,
+        "value": {
+          "active": true,
+          "brand": "Acme",
+          "price": 45,
+          "title": "Travel Adapter Pro"
+        }
+      }
+    },
+    {
+      "id": "delete-existing",
+      "result": {
+        "ok": true,
+        "value": true
+      }
+    },
+    {
+      "id": "delete-missing",
+      "result": {
+        "ok": true,
+        "value": false
+      }
+    },
+    {
+      "id": "analyze-field",
+      "result": {
+        "ok": true,
+        "value": {
+          "tokens": [
+            {
+              "end_byte": 7,
+              "position": 0,
+              "start_byte": 0,
+              "surface": "Running",
+              "term": "running"
+            },
+            {
+              "end_byte": 17,
+              "position": 1,
+              "start_byte": 9,
+              "surface": "wireless",
+              "term": "wireless"
+            },
+            {
+              "end_byte": 28,
+              "position": 2,
+              "start_byte": 18,
+              "surface": "headphones",
+              "term": "headphone"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "analyze-explicit",
+      "result": {
+        "ok": true,
+        "value": {
+          "tokens": [
+            {
+              "end_byte": 7,
+              "position": 0,
+              "start_byte": 0,
+              "surface": "Running",
+              "term": "running"
+            },
+            {
+              "end_byte": 17,
+              "position": 1,
+              "start_byte": 9,
+              "surface": "wireless",
+              "term": "wireless"
+            },
+            {
+              "end_byte": 28,
+              "position": 2,
+              "start_byte": 18,
+              "surface": "headphones",
+              "term": "headphone"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inspect-normalized",
+      "result": {
+        "ok": true,
+        "value": {
+          "facet_debug": [
+            "Facet { field: \"brand\", limit: Some(2), sort: Some(ValueDesc) }"
+          ],
+          "filter_debug": null,
+          "highlighting": null,
+          "language": "en-us",
+          "limit": 20,
+          "offset": 0,
+          "projection": [
+            "title"
+          ],
+          "query": "wireless headphones",
+          "ranking_debug": "Ranking { kind: DefaultRelevanceV1 }",
+          "search_fields": [
+            {
+              "field": "title",
+              "weight": 1.0
+            }
+          ],
+          "sort_debug": [
+            "Sort { field: \"price\", direction: Desc, missing: Some(Last) }"
+          ],
+          "timeout_ms": 100
+        }
+      }
+    },
+    {
+      "id": "unsupported-weight",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "ranking_weights_not_supported",
+              "metadata": {},
+              "path": "search_fields"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-bm25",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "bm25_ranking_not_supported",
+              "metadata": {},
+              "path": "ranking"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-highlight",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "highlighting_native_result_unavailable",
+              "metadata": {},
+              "path": "highlighting"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-language",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "language_not_supported",
+              "metadata": {},
+              "path": "language"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "invalid-sort-text",
+      "result": {
+        "error": {
+          "code": "invalid_argument",
+          "details": [
+            {
+              "code": "field_not_sortable",
+              "metadata": {},
+              "path": "sort[0].field"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "invalid-facet-float",
+      "result": {
+        "error": {
+          "code": "invalid_argument",
+          "details": [
+            {
+              "code": "field_not_facetable",
+              "metadata": {},
+              "path": "facets[0].field"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-multi-schema",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "multi_valued_fields_not_supported",
+              "metadata": {},
+              "path": "fields"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-bool-sort-schema",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "unsupported_field_capability",
+              "metadata": {},
+              "path": "fields[0].sortable"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "unsupported-float-facet-schema",
+      "result": {
+        "error": {
+          "code": "unsupported",
+          "details": [
+            {
+              "code": "unsupported_field_capability",
+              "metadata": {},
+              "path": "fields[0].facetable"
+            }
+          ],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "inspect-after-options",
+      "result": {
+        "ok": true,
+        "value": {
+          "facet_debug": [],
+          "filter_debug": null,
+          "highlighting": null,
+          "language": null,
+          "limit": 3,
+          "offset": 2,
+          "projection": [
+            "title",
+            "brand"
+          ],
+          "query": "wireless",
+          "ranking_debug": "Ranking { kind: DefaultRelevanceV1 }",
+          "search_fields": [
+            {
+              "field": "title",
+              "weight": 1.0
+            },
+            {
+              "field": "description",
+              "weight": 1.0
+            }
+          ],
+          "sort_debug": [],
+          "timeout_ms": null
+        }
+      }
+    },
+    {
+      "id": "close",
+      "result": {
+        "ok": true,
+        "value": null
+      }
+    },
+    {
+      "id": "closed-operation",
+      "result": {
+        "error": {
+          "code": "index_closed",
+          "details": [],
+          "retryable": false
+        },
+        "ok": false
+      }
+    },
+    {
+      "id": "reopen",
+      "result": {
+        "ok": true
+      }
+    },
+    {
+      "id": "describe-after-reopen",
+      "result": {
+        "ok": true,
+        "value": {
+          "debug": "IndexDefinition { name: Some(\"products\"), fields: [Field { name: \"title\", kind: Text, multi: false, stored: Some(true), searchable: Some(true), filterable: Some(false), sortable: Some(false), facetable: Some(false), analyzer: Some(Analyzer { name: \"standard\", version: 1, options: {} }) }, Field { name: \"description\", kind: Text, multi: false, stored: Some(true), searchable: Some(true), filterable: Some(false), sortable: Some(false), facetable: Some(false), analyzer: Some(Analyzer { name: \"standard\", version: 1, options: {} }) }, Field { name: \"brand\", kind: Keyword, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(true), analyzer: None }, Field { name: \"price\", kind: Int64, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(true), analyzer: None }, Field { name: \"rating\", kind: Float64, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(true), facetable: Some(false), analyzer: None }, Field { name: \"active\", kind: Bool, multi: false, stored: Some(true), searchable: Some(false), filterable: Some(true), sortable: Some(false), facetable: Some(false), analyzer: None }], default_search_fields: Some([SearchField { field: \"title\", weight: Some(1.0) }, SearchField { field: \"description\", weight: Some(1.0) }]) }"
+        }
+      }
+    },
+    {
+      "id": "search-after-reopen",
+      "result": {
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
+            {
+              "document": {
+                "price": 60,
+                "title": "Studio Speaker"
+              },
+              "highlights": [],
+              "id": "p2",
+              "score": 0.1378368380548982
+            }
+          ],
+          "total_hits": {
+            "relation": "Exact",
+            "value": 1
+          }
+        }
+      }
+    }
+  ],
+  "scenario": "product-path"
+}

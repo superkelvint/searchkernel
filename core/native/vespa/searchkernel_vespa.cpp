@@ -893,6 +893,10 @@ struct ValueDocument {
     std::string field;
     int64_t value = 0;
     std::vector<DocumentFieldState> fields;
+    bool exists = false;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    std::shared_ptr<const ResultFaultController> result_faults;
+#endif
 };
 
 struct ValueUpdate {
@@ -938,7 +942,9 @@ struct LocalGroupState {
 struct LocalGroupingResultState {
     std::vector<LocalGroupState> groups;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController *failpoints = nullptr;
+    std::shared_ptr<const FailpointController> failpoints;
+    std::shared_ptr<const ResultFaultController> result_faults;
+    std::shared_ptr<std::atomic<uint64_t>> result_destroyed;
 #endif
 };
 
@@ -1258,7 +1264,6 @@ class EmbeddedEngine {
     std::unique_ptr<document::FieldValue> make_attribute_value(
         const std::string &field_name, const OwnedValue &value) const {
         const auto &field = require_attribute_field(field_name);
-        const auto &vespa_field = _doc_type->getField(field_name);
         if (field.type == "string") {
             if (value.kind != SK_VALUE_STRING) throw std::invalid_argument("wrong value type for attribute: " + field_name);
             return std::make_unique<document::StringFieldValue>(value.string);
@@ -1596,10 +1601,8 @@ class EmbeddedEngine {
 
     static bool attribute_type_matches(const std::string &manifest_type,
                                        const std::string &config_type) {
-        // Older checked-in embedded CRUD fixtures use Vespa's INT32
-        // attribute spelling for the integer field.  The generated M6+
-        // configuration uses INT64; both are valid Vespa representations of
-        // the legacy integer fixture and must remain readable.
+        // Existing generated configurations may use the legacy INT32
+        // spelling. New configurations use the portable Int64 contract.
         return config_type == manifest_attribute_type(manifest_type) ||
                (manifest_type == "integer" && config_type == "INT32");
     }
@@ -2412,6 +2415,7 @@ public:
 
     void put(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         Bucket bucket = bucket_for(document_id);
@@ -2426,12 +2430,15 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        wait_for_source_state(document_id, true, {{field, integer_value(value)}}, true);
     }
 
     void update(const std::string &id, const std::string &field, int64_t value) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
+        const bool was_present = source_document_present(document_id);
         failpoint("mutation_before_native_call");
         auto result = _persistence.update(
             bucket_for(document_id), Timestamp(next_timestamp()),
@@ -2440,10 +2447,12 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        wait_for_source_state(document_id, was_present, {{field, integer_value(value)}}, false);
     }
 
     bool remove(const std::string &id) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         DocumentId document_id(internal_document_id(id, _document_type));
         failpoint("mutation_before_native_call");
@@ -2454,6 +2463,7 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        wait_for_source_state(document_id, false, {}, false);
         return result.wasFound();
     }
 
@@ -2562,6 +2572,7 @@ public:
 
     void put_text(const TextDocument &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -2576,12 +2587,15 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        wait_for_source_state(id, true, {{text.field, string_value(text.text)}}, true);
     }
 
     void update_text(const TextUpdate &text) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(text.id, _document_type));
+        const bool was_present = source_document_present(id);
         failpoint("mutation_before_native_call");
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
                                           make_text_update(text));
@@ -2589,6 +2603,7 @@ public:
         if (result.hasError()) {
             throw std::runtime_error(result.getErrorMessage());
         }
+        wait_for_source_state(id, was_present, {{text.field, string_value(text.text)}}, false);
     }
 
     std::vector<TextHit> search_text(const TextRequest &text) const {
@@ -2620,16 +2635,20 @@ public:
         return match_tree(builder.build(), text.rank_profile, "*");
     }
 
-    std::string id_for_gid(const document::GlobalId &gid) const {
+    std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
         auto *ready_sub_db = _db->getReadySubDB();
         if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
         auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
         const auto *provider = dynamic_cast<const search::IDocumentIdProvider *>(&guard->get());
         if (!provider) throw std::runtime_error("Vespa DocumentDB does not provide document IDs");
         search::IDocumentMetaStore::DocId lid = 0;
-        if (!guard->get().getLid(gid, lid)) throw std::runtime_error("Vespa result GID has no document ID");
+        // A concurrent remove may invalidate a match between matching and
+        // result conversion. Treat that stale hit as absent; it is not an
+        // adapter failure and must not turn a safe concurrent search into an
+        // operation error.
+        if (!guard->get().getLid(gid, lid)) return std::nullopt;
         const auto id = provider->get_document_id_string_view(lid);
-        if (id.empty()) throw std::runtime_error("Vespa result document ID is empty");
+        if (id.empty()) return std::nullopt;
         return external_document_id(id, _document_type);
     }
 
@@ -3874,6 +3893,35 @@ extern "C" int32_t sk_document_field(const sk_document *document, uint32_t index
         *out_integer = field.value.integer;
         *out_float = field.value.floating;
         *out_boolean = field.value.boolean ? 1 : 0;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        static const uint8_t invalid_utf8[] = {0xff};
+        if (document->result_faults &&
+            document->result_faults->take(SK_TEST_RESULT_FAULT_DOCUMENT_ACCESSOR_ERROR)) {
+            throw std::runtime_error("injected document accessor failure");
+        }
+        if (document->result_faults &&
+            document->result_faults->take(SK_TEST_RESULT_FAULT_NULL_DOCUMENT_FIELD_NAME)) {
+            *out_name = nullptr;
+            *out_name_length = 1;
+        } else if (document->result_faults &&
+                   document->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_DOCUMENT_FIELD_NAME)) {
+            *out_name = reinterpret_cast<const char *>(invalid_utf8);
+            *out_name_length = sizeof(invalid_utf8);
+        }
+        if (field.value.kind == SK_VALUE_STRING && document->result_faults &&
+            document->result_faults->take(SK_TEST_RESULT_FAULT_NULL_DOCUMENT_STRING)) {
+            *out_string = nullptr;
+            *out_string_length = 1;
+        } else if (field.value.kind == SK_VALUE_STRING && document->result_faults &&
+                   document->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_DOCUMENT_STRING)) {
+            *out_string = reinterpret_cast<const char *>(invalid_utf8);
+            *out_string_length = sizeof(invalid_utf8);
+        }
+        if (document->result_faults &&
+            document->result_faults->take(SK_TEST_RESULT_FAULT_UNKNOWN_DOCUMENT_KIND)) {
+            *out_kind = 99;
+        }
+#endif
     });
 }
 

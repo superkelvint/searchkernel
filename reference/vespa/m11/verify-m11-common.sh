@@ -11,6 +11,7 @@ M11_SDK_CONFIG="$M11_SDK/share/embedded_crud_cfg"
 M11_CONFIG="${M11_CONFIG:-$ROOT/target/vespa-verifier/m11/config}"
 M11_CARGO_TARGET="$CARGO_TARGET_DIR"
 M11_DRIVER="$M11_CARGO_TARGET/debug/searchkernel-m11-driver"
+M11_DEPS="${VESPA_DEPS:-$ROOT/vespa-deps}"
 
 prepare_hardening_sdk() {
   if [[ -f "$M11_SDK/manifest.json" ]]; then
@@ -25,7 +26,9 @@ PY
     mkdir -p "$(dirname "$M11_SDK")" "$M11_BUILD"
     SK_NATIVE_SDK="$M11_SDK" \
     SK_NATIVE_BUILD_DIR="$M11_BUILD" \
-    SK_NATIVE_ENABLE_FAILPOINTS=1 \
+    VESPA_DEPS="$M11_DEPS" \
+      SK_NATIVE_REGENERATE_BINDINGS=0 \
+      SK_NATIVE_ENABLE_FAILPOINTS=1 \
       "$ROOT/core/native/vespa/build-sdk.sh"
   fi
   [[ -d "$M11_SDK_CONFIG" ]] || fail_verification "missing M11 SDK config: $M11_SDK_CONFIG"
@@ -35,11 +38,20 @@ PY
 build_m11_driver() {
   export SK_NATIVE_SDK="$M11_SDK"
   export CARGO_TARGET_DIR="$M11_CARGO_TARGET"
+  export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$M11_SDK/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
   [[ -x "$M11_DRIVER" ]] || fail_verification "M11 driver was not built: $M11_DRIVER"
   require_native_driver "$M11_DRIVER" \
     sk_engine_open sk_engine_close sk_engine_destroy sk_engine_search \
+    sk_engine_search_generic sk_engine_group_generic \
+    sk_generic_search_request_add_grouping \
+    sk_generic_search_result_match_feature_value \
     sk_test_failpoint_set sk_test_failpoint_is_blocked
+  local symbol
+  for symbol in sk_abi_version sk_call sk_close sk_buffer_free sk_create sk_open; do
+    nm "$M11_DRIVER" 2>/dev/null | grep -E "[[:space:]]${symbol}$" >/dev/null ||
+      fail_verification "M11 driver does not contain production C5 symbol: $symbol"
+  done
   rm -rf "$M11_CONFIG"
   mkdir -p "$(dirname "$M11_CONFIG")"
   LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

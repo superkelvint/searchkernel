@@ -109,6 +109,51 @@ fn native_document_crud_round_trip_exercises_lifecycle_and_value_conversion() {
 }
 
 #[test]
+fn native_get_preserves_empty_attribute_values_and_unset_boolean_fields() {
+    let config = temporary_path("source-config");
+    let data = temporary_path("source-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(Field::new("keyword", FieldType::Text).indexed().summary())
+        .field(Field::new("qty", FieldType::Integer).attribute().summary())
+        .field(
+            Field::new("active", FieldType::Boolean)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile source-document config");
+
+    let engine = Engine::open(&data, &config).expect("open source-document engine");
+    engine
+        .put(
+            Document::new("source-1")
+                .field("title", "source")
+                .field("keyword", "")
+                .field("qty", 1_i64),
+        )
+        .expect("put partial source document");
+
+    let document = engine
+        .get("source-1")
+        .expect("get source document")
+        .expect("source document exists");
+    assert_eq!(
+        document.fields().get("keyword"),
+        Some(&FieldValue::Scalar(ScalarValue::String(String::new())))
+    );
+    assert_eq!(
+        document.fields().get("active"),
+        Some(&FieldValue::Scalar(ScalarValue::Boolean(false)))
+    );
+
+    engine.close().expect("close source-document engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_local_search_and_attribute_operations_round_trip() {
     let config = temporary_path("local-config");
     let data = temporary_path("local-data");

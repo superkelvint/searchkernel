@@ -11,6 +11,9 @@ required = {
     "failures.json",
     "reopen.json",
     "concurrency.json",
+    "advanced.json",
+    "adapter.json",
+    "c5.json",
 }
 actual = {path.name for path in scenarios.glob("*.json")}
 if actual != required:
@@ -42,6 +45,27 @@ seed = (scenarios / "stress-seeds.txt").read_text(encoding="utf-8").strip()
 if seed != "seed=0x4d1120260914":
     raise SystemExit("stress seed corpus changed")
 
+for filename, keys in {
+    "advanced.json": ["direct_engine", "sorting", "summaries", "results", "grouping", "facets", "attribute_mutation", "ranking", "match_features"],
+    "adapter.json": ["real_vespa_backend", "facets", "sort", "projection"],
+    "c5.json": ["buffer_release", "malformed_and_status_paths"],
+}.items():
+    with (scenarios / filename).open(encoding="utf-8") as stream:
+        value = json.load(stream)
+    if any(value.get(key) is not True for key in keys):
+        raise SystemExit(f"{filename}: expanded M11 coverage is incomplete")
+
+with (scenarios / "failures.json").open(encoding="utf-8") as stream:
+    failures = json.load(stream)
+if "malformed_result" not in failures.get("actions", []) or not {
+    "document_result_accessors",
+    "summary_result_accessors",
+    "match_feature_accessors",
+    "group_result_accessors",
+    "aggregation_result_accessors",
+}.issubset(failures.get("boundaries", [])):
+    raise SystemExit("failures.json: result accessor fault coverage is incomplete")
+
 with (root / "expected/invariants.json").open(encoding="utf-8") as stream:
     invariants = json.load(stream)
 if invariants != {
@@ -51,8 +75,6 @@ if invariants != {
     "query_depth": 256,
     "query_nodes": 65536,
     "yql_bytes": 4194304,
-    "disk_file_slack": 2,
-    "disk_byte_slack": 65536,
     "disk_file_slack": 2,
     "disk_byte_slack": 65536,
 }:

@@ -8,7 +8,7 @@ if marker not in mt: raise SystemExit('portable errors marker missing')
 if a.mode=='probe':
     defs='// C6 verifier synthetic BFBS-only operation.\ntable VerifierProbeRequest {\n  token:string;\n}\n\ntable VerifierProbeResult {\n  token:string;\n}\n\n'
     mt=mt.replace(marker,defs+marker,1)
-    needle='  query_expr:QueryExpr;\n}'; repl='  query_expr:QueryExpr;\n\n  // C6 verifier synthetic field.\n  verifier_probe_field:uint;\n}'
+    needle='  timeout:OptionalUInt64;\n}'; repl='  timeout:OptionalUInt64;\n\n  // C6 verifier synthetic field.\n  verifier_probe_field:uint;\n}'
     if needle not in mt: raise SystemExit('SearchRequest insertion point missing')
     mt=mt.replace(needle,repl,1)
     needle='  SearchKernel.V1.InspectQueryRequest\n}'; repl='  SearchKernel.V1.InspectQueryRequest,\n  SearchKernel.V1.VerifierProbeRequest\n}'

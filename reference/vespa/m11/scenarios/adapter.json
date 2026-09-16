@@ -1,0 +1,1 @@
+{"id":"m11-adapter","backend":"searchkernel-ir-adapter","real_vespa_backend":true,"operations":["insert","upsert","patch","get","search","delete"],"facets":true,"sort":true,"projection":true}

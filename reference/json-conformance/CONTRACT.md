@@ -111,15 +111,15 @@ Hashes must equal the exact committed BFBS bytes.
 C6 provides `core/crates/searchkernel-client/` with this frozen minimum public API:
 
 ```rust
-pub trait Transport {
+pub trait Transport: Send + Sync {
     type Error;
     fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
-#[allow(async_fn_in_trait)]
-pub trait AsyncTransport {
+pub trait AsyncTransport: Send + Sync {
     type Error;
-    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn call(&self, request: &[u8])
+        -> impl std::future::Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
 pub enum ClientError<E> {

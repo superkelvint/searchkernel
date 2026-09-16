@@ -1,0 +1,15 @@
+{
+  "suite": "searchkernel-product-path-conformance",
+  "version": "1.0.0",
+  "driver_protocol": "searchkernel-product-path/v1",
+  "scenarios": ["scenarios/product-path.json"],
+  "required_native_path": ["searchkernel", "searchkernel-ir-adapter", "searchkernel-vespa-engine"],
+  "unsupported_detail_codes": [
+    "ranking_weights_not_supported",
+    "bm25_ranking_not_supported",
+    "highlighting_native_result_unavailable",
+    "language_not_supported",
+    "multi_valued_fields_not_supported",
+    "unsupported_field_capability"
+  ]
+}

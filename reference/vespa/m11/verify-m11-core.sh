@@ -12,13 +12,17 @@ prepare_hardening_sdk
 build_m11_driver
 
 cargo check --quiet --manifest-path "$ROOT/reference/vespa/api-contract/Cargo.toml" --bin m11
-cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
+LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  cargo test --quiet -p searchkernel-vespa-engine --all-targets --all-features
 
 TARGET="$ROOT/target/vespa-verifier/m11/core"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
 run_m11_driver lifecycle "$TARGET/lifecycle"
 run_m11_driver reopen "$TARGET/reopen"
+run_m11_driver advanced "$TARGET/advanced"
+run_m11_driver adapter "$TARGET/adapter"
+run_m11_driver c5 "$TARGET/c5"
 run_m11_driver malformed "$TARGET/malformed"
 run_m11_driver failures "$TARGET/failures"
 

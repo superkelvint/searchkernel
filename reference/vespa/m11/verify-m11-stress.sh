@@ -13,7 +13,7 @@ build_m11_driver
 TARGET="$ROOT/target/vespa-verifier/m11/stress"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
-run_m11_driver stress "$TARGET/state-machine"
+run_m11_driver torture "$TARGET/torture"
 run_m11_driver concurrency "$TARGET/concurrency"
 
 resource_output="$TARGET/resources.json"

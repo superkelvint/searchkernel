@@ -6,6 +6,7 @@ use searchkernel_client::model::{
     Value,
 };
 use searchkernel_client::{AsyncClient, AsyncTransport, Client, ClientError, Transport};
+use std::future::Future;
 
 #[derive(Debug)]
 struct TestError;
@@ -25,8 +26,9 @@ struct TestAsyncTransport;
 impl AsyncTransport for TestAsyncTransport {
     type Error = TestError;
 
-    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        Ok(request.to_vec())
+    fn call(&self, request: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
+        let request = request.to_vec();
+        async move { Ok(request) }
     }
 }
 

@@ -11,6 +11,7 @@ python3 "$M11/validate.py"
 TARGET="$ROOT/target/vespa-verifier/m11/sanitizer"
 rm -rf "$TARGET"
 mkdir -p "$TARGET"
+M11_BASE_RUSTFLAGS="${RUSTFLAGS:-}"
 
 run_lane() {
   local lane="$1"
@@ -20,9 +21,17 @@ run_lane() {
     "$ROOT/core/native/vespa/build-m11-sanitizer-sdk.sh" "$lane" "$sdk" "$build"
   export SK_NATIVE_SDK="$sdk"
   export CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
+  export RUSTFLAGS="$M11_BASE_RUSTFLAGS -C link-arg=-Wl,-rpath,$sdk/lib"
   cargo build --quiet --manifest-path "$M11/rust-driver/Cargo.toml"
   local binary="$CARGO_TARGET_DIR/debug/searchkernel-m11-driver"
   require_native_driver "$binary" sk_test_failpoint_set sk_test_failpoint_is_blocked
+  local base_preload="${LD_PRELOAD:-}"
+  local asan_runtime="$(cc -print-file-name=libasan.so)"
+  [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
+  case "$lane" in
+    asan-ubsan) export LD_PRELOAD="$asan_runtime${base_preload:+:$base_preload}" ;;
+    tsan) export LD_PRELOAD="$base_preload" ;;
+  esac
   local config="$TARGET/$lane/config"
   rm -rf "$config"
   LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
@@ -47,6 +56,15 @@ run_lane() {
         "$binary" reopen "$config" "$TARGET/$lane/reopen"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" advanced "$config" "$TARGET/$lane/advanced"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" adapter "$config" "$TARGET/$lane/adapter"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" c5 "$config" "$TARGET/$lane/c5"
+        ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" concurrency "$config" "$TARGET/$lane/concurrency"
       ;;
     tsan)
@@ -58,9 +76,19 @@ run_lane() {
         "$binary" lifecycle "$config" "$TARGET/$lane/lifecycle"
       TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" reopen "$config" "$TARGET/$lane/reopen"
+      "$binary" reopen "$config" "$TARGET/$lane/reopen"
+      TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" advanced "$config" "$TARGET/$lane/advanced"
+      TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" adapter "$config" "$TARGET/$lane/adapter"
+      TSAN_OPTIONS="suppressions=$tsan halt_on_error=1" \
+        LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+      "$binary" c5 "$config" "$TARGET/$lane/c5"
       ;;
   esac
+  export LD_PRELOAD="$base_preload"
 }
 
 run_lane asan-ubsan
