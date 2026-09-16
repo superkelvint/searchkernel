@@ -393,11 +393,7 @@ impl Index {
                         SearchField::new(field.field().as_str()).weight(field.weight().get())
                     })
                     .collect(),
-                filter: match request.filters.as_slice() {
-                    [] => None,
-                    [filter] => Some(filter.clone()),
-                    filters => Some(crate::Filter::all(filters.iter().cloned())),
-                },
+                filter: normalized.filter().map(filter_from_ir).transpose()?,
                 sorts: normalized
                     .sort()
                     .iter()
@@ -499,6 +495,62 @@ impl Index {
         searchkernel_ir::__flatbuffers::root::<api::GetRequest>(bytes).map_err(|error| {
             Error::infrastructure(format!("invalid generated get request: {error}"))
         })
+    }
+}
+
+fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
+    use searchkernel_ir::{ComparisonOp, FilterIr, ScalarValueIr};
+
+    fn scalar_to_json(value: &ScalarValueIr) -> Result<serde_json::Value> {
+        match value {
+            ScalarValueIr::Bool(value) => Ok(serde_json::Value::Bool(*value)),
+            ScalarValueIr::Int64(value) => Ok(serde_json::Value::Number((*value).into())),
+            ScalarValueIr::Float64(value) => serde_json::Number::from_f64(*value)
+                .map(serde_json::Value::Number)
+                .ok_or_else(|| {
+                    Error::infrastructure("normalized filter contains a non-finite float")
+                }),
+            ScalarValueIr::String(value) => Ok(serde_json::Value::String(value.clone())),
+        }
+    }
+
+    match filter {
+        FilterIr::And(filters) => filters
+            .iter()
+            .map(filter_from_ir)
+            .collect::<Result<Vec<_>>>()
+            .map(crate::Filter::all),
+        FilterIr::Or(filters) => filters
+            .iter()
+            .map(filter_from_ir)
+            .collect::<Result<Vec<_>>>()
+            .map(crate::Filter::any),
+        FilterIr::Not(filter) => Ok(crate::Filter::not(filter_from_ir(filter)?)),
+        FilterIr::Comparison(comparison) => {
+            let field = crate::field(comparison.field().as_str());
+            let value = scalar_to_json(comparison.value())?;
+            Ok(match comparison.op() {
+                ComparisonOp::Eq => field.eq(value),
+                ComparisonOp::Ne => field.ne(value),
+                ComparisonOp::Lt => field.lt(value),
+                ComparisonOp::Lte => field.lte(value),
+                ComparisonOp::Gt => field.gt(value),
+                ComparisonOp::Gte => field.gte(value),
+            })
+        }
+        FilterIr::Range(range) => {
+            let mut bounds = crate::Range::new()
+                .include_lower(range.include_lower())
+                .include_upper(range.include_upper());
+            if let Some(value) = range.lower() {
+                bounds = bounds.lower(scalar_to_json(value)?);
+            }
+            if let Some(value) = range.upper() {
+                bounds = bounds.upper(scalar_to_json(value)?);
+            }
+            Ok(crate::field(range.field().as_str()).range(bounds))
+        }
+        FilterIr::Exists { field } => Ok(crate::field(field.as_str()).exists()),
     }
 }
 
@@ -1434,6 +1486,50 @@ mod api_tests {
             .projection(["title", "brand"])
             .highlight(["title"])
             .language("EN-us")
+    }
+
+    #[test]
+    fn inspect_exposes_normalized_filter_defaults() {
+        let definition = IndexDefinition::new()
+            .field(Field::text("title"))
+            .field(Field::float64("price"));
+        let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+        let inspected = index
+            .search("")
+            .filter(field("price").range(crate::Range::new().lower(100.0)))
+            .inspect()
+            .unwrap();
+        let Some(crate::Filter(crate::filter::FilterNode::Range { bounds, .. })) = inspected.filter
+        else {
+            panic!("expected normalized range filter");
+        };
+        assert_eq!(bounds.include_lower, Some(true));
+        assert_eq!(bounds.include_upper, Some(true));
+    }
+
+    #[test]
+    fn inspect_exposes_canonical_filter_structure() {
+        let definition = scripted_definition();
+        let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+        let inspected = index
+            .search("")
+            .filter(Filter::all([
+                field("brand").eq("acme"),
+                Filter::all([field("category").eq("books"), field("region").eq("eu")]),
+            ]))
+            .inspect()
+            .unwrap();
+
+        assert_eq!(
+            inspected.filter,
+            Some(Filter::all([
+                field("brand").eq("acme"),
+                field("category").eq("books"),
+                field("region").eq("eu"),
+            ]))
+        );
     }
 
     #[test]
