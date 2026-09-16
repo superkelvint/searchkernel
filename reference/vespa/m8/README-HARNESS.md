@@ -47,7 +47,7 @@ Do not hand M8 to an implementation agent until all steps below are complete.
    ./reference/vespa/m8/freeze-goldens.sh
    ```
 
-8. Manually inspect all eight goldens, especially hit order, exact score bits, total hit count, and the stored-text docsum case.
+8. Manually inspect all nine goldens, especially hit order, exact score bits, total hit count, the stored-text docsum case, and the composite term/range case.
 9. Freeze the verifier:
 
    ```bash
@@ -71,6 +71,7 @@ The scenarios are intentionally not interchangeable smoke tests:
 - `bm25-score-default-summary`: transports real native scores;
 - `stored-text-selected-summary`: requires local docsums for a non-attribute text field;
 - `multi-key-sort`: proves ordered native sort keys.
+- `composite-term-range-pagination`: carries M7 boolean lowering through text matching, numeric filtering, sorting, and limiting.
 
 ## Frozen design choices
 

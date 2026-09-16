@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
 files=sorted(ROOT.glob('scenarios/[0-9][0-9]-*.json'))
-if len(files)!=8: raise SystemExit(f'M8 requires exactly 8 positive scenarios, found {len(files)}')
+if len(files)!=9: raise SystemExit(f'M8 requires exactly 9 positive scenarios, found {len(files)}')
 ids=[]
 for p in files:
     o=json.load(open(p,encoding='utf-8'))
@@ -37,7 +37,16 @@ f=stored['schema']['fields'][0]
 if f.get('type')!='text' or not f.get('index') or not f.get('summary') or f.get('attribute'):
     raise SystemExit('M8 stored-text scenario must be indexed+summary and non-attribute')
 if len(byid['multi-key-sort']['request']['sort'])<2: raise SystemExit('M8 multi-key sort trap changed')
-for sid in ('bm25-score-default-summary','stored-text-selected-summary'):
+composite=byid.get('composite-term-range-pagination')
+if composite is None: raise SystemExit('M8 composite term/range scenario missing')
+query=composite['request']['query']
+if set(query)!= {'and'} or len(query['and'])!=2 or 'term' not in query['and'][0] or 'range' not in query['and'][1]:
+    raise SystemExit('M8 composite scenario must combine a text term and numeric range')
+if composite['request']['limit']<=0 or not composite['request']['sort']:
+    raise SystemExit('M8 composite scenario must retain native sort and limit')
+if composite['request']['sort'][0]['field']!='qty':
+    raise SystemExit('M8 composite scenario must sort by qty')
+for sid in ('bm25-score-default-summary','stored-text-selected-summary','composite-term-range-pagination'):
     case=byid[sid]
     for d in case['documents']:
         for name,encoded in d['fields'].items():

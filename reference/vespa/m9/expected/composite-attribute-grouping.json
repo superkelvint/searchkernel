@@ -1,0 +1,1 @@
+{"id":"composite-attribute-grouping","steps":[{"groups":[{"aggregations":[],"count":1,"key":{"type":"string","value":"books"}}],"id":"groups","op":"group"}]}

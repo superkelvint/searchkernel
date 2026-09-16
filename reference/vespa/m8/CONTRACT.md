@@ -220,6 +220,7 @@ The frozen M8 corpus contains:
 06 BM25 text search with real scores + default summary
 07 text field summary requested explicitly from non-attribute stored field
 08 two-key sort that removes ties
+09 composite text term + integer range with descending sort and limit
 ```
 
 The scenario composition is intentional:
@@ -229,6 +230,7 @@ The scenario composition is intentional:
 - #04/#05 fail if total hits are derived from returned hits;
 - #06 proves score transport;
 - #07 proves local docsums/document-store access.
+- #09 proves M7 boolean query lowering survives the M8 request controls.
 
 ## Required negative cases
 

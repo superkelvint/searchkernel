@@ -1,5 +1,5 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue, Query,
+    ConfigCompiler, Document, Engine, Field, FieldType, FieldValue, Query,
     RangeBound, ScalarValue, Schema, SearchRequest, SortField, SummaryRequest,
 };
 use serde_json::{json, Map, Value as Json};
@@ -54,28 +54,21 @@ pub fn populate(engine: &Engine, root: &Json) {
     for d in docs {
         let id = d["id"].as_str().unwrap();
         let fields = d["fields"].as_object().unwrap();
+        let mut document = Document::new(id);
         let mut created = false;
         for (name, encoded) in fields {
             if let Some(value) = encoded.get("integer").and_then(Json::as_i64) {
-                if created {
-                    engine
-                        .update(DocumentUpdate::new(id).assign(name, value))
-                        .unwrap();
-                } else {
-                    engine.put(Document::new(id).field(name, value)).unwrap();
-                    created = true;
-                }
+                document = document.field(name, value);
+                created = true;
             } else if let Some(text) = encoded.get("text").and_then(Json::as_str) {
-                if created {
-                    panic!("M8 verifier does not mix text and integer fields in one document");
-                }
-                engine.put(Document::new(id).field(name, text)).unwrap();
+                document = document.field(name, text);
                 created = true;
             } else {
                 panic!("M8 positive scenarios may contain only integer/text fixture values");
             }
         }
         assert!(created, "fixture document must contain a field");
+        engine.put(document).unwrap();
     }
 }
 
@@ -100,6 +93,14 @@ pub fn query(v: &Json) -> Query {
             field: x["field"].as_str().unwrap().into(),
             text: x["text"].as_str().unwrap().into(),
         };
+    }
+    if let Some(x) = o.get("and") {
+        return Query::And(x
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(query)
+            .collect());
     }
     if let Some(x) = o.get("range") {
         return Query::Range {

@@ -13,6 +13,7 @@ fixture/attribute/
 fixture/text/
   document type: typea
   title     Text index + summary, NOT attribute
+  qty       Integer attribute + summary
   rank profiles: default, bm25(first-phase = bm25(title))
 ```
 
@@ -20,7 +21,7 @@ Scenario mapping:
 
 ```text
 01-05, 08 -> attribute
-06-07     -> text
+06-07, 09 -> text
 ```
 
 The fixture configuration may be produced once from the already-green M6 compiler or directly from the pinned Vespa config-model, then manually reviewed and frozen as verifier input. It is never regenerated during `verify-m8.sh`.

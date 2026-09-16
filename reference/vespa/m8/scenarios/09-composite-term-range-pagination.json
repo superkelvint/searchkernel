@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "id": "composite-term-range-pagination",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {
+        "name": "title",
+        "type": "text",
+        "index": true,
+        "attribute": false,
+        "summary": true
+      },
+      {
+        "name": "qty",
+        "type": "integer",
+        "attribute": true,
+        "summary": true
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "id:test:typea::a",
+      "fields": {
+        "title": {
+          "text": "fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        },
+        "qty": {
+          "integer": 10
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::b",
+      "fields": {
+        "title": {
+          "text": "fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        },
+        "qty": {
+          "integer": 20
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::c",
+      "fields": {
+        "title": {
+          "text": "fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        },
+        "qty": {
+          "integer": 35
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::d",
+      "fields": {
+        "title": {
+          "text": "turtle",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 6,
+              "term": "turtle"
+            }
+          ]
+        },
+        "qty": {
+          "integer": 40
+        }
+      }
+    },
+    {
+      "id": "id:test:typea::e",
+      "fields": {
+        "title": {
+          "text": "fox",
+          "analysis": [
+            {
+              "position": 0,
+              "byte_start": 0,
+              "byte_len": 3,
+              "term": "fox"
+            }
+          ]
+        },
+        "qty": {
+          "integer": 50
+        }
+      }
+    }
+  ],
+  "request": {
+    "query": {
+      "and": [
+        {
+          "term": {
+            "field": "title",
+            "text": "fox",
+            "analysis": [
+              "fox"
+            ]
+          }
+        },
+        {
+          "range": {
+            "field": "qty",
+            "lower": {
+              "included": 20
+            },
+            "upper": {
+              "unbounded": true
+            }
+          }
+        }
+      ]
+    },
+    "rank_profile": "default",
+    "limit": 2,
+    "offset": 0,
+    "sort": [
+      {
+        "field": "qty",
+        "order": "descending"
+      }
+    ],
+    "summary": {
+      "fields": [
+        "title",
+        "qty"
+      ]
+    }
+  }
+}

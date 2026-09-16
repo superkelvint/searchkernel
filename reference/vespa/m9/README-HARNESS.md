@@ -58,6 +58,7 @@ The public API is frozen by `reference/vespa/api-contract/src/bin/m9.rs`.
 - the main facet fixture contains 25 documents, exceeding the normal ten-hit page;
 - grouping requests have zero regular hits, so result-page aggregation cannot pass;
 - filtered facets prove the query matcher feeds grouping;
+- `composite-attribute-grouping` carries M7 boolean lowering through attribute filtering and native grouping;
 - integer and floating point sum/min/max/average are taken from native group results; the integer-sum fixture exceeds `i32::MAX` to prove the `i64` result contract;
 - M7 Integer `Exists` remains unchanged; Float presence uses an all-unbounded numeric range. No generic String/Boolean existence API is invented.
 

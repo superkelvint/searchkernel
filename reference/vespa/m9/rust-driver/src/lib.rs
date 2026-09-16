@@ -131,6 +131,14 @@ pub fn query(v: &Json) -> Query {
             upper: attr_bound(&x["upper"]),
         };
     }
+    if let Some(x) = o.get("and") {
+        return Query::And(x
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(query)
+            .collect());
+    }
     panic!("unsupported M9 verifier query: {v}");
 }
 

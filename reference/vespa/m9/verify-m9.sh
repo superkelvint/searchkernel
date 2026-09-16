@@ -15,7 +15,10 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m9
 "$SCRIPT_DIR/check-structure.sh"
 
 cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
-require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m9-driver" sk_engine_open
+require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m9-driver" \
+  sk_engine_open \
+  sk_engine_group_generic \
+  sk_engine_update
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do

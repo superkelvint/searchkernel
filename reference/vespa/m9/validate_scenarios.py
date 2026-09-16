@@ -3,7 +3,7 @@ import json, math
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 files=sorted(ROOT.glob('scenarios/[0-9][0-9]-*.json'))
-if len(files)!=13: raise SystemExit(f'M9 requires exactly 13 positive scenarios, found {len(files)}')
+if len(files)!=14: raise SystemExit(f'M9 requires exactly 14 positive scenarios, found {len(files)}')
 ids=[]; group_count=0; update_count=0
 for p in files:
     o=json.load(open(p,encoding='utf-8'))
@@ -37,7 +37,7 @@ for p in files:
             if not step.get('document_id') or not step.get('assign'): raise SystemExit(f'{p}: incomplete update')
         else:
             raise SystemExit(f'{p}: unsupported step op {op!r}')
-if len(set(ids))!=13: raise SystemExit('M9 scenario ids must be unique')
+if len(set(ids))!=14: raise SystemExit('M9 scenario ids must be unique')
 if group_count<6: raise SystemExit('M9 must retain broad native grouping coverage')
 if update_count<3: raise SystemExit('M9 must retain update-before/after coverage')
 facet=json.load(open(ROOT/'scenarios/07-string-facet-counts.json',encoding='utf-8'))
@@ -52,6 +52,12 @@ if fixture!={'name':'attribute_price','expression':'attribute(price)'}:
     raise SystemExit('M9 native ranking-access fixture changed')
 for required in ('string-facet-counts','filtered-facet-counts','integer-aggregations-by-category','float-aggregations-by-category','grouping-after-update'):
     if required not in ids: raise SystemExit(f'M9 required grouping trap missing: {required}')
+composite=json.load(open(ROOT/'scenarios/14-composite-attribute-grouping.json',encoding='utf-8'))
+query=composite['steps'][0]['request']['query']
+if set(query)!= {'and'} or len(query['and'])!=2 or 'attribute_equals' not in query['and'][0] or 'attribute_range' not in query['and'][1]:
+    raise SystemExit('M9 composite scenario must combine attribute equality and range')
+if composite['steps'][0]['op']!='group':
+    raise SystemExit('M9 composite scenario must use native grouping')
 errs=json.load(open(ROOT/'scenarios/errors.json',encoding='utf-8'))
 if errs.get('version')!=1 or len(errs.get('cases',[]))!=25: raise SystemExit('M9 requires exactly 25 frozen negative cases')
 if len({c['id'] for c in errs['cases']})!=25: raise SystemExit('M9 error ids must be unique')

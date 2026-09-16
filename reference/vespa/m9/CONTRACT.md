@@ -281,6 +281,7 @@ The M9 corpus contains:
 11 Float sum/min/max/average by group
 12 update changes group key and aggregate values
 13 Integer Exists + full unbounded Float range exclude unset attributes
+14 composite category equality + quantity range with native grouping
 ```
 
 ## Required negative cases

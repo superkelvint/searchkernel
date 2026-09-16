@@ -58,6 +58,8 @@ M7 Exists(Integer only)
 
 Use the real query tree consumed by local Matcher.
 
+The composite attribute-grouping scenario must build its conjunction through the same recursive query lowering as the leaf cases before passing it to the native grouping request.
+
 For M7 `Exists`, retain the frozen Integer full-range representation. For Float presence, the M9 scenario uses `AttributeRange(Float, Unbounded, Unbounded)`. Do not synthesize generic String/Boolean existence semantics in the oracle.
 
 ## Search/sort

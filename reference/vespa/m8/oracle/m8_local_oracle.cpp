@@ -527,9 +527,18 @@ private:
         return result;
     }
 
-    static std::string query_dump(const Inspector& query) {
-            require(query.type() == vespalib::slime::OBJECT::instance && query.fields() == 1, "query must have one operation");
-        QueryBuilder<proton::matching::ProtonNodeTypes> builder;
+    static void add_query(QueryBuilder<proton::matching::ProtonNodeTypes>& builder,
+                          const Inspector& query) {
+        require(query.type() == vespalib::slime::OBJECT::instance && query.fields() == 1,
+                "query must have one operation");
+        const auto& conjunction = object_field(query, "and");
+        if (present(conjunction)) {
+            require(conjunction.type() == vespalib::slime::ARRAY::instance && conjunction.children() > 0,
+                    "and query must contain children");
+            builder.addAnd(conjunction.children());
+            for (size_t i = 0; i < conjunction.children(); ++i) add_query(builder, conjunction[i]);
+            return;
+        }
         const auto& exists = object_field(query, "exists");
         if (present(exists)) {
             builder.addRangeTerm(Range("[;]"),
@@ -567,6 +576,11 @@ private:
                 builder.addStringTerm(terms.front(), field, 1, Weight(1));
             }
         }
+    }
+
+    static std::string query_dump(const Inspector& query) {
+        QueryBuilder<proton::matching::ProtonNodeTypes> builder;
+        add_query(builder, query);
         auto tree = builder.build();
         require(static_cast<bool>(tree), builder.error());
         return StackDumpCreator::create(*tree);
