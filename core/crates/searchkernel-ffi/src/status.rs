@@ -7,3 +7,28 @@ pub(crate) const UNSUPPORTED_OPERATION: u32 = crate::SK_STATUS_UNSUPPORTED_OPERA
 #[allow(dead_code)]
 pub(crate) const INTERNAL: u32 = crate::SK_STATUS_INTERNAL;
 pub(crate) const PANIC: u32 = crate::SK_STATUS_PANIC;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn public_status_codes_are_unique_and_stable() {
+        let codes = [
+            OK,
+            INVALID_ARGUMENT,
+            INVALID_HANDLE,
+            INVALID_REQUEST,
+            UNSUPPORTED_PROTOCOL,
+            UNSUPPORTED_OPERATION,
+            INTERNAL,
+            PANIC,
+        ];
+        assert_eq!(codes, [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(
+            codes.iter().copied().collect::<BTreeSet<_>>().len(),
+            codes.len()
+        );
+    }
+}

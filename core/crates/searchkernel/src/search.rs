@@ -276,6 +276,10 @@ impl std::fmt::Debug for SearchBuilder<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::Index;
+    use crate::schema::{Field, IndexDefinition};
+    use searchkernel_testkit::RecordingBackend;
+    use std::sync::Arc;
 
     #[test]
     fn sort_builders_encode_direction_and_missing_placement() {
@@ -311,5 +315,20 @@ mod tests {
             assert_eq!(facet.sort, Some(sort));
         }
         assert_eq!(Facet::from("brand"), Facet::new("brand"));
+    }
+
+    #[test]
+    fn search_builder_owns_a_clone_of_the_index() {
+        let request = {
+            let index = Index::from_backend(
+                IndexDefinition::new().field(Field::text("title")),
+                Arc::new(RecordingBackend::new()),
+            )
+            .expect("test index");
+            index.search("headphones")
+        };
+
+        let inspected = request.inspect().expect("inspect search");
+        assert_eq!(inspected.query, "headphones");
     }
 }

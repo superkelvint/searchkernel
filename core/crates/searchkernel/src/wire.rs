@@ -710,3 +710,115 @@ fn comparison_op(op: ComparisonOp) -> api::ComparisonOp {
         ComparisonOp::Gte => api::ComparisonOp::Gte,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::index::Index;
+    use crate::schema::{Field, IndexDefinition};
+    use crate::{field, Filter, Range};
+    use searchkernel_testkit::RecordingBackend;
+    use std::sync::Arc;
+
+    struct FailingSerialize;
+
+    impl serde::Serialize for FailingSerialize {
+        fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(serde::ser::Error::custom(
+                "intentional serialization failure",
+            ))
+        }
+    }
+
+    fn test_index() -> Index {
+        Index::from_backend(
+            IndexDefinition::new()
+                .field(Field::text("title"))
+                .field(Field::keyword("brand"))
+                .field(Field::float64("price")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index")
+    }
+
+    #[test]
+    fn search_encoder_populates_all_optional_sections() {
+        let index = test_index();
+        let request = index
+            .search("headphones")
+            .search_fields([SearchField::new("title").weight(2.0)])
+            .filter(Filter::any([
+                field("brand").eq("Acme"),
+                field("price").range(Range::new().lower(10).include_upper(false)),
+            ]))
+            .sort(Sort::desc("price").missing_last())
+            .facet(Facet::new("brand").limit(5).sort(FacetSort::ValueAsc))
+            .ranking(Ranking::bm25())
+            .limit(10)
+            .offset(2)
+            .projection(["title"])
+            .highlight(["title"])
+            .language("en-us");
+        let bytes = search(&request).expect("search request encoding");
+        let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+            .expect("encoded search request");
+
+        assert_eq!(encoded.query(), Some("headphones"));
+        assert_eq!(encoded.search_fields().unwrap().fields().unwrap().len(), 1);
+        assert_eq!(
+            encoded.filter().unwrap().expr_type(),
+            api::FilterExprKind::FilterOr
+        );
+        assert_eq!(encoded.sort().unwrap().len(), 1);
+        assert_eq!(encoded.facets().unwrap().len(), 1);
+        assert!(encoded.ranking().is_some());
+        assert_eq!(encoded.limit().unwrap().value(), 10);
+        assert_eq!(encoded.offset().unwrap().value(), 2);
+        assert_eq!(encoded.projection().unwrap().fields().unwrap().len(), 1);
+        assert_eq!(encoded.highlighting().unwrap().fields().unwrap().len(), 1);
+        assert_eq!(encoded.language(), Some("en-us"));
+    }
+
+    #[test]
+    fn write_and_analysis_encoders_cover_success_and_validation_errors() {
+        let index = test_index();
+        let patch_value = Patch::new().set("title", "new").unset("brand");
+        let patch_bytes = patch("doc-1", &patch_value).expect("patch request encoding");
+        let encoded_patch = searchkernel_ir::__flatbuffers::root::<api::PatchRequest>(&patch_bytes)
+            .expect("encoded patch request");
+        assert_eq!(encoded_patch.id(), Some("doc-1"));
+        assert_eq!(encoded_patch.operations().unwrap().len(), 2);
+
+        let analyze_request = AnalyzeBuilder::new(&index, "running")
+            .analyzer(Analyzer::standard_v1())
+            .language("en");
+        let analyze_bytes = analyze(&analyze_request).expect("analyze request encoding");
+        let encoded_analyze =
+            searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&analyze_bytes)
+                .expect("encoded analyze request");
+        assert_eq!(encoded_analyze.text(), Some("running"));
+        assert_eq!(encoded_analyze.language(), Some("en"));
+        assert_eq!(encoded_analyze.target_type(), api::AnalyzeTarget::Analyzer);
+
+        let missing_target = AnalyzeBuilder::new(&index, "running");
+        assert!(matches!(
+            super::analyze(&missing_target),
+            Err(Error::Search {
+                code: crate::ErrorCode::InvalidArgument,
+                ..
+            })
+        ));
+        assert!(matches!(
+            insert("doc-1", &Value::Array(vec![])),
+            Err(Error::Serialization(message)) if message.contains("object")
+        ));
+        let invalid_patch = Patch::new().set("ratio", FailingSerialize);
+        assert!(matches!(
+            super::patch("doc-1", &invalid_patch),
+            Err(Error::Serialization(_))
+        ));
+    }
+}

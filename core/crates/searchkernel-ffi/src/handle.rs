@@ -75,3 +75,52 @@ pub(crate) fn close(handle: u64) -> bool {
 pub(crate) fn live_count() -> usize {
     lock_registry().entries.len()
 }
+
+#[cfg(all(test, feature = "ffi-test-support"))]
+mod tests {
+    use super::*;
+    use searchkernel_ir::api;
+    use searchkernel_testkit::RecordingBackend;
+
+    fn test_context() -> Arc<IndexContext> {
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let name = builder.create_string("title");
+        let stored = api::OptionalBool::new(true);
+        let searchable = api::OptionalBool::new(true);
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(name),
+                kind: api::FieldKind::Text,
+                cardinality: api::FieldCardinality::Single,
+                stored: Some(&stored),
+                searchable: Some(&searchable),
+                ..Default::default()
+            },
+        );
+        let fields = builder.create_vector(&[field]);
+        let definition = api::IndexDefinition::create(
+            &mut builder,
+            &api::IndexDefinitionArgs {
+                fields: Some(fields),
+                ..Default::default()
+            },
+        );
+        builder.finish(definition, None);
+        let bytes = builder.finished_data().to_vec();
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("test definition");
+        Arc::new(IndexContext::from_api(root).expect("test context"))
+    }
+
+    #[test]
+    fn handles_are_unique_and_close_is_idempotently_rejected() {
+        let handle = register(test_context(), Arc::new(RecordingBackend::new()));
+        assert_ne!(handle, 0);
+        assert!(lookup(handle).is_some());
+        assert!(close(handle));
+        assert!(lookup(handle).is_none());
+        assert!(!close(handle));
+        assert!(!close(0));
+    }
+}

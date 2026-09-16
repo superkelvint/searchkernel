@@ -151,3 +151,77 @@ fn encode_result<T>(
         },
     )
 }
+
+#[cfg(all(test, feature = "ffi-test-support"))]
+mod tests {
+    use super::*;
+    use searchkernel_ir::{api, IndexContext};
+    use searchkernel_testkit::RecordingBackend;
+    use std::sync::Arc;
+
+    fn test_state() -> HandleState {
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let name = builder.create_string("title");
+        let stored = api::OptionalBool::new(true);
+        let searchable = api::OptionalBool::new(true);
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(name),
+                kind: api::FieldKind::Text,
+                cardinality: api::FieldCardinality::Single,
+                stored: Some(&stored),
+                searchable: Some(&searchable),
+                ..Default::default()
+            },
+        );
+        let fields = builder.create_vector(&[field]);
+        let definition = api::IndexDefinition::create(
+            &mut builder,
+            &api::IndexDefinitionArgs {
+                fields: Some(fields),
+                ..Default::default()
+            },
+        );
+        builder.finish(definition, None);
+        let bytes = builder.finished_data().to_vec();
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("test definition");
+        HandleState {
+            context: Arc::new(IndexContext::from_api(root).expect("test context")),
+            backend: Arc::new(RecordingBackend::new()),
+        }
+    }
+
+    fn describe_request() -> Vec<u8> {
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let request =
+            api::DescribeRequest::create(&mut builder, &api::DescribeRequestArgs::default());
+        builder.finish(request, None);
+        builder.finished_data().to_vec()
+    }
+
+    #[test]
+    fn dispatch_rejects_invalid_protocol_and_operation_discriminants() {
+        let state = test_state();
+        let inner = describe_request();
+        let request = transport::frame_request(transport::REQUEST_DESCRIBE, 99, &inner);
+        assert_eq!(
+            dispatch(&state, &request),
+            Err(status::UNSUPPORTED_PROTOCOL)
+        );
+
+        let request = transport::frame_request(0xfe, transport::PROTOCOL_VERSION, &inner);
+        assert_eq!(
+            dispatch(&state, &request),
+            Err(status::UNSUPPORTED_OPERATION)
+        );
+
+        let request = transport::frame_request(0, transport::PROTOCOL_VERSION, &inner);
+        assert_eq!(dispatch(&state, &request), Err(status::INVALID_REQUEST));
+        assert_eq!(
+            dispatch(&state, b"not a request"),
+            Err(status::INVALID_REQUEST)
+        );
+    }
+}

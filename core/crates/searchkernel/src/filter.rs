@@ -170,3 +170,97 @@ impl std::ops::Not for Filter {
 pub(crate) fn pending_value(value: &PendingValue) -> Result<&Value, String> {
     value.as_ref().map_err(|error| error.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailingSerialize;
+
+    impl serde::Serialize for FailingSerialize {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(serde::ser::Error::custom(
+                "intentional serialization failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn field_builders_cover_all_filter_nodes() {
+        assert!(matches!(
+            field("name").eq("Alice").0,
+            FilterNode::Comparison { field, op: ComparisonOp::Eq, .. } if field == "name"
+        ));
+        assert!(matches!(
+            field("name").ne("Alice").0,
+            FilterNode::Comparison {
+                op: ComparisonOp::Ne,
+                ..
+            }
+        ));
+        assert!(matches!(
+            field("age").lt(10).0,
+            FilterNode::Comparison {
+                op: ComparisonOp::Lt,
+                ..
+            }
+        ));
+        assert!(matches!(
+            field("age").lte(10).0,
+            FilterNode::Comparison {
+                op: ComparisonOp::Lte,
+                ..
+            }
+        ));
+        assert!(matches!(
+            field("age").gt(10).0,
+            FilterNode::Comparison {
+                op: ComparisonOp::Gt,
+                ..
+            }
+        ));
+        assert!(matches!(
+            field("age").gte(10).0,
+            FilterNode::Comparison {
+                op: ComparisonOp::Gte,
+                ..
+            }
+        ));
+        assert!(matches!(field("age").exists().0, FilterNode::Exists { field } if field == "age"));
+        assert!(matches!(
+            field("age").range(Range::new().lower(1).upper(10)).0,
+            FilterNode::Range { field, bounds } if field == "age" && bounds.lower.is_some() && bounds.upper.is_some()
+        ));
+        assert!(matches!(
+            Filter::all([field("a").exists(), field("b").exists()]).0,
+            FilterNode::All(filters) if filters.len() == 2
+        ));
+        assert!(matches!(
+            Filter::any([field("a").exists()]).0,
+            FilterNode::Any(filters) if filters.len() == 1
+        ));
+        assert!(matches!((!field("a").exists()).0, FilterNode::Not(_)));
+    }
+
+    #[test]
+    fn range_defaults_and_pending_errors_are_preserved() {
+        let range = Range::default();
+        assert!(range.lower.is_none());
+        assert!(range.upper.is_none());
+        assert!(range.include_lower.is_none());
+        assert!(range.include_upper.is_none());
+
+        let range = Range::new().include_lower(true).include_upper(false);
+        assert_eq!(range.include_lower, Some(true));
+        assert_eq!(range.include_upper, Some(false));
+
+        let filter = field("ratio").eq(FailingSerialize);
+        let FilterNode::Comparison { value, .. } = filter.0 else {
+            panic!("expected comparison");
+        };
+        assert!(pending_value(&value).is_err());
+    }
+}

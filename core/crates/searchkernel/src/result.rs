@@ -197,3 +197,96 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn result_conversion_preserves_totals_facets_highlights_and_nested_values() {
+        let result = core::SearchResult {
+            hits: vec![core::Hit {
+                id: "doc-1".into(),
+                score: Some(1.5),
+                fields: BTreeMap::from([
+                    ("title".into(), Value::String("hello".into())),
+                    ("bytes".into(), Value::Bytes(vec![1, 255])),
+                    (
+                        "nested".into(),
+                        Value::Object(BTreeMap::from([("enabled".into(), Value::Bool(true))])),
+                    ),
+                ]),
+                highlights: vec![core::HighlightResult {
+                    field: "title".into(),
+                    fragments: vec![core::HighlightFragment {
+                        text: "<em>hello</em>".into(),
+                        matches: vec![core::HighlightSpan {
+                            start_byte: 0,
+                            end_byte: 5,
+                        }],
+                    }],
+                }],
+            }],
+            total_hits: core::TotalHits {
+                value: 7,
+                relation: core::TotalHitsRelation::LowerBound,
+            },
+            facets: vec![core::FacetResult {
+                field: "brand".into(),
+                values: vec![core::FacetValue {
+                    value: Value::UInt64(2),
+                    count: 3,
+                }],
+            }],
+        };
+
+        let converted: SearchResult<serde_json::Value> = search_result(result).unwrap();
+        assert_eq!(converted.total_hits.value, 7);
+        assert_eq!(converted.total_hits.relation, TotalHitsRelation::LowerBound);
+        assert_eq!(converted.hits[0].document["nested"]["enabled"], true);
+        assert_eq!(
+            converted.hits[0].document["bytes"],
+            serde_json::json!([1, 255])
+        );
+        assert_eq!(
+            converted.hits[0].highlights[0].fragments[0].matches[0].end_byte,
+            5
+        );
+        assert_eq!(converted.facets[0].values[0].value, serde_json::json!(2));
+    }
+
+    #[test]
+    fn result_conversion_rejects_nonfinite_values_and_bad_documents() {
+        let nonfinite = core::SearchResult {
+            hits: vec![],
+            total_hits: core::TotalHits {
+                value: 0,
+                relation: core::TotalHitsRelation::Exact,
+            },
+            facets: vec![core::FacetResult {
+                field: "score".into(),
+                values: vec![core::FacetValue {
+                    value: Value::Float64(f64::INFINITY),
+                    count: 1,
+                }],
+            }],
+        };
+        assert!(matches!(
+            search_result::<serde_json::Value>(nonfinite),
+            Err(Error::Infrastructure(message)) if message.contains("non-finite")
+        ));
+
+        let bad_document = core::DocumentResult {
+            id: "doc-2".into(),
+            fields: BTreeMap::from([(
+                String::from("count"),
+                Value::String("not an integer".into()),
+            )]),
+        };
+        assert!(matches!(
+            document::<i64>(bad_document),
+            Err(Error::Deserialization(_))
+        ));
+    }
+}

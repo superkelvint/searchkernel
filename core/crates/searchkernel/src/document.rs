@@ -56,3 +56,39 @@ pub(crate) type PendingValue = std::result::Result<serde_json::Value, String>;
 pub(crate) fn pending<T: Serialize>(value: &T) -> PendingValue {
     serialize(value).map_err(|error| error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailingSerialize;
+
+    impl serde::Serialize for FailingSerialize {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(serde::ser::Error::custom(
+                "intentional serialization failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn document_ids_are_owned_and_borrowable() {
+        let source = String::from("id:ns:type::1");
+        let id = DocumentId::from(&source);
+        assert_eq!(id.as_str(), source);
+        assert_eq!(id.as_ref(), "id:ns:type::1");
+        assert_eq!(id.to_string(), "id:ns:type::1");
+        assert_eq!(DocumentId::from(&id), id);
+    }
+
+    #[test]
+    fn pending_values_preserve_serialization_failures() {
+        assert_eq!(pending(&"value"), Ok(serde_json::json!("value")));
+        assert_eq!(pending(&f64::NAN), Ok(serde_json::Value::Null));
+        let error = pending(&FailingSerialize).expect_err("serializer failure must be retained");
+        assert!(error.contains("intentional serialization failure"));
+    }
+}
