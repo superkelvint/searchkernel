@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "ascii",
+      "request_hex": "534b5251000102030405060708090a0b",
+      "response_mode": "reverse"
+    },
+    {
+      "id": "embedded_nul",
+      "request_hex": "00010200030400050600ff",
+      "response_mode": "reverse"
+    },
+    {
+      "id": "empty",
+      "request_hex": "",
+      "response_mode": "reverse"
+    },
+    {
+      "id": "binary_256",
+      "request_pattern": "byte_ramp",
+      "request_len": 256,
+      "response_mode": "reverse"
+    },
+    {
+      "id": "large_1m",
+      "request_pattern": "byte_ramp",
+      "request_len": 1048576,
+      "response_mode": "reverse"
+    }
+  ]
+}

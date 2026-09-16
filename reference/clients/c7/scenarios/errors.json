@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "abi_mismatch",
+      "shim_abi_version": 4294967295,
+      "expect": "transport_error_before_call"
+    },
+    {
+      "id": "native_call_failure",
+      "request_hex": "4641494c",
+      "expect": "transport_error"
+    },
+    {
+      "id": "portable_error_passthrough",
+      "mode": "real_c5_scripted_backend",
+      "expect": "generated_client_core_maps_portable_error"
+    }
+  ]
+}

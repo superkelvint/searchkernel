@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "required": {
+    "request_byte_fidelity": true,
+    "response_byte_fidelity": true,
+    "response_survives_native_free": true,
+    "close_idempotent": true,
+    "call_after_close_enters_native": false,
+    "handles_are_independent": true,
+    "abi_checked_before_first_call": true,
+    "stress_calls": 5000,
+    "outstanding_response_buffers": 0,
+    "double_free": 0
+  }
+}

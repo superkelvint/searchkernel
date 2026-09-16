@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "forbidden_handwritten_transport_symbols": [
+    "insert",
+    "upsert",
+    "patch",
+    "delete",
+    "get",
+    "search",
+    "analyze",
+    "describe",
+    "inspect_query",
+    "facet",
+    "ranking",
+    "filter"
+  ],
+  "required_transport_concepts": [
+    "open",
+    "call",
+    "close"
+  ]
+}
