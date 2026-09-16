@@ -1,6 +1,6 @@
 use searchkernel::{
-    field, DocumentId, Error, Facet, FacetSort, Field, Filter, Index, IndexDefinition, Patch,
-    Range, Ranking, Sort,
+    field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, Index, IndexDefinition,
+    Patch, Range, Ranking, Sort,
 };
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, HighlightingIr, OperationIr, ProjectionIr, QueryIr,
@@ -119,7 +119,7 @@ fn presence_and_explicit_zero_are_preserved() {
     let index = index_with(backend.clone());
     assert!(index
         .search("")
-        .search_fields([])
+        .search_fields(std::iter::empty::<searchkernel::SearchField>())
         .projection(std::iter::empty::<&str>())
         .highlight(std::iter::empty::<&str>())
         .limit(0)
@@ -136,6 +136,102 @@ fn presence_and_explicit_zero_are_preserved() {
     );
     assert_eq!(request.limit(), 0);
     assert_eq!(request.offset(), 0);
+}
+
+#[test]
+fn browse_is_an_explicit_match_all_search() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index.browse().execute::<Product>().is_err());
+    let OperationIr::Search(request) = backend.last_call().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(request.query(), &QueryIr::MatchAll);
+}
+
+#[test]
+fn projected_get_reaches_the_portable_projection_request() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index
+        .get_with_projection::<serde_json::Value>("sku-42", ["title", "brand"])
+        .is_err());
+    let OperationIr::Get(request) = backend.last_call().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(
+        request
+            .projection()
+            .fields()
+            .iter()
+            .map(|field| field.as_str())
+            .collect::<Vec<_>>(),
+        ["title", "brand"]
+    );
+}
+
+#[test]
+fn describe_and_inspect_expose_effective_request_defaults() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend);
+
+    let definition = index.describe().unwrap();
+    assert_eq!(definition.index_name(), Some("products"));
+    assert_eq!(definition.fields().len(), 4);
+    assert_eq!(
+        definition.configured_default_search_fields().unwrap()[0].field(),
+        "title"
+    );
+
+    let inspected = index
+        .search("wireless")
+        .filter(field("in_stock").eq(true))
+        .filter(field("price").lte(500.0))
+        .limit(7)
+        .inspect()
+        .unwrap();
+    assert_eq!(inspected.query, "wireless");
+    assert_eq!(inspected.limit, 7);
+    assert_eq!(inspected.search_fields.len(), 1);
+    assert_eq!(inspected.search_fields[0].field(), "title");
+    assert!(inspected.filter.is_some());
+}
+
+#[test]
+fn analyze_uses_the_selected_field_and_returns_tokens() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").analyzer(searchkernel::Analyzer::standard_v1()));
+    let recording = Arc::new(RecordingBackend::new());
+    let recording_index = Index::from_backend(definition.clone(), recording.clone()).unwrap();
+    assert!(recording_index
+        .analyze("Running with the foxes")
+        .field("title")
+        .execute()
+        .is_err());
+    let expected = recording.last_call().unwrap();
+
+    let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+        expected,
+        ScriptedResult::Analyze(searchkernel_ir::AnalyzeResult {
+            tokens: vec![searchkernel_ir::AnalyzedToken {
+                surface: "Running".into(),
+                term: "run".into(),
+                position: 0,
+                start_byte: 0,
+                end_byte: 7,
+            }],
+        }),
+    )]));
+    let index = Index::from_backend(definition, backend.clone()).unwrap();
+    let result = index
+        .analyze("Running with the foxes")
+        .field("title")
+        .execute()
+        .unwrap();
+    assert_eq!(result.tokens[0].term, "run");
+    backend.finish().unwrap();
 }
 
 #[test]
@@ -189,7 +285,15 @@ fn get_missing_and_portable_errors_are_distinct() {
     let index = index_with(backend);
     assert_eq!(index.get::<Product>("missing").unwrap(), None);
     let error = index.get::<Product>("missing").unwrap_err();
-    assert!(matches!(error, Error::Portable(error) if !error.retryable && error.message == "down"));
+    assert!(matches!(
+        error,
+        Error::Search {
+            code: ErrorCode::Unavailable,
+            retryable: false,
+            message,
+            ..
+        } if message == "down"
+    ));
 }
 
 #[test]
@@ -411,6 +515,38 @@ fn all_filter_operators_and_search_options_cross_the_boundary() {
 }
 
 #[test]
+fn simple_search_field_names_cross_the_boundary() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = Index::from_backend(
+        definition().field(Field::text("description")),
+        backend.clone(),
+    )
+    .unwrap();
+
+    assert!(index
+        .search("headphones")
+        .search_fields(["title", "description"])
+        .execute::<Product>()
+        .is_err());
+
+    let OperationIr::Search(request) = backend.last_call().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(
+        request
+            .search_fields()
+            .iter()
+            .map(|field| field.field().as_str())
+            .collect::<Vec<_>>(),
+        ["title", "description"]
+    );
+    assert!(request
+        .search_fields()
+        .iter()
+        .all(|field| field.weight().get() == 1.0));
+}
+
+#[test]
 fn portable_values_and_serialization_errors_are_preserved() {
     let definition = IndexDefinition::new()
         .field(Field::text("title"))
@@ -431,7 +567,7 @@ fn portable_values_and_serialization_errors_are_preserved() {
         "nested": {"source": "catalog"}
     });
     let error = index.insert("sku-44", &document).unwrap_err();
-    assert!(matches!(error, Error::Portable(_)));
+    assert!(matches!(error, Error::Search { .. }));
 
     let non_object = serde_json::json!(["not", "a", "document"]);
     let error = index.upsert("sku-45", &non_object).unwrap_err();
@@ -512,20 +648,20 @@ fn backend_errors_and_false_deletes_are_returned_without_reinterpretation() {
     let index = index_with(backend.clone());
     assert!(matches!(
         index.insert("insert", &value),
-        Err(Error::Portable(_))
+        Err(Error::Search { .. })
     ));
     assert!(matches!(
         index.upsert("upsert", &value),
-        Err(Error::Portable(_))
+        Err(Error::Search { .. })
     ));
     assert!(matches!(
         index.patch("patch", Patch::new().unset("brand")),
-        Err(Error::Portable(_))
+        Err(Error::Search { .. })
     ));
-    assert!(matches!(index.delete("delete"), Err(Error::Portable(_))));
+    assert!(matches!(index.delete("delete"), Err(Error::Search { .. })));
     assert!(matches!(
         index.search("").execute::<serde_json::Value>(),
-        Err(Error::Portable(_))
+        Err(Error::Search { .. })
     ));
     backend.finish().unwrap();
 }
@@ -548,15 +684,15 @@ fn public_helper_types_and_errors_have_stable_behavior() {
     let index = index_with(Arc::new(RecordingBackend::new()));
     assert!(format!("{:?}", index.search("headphones")).contains("headphones"));
 
-    let portable = Error::from(searchkernel_ir::PortableError::new(
-        searchkernel_ir::ErrorCode::Unavailable,
-        "unavailable",
-    ));
-    assert!(portable.portable().is_some());
-    assert_eq!(portable.to_string(), "unavailable");
-    assert!(std::error::Error::source(&portable).is_some());
+    let search = Error::search(ErrorCode::Unavailable, "unavailable");
+    assert_eq!(search.code(), ErrorCode::Unavailable);
+    assert!(!search.retryable());
+    assert!(search.details().is_empty());
+    assert_eq!(search.to_string(), "unavailable");
+    assert!(std::error::Error::source(&search).is_none());
     let serialization = Error::Serialization("bad document".into());
-    assert!(serialization.portable().is_none());
+    assert_eq!(serialization.code(), ErrorCode::InvalidArgument);
+    assert!(serialization.details().is_empty());
     assert!(serialization.to_string().contains("bad document"));
     assert_eq!(
         Error::Deserialization("bad result".into()).to_string(),

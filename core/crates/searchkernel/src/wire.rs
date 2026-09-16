@@ -1,5 +1,6 @@
 //! Private encoding of product values into the portable FlatBuffers contract.
 
+use crate::analyze::{AnalyzeBuilder, AnalyzeTarget};
 use crate::filter::{pending_value, ComparisonOp, Filter, FilterNode};
 use crate::patch::{Patch, PatchOperation};
 use crate::schema::{Analyzer, Field, FieldKind, IndexDefinition, SearchField};
@@ -71,18 +72,68 @@ pub(crate) fn delete(id: &str) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-pub(crate) fn get(id: &str) -> Vec<u8> {
+pub(crate) fn get(id: &str, selected_fields: Option<&[String]>) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(id);
+    let projection = selected_fields.map(|fields| projection(&mut builder, fields));
     let root = api::GetRequest::create(
         &mut builder,
         &api::GetRequestArgs {
             id: Some(id),
-            projection: None,
+            projection,
         },
     );
     builder.finish(root, None);
     builder.finished_data().to_vec()
+}
+
+pub(crate) fn analyze(request: &AnalyzeBuilder<'_>) -> Result<Vec<u8>> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let (target_type, target) = match request.target {
+        Some(AnalyzeTarget::Analyzer(analyzer)) => (
+            api::AnalyzeTarget::Analyzer,
+            analyzer_value(&mut builder, analyzer).as_union_value(),
+        ),
+        Some(AnalyzeTarget::Field) => {
+            let field = request.field_name.as_deref().ok_or_else(|| {
+                Error::search(
+                    crate::ErrorCode::InvalidArgument,
+                    "analyze field target is missing a field name",
+                )
+            })?;
+            let field = builder.create_string(field);
+            let target = api::AnalyzeFieldTarget::create(
+                &mut builder,
+                &api::AnalyzeFieldTargetArgs { field: Some(field) },
+            );
+            (
+                api::AnalyzeTarget::AnalyzeFieldTarget,
+                target.as_union_value(),
+            )
+        }
+        None => {
+            return Err(Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "analyze requires an analyzer or field target",
+            ))
+        }
+    };
+    let text = builder.create_string(&request.text);
+    let language = request
+        .language
+        .as_deref()
+        .map(|value| builder.create_string(value));
+    let root = api::AnalyzeRequest::create(
+        &mut builder,
+        &api::AnalyzeRequestArgs {
+            target_type,
+            target: Some(target),
+            text: Some(text),
+            language,
+        },
+    );
+    builder.finish(root, None);
+    Ok(builder.finished_data().to_vec())
 }
 
 pub(crate) fn search(request: &SearchBuilder<'_>) -> Result<Vec<u8>> {

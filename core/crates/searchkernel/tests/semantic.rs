@@ -171,10 +171,7 @@ fn public_api_round_trips_crud_and_match_all_search() {
         Some(product.clone())
     );
     let error = index.insert("sku-1", &product).unwrap_err();
-    assert_eq!(
-        error.portable().unwrap().code,
-        searchkernel_ir::ErrorCode::AlreadyExists
-    );
+    assert_eq!(error.code(), searchkernel::ErrorCode::AlreadyExists);
 
     let clone = index.clone();
     clone

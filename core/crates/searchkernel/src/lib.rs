@@ -1,5 +1,6 @@
 //! Product-facing, backend-independent Search Kernel API.
 
+mod analyze;
 mod document;
 mod error;
 mod filter;
@@ -10,8 +11,9 @@ mod schema;
 mod search;
 mod wire;
 
+pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
-pub use error::{Error, Result};
+pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, Range};
 pub use index::Index;
 pub use patch::Patch;
@@ -20,7 +22,9 @@ pub use result::{
     TotalHits, TotalHitsRelation,
 };
 pub use schema::{Analyzer, Field, IndexDefinition, SearchField};
-pub use search::{Facet, FacetSort, MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection};
+pub use search::{
+    Facet, FacetSort, InspectedQuery, MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection,
+};
 
 /// Internal constructor namespace used by backend-injected tests.
 #[doc(hidden)]

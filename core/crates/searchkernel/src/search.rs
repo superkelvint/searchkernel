@@ -116,6 +116,23 @@ pub enum Ranking {
     Bm25,
 }
 
+/// The normalized meaning of a search request after schema defaults are
+/// applied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InspectedQuery {
+    pub query: String,
+    pub search_fields: Vec<crate::schema::SearchField>,
+    pub filter: Option<Filter>,
+    pub sorts: Vec<Sort>,
+    pub facets: Vec<Facet>,
+    pub ranking: Ranking,
+    pub limit: u32,
+    pub offset: u32,
+    pub projection: Vec<String>,
+    pub highlighting: Option<Vec<String>>,
+    pub language: Option<String>,
+}
+
 /// A fluent search request.
 ///
 /// The builder stores caller intent. Validation, defaults, and conversion to
@@ -157,9 +174,10 @@ impl<'a> SearchBuilder<'a> {
     /// Select the fields used for a text query.
     pub fn search_fields<I>(mut self, fields: I) -> Self
     where
-        I: IntoIterator<Item = crate::schema::SearchField>,
+        I: IntoIterator,
+        I::Item: Into<crate::schema::SearchField>,
     {
-        self.search_fields = Some(fields.into_iter().collect());
+        self.search_fields = Some(fields.into_iter().map(Into::into).collect());
         self
     }
 
@@ -239,6 +257,11 @@ impl<'a> SearchBuilder<'a> {
     pub fn execute<T: DeserializeOwned>(self) -> crate::Result<SearchResult<T>> {
         self.index.execute_search(&self)
     }
+
+    /// Inspect the normalized request without executing a search.
+    pub fn inspect(self) -> crate::Result<InspectedQuery> {
+        self.index.inspect_search(&self)
+    }
 }
 
 impl std::fmt::Debug for SearchBuilder<'_> {
@@ -247,5 +270,46 @@ impl std::fmt::Debug for SearchBuilder<'_> {
             .debug_struct("SearchBuilder")
             .field("query", &self.query)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sort_builders_encode_direction_and_missing_placement() {
+        let ascending = Sort::asc("price");
+        assert_eq!(ascending.field, "price");
+        assert_eq!(ascending.direction, SortDirection::Asc);
+        assert_eq!(ascending.missing, None);
+
+        let descending = Sort::desc("score").missing_first();
+        assert_eq!(descending.direction, SortDirection::Desc);
+        assert_eq!(descending.missing, Some(MissingPlacement::First));
+        assert_eq!(
+            Sort::asc("brand").missing_last().missing,
+            Some(MissingPlacement::Last)
+        );
+    }
+
+    #[test]
+    fn facet_builders_encode_limits_and_each_sort_variant() {
+        let defaults = Facet::new("brand");
+        assert_eq!(defaults.field, "brand");
+        assert_eq!(defaults.limit, None);
+        assert_eq!(defaults.sort, None);
+
+        for sort in [
+            FacetSort::CountDesc,
+            FacetSort::CountAsc,
+            FacetSort::ValueAsc,
+            FacetSort::ValueDesc,
+        ] {
+            let facet = Facet::new("brand").limit(0).sort(sort);
+            assert_eq!(facet.limit, Some(0));
+            assert_eq!(facet.sort, Some(sort));
+        }
+        assert_eq!(Facet::from("brand"), Facet::new("brand"));
     }
 }

@@ -104,6 +104,46 @@ impl Field {
         self.analyzer = Some(value);
         self
     }
+
+    /// Return this field's name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Return whether this field stores multiple values.
+    pub fn is_multi(&self) -> bool {
+        self.multi
+    }
+
+    /// Return the explicitly configured storage capability, if any.
+    pub fn configured_stored(&self) -> Option<bool> {
+        self.stored
+    }
+
+    /// Return the explicitly configured search capability, if any.
+    pub fn configured_searchable(&self) -> Option<bool> {
+        self.searchable
+    }
+
+    /// Return the explicitly configured filter capability, if any.
+    pub fn configured_filterable(&self) -> Option<bool> {
+        self.filterable
+    }
+
+    /// Return the explicitly configured sort capability, if any.
+    pub fn configured_sortable(&self) -> Option<bool> {
+        self.sortable
+    }
+
+    /// Return the explicitly configured facet capability, if any.
+    pub fn configured_facetable(&self) -> Option<bool> {
+        self.facetable
+    }
+
+    /// Return the configured analyzer, if any.
+    pub fn configured_analyzer(&self) -> Option<Analyzer> {
+        self.analyzer
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +165,28 @@ impl SearchField {
     pub fn weight(mut self, value: f64) -> Self {
         self.weight = Some(value);
         self
+    }
+
+    /// Return the selected field name.
+    pub fn field(&self) -> &str {
+        &self.field
+    }
+
+    /// Return the relative weight, if one was explicitly configured.
+    pub fn weight_value(&self) -> Option<f64> {
+        self.weight
+    }
+}
+
+impl From<&str> for SearchField {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for SearchField {
+    fn from(value: String) -> Self {
+        Self::new(value)
     }
 }
 
@@ -154,9 +216,54 @@ impl IndexDefinition {
     /// Set the fields used when a search does not specify its own fields.
     pub fn default_search_fields<I>(mut self, fields: I) -> Self
     where
-        I: IntoIterator<Item = SearchField>,
+        I: IntoIterator,
+        I::Item: Into<SearchField>,
     {
-        self.default_search_fields = Some(fields.into_iter().collect());
+        self.default_search_fields = Some(fields.into_iter().map(Into::into).collect());
         self
+    }
+
+    /// Return the optional index name.
+    pub fn index_name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Return the fields in this definition.
+    pub fn fields(&self) -> &[Field] {
+        &self.fields
+    }
+
+    /// Return the explicitly configured default search fields.
+    pub fn configured_default_search_fields(&self) -> Option<&[SearchField]> {
+        self.default_search_fields.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IndexDefinition, SearchField};
+
+    #[test]
+    fn search_field_names_convert_to_unweighted_fields() {
+        let borrowed: SearchField = "title".into();
+        let owned: SearchField = String::from("description").into();
+
+        assert_eq!(borrowed.field, "title");
+        assert_eq!(borrowed.weight, None);
+        assert_eq!(owned.field, "description");
+        assert_eq!(owned.weight, None);
+    }
+
+    #[test]
+    fn default_search_fields_accept_field_names() {
+        let definition = IndexDefinition::new().default_search_fields(["title", "description"]);
+
+        let fields = definition.default_search_fields.unwrap();
+        assert_eq!(fields[0].field, "title");
+        assert_eq!(fields[1].field, "description");
+        assert_eq!(
+            fields.iter().map(|field| field.weight).collect::<Vec<_>>(),
+            [None, None]
+        );
     }
 }

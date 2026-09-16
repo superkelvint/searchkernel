@@ -1,26 +1,30 @@
+use crate::analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::Patch;
 use crate::result;
-use crate::schema::IndexDefinition;
-use crate::schema::{Analyzer, Field, SearchField};
-use crate::search::SearchBuilder;
+use crate::schema::{Analyzer, Field, IndexDefinition, SearchField};
+use crate::search::{Facet, FacetSort, Ranking, SearchBuilder, Sort};
 use crate::wire;
 use searchkernel_ir::{api, Backend, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
 
+#[cfg(feature = "native")]
 const MANIFEST_FORMAT_VERSION: u32 = 2;
+#[cfg(feature = "native")]
 const NATIVE_ABI_VERSION: u32 = 4;
+#[cfg(feature = "native")]
 const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
+#[cfg(feature = "native")]
 fn create_directory_transaction<T>(
     root: &std::path::Path,
     initialize: impl FnOnce(&std::path::Path) -> Result<T>,
 ) -> Result<T> {
     if root.exists() {
-        return Err(Error::AlreadyExists(root.display().to_string()));
+        return Err(Error::already_exists(root.display().to_string()));
     }
     if let Some(parent) = root.parent() {
         std::fs::create_dir_all(parent)
@@ -28,7 +32,7 @@ fn create_directory_transaction<T>(
     }
     std::fs::create_dir(root).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
-            Error::AlreadyExists(root.display().to_string())
+            Error::already_exists(root.display().to_string())
         } else {
             Error::Infrastructure(error.to_string())
         }
@@ -51,6 +55,7 @@ fn create_directory_transaction<T>(
 pub struct Index {
     pub(crate) context: Arc<IndexContext>,
     pub(crate) backend: Arc<dyn Backend>,
+    pub(crate) definition: IndexDefinition,
 }
 
 impl Clone for Index {
@@ -58,6 +63,7 @@ impl Clone for Index {
         Self {
             context: Arc::clone(&self.context),
             backend: Arc::clone(&self.backend),
+            definition: self.definition.clone(),
         }
     }
 }
@@ -68,30 +74,32 @@ impl Index {
     /// the ergonomic Rust API; the portable wire definition is validated by
     /// `searchkernel-ir` before it reaches the product lifecycle.
     #[doc(hidden)]
+    #[cfg(feature = "native")]
     pub fn create_from_definition_bytes(
         path: impl AsRef<std::path::Path>,
         bytes: &[u8],
     ) -> Result<Self> {
         let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(bytes)
             .map_err(|error| Error::Serialization(format!("invalid index definition: {error}")))?;
-        let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::Portable)?;
+        let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
         Self::create(path, definition_from_ir(&ir))
     }
 
     /// Create a new on-disk index and persist all information required to
     /// reopen it safely.
+    #[cfg(feature = "native")]
     pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
         let root = path.as_ref();
         create_directory_transaction(root, |root| {
             let resolved_ir = definition_to_ir(&definition)?;
             searchkernel_ir_adapter::validate_index_definition(&resolved_ir)
-                .map_err(Error::Portable)?;
+                .map_err(Error::from_ir)?;
             let resolved_definition = definition_from_ir(&resolved_ir);
             let data = root.join("data");
             let config = root.join("config");
             std::fs::create_dir(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
             searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
-                .map_err(Error::Portable)?;
+                .map_err(Error::from_ir)?;
             let manifest =
                 IndexManifest::for_definition(&definition, &resolved_definition, &config)?;
             manifest.write(root)?;
@@ -102,17 +110,18 @@ impl Index {
     }
 
     /// Reopen an existing index using its durable manifest.
+    #[cfg(feature = "native")]
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let root = path.as_ref();
         if !root.is_dir() {
-            return Err(Error::NotFound(root.display().to_string()));
+            return Err(Error::not_found(root.display().to_string()));
         }
         let manifest = IndexManifest::read(root)?;
         let definition = manifest.definition()?;
         let config = root.join("config");
         if !root.join("data").is_dir() || !config.is_dir() {
-            return Err(Error::CorruptIndex(
-                "index data/config directories are missing".into(),
+            return Err(Error::corrupt_index(
+                "index data/config directories are missing",
             ));
         }
         manifest.validate_config(&config)?;
@@ -131,10 +140,12 @@ impl Index {
         let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
             |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
         )?;
-        let context = IndexContext::from_api(root)?;
+        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+        let effective_definition = definition_from_ir(context.definition());
         Ok(Self {
             context: Arc::new(context),
             backend,
+            definition: effective_definition,
         })
     }
 
@@ -153,8 +164,8 @@ impl Index {
             serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
         let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
         let request = self.root_insert(&request_bytes)?;
-        let ir_request = self.context.insert_to_ir(request)?;
-        self.backend.insert(ir_request)?;
+        let ir_request = self.context.insert_to_ir(request).map_err(Error::from_ir)?;
+        self.backend.insert(ir_request).map_err(Error::from_ir)?;
         Ok(())
     }
 
@@ -165,8 +176,8 @@ impl Index {
             serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
         let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
         let request = self.root_upsert(&request_bytes)?;
-        let ir_request = self.context.upsert_to_ir(request)?;
-        self.backend.upsert(ir_request)?;
+        let ir_request = self.context.upsert_to_ir(request).map_err(Error::from_ir)?;
+        self.backend.upsert(ir_request).map_err(Error::from_ir)?;
         Ok(())
     }
 
@@ -175,8 +186,8 @@ impl Index {
         let document_id = id.into();
         let request_bytes = wire::patch(document_id.as_str(), &patch)?;
         let request = self.root_patch(&request_bytes)?;
-        let ir_request = self.context.patch_to_ir(request)?;
-        self.backend.patch(ir_request)?;
+        let ir_request = self.context.patch_to_ir(request).map_err(Error::from_ir)?;
+        self.backend.patch(ir_request).map_err(Error::from_ir)?;
         Ok(())
     }
 
@@ -185,17 +196,40 @@ impl Index {
         let document_id = id.into();
         let request_bytes = wire::delete(document_id.as_str());
         let request = self.root_delete(&request_bytes)?;
-        let ir_request = self.context.delete_to_ir(request)?;
-        let delete_result = self.backend.delete(ir_request)?;
+        let ir_request = self.context.delete_to_ir(request).map_err(Error::from_ir)?;
+        let delete_result = self.backend.delete(ir_request).map_err(Error::from_ir)?;
         Ok(delete_result.deleted)
     }
 
     /// Read a document and deserialize it into `T`.
     pub fn get<T: DeserializeOwned>(&self, id: impl Into<DocumentId>) -> Result<Option<T>> {
-        let document_id = id.into();
-        let request_bytes = wire::get(document_id.as_str());
+        self.get_inner(id.into(), None)
+    }
+
+    /// Read a document while requesting only the selected fields.
+    pub fn get_with_projection<T: DeserializeOwned>(
+        &self,
+        id: impl Into<DocumentId>,
+        fields: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<Option<T>> {
+        let fields = fields
+            .into_iter()
+            .map(|field| field.as_ref().to_owned())
+            .collect();
+        self.get_inner(id.into(), Some(fields))
+    }
+
+    fn get_inner<T: DeserializeOwned>(
+        &self,
+        document_id: DocumentId,
+        projection: Option<Vec<String>>,
+    ) -> Result<Option<T>> {
+        let request_bytes = wire::get(document_id.as_str(), projection.as_deref());
         let request = self.root_get(&request_bytes)?;
-        let get_result = self.backend.get(self.context.get_to_ir(request)?)?;
+        let get_result = self
+            .backend
+            .get(self.context.get_to_ir(request).map_err(Error::from_ir)?)
+            .map_err(Error::from_ir)?;
         get_result
             .document
             .map(result::document)
@@ -208,6 +242,134 @@ impl Index {
         SearchBuilder::new(self, query)
     }
 
+    /// Start a match-all search intended for browsing or administration.
+    pub fn browse(&self) -> SearchBuilder<'_> {
+        self.search("")
+    }
+
+    /// Return the effective schema and search defaults for this index.
+    pub fn describe(&self) -> Result<IndexDefinition> {
+        Ok(self.definition.clone())
+    }
+
+    /// Start a linguistic analysis request.
+    pub fn analyze(&self, text: impl Into<String>) -> AnalyzeBuilder<'_> {
+        AnalyzeBuilder::new(self, text)
+    }
+
+    pub(crate) fn execute_analyze(&self, request: &AnalyzeBuilder<'_>) -> Result<AnalyzeResult> {
+        let request_bytes = wire::analyze(request)?;
+        let wire_request = searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(
+            &request_bytes,
+        )
+        .map_err(|error| {
+            Error::infrastructure(format!("invalid generated analyze request: {error}"))
+        })?;
+        let ir_request = self
+            .context
+            .analyze_to_ir(wire_request)
+            .map_err(Error::from_ir)?;
+        let result = self.backend.analyze(ir_request).map_err(Error::from_ir)?;
+        Ok(AnalyzeResult {
+            tokens: result
+                .tokens
+                .into_iter()
+                .map(|token| AnalyzedToken {
+                    surface: token.surface,
+                    term: token.term,
+                    position: token.position,
+                    start_byte: token.start_byte,
+                    end_byte: token.end_byte,
+                })
+                .collect(),
+        })
+    }
+
+    pub(crate) fn inspect_search(
+        &self,
+        request: &SearchBuilder<'_>,
+    ) -> Result<crate::search::InspectedQuery> {
+        let request_bytes = wire::search(request)?;
+        let wire_request =
+            searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes).map_err(
+                |error| Error::infrastructure(format!("invalid generated search request: {error}")),
+            )?;
+        let normalized = self
+            .context
+            .inspect_query(wire_request)
+            .map_err(Error::from_ir)?;
+        let query = match normalized.query() {
+            searchkernel_ir::QueryIr::MatchAll => String::new(),
+            searchkernel_ir::QueryIr::Text(value) => value.clone(),
+            _ => format!("{:?}", normalized.query()),
+        };
+        let highlighting = match normalized.highlighting() {
+            searchkernel_ir::HighlightingIr::Disabled => None,
+            searchkernel_ir::HighlightingIr::Requested { fields } => Some(
+                fields
+                    .iter()
+                    .map(|field| field.as_str().to_owned())
+                    .collect(),
+            ),
+        };
+        Ok(crate::search::InspectedQuery {
+            query,
+            search_fields: normalized
+                .search_fields()
+                .iter()
+                .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get()))
+                .collect(),
+            filter: match request.filters.as_slice() {
+                [] => None,
+                [filter] => Some(filter.clone()),
+                filters => Some(crate::Filter::all(filters.iter().cloned())),
+            },
+            sorts: normalized
+                .sort()
+                .iter()
+                .map(|sort| {
+                    let value = match sort.direction() {
+                        searchkernel_ir::SortDirection::Asc => Sort::asc(sort.field().as_str()),
+                        searchkernel_ir::SortDirection::Desc => Sort::desc(sort.field().as_str()),
+                    };
+                    match sort.missing() {
+                        searchkernel_ir::MissingPlacement::First => value.missing_first(),
+                        searchkernel_ir::MissingPlacement::Last => value.missing_last(),
+                    }
+                })
+                .collect(),
+            facets: normalized
+                .facets()
+                .iter()
+                .map(|facet| {
+                    let value = Facet::new(facet.field().as_str()).limit(facet.limit());
+                    value.sort(match facet.sort() {
+                        searchkernel_ir::FacetSort::CountDesc => FacetSort::CountDesc,
+                        searchkernel_ir::FacetSort::CountAsc => FacetSort::CountAsc,
+                        searchkernel_ir::FacetSort::ValueAsc => FacetSort::ValueAsc,
+                        searchkernel_ir::FacetSort::ValueDesc => FacetSort::ValueDesc,
+                    })
+                })
+                .collect(),
+            ranking: match normalized.ranking() {
+                searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => Ranking::DefaultRelevanceV1,
+                searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::Bm25,
+            },
+            limit: normalized.limit(),
+            offset: normalized.offset(),
+            projection: normalized
+                .projection()
+                .fields()
+                .iter()
+                .map(|field| field.as_str().to_owned())
+                .collect(),
+            highlighting,
+            language: normalized
+                .language()
+                .map(|language| language.as_str().to_owned()),
+        })
+    }
+
     pub(crate) fn execute_search<T: DeserializeOwned>(
         &self,
         request: &SearchBuilder<'_>,
@@ -217,8 +379,11 @@ impl Index {
             searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes).map_err(
                 |error| Error::infrastructure(format!("invalid generated search request: {error}")),
             )?;
-        let ir_request = self.context.search_to_ir(wire_request)?;
-        let backend_result = self.backend.search(ir_request)?;
+        let ir_request = self
+            .context
+            .search_to_ir(wire_request)
+            .map_err(Error::from_ir)?;
+        let backend_result = self.backend.search(ir_request).map_err(Error::from_ir)?;
         result::search_result(backend_result)
     }
 
@@ -253,11 +418,13 @@ impl Index {
     }
 }
 
+#[cfg(feature = "native")]
 #[derive(Debug, Clone)]
 struct IndexManifest {
     value: serde_json::Value,
 }
 
+#[cfg(feature = "native")]
 impl IndexManifest {
     fn for_definition(
         portable_definition: &IndexDefinition,
@@ -291,13 +458,13 @@ impl IndexManifest {
         let path = root.join("manifest/index.json");
         let bytes = std::fs::read(&path).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
-                Error::CorruptIndex(path.display().to_string())
+                Error::corrupt_index(path.display().to_string())
             } else {
                 Error::Infrastructure(error.to_string())
             }
         })?;
         let value = serde_json::from_slice(&bytes)
-            .map_err(|error| Error::CorruptIndex(error.to_string()))?;
+            .map_err(|error| Error::corrupt_index(error.to_string()))?;
         let manifest = Self { value };
         manifest.validate_identity()?;
         Ok(manifest)
@@ -307,62 +474,60 @@ impl IndexManifest {
         let object = self
             .value
             .as_object()
-            .ok_or_else(|| Error::CorruptIndex("manifest root is not an object".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest root is not an object"))?;
         let version = object
             .get("format_version")
             .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| Error::CorruptIndex("manifest format_version is missing".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest format_version is missing"))?;
         if version != u64::from(MANIFEST_FORMAT_VERSION) {
-            return Err(Error::IncompatibleIndex(format!(
+            return Err(Error::incompatible_index(format!(
                 "manifest format version {version}"
             )));
         }
         let abi = object
             .get("native_abi_version")
             .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| Error::CorruptIndex("manifest native_abi_version is missing".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest native_abi_version is missing"))?;
         if abi != u64::from(NATIVE_ABI_VERSION) {
-            return Err(Error::IncompatibleIndex(format!(
+            return Err(Error::incompatible_index(format!(
                 "native ABI version {abi}"
             )));
         }
         let searchkernel_version = object
             .get("searchkernel_version")
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                Error::CorruptIndex("manifest searchkernel_version is missing".into())
-            })?;
+            .ok_or_else(|| Error::corrupt_index("manifest searchkernel_version is missing"))?;
         let vespa_revision = object
             .get("vespa_revision")
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::CorruptIndex("manifest vespa_revision is missing".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest vespa_revision is missing"))?;
         if searchkernel_version != env!("CARGO_PKG_VERSION") || vespa_revision != VESPA_REVISION {
-            return Err(Error::IncompatibleIndex(
-                "manifest identity does not match this build".into(),
+            return Err(Error::incompatible_index(
+                "manifest identity does not match this build",
             ));
         }
         if !object
             .get("portable_index_definition")
             .is_some_and(serde_json::Value::is_object)
         {
-            return Err(Error::CorruptIndex(
-                "manifest portable_index_definition is invalid".into(),
+            return Err(Error::corrupt_index(
+                "manifest portable_index_definition is invalid",
             ));
         }
         if !object
             .get("resolved_index_definition")
             .is_some_and(serde_json::Value::is_object)
         {
-            return Err(Error::CorruptIndex(
-                "manifest resolved_index_definition is invalid".into(),
+            return Err(Error::corrupt_index(
+                "manifest resolved_index_definition is invalid",
             ));
         }
         if !object
             .get("resolved_engine_config_identity")
             .is_some_and(serde_json::Value::is_object)
         {
-            return Err(Error::CorruptIndex(
-                "manifest resolved_engine_config_identity is invalid".into(),
+            return Err(Error::corrupt_index(
+                "manifest resolved_engine_config_identity is invalid",
             ));
         }
         Ok(())
@@ -379,7 +544,7 @@ impl IndexManifest {
             "proton.cfg",
         ] {
             if !config.join(name).is_file() {
-                return Err(Error::CorruptIndex(format!(
+                return Err(Error::corrupt_index(format!(
                     "resolved engine configuration is missing {name}"
                 )));
             }
@@ -387,11 +552,11 @@ impl IndexManifest {
         let expected = self
             .value
             .get("resolved_engine_config_identity")
-            .ok_or_else(|| Error::CorruptIndex("manifest config identity is missing".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest config identity is missing"))?;
         let actual = config_identity(config)?;
         if expected != &actual {
-            return Err(Error::IncompatibleIndex(
-                "resolved engine configuration differs".into(),
+            return Err(Error::incompatible_index(
+                "resolved engine configuration differs",
             ));
         }
         Ok(())
@@ -401,20 +566,22 @@ impl IndexManifest {
         definition_from_json(
             self.value
                 .get("resolved_index_definition")
-                .ok_or_else(|| Error::CorruptIndex("resolved definition is missing".into()))?,
+                .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
         )
     }
 }
 
+#[cfg(feature = "native")]
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
     let bytes = wire::definition(definition);
     let root =
         searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(|error| {
             Error::infrastructure(format!("invalid generated index definition: {error}"))
         })?;
-    searchkernel_ir::index_definition_to_ir(root).map_err(Error::Portable)
+    searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)
 }
 
+#[cfg(feature = "native")]
 fn definition_json(definition: &IndexDefinition) -> serde_json::Value {
     serde_json::json!({
         "name": definition.name,
@@ -475,10 +642,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
     )
 }
 
+#[cfg(feature = "native")]
 fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
     let object = value
         .as_object()
-        .ok_or_else(|| Error::CorruptIndex("portable definition is not an object".into()))?;
+        .ok_or_else(|| Error::corrupt_index("portable definition is not an object"))?;
     let mut definition = IndexDefinition::new();
     if let Some(name) = object.get("name").and_then(serde_json::Value::as_str) {
         definition = definition.name(name);
@@ -486,36 +654,32 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
     let fields = object
         .get("fields")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| Error::CorruptIndex("portable definition fields are missing".into()))?;
+        .ok_or_else(|| Error::corrupt_index("portable definition fields are missing"))?;
     for field in fields {
         let metadata = field
             .as_object()
-            .ok_or_else(|| Error::CorruptIndex("manifest field is not an object".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest field is not an object"))?;
         let name = metadata
             .get("name")
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::CorruptIndex("manifest field name is missing".into()))?;
+            .ok_or_else(|| Error::corrupt_index("manifest field name is missing"))?;
         let kind = match metadata.get("kind").and_then(serde_json::Value::as_str) {
             Some("Text") => Field::text(name),
             Some("Keyword") => Field::keyword(name),
             Some("Int64") => Field::int64(name),
             Some("Float64") => Field::float64(name),
             Some("Bool") => Field::bool(name),
-            _ => return Err(Error::CorruptIndex("manifest field kind is invalid".into())),
+            _ => return Err(Error::corrupt_index("manifest field kind is invalid")),
         };
         let mut field = kind;
         if let Some(analyzer) = metadata.get("analyzer") {
             if !analyzer.is_null() {
-                let analyzer = analyzer.as_str().ok_or_else(|| {
-                    Error::CorruptIndex("manifest field analyzer is invalid".into())
-                })?;
+                let analyzer = analyzer
+                    .as_str()
+                    .ok_or_else(|| Error::corrupt_index("manifest field analyzer is invalid"))?;
                 field = match analyzer {
                     "StandardV1" => field.analyzer(Analyzer::standard_v1()),
-                    _ => {
-                        return Err(Error::CorruptIndex(
-                            "manifest field analyzer is invalid".into(),
-                        ))
-                    }
+                    _ => return Err(Error::corrupt_index("manifest field analyzer is invalid")),
                 };
             }
         }
@@ -551,15 +715,13 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
     {
         let mut fields = Vec::with_capacity(search_fields.len());
         for search_field in search_fields {
-            let search_field = search_field.as_object().ok_or_else(|| {
-                Error::CorruptIndex("manifest search field is not an object".into())
-            })?;
+            let search_field = search_field
+                .as_object()
+                .ok_or_else(|| Error::corrupt_index("manifest search field is not an object"))?;
             let name = search_field
                 .get("field")
                 .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| {
-                    Error::CorruptIndex("manifest search field name is missing".into())
-                })?;
+                .ok_or_else(|| Error::corrupt_index("manifest search field name is missing"))?;
             let mut field = SearchField::new(name);
             if let Some(weight) = search_field
                 .get("weight")
@@ -574,6 +736,7 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
     Ok(definition)
 }
 
+#[cfg(feature = "native")]
 fn config_identity(config: &std::path::Path) -> Result<serde_json::Value> {
     let mut files = serde_json::Map::new();
     for name in [
@@ -593,7 +756,7 @@ fn config_identity(config: &std::path::Path) -> Result<serde_json::Value> {
     Ok(serde_json::Value::Object(files))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
     use crate::{Analyzer, Field, SearchField};
@@ -751,7 +914,8 @@ mod tests {
         std::fs::write(config.join("proton.cfg"), "changed\n").unwrap();
         assert!(matches!(
             loaded.validate_config(&config),
-            Err(Error::IncompatibleIndex(message)) if message == "resolved engine configuration differs"
+            Err(Error::Search { code: crate::ErrorCode::IncompatibleIndex, message, .. })
+                if message == "incompatible index: resolved engine configuration differs"
         ));
         let _ = std::fs::remove_dir_all(root);
     }
@@ -791,7 +955,13 @@ mod tests {
             let result = corrupted.validate_identity();
             assert!(result.is_err(), "manifest mutation {key} was accepted");
             assert_eq!(
-                matches!(result, Err(Error::IncompatibleIndex(_))),
+                matches!(
+                    result,
+                    Err(Error::Search {
+                        code: crate::ErrorCode::IncompatibleIndex,
+                        ..
+                    })
+                ),
                 incompatible,
                 "unexpected error class for manifest mutation {key}"
             );
@@ -799,7 +969,13 @@ mod tests {
 
         for value in [serde_json::json!(null), serde_json::json!({})] {
             let result = IndexManifest { value }.validate_identity();
-            assert!(matches!(result, Err(Error::CorruptIndex(_))));
+            assert!(matches!(
+                result,
+                Err(Error::Search {
+                    code: crate::ErrorCode::CorruptIndex,
+                    ..
+                })
+            ));
         }
 
         let malformed = root.join("malformed");
@@ -807,14 +983,20 @@ mod tests {
         std::fs::write(malformed.join("manifest/index.json"), b"not-json").unwrap();
         assert!(matches!(
             IndexManifest::read(&malformed),
-            Err(Error::CorruptIndex(_))
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
         ));
 
         let missing = root.join("missing");
         std::fs::create_dir_all(&missing).unwrap();
         assert!(matches!(
             IndexManifest::read(&missing),
-            Err(Error::CorruptIndex(_))
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
         ));
         let _ = std::fs::remove_dir_all(root);
     }
@@ -846,7 +1028,10 @@ mod tests {
         for value in invalid_definitions {
             assert!(matches!(
                 definition_from_json(&value),
-                Err(Error::CorruptIndex(_))
+                Err(Error::Search {
+                    code: crate::ErrorCode::CorruptIndex,
+                    ..
+                })
             ));
         }
     }
@@ -867,5 +1052,61 @@ mod tests {
             matches!(error, Error::Infrastructure(message) if message == "forced initialization failure")
         );
         assert!(!root.exists());
+    }
+}
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+    use crate::Field;
+    use searchkernel_testkit::RecordingBackend;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    fn test_index() -> (Index, Arc<RecordingBackend>) {
+        let backend = Arc::new(RecordingBackend::new());
+        let definition = IndexDefinition::new()
+            .field(Field::text("title").stored(true))
+            .field(Field::float64("price"));
+        let index = Index::from_backend(definition, backend.clone()).expect("valid test index");
+        (index, backend)
+    }
+
+    #[test]
+    fn invalid_values_do_not_reach_the_backend() {
+        let (index, backend) = test_index();
+
+        let error = index
+            .insert("nan", &f64::NAN)
+            .expect_err("non-finite JSON values must be rejected");
+        assert!(
+            matches!(error, Error::Serialization(_)),
+            "unexpected error: {error}"
+        );
+        assert!(backend.calls().is_empty());
+
+        let error = index
+            .patch("nan", Patch::new().set("price", f64::NAN))
+            .expect_err("invalid patch values must be rejected");
+        assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+        assert!(backend.calls().is_empty());
+    }
+
+    #[test]
+    fn backend_errors_are_returned_without_being_rewritten() {
+        let (index, backend) = test_index();
+        let error = index
+            .insert("doc-1", &json!({"title": "fox"}))
+            .expect_err("recording backend intentionally rejects writes");
+        assert_eq!(error.code(), crate::ErrorCode::Unsupported);
+        assert_eq!(backend.calls().len(), 1);
+
+        let error = index
+            .search("fox")
+            .limit(5)
+            .execute::<serde_json::Value>()
+            .expect_err("recording backend intentionally rejects searches");
+        assert_eq!(error.code(), crate::ErrorCode::Unsupported);
+        assert_eq!(backend.calls().len(), 2);
     }
 }
