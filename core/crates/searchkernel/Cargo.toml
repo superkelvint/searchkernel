@@ -6,12 +6,13 @@ license.workspace = true
 
 [features]
 default = []
-native = ["dep:searchkernel-ir-adapter"]
+native = ["dep:libc", "dep:searchkernel-ir-adapter"]
 internal-api = []
 
 [dependencies]
 searchkernel-ir = { path = "../searchkernel-ir" }
 searchkernel-ir-adapter = { path = "../searchkernel-ir-adapter", optional = true }
+libc = { version = "0.2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -103,10 +103,54 @@ fn publish_staging_directory(staging: &std::path::Path, root: &std::path::Path) 
         .map_err(|error| Error::Infrastructure(error.to_string()))
 }
 
+#[cfg(feature = "native")]
+struct LifecycleLock {
+    _file: std::fs::File,
+}
+
+#[cfg(feature = "native")]
+impl LifecycleLock {
+    fn acquire(root: &std::path::Path) -> Result<Self> {
+        use std::os::fd::AsRawFd;
+
+        let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let name = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| Error::infrastructure("index path has an invalid final component"))?;
+        let path = parent.join(format!(".{name}.searchkernel.lock"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        // This lock covers the interval in which a complete index is being
+        // assembled and published, when its final data directory is absent.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let error = std::io::Error::last_os_error();
+            if matches!(error.raw_os_error(), Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN)
+            {
+                return Err(Error::already_exists(root.display().to_string()));
+            }
+            return Err(Error::Infrastructure(format!(
+                "could not lock index lifecycle path '{}': {error}",
+                path.display()
+            )));
+        }
+        Ok(Self { _file: file })
+    }
+}
+
 struct IndexInner {
     context: Arc<IndexContext>,
     definition: Arc<IndexDefinition>,
     session: Arc<BackendSession>,
+    #[cfg(feature = "native")]
+    _lifecycle_lock: Option<LifecycleLock>,
 }
 
 #[derive(Clone)]
@@ -164,6 +208,7 @@ impl Index {
         resolved_ir: searchkernel_ir::IndexDefinitionIr,
         resolved_definition: IndexDefinition,
     ) -> Result<Self> {
+        let lifecycle_lock = LifecycleLock::acquire(root)?;
         let staging = create_staging_directory(root)?;
         let initialize = (|| {
             let staging_data = staging.join("data");
@@ -202,13 +247,18 @@ impl Index {
                 return Err(Error::Infrastructure(error.to_string()));
             }
         };
-        Self::from_owned_backend(resolved_definition, BackendSession::new(Box::new(backend)))
+        Self::from_owned_backend(
+            resolved_definition,
+            BackendSession::new(Box::new(backend)),
+            Some(lifecycle_lock),
+        )
     }
 
     /// Reopen an existing index using its durable manifest.
     #[cfg(feature = "native")]
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let root = path.as_ref();
+        let lifecycle_lock = LifecycleLock::acquire(root)?;
         if !root.is_dir() {
             return Err(Error::not_found(root.display().to_string()));
         }
@@ -223,7 +273,11 @@ impl Index {
         manifest.validate_config(&config)?;
         let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        Self::from_owned_backend(definition, BackendSession::new(Box::new(backend)))
+        Self::from_owned_backend(
+            definition,
+            BackendSession::new(Box::new(backend)),
+            Some(lifecycle_lock),
+        )
     }
 
     /// Construct an index around a backend for tests and infrastructure.
@@ -232,9 +286,34 @@ impl Index {
     /// lifecycle is supplied by a later integration milestone.
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
-        Self::from_owned_backend(definition, BackendSession::from_backend(backend))
+        Self::from_owned_backend(definition, BackendSession::from_backend(backend), None)
     }
 
+    #[cfg(feature = "native")]
+    fn from_owned_backend(
+        definition: IndexDefinition,
+        session: Arc<BackendSession>,
+        lifecycle_lock: Option<LifecycleLock>,
+    ) -> Result<Self> {
+        let bytes = wire::definition(&definition);
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
+            |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
+        )?;
+        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+        let effective_definition = definition_from_ir(context.definition());
+        let context = Arc::new(context);
+        let definition = Arc::new(effective_definition);
+        Ok(Self {
+            inner: Arc::new(IndexInner {
+                session,
+                context,
+                definition,
+                _lifecycle_lock: lifecycle_lock,
+            }),
+        })
+    }
+
+    #[cfg(not(feature = "native"))]
     fn from_owned_backend(
         definition: IndexDefinition,
         session: Arc<BackendSession>,
@@ -1428,6 +1507,24 @@ mod tests {
         publish_staging_directory(&staging, &root).unwrap();
         assert!(root.join("in-progress").is_file());
         assert!(!staging.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn interrupted_staging_does_not_block_a_retry() {
+        let root = temporary_path("interrupted-staging");
+        let staging = create_staging_directory(&root).unwrap();
+        std::fs::write(staging.join("partial-state"), b"incomplete").unwrap();
+        // The process may disappear here. The final path is still absent, so
+        // a later creator can publish a fresh complete tree.
+        assert!(!root.exists());
+
+        let index = Index::create(&root, IndexDefinition::new().field(Field::text("title")))
+            .expect("retry after interrupted staging");
+        index.close().unwrap();
+        assert!(root.join("manifest/index.json").is_file());
+        assert!(staging.exists());
+        let _ = std::fs::remove_dir_all(staging);
         let _ = std::fs::remove_dir_all(root);
     }
 
