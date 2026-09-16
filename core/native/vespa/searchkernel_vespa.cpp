@@ -2820,6 +2820,7 @@ public:
         auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
         for (const auto &[name, value] : options.query_features) {
             std::ostringstream encoded;
+            encoded.imbue(std::locale::classic());
             encoded << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
             rank_properties.add(name, encoded.str());
         }

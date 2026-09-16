@@ -1,6 +1,14 @@
 #include "searchkernel_vespa.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <locale>
+#include <mutex>
+#include <sstream>
+#include <string>
 
 extern "C" int searchkernel_query_outlives_engine_regression(const char *data_dir,
                                                                const char *config_dir) {
@@ -35,5 +43,104 @@ extern "C" int searchkernel_query_outlives_engine_regression(const char *data_di
         return 4;
     }
     sk_query_destroy(query);
+    return 0;
+}
+
+namespace {
+
+struct CommaDecimalNumPut final : std::num_put<char> {
+    iter_type do_put(iter_type output, std::ios_base &, char_type, double value) const override {
+        std::ostringstream encoded;
+        encoded.imbue(std::locale::classic());
+        encoded << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+        auto text = encoded.str();
+        std::replace(text.begin(), text.end(), '.', ',');
+        return std::copy(text.begin(), text.end(), output);
+    }
+};
+
+struct GlobalLocaleGuard {
+    explicit GlobalLocaleGuard(const std::locale &replacement)
+        : previous(std::locale::global(replacement)) {}
+
+    ~GlobalLocaleGuard() noexcept { std::locale::global(previous); }
+
+    std::locale previous;
+};
+
+} // namespace
+
+extern "C" int searchkernel_query_feature_locale_regression(const char *data_dir,
+                                                              const char *config_dir) {
+    static std::mutex locale_mutex;
+    std::lock_guard lock(locale_mutex);
+
+    uint8_t error[SK_ERROR_MESSAGE_CAPACITY] = {};
+    sk_engine *engine = nullptr;
+    if (sk_engine_open(data_dir, config_dir, &engine, error, sizeof(error)) !=
+        SK_NATIVE_STATUS_OK) {
+        return 1;
+    }
+
+    sk_query *query = nullptr;
+    if (sk_query_create(engine, &query, error, sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_engine_destroy(engine);
+        return 2;
+    }
+    if (sk_query_add_true(query, error, sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 3;
+    }
+
+    sk_generic_search_request *request = nullptr;
+    if (sk_generic_search_request_create("locale", 10, 0, SK_SUMMARY_NONE, &request, error,
+                                         sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 4;
+    }
+    if (sk_generic_search_request_add_query_feature(request, "query(locale_probe)", 1.5, error,
+                                                    sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_generic_search_request_destroy(request);
+        sk_query_destroy(query);
+        sk_engine_destroy(engine);
+        return 5;
+    }
+
+    const std::locale comma_locale(std::locale::classic(), new CommaDecimalNumPut);
+    GlobalLocaleGuard locale_guard(comma_locale);
+    sk_generic_search_result *result = nullptr;
+    const auto status = sk_engine_search_generic(engine, query, request, &result, error,
+                                                  sizeof(error));
+    sk_generic_search_request_destroy(request);
+    sk_query_destroy(query);
+    sk_engine_destroy(engine);
+    if (status != SK_NATIVE_STATUS_OK || !result) {
+        if (result) sk_generic_search_result_destroy(result);
+        return 6;
+    }
+
+    if (sk_generic_search_result_hit_count(result) != 1) {
+        sk_generic_search_result_destroy(result);
+        return 7;
+    }
+    const char *id = nullptr;
+    uint32_t id_length = 0;
+    double score = 0.0;
+    if (sk_generic_search_result_hit(result, 0, &id, &id_length, &score, error,
+                                     sizeof(error)) != SK_NATIVE_STATUS_OK) {
+        sk_generic_search_result_destroy(result);
+        return 8;
+    }
+    if (std::string(id, id_length) != "locale-1") {
+        sk_generic_search_result_destroy(result);
+        return 9;
+    }
+    if (std::abs(score - 1.5) > 1e-12) {
+        sk_generic_search_result_destroy(result);
+        return 10;
+    }
+    sk_generic_search_result_destroy(result);
     return 0;
 }

@@ -37,6 +37,10 @@ unsafe extern "C" {
         data_dir: *const std::os::raw::c_char,
         config_dir: *const std::os::raw::c_char,
     ) -> i32;
+    fn searchkernel_query_feature_locale_regression(
+        data_dir: *const std::os::raw::c_char,
+        config_dir: *const std::os::raw::c_char,
+    ) -> i32;
 }
 
 fn replace_once(path: &Path, before: &str, after: &str) {
@@ -347,6 +351,32 @@ fn native_query_can_outlive_engine() {
     assert_eq!(
         result, 0,
         "query lifetime regression failed with code {result}"
+    );
+    let _ = fs::remove_dir_all(config_path);
+    let _ = fs::remove_dir_all(data_path);
+}
+
+#[test]
+fn native_scalar_query_features_ignore_the_process_global_locale() {
+    let (config_path, data_path) = compile_config(
+        "query-feature-locale",
+        &Schema::new("typea")
+            .field(Field::new("title", FieldType::Text).indexed())
+            .rank_profile(RankProfile::new("locale").first_phase("query(locale_probe)")),
+    );
+    let engine = Engine::open(&data_path, &config_path).expect("open locale test config");
+    engine
+        .put(Document::new("locale-1").field("title", "fox"))
+        .expect("insert locale test document");
+    engine.close().expect("close locale test engine");
+
+    let config = CString::new(config_path.to_str().expect("config path is UTF-8")).unwrap();
+    let data = CString::new(data_path.to_str().expect("data path is UTF-8")).unwrap();
+    let result =
+        unsafe { searchkernel_query_feature_locale_regression(data.as_ptr(), config.as_ptr()) };
+    assert_eq!(
+        result, 0,
+        "query-feature locale regression failed with code {result}"
     );
     let _ = fs::remove_dir_all(config_path);
     let _ = fs::remove_dir_all(data_path);
