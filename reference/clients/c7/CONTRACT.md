@@ -89,11 +89,15 @@ opaque echo/error behavior + trace
 
 This path verifies transport mechanics only.
 
-### 2. Real C5 composition path
+### 2. Real C5 composition and portable-conformance path
 
-Representative generated-client calls must run through the actual C5 native
+Every generated C6 request fixture must run through the actual C5 native
 library built by the repository and the canonical dispatcher backed by C3
-`RecordingBackend`/`ScriptedBackend` fixtures.
+`RecordingBackend`/`ScriptedBackend` fixtures. The fixture's expected request
+is converted to IR independently of Python, so an omitted or defaulted Python
+encoder field fails the C7 call immediately. Successful cases return
+operation-specific non-empty content, including document fields, search hits,
+highlights/facets, analyzed tokens, and introspection definitions.
 
 ```text
 generated Python client core

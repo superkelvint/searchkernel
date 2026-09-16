@@ -8,6 +8,8 @@ use std::sync::Arc;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend as C7RecordingBackend, ScriptedBackend};
 #[cfg(feature = "c7-test-support")]
 use std::ffi::CStr;
+#[cfg(feature = "c7-test-support")]
+use std::fs;
 
 #[cfg(test)]
 pub(crate) use searchkernel_testkit::{
@@ -216,6 +218,12 @@ pub(crate) fn open_c7_fixture(path: *const std::os::raw::c_char) -> Result<u64, 
             .unwrap_or("recording")
     };
     let context = c7_context().map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error))?;
+    if let Some(request_path) = name.strip_prefix("c7-auto|") {
+        return open_c7_auto(request_path, context);
+    }
+    if let Some(spec) = name.strip_prefix("c7-script|") {
+        return open_c7_script(name, spec, context);
+    }
     if name == "scripted" {
         let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
         let request = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
@@ -241,29 +249,551 @@ pub(crate) fn open_c7_fixture(path: *const std::os::raw::c_char) -> Result<u64, 
 }
 
 #[cfg(feature = "c7-test-support")]
+fn open_c7_script(
+    name: &str,
+    spec: &str,
+    context: Arc<IndexContext>,
+) -> Result<u64, (u32, String)> {
+    let (request_path, response_path) = spec.split_once('|').ok_or_else(|| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            format!("invalid C7 fixture spec: {name}"),
+        )
+    })?;
+    let request = fs::read(request_path).map_err(|error| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            format!("read C7 request fixture: {error}"),
+        )
+    })?;
+    let response = fs::read(response_path).map_err(|error| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            format!("read C7 response fixture: {error}"),
+        )
+    })?;
+    let envelope = transport::parse_request(&request).map_err(|_| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            "C7 request is not a valid SKRQ envelope".to_owned(),
+        )
+    })?;
+    let expected = match envelope.payload_type().0 {
+        transport::REQUEST_INSERT => envelope
+            .payload_as_search_kernel_v1_insert_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "insert request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .insert_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Insert)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_UPSERT => envelope
+            .payload_as_search_kernel_v1_upsert_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "upsert request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .upsert_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Upsert)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_PATCH => envelope
+            .payload_as_search_kernel_v1_patch_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "patch request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .patch_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Patch)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_DELETE => envelope
+            .payload_as_search_kernel_v1_delete_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "delete request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .delete_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Delete)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_GET => envelope
+            .payload_as_search_kernel_v1_get_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "get request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .get_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Get)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_SEARCH => envelope
+            .payload_as_search_kernel_v1_search_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "search request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .search_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Search)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        transport::REQUEST_ANALYZE => envelope
+            .payload_as_search_kernel_v1_analyze_request()
+            .ok_or_else(|| {
+                (
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "analyze request payload is missing".to_owned(),
+                )
+            })
+            .and_then(|request| {
+                context
+                    .analyze_to_ir(request)
+                    .map(searchkernel_ir::OperationIr::Analyze)
+                    .map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error.to_string()))
+            })?,
+        _ => return Ok(register_index(context, Arc::new(C7RecordingBackend::new()))),
+    };
+    let decoded = decode_response(&response).map_err(|error| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            format!("decode C7 response fixture: {error}"),
+        )
+    })?;
+    let backend: Arc<dyn Backend> = match (expected, decoded) {
+        (searchkernel_ir::OperationIr::Insert(request), DecodedResponse::Insert(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Insert(request),
+                searchkernel_testkit::ScriptedResult::Insert(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Upsert(request), DecodedResponse::Upsert(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Upsert(request),
+                searchkernel_testkit::ScriptedResult::Upsert(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Patch(request), DecodedResponse::Patch(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Patch(request),
+                searchkernel_testkit::ScriptedResult::Patch(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Delete(request), DecodedResponse::Delete(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Delete(request),
+                searchkernel_testkit::ScriptedResult::Delete(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Get(request), DecodedResponse::Get(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Get(request),
+                searchkernel_testkit::ScriptedResult::Get(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Search(request), DecodedResponse::Search(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Search(request),
+                searchkernel_testkit::ScriptedResult::Search(result),
+            )]))
+        }
+        (searchkernel_ir::OperationIr::Analyze(request), DecodedResponse::Analyze(result)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::success(
+                searchkernel_ir::OperationIr::Analyze(request),
+                searchkernel_testkit::ScriptedResult::Analyze(result),
+            )]))
+        }
+        (expected, DecodedResponse::Error(error)) => {
+            Arc::new(ScriptedBackend::new([ExpectedCall::error(expected, error)]))
+        }
+        _ => {
+            return Err((
+                crate::SK_STATUS_INVALID_ARGUMENT,
+                "C7 request/response operation mismatch".to_owned(),
+            ))
+        }
+    };
+    Ok(register_index(context, backend))
+}
+
+#[cfg(feature = "c7-test-support")]
+fn open_c7_auto(request_path: &str, context: Arc<IndexContext>) -> Result<u64, (u32, String)> {
+    let request = fs::read(request_path).map_err(|error| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            format!("read C7 request fixture: {error}"),
+        )
+    })?;
+    let envelope = transport::parse_request(&request).map_err(|_| {
+        (
+            crate::SK_STATUS_INVALID_ARGUMENT,
+            "C7 request is not a valid SKRQ envelope".to_owned(),
+        )
+    })?;
+    let Some(expected) = c7_expected_operation(&context, &envelope) else {
+        return Ok(register_index(context, Arc::new(C7RecordingBackend::new())));
+    };
+    Ok(register_index(context, rich_backend(expected)))
+}
+
+#[cfg(feature = "c7-test-support")]
+fn c7_expected_operation(
+    context: &IndexContext,
+    envelope: &crate::generated::search_kernel::ffi::v1::RequestEnvelope<'_>,
+) -> Option<searchkernel_ir::OperationIr> {
+    match envelope.payload_type().0 {
+        transport::REQUEST_INSERT => envelope
+            .payload_as_search_kernel_v1_insert_request()
+            .and_then(|request| context.insert_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Insert),
+        transport::REQUEST_UPSERT => envelope
+            .payload_as_search_kernel_v1_upsert_request()
+            .and_then(|request| context.upsert_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Upsert),
+        transport::REQUEST_PATCH => envelope
+            .payload_as_search_kernel_v1_patch_request()
+            .and_then(|request| context.patch_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Patch),
+        transport::REQUEST_DELETE => envelope
+            .payload_as_search_kernel_v1_delete_request()
+            .and_then(|request| context.delete_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Delete),
+        transport::REQUEST_GET => envelope
+            .payload_as_search_kernel_v1_get_request()
+            .and_then(|request| context.get_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Get),
+        transport::REQUEST_SEARCH => envelope
+            .payload_as_search_kernel_v1_search_request()
+            .and_then(|request| context.search_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Search),
+        transport::REQUEST_ANALYZE => envelope
+            .payload_as_search_kernel_v1_analyze_request()
+            .and_then(|request| context.analyze_to_ir(request).ok())
+            .map(searchkernel_ir::OperationIr::Analyze),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "c7-test-support")]
+fn rich_backend(expected: searchkernel_ir::OperationIr) -> Arc<dyn Backend> {
+    use searchkernel_testkit::ScriptedResult;
+    let call = match expected {
+        searchkernel_ir::OperationIr::Insert(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Insert(request.clone()),
+            ScriptedResult::Insert(searchkernel_ir::InsertResult {
+                id: request.document().id().as_str().to_owned(),
+            }),
+        ),
+        searchkernel_ir::OperationIr::Upsert(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Upsert(request.clone()),
+            ScriptedResult::Upsert(searchkernel_ir::UpsertResult {
+                id: request.document().id().as_str().to_owned(),
+            }),
+        ),
+        searchkernel_ir::OperationIr::Patch(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Patch(request.clone()),
+            ScriptedResult::Patch(searchkernel_ir::PatchResult {
+                id: request.id().as_str().to_owned(),
+            }),
+        ),
+        searchkernel_ir::OperationIr::Delete(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Delete(request.clone()),
+            ScriptedResult::Delete(searchkernel_ir::DeleteResult {
+                id: request.id().as_str().to_owned(),
+                deleted: true,
+            }),
+        ),
+        searchkernel_ir::OperationIr::Get(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Get(request),
+            ScriptedResult::Get(searchkernel_ir::GetResult {
+                document: Some(searchkernel_ir::DocumentResult {
+                    id: "c7-rich-document".to_owned(),
+                    fields: BTreeMap::from([
+                        (
+                            "title".to_owned(),
+                            searchkernel_ir::Value::String("C7 portable result".to_owned()),
+                        ),
+                        ("price".to_owned(), searchkernel_ir::Value::Float64(42.5)),
+                    ]),
+                }),
+            }),
+        ),
+        searchkernel_ir::OperationIr::Search(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Search(request),
+            ScriptedResult::Search(searchkernel_ir::SearchResult {
+                hits: vec![searchkernel_ir::Hit {
+                    id: "c7-rich-document".to_owned(),
+                    score: Some(3.5),
+                    fields: BTreeMap::from([
+                        (
+                            "title".to_owned(),
+                            searchkernel_ir::Value::String("C7 portable result".to_owned()),
+                        ),
+                        (
+                            "brand".to_owned(),
+                            searchkernel_ir::Value::String("Acme".to_owned()),
+                        ),
+                    ]),
+                    highlights: vec![searchkernel_ir::HighlightResult {
+                        field: "title".to_owned(),
+                        fragments: vec![searchkernel_ir::HighlightFragment {
+                            text: "C7 portable result".to_owned(),
+                            matches: vec![searchkernel_ir::HighlightSpan {
+                                start_byte: 3,
+                                end_byte: 5,
+                            }],
+                        }],
+                    }],
+                }],
+                total_hits: searchkernel_ir::TotalHits {
+                    value: 1,
+                    relation: searchkernel_ir::TotalHitsRelation::Exact,
+                },
+                facets: vec![searchkernel_ir::FacetResult {
+                    field: "brand".to_owned(),
+                    values: vec![searchkernel_ir::FacetValue {
+                        value: searchkernel_ir::Value::String("Acme".to_owned()),
+                        count: 1,
+                    }],
+                }],
+            }),
+        ),
+        searchkernel_ir::OperationIr::Analyze(request) => ExpectedCall::success(
+            searchkernel_ir::OperationIr::Analyze(request),
+            ScriptedResult::Analyze(searchkernel_ir::AnalyzeResult {
+                tokens: vec![searchkernel_ir::AnalyzedToken {
+                    surface: "Portable".to_owned(),
+                    term: "portable".to_owned(),
+                    position: 0,
+                    start_byte: 0,
+                    end_byte: 8,
+                }],
+            }),
+        ),
+    };
+    Arc::new(ScriptedBackend::new([call]))
+}
+
+#[cfg(feature = "c7-test-support")]
 #[allow(dead_code)]
 fn c7_context() -> Result<Arc<IndexContext>, String> {
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
-    let name = builder.create_string("title");
-    let stored = api::OptionalBool::new(true);
-    let searchable = api::OptionalBool::new(true);
-    let field = api::FieldDefinition::create(
+    let analyzer_name = builder.create_string("standard");
+    let analyzer = api::Analyzer::create(
         &mut builder,
-        &api::FieldDefinitionArgs {
-            name: Some(name),
-            kind: api::FieldKind::Text,
-            cardinality: api::FieldCardinality::Single,
-            stored: Some(&stored),
-            searchable: Some(&searchable),
-            ..Default::default()
+        &api::AnalyzerArgs {
+            name: Some(analyzer_name),
+            version: 1,
+            options: None,
         },
     );
-    let fields = builder.create_vector(&[field]);
+    let definitions = [
+        (
+            "title",
+            api::FieldKind::Text,
+            api::FieldCardinality::Single,
+            true,
+            true,
+            false,
+            false,
+            false,
+            true,
+        ),
+        (
+            "description",
+            api::FieldKind::Text,
+            api::FieldCardinality::Single,
+            true,
+            true,
+            false,
+            false,
+            false,
+            true,
+        ),
+        (
+            "brand",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            true,
+            true,
+            false,
+        ),
+        (
+            "category",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            true,
+            true,
+            false,
+        ),
+        (
+            "price",
+            api::FieldKind::Float64,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            true,
+            true,
+            false,
+        ),
+        (
+            "in_stock",
+            api::FieldKind::Bool,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            false,
+            false,
+            false,
+        ),
+        (
+            "popularity",
+            api::FieldKind::Int64,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            true,
+            false,
+            false,
+        ),
+        (
+            "tags",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Multi,
+            true,
+            false,
+            true,
+            false,
+            true,
+            false,
+        ),
+        (
+            "sku",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            true,
+            true,
+            false,
+            false,
+        ),
+        (
+            "image_url",
+            api::FieldKind::Keyword,
+            api::FieldCardinality::Single,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+        ),
+    ];
+    let fields = definitions
+        .iter()
+        .map(
+            |(
+                name,
+                kind,
+                cardinality,
+                stored_value,
+                searchable_value,
+                filterable_value,
+                sortable_value,
+                facetable_value,
+                text,
+            )| {
+                let name = builder.create_string(name);
+                let stored = api::OptionalBool::new(*stored_value);
+                let searchable = api::OptionalBool::new(*searchable_value);
+                let filterable = api::OptionalBool::new(*filterable_value);
+                let sortable = api::OptionalBool::new(*sortable_value);
+                let facetable = api::OptionalBool::new(*facetable_value);
+                api::FieldDefinition::create(
+                    &mut builder,
+                    &api::FieldDefinitionArgs {
+                        name: Some(name),
+                        kind: *kind,
+                        cardinality: *cardinality,
+                        stored: Some(&stored),
+                        searchable: Some(&searchable),
+                        filterable: Some(&filterable),
+                        sortable: Some(&sortable),
+                        facetable: Some(&facetable),
+                        analyzer: if *text { Some(analyzer) } else { None },
+                    },
+                )
+            },
+        )
+        .collect::<Vec<_>>();
+    let fields = builder.create_vector(&fields);
+    let title = builder.create_string("title");
+    let description = builder.create_string("description");
+    let title_weight = api::OptionalDouble::new(4.0);
+    let description_weight = api::OptionalDouble::new(1.0);
+    let title = api::SearchField::create(
+        &mut builder,
+        &api::SearchFieldArgs {
+            field: Some(title),
+            weight: Some(&title_weight),
+        },
+    );
+    let description = api::SearchField::create(
+        &mut builder,
+        &api::SearchFieldArgs {
+            field: Some(description),
+            weight: Some(&description_weight),
+        },
+    );
+    let default_search_fields = builder.create_vector(&[title, description]);
+    let default_search_fields = api::SearchFieldSelection::create(
+        &mut builder,
+        &api::SearchFieldSelectionArgs {
+            fields: Some(default_search_fields),
+        },
+    );
+    let index_name = builder.create_string("products");
     let definition = api::IndexDefinition::create(
         &mut builder,
         &api::IndexDefinitionArgs {
+            name: Some(index_name),
             fields: Some(fields),
-            ..Default::default()
+            default_search_fields: Some(default_search_fields),
         },
     );
     builder.finish(definition, None);

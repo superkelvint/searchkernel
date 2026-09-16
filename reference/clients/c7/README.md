@@ -66,5 +66,9 @@ The plumbing shim verifies:
 - 5,000-call leak/double-free stress;
 - exact native call/open/close/allocation counts.
 
-The real-C5 smoke verifies representative generated-client operations through
-the real canonical dispatcher using C3 recording/scripted backends.
+The real-C5 conformance path runs every generated C6 request fixture through
+the generated Python model/codec, `NativeTransport`, and the real canonical
+dispatcher. Valid cases are checked against exact C5 IR expectations and must
+return non-empty operation-specific results; negative cases must remain native
+portable/transport failures. Rich search, document, analysis, and
+introspection responses are decoded by the generated Python client.

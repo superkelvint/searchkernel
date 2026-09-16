@@ -103,7 +103,7 @@ if [[ -z "$REAL_C5_LIB" ]]; then
 fi
 [[ -f "$REAL_C5_LIB" ]] || fail "real C5 test library does not exist: $REAL_C5_LIB"
 
-say "generated Python client -> NativeTransport -> real C5 smoke"
+say "generated Python client -> NativeTransport -> full C6 portable conformance"
 python3 "$HERE/python/transport_probe.py" \
   --repo "$REPO" --library "$REAL_C5_LIB" --mode real-c5-smoke
 

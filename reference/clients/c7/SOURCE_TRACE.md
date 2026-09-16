@@ -9,6 +9,8 @@ Normative inputs:
 - C6 generated Python client core and `Transport` abstraction;
 - C3 `RecordingBackend` / `ScriptedBackend` test infrastructure;
 - canonical FlatBuffers request/response envelopes from the Portable API.
+- the complete generated C6 request corpus, with C5-derived exact IR
+  expectations and rich operation-specific scripted responses.
 
 Verifier-only instrumentation:
 
