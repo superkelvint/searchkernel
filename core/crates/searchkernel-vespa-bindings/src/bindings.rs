@@ -789,6 +789,16 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_request_add_grouping(
+        request: *mut sk_generic_search_request,
+        group_field: *const ::std::os::raw::c_char,
+        max_groups: u32,
+        order: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_destroy(request: *mut sk_generic_search_request);
 }
 unsafe extern "C" {
@@ -872,6 +882,29 @@ unsafe extern "C" {
         hit_index: u32,
         feature_index: u32,
         out_value: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_grouping_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_group_count(
+        result: *const sk_generic_search_result,
+        grouping_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_group(
+        result: *const sk_generic_search_result,
+        grouping_index: u32,
+        group_index: u32,
+        out_key_kind: *mut u32,
+        out_key_string: *mut *const ::std::os::raw::c_char,
+        out_key_string_length: *mut u32,
+        out_key_integer: *mut i64,
+        out_count: *mut u64,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

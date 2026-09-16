@@ -266,6 +266,7 @@ pub struct SearchResult {
     pub total_hits: u64,
     pub total_hits_relation: TotalHitsRelation,
     pub hits: Vec<Hit>,
+    pub facets: Vec<GroupingResult>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -280,6 +281,7 @@ pub struct SearchRequest {
     pub sort: Vec<SortField>,
     pub summary: SummaryRequest,
     pub language: LinguisticsOptions,
+    pub facets: Vec<FacetRequest>,
 }
 
 impl SearchRequest {
@@ -295,6 +297,7 @@ impl SearchRequest {
             sort: Vec::new(),
             summary: SummaryRequest::None,
             language: LinguisticsOptions::default(),
+            facets: Vec::new(),
         }
     }
 
@@ -359,9 +362,31 @@ impl SearchRequest {
         self
     }
 
+    pub fn facet(mut self, facet: FacetRequest) -> Self {
+        self.facets.push(facet);
+        self
+    }
+
     pub fn language(mut self, language: LinguisticsOptions) -> Self {
         self.language = language;
         self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FacetRequest {
+    pub field: String,
+    pub max_groups: u32,
+    pub order: GroupingOrder,
+}
+
+impl FacetRequest {
+    pub fn new(field: impl Into<String>, max_groups: u32, order: GroupingOrder) -> Self {
+        Self {
+            field: field.into(),
+            max_groups,
+            order,
+        }
     }
 }
 
@@ -949,6 +974,27 @@ impl Engine {
                     native_request.0.as_ptr(),
                     name.as_ptr(),
                     value.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
+        for facet in &request.facets {
+            let field = cstring(&facet.field)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_add_grouping(
+                    native_request.0.as_ptr(),
+                    field.as_ptr(),
+                    facet.max_groups,
+                    match facet.order {
+                        GroupingOrder::None => sys::SK_GROUP_ORDER_NONE,
+                        GroupingOrder::CountAscending => sys::SK_GROUP_ORDER_COUNT_ASC,
+                        GroupingOrder::CountDescending => sys::SK_GROUP_ORDER_COUNT_DESC,
+                        GroupingOrder::ValueAscending => sys::SK_GROUP_ORDER_VALUE_ASC,
+                        GroupingOrder::ValueDescending => sys::SK_GROUP_ORDER_VALUE_DESC,
+                    },
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
@@ -1550,10 +1596,16 @@ fn read_generic_search_result(
                 .collect(),
         });
     }
+    let grouping_count = unsafe { sys::sk_generic_search_result_grouping_count(result.0.as_ptr()) };
+    let mut facets = Vec::with_capacity(grouping_count as usize);
+    for grouping_index in 0..grouping_count {
+        facets.push(read_search_facet(result.0.as_ptr(), grouping_index)?);
+    }
     Ok(SearchResult {
         total_hits: total_hit_count,
         total_hits_relation: TotalHitsRelation::Exact,
         hits,
+        facets,
     })
 }
 
@@ -1562,6 +1614,64 @@ impl Drop for NativeGenericSearchResult {
     fn drop(&mut self) {
         unsafe { sys::sk_generic_search_result_destroy(self.0.as_ptr()) };
     }
+}
+
+fn read_search_facet(
+    result: *const sys::sk_generic_search_result,
+    grouping_index: u32,
+) -> Result<GroupingResult, Error> {
+    let group_count =
+        unsafe { sys::sk_generic_search_result_group_count(result, grouping_index) } as usize;
+    let mut groups = Vec::with_capacity(group_count);
+    for group_index in 0..group_count {
+        let mut key_kind = 0;
+        let mut key_string = ptr::null();
+        let mut key_string_length = 0;
+        let mut key_integer = 0;
+        let mut count = 0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_generic_search_result_group(
+                result,
+                grouping_index,
+                group_index as u32,
+                &mut key_kind,
+                &mut key_string,
+                &mut key_string_length,
+                &mut key_integer,
+                &mut count,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        let key = match key_kind {
+            sys::SK_VALUE_STRING => {
+                if key_string.is_null() {
+                    return Err(Error::message("native search returned null facet key"));
+                }
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(key_string.cast::<u8>(), key_string_length as usize)
+                };
+                Value::String(
+                    String::from_utf8(bytes.to_vec())
+                        .map_err(|_| Error::message("native search returned invalid facet key"))?,
+                )
+            }
+            sys::SK_VALUE_INTEGER => Value::Integer(key_integer),
+            _ => {
+                return Err(Error::message(
+                    "native search returned unsupported facet key kind",
+                ))
+            }
+        };
+        groups.push(Group {
+            key,
+            count,
+            aggregations: Vec::new(),
+        });
+    }
+    Ok(GroupingResult { groups })
 }
 
 fn read_generic_grouping_result(

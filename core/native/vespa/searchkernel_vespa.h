@@ -420,6 +420,13 @@ SK_API int32_t sk_generic_search_request_add_query_feature(
 SK_API int32_t sk_generic_search_request_add_rank_property(
     sk_generic_search_request *request, const char *name, const char *value,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Add one independent grouping expression to the same native search
+   execution. The returned search result exposes grouping results in this
+   insertion order. */
+SK_API int32_t sk_generic_search_request_add_grouping(
+    sk_generic_search_request *request, const char *group_field,
+    uint32_t max_groups, uint32_t order, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_generic_search_request_destroy(sk_generic_search_request *request) SK_NOEXCEPT;
 SK_API int32_t sk_engine_search_generic(
     const sk_engine *engine, const sk_query *query,
@@ -455,6 +462,16 @@ SK_API int32_t sk_generic_search_result_match_feature_name(
 SK_API int32_t sk_generic_search_result_match_feature_value(
     const sk_generic_search_result *result, uint32_t hit_index,
     uint32_t feature_index, double *out_value, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_grouping_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_group_count(
+    const sk_generic_search_result *result, uint32_t grouping_index) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_group(
+    const sk_generic_search_result *result, uint32_t grouping_index,
+    uint32_t group_index, uint32_t *out_key_kind, const char **out_key_string,
+    uint32_t *out_key_string_length, int64_t *out_key_integer,
+    uint64_t *out_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_generic_search_result_destroy(sk_generic_search_result *result) SK_NOEXCEPT;
 

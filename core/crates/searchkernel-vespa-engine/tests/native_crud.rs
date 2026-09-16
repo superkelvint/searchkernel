@@ -1,7 +1,7 @@
 use searchkernel_vespa_engine::{
-    Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue,
-    GroupingOrder, GroupingRequest, LinguisticsOptions, Query, ScalarValue, Schema, SearchRequest,
-    SortField, SummaryRequest,
+    Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
+    FieldValue, GroupingOrder, GroupingRequest, LinguisticsOptions, Query, ScalarValue, Schema,
+    SearchRequest, SortField, SummaryRequest,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -276,6 +276,34 @@ fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
         .expect("execute generic search");
     assert_eq!(sorted.total_hits, 3);
     assert_eq!(sorted.hits[0].document_id, "generic-3");
+
+    let faceted = engine
+        .search(
+            SearchRequest::new(Query::True)
+                .limit(1)
+                .facet(FacetRequest::new(
+                    "category",
+                    2,
+                    GroupingOrder::CountDescending,
+                ))
+                .facet(FacetRequest::new("price", 2, GroupingOrder::ValueAscending)),
+        )
+        .expect("execute composite search and facets");
+    assert_eq!(faceted.hits.len(), 1);
+    assert_eq!(faceted.facets.len(), 2);
+    assert_eq!(
+        faceted.facets[0].groups[0].key,
+        searchkernel_vespa_engine::Value::String("books".into())
+    );
+    assert_eq!(faceted.facets[0].groups[0].count, 2);
+    assert_eq!(
+        faceted.facets[1].groups[0].key,
+        searchkernel_vespa_engine::Value::Integer(10)
+    );
+    assert_eq!(
+        faceted.facets[1].groups[1].key,
+        searchkernel_vespa_engine::Value::Integer(20)
+    );
 
     let count_desc = engine
         .group(

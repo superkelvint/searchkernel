@@ -79,6 +79,7 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_summary_field;
         sk_generic_search_request_add_query_feature;
         sk_generic_search_request_add_rank_property;
+        sk_generic_search_request_add_grouping;
         sk_generic_search_request_destroy;
         sk_engine_search_generic;
         sk_generic_search_result_total_hit_count;
@@ -90,6 +91,9 @@ SEARCHKERNEL_2 {
         sk_generic_search_result_match_feature_count;
         sk_generic_search_result_match_feature_name;
         sk_generic_search_result_match_feature_value;
+        sk_generic_search_result_grouping_count;
+        sk_generic_search_result_group_count;
+        sk_generic_search_result_group;
         sk_generic_search_result_destroy;
         sk_query_add_attribute_string_equals;
         sk_query_add_attribute_float_equals;

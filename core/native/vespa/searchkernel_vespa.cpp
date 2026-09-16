@@ -2848,6 +2848,9 @@ public:
                 }
             }
         }
+        if (!options.groupings.empty()) {
+            set_grouping_spec(request, options.groupings);
+        }
         request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
@@ -2895,6 +2898,25 @@ public:
                         if (value.valid()) result.hits[index].summary.emplace_back(field.name, summary_value(field.name, value));
                     }
                 }
+            }
+        }
+        if (!options.groupings.empty()) {
+            if (reply->groupResult.empty()) {
+                throw std::runtime_error("native search returned no grouping result");
+            }
+            vespalib::nbostream result_buffer(reply->groupResult.data(), reply->groupResult.size());
+            vespalib::NBOSerializer input(result_buffer);
+            uint32_t result_count = 0;
+            input >> result_count;
+            if (result_count != options.groupings.size()) {
+                throw std::runtime_error("native search returned an unexpected grouping count");
+            }
+            result.groupings.reserve(result_count);
+            for (uint32_t index = 0; index < result_count; ++index) {
+                Grouping result_grouping;
+                result_grouping.deserialize(input);
+                result.groupings.push_back(decode_grouping(
+                    result_grouping, options.groupings[index]));
             }
         }
         return result;
@@ -4280,14 +4302,36 @@ extern "C" int32_t sk_engine_group_local(const sk_engine *engine, const sk_query
     return invoke(error, error_capacity, [&] { auto result = std::make_unique<sk_local_grouping_result>(); static_cast<LocalGroupingResultState &>(*result) = engine->impl->group_local_result(*query, *request); *out = result.release(); });
 }
 extern "C" uint32_t sk_local_grouping_result_group_count(const sk_local_grouping_result *result) SK_NOEXCEPT { return result ? static_cast<uint32_t>(result->groups.size()) : 0; }
-extern "C" int32_t sk_local_grouping_result_group(const sk_local_grouping_result *result, uint32_t index, uint32_t *out_key_kind, const char **out_key_string, uint32_t *out_key_string_length, int64_t *out_key_integer, uint64_t *out_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+
+int32_t grouping_result_group(const LocalGroupingResultState *result, uint32_t index,
+                              uint32_t *out_key_kind, const char **out_key_string,
+                              uint32_t *out_key_string_length, int64_t *out_key_integer,
+                              uint64_t *out_count, uint8_t *error,
+                              uint32_t error_capacity) noexcept {
     if (out_key_kind) *out_key_kind = 0;
     if (out_key_string) *out_key_string = nullptr;
     if (out_key_string_length) *out_key_string_length = 0;
     if (out_key_integer) *out_key_integer = 0;
     if (out_count) *out_count = 0;
-    if (!result || !out_key_kind || !out_key_string || !out_key_string_length || !out_key_integer || !out_count || index >= result->groups.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "group result arguments are invalid");
-    return invoke(error, error_capacity, [&] { const auto &group = result->groups[index]; *out_key_kind = group.key.kind; *out_key_string = group.key.string.data(); *out_key_string_length = static_cast<uint32_t>(group.key.string.size()); *out_key_integer = group.key.integer; *out_count = group.count; });
+    if (!result || !out_key_kind || !out_key_string || !out_key_string_length ||
+        !out_key_integer || !out_count || index >= result->groups.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "group result arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        const auto &group = result->groups[index];
+        *out_key_kind = group.key.kind;
+        *out_key_string = group.key.string.data();
+        *out_key_string_length = static_cast<uint32_t>(group.key.string.size());
+        *out_key_integer = group.key.integer;
+        *out_count = group.count;
+    });
+}
+
+extern "C" int32_t sk_local_grouping_result_group(const sk_local_grouping_result *result, uint32_t index, uint32_t *out_key_kind, const char **out_key_string, uint32_t *out_key_string_length, int64_t *out_key_integer, uint64_t *out_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_result_group(result, index, out_key_kind, out_key_string,
+                                 out_key_string_length, out_key_integer, out_count,
+                                 error, error_capacity);
 }
 extern "C" uint32_t sk_local_grouping_result_aggregation_count(const sk_local_grouping_result *result, uint32_t index) SK_NOEXCEPT { return result && index < result->groups.size() ? static_cast<uint32_t>(result->groups[index].aggregations.size()) : 0; }
 extern "C" int32_t sk_local_grouping_result_aggregation(const sk_local_grouping_result *result, uint32_t group_index, uint32_t aggregation_index, uint32_t *out_kind, int64_t *out_integer, double *out_float, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -4372,6 +4416,24 @@ extern "C" int32_t sk_generic_search_request_add_rank_property(
     }
     return invoke(error, error_capacity,
                   [&] { add_rank_property(*request, name, value); });
+}
+
+extern "C" int32_t sk_generic_search_request_add_grouping(
+    sk_generic_search_request *request, const char *group_field,
+    uint32_t max_groups, uint32_t order, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !group_field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "generic grouping arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(group_field);
+        if (order > SK_GROUP_ORDER_VALUE_DESC) {
+            throw std::invalid_argument("unsupported grouping order");
+        }
+        request->groupings.push_back(
+            LocalGroupingRequestState{std::string(group_field), max_groups, order, {}});
+    });
 }
 
 extern "C" void sk_generic_search_request_destroy(
@@ -4464,6 +4526,31 @@ extern "C" int32_t sk_generic_search_result_match_feature_value(
     }
     return invoke(error, error_capacity,
                   [&] { match_feature_value(*result, hit_index, feature_index, out_value); });
+}
+extern "C" uint32_t sk_generic_search_result_grouping_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? static_cast<uint32_t>(result->groupings.size()) : 0;
+}
+extern "C" uint32_t sk_generic_search_result_group_count(
+    const sk_generic_search_result *result, uint32_t grouping_index) SK_NOEXCEPT {
+    return result && grouping_index < result->groupings.size()
+               ? static_cast<uint32_t>(result->groupings[grouping_index].groups.size())
+               : 0;
+}
+extern "C" int32_t sk_generic_search_result_group(
+    const sk_generic_search_result *result, uint32_t grouping_index,
+    uint32_t group_index, uint32_t *out_key_kind, const char **out_key_string,
+    uint32_t *out_key_string_length, int64_t *out_key_integer,
+    uint64_t *out_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!result || grouping_index >= result->groupings.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping result index is out of bounds");
+    }
+    return grouping_result_group(&result->groupings[grouping_index], group_index,
+                                 out_key_kind, out_key_string,
+                                 out_key_string_length, out_key_integer,
+                                 out_count, error, error_capacity);
 }
 extern "C" void sk_generic_search_result_destroy(
     sk_generic_search_result *result) SK_NOEXCEPT { destroy_noexcept(result); }

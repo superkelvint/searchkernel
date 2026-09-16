@@ -11,9 +11,9 @@ use searchkernel_ir::{
     SearchRequestIr, SearchResult, TotalHitsRelation, UpsertRequestIr, UpsertResult, Value,
 };
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue, Query,
-    ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
-    TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
+    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
+    GroupingResult, Query, ScalarValue, Schema, SearchRequest, SortField, SortOrder,
+    SummaryRequest, TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -211,12 +211,28 @@ impl Backend for VespaBackend {
         validate_search_request(&request)?;
         let language = analysis_options(request.language())?;
         let query = lower_search_query(&request, language)?;
-        let m_request = lower_search_options(&request, query.clone(), language)?;
-        let result = self
-            .engine
-            .search(m_request)
-            .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        let facets = lower_facets(&self.engine, &query, request.facets())?;
+        let mut m_request = lower_search_options(&request, query.clone(), language)?;
+        for facet in request.facets() {
+            m_request = m_request.facet(FacetRequest::new(
+                facet.field().as_str(),
+                facet.limit(),
+                lower_facet_order(facet),
+            ));
+        }
+        let result = self.engine.search(m_request).map_err(|error| {
+            if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported
+                && error.to_string().contains("grouping key type")
+            {
+                PortableError::unsupported(
+                    "facet_key_type_not_supported",
+                    Some("facets"),
+                    error.to_string(),
+                )
+            } else {
+                native_search_error(error, "sort_field_type_not_supported")
+            }
+        })?;
+        let facets = lower_facets(&result.facets, request.facets())?;
         Ok(SearchResult {
             hits: result
                 .hits
@@ -444,11 +460,8 @@ fn lower_sort(sort: &searchkernel_ir::SortIr) -> SortField {
     }
 }
 
-fn lower_facet_grouping(
-    query: Query,
-    facet: &searchkernel_ir::FacetIr,
-) -> searchkernel_vespa_engine::GroupingRequest {
-    let order = match facet.sort() {
+fn lower_facet_order(facet: &searchkernel_ir::FacetIr) -> searchkernel_vespa_engine::GroupingOrder {
+    match facet.sort() {
         searchkernel_ir::FacetSort::CountAsc => {
             searchkernel_vespa_engine::GroupingOrder::CountAscending
         }
@@ -461,10 +474,17 @@ fn lower_facet_grouping(
         searchkernel_ir::FacetSort::ValueDesc => {
             searchkernel_vespa_engine::GroupingOrder::ValueDescending
         }
-    };
+    }
+}
+
+#[cfg(test)]
+fn lower_facet_grouping(
+    query: Query,
+    facet: &searchkernel_ir::FacetIr,
+) -> searchkernel_vespa_engine::GroupingRequest {
     searchkernel_vespa_engine::GroupingRequest::new(query, facet.field().as_str())
         .max_groups(facet.limit())
-        .order(order)
+        .order(lower_facet_order(facet))
 }
 
 fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
@@ -716,36 +736,23 @@ fn native_search_error(
 }
 
 fn lower_facets(
-    engine: &Engine,
-    query: &Query,
+    grouped: &[GroupingResult],
     facets: &[searchkernel_ir::FacetIr],
 ) -> Result<Vec<searchkernel_ir::FacetResult>> {
+    if grouped.len() != facets.len() {
+        return Err(internal("native search returned an unexpected facet count"));
+    }
     facets
         .iter()
-        .map(|facet| {
-            let grouped = engine
-                .group(&lower_facet_grouping(query.clone(), facet))
-                .map_err(|error| {
-                    if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
-                        PortableError::unsupported(
-                            "facet_key_type_not_supported",
-                            Some("facets"),
-                            format!(
-                                "facet field `{}` requires a String or Integer native grouping key",
-                                facet.field().as_str()
-                            ),
-                        )
-                    } else {
-                        native_error(error)
-                    }
-                })?;
+        .zip(grouped)
+        .map(|(facet, grouped)| {
             let values = grouped
                 .groups
-                .into_iter()
+                .iter()
                 .map(|group| Ok(searchkernel_ir::FacetValue {
-                    value: value_to_ir(&FieldValue::Scalar(match group.key {
-                        VespaValue::String(value) => ScalarValue::String(value),
-                        VespaValue::Integer(value) => ScalarValue::Integer(value),
+                    value: value_to_ir(&FieldValue::Scalar(match &group.key {
+                        VespaValue::String(value) => ScalarValue::String(value.clone()),
+                        VespaValue::Integer(value) => ScalarValue::Integer(*value),
                         _ => return Err(PortableError::unsupported(
                             "facet_key_type_not_supported",
                             Some("facets"),
