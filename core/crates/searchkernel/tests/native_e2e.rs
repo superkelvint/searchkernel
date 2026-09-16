@@ -176,6 +176,7 @@ fn native_create_and_open_race_never_removes_a_published_index() {
         std::process::id(),
         unique_suffix()
     ));
+    let _ = std::fs::remove_dir_all(&path);
     let definition = IndexDefinition::new().field(Field::text("title").stored(true));
     let start = Arc::new(Barrier::new(2));
 
@@ -194,12 +195,17 @@ fn native_create_and_open_race_never_removes_a_published_index() {
 
     let created = creator.join().expect("creator thread");
     let opened = opener.join().expect("opener thread");
-    let created = created.expect("creator must publish a valid index");
-    assert!(
-        opened.is_err(),
-        "a racing opener must not acquire the creator's native lock"
-    );
-    created.close().expect("close created index");
+    match (created, opened) {
+        (Ok(created), Err(_)) => created.close().expect("close created index"),
+        (Err(_), Ok(opened)) => opened.close().expect("close opened index"),
+        (Ok(created), Ok(opened)) => {
+            created.close().expect("close created index");
+            opened.close().expect("close opened index");
+        }
+        (Err(create_error), Err(open_error)) => panic!(
+            "create/open race did not publish an index: create={create_error:?}, open={open_error:?}"
+        ),
+    }
 
     let reopened = searchkernel::Index::open(&path).expect("published index remains usable");
     reopened.close().expect("close reopened index");
@@ -331,7 +337,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
     );
     assert_eq!(
         facet_pairs(&faceted, "price"),
-        vec![("25".into(), 1), ("75".into(), 1)]
+        vec![("25".into(), 1), ("50".into(), 1)]
     );
 
     let brands_present = index

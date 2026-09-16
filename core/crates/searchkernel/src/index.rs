@@ -150,7 +150,7 @@ struct IndexInner {
     definition: Arc<IndexDefinition>,
     session: Arc<BackendSession>,
     #[cfg(feature = "native")]
-    _lifecycle_lock: Option<LifecycleLock>,
+    lifecycle_lock: std::sync::Mutex<Option<LifecycleLock>>,
 }
 
 #[derive(Clone)]
@@ -308,7 +308,7 @@ impl Index {
                 session,
                 context,
                 definition,
-                _lifecycle_lock: lifecycle_lock,
+                lifecycle_lock: std::sync::Mutex::new(lifecycle_lock),
             }),
         })
     }
@@ -343,7 +343,19 @@ impl Index {
     /// Gracefully close this index and all of its clones after draining active
     /// operations.
     pub fn close(&self) -> Result<()> {
-        self.inner.session.close().map_err(Error::from_ir)
+        let result = self.inner.session.close().map_err(Error::from_ir);
+        #[cfg(feature = "native")]
+        {
+            // Release the publication lock only after the backend has drained
+            // and shut down. All cloned handles share this same mutex.
+            let _ = self
+                .inner
+                .lifecycle_lock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+        }
+        result
     }
 
     /// Transfer the shared lifecycle state to the native handle registry.

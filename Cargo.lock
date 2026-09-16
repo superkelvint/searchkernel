@@ -523,6 +523,7 @@ dependencies = [
 name = "searchkernel"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "searchkernel-ir",
  "searchkernel-ir-adapter",
  "searchkernel-testkit",
