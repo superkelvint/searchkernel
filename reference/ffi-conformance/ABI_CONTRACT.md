@@ -9,7 +9,7 @@ The production ABI is exactly:
 uint32_t sk_abi_version(void);
 sk_status_t sk_call(sk_handle_t, const uint8_t *, size_t,
                     uint8_t **, size_t *, uint64_t *);
-sk_status_t sk_close(sk_handle_t);
+sk_status_t sk_close(sk_handle_t, uint8_t *, size_t);
 void sk_buffer_free(uint8_t *, uint64_t);
 ```
 
@@ -33,6 +33,7 @@ Numeric values are permanent:
 | 5 | `SK_STATUS_UNSUPPORTED_OPERATION` |
 | 6 | `SK_STATUS_INTERNAL` |
 | 7 | `SK_STATUS_PANIC` |
+| 12 | `SK_STATUS_INDEX_CLOSED` |
 
 ABI statuses are transport/runtime failures only. Search Kernel semantic errors are encoded as `ResponseEnvelope(Error)` and `sk_call()` returns `SK_STATUS_OK`.
 
@@ -107,12 +108,17 @@ arbitrary foreign pointer to `sk_buffer_free()` is outside the contract.
 - first successful `sk_close()` returns `OK`;
 - a second close returns `INVALID_HANDLE`;
 - calls beginning after close return `INVALID_HANDLE`.
+- the close error buffer is optional and receives a NUL-terminated diagnostic
+  when graceful native shutdown fails.
 
 Concurrent close semantics:
 
-1. A call that has already obtained its internal `Arc` may complete normally.
-2. `sk_close()` removes the handle and returns `OK`.
-3. New calls after that point return `INVALID_HANDLE`.
+1. A call that has entered execution may complete normally.
+2. `sk_close()` removes the handle, waits for entered calls to drain, and
+   returns `OK` or the native close failure status.
+3. Calls that obtained the registry entry but had not entered execution return
+   `SK_STATUS_INDEX_CLOSED`.
+4. Calls after registry removal return `INVALID_HANDLE`.
 
 The registry lock must not be held while executing a backend operation.
 

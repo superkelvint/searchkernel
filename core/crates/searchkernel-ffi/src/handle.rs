@@ -1,10 +1,10 @@
-use searchkernel_ir::{Backend, IndexContext};
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub(crate) struct HandleState {
     pub(crate) context: Arc<IndexContext>,
-    pub(crate) backend: Arc<dyn Backend>,
+    pub(crate) session: Arc<BackendSession>,
 }
 
 struct Registry {
@@ -34,6 +34,10 @@ fn lock_registry() -> std::sync::MutexGuard<'static, Registry> {
 
 #[cfg(any(feature = "ffi-test-support", feature = "production"))]
 pub(crate) fn register(context: Arc<IndexContext>, backend: Arc<dyn Backend>) -> u64 {
+    register_session(context, BackendSession::from_backend(backend))
+}
+
+pub(crate) fn register_session(context: Arc<IndexContext>, session: Arc<BackendSession>) -> u64 {
     let mut registry = lock_registry();
     let handle = registry.next;
     if handle == 0 {
@@ -45,7 +49,7 @@ pub(crate) fn register(context: Arc<IndexContext>, backend: Arc<dyn Backend>) ->
     registry.next = next;
     registry
         .entries
-        .insert(handle, Arc::new(HandleState { context, backend }));
+        .insert(handle, Arc::new(HandleState { context, session }));
     handle
 }
 
@@ -57,18 +61,17 @@ pub(crate) fn lookup(handle: u64) -> Option<Arc<HandleState>> {
     registry.entries.get(&handle).cloned()
 }
 
-pub(crate) fn close(handle: u64) -> bool {
+pub(crate) fn close(handle: u64) -> Option<searchkernel_ir::Result<()>> {
     if handle == 0 {
-        return false;
+        return None;
     }
     let removed = {
         let mut registry = lock_registry();
         registry.entries.remove(&handle)
     };
-    let closed = removed.is_some();
-    // Drop the backend/context state after releasing the global registry lock.
-    drop(removed);
-    closed
+    let removed = removed?;
+    // Close the backend/context state after releasing the global registry lock.
+    Some(removed.session.close())
 }
 
 #[cfg(feature = "ffi-test-support")]
@@ -118,9 +121,9 @@ mod tests {
         let handle = register(test_context(), Arc::new(RecordingBackend::new()));
         assert_ne!(handle, 0);
         assert!(lookup(handle).is_some());
-        assert!(close(handle));
+        assert!(close(handle).expect("registered handle").is_ok());
         assert!(lookup(handle).is_none());
-        assert!(!close(handle));
-        assert!(!close(0));
+        assert!(close(handle).is_none());
+        assert!(close(0).is_none());
     }
 }

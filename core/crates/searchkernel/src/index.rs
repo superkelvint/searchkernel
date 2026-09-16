@@ -6,7 +6,7 @@ use crate::result;
 use crate::schema::{Analyzer, Field, IndexDefinition, SearchField};
 use crate::search::{Facet, FacetSort, Ranking, SearchBuilder, Sort};
 use crate::wire;
-use searchkernel_ir::{api, Backend, IndexContext};
+use searchkernel_ir::{api, Backend, BackendSession, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
@@ -54,21 +54,31 @@ fn create_directory_transaction<T>(
 
 pub struct Index {
     pub(crate) context: Arc<IndexContext>,
-    pub(crate) backend: Arc<dyn Backend>,
-    pub(crate) definition: IndexDefinition,
+    pub(crate) session: Arc<BackendSession>,
+    pub(crate) definition: Arc<IndexDefinition>,
 }
 
 impl Clone for Index {
     fn clone(&self) -> Self {
         Self {
             context: Arc::clone(&self.context),
-            backend: Arc::clone(&self.backend),
-            definition: self.definition.clone(),
+            session: Arc::clone(&self.session),
+            definition: Arc::clone(&self.definition),
         }
     }
 }
 
-impl Index {
+/// The owning lifecycle for an [`Index`] and all handles derived from it.
+///
+/// `IndexRuntime` is deliberately not cloneable.  Clone the [`Index`] returned
+/// by [`IndexRuntime::index`] when an operation handle must be shared.
+pub struct IndexRuntime {
+    context: Arc<IndexContext>,
+    definition: Arc<IndexDefinition>,
+    session: Arc<BackendSession>,
+}
+
+impl IndexRuntime {
     /// Construct an index from the canonical FlatBuffers index-definition
     /// payload used by the native bootstrap. This is intentionally hidden from
     /// the ergonomic Rust API; the portable wire definition is validated by
@@ -105,7 +115,7 @@ impl Index {
             manifest.write(root)?;
             let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
                 .map_err(|error| Error::Infrastructure(error.to_string()))?;
-            Self::from_backend(resolved_definition, Arc::new(backend))
+            Self::from_owned_backend(resolved_definition, BackendSession::new(Box::new(backend)))
         })
     }
 
@@ -127,13 +137,71 @@ impl Index {
         manifest.validate_config(&config)?;
         let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        Self::from_backend(definition, Arc::new(backend))
+        Self::from_owned_backend(definition, BackendSession::new(Box::new(backend)))
     }
 
-    /// Construct an index around a backend for tests and infrastructure.
+    /// Construct a runtime around a backend for tests and infrastructure.
     ///
     /// This is hidden from normal API documentation because production
     /// lifecycle is supplied by a later integration milestone.
+    #[doc(hidden)]
+    pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
+        Self::from_owned_backend(definition, BackendSession::from_backend(backend))
+    }
+
+    fn from_owned_backend(
+        definition: IndexDefinition,
+        session: Arc<BackendSession>,
+    ) -> Result<Self> {
+        let bytes = wire::definition(&definition);
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
+            |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
+        )?;
+        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+        let effective_definition = definition_from_ir(context.definition());
+        let context = Arc::new(context);
+        let definition = Arc::new(effective_definition);
+        Ok(Self {
+            session,
+            context,
+            definition,
+        })
+    }
+
+    /// Return a cloneable operation handle for this runtime.
+    pub fn index(&self) -> Index {
+        Index {
+            context: Arc::clone(&self.context),
+            session: Arc::clone(&self.session),
+            definition: Arc::clone(&self.definition),
+        }
+    }
+
+    /// Gracefully close the native/backend runtime after draining operations.
+    pub fn close(self) -> Result<()> {
+        self.session.close().map_err(Error::from_ir)
+    }
+
+    /// Transfer the runtime's shared owner to the native handle registry.
+    #[doc(hidden)]
+    pub fn into_session_parts(self) -> (Arc<IndexContext>, Arc<BackendSession>) {
+        let runtime = std::mem::ManuallyDrop::new(self);
+        (Arc::clone(&runtime.context), Arc::clone(&runtime.session))
+    }
+}
+
+impl Drop for IndexRuntime {
+    fn drop(&mut self) {
+        self.session.best_effort_close();
+    }
+}
+
+impl Index {
+    /// Construct a handle around a backend for tests and infrastructure.
+    ///
+    /// This hidden constructor has no public lifecycle surface. Production
+    /// callers must use [`IndexRuntime`] and derive handles with
+    /// [`IndexRuntime::index`].
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
         let bytes = wire::definition(&definition);
@@ -143,62 +211,68 @@ impl Index {
         let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
         let effective_definition = definition_from_ir(context.definition());
         Ok(Self {
+            session: BackendSession::from_backend(backend),
             context: Arc::new(context),
-            backend,
-            definition: effective_definition,
+            definition: Arc::new(effective_definition),
         })
     }
 
-    /// Consume the product handle for a native host that owns the FFI
-    /// registry. This is deliberately hidden; normal callers keep using the
-    /// `Index` owner and never handle the backend trait object directly.
-    #[doc(hidden)]
-    pub fn into_backend_parts(self) -> (Arc<IndexContext>, Arc<dyn Backend>) {
-        (self.context, self.backend)
+    fn with_backend<T>(&self, callback: impl FnOnce(&dyn Backend) -> Result<T>) -> Result<T> {
+        self.session
+            .execute(callback)
+            .map_err(|_| Error::index_closed())?
     }
 
     /// Insert a new document.
     pub fn insert<T: Serialize>(&self, id: impl Into<DocumentId>, document: &T) -> Result<()> {
-        let document_id = id.into();
-        let document_value =
-            serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-        let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
-        let request = self.root_insert(&request_bytes)?;
-        let ir_request = self.context.insert_to_ir(request).map_err(Error::from_ir)?;
-        self.backend.insert(ir_request).map_err(Error::from_ir)?;
-        Ok(())
+        self.with_backend(|backend| {
+            let document_id = id.into();
+            let document_value =
+                serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
+            let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
+            let request = self.root_insert(&request_bytes)?;
+            let ir_request = self.context.insert_to_ir(request).map_err(Error::from_ir)?;
+            backend.insert(ir_request).map_err(Error::from_ir)?;
+            Ok(())
+        })
     }
 
     /// Insert a document or replace the existing document with the same ID.
     pub fn upsert<T: Serialize>(&self, id: impl Into<DocumentId>, document: &T) -> Result<()> {
-        let document_id = id.into();
-        let document_value =
-            serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-        let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
-        let request = self.root_upsert(&request_bytes)?;
-        let ir_request = self.context.upsert_to_ir(request).map_err(Error::from_ir)?;
-        self.backend.upsert(ir_request).map_err(Error::from_ir)?;
-        Ok(())
+        self.with_backend(|backend| {
+            let document_id = id.into();
+            let document_value =
+                serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
+            let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
+            let request = self.root_upsert(&request_bytes)?;
+            let ir_request = self.context.upsert_to_ir(request).map_err(Error::from_ir)?;
+            backend.upsert(ir_request).map_err(Error::from_ir)?;
+            Ok(())
+        })
     }
 
     /// Apply field updates to an existing document.
     pub fn patch(&self, id: impl Into<DocumentId>, patch: Patch) -> Result<()> {
-        let document_id = id.into();
-        let request_bytes = wire::patch(document_id.as_str(), &patch)?;
-        let request = self.root_patch(&request_bytes)?;
-        let ir_request = self.context.patch_to_ir(request).map_err(Error::from_ir)?;
-        self.backend.patch(ir_request).map_err(Error::from_ir)?;
-        Ok(())
+        self.with_backend(|backend| {
+            let document_id = id.into();
+            let request_bytes = wire::patch(document_id.as_str(), &patch)?;
+            let request = self.root_patch(&request_bytes)?;
+            let ir_request = self.context.patch_to_ir(request).map_err(Error::from_ir)?;
+            backend.patch(ir_request).map_err(Error::from_ir)?;
+            Ok(())
+        })
     }
 
     /// Delete a document and return whether it existed.
     pub fn delete(&self, id: impl Into<DocumentId>) -> Result<bool> {
-        let document_id = id.into();
-        let request_bytes = wire::delete(document_id.as_str());
-        let request = self.root_delete(&request_bytes)?;
-        let ir_request = self.context.delete_to_ir(request).map_err(Error::from_ir)?;
-        let delete_result = self.backend.delete(ir_request).map_err(Error::from_ir)?;
-        Ok(delete_result.deleted)
+        self.with_backend(|backend| {
+            let document_id = id.into();
+            let request_bytes = wire::delete(document_id.as_str());
+            let request = self.root_delete(&request_bytes)?;
+            let ir_request = self.context.delete_to_ir(request).map_err(Error::from_ir)?;
+            let delete_result = backend.delete(ir_request).map_err(Error::from_ir)?;
+            Ok(delete_result.deleted)
+        })
     }
 
     /// Read a document and deserialize it into `T`.
@@ -224,17 +298,18 @@ impl Index {
         document_id: DocumentId,
         projection: Option<Vec<String>>,
     ) -> Result<Option<T>> {
-        let request_bytes = wire::get(document_id.as_str(), projection.as_deref());
-        let request = self.root_get(&request_bytes)?;
-        let get_result = self
-            .backend
-            .get(self.context.get_to_ir(request).map_err(Error::from_ir)?)
-            .map_err(Error::from_ir)?;
-        get_result
-            .document
-            .map(result::document)
-            .transpose()
-            .map(|value| value.map(|(_, document)| document))
+        self.with_backend(|backend| {
+            let request_bytes = wire::get(document_id.as_str(), projection.as_deref());
+            let request = self.root_get(&request_bytes)?;
+            let get_result = backend
+                .get(self.context.get_to_ir(request).map_err(Error::from_ir)?)
+                .map_err(Error::from_ir)?;
+            get_result
+                .document
+                .map(result::document)
+                .transpose()
+                .map(|value| value.map(|(_, document)| document))
+        })
     }
 
     /// Start a search for `query`.
@@ -249,7 +324,7 @@ impl Index {
 
     /// Return the effective schema and search defaults for this index.
     pub fn describe(&self) -> Result<IndexDefinition> {
-        Ok(self.definition.clone())
+        self.with_backend(|_| Ok((*self.definition).clone()))
     }
 
     /// Start a linguistic analysis request.
@@ -258,30 +333,31 @@ impl Index {
     }
 
     pub(crate) fn execute_analyze(&self, request: &AnalyzeBuilder<'_>) -> Result<AnalyzeResult> {
-        let request_bytes = wire::analyze(request)?;
-        let wire_request = searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(
-            &request_bytes,
-        )
-        .map_err(|error| {
-            Error::infrastructure(format!("invalid generated analyze request: {error}"))
-        })?;
-        let ir_request = self
-            .context
-            .analyze_to_ir(wire_request)
-            .map_err(Error::from_ir)?;
-        let result = self.backend.analyze(ir_request).map_err(Error::from_ir)?;
-        Ok(AnalyzeResult {
-            tokens: result
-                .tokens
-                .into_iter()
-                .map(|token| AnalyzedToken {
-                    surface: token.surface,
-                    term: token.term,
-                    position: token.position,
-                    start_byte: token.start_byte,
-                    end_byte: token.end_byte,
-                })
-                .collect(),
+        self.with_backend(|backend| {
+            let request_bytes = wire::analyze(request)?;
+            let wire_request =
+                searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&request_bytes)
+                    .map_err(|error| {
+                        Error::infrastructure(format!("invalid generated analyze request: {error}"))
+                    })?;
+            let ir_request = self
+                .context
+                .analyze_to_ir(wire_request)
+                .map_err(Error::from_ir)?;
+            let result = backend.analyze(ir_request).map_err(Error::from_ir)?;
+            Ok(AnalyzeResult {
+                tokens: result
+                    .tokens
+                    .into_iter()
+                    .map(|token| AnalyzedToken {
+                        surface: token.surface,
+                        term: token.term,
+                        position: token.position,
+                        start_byte: token.start_byte,
+                        end_byte: token.end_byte,
+                    })
+                    .collect(),
+            })
         })
     }
 
@@ -289,87 +365,94 @@ impl Index {
         &self,
         request: &SearchBuilder,
     ) -> Result<crate::search::InspectedQuery> {
-        let request_bytes = wire::search(request)?;
-        let wire_request =
-            searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes).map_err(
-                |error| Error::infrastructure(format!("invalid generated search request: {error}")),
-            )?;
-        let normalized = self
-            .context
-            .inspect_query(wire_request)
-            .map_err(Error::from_ir)?;
-        let query = match normalized.query() {
-            searchkernel_ir::QueryIr::MatchAll => String::new(),
-            searchkernel_ir::QueryIr::Text(value) => value.clone(),
-            _ => format!("{:?}", normalized.query()),
-        };
-        let highlighting = match normalized.highlighting() {
-            searchkernel_ir::HighlightingIr::Disabled => None,
-            searchkernel_ir::HighlightingIr::Requested { fields } => Some(
-                fields
+        self.with_backend(|_| {
+            let request_bytes = wire::search(request)?;
+            let wire_request =
+                searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
+                    .map_err(|error| {
+                        Error::infrastructure(format!("invalid generated search request: {error}"))
+                    })?;
+            let normalized = self
+                .context
+                .inspect_query(wire_request)
+                .map_err(Error::from_ir)?;
+            let query = match normalized.query() {
+                searchkernel_ir::QueryIr::MatchAll => String::new(),
+                searchkernel_ir::QueryIr::Text(value) => value.clone(),
+                _ => format!("{:?}", normalized.query()),
+            };
+            let highlighting = match normalized.highlighting() {
+                searchkernel_ir::HighlightingIr::Disabled => None,
+                searchkernel_ir::HighlightingIr::Requested { fields } => Some(
+                    fields
+                        .iter()
+                        .map(|field| field.as_str().to_owned())
+                        .collect(),
+                ),
+            };
+            Ok(crate::search::InspectedQuery {
+                query,
+                search_fields: normalized
+                    .search_fields()
+                    .iter()
+                    .map(|field| {
+                        SearchField::new(field.field().as_str()).weight(field.weight().get())
+                    })
+                    .collect(),
+                filter: match request.filters.as_slice() {
+                    [] => None,
+                    [filter] => Some(filter.clone()),
+                    filters => Some(crate::Filter::all(filters.iter().cloned())),
+                },
+                sorts: normalized
+                    .sort()
+                    .iter()
+                    .map(|sort| {
+                        let value = match sort.direction() {
+                            searchkernel_ir::SortDirection::Asc => Sort::asc(sort.field().as_str()),
+                            searchkernel_ir::SortDirection::Desc => {
+                                Sort::desc(sort.field().as_str())
+                            }
+                        };
+                        match sort.missing() {
+                            searchkernel_ir::MissingPlacement::First => value.missing_first(),
+                            searchkernel_ir::MissingPlacement::Last => value.missing_last(),
+                        }
+                    })
+                    .collect(),
+                facets: normalized
+                    .facets()
+                    .iter()
+                    .map(|facet| {
+                        let value = Facet::new(facet.field().as_str()).limit(facet.limit());
+                        value.sort(match facet.sort() {
+                            searchkernel_ir::FacetSort::CountDesc => FacetSort::CountDesc,
+                            searchkernel_ir::FacetSort::CountAsc => FacetSort::CountAsc,
+                            searchkernel_ir::FacetSort::ValueAsc => FacetSort::ValueAsc,
+                            searchkernel_ir::FacetSort::ValueDesc => FacetSort::ValueDesc,
+                        })
+                    })
+                    .collect(),
+                ranking: match normalized.ranking() {
+                    searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => {
+                        Ranking::default_relevance_v1()
+                    }
+                    searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::bm25(),
+                },
+                limit: normalized.limit(),
+                offset: normalized.offset(),
+                projection: normalized
+                    .projection()
+                    .fields()
                     .iter()
                     .map(|field| field.as_str().to_owned())
                     .collect(),
-            ),
-        };
-        Ok(crate::search::InspectedQuery {
-            query,
-            search_fields: normalized
-                .search_fields()
-                .iter()
-                .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get()))
-                .collect(),
-            filter: match request.filters.as_slice() {
-                [] => None,
-                [filter] => Some(filter.clone()),
-                filters => Some(crate::Filter::all(filters.iter().cloned())),
-            },
-            sorts: normalized
-                .sort()
-                .iter()
-                .map(|sort| {
-                    let value = match sort.direction() {
-                        searchkernel_ir::SortDirection::Asc => Sort::asc(sort.field().as_str()),
-                        searchkernel_ir::SortDirection::Desc => Sort::desc(sort.field().as_str()),
-                    };
-                    match sort.missing() {
-                        searchkernel_ir::MissingPlacement::First => value.missing_first(),
-                        searchkernel_ir::MissingPlacement::Last => value.missing_last(),
-                    }
-                })
-                .collect(),
-            facets: normalized
-                .facets()
-                .iter()
-                .map(|facet| {
-                    let value = Facet::new(facet.field().as_str()).limit(facet.limit());
-                    value.sort(match facet.sort() {
-                        searchkernel_ir::FacetSort::CountDesc => FacetSort::CountDesc,
-                        searchkernel_ir::FacetSort::CountAsc => FacetSort::CountAsc,
-                        searchkernel_ir::FacetSort::ValueAsc => FacetSort::ValueAsc,
-                        searchkernel_ir::FacetSort::ValueDesc => FacetSort::ValueDesc,
-                    })
-                })
-                .collect(),
-            ranking: match normalized.ranking() {
-                searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => {
-                    Ranking::default_relevance_v1()
-                }
-                searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::bm25(),
-            },
-            limit: normalized.limit(),
-            offset: normalized.offset(),
-            projection: normalized
-                .projection()
-                .fields()
-                .iter()
-                .map(|field| field.as_str().to_owned())
-                .collect(),
-            highlighting,
-            language: normalized
-                .language()
-                .map(|language| language.as_str().to_owned()),
-            timeout: normalized.timeout(),
+                highlighting,
+                language: normalized
+                    .language()
+                    .map(|language| language.as_str().to_owned()),
+                timeout: normalized.timeout(),
+            })
         })
     }
 
@@ -377,17 +460,20 @@ impl Index {
         &self,
         request: &SearchBuilder,
     ) -> Result<result::SearchResult<T>> {
-        let request_bytes = wire::search(request)?;
-        let wire_request =
-            searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes).map_err(
-                |error| Error::infrastructure(format!("invalid generated search request: {error}")),
-            )?;
-        let ir_request = self
-            .context
-            .search_to_ir(wire_request)
-            .map_err(Error::from_ir)?;
-        let backend_result = self.backend.search(ir_request).map_err(Error::from_ir)?;
-        result::search_result(backend_result)
+        self.with_backend(|backend| {
+            let request_bytes = wire::search(request)?;
+            let wire_request =
+                searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
+                    .map_err(|error| {
+                        Error::infrastructure(format!("invalid generated search request: {error}"))
+                    })?;
+            let ir_request = self
+                .context
+                .search_to_ir(wire_request)
+                .map_err(Error::from_ir)?;
+            let backend_result = backend.search(ir_request).map_err(Error::from_ir)?;
+            result::search_result(backend_result)
+        })
     }
 
     fn root_insert<'a>(&self, bytes: &'a [u8]) -> Result<api::InsertRequest<'a>> {
@@ -913,7 +999,9 @@ mod tests {
                     .facetable(true),
             )
             .default_search_fields([SearchField::new("title").weight(0.0)]);
-        let index = Index::from_backend(definition, Arc::new(RecordingBackend::new())).unwrap();
+        let index = IndexRuntime::from_backend(definition, Arc::new(RecordingBackend::new()))
+            .unwrap()
+            .index();
         let description = index.context.describe();
 
         assert_eq!(description.name().unwrap().as_str(), "catalog");
@@ -1107,23 +1195,380 @@ mod tests {
 #[cfg(test)]
 mod api_tests {
     use super::*;
-    use crate::Field;
-    use searchkernel_testkit::RecordingBackend;
+    use crate::{field, Analyzer, Facet, Filter, Ranking, SearchBuilder, Sort};
+    use searchkernel_ir::{api, IndexContext, OperationIr};
+    use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
     use serde_json::json;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    fn test_index() -> (Index, Arc<RecordingBackend>) {
+    fn test_index() -> (IndexRuntime, Index, Arc<RecordingBackend>) {
         let backend = Arc::new(RecordingBackend::new());
         let definition = IndexDefinition::new()
             .field(Field::text("title").stored(true))
             .field(Field::float64("price"));
-        let index = Index::from_backend(definition, backend.clone()).expect("valid test index");
-        (index, backend)
+        let runtime =
+            IndexRuntime::from_backend(definition, backend.clone()).expect("valid test index");
+        let index = runtime.index();
+        (runtime, index, backend)
+    }
+
+    fn runtime_index(
+        definition: IndexDefinition,
+        backend: Arc<dyn Backend>,
+    ) -> (IndexRuntime, Index) {
+        let runtime = IndexRuntime::from_backend(definition, backend).expect("valid test index");
+        let index = runtime.index();
+        (runtime, index)
+    }
+
+    fn context_for(definition: &IndexDefinition) -> Arc<IndexContext> {
+        let (_probe_runtime, probe) =
+            runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
+        Arc::clone(&probe.context)
+    }
+
+    fn expected_get(
+        context: &IndexContext,
+        id: &str,
+        projection: Option<&[String]>,
+    ) -> searchkernel_ir::GetRequestIr {
+        let bytes = wire::get(id, projection);
+        let request = searchkernel_ir::__flatbuffers::root::<api::GetRequest>(&bytes)
+            .expect("valid generated get request");
+        context.get_to_ir(request).expect("valid get request IR")
+    }
+
+    fn expected_search(
+        context: &IndexContext,
+        request: &SearchBuilder,
+    ) -> searchkernel_ir::SearchRequestIr {
+        let bytes = wire::search(request).expect("valid generated search request");
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+            .expect("valid generated search request");
+        context
+            .search_to_ir(request)
+            .expect("valid search request IR")
+    }
+
+    fn expected_analyze(
+        context: &IndexContext,
+        request: &AnalyzeBuilder<'_>,
+    ) -> searchkernel_ir::AnalyzeRequestIr {
+        let bytes = wire::analyze(request).expect("valid generated analyze request");
+        let request = searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&bytes)
+            .expect("valid generated analyze request");
+        context
+            .analyze_to_ir(request)
+            .expect("valid analyze request IR")
+    }
+
+    fn scripted_definition() -> IndexDefinition {
+        IndexDefinition::new()
+            .name("catalog")
+            .field(
+                Field::text("title")
+                    .stored(true)
+                    .searchable(true)
+                    .analyzer(Analyzer::standard_v1()),
+            )
+            .field(
+                Field::keyword("brand")
+                    .stored(true)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(
+                Field::keyword("category")
+                    .stored(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(
+                Field::keyword("region")
+                    .stored(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+            .field(
+                Field::keyword("channel")
+                    .stored(false)
+                    .filterable(true)
+                    .sortable(true)
+                    .facetable(true),
+            )
+    }
+
+    fn normalized_search(index: &Index) -> SearchBuilder {
+        index
+            .search("  fox  ")
+            .search_fields(["title"])
+            .filter(field("brand").eq("acme"))
+            .filter(field("category").eq("books"))
+            .sort(Sort::asc("brand").missing_last())
+            .sort(Sort::desc("category").missing_first())
+            .facets([
+                Facet::new("brand")
+                    .limit(3)
+                    .sort(crate::FacetSort::CountDesc),
+                Facet::new("category")
+                    .limit(4)
+                    .sort(crate::FacetSort::CountAsc),
+                Facet::new("region")
+                    .limit(5)
+                    .sort(crate::FacetSort::ValueAsc),
+                Facet::new("channel")
+                    .limit(6)
+                    .sort(crate::FacetSort::ValueDesc),
+            ])
+            .ranking(Ranking::bm25())
+            .limit(7)
+            .offset(2)
+            .projection(["title", "brand"])
+            .highlight(["title"])
+            .language("EN-us")
+    }
+
+    #[test]
+    fn scripted_backend_get_converts_documents_and_projections() {
+        let definition = scripted_definition();
+        let context = context_for(&definition);
+        let projection = vec!["title".to_owned()];
+        let document = searchkernel_ir::DocumentResult {
+            id: "doc-1".to_owned(),
+            fields: BTreeMap::from([
+                (
+                    "title".to_owned(),
+                    searchkernel_ir::Value::String("fox".to_owned()),
+                ),
+                (
+                    "brand".to_owned(),
+                    searchkernel_ir::Value::String("acme".to_owned()),
+                ),
+            ]),
+        };
+        let backend = Arc::new(ScriptedBackend::new([
+            ExpectedCall::success(
+                OperationIr::Get(expected_get(&context, "doc-1", None)),
+                ScriptedResult::Get(searchkernel_ir::GetResult {
+                    document: Some(document),
+                }),
+            ),
+            ExpectedCall::success(
+                OperationIr::Get(expected_get(&context, "doc-1", Some(&projection))),
+                ScriptedResult::Get(searchkernel_ir::GetResult {
+                    document: Some(searchkernel_ir::DocumentResult {
+                        id: "doc-1".to_owned(),
+                        fields: BTreeMap::from([(
+                            "title".to_owned(),
+                            searchkernel_ir::Value::String("fox".to_owned()),
+                        )]),
+                    }),
+                }),
+            ),
+            ExpectedCall::success(
+                OperationIr::Get(expected_get(&context, "missing", None)),
+                ScriptedResult::Get(searchkernel_ir::GetResult { document: None }),
+            ),
+        ]));
+        let (_runtime, index) = runtime_index(definition, backend.clone());
+
+        let full: Option<serde_json::Value> = index.get("doc-1").unwrap();
+        assert_eq!(full, Some(json!({"title": "fox", "brand": "acme"})));
+        let projected: Option<serde_json::Value> =
+            index.get_with_projection("doc-1", ["title"]).unwrap();
+        assert_eq!(projected, Some(json!({"title": "fox"})));
+        let missing: Option<serde_json::Value> = index.get("missing").unwrap();
+        assert_eq!(missing, None);
+        backend.finish().unwrap();
+    }
+
+    #[test]
+    fn scripted_backend_executes_analyze_and_converts_tokens() {
+        let definition = scripted_definition();
+        let context = context_for(&definition);
+        let (_probe_runtime, probe) =
+            runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
+        let probe_request = probe.analyze("Running").field("title").language("EN-us");
+        let expected = expected_analyze(&context, &probe_request);
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+            OperationIr::Analyze(expected),
+            ScriptedResult::Analyze(searchkernel_ir::AnalyzeResult {
+                tokens: vec![searchkernel_ir::AnalyzedToken {
+                    surface: "Running".to_owned(),
+                    term: "run".to_owned(),
+                    position: 1,
+                    start_byte: 0,
+                    end_byte: 7,
+                }],
+            }),
+        )]));
+        let (_runtime, index) = runtime_index(definition, backend.clone());
+
+        let result = index
+            .analyze("Running")
+            .field("title")
+            .language("EN-us")
+            .execute()
+            .unwrap();
+        assert_eq!(result.tokens[0].term, "run");
+        assert_eq!(result.tokens[0].start_byte, 0);
+        assert_eq!(result.tokens[0].end_byte, 7);
+        backend.finish().unwrap();
+    }
+
+    #[test]
+    fn browse_executes_match_all_and_describe_returns_schema() {
+        let definition = scripted_definition();
+        let context = context_for(&definition);
+        let (_probe_runtime, probe) =
+            runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
+        let expected = expected_search(&context, &probe.browse());
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+            OperationIr::Search(expected),
+            ScriptedResult::Search(searchkernel_ir::SearchResult {
+                hits: Vec::new(),
+                total_hits: searchkernel_ir::TotalHits {
+                    value: 0,
+                    relation: searchkernel_ir::TotalHitsRelation::Exact,
+                },
+                facets: Vec::new(),
+            }),
+        )]));
+        let (_runtime, index) = runtime_index(definition, backend.clone());
+
+        let described = index.describe().unwrap();
+        assert_eq!(described.index_name(), Some("catalog"));
+        assert_eq!(described.fields().len(), 5);
+        assert_eq!(described.fields()[0].name(), "title");
+        assert_eq!(described.fields()[1].name(), "brand");
+
+        let result: crate::SearchResult<serde_json::Value> = index.browse().execute().unwrap();
+        assert!(result.hits.is_empty());
+        assert_eq!(result.total_hits.value, 0);
+        backend.finish().unwrap();
+    }
+
+    #[test]
+    fn search_normalization_covers_explicit_options_and_defaults() {
+        let definition = scripted_definition();
+        let context = context_for(&definition);
+        let (_probe_runtime, probe) =
+            runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
+        let expected = expected_search(&context, &normalized_search(&probe));
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
+            OperationIr::Search(expected),
+            ScriptedResult::Search(searchkernel_ir::SearchResult {
+                hits: Vec::new(),
+                total_hits: searchkernel_ir::TotalHits {
+                    value: 0,
+                    relation: searchkernel_ir::TotalHitsRelation::Exact,
+                },
+                facets: Vec::new(),
+            }),
+        )]));
+        let (_runtime, index) = runtime_index(definition, backend.clone());
+
+        let inspected = normalized_search(&index).inspect().unwrap();
+        assert_eq!(inspected.query, "  fox  ");
+        assert_eq!(inspected.search_fields.len(), 1);
+        assert_eq!(inspected.search_fields[0].field(), "title");
+        assert_eq!(
+            inspected.filter,
+            Some(Filter::all([
+                field("brand").eq("acme"),
+                field("category").eq("books"),
+            ]))
+        );
+        assert_eq!(inspected.sorts.len(), 2);
+        assert_eq!(inspected.sorts[0].direction, crate::SortDirection::Asc);
+        assert_eq!(
+            inspected.sorts[0].missing,
+            Some(crate::MissingPlacement::Last)
+        );
+        assert_eq!(inspected.sorts[1].direction, crate::SortDirection::Desc);
+        assert_eq!(
+            inspected.sorts[1].missing,
+            Some(crate::MissingPlacement::First)
+        );
+        assert_eq!(inspected.facets.len(), 4);
+        assert_eq!(inspected.facets[0].limit, Some(3));
+        assert_eq!(inspected.facets[1].sort, Some(crate::FacetSort::CountAsc));
+        assert_eq!(inspected.facets[2].sort, Some(crate::FacetSort::ValueAsc));
+        assert_eq!(inspected.facets[3].sort, Some(crate::FacetSort::ValueDesc));
+        assert_eq!(inspected.ranking.kind, crate::search::RankingKind::Bm25);
+        assert_eq!(inspected.limit, 7);
+        assert_eq!(inspected.offset, 2);
+        assert_eq!(inspected.projection, ["title", "brand"]);
+        assert_eq!(inspected.highlighting, Some(vec!["title".to_owned()]));
+        assert_eq!(inspected.language.as_deref(), Some("en-us"));
+
+        let result: crate::SearchResult<serde_json::Value> =
+            normalized_search(&index).execute().unwrap();
+        assert!(result.hits.is_empty());
+        backend.finish().unwrap();
+
+        let single_filter = index
+            .search("fox")
+            .filter(field("brand").eq("acme"))
+            .inspect()
+            .unwrap();
+        assert_eq!(single_filter.query, "fox");
+        assert_eq!(single_filter.filter, Some(field("brand").eq("acme")));
+
+        let defaults = index.browse().inspect().unwrap();
+        assert_eq!(defaults.query, "");
+        assert!(defaults.filter.is_none());
+        assert!(defaults.sorts.is_empty());
+        assert!(defaults.facets.is_empty());
+        assert_eq!(
+            defaults.ranking.kind,
+            crate::search::RankingKind::DefaultRelevanceV1
+        );
+        assert_eq!(defaults.limit, 20);
+        assert_eq!(defaults.offset, 0);
+        assert_eq!(defaults.projection, ["title", "brand"]);
+        assert!(defaults.highlighting.is_none());
+        assert!(defaults.language.is_none());
+    }
+
+    #[test]
+    fn scripted_backend_errors_preserve_code_message_and_details() {
+        let definition = scripted_definition();
+        let context = context_for(&definition);
+        let (_probe_runtime, probe) =
+            runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
+        let mut backend_error = searchkernel_ir::PortableError::new(
+            searchkernel_ir::ErrorCode::Unavailable,
+            "backend unavailable",
+        )
+        .with_detail("backend_timeout", Some("search"), "request timed out");
+        backend_error.retryable = true;
+        let backend = Arc::new(ScriptedBackend::new([ExpectedCall::error(
+            OperationIr::Search(expected_search(&context, &probe.search("fox"))),
+            backend_error,
+        )]));
+        let (_runtime, index) = runtime_index(definition, backend.clone());
+
+        let error = index
+            .search("fox")
+            .execute::<serde_json::Value>()
+            .expect_err("scripted backend should fail the search");
+        assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+        assert!(error.retryable());
+        assert_eq!(error.details()[0].code, "backend_timeout");
+        assert_eq!(error.details()[0].path.as_deref(), Some("search"));
+        assert_eq!(error.details()[0].message, "request timed out");
+        assert_eq!(error.to_string(), "backend unavailable");
+        backend.finish().unwrap();
     }
 
     #[test]
     fn invalid_values_do_not_reach_the_backend() {
-        let (index, backend) = test_index();
+        let (_runtime, index, backend) = test_index();
 
         let error = index
             .insert("nan", &f64::NAN)
@@ -1143,7 +1588,7 @@ mod api_tests {
 
     #[test]
     fn backend_errors_are_returned_without_being_rewritten() {
-        let (index, backend) = test_index();
+        let (_runtime, index, backend) = test_index();
         let error = index
             .insert("doc-1", &json!({"title": "fox"}))
             .expect_err("recording backend intentionally rejects writes");

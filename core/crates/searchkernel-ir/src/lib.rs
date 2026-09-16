@@ -12,6 +12,7 @@ pub mod backend;
 pub mod error;
 pub mod ir_to_api;
 pub mod model;
+pub mod session;
 
 pub use api_to_ir::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, IndexContext, WriteRequestRef,
@@ -20,6 +21,7 @@ pub use backend::Backend;
 pub use error::{ErrorCode, ErrorDetail, PortableError, Result};
 pub use ir_to_api::*;
 pub use model::*;
+pub use session::{BackendSession, SessionError};
 
 /// The generated FlatBuffers API used at the portable API boundary.
 pub use searchkernel_protocol::v1 as api;

@@ -765,7 +765,8 @@ Hit<T>
 Target feel:
 
 ```rust
-let index = Index::open("./products")?;
+let runtime = IndexRuntime::open("./products")?;
+let index = runtime.index();
 
 index.upsert("sku-42", &product)?;
 
@@ -1381,7 +1382,7 @@ searchkernel-vespa-engine configuration
 
 Map high-level index creation/opening onto the low-level engine lifecycle.
 
-This is the first real implementation of `Index::create` / `Index::open` against Vespa.
+This is the first real implementation of `IndexRuntime::create` / `IndexRuntime::open` against Vespa.
 
 ---
 

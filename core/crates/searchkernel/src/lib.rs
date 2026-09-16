@@ -15,7 +15,7 @@ pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, Range};
-pub use index::Index;
+pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
 pub use result::{
     FacetResult, FacetValue, HighlightFragment, HighlightResult, HighlightSpan, Hit, SearchResult,

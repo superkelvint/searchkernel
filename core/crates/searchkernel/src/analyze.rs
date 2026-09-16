@@ -72,22 +72,24 @@ pub struct AnalyzeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::Index;
+    use crate::index::{Index, IndexRuntime};
     use crate::schema::{Field, IndexDefinition};
     use searchkernel_testkit::RecordingBackend;
     use std::sync::Arc;
 
-    fn test_index() -> Index {
-        Index::from_backend(
+    fn test_index() -> (IndexRuntime, Index) {
+        let runtime = IndexRuntime::from_backend(
             IndexDefinition::new().field(Field::text("title")),
             Arc::new(RecordingBackend::new()),
         )
-        .expect("test index")
+        .expect("test index");
+        let index = runtime.index();
+        (runtime, index)
     }
 
     #[test]
     fn analyze_builder_switches_between_field_and_explicit_analyzer() {
-        let index = test_index();
+        let (_runtime, index) = test_index();
         let field = AnalyzeBuilder::new(&index, "Running")
             .field("title")
             .language("EN-us");

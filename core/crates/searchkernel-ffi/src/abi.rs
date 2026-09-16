@@ -107,11 +107,18 @@ unsafe fn call_inner(
     }
 }
 
-pub(crate) fn close(handle_value: u64) -> u32 {
+pub(crate) fn close(handle_value: u64, error: *mut u8, error_capacity: usize) -> u32 {
     match catch_unwind(AssertUnwindSafe(|| handle::close(handle_value))) {
-        Ok(true) => status::OK,
-        Ok(false) => status::INVALID_HANDLE,
-        Err(_) => status::PANIC,
+        Ok(Some(Ok(()))) => status::OK,
+        Ok(Some(Err(close_error))) => {
+            crate::write_lifecycle_error(close_error, error, error_capacity);
+            status::INTERNAL
+        }
+        Ok(None) => status::INVALID_HANDLE,
+        Err(_) => {
+            crate::write_lifecycle_error("panic while closing index", error, error_capacity);
+            status::PANIC
+        }
     }
 }
 
@@ -217,7 +224,7 @@ mod tests {
     #[test]
     fn invalid_handle_and_close_statuses_are_stable() {
         assert_eq!(abi_version(), crate::SK_ABI_VERSION);
-        assert_eq!(close(0), status::INVALID_HANDLE);
-        assert_eq!(close(u64::MAX), status::INVALID_HANDLE);
+        assert_eq!(close(0, ptr::null_mut(), 0), status::INVALID_HANDLE);
+        assert_eq!(close(u64::MAX, ptr::null_mut(), 0), status::INVALID_HANDLE);
     }
 }

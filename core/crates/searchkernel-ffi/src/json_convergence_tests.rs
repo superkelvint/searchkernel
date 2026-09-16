@@ -171,8 +171,12 @@ fn native_and_json_requests_converge_at_the_canonical_dispatcher() {
         }
     }
 
-    assert!(handle::close(native_handle));
-    assert!(handle::close(json_handle));
+    assert!(handle::close(native_handle)
+        .expect("registered native handle")
+        .is_ok());
+    assert!(handle::close(json_handle)
+        .expect("registered JSON handle")
+        .is_ok());
 }
 
 #[test]
@@ -200,7 +204,9 @@ fn successful_dispatch_encodes_each_backend_operation() {
             .into_iter()
             .next()
             .unwrap_or_else(|| panic!("{case} did not reach a backend operation"));
-        assert!(handle::close(recording_handle));
+        assert!(handle::close(recording_handle)
+            .expect("registered recording handle")
+            .is_ok());
 
         let expected_response = match &operation {
             searchkernel_ir::OperationIr::Insert(request) => {
@@ -258,7 +264,9 @@ fn successful_dispatch_encodes_each_backend_operation() {
                 | Ok(crate::test_support::DecodedResponse::Search(_))
                 | Ok(crate::test_support::DecodedResponse::Analyze(_))
         ));
-        assert!(handle::close(handle_value));
+        assert!(handle::close(handle_value)
+            .expect("registered handle")
+            .is_ok());
     }
 }
 
@@ -393,5 +401,7 @@ fn dispatcher_rejects_bad_framing_before_backend_execution() {
         assert_eq!(dispatch::dispatch(&state, &unknown), Err(expected));
     }
     assert!(backend.calls().is_empty());
-    assert!(handle::close(handle_value));
+    assert!(handle::close(handle_value)
+        .expect("registered handle")
+        .is_ok());
 }

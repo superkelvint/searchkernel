@@ -34,7 +34,7 @@ mod tests {
             out_len: *mut usize,
             out_allocation_id: *mut u64,
         ) -> u32;
-        fn sk_close(handle: u64) -> u32;
+        fn sk_close(handle: u64, error: *mut u8, error_capacity: usize) -> u32;
         fn sk_buffer_free(data: *mut u8, allocation_id: u64);
     }
 
@@ -539,13 +539,13 @@ mod tests {
     }
 
     fn close_ok(handle: u64) {
-        assert_eq!(unsafe { sk_close(handle) }, SK_STATUS_OK);
+        assert_eq!(unsafe { sk_close(handle, ptr::null_mut(), 0) }, SK_STATUS_OK);
     }
 
     #[test]
     fn abi_version_is_frozen() {
         let _guard = TEST_LOCK.lock().unwrap();
-        assert_eq!(unsafe { sk_abi_version() }, 1);
+        assert_eq!(unsafe { sk_abi_version() }, 2);
     }
 
     #[test]
@@ -1053,8 +1053,8 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         let first = register_index(context(), Arc::new(RecordingBackend::new()));
         assert_ne!(first, 0);
-        assert_eq!(unsafe { sk_close(first) }, SK_STATUS_OK);
-        assert_eq!(unsafe { sk_close(first) }, SK_STATUS_INVALID_HANDLE);
+        assert_eq!(unsafe { sk_close(first, ptr::null_mut(), 0) }, SK_STATUS_OK);
+        assert_eq!(unsafe { sk_close(first, ptr::null_mut(), 0) }, SK_STATUS_INVALID_HANDLE);
 
         let second = register_index(context(), Arc::new(RecordingBackend::new()));
         assert_ne!(second, 0);
@@ -1141,7 +1141,7 @@ mod tests {
         });
 
         entered.wait();
-        assert_eq!(unsafe { sk_close(handle) }, SK_STATUS_OK);
+        assert_eq!(unsafe { sk_close(handle, ptr::null_mut(), 0) }, SK_STATUS_OK);
 
         let (status, out) = raw_call(handle, &request);
         assert_eq!(status, SK_STATUS_INVALID_HANDLE);

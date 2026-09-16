@@ -13,10 +13,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_insert_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .insert_to_ir(payload)
-                .and_then(|request| state.backend.insert(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .insert_to_ir(payload)
+                    .and_then(|request| backend.insert(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_INSERT, |builder, result| {
                 searchkernel_ir::insert_result_offset(builder, result).as_union_value()
             });
@@ -26,10 +27,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_upsert_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .upsert_to_ir(payload)
-                .and_then(|request| state.backend.upsert(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .upsert_to_ir(payload)
+                    .and_then(|request| backend.upsert(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_UPSERT, |builder, result| {
                 searchkernel_ir::upsert_result_offset(builder, result).as_union_value()
             });
@@ -39,10 +41,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_patch_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .patch_to_ir(payload)
-                .and_then(|request| state.backend.patch(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .patch_to_ir(payload)
+                    .and_then(|request| backend.patch(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_PATCH, |builder, result| {
                 searchkernel_ir::patch_result_offset(builder, result).as_union_value()
             });
@@ -52,10 +55,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_delete_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .delete_to_ir(payload)
-                .and_then(|request| state.backend.delete(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .delete_to_ir(payload)
+                    .and_then(|request| backend.delete(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_DELETE, |builder, result| {
                 searchkernel_ir::delete_result_offset(builder, result).as_union_value()
             });
@@ -65,10 +69,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_get_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .get_to_ir(payload)
-                .and_then(|request| state.backend.get(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .get_to_ir(payload)
+                    .and_then(|request| backend.get(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_GET, |builder, result| {
                 searchkernel_ir::get_result_offset(builder, result).as_union_value()
             });
@@ -78,10 +83,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_search_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .search_to_ir(payload)
-                .and_then(|request| state.backend.search(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .search_to_ir(payload)
+                    .and_then(|request| backend.search(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_SEARCH, |builder, result| {
                 searchkernel_ir::search_result_offset(builder, result).as_union_value()
             });
@@ -91,10 +97,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
             let payload = envelope
                 .payload_as_search_kernel_v1_analyze_request()
                 .ok_or(status::INVALID_REQUEST)?;
-            let result = state
-                .context
-                .analyze_to_ir(payload)
-                .and_then(|request| state.backend.analyze(request));
+            let result = execute_backend(state, |context, backend| {
+                context
+                    .analyze_to_ir(payload)
+                    .and_then(|request| backend.analyze(request))
+            })?;
             let response = encode_result(result, transport::RESPONSE_ANALYZE, |builder, result| {
                 searchkernel_ir::analyze_result_offset(builder, result).as_union_value()
             });
@@ -105,6 +112,7 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
                 .payload_as_search_kernel_v1_describe_request()
                 .ok_or(status::INVALID_REQUEST)?;
             let _ = payload;
+            execute_context(state, |_| Ok(()))?.expect("empty context callback cannot fail");
             let result = state.context.describe();
             Ok(transport::frame_response(
                 transport::RESPONSE_DESCRIBE,
@@ -118,7 +126,7 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
                 .payload_as_search_kernel_v1_inspect_query_request()
                 .ok_or(status::INVALID_REQUEST)?;
             let request = payload.request().ok_or(status::INVALID_REQUEST)?;
-            let result = state.context.inspect_query(request);
+            let result = execute_context(state, |context| context.inspect_query(request))?;
             Ok(encode_result(
                 result,
                 transport::RESPONSE_INSPECT_QUERY,
@@ -130,6 +138,29 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
         0 => Err(status::INVALID_REQUEST),
         _ => Err(status::UNSUPPORTED_OPERATION),
     }
+}
+
+fn execute_backend<T>(
+    state: &HandleState,
+    callback: impl FnOnce(
+        &searchkernel_ir::IndexContext,
+        &dyn searchkernel_ir::Backend,
+    ) -> searchkernel_ir::Result<T>,
+) -> Result<searchkernel_ir::Result<T>, u32> {
+    state
+        .session
+        .execute(|backend| callback(&state.context, backend))
+        .map_err(|searchkernel_ir::SessionError::Closed| status::INDEX_CLOSED)
+}
+
+fn execute_context<T>(
+    state: &HandleState,
+    callback: impl FnOnce(&searchkernel_ir::IndexContext) -> searchkernel_ir::Result<T>,
+) -> Result<searchkernel_ir::Result<T>, u32> {
+    state
+        .session
+        .execute(|_| callback(&state.context))
+        .map_err(|searchkernel_ir::SessionError::Closed| status::INDEX_CLOSED)
 }
 
 fn encode_result<T>(
@@ -189,7 +220,9 @@ mod tests {
             .expect("test definition");
         HandleState {
             context: Arc::new(IndexContext::from_api(root).expect("test context")),
-            backend: Arc::new(RecordingBackend::new()),
+            session: searchkernel_ir::BackendSession::from_backend(Arc::new(
+                RecordingBackend::new(),
+            )),
         }
     }
 

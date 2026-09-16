@@ -7,6 +7,7 @@ pub(crate) const UNSUPPORTED_OPERATION: u32 = crate::SK_STATUS_UNSUPPORTED_OPERA
 #[allow(dead_code)]
 pub(crate) const INTERNAL: u32 = crate::SK_STATUS_INTERNAL;
 pub(crate) const PANIC: u32 = crate::SK_STATUS_PANIC;
+pub(crate) const INDEX_CLOSED: u32 = crate::SK_STATUS_INDEX_CLOSED;
 
 #[cfg(test)]
 mod tests {
@@ -24,8 +25,9 @@ mod tests {
             UNSUPPORTED_OPERATION,
             INTERNAL,
             PANIC,
+            INDEX_CLOSED,
         ];
-        assert_eq!(codes, [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(codes, [0, 1, 2, 3, 4, 5, 6, 7, 12]);
         assert_eq!(
             codes.iter().copied().collect::<BTreeSet<_>>().len(),
             codes.len()

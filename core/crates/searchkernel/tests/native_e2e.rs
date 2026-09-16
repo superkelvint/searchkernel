@@ -4,7 +4,8 @@
 #![cfg(feature = "native")]
 
 use searchkernel::{
-    field, ErrorCode, Facet, FacetSort, Field, Index, IndexDefinition, Ranking, SearchField, Sort,
+    field, ErrorCode, Facet, FacetSort, Field, IndexDefinition, IndexRuntime, Ranking, SearchField,
+    Sort,
 };
 use serde_json::json;
 
@@ -18,7 +19,8 @@ fn native_product_path_round_trips_annotated_mixed_document() {
     let definition = IndexDefinition::new()
         .field(Field::text("title").stored(true))
         .field(Field::int64("price").stored(true).filterable(true));
-    let index = Index::create(&path, definition).expect("create native index");
+    let runtime = IndexRuntime::create(&path, definition).expect("create native index");
+    let index = runtime.index();
     index
         .upsert(
             "sku-42",
@@ -32,7 +34,7 @@ fn native_product_path_round_trips_annotated_mixed_document() {
         .expect("search native index");
     assert_eq!(result.total_hits.value, 1);
     assert!(index.delete("sku-42").expect("delete native document"));
-    drop(index);
+    runtime.close().expect("close native index");
     std::fs::remove_dir_all(path).expect("remove native test index");
 }
 
@@ -60,7 +62,8 @@ fn native_product_path_has_current_search_and_facet_parity() {
                 .sortable(true)
                 .facetable(true),
         );
-    let index = Index::create(&path, definition).expect("create native parity index");
+    let runtime = IndexRuntime::create(&path, definition).expect("create native parity index");
+    let index = runtime.index();
 
     for (id, title, description, brand, price) in [
         (
@@ -263,8 +266,9 @@ fn native_product_path_has_current_search_and_facet_parity() {
         "language_not_supported",
     );
 
-    drop(index);
-    let reopened = Index::open(&path).expect("reopen native parity index");
+    runtime.close().expect("close native parity index");
+    let reopened_runtime = IndexRuntime::open(&path).expect("reopen native parity index");
+    let reopened = reopened_runtime.index();
     let after_reopen = reopened
         .search("wireless")
         .limit(1)
@@ -276,7 +280,9 @@ fn native_product_path_has_current_search_and_facet_parity() {
         facet_pairs(&after_reopen, "brand"),
         vec![("Charlie".into(), 3)]
     );
-    drop(reopened);
+    reopened_runtime
+        .close()
+        .expect("close reopened native parity index");
     std::fs::remove_dir_all(path).expect("remove native parity index");
 }
 

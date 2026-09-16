@@ -1149,7 +1149,8 @@ Hit<T>
 ### Example
 
 ```rust
-let index = Index::open("./products")?;
+let runtime = IndexRuntime::open("./products")?;
+let index = runtime.index();
 
 index.upsert("sku-42", &product)?;
 
@@ -1346,7 +1347,7 @@ M1/M6
 
 ### Goal
 
-Compile `ResolvedIndexDefinition` into the low-level Vespa configuration and wire real `Index::create/open`.
+Compile `ResolvedIndexDefinition` into the low-level Vespa configuration and wire real `IndexRuntime::create/open`.
 
 ### Verify
 

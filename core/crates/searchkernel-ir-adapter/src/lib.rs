@@ -277,6 +277,10 @@ impl Backend for VespaBackend {
                 .collect(),
         })
     }
+
+    fn close(self: Box<Self>) -> Result<()> {
+        self.engine.close().map_err(native_error)
+    }
 }
 
 fn lower_document(document: &DocumentIr) -> Result<Document> {

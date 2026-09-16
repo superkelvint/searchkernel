@@ -8,7 +8,7 @@ _Static_assert(sizeof(sk_handle_t) == 8, "sk_handle_t must be 64-bit");
 _Static_assert(sizeof(sk_status_t) == 4, "sk_status_t must be 32-bit");
 
 int main(void) {
-    assert(SK_ABI_VERSION == 1u);
+    assert(SK_ABI_VERSION == 2u);
     assert(SK_STATUS_OK == 0u);
     assert(SK_STATUS_INVALID_ARGUMENT == 1u);
     assert(SK_STATUS_INVALID_HANDLE == 2u);
@@ -22,7 +22,7 @@ int main(void) {
 
     sk_buffer_free(NULL, 0u);
 
-    assert(sk_close(0u) == SK_STATUS_INVALID_HANDLE);
+    assert(sk_close(0u, NULL, 0u) == SK_STATUS_INVALID_HANDLE);
 
     // sk_call treats the output as write-only on entry, so ordinary
     // uninitialized C out-parameter storage is valid.

@@ -5,15 +5,14 @@ caller obligations, not additional synchronization performed by the ABI.
 
 ## Handles and close
 
-`sk_close(handle)` removes the handle from the registry and prevents new calls
-from starting. It is not a completion barrier: a call that already acquired
-the handle's internal strong reference may continue and complete normally
-after `sk_close` returns. A caller that requires all work to finish must
-coordinate that quiescence itself before closing the handle.
+`sk_close(handle, error, error_capacity)` removes the handle from the registry,
+prevents new calls from starting, waits for calls already in execution to
+finish, and performs graceful native shutdown. A native shutdown failure is
+returned as a status and copied to the optional error buffer.
 
 After close returns, future calls using that handle fail with
-`SK_STATUS_INVALID_HANDLE`. Handle destruction is independent of the lifetime
-of an in-flight call.
+`SK_STATUS_INVALID_HANDLE`. A call that raced after the lifecycle transition
+but before registry removal receives `SK_STATUS_INDEX_CLOSED`.
 
 ## Request and response storage
 

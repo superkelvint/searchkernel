@@ -18,6 +18,7 @@ pub enum ErrorCode {
     DeadlineExceeded,
     CorruptIndex,
     IncompatibleIndex,
+    IndexClosed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +101,10 @@ impl Error {
                 ..
             }
         )
+    }
+
+    pub(crate) fn index_closed() -> Self {
+        Self::search(ErrorCode::IndexClosed, "index runtime is closed")
     }
 
     pub fn details(&self) -> &[ErrorDetail] {

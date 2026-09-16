@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define SK_ABI_VERSION 1
+#define SK_ABI_VERSION 2
 
 #define SK_STATUS_OK 0
 
@@ -32,6 +32,8 @@
 #define SK_STATUS_CORRUPT_INDEX 10
 
 #define SK_STATUS_INCOMPATIBLE_INDEX 11
+
+#define SK_STATUS_INDEX_CLOSED 12
 
 typedef uint32_t sk_status_t;
 
@@ -61,7 +63,13 @@ sk_status_t sk_call(sk_handle_t handle,
                     size_t *out_len,
                     uint64_t *out_allocation_id);
 
-sk_status_t sk_close(sk_handle_t handle);
+/**
+ * Gracefully close an index handle and report any native durability error.
+ *
+ * The error buffer may be null when only the status code is required. When
+ * non-null, it must reference writable storage of `error_capacity` bytes.
+ */
+sk_status_t sk_close(sk_handle_t handle, uint8_t *error, size_t error_capacity);
 
 /**
  * Create an on-disk index from its canonical FlatBuffers definition.

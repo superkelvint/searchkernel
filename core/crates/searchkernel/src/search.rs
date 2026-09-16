@@ -309,7 +309,7 @@ impl std::fmt::Debug for SearchBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::Index;
+    use crate::index::IndexRuntime;
     use crate::schema::{Field, IndexDefinition};
     use searchkernel_testkit::RecordingBackend;
     use std::sync::Arc;
@@ -352,12 +352,13 @@ mod tests {
 
     #[test]
     fn search_builder_owns_a_clone_of_the_index() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
         let request = {
-            let index = Index::from_backend(
-                IndexDefinition::new().field(Field::text("title")),
-                Arc::new(RecordingBackend::new()),
-            )
-            .expect("test index");
+            let index = runtime.index();
             index.search("headphones")
         };
 
@@ -367,11 +368,12 @@ mod tests {
 
     #[test]
     fn search_builder_preserves_engine_timeout() {
-        let index = Index::from_backend(
+        let runtime = IndexRuntime::from_backend(
             IndexDefinition::new().field(Field::text("title")),
             Arc::new(RecordingBackend::new()),
         )
         .expect("test index");
+        let index = runtime.index();
 
         let inspected = index
             .search("headphones")

@@ -18,4 +18,12 @@ pub trait Backend: Send + Sync {
     fn get(&self, request: GetRequestIr) -> Result<GetResult>;
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult>;
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult>;
+
+    /// Gracefully release backend-owned resources.
+    ///
+    /// Backends that have no explicit shutdown operation may use the default,
+    /// which simply allows the backend value to be dropped.
+    fn close(self: Box<Self>) -> Result<()> {
+        Ok(())
+    }
 }

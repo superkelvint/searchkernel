@@ -754,7 +754,7 @@ fn comparison_op(op: ComparisonOp) -> api::ComparisonOp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::Index;
+    use crate::index::{Index, IndexRuntime};
     use crate::schema::{Field, IndexDefinition};
     use crate::{field, Filter, Range};
     use searchkernel_testkit::RecordingBackend;
@@ -773,20 +773,22 @@ mod tests {
         }
     }
 
-    fn test_index() -> Index {
-        Index::from_backend(
+    fn test_index() -> (IndexRuntime, Index) {
+        let runtime = IndexRuntime::from_backend(
             IndexDefinition::new()
                 .field(Field::text("title"))
                 .field(Field::keyword("brand"))
                 .field(Field::float64("price")),
             Arc::new(RecordingBackend::new()),
         )
-        .expect("test index")
+        .expect("test index");
+        let index = runtime.index();
+        (runtime, index)
     }
 
     #[test]
     fn search_encoder_populates_all_optional_sections() {
-        let index = test_index();
+        let (_runtime, index) = test_index();
         let request = index
             .search("headphones")
             .search_fields([SearchField::new("title").weight(2.0)])
@@ -826,7 +828,7 @@ mod tests {
 
     #[test]
     fn search_encoder_rejects_sub_millisecond_timeout() {
-        let index = test_index();
+        let (_runtime, index) = test_index();
         let request = index.search("headphones").timeout(Duration::from_nanos(1));
 
         assert!(matches!(
@@ -840,7 +842,7 @@ mod tests {
 
     #[test]
     fn write_and_analysis_encoders_cover_success_and_validation_errors() {
-        let index = test_index();
+        let (_runtime, index) = test_index();
         let patch_value = Patch::new().set("title", "new").unset("brand");
         let patch_bytes = patch("doc-1", &patch_value).expect("patch request encoding");
         let encoded_patch = searchkernel_ir::__flatbuffers::root::<api::PatchRequest>(&patch_bytes)

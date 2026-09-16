@@ -16,7 +16,7 @@ pub mod test_support;
 pub type SkHandle = u64;
 pub type SkStatus = u32;
 
-pub const SK_ABI_VERSION: u32 = 1;
+pub const SK_ABI_VERSION: u32 = 2;
 pub const SK_STATUS_OK: u32 = 0;
 pub const SK_STATUS_INVALID_ARGUMENT: u32 = 1;
 pub const SK_STATUS_INVALID_HANDLE: u32 = 2;
@@ -29,6 +29,7 @@ pub const SK_STATUS_ALREADY_EXISTS: u32 = 8;
 pub const SK_STATUS_NOT_FOUND: u32 = 9;
 pub const SK_STATUS_CORRUPT_INDEX: u32 = 10;
 pub const SK_STATUS_INCOMPATIBLE_INDEX: u32 = 11;
+pub const SK_STATUS_INDEX_CLOSED: u32 = 12;
 
 #[cfg(test)]
 mod primitive_output_abi_tests {
@@ -112,8 +113,12 @@ pub unsafe extern "C" fn sk_call(
 }
 
 #[no_mangle]
-pub extern "C" fn sk_close(handle: SkHandle) -> SkStatus {
-    abi::close(handle)
+/// Gracefully close an index handle and report any native durability error.
+///
+/// The error buffer may be null when only the status code is required. When
+/// non-null, it must reference writable storage of `error_capacity` bytes.
+pub extern "C" fn sk_close(handle: SkHandle, error: *mut u8, error_capacity: usize) -> SkStatus {
+    abi::close(handle, error, error_capacity)
 }
 
 #[cfg(feature = "production")]
@@ -127,6 +132,7 @@ fn lifecycle_status(error: &searchkernel::Error) -> SkStatus {
             searchkernel::ErrorCode::Unsupported => SK_STATUS_UNSUPPORTED_OPERATION,
             searchkernel::ErrorCode::CorruptIndex => SK_STATUS_CORRUPT_INDEX,
             searchkernel::ErrorCode::IncompatibleIndex => SK_STATUS_INCOMPATIBLE_INDEX,
+            searchkernel::ErrorCode::IndexClosed => SK_STATUS_INDEX_CLOSED,
             searchkernel::ErrorCode::ResourceExhausted
             | searchkernel::ErrorCode::Conflict
             | searchkernel::ErrorCode::Internal
@@ -173,9 +179,9 @@ fn lifecycle_path(path: *const std::os::raw::c_char) -> Result<std::path::PathBu
 }
 
 #[cfg(feature = "production")]
-fn lifecycle_register(index: searchkernel::Index) -> Result<SkHandle, (SkStatus, String)> {
-    let (context, backend) = index.into_backend_parts();
-    let handle = handle::register(context, backend);
+fn lifecycle_register(runtime: searchkernel::IndexRuntime) -> Result<SkHandle, (SkStatus, String)> {
+    let (context, session) = runtime.into_session_parts();
+    let handle = handle::register_session(context, session);
     if handle == 0 {
         return Err((
             SK_STATUS_INTERNAL,
@@ -201,7 +207,7 @@ fn create_inner(
     // SAFETY: the C ABI requires `definition` to reference `definition_len`
     // readable bytes for this call.
     let definition = unsafe { std::slice::from_raw_parts(definition, definition_len) };
-    searchkernel::Index::create_from_definition_bytes(path, definition)
+    searchkernel::IndexRuntime::create_from_definition_bytes(path, definition)
         .map_err(|error| (lifecycle_status(&error), error.to_string()))
         .and_then(lifecycle_register)
 }
@@ -209,7 +215,7 @@ fn create_inner(
 #[cfg(feature = "production")]
 fn open_inner(path: *const std::os::raw::c_char) -> Result<SkHandle, (SkStatus, String)> {
     let path = lifecycle_path(path).map_err(|error| (SK_STATUS_INVALID_ARGUMENT, error))?;
-    searchkernel::Index::open(path)
+    searchkernel::IndexRuntime::open(path)
         .map_err(|error| (lifecycle_status(&error), error.to_string()))
         .and_then(lifecycle_register)
 }
@@ -554,7 +560,7 @@ mod lifecycle_tests {
         };
         assert_eq!(status, SK_STATUS_OK);
         assert_ne!(handle, 0);
-        assert_eq!(sk_close(handle), SK_STATUS_OK);
+        assert_eq!(sk_close(handle, std::ptr::null_mut(), 0), SK_STATUS_OK);
 
         let mut reopened = 0;
         let status = unsafe {
@@ -567,7 +573,7 @@ mod lifecycle_tests {
         };
         assert_eq!(status, SK_STATUS_OK);
         assert_ne!(reopened, 0);
-        assert_eq!(sk_close(reopened), SK_STATUS_OK);
+        assert_eq!(sk_close(reopened, std::ptr::null_mut(), 0), SK_STATUS_OK);
         std::fs::remove_dir_all(path.to_str().unwrap()).unwrap();
     }
 
