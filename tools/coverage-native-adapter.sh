@@ -62,6 +62,12 @@ LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$DRIVER" reopen "$CONFIG" "$RUN/reopen"
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$DRIVER" concurrency "$CONFIG" "$RUN/concurrency"
+LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$DRIVER" advanced "$CONFIG" "$RUN/advanced"
+LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$DRIVER" adapter "$CONFIG" "$RUN/adapter"
+LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$DRIVER" c5 "$CONFIG" "$RUN/c5"
 
 echo "running timing instrumentation in a fresh process"
 SK_ENGINE_TIMING=1 \

@@ -8,8 +8,8 @@ use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_protocol::v1 as api;
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
-    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, Query,
-    RankProfile, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
+    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
+    Query, RankProfile, ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -46,6 +46,11 @@ fn schema() -> Schema {
     Schema::new("typea")
         .field(Field::new("title", FieldType::Text).indexed().summary())
         .field(Field::new("body", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("stored_verification_id", FieldType::Text)
+                .indexed()
+                .summary(),
+        )
         .field(
             Field::new("category", FieldType::String)
                 .attribute()
@@ -94,6 +99,7 @@ fn put(engine: &Engine, id: &str, value: i64) -> AnyResult<()> {
         Document::new(id)
             .field("title", format!("wireless fox {id}"))
             .field("body", "portable native search workload")
+            .field("stored_verification_id", id)
             .field("category", if value % 2 == 0 { "audio" } else { "book" })
             .field("qty", value)
             .field("price", value as f64 + 0.5)
@@ -1201,7 +1207,11 @@ fn torture(config: &Path, root: &Path) -> AnyResult<()> {
 
 fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
     let engine = Arc::new(open(config, data)?);
-    engine.put(Document::new("stable-text").field("title", "stable fox"))?;
+    engine.put(
+        Document::new("stable-text")
+            .field("title", "stable fox")
+            .field("stored_verification_id", "stable-text"),
+    )?;
     let mut workers = Vec::new();
     for worker in 0..8u32 {
         let engine = Arc::clone(&engine);
@@ -1239,7 +1249,10 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
                     let advanced = engine.search(
                         SearchRequest::new(Query::term("title", "fox"))
                             .sort(SortField::descending("popularity"))
-                            .summary(SummaryRequest::Fields(vec!["title".to_owned()]))
+                            .summary(SummaryRequest::Fields(vec![
+                                "title".to_owned(),
+                                "stored_verification_id".to_owned(),
+                            ]))
                             .facet(FacetRequest::new(
                                 "category",
                                 4,
@@ -1251,6 +1264,20 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
                     )?;
                     if advanced.hits.iter().any(|hit| !hit.score.is_finite()) {
                         panic!("advanced concurrent search returned a non-finite score");
+                    }
+                    // A document deleted after ID resolution may have an
+                    // empty positional docsum. Any populated verification
+                    // value must still belong to the hit carrying it.
+                    for hit in &advanced.hits {
+                        let expected = FieldValue::Scalar(ScalarValue::String(hit.document_id.clone()));
+                        if let Some(actual) = hit.fields.get("stored_verification_id") {
+                            if actual != &expected {
+                                panic!(
+                                    "advanced concurrent search associated summary with the wrong hit: hit={} summary={actual:?}",
+                                    hit.document_id
+                                );
+                            }
+                        }
                     }
                     let _ = engine.group(&searchkernel_vespa_engine::GroupingRequest::new(
                         Query::term("title", "fox"),

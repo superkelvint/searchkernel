@@ -910,11 +910,14 @@ Ranking evaluation remains C++.
 
 ---
 
-## M11 — Low-level hardening
+## M11 v2 — Full-surface wrapper hardening
 
 ### Goal
 
-Harden `searchkernel-vespa-engine` independently.
+Harden `searchkernel-vespa-engine` across M0–M10, then replay the same torture
+workload through `searchkernel-ir-adapter` and production C5 calls. Preserve
+the lifecycle, malformed-input, failpoint, concurrency, resource, sanitizer,
+and stress guarantees at every supported boundary.
 
 Exercise:
 
@@ -933,7 +936,8 @@ disk growth
 native errors
 ```
 
-M11 has no dependency on completion of the C-series.
+The M11 verifier consumes the production C5 ABI, but does not use C-series test
+backends or introduce a second semantic implementation.
 
 ---
 

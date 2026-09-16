@@ -9,7 +9,6 @@ CXX=${CXX:-c++}
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
 ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
-EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
 REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 FAILPOINT_DEFINES=
@@ -40,7 +39,13 @@ fi
 RAW_INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE")
 CONFIGURED_DEPS=$(printf '%s\n' "$RAW_INCLUDES" |
     sed -n 's#.*-isystem \([^ ]*\)/include.*#\1#p')
-VESPA_DEPS=${VESPA_DEPS:-$CONFIGURED_DEPS}
+if [ -z "${VESPA_DEPS:-}" ]; then
+    if [ -d "$ROOT/vespa-deps" ]; then
+        VESPA_DEPS=$ROOT/vespa-deps
+    else
+        VESPA_DEPS=$CONFIGURED_DEPS
+    fi
+fi
 if [ -z "$VESPA_DEPS" ] || [ ! -d "$VESPA_DEPS" ]; then
     echo "Vespa dependencies were not found at the configured build path" >&2
     echo "Set VESPA_DEPS to the dependency installation used by the Vespa build" >&2
@@ -60,7 +65,19 @@ else
     exit 1
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
-VESPA_EXTRA_LIB_DIR=${VESPA_EXTRA_LIB_DIR:-$VESPA_DEPS/../../usr/lib64}
+if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
+    if [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+    elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
+    else
+        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+    fi
+fi
+EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
+if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
+    EXTRA_LINK_FLAGS="$EXTRA_LINK_FLAGS -L$VESPA_EXTRA_LIB_DIR"
+fi
 
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
@@ -154,14 +171,21 @@ cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 # build. Test support libraries are not part of the production ABI package.
 # The adapter's private RPATH makes the SDK independent of the build paths.
 find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
-find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
+find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
+    ! -name 'libsearchkernel_vespa.so*' -exec cp -a -t "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
         cp -a "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" "$SDK/lib/"
     fi
 fi
-AWS_LIB_DIR=${VESPA_AWS_LIB_DIR:-$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist}
+if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
+    AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
+elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
+    AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
+else
+    AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
+fi
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
     cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
 fi

@@ -529,9 +529,11 @@ For ranking assets such as constants or models, embedded operation uses explicit
 
 ---
 
-## M11 — Low-level wrapper hardening
+## M11 v2 — Full-surface wrapper hardening
 
-Harden `searchkernel-vespa-engine` independently of the high-level product.
+Harden the complete M0–M10 native surface, `searchkernel-ir-adapter`, and the
+production C5 FFI boundary. The verifier replays one deterministic torture
+workload through direct Vespa, the real IR adapter, and production C5 calls.
 
 Cover:
 
@@ -543,9 +545,12 @@ Cover:
 - memory safety;
 - resource leaks;
 - native sanitizers;
-- long-running mutation/search workloads.
+- long-running mutation/search workloads;
+- M8 sorting/summaries/results, M9 grouping/facets/attribute mutation, and M10
+  ranking/match features at each applicable boundary.
 
-This milestone does not require C-series clients.
+Failpoint builds remain test-only; the C5 lane uses production symbols and no
+test backend or semantic mock.
 
 ---
 

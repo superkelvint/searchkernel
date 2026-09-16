@@ -7,3 +7,5 @@
 /reference/vespa/m2/rust-driver/Cargo.lock
 /reference/clients/c2/api-contract/Cargo.lock
 **/__pycache__/*
+/vespa-deps/
+.almalinux_bash_history
