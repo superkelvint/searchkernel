@@ -4431,21 +4431,10 @@ fn total_hits_from_json<'a>(
         "response.search.total_hits.value",
         "unsigned 64-bit integer",
     )?;
-    let relation = match string(
+    let relation = parse_total_hits_relation(
         required(o, "relation", "response.search.total_hits")?,
         "response.search.total_hits.relation",
-    )?
-    .as_str()
-    {
-        "unspecified" => api::TotalHitsRelation::Unspecified,
-        "exact" => api::TotalHitsRelation::Exact,
-        "lower_bound" => api::TotalHitsRelation::LowerBound,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `response.search.total_hits.relation` value `{other}`"
-            )))
-        }
-    };
+    )?;
     Ok(api::TotalHits::create(
         b,
         &api::TotalHitsArgs {
@@ -4658,7 +4647,7 @@ fn error_from_json<'a>(
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     let o = object(value, "response.error")?;
     check_keys(o, "SearchKernel_V1_Error", "response.error")?;
-    let code = error_code_from_json(
+    let code = parse_error_code(
         required(o, "code", "response.error")?,
         "response.error.code",
     )?;
@@ -4755,21 +4744,7 @@ fn string_entries<'a>(
     Ok(entries)
 }
 
-fn error_code_from_json(value: &Value, path: &str) -> Result<api::ErrorCode, JsonCodecError> {
-    match string(value, path)?.as_str() {
-        "unspecified" => Ok(api::ErrorCode::Unspecified),
-        "invalid_argument" => Ok(api::ErrorCode::InvalidArgument),
-        "not_found" => Ok(api::ErrorCode::NotFound),
-        "already_exists" => Ok(api::ErrorCode::AlreadyExists),
-        "failed_precondition" => Ok(api::ErrorCode::FailedPrecondition),
-        "conflict" => Ok(api::ErrorCode::Conflict),
-        "unsupported" => Ok(api::ErrorCode::Unsupported),
-        "resource_exhausted" => Ok(api::ErrorCode::ResourceExhausted),
-        "internal" => Ok(api::ErrorCode::Internal),
-        "unavailable" => Ok(api::ErrorCode::Unavailable),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
+    // __BFBS_JSON_ENUM_PARSERS__
 
 fn response_describe_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
@@ -4865,34 +4840,11 @@ fn field_definition_from_json<'a>(
         required(o, "name", path)?,
         &format!("{path}.name"),
     )?);
-    let kind = match string(required(o, "kind", path)?, &format!("{path}.kind"))?.as_str() {
-        "unspecified" => api::FieldKind::Unspecified,
-        "text" => api::FieldKind::Text,
-        "keyword" => api::FieldKind::Keyword,
-        "int64" => api::FieldKind::Int64,
-        "float64" => api::FieldKind::Float64,
-        "bool" => api::FieldKind::Bool,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `{path}.kind` value `{other}`"
-            )))
-        }
-    };
-    let cardinality = match string(
+    let kind = parse_field_kind(required(o, "kind", path)?, &format!("{path}.kind"))?;
+    let cardinality = parse_field_cardinality(
         required(o, "cardinality", path)?,
         &format!("{path}.cardinality"),
-    )?
-    .as_str()
-    {
-        "unspecified" => api::FieldCardinality::Unspecified,
-        "single" => api::FieldCardinality::Single,
-        "multi" => api::FieldCardinality::Multi,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `{path}.cardinality` value `{other}`"
-            )))
-        }
-    };
+    )?;
     let stored = optional_bool(o, "stored", path)?;
     let searchable = optional_bool(o, "searchable", path)?;
     let filterable = optional_bool(o, "filterable", path)?;
@@ -6242,7 +6194,7 @@ fn comparison<'a>(
     check_keys(o, "SearchKernel_V1_FilterComparison", path)?;
     let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let op = field(o, "op")
-        .map(|value| parse_comparison(value, &format!("{path}.op")))
+        .map(|value| parse_comparison_op(value, &format!("{path}.op")))
         .transpose()?
         .unwrap_or(api::ComparisonOp::Unspecified);
     let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
@@ -6301,12 +6253,12 @@ fn sort<'a>(
     check_keys(o, "SearchKernel_V1_SortExpr", path)?;
     let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let direction = field(o, "direction")
-        .map(|v| parse_direction(v, &format!("{path}.direction")))
+        .map(|v| parse_sort_direction(v, &format!("{path}.direction")))
         .transpose()?
         .unwrap_or(api::SortDirection::Unspecified);
     let missing = field(o, "missing")
         .map(|v| {
-            parse_missing(v, &format!("{path}.missing")).map(api::OptionalMissingPlacement::new)
+            parse_missing_placement(v, &format!("{path}.missing")).map(api::OptionalMissingPlacement::new)
         })
         .transpose()?;
     Ok(api::SortExpr::create(
@@ -6569,48 +6521,6 @@ fn analyze_field_target<'a>(
 
 fn enum_name(value: &Value, path: &str) -> Result<String, JsonCodecError> {
     string(value, path)
-}
-
-fn parse_comparison(value: &Value, path: &str) -> Result<api::ComparisonOp, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::ComparisonOp::Unspecified),
-        "eq" => Ok(api::ComparisonOp::Eq),
-        "ne" => Ok(api::ComparisonOp::Ne),
-        "lt" => Ok(api::ComparisonOp::Lt),
-        "lte" => Ok(api::ComparisonOp::Lte),
-        "gt" => Ok(api::ComparisonOp::Gt),
-        "gte" => Ok(api::ComparisonOp::Gte),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_direction(value: &Value, path: &str) -> Result<api::SortDirection, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::SortDirection::Unspecified),
-        "asc" => Ok(api::SortDirection::Asc),
-        "desc" => Ok(api::SortDirection::Desc),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_missing(value: &Value, path: &str) -> Result<api::MissingPlacement, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::MissingPlacement::Unspecified),
-        "first" => Ok(api::MissingPlacement::First),
-        "last" => Ok(api::MissingPlacement::Last),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_facet_sort(value: &Value, path: &str) -> Result<api::FacetSort, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::FacetSort::Unspecified),
-        "count_desc" => Ok(api::FacetSort::CountDesc),
-        "count_asc" => Ok(api::FacetSort::CountAsc),
-        "value_asc" => Ok(api::FacetSort::ValueAsc),
-        "value_desc" => Ok(api::FacetSort::ValueDesc),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
 }
 
 fn describe<'a>(

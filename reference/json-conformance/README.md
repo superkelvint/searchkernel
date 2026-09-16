@@ -18,7 +18,7 @@ The complete verifier proves:
 6. public JSON is Search Kernel canonical JSON, not official FlatBuffers JSON;
 7. JSON preserves presence, uses symbolic one-key unions, decimal-string int64/uint64, base64 bytes, and strict decoding;
 8. generated operation metadata, JSON Schema/OpenAPI-compatible metadata, docs, and corpus fixtures are synchronized;
-9. generator completeness is fail-closed: a new valid BFBS operation/field is generated, while an unpaired operation and malformed BFBS are rejected;
+9. generator completeness is fail-closed: new valid BFBS operations, fields, and enum variants are generated completely, while unsupported mutations, an unpaired operation, and malformed BFBS are rejected;
 10. JSON→FlatBuffers and native FlatBuffers use the exact same dispatcher and produce identical Search Kernel IR;
 11. the full `reference/api-conformance` semantic suite remains green.
 

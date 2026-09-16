@@ -3,7 +3,7 @@ use searchkernel_client::model::{
     AnalyzeRequest, AnalyzeTarget, DeleteRequest, DescribeRequest, FacetRequest, FilterExpr,
     GetRequest, HighlightRequest, InsertRequest, InspectQueryRequest, PatchOperation, PatchRequest,
     QueryExpr, RankingPolicy, SearchField, SearchFieldSelection, SearchRequest, SortExpr,
-    UpsertRequest, Value, ComparisonOp, FacetSort, MissingPlacement, SortDirection,
+    UpsertRequest, Value, ComparisonOp, ErrorCode, FacetSort, MissingPlacement, SortDirection,
 };
 use searchkernel_client::{
     AsyncClient, AsyncTransport, Client, ClientError, Transport,
@@ -169,6 +169,25 @@ fn finish_response<'a>(
     );
     builder.finish(root, Some(wire::RESPONSE_ENVELOPE_IDENTIFIER));
     builder.finished_data().to_vec()
+}
+
+fn deadline_exceeded_response() -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let message = builder.create_string("deadline");
+    let error = wire::Error::create(
+        &mut builder,
+        &wire::ErrorArgs {
+            code: wire::ErrorCode::DeadlineExceeded,
+            message: Some(message),
+            details: None,
+            retryable: true,
+        },
+    );
+    finish_response(
+        builder,
+        wire::ResponsePayload::SearchKernel_V1_Error,
+        error.as_union_value(),
+    )
 }
 
 fn insert_response(marker: &str) -> Vec<u8> {
@@ -933,6 +952,21 @@ fn main() {
         ClientError::Transport(_) => panic!("portable error became transport error"),
         ClientError::Protocol(message) => {
             panic!("portable error became protocol error: {message}")
+        }
+    }
+
+    let transport = ScriptedTransport::new(deadline_exceeded_response());
+    let client = Client::new(transport.clone());
+    let error = client.search(SearchRequest::default()).unwrap_err();
+    match error {
+        ClientError::Portable(error) => {
+            assert_eq!(error.code, ErrorCode::DeadlineExceeded);
+            assert_eq!(error.message, "deadline");
+            assert!(error.retryable);
+        }
+        ClientError::Transport(_) => panic!("deadline error became transport error"),
+        ClientError::Protocol(message) => {
+            panic!("deadline error became protocol error: {message}")
         }
     }
     assert_eq!(

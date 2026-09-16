@@ -294,6 +294,12 @@ It compiles the temporary schemas to BFBS, deletes the `.fbs` sources, copies th
 
 Required output includes operation `verifier_probe`, `Client::verifier_probe`, and JSON/schema metadata containing `verifier_probe_field`.
 
+The verifier also appends `ErrorCode.VerifierSynthetic = 11` in a separate
+BFBS-only mutation. Generation must either emit the variant and its complete
+client/JSON conversion mappings or fail non-zero with a diagnostic naming the
+enum and variant. Successful generation that silently omits the mapping is
+rejected.
+
 ## Fail-closed mutation proof
 
 The verifier creates `VerifierOrphanRequest` with no result pair. Bindgen must fail non-zero and identify the orphan in its diagnostic. Malformed BFBS must also fail non-zero.

@@ -69,6 +69,26 @@ fn malformed_response_is_rejected() {
 }
 
 #[test]
+fn deadline_exceeded_is_a_supported_error_code() {
+    let input = br#"{
+      "protocol_version": 1,
+      "response": {
+        "error": {
+          "code": "deadline_exceeded",
+          "message": "deadline",
+          "retryable": true
+        }
+      }
+    }"#;
+    let bytes = response_json_to_flatbuffer(input).expect("deadline error JSON must decode");
+    let output = response_flatbuffer_to_json(&bytes).expect("deadline error must encode");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(input).unwrap()
+    );
+}
+
+#[test]
 fn response_payload_required_fields_are_enforced_by_the_codec() {
     for input in [
         br#"{"protocol_version":1,"response":{"insert":{}}}"#.as_slice(),

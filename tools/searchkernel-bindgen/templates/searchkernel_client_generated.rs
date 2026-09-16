@@ -260,7 +260,7 @@ fn model_filter<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FilterExp
         model::FilterExpr::Comparison { field, op, value } => {
             let field = builder.create_string(&field);
             let value = model_value(builder, value)?;
-            let op = match op { model::ComparisonOp::Unspecified => wire::ComparisonOp::Unspecified, model::ComparisonOp::Eq => wire::ComparisonOp::Eq, model::ComparisonOp::Ne => wire::ComparisonOp::Ne, model::ComparisonOp::Lt => wire::ComparisonOp::Lt, model::ComparisonOp::Lte => wire::ComparisonOp::Lte, model::ComparisonOp::Gt => wire::ComparisonOp::Gt, model::ComparisonOp::Gte => wire::ComparisonOp::Gte };
+            let op = encode_comparison_op(op);
             (wire::FilterExprKind::FilterComparison, wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: Some(field), op, value: Some(value) }).as_union_value())
         }
         model::FilterExpr::Range { field, lower, upper, include_lower, include_upper } => {
@@ -306,8 +306,8 @@ fn model_query<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::QueryExpr)
 
 fn model_projection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FieldProjection) -> flatbuffers::WIPOffset<wire::FieldProjection<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::FieldProjection::create(builder, &wire::FieldProjectionArgs { fields: Some(fields) }) }
 fn model_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::SearchFieldSelection) -> Result<flatbuffers::WIPOffset<wire::SearchFieldSelection<'a>>, String> { let mut fields = Vec::with_capacity(value.fields.len()); for field in value.fields { let name = builder.create_string(&field.field); let weight = field.weight.map(|value| { if !value.is_finite() { return Err("non-finite search field weight is not portable".to_owned()); } Ok(wire::OptionalDouble::new(value)) }).transpose()?; fields.push(wire::SearchField::create(builder, &wire::SearchFieldArgs { field: Some(name), weight: weight.as_ref() })); } let fields = builder.create_vector(&fields); Ok(wire::SearchFieldSelection::create(builder, &wire::SearchFieldSelectionArgs { fields: Some(fields) })) }
-fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = match value.direction { model::SortDirection::Unspecified => wire::SortDirection::Unspecified, model::SortDirection::Asc => wire::SortDirection::Asc, model::SortDirection::Desc => wire::SortDirection::Desc }; let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(match value { model::MissingPlacement::Unspecified => wire::MissingPlacement::Unspecified, model::MissingPlacement::First => wire::MissingPlacement::First, model::MissingPlacement::Last => wire::MissingPlacement::Last })); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(match value { model::FacetSort::Unspecified => wire::FacetSort::Unspecified, model::FacetSort::CountDesc => wire::FacetSort::CountDesc, model::FacetSort::CountAsc => wire::FacetSort::CountAsc, model::FacetSort::ValueAsc => wire::FacetSort::ValueAsc, model::FacetSort::ValueDesc => wire::FacetSort::ValueDesc })); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
+fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = encode_sort_direction(value.direction); let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(encode_missing_placement(value))); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
+fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(encode_facet_sort(value))); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
 fn model_highlighting<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::HighlightRequest) -> flatbuffers::WIPOffset<wire::HighlightRequest<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: Some(fields) }) }
 fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value { model::RankingPolicy::DefaultRelevanceV1 => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), model::RankingPolicy::Bm25Ranking => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
 
@@ -375,69 +375,7 @@ trait CasePascal { fn to_case_pascal(&self) -> String; }
 impl CasePascal for str { fn to_case_pascal(&self) -> String { self.split('_').map(|part| { let mut chars = part.chars(); match chars.next() { Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(), None => String::new() } }).collect() } }
 fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> { value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}"))) }
 
-fn decode_comparison_op(value: wire::ComparisonOp) -> Result<model::ComparisonOp, DecodeError> {
-    match value.0 {
-        0 => Ok(model::ComparisonOp::Unspecified), 1 => Ok(model::ComparisonOp::Eq),
-        2 => Ok(model::ComparisonOp::Ne), 3 => Ok(model::ComparisonOp::Lt),
-        4 => Ok(model::ComparisonOp::Lte), 5 => Ok(model::ComparisonOp::Gt),
-        6 => Ok(model::ComparisonOp::Gte),
-        _ => Err(DecodeError::Protocol("unknown comparison operator".to_owned())),
-    }
-}
-fn decode_sort_direction(value: wire::SortDirection) -> Result<model::SortDirection, DecodeError> {
-    match value.0 {
-        0 => Ok(model::SortDirection::Unspecified), 1 => Ok(model::SortDirection::Asc),
-        2 => Ok(model::SortDirection::Desc),
-        _ => Err(DecodeError::Protocol("unknown sort direction".to_owned())),
-    }
-}
-fn decode_missing_placement(value: wire::MissingPlacement) -> Result<model::MissingPlacement, DecodeError> {
-    match value.0 {
-        0 => Ok(model::MissingPlacement::Unspecified), 1 => Ok(model::MissingPlacement::First),
-        2 => Ok(model::MissingPlacement::Last),
-        _ => Err(DecodeError::Protocol("unknown missing placement".to_owned())),
-    }
-}
-fn decode_facet_sort(value: wire::FacetSort) -> Result<model::FacetSort, DecodeError> {
-    match value.0 {
-        0 => Ok(model::FacetSort::Unspecified), 1 => Ok(model::FacetSort::CountDesc),
-        2 => Ok(model::FacetSort::CountAsc), 3 => Ok(model::FacetSort::ValueAsc),
-        4 => Ok(model::FacetSort::ValueDesc),
-        _ => Err(DecodeError::Protocol("unknown facet sort".to_owned())),
-    }
-}
-fn decode_field_kind(value: wire::FieldKind) -> Result<model::FieldKind, DecodeError> {
-    match value.0 {
-        0 => Ok(model::FieldKind::Unspecified), 1 => Ok(model::FieldKind::Text),
-        2 => Ok(model::FieldKind::Keyword), 3 => Ok(model::FieldKind::Int64),
-        4 => Ok(model::FieldKind::Float64), 5 => Ok(model::FieldKind::Bool),
-        _ => Err(DecodeError::Protocol("unknown field kind".to_owned())),
-    }
-}
-fn decode_field_cardinality(value: wire::FieldCardinality) -> Result<model::FieldCardinality, DecodeError> {
-    match value.0 {
-        0 => Ok(model::FieldCardinality::Unspecified), 1 => Ok(model::FieldCardinality::Single),
-        2 => Ok(model::FieldCardinality::Multi),
-        _ => Err(DecodeError::Protocol("unknown field cardinality".to_owned())),
-    }
-}
-fn decode_total_hits_relation(value: wire::TotalHitsRelation) -> Result<model::TotalHitsRelation, DecodeError> {
-    match value.0 {
-        0 => Ok(model::TotalHitsRelation::Unspecified), 1 => Ok(model::TotalHitsRelation::Exact),
-        2 => Ok(model::TotalHitsRelation::LowerBound),
-        _ => Err(DecodeError::Protocol("unknown total-hits relation".to_owned())),
-    }
-}
-fn decode_error_code(value: wire::ErrorCode) -> Result<model::ErrorCode, DecodeError> {
-    match value.0 {
-        0 => Ok(model::ErrorCode::Unspecified), 1 => Ok(model::ErrorCode::InvalidArgument),
-        2 => Ok(model::ErrorCode::NotFound), 3 => Ok(model::ErrorCode::AlreadyExists),
-        4 => Ok(model::ErrorCode::FailedPrecondition), 5 => Ok(model::ErrorCode::Conflict),
-        6 => Ok(model::ErrorCode::Unsupported), 7 => Ok(model::ErrorCode::ResourceExhausted),
-        8 => Ok(model::ErrorCode::Internal), 9 => Ok(model::ErrorCode::Unavailable),
-        _ => Err(DecodeError::Protocol("unknown error code".to_owned())),
-    }
-}
+// __BFBS_CLIENT_ENUM_CONVERSIONS__
 
 fn decode_error_details(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ErrorDetail<'_>>>>) -> Result<Vec<model::ErrorDetail>, DecodeError> {
     let mut result = Vec::new();

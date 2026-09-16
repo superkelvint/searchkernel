@@ -2090,10 +2090,20 @@ pub(crate) mod schema {
                 "SearchKernel_V1_DescribeResult",
                 "SearchKernel_V1_InspectQueryResult",
             ]),
-            "SearchKernel_V1_AnalyzeTarget" => Some(&["NONE", "Analyzer", "AnalyzeFieldTarget"]),
-            "SearchKernel_V1_ComparisonOp" => {
-                Some(&["Unspecified", "Eq", "Ne", "Lt", "Lte", "Gt", "Gte"])
-            }
+            "SearchKernel_V1_AnalyzeTarget" => Some(&[
+                "NONE",
+                "Analyzer",
+                "AnalyzeFieldTarget",
+            ]),
+            "SearchKernel_V1_ComparisonOp" => Some(&[
+                "Unspecified",
+                "Eq",
+                "Ne",
+                "Lt",
+                "Lte",
+                "Gt",
+                "Gte",
+            ]),
             "SearchKernel_V1_ErrorCode" => Some(&[
                 "Unspecified",
                 "InvalidArgument",
@@ -2105,6 +2115,7 @@ pub(crate) mod schema {
                 "ResourceExhausted",
                 "Internal",
                 "Unavailable",
+                "DeadlineExceeded",
             ]),
             "SearchKernel_V1_FacetSort" => Some(&[
                 "Unspecified",
@@ -2113,10 +2124,19 @@ pub(crate) mod schema {
                 "ValueAsc",
                 "ValueDesc",
             ]),
-            "SearchKernel_V1_FieldCardinality" => Some(&["Unspecified", "Single", "Multi"]),
-            "SearchKernel_V1_FieldKind" => {
-                Some(&["Unspecified", "Text", "Keyword", "Int64", "Float64", "Bool"])
-            }
+            "SearchKernel_V1_FieldCardinality" => Some(&[
+                "Unspecified",
+                "Single",
+                "Multi",
+            ]),
+            "SearchKernel_V1_FieldKind" => Some(&[
+                "Unspecified",
+                "Text",
+                "Keyword",
+                "Int64",
+                "Float64",
+                "Bool",
+            ]),
             "SearchKernel_V1_FilterExprKind" => Some(&[
                 "NONE",
                 "FilterAnd",
@@ -2126,15 +2146,42 @@ pub(crate) mod schema {
                 "FilterRange",
                 "FilterExists",
             ]),
-            "SearchKernel_V1_MissingPlacement" => Some(&["Unspecified", "First", "Last"]),
-            "SearchKernel_V1_NullValue" => Some(&["Unspecified", "Null"]),
-            "SearchKernel_V1_PatchOperationKind" => Some(&["NONE", "SetField", "UnsetField"]),
-            "SearchKernel_V1_QueryExprKind" => {
-                Some(&["NONE", "TermQuery", "QueryAnd", "QueryOr", "QueryNot"])
-            }
-            "SearchKernel_V1_RankingPolicyKind" => Some(&["NONE", "DefaultRelevanceV1", "Bm25Ranking"]),
-            "SearchKernel_V1_SortDirection" => Some(&["Unspecified", "Asc", "Desc"]),
-            "SearchKernel_V1_TotalHitsRelation" => Some(&["Unspecified", "Exact", "LowerBound"]),
+            "SearchKernel_V1_MissingPlacement" => Some(&[
+                "Unspecified",
+                "First",
+                "Last",
+            ]),
+            "SearchKernel_V1_NullValue" => Some(&[
+                "Unspecified",
+                "Null",
+            ]),
+            "SearchKernel_V1_PatchOperationKind" => Some(&[
+                "NONE",
+                "SetField",
+                "UnsetField",
+            ]),
+            "SearchKernel_V1_QueryExprKind" => Some(&[
+                "NONE",
+                "TermQuery",
+                "QueryAnd",
+                "QueryOr",
+                "QueryNot",
+            ]),
+            "SearchKernel_V1_RankingPolicyKind" => Some(&[
+                "NONE",
+                "DefaultRelevanceV1",
+                "Bm25Ranking",
+            ]),
+            "SearchKernel_V1_SortDirection" => Some(&[
+                "Unspecified",
+                "Asc",
+                "Desc",
+            ]),
+            "SearchKernel_V1_TotalHitsRelation" => Some(&[
+                "Unspecified",
+                "Exact",
+                "LowerBound",
+            ]),
             "SearchKernel_V1_ValueKind" => Some(&[
                 "NONE",
                 "NullValueValue",
@@ -2150,7 +2197,7 @@ pub(crate) mod schema {
             _ => None,
         }
     }
-    
+
     pub(crate) fn fields(name: &str) -> Option<&'static [&'static str]> {
         match name {
             "SearchKernel_FFI_V1_RequestEnvelope" => {
@@ -2607,23 +2654,25 @@ pub(crate) mod json_types {
         #[serde(rename = "Unspecified")]
         Unspecified,
         #[serde(rename = "InvalidArgument")]
-        Invalidargument,
+        InvalidArgument,
         #[serde(rename = "NotFound")]
-        Notfound,
+        NotFound,
         #[serde(rename = "AlreadyExists")]
-        Alreadyexists,
+        AlreadyExists,
         #[serde(rename = "FailedPrecondition")]
-        Failedprecondition,
+        FailedPrecondition,
         #[serde(rename = "Conflict")]
         Conflict,
         #[serde(rename = "Unsupported")]
         Unsupported,
         #[serde(rename = "ResourceExhausted")]
-        Resourceexhausted,
+        ResourceExhausted,
         #[serde(rename = "Internal")]
         Internal,
         #[serde(rename = "Unavailable")]
         Unavailable,
+        #[serde(rename = "DeadlineExceeded")]
+        DeadlineExceeded,
     }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2661,13 +2710,13 @@ pub(crate) mod json_types {
         #[serde(rename = "Unspecified")]
         Unspecified,
         #[serde(rename = "CountDesc")]
-        Countdesc,
+        CountDesc,
         #[serde(rename = "CountAsc")]
-        Countasc,
+        CountAsc,
         #[serde(rename = "ValueAsc")]
-        Valueasc,
+        ValueAsc,
         #[serde(rename = "ValueDesc")]
-        Valuedesc,
+        ValueDesc,
     }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -3249,7 +3298,7 @@ pub(crate) mod json_types {
         #[serde(rename = "Exact")]
         Exact,
         #[serde(rename = "LowerBound")]
-        Lowerbound,
+        LowerBound,
     }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4431,21 +4480,10 @@ fn total_hits_from_json<'a>(
         "response.search.total_hits.value",
         "unsigned 64-bit integer",
     )?;
-    let relation = match string(
+    let relation = parse_total_hits_relation(
         required(o, "relation", "response.search.total_hits")?,
         "response.search.total_hits.relation",
-    )?
-    .as_str()
-    {
-        "unspecified" => api::TotalHitsRelation::Unspecified,
-        "exact" => api::TotalHitsRelation::Exact,
-        "lower_bound" => api::TotalHitsRelation::LowerBound,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `response.search.total_hits.relation` value `{other}`"
-            )))
-        }
-    };
+    )?;
     Ok(api::TotalHits::create(
         b,
         &api::TotalHitsArgs {
@@ -4658,7 +4696,7 @@ fn error_from_json<'a>(
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     let o = object(value, "response.error")?;
     check_keys(o, "SearchKernel_V1_Error", "response.error")?;
-    let code = error_code_from_json(
+    let code = parse_error_code(
         required(o, "code", "response.error")?,
         "response.error.code",
     )?;
@@ -4755,21 +4793,104 @@ fn string_entries<'a>(
     Ok(entries)
 }
 
-fn error_code_from_json(value: &Value, path: &str) -> Result<api::ErrorCode, JsonCodecError> {
-    match string(value, path)?.as_str() {
-        "unspecified" => Ok(api::ErrorCode::Unspecified),
-        "invalid_argument" => Ok(api::ErrorCode::InvalidArgument),
-        "not_found" => Ok(api::ErrorCode::NotFound),
-        "already_exists" => Ok(api::ErrorCode::AlreadyExists),
-        "failed_precondition" => Ok(api::ErrorCode::FailedPrecondition),
-        "conflict" => Ok(api::ErrorCode::Conflict),
-        "unsupported" => Ok(api::ErrorCode::Unsupported),
-        "resource_exhausted" => Ok(api::ErrorCode::ResourceExhausted),
-        "internal" => Ok(api::ErrorCode::Internal),
-        "unavailable" => Ok(api::ErrorCode::Unavailable),
+fn parse_comparison_op(value: &Value, path: &str) -> Result<api::ComparisonOp, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::ComparisonOp(0)),
+        "eq" => Ok(api::ComparisonOp(1)),
+        "ne" => Ok(api::ComparisonOp(2)),
+        "lt" => Ok(api::ComparisonOp(3)),
+        "lte" => Ok(api::ComparisonOp(4)),
+        "gt" => Ok(api::ComparisonOp(5)),
+        "gte" => Ok(api::ComparisonOp(6)),
         other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
     }
 }
+
+fn parse_error_code(value: &Value, path: &str) -> Result<api::ErrorCode, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::ErrorCode(0)),
+        "invalid_argument" => Ok(api::ErrorCode(1)),
+        "not_found" => Ok(api::ErrorCode(2)),
+        "already_exists" => Ok(api::ErrorCode(3)),
+        "failed_precondition" => Ok(api::ErrorCode(4)),
+        "conflict" => Ok(api::ErrorCode(5)),
+        "unsupported" => Ok(api::ErrorCode(6)),
+        "resource_exhausted" => Ok(api::ErrorCode(7)),
+        "internal" => Ok(api::ErrorCode(8)),
+        "unavailable" => Ok(api::ErrorCode(9)),
+        "deadline_exceeded" => Ok(api::ErrorCode(10)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_facet_sort(value: &Value, path: &str) -> Result<api::FacetSort, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::FacetSort(0)),
+        "count_desc" => Ok(api::FacetSort(1)),
+        "count_asc" => Ok(api::FacetSort(2)),
+        "value_asc" => Ok(api::FacetSort(3)),
+        "value_desc" => Ok(api::FacetSort(4)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_field_cardinality(value: &Value, path: &str) -> Result<api::FieldCardinality, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::FieldCardinality(0)),
+        "single" => Ok(api::FieldCardinality(1)),
+        "multi" => Ok(api::FieldCardinality(2)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_field_kind(value: &Value, path: &str) -> Result<api::FieldKind, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::FieldKind(0)),
+        "text" => Ok(api::FieldKind(1)),
+        "keyword" => Ok(api::FieldKind(2)),
+        "int64" => Ok(api::FieldKind(3)),
+        "float64" => Ok(api::FieldKind(4)),
+        "bool" => Ok(api::FieldKind(5)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_missing_placement(value: &Value, path: &str) -> Result<api::MissingPlacement, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::MissingPlacement(0)),
+        "first" => Ok(api::MissingPlacement(1)),
+        "last" => Ok(api::MissingPlacement(2)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_null_value(value: &Value, path: &str) -> Result<api::NullValue, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::NullValue(0)),
+        "null" => Ok(api::NullValue(1)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_sort_direction(value: &Value, path: &str) -> Result<api::SortDirection, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::SortDirection(0)),
+        "asc" => Ok(api::SortDirection(1)),
+        "desc" => Ok(api::SortDirection(2)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+fn parse_total_hits_relation(value: &Value, path: &str) -> Result<api::TotalHitsRelation, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::TotalHitsRelation(0)),
+        "exact" => Ok(api::TotalHitsRelation(1)),
+        "lower_bound" => Ok(api::TotalHitsRelation(2)),
+        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
+    }
+}
+
+
 
 fn response_describe_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
@@ -4865,34 +4986,11 @@ fn field_definition_from_json<'a>(
         required(o, "name", path)?,
         &format!("{path}.name"),
     )?);
-    let kind = match string(required(o, "kind", path)?, &format!("{path}.kind"))?.as_str() {
-        "unspecified" => api::FieldKind::Unspecified,
-        "text" => api::FieldKind::Text,
-        "keyword" => api::FieldKind::Keyword,
-        "int64" => api::FieldKind::Int64,
-        "float64" => api::FieldKind::Float64,
-        "bool" => api::FieldKind::Bool,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `{path}.kind` value `{other}`"
-            )))
-        }
-    };
-    let cardinality = match string(
+    let kind = parse_field_kind(required(o, "kind", path)?, &format!("{path}.kind"))?;
+    let cardinality = parse_field_cardinality(
         required(o, "cardinality", path)?,
         &format!("{path}.cardinality"),
-    )?
-    .as_str()
-    {
-        "unspecified" => api::FieldCardinality::Unspecified,
-        "single" => api::FieldCardinality::Single,
-        "multi" => api::FieldCardinality::Multi,
-        other => {
-            return Err(contract(format!(
-                "unknown enum `{path}.cardinality` value `{other}`"
-            )))
-        }
-    };
+    )?;
     let stored = optional_bool(o, "stored", path)?;
     let searchable = optional_bool(o, "searchable", path)?;
     let filterable = optional_bool(o, "filterable", path)?;
@@ -6242,7 +6340,7 @@ fn comparison<'a>(
     check_keys(o, "SearchKernel_V1_FilterComparison", path)?;
     let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let op = field(o, "op")
-        .map(|value| parse_comparison(value, &format!("{path}.op")))
+        .map(|value| parse_comparison_op(value, &format!("{path}.op")))
         .transpose()?
         .unwrap_or(api::ComparisonOp::Unspecified);
     let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
@@ -6301,12 +6399,12 @@ fn sort<'a>(
     check_keys(o, "SearchKernel_V1_SortExpr", path)?;
     let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
     let direction = field(o, "direction")
-        .map(|v| parse_direction(v, &format!("{path}.direction")))
+        .map(|v| parse_sort_direction(v, &format!("{path}.direction")))
         .transpose()?
         .unwrap_or(api::SortDirection::Unspecified);
     let missing = field(o, "missing")
         .map(|v| {
-            parse_missing(v, &format!("{path}.missing")).map(api::OptionalMissingPlacement::new)
+            parse_missing_placement(v, &format!("{path}.missing")).map(api::OptionalMissingPlacement::new)
         })
         .transpose()?;
     Ok(api::SortExpr::create(
@@ -6569,48 +6667,6 @@ fn analyze_field_target<'a>(
 
 fn enum_name(value: &Value, path: &str) -> Result<String, JsonCodecError> {
     string(value, path)
-}
-
-fn parse_comparison(value: &Value, path: &str) -> Result<api::ComparisonOp, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::ComparisonOp::Unspecified),
-        "eq" => Ok(api::ComparisonOp::Eq),
-        "ne" => Ok(api::ComparisonOp::Ne),
-        "lt" => Ok(api::ComparisonOp::Lt),
-        "lte" => Ok(api::ComparisonOp::Lte),
-        "gt" => Ok(api::ComparisonOp::Gt),
-        "gte" => Ok(api::ComparisonOp::Gte),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_direction(value: &Value, path: &str) -> Result<api::SortDirection, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::SortDirection::Unspecified),
-        "asc" => Ok(api::SortDirection::Asc),
-        "desc" => Ok(api::SortDirection::Desc),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_missing(value: &Value, path: &str) -> Result<api::MissingPlacement, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::MissingPlacement::Unspecified),
-        "first" => Ok(api::MissingPlacement::First),
-        "last" => Ok(api::MissingPlacement::Last),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
-}
-
-fn parse_facet_sort(value: &Value, path: &str) -> Result<api::FacetSort, JsonCodecError> {
-    match enum_name(value, path)?.as_str() {
-        "unspecified" => Ok(api::FacetSort::Unspecified),
-        "count_desc" => Ok(api::FacetSort::CountDesc),
-        "count_asc" => Ok(api::FacetSort::CountAsc),
-        "value_asc" => Ok(api::FacetSort::ValueAsc),
-        "value_desc" => Ok(api::FacetSort::ValueDesc),
-        other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
-    }
 }
 
 fn describe<'a>(

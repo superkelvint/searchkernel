@@ -2,7 +2,7 @@ use flatbuffers::root;
 use flatbuffers_reflection::reflection::{BaseType, Field, Schema};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,24 @@ struct Operation {
     response: Variant,
 }
 
+#[derive(Debug, Clone)]
+struct EnumVariant {
+    source_name: String,
+    rust_name: String,
+    json_name: String,
+    value: u8,
+}
+
+#[derive(Debug, Clone)]
+struct EnumDefinition {
+    full_name: String,
+    short_name: String,
+    schema_name: String,
+    json_type_name: String,
+    is_union: bool,
+    variants: Vec<EnumVariant>,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("searchkernel-bindgen: {error}");
@@ -45,6 +63,7 @@ fn run() -> Result<(), String> {
     let response_bytes = read_bytes(&response_path)?;
     let request_schema = read_schema(&request_bytes, &request_path)?;
     let response_schema = read_schema(&response_bytes, &response_path)?;
+    let enums = enum_definitions(&request_schema, &response_schema)?;
     let request_variants = union_variants(&request_schema, "SearchKernel.FFI.V1.RequestPayload")?;
     let response_variants =
         union_variants(&response_schema, "SearchKernel.FFI.V1.ResponsePayload")?;
@@ -52,8 +71,8 @@ fn run() -> Result<(), String> {
     ensure_client_template_coverage(&operations)?;
     ensure_output_root(&arguments.output_root)?;
 
-    let generated_client = generate_client(&operations, &request_schema, &response_schema);
-    let generated_json = generate_json_codec(&request_schema, &response_schema);
+    let generated_client = generate_client(&operations, &request_schema, &response_schema, &enums);
+    let generated_json = generate_json_codec(&request_schema, &response_schema, &enums)?;
     for relative in [
         "core/crates/searchkernel-client/src/generated.rs",
         "core/crates/searchkernel-client/src/generated.rs",
@@ -164,6 +183,103 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {
 
 fn read_schema<'a>(bytes: &'a [u8], path: &Path) -> Result<Schema<'a>, String> {
     root::<Schema>(bytes).map_err(|error| format!("invalid BFBS {}: {error}", path.display()))
+}
+
+fn enum_definitions(
+    request: &Schema<'_>,
+    response: &Schema<'_>,
+) -> Result<Vec<EnumDefinition>, String> {
+    let mut definitions: BTreeMap<String, EnumDefinition> = BTreeMap::new();
+    for schema in [request, response] {
+        for enumeration in schema.enums().iter() {
+            let full_name = enumeration.name().to_owned();
+            let variants = enumeration
+                .values()
+                .iter()
+                .map(|value| {
+                    let rust_name = enum_variant_name(value.name());
+                    let json_name = if enumeration.is_union() {
+                        value.name().to_owned()
+                    } else {
+                        snake_case(&rust_name)
+                    };
+                    Ok(EnumVariant {
+                        source_name: value.name().to_owned(),
+                        rust_name,
+                        json_name,
+                        value: u8::try_from(value.value()).map_err(|error| {
+                            format!(
+                                "enum {full_name} variant {} has invalid value: {error}",
+                                value.name()
+                            )
+                        })?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            validate_enum(&full_name, &variants)?;
+            let definition = EnumDefinition {
+                short_name: short_type_name(&full_name),
+                schema_name: full_name.replace('.', "_"),
+                json_type_name: format!(
+                    "Json{}",
+                    full_name.split('.').map(str::to_owned).collect::<String>()
+                ),
+                is_union: enumeration.is_union(),
+                full_name,
+                variants,
+            };
+            if let Some(previous) = definitions.get(&definition.full_name) {
+                if previous.is_union != definition.is_union
+                    || previous
+                        .variants
+                        .iter()
+                        .map(|variant| (&variant.source_name, variant.value))
+                        .ne(definition
+                            .variants
+                            .iter()
+                            .map(|variant| (&variant.source_name, variant.value)))
+                {
+                    return Err(format!(
+                        "conflicting BFBS definitions for enum {}",
+                        definition.full_name
+                    ));
+                }
+            } else {
+                definitions.insert(definition.full_name.clone(), definition);
+            }
+        }
+    }
+    Ok(definitions.into_values().collect())
+}
+
+fn validate_enum(name: &str, variants: &[EnumVariant]) -> Result<(), String> {
+    if variants.is_empty() {
+        return Err(format!("BFBS enum {name} has no variants"));
+    }
+    let mut values = BTreeSet::new();
+    let mut rust_names = BTreeSet::new();
+    let mut json_names = BTreeSet::new();
+    for variant in variants {
+        if !values.insert(variant.value) {
+            return Err(format!(
+                "BFBS enum {name} has duplicate numeric value {}",
+                variant.value
+            ));
+        }
+        if !rust_names.insert(variant.rust_name.clone()) {
+            return Err(format!(
+                "BFBS enum {name} has colliding Rust variant {}",
+                variant.rust_name
+            ));
+        }
+        if !json_names.insert(variant.json_name.clone()) {
+            return Err(format!(
+                "BFBS enum {name} has colliding JSON name {}",
+                variant.json_name
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn union_variants(schema: &Schema<'_>, name: &str) -> Result<Vec<Variant>, String> {
@@ -344,10 +460,20 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     write_file(path, &bytes)
 }
 
-fn generate_json_codec(request: &Schema<'_>, response: &Schema<'_>) -> String {
+fn generate_json_codec(
+    request: &Schema<'_>,
+    response: &Schema<'_>,
+    enums: &[EnumDefinition],
+) -> Result<String, String> {
     let mut output = GENERATED_JSON.replace(
         "// generated template: materialized by searchkernel-bindgen",
         "// @generated by searchkernel-bindgen; do not modify",
+    );
+    output = replace_json_enum_types(output, enums)?;
+    output = replace_json_enum_values(output, enums)?;
+    output = output.replace(
+        "    // __BFBS_JSON_ENUM_PARSERS__",
+        &json_enum_parsers(enums),
     );
     output.push_str("\n\n// BFBS-derived schema inventory. Direct Rust FlatBuffers builders/readers are used above.\n");
     for schema in [request, response] {
@@ -363,6 +489,89 @@ fn generate_json_codec(request: &Schema<'_>, response: &Schema<'_>) -> String {
                 output.push_str(&format!("// variant {}={}\n", value.name(), value.value()));
             }
         }
+    }
+    Ok(output)
+}
+
+fn replace_json_enum_types(mut output: String, enums: &[EnumDefinition]) -> Result<String, String> {
+    for enumeration in enums.iter().filter(|enumeration| !enumeration.is_union) {
+        let marker = format!("pub(crate) enum {} {{", enumeration.json_type_name);
+        let Some(start) = output.find(&marker) else {
+            return Err(format!(
+                "JSON template has no enum type for BFBS enum {}",
+                enumeration.full_name
+            ));
+        };
+        let body_start = start + marker.len();
+        let body_end = body_start
+            + output[body_start..]
+                .find("\n    }\n")
+                .ok_or_else(|| format!("malformed JSON enum type {marker}"))?;
+        let mut body = String::new();
+        for variant in &enumeration.variants {
+            body.push_str(&format!(
+                "\n        #[serde(rename = \"{}\")]\n        {},",
+                variant.source_name, variant.rust_name
+            ));
+        }
+        output.replace_range(body_start..body_end, &body);
+    }
+    Ok(output)
+}
+
+fn replace_json_enum_values(
+    mut output: String,
+    enums: &[EnumDefinition],
+) -> Result<String, String> {
+    let start_marker =
+        "    pub(crate) fn enum_values(name: &str) -> Option<&'static [&'static str]> {";
+    let end_marker = "    pub(crate) fn fields(name: &str) -> Option<&'static [&'static str]> {";
+    let start = output
+        .find(start_marker)
+        .ok_or_else(|| "JSON template enum_values function is missing".to_owned())?;
+    let end = output[start..]
+        .find(end_marker)
+        .map(|offset| start + offset)
+        .ok_or_else(|| "JSON template fields function is missing".to_owned())?;
+    output.replace_range(start..end, &json_enum_values(enums));
+    Ok(output)
+}
+
+fn json_enum_values(enums: &[EnumDefinition]) -> String {
+    let mut output = String::from(
+        "    pub(crate) fn enum_values(name: &str) -> Option<&'static [&'static str]> {\n        match name {\n",
+    );
+    for enumeration in enums {
+        output.push_str(&format!(
+            "            {:?} => Some(&[\n",
+            enumeration.schema_name
+        ));
+        for variant in &enumeration.variants {
+            output.push_str(&format!("                {:?},\n", variant.source_name));
+        }
+        output.push_str("            ]),\n");
+    }
+    output.push_str("            _ => None,\n        }\n    }\n\n");
+    output
+}
+
+fn json_enum_parsers(enums: &[EnumDefinition]) -> String {
+    let mut output = String::new();
+    for enumeration in enums.iter().filter(|enumeration| !enumeration.is_union) {
+        let function_name = snake_case(&enumeration.short_name);
+        output.push_str(&format!(
+            "fn parse_{function_name}(value: &Value, path: &str) -> Result<api::{}, JsonCodecError> {{\n    match enum_name(value, path)?.as_str() {{\n",
+            enumeration.short_name
+        ));
+        for variant in &enumeration.variants {
+            output.push_str(&format!(
+                "        {:?} => Ok(api::{}({})),\n",
+                variant.json_name, enumeration.short_name, variant.value
+            ));
+        }
+        output.push_str(
+            "        other => Err(contract(format!(\"unknown enum `{path}` value `{other}`\"))),\n    }\n}\n\n",
+        );
     }
     output
 }
@@ -509,10 +718,12 @@ fn generate_client(
     operations: &[Operation],
     request_schema: &Schema<'_>,
     response_schema: &Schema<'_>,
+    enums: &[EnumDefinition],
 ) -> String {
-    let mut output = GENERATED_CLIENT.replace(
-        "    // __BFBS_CLIENT_ENUMS__",
-        &client_enums(request_schema, response_schema),
+    let mut output = GENERATED_CLIENT.replace("    // __BFBS_CLIENT_ENUMS__", &client_enums(enums));
+    output = output.replace(
+        "// __BFBS_CLIENT_ENUM_CONVERSIONS__",
+        &client_enum_conversions(enums),
     );
     output.push_str("\n\n// BFBS-derived client inventory.\n");
     for schema in [request_schema, response_schema] {
@@ -546,42 +757,61 @@ fn generate_client(
     output
 }
 
-fn client_enums(request: &Schema<'_>, response: &Schema<'_>) -> String {
-    let mut enums = BTreeSet::new();
+fn client_enums(enums: &[EnumDefinition]) -> String {
     let mut definitions = Vec::new();
-    for schema in [request, response] {
-        for enumeration in schema.enums().iter().filter(|item| !item.is_union()) {
-            let name = short_type_name(enumeration.name());
-            if enums.insert(name.clone()) {
-                let mut variants = Vec::new();
-                for value in enumeration.values().iter() {
-                    let variant = enum_variant_name(value.name());
-                    if !variants.contains(&variant) {
-                        variants.push(variant);
-                    }
-                }
-                if variants.is_empty() {
-                    continue;
-                }
-                let default = variants
-                    .iter()
-                    .position(|variant| variant == "Unspecified")
-                    .unwrap_or(0);
-                let mut definition = format!(
-                    "    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n    pub enum {name} {{\n"
-                );
-                for (index, variant) in variants.iter().enumerate() {
-                    if index == default {
-                        definition.push_str("        #[default]\n");
-                    }
-                    definition.push_str(&format!("        {variant},\n"));
-                }
-                definition.push_str("    }\n");
-                definitions.push(definition);
+    for enumeration in enums.iter().filter(|enumeration| !enumeration.is_union) {
+        let default = enumeration
+            .variants
+            .iter()
+            .position(|variant| variant.rust_name == "Unspecified")
+            .unwrap_or(0);
+        let mut definition = format!(
+            "    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n    pub enum {} {{\n",
+            enumeration.short_name
+        );
+        for (index, variant) in enumeration.variants.iter().enumerate() {
+            if index == default {
+                definition.push_str("        #[default]\n");
             }
+            definition.push_str(&format!("        {},\n", variant.rust_name));
         }
+        definition.push_str("    }\n");
+        definitions.push(definition);
     }
     definitions.join("\n")
+}
+
+fn client_enum_conversions(enums: &[EnumDefinition]) -> String {
+    let mut output = String::new();
+    for enumeration in enums.iter().filter(|enumeration| !enumeration.is_union) {
+        let function_name = snake_case(&enumeration.short_name);
+        output.push_str(&format!(
+            "fn encode_{function_name}(value: model::{}) -> wire::{} {{\n    match value {{\n",
+            enumeration.short_name, enumeration.short_name
+        ));
+        for variant in &enumeration.variants {
+            output.push_str(&format!(
+                "        model::{}::{} => wire::{}({}),\n",
+                enumeration.short_name, variant.rust_name, enumeration.short_name, variant.value
+            ));
+        }
+        output.push_str("    }\n}\n");
+        output.push_str(&format!(
+            "fn decode_{function_name}(value: wire::{}) -> Result<model::{}, DecodeError> {{\n    match value.0 {{\n",
+            enumeration.short_name, enumeration.short_name
+        ));
+        for variant in &enumeration.variants {
+            output.push_str(&format!(
+                "        {} => Ok(model::{}::{}),\n",
+                variant.value, enumeration.short_name, variant.rust_name
+            ));
+        }
+        output.push_str(&format!(
+            "        _ => Err(DecodeError::Protocol(\"unknown {}\".to_owned())),\n    }}\n}}\n\n",
+            function_name.replace('_', " ")
+        ));
+    }
+    output
 }
 
 fn enum_variant_name(value: &str) -> String {

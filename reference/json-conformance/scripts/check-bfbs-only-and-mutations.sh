@@ -28,6 +28,28 @@ PY2
 grep -Eq '\bfn[[:space:]]+verifier_probe[[:space:]]*\(' "$client" || { echo 'generated client missing verifier_probe' >&2; exit 1; }
 grep -q 'verifier_probe_field' "$client" || { echo 'generated client model missing verifier_probe_field' >&2; exit 1; }
 grep -q 'verifier_probe_field' "$json_generated" || { echo 'generated JSON codec missing verifier_probe_field' >&2; exit 1; }
+enum="$tmp/enum"; make_bfbs enum "$enum"; mkdir -p "$enum/out"
+if ( cd "$tmp/run"; "$binary" generate --bfbs-root "$enum/bfbs" --output-root "$enum/out" ) >"$enum/stdout" 2>"$enum/stderr"; then
+  enum_client="$enum/out/core/crates/searchkernel-client/src/generated.rs"
+  enum_json="$enum/out/core/crates/searchkernel-json/src/generated.rs"
+  enum_schema="$enum/out/reference/json-conformance/generated/searchkernel.schema.json"
+  grep -q 'VerifierSynthetic' "$enum_client" || { echo 'generated client missing synthetic enum variant' >&2; exit 1; }
+  grep -q 'model::ErrorCode::VerifierSynthetic => wire::ErrorCode(11)' "$enum_client" || { echo 'generated client missing synthetic enum encode mapping' >&2; exit 1; }
+  grep -q '11 => Ok(model::ErrorCode::VerifierSynthetic)' "$enum_client" || { echo 'generated client missing synthetic enum decode mapping' >&2; exit 1; }
+  grep -q 'verifier_synthetic.*api::ErrorCode(11)' "$enum_json" || { echo 'generated JSON missing synthetic enum mapping' >&2; exit 1; }
+  grep -q 'VerifierSynthetic' "$enum_json" || { echo 'generated JSON missing synthetic enum declaration' >&2; exit 1; }
+  python3 - "$enum_schema" <<'PY3'
+import json
+import sys
+
+schema = json.load(open(sys.argv[1], encoding="utf-8"))
+if "verifier_synthetic" not in json.dumps(schema, sort_keys=True):
+    raise SystemExit("generated JSON schema missing synthetic enum variant")
+PY3
+else
+  grep -q 'ErrorCode' "$enum/stderr" "$enum/stdout" || { echo 'enum rejection did not identify ErrorCode' >&2; exit 1; }
+  grep -q 'VerifierSynthetic' "$enum/stderr" "$enum/stdout" || { echo 'enum rejection did not identify VerifierSynthetic' >&2; exit 1; }
+fi
 orphan="$tmp/orphan"; make_bfbs orphan "$orphan"; mkdir -p "$orphan/out"
 set +e; ( cd "$tmp/run"; "$binary" generate --bfbs-root "$orphan/bfbs" --output-root "$orphan/out" ) >"$orphan/stdout" 2>"$orphan/stderr"; status=$?; set -e
 [[ $status -ne 0 ]] || { echo 'bindgen accepted unpaired VerifierOrphanRequest' >&2; exit 1; }
