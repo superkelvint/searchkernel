@@ -52,6 +52,6 @@ for sid in ('bm25-score-default-summary','stored-text-selected-summary'):
     if q is not None and (not isinstance(q.get('analysis'),list) or not q['analysis']):
         raise SystemExit(f'M8 {sid}: direct C++ oracle requires frozen M3 query analysis')
 errs=json.load(open(ROOT/'scenarios/errors.json',encoding='utf-8'))
-if errs.get('version')!=1 or len(errs.get('cases',[]))!=7: raise SystemExit('M8 requires exactly 7 frozen negative cases')
-if len({c['id'] for c in errs['cases']})!=7: raise SystemExit('M8 error ids must be unique')
+if errs.get('version')!=1 or len(errs.get('cases',[]))!=6: raise SystemExit('M8 requires exactly 6 frozen negative cases')
+if len({c['id'] for c in errs['cases']})!=6: raise SystemExit('M8 error ids must be unique')
 print('M8 scenarios valid')

@@ -98,9 +98,13 @@ field type == Integer
 field has attribute=true
 ```
 
-Unknown fields, non-attribute fields, and unsupported field types are deterministic errors.
+Unknown fields and non-attribute fields are deterministic errors. M8 does not
+freeze rejection of attribute types that a later cumulative milestone may
+support; those capability ceilings belong in the milestone that introduces
+them, not in an earlier verifier that later milestones must pass.
 
-M9 broadens the supported attribute types. M8 itself does not need String/Float sort support.
+M9 broadens the supported attribute types. M8 itself does not require
+String/Float sort support.
 
 The verifier avoids ambiguous sort ties unless a later sort key resolves them.
 
@@ -231,7 +235,6 @@ The scenario composition is intentional:
 ```text
 unknown sort field
 sort on Text non-attribute field
-sort on unsupported String attribute during M8
 unknown summary field
 summary field with summary=false
 empty explicit summary field list

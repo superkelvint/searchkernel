@@ -3,7 +3,7 @@ use std::path::PathBuf;
 type Result<T> = std::result::Result<T, searchkernel_vespa_engine::Error>;
 
 fn search_ids(engine: &Engine, value: i64) -> Result<Vec<String>> {
-    let mut ids = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?.hits
+    let mut ids: Vec<String> = engine.search(SearchRequest::new(Query::equals("attr1", value)).limit(10))?.hits
         .into_iter().map(|hit| hit.document_id).collect();
     ids.sort();
     Ok(ids)
@@ -25,7 +25,7 @@ fn run() -> Result<()> {
     assert!(args.next().is_none(), "unexpected extra arguments");
 
     let _ = std::fs::remove_dir_all(&data_dir);
-    let mut engine = Engine::open(&data_dir, &config_dir)?;
+    let engine = Engine::open(&data_dir, &config_dir)?;
 
     engine.put(Document::new("id:test:typea::1").field("attr1", 10_i64))?;
     engine.put(Document::new("id:test:typea::2").field("attr1", 20_i64))?;

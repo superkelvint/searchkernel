@@ -60,40 +60,6 @@
       "expected_error": "wrong_field_capability"
     },
     {
-      "id": "sort-string-deferred-to-m9",
-      "schema": {
-        "document_type": "typea",
-        "fields": [
-          {
-            "name": "qty",
-            "type": "integer",
-            "attribute": true,
-            "summary": true
-          },
-          {
-            "name": "sku",
-            "type": "string",
-            "attribute": true,
-            "summary": true
-          }
-        ]
-      },
-      "request": {
-        "query": {
-          "exists": {
-            "field": "qty"
-          }
-        },
-        "sort": [
-          {
-            "field": "sku",
-            "order": "ascending"
-          }
-        ]
-      },
-      "expected_error": "unsupported_field_type"
-    },
-    {
       "id": "unknown-summary-field",
       "schema": {
         "document_type": "typea",
