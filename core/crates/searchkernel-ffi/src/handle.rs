@@ -1,4 +1,6 @@
-use searchkernel_ir::{Backend, BackendSession, IndexContext};
+#[cfg(any(feature = "ffi-test-support", feature = "production"))]
+use searchkernel_ir::Backend;
+use searchkernel_ir::{BackendSession, IndexContext};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -37,6 +39,7 @@ pub(crate) fn register(context: Arc<IndexContext>, backend: Arc<dyn Backend>) ->
     register_session(context, BackendSession::from_backend(backend))
 }
 
+#[cfg(any(feature = "ffi-test-support", feature = "production"))]
 pub(crate) fn register_session(context: Arc<IndexContext>, session: Arc<BackendSession>) -> u64 {
     let mut registry = lock_registry();
     let handle = registry.next;
@@ -82,8 +85,8 @@ pub(crate) fn live_count() -> usize {
 #[cfg(all(test, feature = "ffi-test-support"))]
 mod tests {
     use super::*;
+    use crate::test_support::RecordingBackend;
     use searchkernel_ir::api;
-    use searchkernel_testkit::RecordingBackend;
 
     fn test_context() -> Arc<IndexContext> {
         let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();

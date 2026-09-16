@@ -282,6 +282,7 @@ dependencies = [
  "cbindgen",
  "flatbuffers",
  "searchkernel-ir",
+ "searchkernel-testkit",
 ]
 
 [[package]]

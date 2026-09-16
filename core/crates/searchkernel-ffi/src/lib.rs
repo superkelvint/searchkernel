@@ -221,6 +221,7 @@ fn open_inner(path: *const std::os::raw::c_char) -> Result<SkHandle, (SkStatus, 
 }
 
 #[no_mangle]
+#[cfg(feature = "production")]
 /// Create an on-disk index from its canonical FlatBuffers definition.
 ///
 /// # Safety
@@ -249,11 +250,6 @@ pub unsafe extern "C" fn sk_create(
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         create_inner(path, definition, definition_len)
     }));
-    #[cfg(not(feature = "production"))]
-    let result = Ok::<_, ()>(Err::<SkHandle, _>((
-        SK_STATUS_UNSUPPORTED_OPERATION,
-        String::from("production bootstrap is not enabled in this build"),
-    )));
     match result {
         Ok(Ok(handle)) => {
             // SAFETY: `out_handle` remains valid for this call.
@@ -272,6 +268,7 @@ pub unsafe extern "C" fn sk_create(
 }
 
 #[no_mangle]
+#[cfg(any(feature = "production", feature = "c7-test-support"))]
 /// Reopen an existing index using its durable manifest.
 ///
 /// # Safety
@@ -295,7 +292,11 @@ pub unsafe extern "C" fn sk_open(
     let _ = path;
     #[cfg(feature = "production")]
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| open_inner(path)));
-    #[cfg(not(feature = "production"))]
+    #[cfg(all(not(feature = "production"), feature = "c7-test-support"))]
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        test_support::open_c7_fixture(path)
+    }));
+    #[cfg(all(not(feature = "production"), not(feature = "c7-test-support")))]
     let result = Ok::<_, ()>(Err::<SkHandle, _>((
         SK_STATUS_UNSUPPORTED_OPERATION,
         String::from("production bootstrap is not enabled in this build"),

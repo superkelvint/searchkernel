@@ -1,16 +1,7 @@
 #ifndef SEARCHKERNEL_C7_C5_ABI_ADAPTER_H
 #define SEARCHKERNEL_C7_C5_ABI_ADAPTER_H
 
-/*
- * C7 verifier-only adapter for the frozen C5 public ABI.
- *
- * IMPORTANT: reconcile this file against the actual C5 public header before
- * committing the C7 verifier specification. Do not duplicate these ABI
- * declarations in Python verifier or adapter code.
- *
- * If the repository exposes a stable installable C5 header, prefer replacing
- * these compatibility declarations with a direct include of that header.
- */
+/* Verifier-local spelling of the already-frozen primitive C5 ABI. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -19,21 +10,26 @@
 extern "C" {
 #endif
 
-typedef struct sk_handle sk_handle;
+typedef uint64_t sk_handle_t;
+typedef uint32_t sk_status_t;
 
-typedef struct sk_buffer {
-    uint8_t *data;
-    size_t len;
-} sk_buffer;
+#define SK_STATUS_OK 0u
+#define SK_STATUS_INVALID_ARGUMENT 1u
+#define SK_STATUS_INVALID_HANDLE 2u
 
 uint32_t sk_abi_version(void);
-int32_t sk_open(const uint8_t *payload, size_t payload_len, sk_handle **out_handle);
-int32_t sk_call(sk_handle *handle,
-                const uint8_t *request,
-                size_t request_len,
-                sk_buffer *out_response);
-void sk_buffer_free(sk_buffer *buffer);
-void sk_close(sk_handle *handle);
+sk_status_t sk_open(const char *path,
+                    sk_handle_t *out_handle,
+                    uint8_t *error,
+                    size_t error_capacity);
+sk_status_t sk_call(sk_handle_t handle,
+                    const uint8_t *request,
+                    size_t request_len,
+                    uint8_t **out_data,
+                    size_t *out_len,
+                    uint64_t *out_allocation_id);
+sk_status_t sk_close(sk_handle_t handle, uint8_t *error, size_t error_capacity);
+void sk_buffer_free(uint8_t *data, uint64_t allocation_id);
 
 #ifdef __cplusplus
 }

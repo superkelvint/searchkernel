@@ -4,8 +4,8 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
 
-C5_VERIFY=${C5_VERIFY:-"$REPO/reference/ffi-conformance/verify-c5.sh"}
-C6_VERIFY=${C6_VERIFY:-"$REPO/reference/clients/c6/verify-c6.sh"}
+C5_VERIFY=${C5_VERIFY:-"$REPO/reference/ffi-conformance/verify.sh"}
+C6_VERIFY=${C6_VERIFY:-"$REPO/reference/json-conformance/verify.sh"}
 PY_ADAPTER=${PY_ADAPTER:-"$REPO/clients/python/tests/c7_adapter.py"}
 PY_TRANSPORT_SRC=${PY_TRANSPORT_SRC:-"$REPO/clients/python"}
 REAL_C5_LIB=${SEARCHKERNEL_C5_TEST_LIBRARY:-}
@@ -92,8 +92,15 @@ say "verifying prerequisite C5 and C6 contracts"
 "$C5_VERIFY"
 "$C6_VERIFY"
 
-[[ -n "$REAL_C5_LIB" ]] || fail \
-  "set SEARCHKERNEL_C5_TEST_LIBRARY to the real C5 test shared library for the composition smoke"
+if [[ -z "$REAL_C5_LIB" ]]; then
+  say "building C5 C3 composition test library"
+  (cd "$REPO" && cargo build -p searchkernel-ffi --features c7-test-support)
+  case "$(uname -s)" in
+    Linux) REAL_C5_LIB="$REPO/target/debug/libsearchkernel_ffi.so" ;;
+    Darwin) REAL_C5_LIB="$REPO/target/debug/libsearchkernel_ffi.dylib" ;;
+    *) fail "unsupported verifier host: $(uname -s)" ;;
+  esac
+fi
 [[ -f "$REAL_C5_LIB" ]] || fail "real C5 test library does not exist: $REAL_C5_LIB"
 
 say "generated Python client -> NativeTransport -> real C5 smoke"

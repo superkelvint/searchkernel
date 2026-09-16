@@ -186,8 +186,8 @@ fn encode_result<T>(
 #[cfg(all(test, feature = "ffi-test-support"))]
 mod tests {
     use super::*;
+    use crate::test_support::RecordingBackend;
     use searchkernel_ir::{api, IndexContext};
-    use searchkernel_testkit::RecordingBackend;
     use std::sync::Arc;
 
     fn test_state() -> HandleState {

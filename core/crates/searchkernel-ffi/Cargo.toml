@@ -9,13 +9,15 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-ffi-test-support = []
+ffi-test-support = ["dep:searchkernel-testkit"]
 production = ["dep:searchkernel", "searchkernel/native"]
+c7-test-support = ["ffi-test-support"]
 
 [dependencies]
 flatbuffers = "=25.12.19"
 searchkernel-ir = { path = "../searchkernel-ir" }
 searchkernel = { path = "../searchkernel", optional = true }
+searchkernel-testkit = { path = "../searchkernel-testkit", optional = true }
 
 [build-dependencies]
 cbindgen = "0.29.4"
@@ -23,4 +25,3 @@ cbindgen = "0.29.4"
 [dev-dependencies]
 serde_json = "1"
 searchkernel-json = { path = "../searchkernel-json" }
-searchkernel-testkit = { path = "../searchkernel-testkit" }

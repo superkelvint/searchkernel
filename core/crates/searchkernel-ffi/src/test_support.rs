@@ -4,6 +4,11 @@ use searchkernel_ir::{Backend, IndexContext};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[cfg(feature = "c7-test-support")]
+use searchkernel_testkit::{ExpectedCall, RecordingBackend as C7RecordingBackend, ScriptedBackend};
+#[cfg(feature = "c7-test-support")]
+use std::ffi::CStr;
+
 #[cfg(test)]
 pub(crate) use searchkernel_testkit::{
     build_component_transport_case, RecordingBackend, TransportCase,
@@ -194,6 +199,80 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         0 => Err("response payload is missing".to_owned()),
         _ => Err("unsupported response payload".to_owned()),
     }
+}
+
+/// Open the deterministic C7 composition fixture through the normal C5
+/// dispatcher.  This entry point is compiled only into the non-production
+/// verifier library; the public production ABI remains unchanged.
+#[cfg(feature = "c7-test-support")]
+#[allow(dead_code)]
+pub(crate) fn open_c7_fixture(path: *const std::os::raw::c_char) -> Result<u64, (u32, String)> {
+    let name = if path.is_null() {
+        "recording"
+    } else {
+        // SAFETY: the C5 open contract supplies a NUL-terminated path.
+        unsafe { CStr::from_ptr(path) }
+            .to_str()
+            .unwrap_or("recording")
+    };
+    let context = c7_context().map_err(|error| (crate::SK_STATUS_INVALID_ARGUMENT, error))?;
+    if name == "scripted" {
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let request = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
+        builder.finish(request, None);
+        let request =
+            searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+                .map_err(|error| (crate::SK_STATUS_INTERNAL, error.to_string()))?;
+        let expected = context
+            .search_to_ir(request)
+            .map_err(|error| (crate::SK_STATUS_INTERNAL, error.to_string()))?;
+        let scripted = ScriptedBackend::new([ExpectedCall::error(
+            searchkernel_ir::OperationIr::Search(expected),
+            searchkernel_ir::PortableError::unsupported(
+                "c7_scripted",
+                None::<String>,
+                "scripted C7 portable error",
+            ),
+        )]);
+        Ok(register_index(context, Arc::new(scripted)))
+    } else {
+        Ok(register_index(context, Arc::new(C7RecordingBackend::new())))
+    }
+}
+
+#[cfg(feature = "c7-test-support")]
+#[allow(dead_code)]
+fn c7_context() -> Result<Arc<IndexContext>, String> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let name = builder.create_string("title");
+    let stored = api::OptionalBool::new(true);
+    let searchable = api::OptionalBool::new(true);
+    let field = api::FieldDefinition::create(
+        &mut builder,
+        &api::FieldDefinitionArgs {
+            name: Some(name),
+            kind: api::FieldKind::Text,
+            cardinality: api::FieldCardinality::Single,
+            stored: Some(&stored),
+            searchable: Some(&searchable),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(definition, None);
+    let definition =
+        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(builder.finished_data())
+            .map_err(|error| error.to_string())?;
+    IndexContext::from_api(definition)
+        .map(Arc::new)
+        .map_err(|error| error.to_string())
 }
 
 fn required(value: Option<&str>, name: &str) -> Result<String, String> {

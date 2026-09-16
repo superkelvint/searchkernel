@@ -7,24 +7,28 @@
 #include <string.h>
 #include <unistd.h>
 
-struct sk_handle {
-    uint64_t id;
+typedef struct handle_node {
+    sk_handle_t id;
     int closed;
-};
+    struct handle_node *next;
+} handle_node;
 
 typedef struct allocation_node {
     uint8_t *ptr;
+    uint64_t id;
     size_t len;
     struct allocation_node *next;
 } allocation_node;
 
-static uint64_t next_handle_id = 1;
+static sk_handle_t next_handle_id = 1;
+static uint64_t next_allocation_id = 1;
 static uint64_t open_count = 0;
 static uint64_t close_count = 0;
 static uint64_t call_count = 0;
 static uint64_t alloc_count = 0;
 static uint64_t free_count = 0;
 static uint64_t double_free_count = 0;
+static handle_node *handles = NULL;
 static allocation_node *allocations = NULL;
 
 static const char *trace_path(void) {
@@ -34,9 +38,8 @@ static const char *trace_path(void) {
 
 static uint32_t configured_abi_version(void) {
     const char *v = getenv("C7_SHIM_ABI_VERSION");
-    if (!v || !*v) return 1u;
-    unsigned long parsed = strtoul(v, NULL, 10);
-    return (uint32_t)parsed;
+    if (!v || !*v) return 2u;
+    return (uint32_t)strtoul(v, NULL, 10);
 }
 
 static void trace_line(const char *line) {
@@ -55,22 +58,31 @@ static void trace_event(const char *event, uint64_t a, uint64_t b) {
     trace_line(buf);
 }
 
-static void track_alloc(uint8_t *ptr, size_t len) {
+static handle_node *find_handle(sk_handle_t id) {
+    for (handle_node *p = handles; p; p = p->next) {
+        if (p->id == id) return p;
+    }
+    return NULL;
+}
+
+static void track_alloc(uint8_t *ptr, size_t len, uint64_t id) {
     allocation_node *n = (allocation_node *)malloc(sizeof(*n));
     if (!n) abort();
     n->ptr = ptr;
+    n->id = id;
     n->len = len;
     n->next = allocations;
     allocations = n;
     alloc_count++;
 }
 
-static int untrack_alloc(uint8_t *ptr) {
+static int untrack_alloc(uint8_t *ptr, uint64_t id, size_t *len) {
     allocation_node **cur = &allocations;
     while (*cur) {
-        if ((*cur)->ptr == ptr) {
+        if ((*cur)->ptr == ptr && (*cur)->id == id) {
             allocation_node *victim = *cur;
             *cur = victim->next;
+            if (len) *len = victim->len;
             free(victim);
             free_count++;
             return 1;
@@ -82,9 +94,9 @@ static int untrack_alloc(uint8_t *ptr) {
 }
 
 static uint64_t outstanding_count(void) {
-    uint64_t n = 0;
-    for (allocation_node *p = allocations; p; p = p->next) n++;
-    return n;
+    uint64_t count = 0;
+    for (allocation_node *p = allocations; p; p = p->next) count++;
+    return count;
 }
 
 __attribute__((constructor))
@@ -98,91 +110,84 @@ static void c7_fini(void) {
     char buf[512];
     snprintf(buf, sizeof(buf),
              "{\"event\":\"summary\",\"open\":%" PRIu64
-             ",\"close\":%" PRIu64
-             ",\"call\":%" PRIu64
-             ",\"alloc\":%" PRIu64
-             ",\"free\":%" PRIu64
-             ",\"double_free\":%" PRIu64
-             ",\"outstanding\":%" PRIu64 "}",
-             open_count, close_count, call_count,
-             alloc_count, free_count, double_free_count, outstanding_count());
+             ",\"close\":%" PRIu64 ",\"call\":%" PRIu64
+             ",\"alloc\":%" PRIu64 ",\"free\":%" PRIu64
+             ",\"double_free\":%" PRIu64 ",\"outstanding\":%" PRIu64 "}",
+             open_count, close_count, call_count, alloc_count, free_count,
+             double_free_count, outstanding_count());
     trace_line(buf);
 }
 
 uint32_t sk_abi_version(void) {
-    uint32_t v = configured_abi_version();
-    trace_event("abi_version", v, 0);
-    return v;
+    uint32_t version = configured_abi_version();
+    trace_event("abi_version", version, 0);
+    return version;
 }
 
-int32_t sk_open(const uint8_t *payload, size_t payload_len, sk_handle **out_handle) {
-    (void)payload;
-    if (!out_handle) return -10;
-    sk_handle *h = (sk_handle *)calloc(1, sizeof(*h));
-    if (!h) return -11;
-    h->id = next_handle_id++;
-    *out_handle = h;
+sk_status_t sk_open(const char *path, sk_handle_t *out_handle,
+                    uint8_t *error, size_t error_capacity) {
+    (void)path;
+    (void)error;
+    (void)error_capacity;
+    if (!out_handle) return SK_STATUS_INVALID_ARGUMENT;
+    *out_handle = 0;
+    handle_node *handle = (handle_node *)calloc(1, sizeof(*handle));
+    if (!handle) return SK_STATUS_INVALID_ARGUMENT;
+    handle->id = next_handle_id++;
+    handle->next = handles;
+    handles = handle;
+    *out_handle = handle->id;
     open_count++;
-    trace_event("open", h->id, (uint64_t)payload_len);
-    return 0;
+    trace_event("open", handle->id, 0);
+    return SK_STATUS_OK;
 }
 
-int32_t sk_call(sk_handle *handle,
-                const uint8_t *request,
-                size_t request_len,
-                sk_buffer *out_response) {
-    if (!handle || handle->closed || !out_response) return -20;
+sk_status_t sk_call(sk_handle_t handle, const uint8_t *request, size_t request_len,
+                    uint8_t **out_data, size_t *out_len,
+                    uint64_t *out_allocation_id) {
+    if (!out_data || !out_len || !out_allocation_id) return SK_STATUS_INVALID_ARGUMENT;
+    *out_data = NULL;
+    *out_len = 0;
+    *out_allocation_id = 0;
+    handle_node *entry = find_handle(handle);
+    if (!entry || entry->closed) return SK_STATUS_INVALID_HANDLE;
+    if (request_len > 0 && !request) return SK_STATUS_INVALID_ARGUMENT;
     call_count++;
-    trace_event("call", handle->id, (uint64_t)request_len);
+    trace_event("call", handle, (uint64_t)request_len);
+    if (request_len == 4 && memcmp(request, "FAIL", 4) == 0) return 77u;
 
-    /* Reserved verifier input: ASCII FAIL => native transport failure. */
-    if (request_len == 4 && request && memcmp(request, "FAIL", 4) == 0) {
-        out_response->data = NULL;
-        out_response->len = 0;
-        return -77;
-    }
-
-    uint8_t *response = NULL;
     if (request_len > 0) {
-        response = (uint8_t *)malloc(request_len);
-        if (!response) return -21;
-        for (size_t i = 0; i < request_len; i++) {
-            response[i] = request[request_len - 1 - i];
-        }
-        track_alloc(response, request_len);
+        uint8_t *response = (uint8_t *)malloc(request_len);
+        if (!response) return SK_STATUS_INVALID_ARGUMENT;
+        for (size_t i = 0; i < request_len; ++i) response[i] = request[request_len - 1 - i];
+        uint64_t allocation_id = next_allocation_id++;
+        track_alloc(response, request_len, allocation_id);
+        *out_data = response;
+        *out_len = request_len;
+        *out_allocation_id = allocation_id;
+        trace_event("alloc", allocation_id, (uint64_t)request_len);
     }
-
-    out_response->data = response;
-    out_response->len = request_len;
-    if (response) {
-        trace_event("alloc", (uint64_t)(uintptr_t)response, (uint64_t)request_len);
-    }
-    return 0;
+    return SK_STATUS_OK;
 }
 
-void sk_buffer_free(sk_buffer *buffer) {
-    if (!buffer) return;
-    if (buffer->data) {
-        uint8_t *p = buffer->data;
-        if (untrack_alloc(p)) {
-            trace_event("free", (uint64_t)(uintptr_t)p, (uint64_t)buffer->len);
-            free(p);
-        } else {
-            trace_event("double_free", (uint64_t)(uintptr_t)p, 0);
-        }
-    }
-    buffer->data = NULL;
-    buffer->len = 0;
-}
-
-void sk_close(sk_handle *handle) {
-    if (!handle) return;
-    if (handle->closed) {
-        trace_event("native_double_close", handle->id, 0);
-        return;
-    }
-    handle->closed = 1;
+sk_status_t sk_close(sk_handle_t handle, uint8_t *error, size_t error_capacity) {
+    (void)error;
+    (void)error_capacity;
+    handle_node *entry = find_handle(handle);
+    if (!entry || entry->closed) return SK_STATUS_INVALID_HANDLE;
+    entry->closed = 1;
     close_count++;
-    trace_event("close", handle->id, 0);
-    free(handle);
+    trace_event("close", handle, 0);
+    return SK_STATUS_OK;
+}
+
+void sk_buffer_free(uint8_t *data, uint64_t allocation_id) {
+    if (!data || !allocation_id) return;
+    size_t len = 0;
+    if (untrack_alloc(data, allocation_id, &len)) {
+        trace_event("free", allocation_id, (uint64_t)len);
+        free(data);
+    } else {
+        trace_event("double_free", allocation_id, 0);
+    }
 }
