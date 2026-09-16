@@ -12,6 +12,9 @@ use serde::Serialize;
 use std::sync::Arc;
 
 #[cfg(feature = "native")]
+use std::io::Write;
+
+#[cfg(feature = "native")]
 const MANIFEST_FORMAT_VERSION: u32 = 3;
 #[cfg(feature = "native")]
 const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 2;
@@ -88,7 +91,9 @@ impl Index {
         let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(bytes)
             .map_err(|error| Error::Serialization(format!("invalid index definition: {error}")))?;
         let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
-        Self::create(path, definition_from_ir(&ir))
+        searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
+        let resolved_definition = definition_from_ir(&ir);
+        Self::create_with_definitions(path.as_ref(), bytes.to_vec(), ir, resolved_definition)
     }
 
     /// Create a new on-disk index and persist all information required to
@@ -96,17 +101,36 @@ impl Index {
     #[cfg(feature = "native")]
     pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
         let root = path.as_ref();
+        let portable_definition_bytes = wire::definition(&definition);
+        let resolved_ir = definition_to_ir(&definition)?;
+        searchkernel_ir_adapter::validate_index_definition(&resolved_ir).map_err(Error::from_ir)?;
+        let resolved_definition = definition_from_ir(&resolved_ir);
+        Self::create_with_definitions(
+            root,
+            portable_definition_bytes,
+            resolved_ir,
+            resolved_definition,
+        )
+    }
+
+    #[cfg(feature = "native")]
+    fn create_with_definitions(
+        root: &std::path::Path,
+        portable_definition_bytes: Vec<u8>,
+        resolved_ir: searchkernel_ir::IndexDefinitionIr,
+        resolved_definition: IndexDefinition,
+    ) -> Result<Self> {
         create_directory_transaction(root, |root| {
-            let resolved_ir = definition_to_ir(&definition)?;
-            searchkernel_ir_adapter::validate_index_definition(&resolved_ir)
-                .map_err(Error::from_ir)?;
-            let resolved_definition = definition_from_ir(&resolved_ir);
             let data = root.join("data");
             let config = root.join("config");
             std::fs::create_dir(&data).map_err(|error| Error::Infrastructure(error.to_string()))?;
             searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &config)
                 .map_err(Error::from_ir)?;
-            let manifest = IndexManifest::for_definition(&definition, &config)?;
+            let manifest = IndexManifest::for_definitions(
+                &portable_definition_bytes,
+                &resolved_definition,
+                &config,
+            )?;
             manifest.write(root)?;
             let backend = searchkernel_ir_adapter::VespaBackend::open(&data, &config)
                 .map_err(|error| Error::Infrastructure(error.to_string()))?;
@@ -558,13 +582,44 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
 #[derive(Debug, Clone)]
 struct IndexManifest {
     value: serde_json::Value,
-    definition_bytes: Vec<u8>,
+    portable_definition_bytes: Vec<u8>,
+    resolved_definition_bytes: Vec<u8>,
+}
+
+#[cfg(feature = "native")]
+fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    let directory = path
+        .parent()
+        .ok_or_else(|| Error::infrastructure("manifest path has no parent directory"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::infrastructure("manifest path has an invalid file name"))?;
+    let temporary = directory.join(format!(".{file_name}.tmp"));
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| Error::Infrastructure(error.to_string()))?;
+    file.write_all(bytes)
+        .map_err(|error| Error::Infrastructure(error.to_string()))?;
+    file.sync_all()
+        .map_err(|error| Error::Infrastructure(error.to_string()))?;
+    drop(file);
+
+    std::fs::rename(&temporary, path).map_err(|error| Error::Infrastructure(error.to_string()))?;
+    std::fs::File::open(directory)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| Error::Infrastructure(error.to_string()))
 }
 
 #[cfg(feature = "native")]
 impl IndexManifest {
-    fn for_definition(
-        portable_definition: &IndexDefinition,
+    fn for_definitions(
+        portable_definition_bytes: &[u8],
+        resolved_definition: &IndexDefinition,
         config: &std::path::Path,
     ) -> Result<Self> {
         Ok(Self {
@@ -576,10 +631,12 @@ impl IndexManifest {
                     "created_by_native_abi": NATIVE_ABI_VERSION,
                     "created_by_vespa_revision": VESPA_REVISION,
                 },
+                "portable_index_definition": "portable-index-definition.bfbs",
                 "canonical_index_definition": "index-definition.bfbs",
                 "resolved_engine_config_identity": config_identity(config)?,
             }),
-            definition_bytes: wire::definition(portable_definition),
+            portable_definition_bytes: portable_definition_bytes.to_vec(),
+            resolved_definition_bytes: wire::definition(resolved_definition),
         })
     }
 
@@ -589,13 +646,15 @@ impl IndexManifest {
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         let bytes = serde_json::to_vec_pretty(&self.value)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        std::fs::write(
-            directory.join("index-definition.bfbs"),
-            &self.definition_bytes,
-        )
-        .map_err(|error| Error::Infrastructure(error.to_string()))?;
-        std::fs::write(directory.join("index.json"), bytes)
-            .map_err(|error| Error::Infrastructure(error.to_string()))
+        atomic_write(
+            &directory.join("index-definition.bfbs"),
+            &self.resolved_definition_bytes,
+        )?;
+        atomic_write(
+            &directory.join("portable-index-definition.bfbs"),
+            &self.portable_definition_bytes,
+        )?;
+        atomic_write(&directory.join("index.json"), &bytes)
     }
 
     fn read(root: &std::path::Path) -> Result<Self> {
@@ -613,23 +672,40 @@ impl IndexManifest {
             .get("manifest_format_version")
             .or_else(|| value.get("format_version"))
             .and_then(serde_json::Value::as_u64);
-        let definition_bytes = if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
-            let path = root.join("manifest/index-definition.bfbs");
-            std::fs::read(&path).map_err(|error| {
-                if error.kind() == std::io::ErrorKind::NotFound {
-                    Error::corrupt_index(path.display().to_string())
-                } else {
-                    Error::Infrastructure(error.to_string())
-                }
-            })?
-        } else {
-            Vec::new()
-        };
+        let (resolved_definition_bytes, portable_definition_bytes) =
+            if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+                let read_definition = |name: &str| {
+                    let path = root.join("manifest").join(name);
+                    std::fs::read(&path).map_err(|error| {
+                        if error.kind() == std::io::ErrorKind::NotFound {
+                            Error::corrupt_index(path.display().to_string())
+                        } else {
+                            Error::Infrastructure(error.to_string())
+                        }
+                    })
+                };
+                (
+                    read_definition("index-definition.bfbs")?,
+                    read_definition("portable-index-definition.bfbs")?,
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
         let manifest = Self {
             value,
-            definition_bytes,
+            portable_definition_bytes,
+            resolved_definition_bytes,
         };
         manifest.validate_identity()?;
+        if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+            let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+                &manifest.portable_definition_bytes,
+            )
+            .map_err(|error| {
+                Error::corrupt_index(format!("invalid portable index definition: {error}"))
+            })?;
+            searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+        }
         manifest.definition()?;
         Ok(manifest)
     }
@@ -678,12 +754,17 @@ impl IndexManifest {
                         "manifest provenance has invalid fields",
                     ));
                 }
-                if !object
-                    .get("canonical_index_definition")
-                    .is_some_and(serde_json::Value::is_string)
+                if object
+                    .get("portable_index_definition")
+                    .and_then(serde_json::Value::as_str)
+                    != Some("portable-index-definition.bfbs")
+                    || object
+                        .get("canonical_index_definition")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("index-definition.bfbs")
                 {
                     return Err(Error::corrupt_index(
-                        "manifest canonical_index_definition is invalid",
+                        "manifest index definition references are invalid",
                     ));
                 }
             }
@@ -766,7 +847,7 @@ impl IndexManifest {
             .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
         if version == u64::from(MANIFEST_FORMAT_VERSION) {
             let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
-                &self.definition_bytes,
+                &self.resolved_definition_bytes,
             )
             .map_err(|error| Error::corrupt_index(format!("invalid index definition: {error}")))?;
             let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
@@ -1135,7 +1216,10 @@ mod tests {
         write_config(&config);
         let definition = manifest_definition();
 
-        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
+        let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        let manifest =
+            IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config)
+                .unwrap();
         manifest.write(&root).unwrap();
         let loaded = IndexManifest::read(&root).unwrap();
         loaded.validate_config(&config).unwrap();
@@ -1151,6 +1235,22 @@ mod tests {
             STORAGE_COMPATIBILITY_GENERATION
         );
         assert!(root.join("manifest/index-definition.bfbs").is_file());
+        assert!(root
+            .join("manifest/portable-index-definition.bfbs")
+            .is_file());
+        assert_eq!(
+            loaded.value["canonical_index_definition"],
+            "index-definition.bfbs"
+        );
+        assert_eq!(
+            loaded.value["portable_index_definition"],
+            "portable-index-definition.bfbs"
+        );
+        assert!(!root.join("manifest/.index-definition.bfbs.tmp").exists());
+        assert!(!root
+            .join("manifest/.portable-index-definition.bfbs.tmp")
+            .exists());
+        assert!(!root.join("manifest/.index.json.tmp").exists());
 
         std::fs::write(config.join("proton.cfg"), "changed\n").unwrap();
         assert!(matches!(
@@ -1158,6 +1258,56 @@ mod tests {
             Err(Error::Search { code: crate::ErrorCode::IncompatibleIndex, message, .. })
                 if message == "incompatible index: resolved engine configuration differs"
         ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manifest_separates_portable_intent_from_resolved_definition() {
+        let root = temporary_path("manifest-resolved-definition");
+        let config = root.join("config");
+        write_config(&config);
+        let portable_definition = IndexDefinition::new().field(Field::text("title"));
+        let resolved_ir = definition_to_ir(&portable_definition).unwrap();
+        let resolved_definition = definition_from_ir(&resolved_ir);
+        let portable_bytes = wire::definition(&portable_definition);
+        let manifest =
+            IndexManifest::for_definitions(&portable_bytes, &resolved_definition, &config).unwrap();
+
+        manifest.write(&root).unwrap();
+        let loaded = IndexManifest::read(&root).unwrap();
+        assert_eq!(loaded.definition().unwrap(), resolved_definition);
+        assert_eq!(loaded.portable_definition_bytes, portable_bytes);
+        assert_ne!(
+            loaded.portable_definition_bytes,
+            loaded.resolved_definition_bytes
+        );
+
+        let portable_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+            &loaded.portable_definition_bytes,
+        )
+        .unwrap();
+        let portable_field = portable_root.fields().unwrap().get(0);
+        assert!(portable_field.stored().is_none());
+        assert!(portable_field.analyzer().is_none());
+
+        let resolved_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+            &loaded.resolved_definition_bytes,
+        )
+        .unwrap();
+        let resolved_field = resolved_root.fields().unwrap().get(0);
+        assert_eq!(
+            resolved_field.stored().map(|value| value.value()),
+            Some(true)
+        );
+        assert_eq!(
+            resolved_field.searchable().map(|value| value.value()),
+            Some(true)
+        );
+        assert_eq!(
+            resolved_field.analyzer().map(|value| value.version()),
+            Some(1)
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1198,9 +1348,39 @@ mod tests {
         let config = root.join("config");
         write_config(&config);
         let definition = manifest_definition();
-        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
+        let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        let manifest =
+            IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config)
+                .unwrap();
         manifest.write(&root).unwrap();
         std::fs::write(root.join("manifest/index-definition.bfbs"), b"invalid").unwrap();
+
+        assert!(matches!(
+            IndexManifest::read(&root),
+            Err(Error::Search {
+                code: crate::ErrorCode::CorruptIndex,
+                ..
+            })
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn portable_definition_corruption_is_rejected() {
+        let root = temporary_path("portable-definition-corruption");
+        let config = root.join("config");
+        write_config(&config);
+        let definition = manifest_definition();
+        let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        let manifest =
+            IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config)
+                .unwrap();
+        manifest.write(&root).unwrap();
+        std::fs::write(
+            root.join("manifest/portable-index-definition.bfbs"),
+            b"invalid",
+        )
+        .unwrap();
 
         assert!(matches!(
             IndexManifest::read(&root),
@@ -1218,7 +1398,10 @@ mod tests {
         let config = root.join("config");
         write_config(&config);
         let definition = manifest_definition();
-        let manifest = IndexManifest::for_definition(&definition, &config).unwrap();
+        let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+        let manifest =
+            IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config)
+                .unwrap();
 
         let mut provenance = manifest.clone();
         provenance.value["provenance"]["created_by_native_abi"] = serde_json::json!(4);
@@ -1259,7 +1442,8 @@ mod tests {
         for value in [serde_json::json!(null), serde_json::json!({})] {
             let result = IndexManifest {
                 value,
-                definition_bytes: Vec::new(),
+                portable_definition_bytes: Vec::new(),
+                resolved_definition_bytes: Vec::new(),
             }
             .validate_identity();
             assert!(matches!(

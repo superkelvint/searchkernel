@@ -960,6 +960,15 @@ struct LocalSearchRequestState {
     std::vector<LocalGroupingRequestState> groupings;
 };
 
+std::chrono::milliseconds remaining_search_timeout(
+    std::chrono::milliseconds budget,
+    std::chrono::steady_clock::duration elapsed) noexcept {
+    if (elapsed >= budget) {
+        return 0ms;
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(budget - elapsed);
+}
+
 struct LocalHitState {
     std::string id;
     double score = 0.0;
@@ -2812,8 +2821,10 @@ public:
         auto tree = query.builder.build();
         if (!tree) throw std::invalid_argument("could not build query tree");
         validate_rank_profile(options.rank_profile.c_str());
+        const auto search_start = std::chrono::steady_clock::now();
+        const auto timeout = std::chrono::milliseconds(options.timeout_millis);
         SearchRequest request;
-        request.setTimeout(std::chrono::milliseconds(options.timeout_millis));
+        request.setTimeout(timeout);
         request.ranking = options.rank_profile;
         request.propertiesMap.lookupCreate(search::MapNames::RANK)
             .add("vespa.matching.numthreadspersearch", "1");
@@ -2890,8 +2901,13 @@ public:
             result.hits.push_back({id_for_gid(hit.gid), hit.metric, {}});
         }
         if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
+            const auto remaining = remaining_search_timeout(
+                timeout, std::chrono::steady_clock::now() - search_start);
+            if (remaining <= 0ms) {
+                throw DeadlineExceededNativeError("search execution deadline exceeded");
+            }
             DocsumRequest docsum_request;
-            docsum_request.setTimeout(std::chrono::milliseconds(options.timeout_millis));
+            docsum_request.setTimeout(remaining);
             docsum_request.resultClassName = "default";
             docsum_request.ranking = options.rank_profile;
             for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
