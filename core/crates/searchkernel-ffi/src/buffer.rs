@@ -33,7 +33,7 @@ pub(crate) unsafe fn write(
     out_len: *mut usize,
     out_allocation_id: *mut u64,
     bytes: Vec<u8>,
-) {
+) -> Result<(), ()> {
     let boxed = bytes.into_boxed_slice();
     let len = boxed.len();
     debug_assert!(len > 0);
@@ -45,7 +45,7 @@ pub(crate) unsafe fn write(
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
             current.checked_add(1)
         })
-        .expect("response allocation ID exhausted");
+        .map_err(|_| ())?;
     let previous = lock_buffers().insert(
         allocation_id,
         Allocation {
@@ -62,6 +62,7 @@ pub(crate) unsafe fn write(
         *out_allocation_id = allocation_id;
     }
     LIVE_BUFFERS.fetch_add(1, Ordering::AcqRel);
+    Ok(())
 }
 
 /// Release a pointer/token pair created by `write`.
@@ -97,7 +98,8 @@ mod tests {
         let mut len = 0;
         let mut allocation_id = 0;
         // SAFETY: this test provides valid output pointers.
-        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![1, 2, 3]) };
+        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![1, 2, 3]) }
+            .expect("test allocation");
         assert!(!data.is_null());
         assert_eq!(len, 3);
         assert_eq!(live_count(), 1);
@@ -122,6 +124,7 @@ mod tests {
                 &mut stale_id,
                 vec![7, 8, 9],
             )
+            .expect("test allocation")
         };
         unsafe { free(stale_data, stale_id) };
         let mut live_data = ptr::null_mut();
@@ -134,6 +137,7 @@ mod tests {
                 &mut live_id,
                 vec![10, 11, 12],
             )
+            .expect("test allocation")
         };
         unsafe { free(stale_data, stale_id) };
         assert_eq!(live_count(), 1);
@@ -146,7 +150,8 @@ mod tests {
         assert_eq!(live_count(), 0);
 
         // Length is not part of the deallocation API and cannot affect it.
-        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![4, 5, 6]) };
+        unsafe { write(&mut data, &mut len, &mut allocation_id, vec![4, 5, 6]) }
+            .expect("test allocation");
         len = usize::MAX;
         assert_eq!(len, usize::MAX);
         unsafe { free(data, allocation_id) };

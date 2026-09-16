@@ -10,7 +10,11 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 ffi-test-support = ["dep:searchkernel-testkit"]
-production = ["dep:searchkernel", "searchkernel/native"]
+production = [
+    "dep:searchkernel",
+    "searchkernel/native",
+    "searchkernel/internal-api",
+]
 c7-test-support = ["ffi-test-support"]
 
 [dependencies]

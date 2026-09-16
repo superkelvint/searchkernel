@@ -112,7 +112,7 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
                 .payload_as_search_kernel_v1_describe_request()
                 .ok_or(status::INVALID_REQUEST)?;
             let _ = payload;
-            execute_context(state, |_| Ok(()))?.expect("empty context callback cannot fail");
+            execute_context(state, |_| Ok(()))?.map_err(|_| status::INTERNAL)?;
             let result = state.context.describe();
             Ok(transport::frame_response(
                 transport::RESPONSE_DESCRIBE,

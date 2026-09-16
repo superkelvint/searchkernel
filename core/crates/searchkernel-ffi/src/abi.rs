@@ -98,10 +98,12 @@ unsafe fn call_inner(
     let request = unsafe { std::slice::from_raw_parts(request, request_len) };
     match dispatch::dispatch(&state, request) {
         Ok(response) => {
-            // SAFETY: all output pointers were validated before dispatch and
-            // the response allocation is registered before publishing it.
-            unsafe { buffer::write(out_data, out_len, out_allocation_id, response) };
-            status::OK
+            // SAFETY: all output pointers were validated before dispatch.
+            // The allocation is registered before any output is published.
+            match unsafe { buffer::write(out_data, out_len, out_allocation_id, response) } {
+                Ok(()) => status::OK,
+                Err(()) => status::INTERNAL,
+            }
         }
         Err(status) => status,
     }

@@ -1,4 +1,4 @@
-#[cfg(any(feature = "ffi-test-support", feature = "production"))]
+#[cfg(feature = "ffi-test-support")]
 use searchkernel_ir::Backend;
 use searchkernel_ir::{BackendSession, IndexContext};
 use std::collections::BTreeMap;
@@ -34,7 +34,7 @@ fn lock_registry() -> std::sync::MutexGuard<'static, Registry> {
     }
 }
 
-#[cfg(any(feature = "ffi-test-support", feature = "production"))]
+#[cfg(feature = "ffi-test-support")]
 pub(crate) fn register(context: Arc<IndexContext>, backend: Arc<dyn Backend>) -> u64 {
     register_session(context, BackendSession::from_backend(backend))
 }
