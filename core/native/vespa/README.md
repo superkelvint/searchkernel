@@ -20,3 +20,13 @@ configuration details, and native error translation belong.
 - ABI status codes and error payloads are the only native behavior visible to
   Rust.
 - The pinned upstream checkout is read-only; adapt Vespa here instead.
+
+## Native adapter coverage
+
+Run `tools/coverage-native-adapter.sh` from the repository root. It builds an
+O0, gcov-instrumented adapter with hardening failpoints, runs the direct C++
+ABI harness plus the native Rust integration and M11 scenarios, and requires
+at least 90% executable line coverage for `searchkernel_vespa.cpp`. The
+configured Vespa dependency installation must be available at the path
+recorded by the pinned Vespa build, or supplied with `VESPA_DEPS`,
+`VESPA_DEPS_INCLUDE_DIR`, and `VESPA_DEPS_LIB_DIR`.

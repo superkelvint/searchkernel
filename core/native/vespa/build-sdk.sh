@@ -7,12 +7,22 @@ SDK=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
 BUILD=${SK_NATIVE_BUILD_DIR:-$ROOT/target/native-sdk}
 CXX=${CXX:-c++}
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
+ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
 EXTRA_CXX_FLAGS=${SK_NATIVE_EXTRA_CXX_FLAGS:-}
 EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
 SANITIZER=${SK_NATIVE_SANITIZER:-none}
+REGENERATE_BINDINGS=${SK_NATIVE_REGENERATE_BINDINGS:-1}
 FAILPOINT_DEFINES=
+COVERAGE_FLAGS=
+COVERAGE_LINK_FLAGS=
+OPTIMIZATION_FLAGS=-O2
 if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     FAILPOINT_DEFINES=-DSK_ENABLE_HARDENING_FAILPOINTS
+fi
+if [ "$ENABLE_COVERAGE" = 1 ]; then
+    COVERAGE_FLAGS=--coverage
+    COVERAGE_LINK_FLAGS=--coverage
+    OPTIMIZATION_FLAGS=-O0
 fi
 
 LINK_FILE=$VESPA_ROOT/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_embedded_crud_spike_app.dir/link.txt
@@ -67,9 +77,9 @@ CXX_FLAGS=$(sed -n 's/^CXX_FLAGS = //p' "$FLAGS_FILE")
 # libabigail to compare the types reachable from the exported C functions.
 # These explicit final flags make that property independent of the harvested
 # test target's optimization/debug configuration.
-$CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES \
+$CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE_FLAGS \
     -Wno-inline -std=gnu++23 -fPIC \
-    -O2 -g \
+    $OPTIMIZATION_FLAGS -g \
     -fvisibility=hidden \
     -I"$ROOT/core/native/vespa" -c "$ROOT/core/native/vespa/searchkernel_vespa.cpp" \
     -o "$BUILD/searchkernel_vespa.o"
@@ -97,7 +107,7 @@ if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     MAP_FILE=$ROOT/core/native/vespa/searchkernel_vespa_test.map
 fi
 LINK_ARGS="$LINK_ARGS -Wl,--exclude-libs,ALL -Wl,--version-script=$MAP_FILE"
-LINK_ARGS="$LINK_ARGS $EXTRA_LINK_FLAGS"
+LINK_ARGS="$LINK_ARGS $EXTRA_LINK_FLAGS $COVERAGE_LINK_FLAGS"
 # The source link command belongs to a Vespa unit-test executable.  The
 # adapter-owned replacements below do not need its test-only libraries.
 LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
@@ -160,8 +170,10 @@ fi
 # header whenever the SDK is rebuilt. This is intentionally a hard failure:
 # the header is the ABI source of truth, while ordinary consumers use the
 # checked-in bindings and do not need libclang.
-SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
-    "$ROOT/tools/check-vespa-bindings.sh"
+if [ "$REGENERATE_BINDINGS" = 1 ]; then
+    SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
+        "$ROOT/tools/check-vespa-bindings.sh"
+fi
 
 # The upstream build tree also contains unit-test support libraries. Keep
 # those out of the distributable SDK even when they share a directory with

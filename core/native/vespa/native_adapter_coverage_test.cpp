@@ -1,0 +1,661 @@
+#include "searchkernel_vespa.h"
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+#include "searchkernel_vespa_test.h"
+#endif
+
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <limits>
+#include <string>
+#include <vector>
+
+namespace {
+
+constexpr uint32_t ERROR_CAPACITY = SK_ERROR_MESSAGE_CAPACITY;
+
+struct ErrorBuffer {
+    uint8_t bytes[ERROR_CAPACITY]{};
+
+    uint8_t *data() { return bytes; }
+};
+
+void expect(int32_t actual, int32_t expected, const char *operation) {
+    if (actual != expected) {
+        std::cerr << operation << ": expected status " << expected << ", got " << actual
+                  << '\n';
+        std::abort();
+    }
+}
+
+void expect_ok(int32_t status, const char *operation) {
+    expect(status, SK_NATIVE_STATUS_OK, operation);
+}
+
+void expect_invalid(int32_t status, const char *operation) {
+    expect(status, SK_NATIVE_STATUS_INVALID_ARGUMENT, operation);
+}
+
+void invalid_argument_surface() {
+    ErrorBuffer error;
+    sk_engine *engine = nullptr;
+    sk_document *document = nullptr;
+    sk_document_update *update = nullptr;
+    sk_search_request *request = nullptr;
+    sk_search_result *result = nullptr;
+    sk_text_document *text_document = nullptr;
+    sk_text_update *text_update = nullptr;
+    sk_text_request *text_request = nullptr;
+    sk_text_result *text_result = nullptr;
+    sk_query *query = nullptr;
+    sk_local_search_request *local_request = nullptr;
+    sk_local_search_result *local_result = nullptr;
+    sk_generic_search_request *generic_request = nullptr;
+    sk_generic_search_result *generic_result = nullptr;
+    sk_attribute_document *attribute_document = nullptr;
+    sk_attribute_update *attribute_update = nullptr;
+    sk_local_grouping_result *local_grouping_result = nullptr;
+    sk_generic_grouping_request *generic_grouping = nullptr;
+    sk_generic_grouping_result *generic_grouping_result = nullptr;
+    uint32_t count = 7;
+    uint8_t blocked = 7;
+    int32_t found = 7;
+    const char *text = reinterpret_cast<const char *>(1);
+    uint32_t length = 7;
+    uint32_t kind = 7;
+    uint32_t string_length = 7;
+    int64_t integer = 7;
+    double floating = 7;
+    uint8_t boolean = 7;
+    uint64_t total = 7;
+
+    expect_invalid(sk_engine_open(nullptr, nullptr, &engine, error.data(), ERROR_CAPACITY),
+                   "engine open null");
+    expect_invalid(sk_engine_open("data", "config", nullptr, error.data(), ERROR_CAPACITY),
+                   "engine open output null");
+    sk_engine_destroy(nullptr);
+    expect_invalid(sk_engine_close(nullptr, error.data(), ERROR_CAPACITY), "engine close null");
+
+    expect_invalid(sk_document_create(nullptr, "qty", 1, &document, error.data(), ERROR_CAPACITY),
+                   "document create null id");
+    expect_invalid(sk_document_create_empty(nullptr, &document, error.data(), ERROR_CAPACITY),
+                   "document empty null id");
+    expect_invalid(sk_document_create_empty("id", nullptr, error.data(), ERROR_CAPACITY),
+                   "document empty null output");
+    expect_invalid(sk_document_add_string(nullptr, "qty", "x", error.data(), ERROR_CAPACITY),
+                   "document add string null");
+    expect_invalid(sk_document_add_integer(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "document add integer null");
+    expect_invalid(sk_document_add_float(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "document add float null");
+    expect_invalid(sk_document_add_boolean(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "document add boolean null");
+    expect_invalid(sk_document_annotate_text(nullptr, "title", nullptr, 0, nullptr, nullptr,
+                                             nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "document annotate null");
+    sk_document_destroy(nullptr);
+
+    expect_invalid(sk_document_update_create(nullptr, "qty", 1, &update, error.data(), ERROR_CAPACITY),
+                   "update create null id");
+    expect_invalid(sk_document_update_create_empty(nullptr, &update, error.data(), ERROR_CAPACITY),
+                   "empty update null id");
+    expect_invalid(sk_document_update_assign_string(nullptr, "qty", "x", error.data(), ERROR_CAPACITY),
+                   "update string null");
+    expect_invalid(sk_document_update_assign_integer(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "update integer null");
+    expect_invalid(sk_document_update_assign_float(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "update float null");
+    expect_invalid(sk_document_update_assign_boolean(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
+                   "update boolean null");
+    expect_invalid(sk_document_update_clear(nullptr, "qty", error.data(), ERROR_CAPACITY),
+                   "update clear null");
+    expect_invalid(sk_document_update_annotate_text(nullptr, "title", nullptr, 0, nullptr,
+                                                     nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "update annotate null");
+    sk_document_update_destroy(nullptr);
+
+    expect_invalid(sk_search_request_create(nullptr, 1, 1, &request, error.data(), ERROR_CAPACITY),
+                   "search request null field");
+    sk_search_request_destroy(nullptr);
+    expect_invalid(sk_engine_put(nullptr, nullptr, error.data(), ERROR_CAPACITY), "put null");
+    expect_invalid(sk_engine_update(nullptr, nullptr, error.data(), ERROR_CAPACITY), "update null");
+    expect_invalid(sk_engine_get(nullptr, nullptr, &document, error.data(), ERROR_CAPACITY), "get null");
+    expect_invalid(sk_engine_remove(nullptr, nullptr, &found, error.data(), ERROR_CAPACITY), "remove null");
+    expect_invalid(sk_engine_search(nullptr, nullptr, &result, error.data(), ERROR_CAPACITY), "search null");
+    assert(sk_search_result_size(nullptr) == 0);
+    expect_invalid(sk_search_result_id(nullptr, 0, &text, &length, error.data(), ERROR_CAPACITY),
+                   "result id null");
+    sk_search_result_destroy(nullptr);
+
+    expect_invalid(sk_text_document_create("id", "title", nullptr, 1, &text_document,
+                                           error.data(), ERROR_CAPACITY), "text null bytes");
+    expect_invalid(sk_text_document_add_occurrences(nullptr, nullptr, 0, nullptr, nullptr, nullptr,
+                                                    0, error.data(), ERROR_CAPACITY), "text document null");
+    sk_text_document_destroy(nullptr);
+    expect_invalid(sk_text_update_create("id", "title", nullptr, 1, &text_update,
+                                         error.data(), ERROR_CAPACITY), "text update null bytes");
+    expect_invalid(sk_text_update_add_occurrences(nullptr, nullptr, 0, nullptr, nullptr, nullptr,
+                                                   0, error.data(), ERROR_CAPACITY), "text update null");
+    sk_text_update_destroy(nullptr);
+    expect_invalid(sk_text_request_create(0, "title", "default", &text_request,
+                                          error.data(), ERROR_CAPACITY), "text request invalid kind");
+    expect_invalid(sk_text_request_add_terms(nullptr, nullptr, 0, nullptr, 0,
+                                             error.data(), ERROR_CAPACITY), "text request null");
+    sk_text_request_destroy(nullptr);
+    expect_invalid(sk_engine_put_text(nullptr, nullptr, error.data(), ERROR_CAPACITY), "text put null");
+    expect_invalid(sk_engine_update_text(nullptr, nullptr, error.data(), ERROR_CAPACITY), "text update call null");
+    expect_invalid(sk_engine_search_text(nullptr, nullptr, &text_result, error.data(), ERROR_CAPACITY),
+                   "text search null");
+    assert(sk_text_result_size(nullptr) == 0);
+    expect_invalid(sk_text_result_hit(nullptr, 0, &text, &length, &floating, error.data(), ERROR_CAPACITY),
+                   "text result null");
+    sk_text_result_destroy(nullptr);
+
+    expect_invalid(sk_query_create(nullptr, &query, error.data(), ERROR_CAPACITY), "query create null");
+    expect_invalid(sk_query_add_operator(nullptr, 0, 0, error.data(), ERROR_CAPACITY), "query operator null");
+    expect_invalid(sk_query_validate_field(nullptr, 0, nullptr, error.data(), ERROR_CAPACITY), "query field null");
+    expect_invalid(sk_query_add_true(nullptr, error.data(), ERROR_CAPACITY), "query true null");
+    expect_invalid(sk_query_add_text(nullptr, 0, nullptr, nullptr, 0, nullptr, 0,
+                                     error.data(), ERROR_CAPACITY), "query text null");
+    expect_invalid(sk_query_add_equals(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY), "query equals null");
+    expect_invalid(sk_query_add_range(nullptr, nullptr, 0, 0, 0, 0, error.data(), ERROR_CAPACITY), "query range null");
+    sk_query_destroy(nullptr);
+    expect_invalid(sk_engine_search_query(nullptr, nullptr, nullptr, nullptr, &text_result,
+                                          error.data(), ERROR_CAPACITY), "query search null");
+
+    expect_invalid(sk_local_search_request_create(nullptr, 1, 0, 0, &local_request,
+                                                  error.data(), ERROR_CAPACITY), "local request null");
+    expect_invalid(sk_local_search_request_add_sort(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "local sort null");
+    expect_invalid(sk_local_search_request_add_summary_field(nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "local summary null");
+    expect_invalid(sk_local_search_request_add_query_feature(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "local feature null");
+    expect_invalid(sk_local_search_request_add_rank_property(nullptr, nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "local property null");
+    sk_local_search_request_destroy(nullptr);
+    expect_invalid(sk_engine_search_local(nullptr, nullptr, nullptr, &local_result,
+                                          error.data(), ERROR_CAPACITY), "local search null");
+    assert(sk_local_search_result_total_hit_count(nullptr) == 0);
+    assert(sk_local_search_result_hit_count(nullptr) == 0);
+    assert(sk_local_search_result_summary_count(nullptr, 0) == 0);
+    assert(sk_local_search_result_match_feature_count(nullptr) == 0);
+    sk_local_search_result_destroy(nullptr);
+
+    expect_invalid(sk_generic_search_request_create(nullptr, 1, 0, 0, &generic_request,
+                                                    error.data(), ERROR_CAPACITY), "generic request null");
+    expect_invalid(sk_generic_search_request_set_timeout(nullptr, 1, error.data(), ERROR_CAPACITY),
+                   "generic timeout null");
+    expect_invalid(sk_generic_search_request_add_sort(nullptr, nullptr, 0, 0, error.data(), ERROR_CAPACITY),
+                   "generic sort null");
+    expect_invalid(sk_generic_search_request_add_summary_field(nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "generic summary null");
+    expect_invalid(sk_generic_search_request_add_query_feature(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "generic feature null");
+    expect_invalid(sk_generic_search_request_add_rank_property(nullptr, nullptr, nullptr,
+                                                               error.data(), ERROR_CAPACITY), "generic property null");
+    expect_invalid(sk_generic_search_request_add_grouping(nullptr, nullptr, 1, 0,
+                                                           error.data(), ERROR_CAPACITY), "generic grouping null");
+    sk_generic_search_request_destroy(nullptr);
+    expect_invalid(sk_engine_search_generic(nullptr, nullptr, nullptr, &generic_result,
+                                            error.data(), ERROR_CAPACITY), "generic search null");
+    assert(sk_generic_search_result_total_hit_count(nullptr) == 0);
+    assert(sk_generic_search_result_hit_count(nullptr) == 0);
+    assert(sk_generic_search_result_summary_count(nullptr, 0) == 0);
+    assert(sk_generic_search_result_match_feature_count(nullptr) == 0);
+    assert(sk_generic_search_result_grouping_count(nullptr) == 0);
+    sk_generic_search_result_destroy(nullptr);
+
+    expect_invalid(sk_attribute_document_create(nullptr, &attribute_document, error.data(), ERROR_CAPACITY),
+                   "attribute document null");
+    expect_invalid(sk_attribute_document_add_string(nullptr, nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "attribute string null");
+    expect_invalid(sk_attribute_document_add_integer(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute integer null");
+    expect_invalid(sk_attribute_document_add_float(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute float null");
+    expect_invalid(sk_attribute_document_add_boolean(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute boolean null");
+    sk_attribute_document_destroy(nullptr);
+    expect_invalid(sk_attribute_update_create(nullptr, &attribute_update, error.data(), ERROR_CAPACITY),
+                   "attribute update null");
+    expect_invalid(sk_attribute_update_add_string(nullptr, nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "attribute update string null");
+    expect_invalid(sk_attribute_update_add_integer(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute update integer null");
+    expect_invalid(sk_attribute_update_add_float(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute update float null");
+    expect_invalid(sk_attribute_update_add_boolean(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
+                   "attribute update boolean null");
+    sk_attribute_update_destroy(nullptr);
+    expect_invalid(sk_engine_put_attributes(nullptr, nullptr, error.data(), ERROR_CAPACITY), "attribute put null");
+    expect_invalid(sk_engine_update_attributes(nullptr, nullptr, error.data(), ERROR_CAPACITY), "attribute update call null");
+    expect_invalid(sk_local_grouping_request_create(nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "local grouping null");
+    expect_invalid(sk_local_grouping_request_add_aggregation(nullptr, 0, nullptr,
+                                                              error.data(), ERROR_CAPACITY), "local aggregation null");
+    sk_local_grouping_request_destroy(nullptr);
+    expect_invalid(sk_engine_group_local(nullptr, nullptr, nullptr, &local_grouping_result,
+                                         error.data(), ERROR_CAPACITY), "local grouping call null");
+    assert(sk_local_grouping_result_group_count(nullptr) == 0);
+    assert(sk_local_grouping_result_aggregation_count(nullptr, 0) == 0);
+    sk_local_grouping_result_destroy(nullptr);
+    expect_invalid(sk_generic_grouping_request_create(nullptr, 1, 0, &generic_grouping,
+                                                      error.data(), ERROR_CAPACITY), "generic grouping null");
+    expect_invalid(sk_generic_grouping_request_add_aggregation(nullptr, 0, nullptr,
+                                                                error.data(), ERROR_CAPACITY), "generic grouping aggregation null");
+    sk_generic_grouping_request_destroy(nullptr);
+    expect_invalid(sk_engine_group_generic(nullptr, nullptr, nullptr, &generic_grouping_result,
+                                           error.data(), ERROR_CAPACITY), "generic grouping call null");
+    assert(sk_generic_grouping_result_group_count(nullptr) == 0);
+    assert(sk_generic_grouping_result_aggregation_count(nullptr, 0) == 0);
+    sk_generic_grouping_result_destroy(nullptr);
+
+    (void)blocked;
+    (void)count;
+    (void)kind;
+    (void)string_length;
+    (void)integer;
+    (void)boolean;
+    (void)total;
+}
+
+void check_document_fields(const sk_document *document) {
+    ErrorBuffer error;
+    uint32_t count = 0;
+    expect_ok(sk_document_field_count(document, &count, error.data(), ERROR_CAPACITY), "field count");
+    assert(count >= 2);
+    for (uint32_t index = 0; index < count; ++index) {
+        const char *name = nullptr;
+        const char *string = nullptr;
+        uint32_t name_length = 0;
+        uint32_t kind = 0;
+        uint32_t string_length = 0;
+        int64_t integer = 0;
+        double floating = 0;
+        uint8_t boolean = 0;
+        expect_ok(sk_document_field(document, index, &name, &name_length, &kind, &string,
+                                     &string_length, &integer, &floating, &boolean,
+                                     error.data(), ERROR_CAPACITY), "field");
+        assert(name != nullptr && name_length != 0);
+        if (kind == SK_VALUE_INTEGER) assert(integer == 17);
+        if (kind == SK_VALUE_STRING) assert(string != nullptr && string_length != 0);
+    }
+    expect_invalid(sk_document_field(document, count, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                     nullptr, nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "field out of bounds");
+}
+
+sk_query *make_equals_query(const sk_engine *engine) {
+    ErrorBuffer error;
+    sk_query *query = nullptr;
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "query create");
+    expect_ok(sk_query_add_equals(query, "qty", 18, error.data(), ERROR_CAPACITY), "query equals");
+    return query;
+}
+
+void exercise_native_engine(const std::filesystem::path &data,
+                            const std::filesystem::path &config) {
+    ErrorBuffer error;
+    sk_engine *engine = nullptr;
+    sk_local_grouping_request *local_grouping = nullptr;
+    sk_local_grouping_result *local_grouping_result = nullptr;
+    expect_ok(sk_engine_open(data.c_str(), config.c_str(), &engine, error.data(), ERROR_CAPACITY),
+              "engine open");
+    assert(engine != nullptr);
+
+    sk_query *query = nullptr;
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "query metadata");
+    expect_ok(sk_query_validate_field(query, SK_QUERY_FIELD_TEXT, "title", error.data(),
+                                     ERROR_CAPACITY), "validate text field");
+    expect_ok(sk_query_validate_field(query, SK_QUERY_FIELD_INTEGER, "qty", error.data(),
+                                     ERROR_CAPACITY), "validate integer field");
+    expect_ok(sk_query_add_true(query, error.data(), ERROR_CAPACITY), "query true");
+    sk_query_destroy(query);
+
+    const uint8_t query_text[] = "quick";
+    const uint32_t query_text_lengths[] = {5};
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "text query create");
+    expect_ok(sk_query_add_text(query, SK_QUERY_TEXT_TERM, "title", query_text,
+                                sizeof(query_text) - 1, query_text_lengths, 1,
+                                error.data(), ERROR_CAPACITY), "text query");
+    sk_query_destroy(query);
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "range query create");
+    expect_ok(sk_query_add_range(query, "qty", SK_QUERY_BOUND_INCLUDED, 1,
+                                 SK_QUERY_BOUND_EXCLUDED, 100, error.data(), ERROR_CAPACITY),
+              "range query");
+    sk_query_destroy(query);
+
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "attribute exists query create");
+    expect_ok(sk_query_add_attribute_exists(query, "qty", error.data(), ERROR_CAPACITY),
+              "attribute exists query");
+    sk_query_destroy(query);
+    expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "attribute integer range create");
+    expect_ok(sk_query_add_attribute_integer_range(query, "qty", SK_QUERY_BOUND_UNBOUNDED, 0,
+                                                   SK_QUERY_BOUND_INCLUDED, 100, error.data(),
+                                                   ERROR_CAPACITY), "attribute integer range");
+    sk_query_destroy(query);
+    sk_document *document = nullptr;
+    expect_ok(sk_document_create_empty("id:test:typea::coverage", &document,
+                                       error.data(), ERROR_CAPACITY), "document create");
+    expect_ok(sk_document_add_string(document, "title", "quick fox", error.data(), ERROR_CAPACITY),
+              "document string");
+    expect_ok(sk_document_add_integer(document, "qty", 17, error.data(), ERROR_CAPACITY),
+              "document integer");
+    check_document_fields(document);
+    expect_ok(sk_engine_put(engine, document, error.data(), ERROR_CAPACITY), "document put");
+
+    sk_document *loaded = nullptr;
+    expect_ok(sk_engine_get(engine, "id:test:typea::coverage", &loaded, error.data(), ERROR_CAPACITY),
+              "document get");
+    check_document_fields(loaded);
+    sk_document_destroy(loaded);
+    sk_document_destroy(document);
+
+    sk_document_update *update = nullptr;
+    expect_ok(sk_document_update_create_empty("id:test:typea::coverage", &update,
+                                               error.data(), ERROR_CAPACITY), "update create");
+    expect_ok(sk_document_update_assign_integer(update, "qty", 18, error.data(), ERROR_CAPACITY),
+              "update integer");
+    expect_ok(sk_engine_update(engine, update, error.data(), ERROR_CAPACITY), "document update");
+    sk_document_update_destroy(update);
+
+    int32_t found = 0;
+    expect_ok(sk_engine_remove(engine, "id:test:typea::missing", &found, error.data(), ERROR_CAPACITY),
+              "remove missing");
+    assert(found == 0);
+
+    sk_search_request *old_request = nullptr;
+    expect_ok(sk_search_request_create("qty", 18, 10, &old_request,
+                                       error.data(), ERROR_CAPACITY), "old request create");
+    sk_search_result *old_result = nullptr;
+    expect_ok(sk_engine_search(engine, old_request, &old_result, error.data(), ERROR_CAPACITY),
+              "old search");
+    assert(sk_search_result_size(old_result) == 1);
+    const char *id = nullptr;
+    uint32_t id_length = 0;
+    expect_ok(sk_search_result_id(old_result, 0, &id, &id_length, error.data(), ERROR_CAPACITY),
+              "old result id");
+    assert(std::string(id, id_length) == "id:test:typea::coverage");
+    expect_invalid(sk_search_result_id(old_result, 1, &id, &id_length, error.data(), ERROR_CAPACITY),
+                   "old result bounds");
+    sk_search_result_destroy(old_result);
+    sk_search_request_destroy(old_request);
+
+    query = make_equals_query(engine);
+    sk_text_result *query_result = nullptr;
+    expect_ok(sk_engine_search_query(engine, query, "default", "*", &query_result,
+                                     error.data(), ERROR_CAPACITY), "query search");
+    assert(sk_text_result_size(query_result) == 0 || sk_text_result_size(query_result) == 1);
+    sk_text_result_destroy(query_result);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    sk_local_search_request *local = nullptr;
+    expect_ok(sk_local_search_request_create("default", 10, 0, SK_SUMMARY_NONE, &local,
+                                             error.data(), ERROR_CAPACITY), "local request");
+    expect_ok(sk_local_search_request_add_sort(local, "qty", SK_SORT_ASCENDING,
+                                               error.data(), ERROR_CAPACITY), "local sort");
+    expect_ok(sk_local_search_request_add_query_feature(local, "feature", 1.5,
+                                                        error.data(), ERROR_CAPACITY), "local feature");
+    expect_ok(sk_local_search_request_add_rank_property(local, "custom", "value",
+                                                        error.data(), ERROR_CAPACITY), "local property");
+    sk_local_search_result *local_result = nullptr;
+    expect_ok(sk_engine_search_local(engine, query, local, &local_result,
+                                     error.data(), ERROR_CAPACITY), "local search");
+    assert(sk_local_search_result_hit_count(local_result) == 1);
+    assert(sk_local_search_result_total_hit_count(local_result) >= 1);
+    double score = 0;
+    expect_ok(sk_local_search_result_hit(local_result, 0, &id, &id_length, &score,
+                                         error.data(), ERROR_CAPACITY), "local hit");
+    assert(id_length != 0);
+    expect_invalid(sk_local_search_result_hit(local_result, 1, &id, &id_length, &score,
+                                              error.data(), ERROR_CAPACITY), "local hit bounds");
+    sk_local_search_result_destroy(local_result);
+    sk_local_search_request_destroy(local);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    expect_ok(sk_local_search_request_create("default", 10, 0, SK_SUMMARY_DEFAULT, &local,
+                                             error.data(), ERROR_CAPACITY), "summary request");
+    sk_local_search_result *summary_result = nullptr;
+    expect_ok(sk_engine_search_local(engine, query, local, &summary_result,
+                                     error.data(), ERROR_CAPACITY), "summary search");
+    assert(sk_local_search_result_summary_count(summary_result, 0) != 0);
+    for (uint32_t index = 0; index < sk_local_search_result_summary_count(summary_result, 0);
+         ++index) {
+        const char *summary_name = nullptr;
+        uint32_t summary_name_length = 0;
+        expect_ok(sk_local_search_result_summary_name(summary_result, 0, index, &summary_name,
+                                                      &summary_name_length, error.data(),
+                                                      ERROR_CAPACITY), "summary name");
+        assert(summary_name != nullptr && summary_name_length != 0);
+        uint32_t summary_kind = 0;
+        const char *summary_string = nullptr;
+        uint32_t summary_string_length = 0;
+        int64_t summary_integer = 0;
+        double summary_float = 0;
+        uint8_t summary_boolean = 0;
+        expect_ok(sk_local_search_result_summary_value(
+                      summary_result, 0, index, &summary_kind, &summary_string,
+                      &summary_string_length, &summary_integer, &summary_float,
+                      &summary_boolean, error.data(), ERROR_CAPACITY),
+                  "summary value");
+        assert(summary_kind == SK_VALUE_STRING || summary_kind == SK_VALUE_INTEGER ||
+               summary_kind == SK_VALUE_FLOAT || summary_kind == SK_VALUE_BOOLEAN);
+    }
+    expect_invalid(sk_local_search_result_summary_name(summary_result, 1, 0, nullptr, nullptr,
+                                                       error.data(), ERROR_CAPACITY),
+                   "summary name bounds");
+    expect_invalid(sk_local_search_result_summary_value(summary_result, 1, 0, nullptr, nullptr,
+                                                        nullptr, nullptr, nullptr, nullptr,
+                                                        error.data(), ERROR_CAPACITY),
+                   "summary value bounds");
+    sk_local_search_result_destroy(summary_result);
+    sk_local_search_request_destroy(local);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    expect_ok(sk_local_search_request_create("default", 10, 0, SK_SUMMARY_NONE, &local,
+                                             error.data(), ERROR_CAPACITY), "feature request");
+    sk_local_search_result *feature_result = nullptr;
+    expect_ok(sk_engine_search_local(engine, query, local, &feature_result,
+                                     error.data(), ERROR_CAPACITY), "feature search");
+    const uint32_t feature_count = sk_local_search_result_match_feature_count(feature_result);
+    if (feature_count != 0) {
+        const char *feature_name = nullptr;
+        uint32_t feature_name_length = 0;
+        expect_ok(sk_local_search_result_match_feature_name(feature_result, 0, &feature_name,
+                                                            &feature_name_length, error.data(),
+                                                            ERROR_CAPACITY), "feature name");
+        double feature_value = 0;
+        expect_ok(sk_local_search_result_match_feature_value(feature_result, 0, 0,
+                                                             &feature_value, error.data(),
+                                                             ERROR_CAPACITY), "feature value");
+    }
+    expect_invalid(sk_local_search_result_match_feature_name(feature_result, feature_count,
+                                                              nullptr, nullptr, error.data(),
+                                                              ERROR_CAPACITY), "feature bounds");
+    sk_local_search_result_destroy(feature_result);
+    sk_local_search_request_destroy(local);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    expect_ok(sk_local_grouping_request_create("qty", &local_grouping, error.data(), ERROR_CAPACITY),
+              "local grouping request");
+    for (uint32_t aggregation = SK_AGGREGATION_SUM;
+         aggregation <= SK_AGGREGATION_AVERAGE; ++aggregation) {
+        expect_ok(sk_local_grouping_request_add_aggregation(local_grouping, aggregation, "qty",
+                                                            error.data(), ERROR_CAPACITY),
+                  "local grouping aggregation");
+    }
+    expect_ok(sk_engine_group_local(engine, query, local_grouping, &local_grouping_result,
+                                    error.data(), ERROR_CAPACITY), "local grouping");
+    assert(sk_local_grouping_result_group_count(local_grouping_result) != 0);
+    uint32_t local_key_kind = 0;
+    const char *local_key_string = nullptr;
+    uint32_t local_key_string_length = 0;
+    int64_t local_key_integer = 0;
+    uint64_t local_count = 0;
+    expect_ok(sk_local_grouping_result_group(local_grouping_result, 0, &local_key_kind,
+                                             &local_key_string, &local_key_string_length,
+                                             &local_key_integer, &local_count, error.data(),
+                                             ERROR_CAPACITY), "local group");
+    assert(local_key_kind == SK_VALUE_INTEGER && local_count != 0);
+    for (uint32_t aggregation = 0; aggregation < 4; ++aggregation) {
+        uint32_t result_kind = 0;
+        int64_t result_integer = 0;
+        double result_float = 0;
+        expect_ok(sk_local_grouping_result_aggregation(local_grouping_result, 0, aggregation,
+                                                       &result_kind, &result_integer,
+                                                       &result_float, error.data(), ERROR_CAPACITY),
+                  "local aggregation result");
+        assert(result_kind == SK_VALUE_INTEGER || result_kind == SK_VALUE_FLOAT);
+    }
+    expect_invalid(sk_local_grouping_result_group(local_grouping_result, 1, &local_key_kind,
+                                                  &local_key_string, &local_key_string_length,
+                                                  &local_key_integer, &local_count, error.data(),
+                                                  ERROR_CAPACITY), "local group bounds");
+    sk_local_grouping_result_destroy(local_grouping_result);
+    sk_local_grouping_request_destroy(local_grouping);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    sk_generic_search_request *generic = nullptr;
+    expect_ok(sk_generic_search_request_create("default", 10, 0, SK_SUMMARY_NONE, &generic,
+                                               error.data(), ERROR_CAPACITY), "generic request");
+    expect_ok(sk_generic_search_request_set_timeout(generic, 1000, error.data(), ERROR_CAPACITY),
+              "generic timeout");
+    expect_ok(sk_generic_search_request_add_sort(generic, "qty", SK_SORT_DESCENDING,
+                                                 SK_SORT_MISSING_DEFAULT, error.data(), ERROR_CAPACITY),
+              "generic sort");
+    expect_ok(sk_generic_search_request_add_query_feature(generic, "feature", 2.5,
+                                                          error.data(), ERROR_CAPACITY), "generic feature");
+    expect_ok(sk_generic_search_request_add_rank_property(generic, "custom", "value",
+                                                          error.data(), ERROR_CAPACITY), "generic property");
+    expect_ok(sk_generic_search_request_add_grouping(generic, "qty", 10, SK_GROUP_ORDER_NONE,
+                                                     error.data(), ERROR_CAPACITY), "generic grouping");
+    sk_generic_search_result *generic_result = nullptr;
+    expect_ok(sk_engine_search_generic(engine, query, generic, &generic_result,
+                                       error.data(), ERROR_CAPACITY), "generic search");
+    assert(sk_generic_search_result_hit_count(generic_result) == 1);
+    assert(sk_generic_search_result_grouping_count(generic_result) == 1);
+    assert(sk_generic_search_result_group_count(generic_result, 0) >= 1);
+    const char *generic_id = nullptr;
+    uint32_t generic_id_length = 0;
+    double generic_score = 0;
+    expect_ok(sk_generic_search_result_hit(generic_result, 0, &generic_id, &generic_id_length,
+                                           &generic_score, error.data(), ERROR_CAPACITY),
+              "generic hit");
+    assert(generic_id_length != 0);
+    expect_invalid(sk_generic_search_result_hit(generic_result, 1, &generic_id, &generic_id_length,
+                                                &generic_score, error.data(), ERROR_CAPACITY),
+                   "generic hit bounds");
+    uint32_t key_kind = 0;
+    const char *key_string = nullptr;
+    uint32_t key_string_length = 0;
+    int64_t key_integer = 0;
+    uint64_t group_count = 0;
+    expect_ok(sk_generic_search_result_group(generic_result, 0, 0, &key_kind, &key_string,
+                                             &key_string_length, &key_integer, &group_count,
+                                             error.data(), ERROR_CAPACITY), "generic group");
+    assert(key_kind == SK_VALUE_INTEGER && group_count != 0);
+    expect_invalid(sk_generic_search_result_group(generic_result, 1, 0, &key_kind, &key_string,
+                                                  &key_string_length, &key_integer, &group_count,
+                                                  error.data(), ERROR_CAPACITY), "generic group bounds");
+    sk_generic_search_result_destroy(generic_result);
+    sk_generic_search_request_destroy(generic);
+    sk_query_destroy(query);
+
+    sk_attribute_document *attributes = nullptr;
+    expect_ok(sk_attribute_document_create("id:test:typea::attributes", &attributes,
+                                           error.data(), ERROR_CAPACITY), "attribute document");
+    expect_ok(sk_attribute_document_add_integer(attributes, "qty", 19, error.data(), ERROR_CAPACITY),
+              "attribute integer");
+    expect_ok(sk_engine_put_attributes(engine, attributes, error.data(), ERROR_CAPACITY),
+              "attribute put");
+    sk_attribute_document_destroy(attributes);
+
+    expect_ok(sk_attribute_document_create("id:test:typea::attribute-builders", &attributes,
+                                           error.data(), ERROR_CAPACITY), "attribute builder document");
+    expect_ok(sk_attribute_document_add_string(attributes, "qty", "19",
+                                               error.data(), ERROR_CAPACITY), "attribute string");
+    expect_ok(sk_attribute_document_add_float(attributes, "qty", 2.0, error.data(), ERROR_CAPACITY),
+              "attribute float");
+    expect_ok(sk_attribute_document_add_boolean(attributes, "qty", 1, error.data(), ERROR_CAPACITY),
+              "attribute boolean");
+    sk_attribute_document_destroy(attributes);
+
+    sk_attribute_update *attribute_update = nullptr;
+    expect_ok(sk_attribute_update_create("id:test:typea::attributes", &attribute_update,
+                                         error.data(), ERROR_CAPACITY), "attribute update");
+    expect_ok(sk_attribute_update_add_string(attribute_update, "qty", "20",
+                                             error.data(), ERROR_CAPACITY), "attribute update string");
+    expect_ok(sk_attribute_update_add_integer(attribute_update, "qty", 20,
+                                              error.data(), ERROR_CAPACITY), "attribute update integer");
+    expect_ok(sk_attribute_update_add_float(attribute_update, "qty", 3.0,
+                                            error.data(), ERROR_CAPACITY), "attribute update float");
+    expect_ok(sk_attribute_update_add_boolean(attribute_update, "qty", 0,
+                                              error.data(), ERROR_CAPACITY), "attribute update boolean");
+    sk_attribute_update_destroy(attribute_update);
+
+    expect_ok(sk_attribute_update_create("id:test:typea::attributes", &attribute_update,
+                                         error.data(), ERROR_CAPACITY), "attribute integer update");
+    expect_ok(sk_attribute_update_add_integer(attribute_update, "qty", 20,
+                                              error.data(), ERROR_CAPACITY), "attribute update native integer");
+    expect_ok(sk_engine_update_attributes(engine, attribute_update, error.data(), ERROR_CAPACITY),
+              "attribute update call");
+    sk_attribute_update_destroy(attribute_update);
+
+    sk_text_document *text_document = nullptr;
+    const uint8_t body[] = "quick fox";
+    const uint8_t terms[] = "quickfox";
+    const uint32_t term_lengths[] = {5, 3};
+    const uint32_t starts[] = {0, 6};
+    const uint32_t lengths[] = {5, 3};
+    expect_ok(sk_text_document_create("id:test:typea::text", "title", body, sizeof(body) - 1,
+                                      &text_document, error.data(), ERROR_CAPACITY), "text document");
+    expect_ok(sk_text_document_add_occurrences(text_document, terms, sizeof(terms) - 1,
+                                               term_lengths, starts, lengths, 2,
+                                               error.data(), ERROR_CAPACITY), "text occurrences");
+    expect_ok(sk_engine_put_text(engine, text_document, error.data(), ERROR_CAPACITY), "text put");
+    sk_text_document_destroy(text_document);
+
+    sk_text_request *text_request = nullptr;
+    expect_ok(sk_text_request_create(SK_TEXT_QUERY_TERM, "title", "default", &text_request,
+                                     error.data(), ERROR_CAPACITY), "text request");
+    const uint8_t query_terms[] = "quick";
+    const uint32_t query_lengths[] = {5};
+    expect_ok(sk_text_request_add_terms(text_request, query_terms, sizeof(query_terms) - 1,
+                                        query_lengths, 1, error.data(), ERROR_CAPACITY), "text terms");
+    sk_text_result *text_result = nullptr;
+    expect_ok(sk_engine_search_text(engine, text_request, &text_result,
+                                    error.data(), ERROR_CAPACITY), "text search");
+    if (sk_text_result_size(text_result) != 0) {
+        expect_ok(sk_text_result_hit(text_result, 0, &id, &id_length, &score,
+                                     error.data(), ERROR_CAPACITY), "text hit");
+    }
+    sk_text_result_destroy(text_result);
+    sk_text_request_destroy(text_request);
+
+    expect_ok(sk_engine_close(engine, error.data(), ERROR_CAPACITY), "engine close");
+    expect_invalid(sk_engine_close(engine, error.data(), ERROR_CAPACITY), "engine close twice");
+    sk_engine_destroy(engine);
+}
+
+} // namespace
+
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        std::cerr << "usage: native_adapter_coverage_test DATA_DIR CONFIG_DIR\n";
+        return 2;
+    }
+    assert(sk_native_abi_version() == SK_NATIVE_ABI_VERSION);
+    invalid_argument_surface();
+    exercise_native_engine(std::filesystem::path(argv[1]), std::filesystem::path(argv[2]));
+    std::cout << "native adapter coverage harness passed\n";
+    return 0;
+}
