@@ -2,8 +2,8 @@ use crate::index::Index;
 use crate::schema::Analyzer;
 
 /// A fluent request for linguistic analysis of text.
-pub struct AnalyzeBuilder<'a> {
-    pub(crate) index: &'a Index,
+pub struct AnalyzeBuilder {
+    pub(crate) index: Index,
     pub(crate) target: Option<AnalyzeTarget>,
     pub(crate) field_name: Option<String>,
     pub(crate) text: String,
@@ -16,8 +16,8 @@ pub(crate) enum AnalyzeTarget {
     Field,
 }
 
-impl<'a> AnalyzeBuilder<'a> {
-    pub(crate) fn new(index: &'a Index, text: impl Into<String>) -> Self {
+impl AnalyzeBuilder {
+    pub(crate) fn new(index: Index, text: impl Into<String>) -> Self {
         Self {
             index,
             target: None,
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn analyze_builder_switches_between_field_and_explicit_analyzer() {
         let (_runtime, index) = test_index();
-        let field = AnalyzeBuilder::new(&index, "Running")
+        let field = AnalyzeBuilder::new(index.clone(), "Running")
             .field("title")
             .language("EN-us");
         assert_eq!(field.target, Some(AnalyzeTarget::Field));
@@ -104,5 +104,18 @@ mod tests {
         );
         assert_eq!(explicit.field_name, None);
         assert_eq!(explicit.text, "Running");
+    }
+
+    #[test]
+    fn analyze_builder_owns_index_handle() {
+        let builder = {
+            let (_runtime, index) = test_index();
+            index.analyze("Running").analyzer(Analyzer::standard_v1())
+        };
+
+        assert!(matches!(
+            builder.execute(),
+            Err(error) if error.code() == crate::ErrorCode::Unsupported
+        ));
     }
 }

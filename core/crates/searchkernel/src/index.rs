@@ -344,11 +344,11 @@ impl Index {
     }
 
     /// Start a linguistic analysis request.
-    pub fn analyze(&self, text: impl Into<String>) -> AnalyzeBuilder<'_> {
-        AnalyzeBuilder::new(self, text)
+    pub fn analyze(&self, text: impl Into<String>) -> AnalyzeBuilder {
+        AnalyzeBuilder::new(self.clone(), text)
     }
 
-    pub(crate) fn execute_analyze(&self, request: &AnalyzeBuilder<'_>) -> Result<AnalyzeResult> {
+    pub(crate) fn execute_analyze(&self, request: &AnalyzeBuilder) -> Result<AnalyzeResult> {
         self.with_backend(|backend| {
             let request_bytes = wire::analyze(request)?;
             let wire_request =
@@ -1593,7 +1593,7 @@ mod api_tests {
 
     fn expected_analyze(
         context: &IndexContext,
-        request: &AnalyzeBuilder<'_>,
+        request: &AnalyzeBuilder,
     ) -> searchkernel_ir::AnalyzeRequestIr {
         let bytes = wire::analyze(request).expect("valid generated analyze request");
         let request = searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&bytes)

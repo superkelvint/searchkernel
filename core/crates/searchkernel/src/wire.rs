@@ -88,7 +88,7 @@ pub(crate) fn get(id: &str, selected_fields: Option<&[String]>) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
-pub(crate) fn analyze(request: &AnalyzeBuilder<'_>) -> Result<Vec<u8>> {
+pub(crate) fn analyze(request: &AnalyzeBuilder) -> Result<Vec<u8>> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let (target_type, target) = match request.target.as_ref() {
         Some(AnalyzeTarget::Analyzer(analyzer)) => (
@@ -850,7 +850,7 @@ mod tests {
         assert_eq!(encoded_patch.id(), Some("doc-1"));
         assert_eq!(encoded_patch.operations().unwrap().len(), 2);
 
-        let analyze_request = AnalyzeBuilder::new(&index, "running")
+        let analyze_request = AnalyzeBuilder::new(index.clone(), "running")
             .analyzer(Analyzer::standard_v1())
             .language("en");
         let analyze_bytes = analyze(&analyze_request).expect("analyze request encoding");
@@ -861,7 +861,7 @@ mod tests {
         assert_eq!(encoded_analyze.language(), Some("en"));
         assert_eq!(encoded_analyze.target_type(), api::AnalyzeTarget::Analyzer);
 
-        let missing_target = AnalyzeBuilder::new(&index, "running");
+        let missing_target = AnalyzeBuilder::new(index, "running");
         assert!(matches!(
             super::analyze(&missing_target),
             Err(Error::Search {
