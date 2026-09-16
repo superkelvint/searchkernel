@@ -1140,6 +1140,10 @@ streaming API
 arbitrary Vespa query/ranking escape hatches
 ```
 
+The embedded API remains synchronous. An async portable client/transport is a
+separate concern and must not change `Backend`, `Index`, or search-builder
+execution semantics.
+
 Those require later explicit milestones.
 
 Do not add them opportunistically.

@@ -177,38 +177,11 @@ pub mod hardening {
 use searchkernel_vespa_bindings as sys;
 use std::collections::BTreeMap;
 use std::ffi::{CString, NulError};
+use std::fs;
 use std::path::Path;
 use std::ptr::{self, NonNull};
 
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
-
-#[derive(Debug, Clone, Copy)]
-/// A text document passed to the native Vespa adapter.
-pub struct TextDocument<'a> {
-    pub id: &'a str,
-    pub field: &'a str,
-    pub text: &'a str,
-}
-
-#[derive(Debug, Clone, Copy)]
-/// A text query supported by the native Vespa adapter.
-pub enum TextQuery<'a> {
-    Term { field: &'a str, text: &'a str },
-    Phrase { field: &'a str, text: &'a str },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-/// One hit returned by a text search.
-pub struct TextHit {
-    pub document_id: String,
-    pub score: f64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-/// The result of a text search.
-pub struct TextSearchResult {
-    pub hits: Vec<TextHit>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
@@ -216,10 +189,18 @@ pub enum SortOrder {
     Descending,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingPlacement {
+    Default,
+    First,
+    Last,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SortField {
     pub field: String,
     pub order: SortOrder,
+    pub missing: MissingPlacement,
 }
 
 impl SortField {
@@ -227,6 +208,7 @@ impl SortField {
         Self {
             field: field.into(),
             order,
+            missing: MissingPlacement::Default,
         }
     }
 
@@ -237,6 +219,16 @@ impl SortField {
     pub fn descending(field: impl Into<String>) -> Self {
         Self::new(field, SortOrder::Descending)
     }
+
+    pub fn missing_first(mut self) -> Self {
+        self.missing = MissingPlacement::First;
+        self
+    }
+
+    pub fn missing_last(mut self) -> Self {
+        self.missing = MissingPlacement::Last;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,65 +238,13 @@ pub enum SummaryRequest {
     Fields(Vec<String>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocalSearchRequest {
-    pub query: Query,
-    pub rank_profile: String,
-    pub limit: u32,
-    pub offset: u32,
-    pub sort: Vec<SortField>,
-    pub summary: SummaryRequest,
-}
-
-impl LocalSearchRequest {
-    pub fn new(query: Query) -> Self {
-        Self {
-            query,
-            rank_profile: "default".to_owned(),
-            limit: 10,
-            offset: 0,
-            sort: Vec::new(),
-            summary: SummaryRequest::None,
-        }
-    }
-
-    pub fn rank_profile(mut self, rank_profile: impl Into<String>) -> Self {
-        self.rank_profile = rank_profile.into();
-        self
-    }
-
-    pub fn limit(mut self, limit: u32) -> Self {
-        self.limit = limit;
-        self
-    }
-
-    pub fn offset(mut self, offset: u32) -> Self {
-        self.offset = offset;
-        self
-    }
-
-    pub fn sort_by(mut self, sort: SortField) -> Self {
-        self.sort.push(sort);
-        self
-    }
-
-    pub fn summary(mut self, summary: SummaryRequest) -> Self {
-        self.summary = summary;
-        self
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocalHit {
-    pub document_id: String,
-    pub score: f64,
-    pub summary: BTreeMap<String, Value>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocalSearchResult {
-    pub total_hit_count: u64,
-    pub hits: Vec<LocalHit>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// The document source selected by a search request.
+pub enum Source {
+    /// Search all document sources configured by the engine.
+    All,
+    /// Search one configured document source by name.
+    Named(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,6 +258,7 @@ pub struct Hit {
     pub document_id: String,
     pub score: f64,
     pub fields: BTreeMap<String, FieldValue>,
+    pub match_features: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -330,6 +271,7 @@ pub struct SearchResult {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchRequest {
     pub query: Query,
+    pub source: Source,
     pub rank_profile: String,
     pub query_features: Vec<(String, f64)>,
     pub rank_properties: Vec<(String, String)>,
@@ -337,12 +279,14 @@ pub struct SearchRequest {
     pub offset: u32,
     pub sort: Vec<SortField>,
     pub summary: SummaryRequest,
+    pub language: LinguisticsOptions,
 }
 
 impl SearchRequest {
     pub fn new(query: Query) -> Self {
         Self {
             query,
+            source: Source::All,
             rank_profile: "default".to_owned(),
             query_features: Vec::new(),
             rank_properties: Vec::new(),
@@ -350,7 +294,25 @@ impl SearchRequest {
             offset: 0,
             sort: Vec::new(),
             summary: SummaryRequest::None,
+            language: LinguisticsOptions::default(),
         }
+    }
+
+    /// Parse YQL while retaining its document-source selection.
+    pub fn from_yql(yql: &str) -> Result<Self, Error> {
+        let parsed = query::parse_yql(yql)?;
+        query::validate_query(&parsed.query)?;
+        let source = if parsed.source == "*" {
+            Source::All
+        } else {
+            Source::Named(parsed.source)
+        };
+        Ok(Self::new(parsed.query).source(source))
+    }
+
+    pub fn source(mut self, source: Source) -> Self {
+        self.source = source;
+        self
     }
 
     pub fn rank_profile(mut self, rank_profile: impl Into<String>) -> Self {
@@ -391,44 +353,14 @@ impl SearchRequest {
         self.summary = SummaryRequest::Fields(fields.into_iter().map(Into::into).collect());
         self
     }
-}
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AttributeDocument {
-    pub document_id: String,
-    pub fields: Vec<(String, Value)>,
-}
-
-impl AttributeDocument {
-    pub fn new(document_id: impl Into<String>) -> Self {
-        Self {
-            document_id: document_id.into(),
-            fields: Vec::new(),
-        }
-    }
-
-    pub fn field(mut self, field: impl Into<String>, value: Value) -> Self {
-        self.fields.push((field.into(), value));
+    pub fn summary(mut self, summary: SummaryRequest) -> Self {
+        self.summary = summary;
         self
     }
-}
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AttributeUpdate {
-    pub document_id: String,
-    pub assignments: Vec<(String, Value)>,
-}
-
-impl AttributeUpdate {
-    pub fn new(document_id: impl Into<String>) -> Self {
-        Self {
-            document_id: document_id.into(),
-            assignments: Vec::new(),
-        }
-    }
-
-    pub fn assign(mut self, field: impl Into<String>, value: Value) -> Self {
-        self.assignments.push((field.into(), value));
+    pub fn language(mut self, language: LinguisticsOptions) -> Self {
+        self.language = language;
         self
     }
 }
@@ -441,24 +373,47 @@ pub enum Aggregation {
     Average(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupingOrder {
+    None,
+    CountAscending,
+    CountDescending,
+    ValueAscending,
+    ValueDescending,
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct LocalGroupingRequest {
+pub struct GroupingRequest {
     pub query: Query,
     pub group_by: String,
     pub aggregations: Vec<Aggregation>,
+    pub max_groups: Option<u32>,
+    pub order: GroupingOrder,
 }
 
-impl LocalGroupingRequest {
+impl GroupingRequest {
     pub fn new(query: Query, group_by: impl Into<String>) -> Self {
         Self {
             query,
             group_by: group_by.into(),
             aggregations: Vec::new(),
+            max_groups: None,
+            order: GroupingOrder::None,
         }
     }
 
     pub fn aggregation(mut self, aggregation: Aggregation) -> Self {
         self.aggregations.push(aggregation);
+        self
+    }
+
+    pub fn max_groups(mut self, max_groups: u32) -> Self {
+        self.max_groups = Some(max_groups);
+        self
+    }
+
+    pub fn order(mut self, order: GroupingOrder) -> Self {
+        self.order = order;
         self
     }
 }
@@ -470,27 +425,37 @@ pub enum AggregateValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LocalGroup {
+pub struct Group {
     pub key: Value,
     pub count: u64,
     pub aggregations: Vec<AggregateValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LocalGroupingResult {
-    pub groups: Vec<LocalGroup>,
+pub struct GroupingResult {
+    pub groups: Vec<Group>,
 }
 
 #[derive(Debug)]
 /// An error returned while calling the native adapter.
 pub struct Error {
+    kind: ErrorKind,
     code: i32,
     message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorKind {
+    InvalidArgument,
+    ResourceExhausted,
+    Unsupported,
+    Internal,
 }
 
 impl Error {
     fn message(message: impl Into<String>) -> Self {
         Self {
+            kind: ErrorKind::InvalidArgument,
             code: 0,
             message: message.into(),
         }
@@ -498,6 +463,12 @@ impl Error {
 
     fn native(code: i32, message: impl Into<String>) -> Self {
         Self {
+            kind: match code {
+                1 => ErrorKind::InvalidArgument,
+                3 => ErrorKind::ResourceExhausted,
+                4 => ErrorKind::Unsupported,
+                _ => ErrorKind::Internal,
+            },
             code,
             message: message.into(),
         }
@@ -510,6 +481,10 @@ impl Error {
     /// Returns the native Search Kernel error code, or zero for an adapter-side error.
     pub fn code(&self) -> i32 {
         self.code
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
     }
 }
 
@@ -563,6 +538,32 @@ fn path_cstring(path: &Path) -> Result<CString, Error> {
     }
 }
 
+fn configured_document_type(config_dir: &Path) -> Result<String, Error> {
+    let manifest_path = config_dir.join("searchkernel-schema.json");
+    let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
+        Error::message(format!(
+            "could not read generated schema manifest '{}': {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let key = "\"document_type\"";
+    let value = manifest
+        .find(key)
+        .and_then(|key_start| {
+            manifest[key_start + key.len()..]
+                .find(':')
+                .map(|colon| key_start + key.len() + colon + 1)
+        })
+        .and_then(|value_start| {
+            let value = manifest[value_start..].trim_start();
+            value.strip_prefix('"').map(|value| value.to_owned())
+        })
+        .and_then(|value| value.find('"').map(|end| value[..end].to_owned()))
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::message("generated schema manifest has no document type"))?;
+    Ok(value)
+}
+
 fn require_ptr<T>(pointer: *mut T, name: &str) -> Result<NonNull<T>, Error> {
     NonNull::new(pointer)
         .ok_or_else(|| Error::message(format!("native operation returned a null {name}")))
@@ -590,6 +591,7 @@ fn native_bytes<'a>(
 
 pub struct Engine {
     handle: NonNull<sys::sk_engine>,
+    document_type: String,
 }
 
 // SAFETY: the native adapter owns the pointed-to engine and protects its
@@ -614,6 +616,7 @@ impl Engine {
             )));
         }
 
+        let document_type = configured_document_type(config_dir.as_ref())?;
         let data_dir = path_cstring(data_dir.as_ref())?;
         let config_dir = path_cstring(config_dir.as_ref())?;
         let mut handle = ptr::null_mut();
@@ -630,6 +633,7 @@ impl Engine {
         check(status, &error)?;
         Ok(Self {
             handle: require_ptr(handle, "engine")?,
+            document_type,
         })
     }
 
@@ -851,207 +855,17 @@ impl Engine {
         Ok(was_found != 0)
     }
 
-    /// Insert a text document after applying Vespa-compatible linguistics.
-    pub fn put_text(&self, document: TextDocument<'_>) -> Result<(), Error> {
-        let analysis = Linguistics.analyze_document(document.text, LinguisticsOptions::default());
-        let occurrences = text_occurrences(&analysis)?;
-        let id = cstring(document.id)?;
-        let field = cstring(document.field)?;
-        let mut native_document = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_document_create(
-                id.as_ptr(),
-                field.as_ptr(),
-                document.text.as_bytes().as_ptr(),
-                length_u32(document.text.len(), "text")?,
-                &mut native_document,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_document = NativeTextDocument(require_ptr(native_document, "text document")?);
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_document_add_occurrences(
-                native_document.0.as_ptr(),
-                occurrences.term_bytes.as_ptr(),
-                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
-                occurrences.term_lengths.as_ptr(),
-                occurrences.byte_starts.as_ptr(),
-                occurrences.byte_lengths.as_ptr(),
-                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_put_text(
-                self.handle.as_ptr(),
-                native_document.0.as_ptr(),
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)
-    }
-
-    /// Update a text field after applying Vespa-compatible linguistics.
-    pub fn update_text(&self, document: TextDocument<'_>) -> Result<(), Error> {
-        let analysis = Linguistics.analyze_document(document.text, LinguisticsOptions::default());
-        let occurrences = text_occurrences(&analysis)?;
-        let id = cstring(document.id)?;
-        let field = cstring(document.field)?;
-        let mut native_update = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_update_create(
-                id.as_ptr(),
-                field.as_ptr(),
-                document.text.as_bytes().as_ptr(),
-                length_u32(document.text.len(), "text")?,
-                &mut native_update,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_update = NativeTextUpdate(require_ptr(native_update, "text update")?);
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_update_add_occurrences(
-                native_update.0.as_ptr(),
-                occurrences.term_bytes.as_ptr(),
-                length_u32(occurrences.term_bytes.len(), "text term bytes")?,
-                occurrences.term_lengths.as_ptr(),
-                occurrences.byte_starts.as_ptr(),
-                occurrences.byte_lengths.as_ptr(),
-                length_u32(occurrences.term_lengths.len(), "text occurrence")?,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_update_text(
-                self.handle.as_ptr(),
-                native_update.0.as_ptr(),
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)
-    }
-
-    /// Search a text field using the requested query form.
-    pub fn search_text(
-        &self,
-        query: TextQuery<'_>,
-        rank_profile: &str,
-    ) -> Result<TextSearchResult, Error> {
-        let (kind, field, text) = match query {
-            TextQuery::Term { field, text } => (sys::SK_TEXT_QUERY_TERM, field, text),
-            TextQuery::Phrase { field, text } => (sys::SK_TEXT_QUERY_PHRASE, field, text),
-        };
-        let analysis = Linguistics.analyze_query(text, LinguisticsOptions::default());
-        if kind == sys::SK_TEXT_QUERY_TERM {
-            validate_term_query(&analysis)?;
-        }
-        let terms = text_query_terms(&analysis)?;
-        let field = cstring(field)?;
-        let rank_profile = cstring(rank_profile)?;
-        let mut native_request = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_request_create(
-                kind,
-                field.as_ptr(),
-                rank_profile.as_ptr(),
-                &mut native_request,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_request = NativeTextRequest(require_ptr(native_request, "text request")?);
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_text_request_add_terms(
-                native_request.0.as_ptr(),
-                terms.term_bytes.as_ptr(),
-                length_u32(terms.term_bytes.len(), "text query term bytes")?,
-                terms.term_lengths.as_ptr(),
-                length_u32(terms.term_lengths.len(), "text query term")?,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-
-        let mut native_result = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_search_text(
-                self.handle.as_ptr(),
-                native_request.0.as_ptr(),
-                &mut native_result,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_result = NativeTextResult(require_ptr(native_result, "text result")?);
-        let size = unsafe { sys::sk_text_result_size(native_result.0.as_ptr()) } as usize;
-        let mut hits = Vec::with_capacity(size);
-        for index in 0..size {
-            let mut id_ptr = ptr::null();
-            let mut id_length = 0;
-            let mut score = 0.0;
-            let mut error = NativeError::new();
-            let status = unsafe {
-                sys::sk_text_result_hit(
-                    native_result.0.as_ptr(),
-                    index as u32,
-                    &mut id_ptr,
-                    &mut id_length,
-                    &mut score,
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            };
-            check(status, &error)?;
-            if id_ptr.is_null() {
-                return Err(Error::message(
-                    "native text result returned a null document ID",
-                ));
-            }
-            let bytes =
-                unsafe { std::slice::from_raw_parts(id_ptr.cast::<u8>(), id_length as usize) };
-            hits.push(TextHit {
-                document_id: String::from_utf8(bytes.to_vec())
-                    .map_err(|_| Error::message("native text result returned invalid UTF-8"))?,
-                score,
-            });
-        }
-        Ok(TextSearchResult { hits })
-    }
-
-    /// Search using the typed low-level Vespa query representation.
-    pub fn search_query(
-        &self,
-        query: &Query,
-        rank_profile: &str,
-    ) -> Result<TextSearchResult, Error> {
-        self.search_query_with_source(query, rank_profile, "*")
-    }
-
-    pub fn search_local(&self, request: &LocalSearchRequest) -> Result<LocalSearchResult, Error> {
+    fn execute_search(&self, request: &SearchRequest) -> Result<SearchResult, Error> {
+        validate_search_ranking_inputs(request)?;
         query::validate_query(&request.query)?;
-        let native_query = self.create_native_query(&request.query)?;
+        if let Source::Named(source) = &request.source {
+            if source != &self.document_type {
+                return Err(Error::message(format!(
+                    "unsupported query source: {source}"
+                )));
+            }
+        }
+        let native_query = self.create_native_query(&request.query, request.language)?;
         let rank_profile = cstring(&request.rank_profile)?;
         let summary_kind = match request.summary {
             SummaryRequest::None => sys::SK_SUMMARY_NONE,

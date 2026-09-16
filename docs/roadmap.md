@@ -884,11 +884,17 @@ Client
   └── inspect_query(...)
          │
          ▼
-      Transport
-         │
+         Transport boundary
+         ├── synchronous `Transport`
+         └── asynchronous `AsyncTransport`
+              │
          ▼
  call(canonical request) → canonical response
 ```
+
+The embedded engine remains synchronous. `AsyncTransport` and its corresponding
+async client surface are additive portable-client APIs; they do not wrap the
+blocking native engine in futures or require a runtime dependency.
 
 The exact host-language shape may differ idiomatically, but operation coverage and portable meaning must be generated from the same BFBS source.
 

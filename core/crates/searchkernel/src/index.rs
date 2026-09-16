@@ -14,7 +14,7 @@ use std::sync::Arc;
 #[cfg(feature = "native")]
 const MANIFEST_FORMAT_VERSION: u32 = 2;
 #[cfg(feature = "native")]
-const NATIVE_ABI_VERSION: u32 = 4;
+const NATIVE_ABI_VERSION: u32 = 5;
 #[cfg(feature = "native")]
 const VESPA_REVISION: &str = "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e";
 
@@ -238,12 +238,12 @@ impl Index {
     }
 
     /// Start a search for `query`.
-    pub fn search(&self, query: impl Into<String>) -> SearchBuilder<'_> {
-        SearchBuilder::new(self, query)
+    pub fn search(&self, query: impl Into<String>) -> SearchBuilder {
+        SearchBuilder::new(self.clone(), query)
     }
 
     /// Start a match-all search intended for browsing or administration.
-    pub fn browse(&self) -> SearchBuilder<'_> {
+    pub fn browse(&self) -> SearchBuilder {
         self.search("")
     }
 
@@ -287,7 +287,7 @@ impl Index {
 
     pub(crate) fn inspect_search(
         &self,
-        request: &SearchBuilder<'_>,
+        request: &SearchBuilder,
     ) -> Result<crate::search::InspectedQuery> {
         let request_bytes = wire::search(request)?;
         let wire_request =
@@ -352,8 +352,10 @@ impl Index {
                 })
                 .collect(),
             ranking: match normalized.ranking() {
-                searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => Ranking::DefaultRelevanceV1,
-                searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::Bm25,
+                searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => {
+                    Ranking::default_relevance_v1()
+                }
+                searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::bm25(),
             },
             limit: normalized.limit(),
             offset: normalized.offset(),
@@ -372,7 +374,7 @@ impl Index {
 
     pub(crate) fn execute_search<T: DeserializeOwned>(
         &self,
-        request: &SearchBuilder<'_>,
+        request: &SearchBuilder,
     ) -> Result<result::SearchResult<T>> {
         let request_bytes = wire::search(request)?;
         let wire_request =
@@ -594,7 +596,11 @@ fn definition_json(definition: &IndexDefinition) -> serde_json::Value {
             "filterable": field.filterable,
             "sortable": field.sortable,
             "facetable": field.facetable,
-            "analyzer": field.analyzer.map(|value| format!("{:?}", value)),
+            "analyzer": field.analyzer.as_ref().map(|value| serde_json::json!({
+                "name": value.name,
+                "version": value.version,
+                "options": value.options,
+            })),
         })).collect::<Vec<_>>(),
         "default_search_fields": definition.default_search_fields.as_ref().map(|fields| fields.iter().map(|field| serde_json::json!({"field": field.field, "weight": field.weight})).collect::<Vec<_>>()),
     })
@@ -674,13 +680,55 @@ fn definition_from_json(value: &serde_json::Value) -> Result<IndexDefinition> {
         let mut field = kind;
         if let Some(analyzer) = metadata.get("analyzer") {
             if !analyzer.is_null() {
-                let analyzer = analyzer
-                    .as_str()
-                    .ok_or_else(|| Error::corrupt_index("manifest field analyzer is invalid"))?;
-                field = match analyzer {
-                    "StandardV1" => field.analyzer(Analyzer::standard_v1()),
-                    _ => return Err(Error::corrupt_index("manifest field analyzer is invalid")),
-                };
+                if let Some(analyzer) = analyzer.as_str() {
+                    field = match analyzer {
+                        "StandardV1" => field.analyzer(Analyzer::standard_v1()),
+                        _ => {
+                            return Err(Error::corrupt_index("manifest field analyzer is invalid"))
+                        }
+                    };
+                } else {
+                    let analyzer = analyzer.as_object().ok_or_else(|| {
+                        Error::corrupt_index("manifest field analyzer is invalid")
+                    })?;
+                    let name = analyzer
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| {
+                            Error::corrupt_index("manifest field analyzer name is missing")
+                        })?;
+                    let version = analyzer
+                        .get("version")
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .ok_or_else(|| {
+                            Error::corrupt_index("manifest field analyzer version is invalid")
+                        })?;
+                    let options = analyzer
+                        .get("options")
+                        .map(|options| {
+                            options
+                                .as_object()
+                                .ok_or_else(|| {
+                                    Error::corrupt_index(
+                                        "manifest field analyzer options are invalid",
+                                    )
+                                })
+                                .map(|options| {
+                                    options
+                                        .iter()
+                                        .map(|(key, value)| (key.clone(), value.clone()))
+                                        .collect()
+                                })
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+                    field = field.analyzer(Analyzer {
+                        name: name.to_owned(),
+                        version,
+                        options,
+                    });
+                }
             }
         }
         if metadata

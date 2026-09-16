@@ -10,7 +10,7 @@ pub struct AnalyzeBuilder<'a> {
     pub(crate) language: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum AnalyzeTarget {
     Analyzer(Analyzer),
     Field,

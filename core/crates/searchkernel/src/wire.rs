@@ -89,7 +89,7 @@ pub(crate) fn get(id: &str, selected_fields: Option<&[String]>) -> Vec<u8> {
 
 pub(crate) fn analyze(request: &AnalyzeBuilder<'_>) -> Result<Vec<u8>> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let (target_type, target) = match request.target {
+    let (target_type, target) = match request.target.as_ref() {
         Some(AnalyzeTarget::Analyzer(analyzer)) => (
             api::AnalyzeTarget::Analyzer,
             analyzer_value(&mut builder, analyzer).as_union_value(),
@@ -136,7 +136,7 @@ pub(crate) fn analyze(request: &AnalyzeBuilder<'_>) -> Result<Vec<u8>> {
     Ok(builder.finished_data().to_vec())
 }
 
-pub(crate) fn search(request: &SearchBuilder<'_>) -> Result<Vec<u8>> {
+pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let query = builder.create_string(&request.query);
     let search_fields = request
@@ -165,6 +165,7 @@ pub(crate) fn search(request: &SearchBuilder<'_>) -> Result<Vec<u8>> {
     let facets = builder.create_vector(&facets);
     let ranking = request
         .ranking
+        .as_ref()
         .map(|ranking| ranking_policy(&mut builder, ranking));
     let limit = request.limit.map(api::OptionalUInt32::new);
     let offset = request.offset.map(api::OptionalUInt32::new);
@@ -236,6 +237,7 @@ fn field_definition<'a>(
     let name = builder.create_string(&field.name);
     let analyzer = field
         .analyzer
+        .as_ref()
         .map(|analyzer| analyzer_value(builder, analyzer));
     let stored = field.stored.map(api::OptionalBool::new);
     let searchable = field.searchable.map(api::OptionalBool::new);
@@ -264,18 +266,33 @@ fn field_definition<'a>(
 
 fn analyzer_value<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    analyzer: Analyzer,
+    analyzer: &Analyzer,
 ) -> flatbuffers::WIPOffset<api::Analyzer<'a>> {
-    let (name, version) = match analyzer {
-        Analyzer::StandardV1 => ("standard", 1),
-    };
-    let name = builder.create_string(name);
+    let name = builder.create_string(&analyzer.name);
+    let options = (!analyzer.options.is_empty()).then(|| {
+        let entries = analyzer
+            .options
+            .iter()
+            .map(|(key, value)| {
+                let key = builder.create_string(key);
+                let value = value_offset(builder, value);
+                api::ValueEntry::create(
+                    builder,
+                    &api::ValueEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&entries)
+    });
     api::Analyzer::create(
         builder,
         &api::AnalyzerArgs {
             name: Some(name),
-            version,
-            options: None,
+            version: analyzer.version,
+            options,
         },
     )
 }
@@ -668,15 +685,15 @@ fn facet_request<'a>(
 
 fn ranking_policy<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ranking: Ranking,
+    ranking: &Ranking,
 ) -> flatbuffers::WIPOffset<api::RankingPolicy<'a>> {
-    let (policy_type, policy) = match ranking {
-        Ranking::DefaultRelevanceV1 => (
+    let (policy_type, policy) = match ranking.kind {
+        super::search::RankingKind::DefaultRelevanceV1 => (
             api::RankingPolicyKind::DefaultRelevanceV1,
             api::DefaultRelevanceV1::create(builder, &api::DefaultRelevanceV1Args {})
                 .as_union_value(),
         ),
-        Ranking::Bm25 => (
+        super::search::RankingKind::Bm25 => (
             api::RankingPolicyKind::Bm25Ranking,
             api::Bm25Ranking::create(builder, &api::Bm25RankingArgs {}).as_union_value(),
         ),

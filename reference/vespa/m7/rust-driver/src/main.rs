@@ -1,8 +1,9 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, Schema, SearchRequest,
+    ConfigCompiler, Document as EngineDocument, Engine, Field, FieldType, Query, RangeBound,
+    Schema, SearchRequest,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf};
 
 #[derive(Deserialize)]
@@ -10,7 +11,7 @@ struct Scenario {
     id: String,
     schema: String,
     fields: Vec<FieldSpec>,
-    documents: Vec<Document>,
+    documents: Vec<ScenarioDocument>,
     typed: Value,
     yql: String,
 }
@@ -24,7 +25,7 @@ struct FieldSpec {
     summary: bool,
 }
 #[derive(Deserialize)]
-struct Document {
+struct ScenarioDocument {
     id: String,
     kind: String,
     field: String,
@@ -129,13 +130,16 @@ fn canon(q: &Query) -> Value {
             json!({"kind":"range","field":field,"lower":canon_bound(lower),"upper":canon_bound(upper)})
         }
         Query::Exists { field } => json!({"kind":"exists","field":field}),
+        Query::AttributeEquals { .. } | Query::AttributeRange { .. } => {
+            panic!("attribute queries are not part of M7")
+        }
     }
 }
 fn populate(engine: &mut Engine, s: &Scenario) {
     let mut created = HashSet::new();
     for d in &s.documents {
         if created.insert(d.id.clone()) {
-            let mut document = Document::new(&d.id);
+            let mut document = EngineDocument::new(&d.id);
             for field in s.documents.iter().filter(|field| field.id == d.id) {
                 document = match field.kind.as_str() {
                     "text" => document.field(&field.field, field.value.as_str().unwrap()),
@@ -156,11 +160,11 @@ fn main() {
         "canonical" => {
             let s = load(&a[2]);
             let t = query(&s.typed);
-            let y = Query::from_yql(&s.yql).expect("parse yql");
+            let y = SearchRequest::from_yql(&s.yql).expect("parse yql");
             println!(
                 "{}",
                 serde_json::to_string(
-                    &json!({"id":s.id,"schema":s.schema,"typed":canon(&t),"yql":canon(&y)})
+                    &json!({"id":s.id,"schema":s.schema,"typed":canon(&t),"yql":canon(&y.query)})
                 )
                 .unwrap()
             );
@@ -180,7 +184,7 @@ fn main() {
             let result = if a[5] == "typed" {
                 e.search(SearchRequest::new(query(&s.typed)))
             } else {
-                e.search(SearchRequest::new(Query::from_yql(&s.yql).expect("parse yql")))
+                e.search(SearchRequest::from_yql(&s.yql).expect("parse yql"))
             }
             .expect("query");
             let mut hits = result

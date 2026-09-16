@@ -1,4 +1,6 @@
-use searchkernel_vespa_engine::{ConfigCompiler, Engine, Field, FieldType, Query, Schema, SearchRequest};
+use searchkernel_vespa_engine::{
+    ConfigCompiler, Engine, Field, FieldType, Query, Schema, SearchRequest,
+};
 use serde_json::Value;
 use std::{fs, path::PathBuf};
 fn q(v: &Value) -> Query {
@@ -68,8 +70,10 @@ fn main() {
     let r = if path == "typed" {
         e.search(SearchRequest::new(q(&c["typed"]))).map(|_| ())
     } else {
-        e.search(SearchRequest::new(Query::from_yql(c["yql"].as_str().unwrap())?))
-            .map(|_| ())
+        match SearchRequest::from_yql(c["yql"].as_str().unwrap()) {
+            Ok(request) => e.search(request).map(|_| ()),
+            Err(error) => Err(error),
+        }
     };
     match r {
         Ok(_) => {

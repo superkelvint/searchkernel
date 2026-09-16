@@ -162,6 +162,11 @@ serde representation
 Python API
 ```
 
+Here, “async API” refers to the embedded Vespa engine and high-level Rust
+surface. The portable client may provide a separate async transport/client
+surface; it must not make `Backend`, `Index`, or embedded engine execution
+asynchronous.
+
 Do not add one of these merely to complete M0–M2.
 
 ---

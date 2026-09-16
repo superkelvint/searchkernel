@@ -12,9 +12,11 @@ use searchkernel_ir::{
 };
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue, Query,
-    RangeBound, ScalarValue, Schema, SearchRequest, SortField, SortOrder,
+    ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 
 /// Compile the resolved portable definition into the M-layer configuration.
 ///
@@ -37,10 +39,14 @@ pub fn compile_index_definition(
             field.cardinality(),
             searchkernel_ir::FieldCardinality::Multi
         ) {
-            return Err(unsupported(format!(
-                "multi-valued field `{}` is not supported by the current M document/config ABI",
-                field.name().as_str()
-            )));
+            return Err(PortableError::unsupported(
+                "multi_valued_fields_not_supported",
+                Some("fields"),
+                format!(
+                    "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
+                    field.name().as_str()
+                ),
+            ));
         }
         let kind = match field.kind() {
             searchkernel_ir::FieldKind::Text => FieldType::Text,
@@ -53,6 +59,10 @@ pub fn compile_index_definition(
         let mut native = Field::new(field.name().as_str(), kind);
         if capabilities.searchable() {
             native = native.indexed();
+        }
+        if matches!(field.kind(), searchkernel_ir::FieldKind::Keyword) && capabilities.filterable()
+        {
+            native = native.fast_search();
         }
         if capabilities.filterable()
             || capabilities.sortable()
@@ -80,10 +90,14 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
             searchkernel_ir::FieldCardinality::Multi
         )
     }) {
-        return Err(unsupported(format!(
-            "multi-valued field `{}` is not supported by the current M document/config ABI",
-            field.name().as_str()
-        )));
+        return Err(PortableError::unsupported(
+            "multi_valued_fields_not_supported",
+            Some("fields"),
+            format!(
+                "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
+                field.name().as_str()
+            ),
+        ));
     }
     Ok(())
 }
@@ -91,6 +105,7 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
     engine: Engine,
+    insert_lock: Mutex<()>,
 }
 
 impl VespaBackend {
@@ -99,12 +114,15 @@ impl VespaBackend {
         config_dir: impl AsRef<std::path::Path>,
     ) -> Result<Self> {
         Engine::open(data_dir, config_dir)
-            .map(|engine| Self { engine })
+            .map(Self::from_engine)
             .map_err(native_error)
     }
 
     pub fn from_engine(engine: Engine) -> Self {
-        Self { engine }
+        Self {
+            engine,
+            insert_lock: Mutex::new(()),
+        }
     }
 
     pub fn engine(&self) -> &Engine {
@@ -116,6 +134,10 @@ impl Backend for VespaBackend {
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult> {
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
+        let _insert_guard = self
+            .insert_lock
+            .lock()
+            .map_err(|_| internal("insert lock is poisoned"))?;
         if self.engine.get(&id).map_err(native_error)?.is_some() {
             return Err(PortableError::new(
                 searchkernel_ir::ErrorCode::AlreadyExists,
@@ -176,18 +198,7 @@ impl Backend for VespaBackend {
         let Some(document) = document else {
             return Ok(GetResult { document: None });
         };
-        let projection = request.projection().fields();
-        let fields = document
-            .fields()
-            .iter()
-            .filter(|(name, _)| {
-                projection.is_empty()
-                    || projection
-                        .iter()
-                        .any(|field| field.as_str() == name.as_str())
-            })
-            .map(|(name, value)| (name.clone(), value_to_ir(value)))
-            .collect();
+        let fields = project_document(&document, request.projection().fields());
         Ok(GetResult {
             document: Some(searchkernel_ir::DocumentResult {
                 id: document.id().to_owned(),
@@ -198,34 +209,14 @@ impl Backend for VespaBackend {
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
         validate_search_request(&request)?;
-        let query = lower_search_query(&request)?;
-        let mut m_request = SearchRequest::new(query)
-            .limit(request.limit())
-            .offset(request.offset())
-            .rank_profile(match request.ranking() {
-                searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => "default",
-                searchkernel_ir::RankingPolicyIr::Bm25 => "bm25",
-            });
-        for sort in request.sort() {
-            m_request = m_request.sort(match sort.direction() {
-                searchkernel_ir::SortDirection::Asc => {
-                    SortField::new(sort.field().as_str(), SortOrder::Ascending)
-                }
-                searchkernel_ir::SortDirection::Desc => {
-                    SortField::new(sort.field().as_str(), SortOrder::Descending)
-                }
-            });
-        }
-        if !request.projection().fields().is_empty() {
-            m_request = m_request.fields(
-                request
-                    .projection()
-                    .fields()
-                    .iter()
-                    .map(|field| field.as_str()),
-            );
-        }
-        let result = self.engine.search(m_request).map_err(native_error)?;
+        let language = analysis_options(request.language())?;
+        let query = lower_search_query(&request, language)?;
+        let m_request = lower_search_options(&request, query.clone(), language)?;
+        let result = self
+            .engine
+            .search(m_request)
+            .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
+        let facets = lower_facets(&self.engine, &query, request.facets())?;
         Ok(SearchResult {
             hits: result
                 .hits
@@ -248,15 +239,14 @@ impl Backend for VespaBackend {
                     VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
                 },
             },
-            facets: Vec::new(),
+            facets,
         })
     }
 
     fn analyze(&self, request: AnalyzeRequestIr) -> Result<AnalyzeResult> {
-        let analysis = searchkernel_vespa_engine::Linguistics.analyze_document(
-            request.text(),
-            searchkernel_vespa_engine::LinguisticsOptions::default(),
-        );
+        let options = analysis_options(request.language())?;
+        let analysis =
+            searchkernel_vespa_engine::Linguistics.analyze_document(request.text(), options);
         Ok(AnalyzeResult {
             tokens: analysis
                 .terms
@@ -290,6 +280,22 @@ fn lower_document(document: &DocumentIr) -> Result<Document> {
         }
     }
     Ok(result)
+}
+
+fn project_document(
+    document: &Document,
+    projection: &[searchkernel_ir::FieldName],
+) -> BTreeMap<String, Value> {
+    document
+        .fields()
+        .iter()
+        .filter(|(name, _)| {
+            projection
+                .iter()
+                .any(|field| field.as_str() == name.as_str())
+        })
+        .map(|(name, value)| (name.clone(), value_to_ir(value)))
+        .collect()
 }
 
 fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
@@ -378,8 +384,15 @@ fn lower_scalar(value: &ScalarValueIr) -> Result<ScalarValue> {
     })
 }
 
-fn lower_search_query(request: &SearchRequestIr) -> Result<Query> {
-    let mut clauses = vec![lower_query(request.query(), request.search_fields())?];
+fn lower_search_query(
+    request: &SearchRequestIr,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<Query> {
+    let mut clauses = vec![lower_query_with_language(
+        request.query(),
+        request.search_fields(),
+        language,
+    )?];
     if let Some(filter) = request.filter() {
         clauses.push(lower_filter(filter)?);
     }
@@ -390,15 +403,79 @@ fn lower_search_query(request: &SearchRequestIr) -> Result<Query> {
     }
 }
 
+fn lower_search_options(
+    request: &SearchRequestIr,
+    query: Query,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<SearchRequest> {
+    let mut m_request = SearchRequest::new(query)
+        .limit(request.limit())
+        .offset(request.offset())
+        .rank_profile(ranking_profile(request.ranking())?)
+        .language(language);
+    for sort in request.sort() {
+        m_request = m_request.sort(lower_sort(sort));
+    }
+
+    // C2 has already resolved the projection. An empty list means that no
+    // summary fields should be fetched; the native API rejects an explicit
+    // empty field list, so use its no-summary mode instead.
+    let fields = request.projection().fields();
+    if fields.is_empty() {
+        m_request = m_request.summary(SummaryRequest::None);
+    } else {
+        m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
+    }
+    Ok(m_request)
+}
+
+fn lower_sort(sort: &searchkernel_ir::SortIr) -> SortField {
+    let sort_field = match sort.direction() {
+        searchkernel_ir::SortDirection::Asc => {
+            SortField::new(sort.field().as_str(), SortOrder::Ascending)
+        }
+        searchkernel_ir::SortDirection::Desc => {
+            SortField::new(sort.field().as_str(), SortOrder::Descending)
+        }
+    };
+    match sort.missing() {
+        searchkernel_ir::MissingPlacement::First => sort_field.missing_first(),
+        searchkernel_ir::MissingPlacement::Last => sort_field.missing_last(),
+    }
+}
+
+fn lower_facet_grouping(
+    query: Query,
+    facet: &searchkernel_ir::FacetIr,
+) -> searchkernel_vespa_engine::GroupingRequest {
+    let order = match facet.sort() {
+        searchkernel_ir::FacetSort::CountAsc => {
+            searchkernel_vespa_engine::GroupingOrder::CountAscending
+        }
+        searchkernel_ir::FacetSort::CountDesc => {
+            searchkernel_vespa_engine::GroupingOrder::CountDescending
+        }
+        searchkernel_ir::FacetSort::ValueAsc => {
+            searchkernel_vespa_engine::GroupingOrder::ValueAscending
+        }
+        searchkernel_ir::FacetSort::ValueDesc => {
+            searchkernel_vespa_engine::GroupingOrder::ValueDescending
+        }
+    };
+    searchkernel_vespa_engine::GroupingRequest::new(query, facet.field().as_str())
+        .max_groups(facet.limit())
+        .order(order)
+}
+
 fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
-    if !request.facets().is_empty()
-        || !matches!(
-            request.highlighting(),
-            searchkernel_ir::HighlightingIr::Disabled
-        )
-    {
-        return Err(unsupported(
-            "facets and highlighting are not yet lowered by the M API",
+    if !matches!(
+        request.highlighting(),
+        searchkernel_ir::HighlightingIr::Disabled
+    ) {
+        return Err(PortableError::unsupported(
+            "highlighting_native_result_unavailable",
+            Some("highlighting"),
+            "native Vespa result path does not expose generated highlight fragments and spans",
         ));
     }
     if request
@@ -406,36 +483,46 @@ fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
         .iter()
         .any(|field| field.weight().get() != 1.0)
     {
-        return Err(unsupported(
-            "weighted search fields are not yet represented by the M query model",
+        return Err(PortableError::unsupported(
+            "ranking_weights_not_supported",
+            Some("search_fields"),
+            "non-default search-field weights require the M10/I7 ranking integration surface",
         ));
     }
-    if request
-        .sort()
-        .iter()
-        .any(|sort| matches!(sort.missing(), searchkernel_ir::MissingPlacement::First))
-    {
-        return Err(unsupported(
-            "missing-first sorting is not yet represented by the M query model",
-        ));
-    }
-    if request.language().is_some() {
-        return Err(unsupported(
-            "per-request language is not yet represented by the M query model",
-        ));
-    }
+    analysis_options(request.language())?;
     Ok(())
 }
 
+fn ranking_profile(ranking: searchkernel_ir::RankingPolicyIr) -> Result<&'static str> {
+    match ranking {
+        searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => Ok("default"),
+        searchkernel_ir::RankingPolicyIr::Bm25 => Err(PortableError::unsupported(
+            "bm25_ranking_not_supported",
+            Some("ranking"),
+            "BM25 ranking requires the M10/I7 ranking integration surface",
+        )),
+    }
+}
+
+#[cfg(test)]
 fn lower_query(query: &QueryIr, fields: &[searchkernel_ir::SearchFieldIr]) -> Result<Query> {
+    lower_query_with_language(
+        query,
+        fields,
+        searchkernel_vespa_engine::LinguisticsOptions::default(),
+    )
+}
+
+fn lower_query_with_language(
+    query: &QueryIr,
+    fields: &[searchkernel_ir::SearchFieldIr],
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<Query> {
     match query {
         QueryIr::MatchAll => Ok(Query::True),
         QueryIr::Text(text) => {
             let term_count = searchkernel_vespa_engine::Linguistics
-                .analyze_query(
-                    text,
-                    searchkernel_vespa_engine::LinguisticsOptions::default(),
-                )
+                .analyze_query(text, language)
                 .terms
                 .len();
             let clauses = fields
@@ -464,16 +551,18 @@ fn lower_query(query: &QueryIr, fields: &[searchkernel_ir::SearchFieldIr]) -> Re
         QueryIr::And(children) => Ok(Query::And(
             children
                 .iter()
-                .map(|child| lower_query(child, fields))
+                .map(|child| lower_query_with_language(child, fields, language))
                 .collect::<Result<Vec<_>>>()?,
         )),
         QueryIr::Or(children) => Ok(Query::Or(
             children
                 .iter()
-                .map(|child| lower_query(child, fields))
+                .map(|child| lower_query_with_language(child, fields, language))
                 .collect::<Result<Vec<_>>>()?,
         )),
-        QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query(child, fields)?))),
+        QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query_with_language(
+            child, fields, language,
+        )?))),
     }
 }
 
@@ -492,7 +581,11 @@ fn lower_filter(filter: &FilterIr) -> Result<Query> {
                 .collect::<Result<Vec<_>>>()?,
         )),
         FilterIr::Not(child) => Ok(Query::Not(Box::new(lower_filter(child)?))),
-        FilterIr::Exists { field } => Ok(Query::exists(field.as_str())),
+        FilterIr::Exists { field } => Ok(Query::AttributeRange {
+            field: field.to_string(),
+            lower: searchkernel_vespa_engine::AttributeBound::Unbounded,
+            upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+        }),
         FilterIr::Comparison(comparison) => lower_comparison(comparison),
         FilterIr::Range(range) => lower_range(range),
     }
@@ -500,56 +593,72 @@ fn lower_filter(filter: &FilterIr) -> Result<Query> {
 
 fn lower_comparison(comparison: &searchkernel_ir::ComparisonIr) -> Result<Query> {
     use searchkernel_ir::ComparisonOp;
-    match (&comparison.op(), comparison.value()) {
-        (ComparisonOp::Eq, ScalarValueIr::Int64(value)) => Ok(Query::equals(
-            comparison.field().as_str(),
-            integer_query_value(*value)?,
-        )),
-        (ComparisonOp::Eq, ScalarValueIr::String(value)) => Ok(Query::AttributeEquals {
-            field: comparison.field().to_string(),
-            value: VespaValue::String(value.clone()),
-        }),
-        (ComparisonOp::Ne, ScalarValueIr::Int64(value)) => Ok(Query::Not(Box::new(Query::equals(
-            comparison.field().as_str(),
-            integer_query_value(*value)?,
-        )))),
-        (ComparisonOp::Ne, ScalarValueIr::String(value)) => {
-            Ok(Query::Not(Box::new(Query::AttributeEquals {
-                field: comparison.field().to_string(),
-                value: VespaValue::String(value.clone()),
-            })))
+    let field = comparison.field().to_string();
+    let value = lower_attribute_value(comparison.value())?;
+    match comparison.op() {
+        ComparisonOp::Eq => Ok(Query::AttributeEquals { field, value }),
+        ComparisonOp::Ne => Ok(Query::Not(Box::new(Query::AttributeEquals {
+            field,
+            value,
+        }))),
+        ComparisonOp::Lt | ComparisonOp::Lte | ComparisonOp::Gt | ComparisonOp::Gte => {
+            let lower_bound = matches!(comparison.op(), ComparisonOp::Gt | ComparisonOp::Gte);
+            let included = matches!(comparison.op(), ComparisonOp::Gte | ComparisonOp::Lte);
+            if !matches!(value, VespaValue::Integer(_) | VespaValue::Float(_)) {
+                return Err(unsupported("ordered comparisons require a numeric field"));
+            }
+            let bound = if included {
+                searchkernel_vespa_engine::AttributeBound::Included(value)
+            } else {
+                searchkernel_vespa_engine::AttributeBound::Excluded(value)
+            };
+            Ok(Query::AttributeRange {
+                field,
+                lower: if lower_bound {
+                    bound.clone()
+                } else {
+                    searchkernel_vespa_engine::AttributeBound::Unbounded
+                },
+                upper: if lower_bound {
+                    searchkernel_vespa_engine::AttributeBound::Unbounded
+                } else {
+                    bound
+                },
+            })
         }
-        _ => Err(unsupported(
-            "comparison is not lowerable by the M query model",
-        )),
     }
 }
 
 fn lower_range(range: &RangeIr) -> Result<Query> {
-    let lower = range
-        .lower()
-        .map(|value| lower_bound(value, range.include_lower()))
-        .transpose()?
-        .unwrap_or(RangeBound::Unbounded);
-    let upper = range
-        .upper()
-        .map(|value| lower_bound(value, range.include_upper()))
-        .transpose()?
-        .unwrap_or(RangeBound::Unbounded);
-    Ok(Query::range(range.field().as_str(), lower, upper))
+    Ok(Query::AttributeRange {
+        field: range.field().to_string(),
+        lower: attribute_bound(range.lower(), range.include_lower())?,
+        upper: attribute_bound(range.upper(), range.include_upper())?,
+    })
 }
 
-fn lower_bound(value: &ScalarValueIr, included: bool) -> Result<RangeBound> {
+fn attribute_bound(
+    value: Option<&ScalarValueIr>,
+    included: bool,
+) -> Result<searchkernel_vespa_engine::AttributeBound> {
+    let Some(value) = value else {
+        return Ok(searchkernel_vespa_engine::AttributeBound::Unbounded);
+    };
+    let value = lower_attribute_value(value)?;
+    Ok(if included {
+        searchkernel_vespa_engine::AttributeBound::Included(value)
+    } else {
+        searchkernel_vespa_engine::AttributeBound::Excluded(value)
+    })
+}
+
+fn lower_attribute_value(value: &ScalarValueIr) -> Result<VespaValue> {
     match value {
-        ScalarValueIr::Int64(value) => {
-            let value = integer_query_value(*value)?;
-            Ok(if included {
-                RangeBound::Included(value)
-            } else {
-                RangeBound::Excluded(value)
-            })
-        }
-        _ => Err(unsupported("only integer ranges are currently lowerable")),
+        ScalarValueIr::Int64(value) => Ok(VespaValue::Integer(integer_query_value(*value)?)),
+        ScalarValueIr::Float64(value) if value.is_finite() => Ok(VespaValue::Float(*value)),
+        ScalarValueIr::String(value) => Ok(VespaValue::String(value.clone())),
+        ScalarValueIr::Bool(value) => Ok(VespaValue::Boolean(*value)),
+        ScalarValueIr::Float64(_) => Err(unsupported("float comparison value must be finite")),
     }
 }
 
@@ -580,20 +689,98 @@ fn value_to_ir(value: &FieldValue) -> Value {
 
 fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
     let message = error.to_string();
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("unsupported") || lower.contains("not supported") {
-        PortableError::unsupported("m_native", None::<String>, message)
-    } else if error.code() == 1
-        || lower.contains("invalid")
-        || lower.contains("must not")
-        || lower.contains("must contain")
-        || lower.contains("unknown")
-        || lower.contains("requires an")
-    {
-        PortableError::invalid("backend_request", None::<String>, message)
-    } else {
-        PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
+    match error.kind() {
+        searchkernel_vespa_engine::ErrorKind::InvalidArgument => {
+            PortableError::invalid("backend_request", None::<String>, message)
+        }
+        searchkernel_vespa_engine::ErrorKind::ResourceExhausted => {
+            PortableError::new(searchkernel_ir::ErrorCode::ResourceExhausted, message)
+        }
+        searchkernel_vespa_engine::ErrorKind::Unsupported => {
+            PortableError::unsupported("native_capability_not_supported", None::<String>, message)
+        }
+        searchkernel_vespa_engine::ErrorKind::Internal => {
+            PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
+        }
     }
+}
+
+fn native_search_error(
+    error: searchkernel_vespa_engine::Error,
+    unsupported_code: &'static str,
+) -> PortableError {
+    if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
+        return PortableError::unsupported(unsupported_code, Some("sort"), error.to_string());
+    }
+    native_error(error)
+}
+
+fn lower_facets(
+    engine: &Engine,
+    query: &Query,
+    facets: &[searchkernel_ir::FacetIr],
+) -> Result<Vec<searchkernel_ir::FacetResult>> {
+    facets
+        .iter()
+        .map(|facet| {
+            let grouped = engine
+                .group(&lower_facet_grouping(query.clone(), facet))
+                .map_err(|error| {
+                    if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
+                        PortableError::unsupported(
+                            "facet_key_type_not_supported",
+                            Some("facets"),
+                            format!(
+                                "facet field `{}` requires a String or Integer native grouping key",
+                                facet.field().as_str()
+                            ),
+                        )
+                    } else {
+                        native_error(error)
+                    }
+                })?;
+            let values = grouped
+                .groups
+                .into_iter()
+                .map(|group| Ok(searchkernel_ir::FacetValue {
+                    value: value_to_ir(&FieldValue::Scalar(match group.key {
+                        VespaValue::String(value) => ScalarValue::String(value),
+                        VespaValue::Integer(value) => ScalarValue::Integer(value),
+                        _ => return Err(PortableError::unsupported(
+                            "facet_key_type_not_supported",
+                            Some("facets"),
+                            "native grouping returned a key kind not representable by the portable facet contract",
+                        )),
+                    })),
+                    count: group.count,
+                }))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(searchkernel_ir::FacetResult {
+                field: facet.field().to_string(),
+                values,
+            })
+        })
+        .collect()
+}
+
+fn analysis_options(
+    language: Option<&searchkernel_ir::LanguageHint>,
+) -> Result<searchkernel_vespa_engine::LinguisticsOptions> {
+    match language.map(|value| value.as_str()) {
+        None | Some("en") => Ok(searchkernel_vespa_engine::LinguisticsOptions::default()),
+        Some(value) if value.starts_with("en-") => {
+            Ok(searchkernel_vespa_engine::LinguisticsOptions::default())
+        }
+        Some(value) => Err(PortableError::unsupported(
+            "language_not_supported",
+            Some("language"),
+            format!("language `{value}` is not supported by the current analyzer"),
+        )),
+    }
+}
+
+fn internal(message: impl Into<String>) -> PortableError {
+    PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
 }
 
 fn unsupported(message: impl Into<String>) -> PortableError {
@@ -604,10 +791,10 @@ fn unsupported(message: impl Into<String>) -> PortableError {
 mod tests {
     use super::*;
     use searchkernel_ir::{
-        AnalyzerIdentity, ComparisonIr, ComparisonOp, FieldCapabilities, FieldCardinality, FieldIr,
-        FieldKind, FieldName, FieldValueIr, HighlightingIr, IndexDefinitionIr, LanguageHint,
-        MissingPlacement, PrefixPolicy, QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr,
-        SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
+        AnalyzerIdentity, ComparisonIr, ComparisonOp, FacetIr, FieldCapabilities, FieldCardinality,
+        FieldIr, FieldKind, FieldName, FieldValueIr, HighlightingIr, IndexDefinitionIr,
+        LanguageHint, MissingPlacement, PrefixPolicy, QueryIr, RangeIr, RankingPolicyIr,
+        ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -663,10 +850,8 @@ mod tests {
             Vec::new(),
             None,
         );
-        assert_eq!(
-            lower_search_request_for_test(weighted).code,
-            searchkernel_ir::ErrorCode::Unsupported
-        );
+        let error = validate_search_request(&weighted).unwrap_err();
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
 
         let missing_first = request(
             vec![SearchFieldIr::new(
@@ -680,10 +865,7 @@ mod tests {
             )],
             None,
         );
-        assert_eq!(
-            lower_search_request_for_test(missing_first).code,
-            searchkernel_ir::ErrorCode::Unsupported
-        );
+        assert!(validate_search_request(&missing_first).is_ok());
 
         let language = request(
             vec![SearchFieldIr::new(
@@ -693,10 +875,18 @@ mod tests {
             Vec::new(),
             Some(LanguageHint::parse("en").unwrap()),
         );
-        assert_eq!(
-            lower_search_request_for_test(language).code,
-            searchkernel_ir::ErrorCode::Unsupported
+        assert!(validate_search_request(&language).is_ok());
+
+        let french = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            Vec::new(),
+            Some(LanguageHint::parse("fr").unwrap()),
         );
+        let error = validate_search_request(&french).unwrap_err();
+        assert_eq!(error.details[0].code, "language_not_supported");
     }
 
     #[test]
@@ -880,9 +1070,19 @@ mod tests {
                 field: title.clone()
             })
             .unwrap(),
-            Query::exists("title")
+            Query::AttributeRange {
+                field: "title".into(),
+                lower: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+            }
         );
-        assert_eq!(lower_filter(&eq_int).unwrap(), Query::equals("price", 10));
+        assert_eq!(
+            lower_filter(&eq_int).unwrap(),
+            Query::AttributeEquals {
+                field: "price".into(),
+                value: VespaValue::Integer(10),
+            }
+        );
         assert_eq!(
             lower_filter(&ne_string).unwrap(),
             Query::Not(Box::new(Query::AttributeEquals {
@@ -897,7 +1097,10 @@ mod tests {
             ]))
             .unwrap(),
             Query::And(vec![
-                Query::equals("price", 10),
+                Query::AttributeEquals {
+                    field: "price".into(),
+                    value: VespaValue::Integer(10),
+                },
                 Query::Not(Box::new(Query::Not(Box::new(Query::AttributeEquals {
                     field: "title".into(),
                     value: VespaValue::String("fox".into()),
@@ -913,12 +1116,41 @@ mod tests {
                 false,
             )))
             .unwrap(),
-            Query::range("price", RangeBound::Included(1), RangeBound::Excluded(5),)
+            Query::AttributeRange {
+                field: "price".into(),
+                lower: searchkernel_vespa_engine::AttributeBound::Included(VespaValue::Integer(1),),
+                upper: searchkernel_vespa_engine::AttributeBound::Excluded(VespaValue::Integer(5),),
+            }
+        );
+        assert_eq!(
+            lower_filter(&FilterIr::Comparison(ComparisonIr::new(
+                price.clone(),
+                ComparisonOp::Gt,
+                ScalarValueIr::Float64(1.0),
+            )))
+            .unwrap(),
+            Query::AttributeRange {
+                field: "price".into(),
+                lower: searchkernel_vespa_engine::AttributeBound::Excluded(VespaValue::Float(1.0),),
+                upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+            }
+        );
+        assert_eq!(
+            lower_filter(&FilterIr::Comparison(ComparisonIr::new(
+                title.clone(),
+                ComparisonOp::Eq,
+                ScalarValueIr::Bool(true),
+            )))
+            .unwrap(),
+            Query::AttributeEquals {
+                field: "title".into(),
+                value: VespaValue::Boolean(true),
+            }
         );
         assert!(lower_filter(&FilterIr::Comparison(ComparisonIr::new(
             price,
             ComparisonOp::Gt,
-            ScalarValueIr::Float64(1.0),
+            ScalarValueIr::Float64(f64::NAN),
         )))
         .is_err());
     }
@@ -963,7 +1195,271 @@ mod tests {
         }
     }
 
-    fn lower_search_request_for_test(request: SearchRequestIr) -> PortableError {
-        validate_search_request(&request).unwrap_err()
+    #[test]
+    fn analyze_language_is_explicitly_supported_or_rejected() {
+        let english = LanguageHint::parse("en-US").unwrap();
+        assert!(analysis_options(Some(&english)).is_ok());
+
+        let french = LanguageHint::parse("fr").unwrap();
+        let error = analysis_options(Some(&french)).unwrap_err();
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "language_not_supported");
+    }
+
+    #[test]
+    fn search_validation_supports_facets_and_rejects_highlighting_precisely() {
+        let title = field("title");
+        let search_fields = vec![SearchFieldIr::new(
+            title.clone(),
+            SearchFieldWeight::new(1.0).unwrap(),
+        )];
+        let facets = SearchRequestIr::new(
+            QueryIr::Text("fox".into()),
+            search_fields.clone(),
+            None,
+            Vec::new(),
+            vec![FacetIr::new(
+                title.clone(),
+                10,
+                searchkernel_ir::FacetSort::CountDesc,
+            )],
+            RankingPolicyIr::DefaultRelevanceV1,
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        assert!(validate_search_request(&facets).is_ok());
+
+        let highlighting = SearchRequestIr::new(
+            QueryIr::Text("fox".into()),
+            search_fields,
+            None,
+            Vec::new(),
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Requested {
+                fields: vec![title],
+            },
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        let error = validate_search_request(&highlighting).unwrap_err();
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(
+            error.details[0].code,
+            "highlighting_native_result_unavailable"
+        );
+    }
+
+    #[test]
+    fn ranking_and_ordered_comparisons_preserve_supported_boundaries() {
+        assert_eq!(
+            ranking_profile(RankingPolicyIr::DefaultRelevanceV1),
+            Ok("default")
+        );
+        assert_eq!(
+            ranking_profile(RankingPolicyIr::Bm25).unwrap_err().code,
+            searchkernel_ir::ErrorCode::Unsupported
+        );
+
+        let price = field("price");
+        for (operation, expected) in [
+            (
+                ComparisonOp::Lt,
+                Query::AttributeRange {
+                    field: "price".into(),
+                    lower: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                    upper: searchkernel_vespa_engine::AttributeBound::Excluded(
+                        VespaValue::Integer(10),
+                    ),
+                },
+            ),
+            (
+                ComparisonOp::Lte,
+                Query::AttributeRange {
+                    field: "price".into(),
+                    lower: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                    upper: searchkernel_vespa_engine::AttributeBound::Included(
+                        VespaValue::Integer(10),
+                    ),
+                },
+            ),
+            (
+                ComparisonOp::Gt,
+                Query::AttributeRange {
+                    field: "price".into(),
+                    lower: searchkernel_vespa_engine::AttributeBound::Excluded(
+                        VespaValue::Integer(10),
+                    ),
+                    upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                },
+            ),
+            (
+                ComparisonOp::Gte,
+                Query::AttributeRange {
+                    field: "price".into(),
+                    lower: searchkernel_vespa_engine::AttributeBound::Included(
+                        VespaValue::Integer(10),
+                    ),
+                    upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                },
+            ),
+        ] {
+            assert_eq!(
+                lower_comparison(&ComparisonIr::new(
+                    price.clone(),
+                    operation,
+                    ScalarValueIr::Int64(10),
+                ))
+                .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_empty_projection_returns_no_document_fields() {
+        let document = Document::new("doc-1")
+            .field(
+                "title",
+                FieldValue::Scalar(ScalarValue::String("fox".into())),
+            )
+            .field("price", FieldValue::Scalar(ScalarValue::Integer(10)));
+        assert!(project_document(&document, &[]).is_empty());
+        assert_eq!(
+            project_document(&document, &[field("title")]),
+            BTreeMap::from([("title".into(), Value::String("fox".into()))])
+        );
+    }
+
+    #[test]
+    fn empty_projection_lowers_to_no_summary_fields() {
+        let request = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+            Vec::new(),
+            None,
+        );
+        let language = analysis_options(request.language()).unwrap();
+        let query = lower_search_query(&request, language).unwrap();
+        let lowered = lower_search_options(&request, query, language).unwrap();
+
+        assert_eq!(
+            lowered.summary,
+            searchkernel_vespa_engine::SummaryRequest::None
+        );
+    }
+
+    #[test]
+    fn every_expressible_search_option_is_lowered_to_the_generic_m_api() {
+        let title = field("title");
+        let description = field("description");
+        let brand = field("brand");
+        let price = field("price");
+        let search_fields = vec![
+            SearchFieldIr::new(title.clone(), SearchFieldWeight::new(1.0).unwrap()),
+            SearchFieldIr::new(description.clone(), SearchFieldWeight::new(1.0).unwrap()),
+        ];
+        let sorts = vec![
+            SortIr::new(price.clone(), SortDirection::Asc, MissingPlacement::First),
+            SortIr::new(brand.clone(), SortDirection::Desc, MissingPlacement::Last),
+        ];
+        let facets = [
+            FacetIr::new(brand.clone(), 7, searchkernel_ir::FacetSort::CountDesc),
+            FacetIr::new(price.clone(), 6, searchkernel_ir::FacetSort::CountAsc),
+            FacetIr::new(title.clone(), 5, searchkernel_ir::FacetSort::ValueAsc),
+            FacetIr::new(
+                description.clone(),
+                4,
+                searchkernel_ir::FacetSort::ValueDesc,
+            ),
+        ];
+        let request = SearchRequestIr::new(
+            QueryIr::Text("wireless headphones".into()),
+            search_fields,
+            Some(FilterIr::Comparison(ComparisonIr::new(
+                price.clone(),
+                ComparisonOp::Gte,
+                ScalarValueIr::Int64(10),
+            ))),
+            sorts,
+            facets.to_vec(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            3,
+            2,
+            searchkernel_ir::ProjectionIr::new(vec![title.clone(), brand.clone()]),
+            HighlightingIr::Disabled,
+            Some(LanguageHint::parse("en-US").unwrap()),
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+
+        validate_search_request(&request).unwrap();
+        let language = analysis_options(request.language()).unwrap();
+        let query = lower_search_query(&request, language).unwrap();
+        let lowered = lower_search_options(&request, query.clone(), language).unwrap();
+        assert_eq!(lowered.query, query);
+        assert_eq!(lowered.source, searchkernel_vespa_engine::Source::All);
+        assert_eq!(lowered.rank_profile, "default");
+        assert_eq!(lowered.limit, 3);
+        assert_eq!(lowered.offset, 2);
+        assert_eq!(lowered.language, language);
+        assert_eq!(
+            lowered.sort,
+            vec![
+                SortField::ascending("price").missing_first(),
+                SortField::descending("brand").missing_last(),
+            ]
+        );
+        assert_eq!(
+            lowered.summary,
+            searchkernel_vespa_engine::SummaryRequest::Fields(
+                vec!["title".into(), "brand".into(),]
+            )
+        );
+
+        let expected_orders = [
+            searchkernel_vespa_engine::GroupingOrder::CountDescending,
+            searchkernel_vespa_engine::GroupingOrder::CountAscending,
+            searchkernel_vespa_engine::GroupingOrder::ValueAscending,
+            searchkernel_vespa_engine::GroupingOrder::ValueDescending,
+        ];
+        for (facet, expected_order) in facets.iter().zip(expected_orders) {
+            let grouping = lower_facet_grouping(query.clone(), facet);
+            assert_eq!(grouping.query, query);
+            assert_eq!(grouping.group_by, facet.field().as_str());
+            assert_eq!(grouping.max_groups, Some(facet.limit()));
+            assert_eq!(grouping.order, expected_order);
+            assert!(grouping.aggregations.is_empty());
+        }
+    }
+
+    #[test]
+    fn unsupported_search_options_have_stable_narrow_codes() {
+        let weighted = request(
+            vec![SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(2.0).unwrap(),
+            )],
+            Vec::new(),
+            None,
+        );
+        let error = validate_search_request(&weighted).unwrap_err();
+        assert_eq!(error.details[0].code, "ranking_weights_not_supported");
+
+        assert_eq!(
+            ranking_profile(RankingPolicyIr::Bm25).unwrap_err().details[0].code,
+            "bm25_ranking_not_supported"
+        );
     }
 }

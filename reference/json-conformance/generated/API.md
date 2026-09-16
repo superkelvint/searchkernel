@@ -5,6 +5,10 @@
 Canonical JSON uses symbolic one-key unions, decimal strings for int64/uint64,
 and base64 strings for bytes.
 
+The generated client provides synchronous `Client`/`Transport` and
+runtime-neutral asynchronous `AsyncClient`/`AsyncTransport` surfaces.
+Both surfaces use the same canonical operations and portable errors.
+
 Operations:
 
 - insert

@@ -4,6 +4,7 @@ use std::fmt;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorCode {
     InvalidArgument,
     NotFound,
@@ -27,6 +28,7 @@ pub struct ErrorDetail {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 /// An error returned by the public Search Kernel API.
 pub enum Error {
     Search {

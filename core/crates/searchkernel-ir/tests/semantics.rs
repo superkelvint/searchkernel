@@ -731,6 +731,86 @@ fn model_validators_cover_boundary_values() {
 }
 
 #[test]
+fn model_accessors_and_error_display_preserve_owned_values() {
+    let field_name = FieldName::parse("title").unwrap();
+    let capabilities = FieldCapabilities::new(true, true, false, true, false);
+    assert!(capabilities.stored());
+    assert!(capabilities.searchable());
+    assert!(!capabilities.filterable());
+    assert!(capabilities.sortable());
+    assert!(!capabilities.facetable());
+
+    let field = FieldIr::new(
+        field_name.clone(),
+        FieldKind::Text,
+        FieldCardinality::Single,
+        Some(AnalyzerIdentity::StandardV1),
+        capabilities,
+    );
+    assert_eq!(field.name().as_str(), "title");
+    assert_eq!(field.kind(), FieldKind::Text);
+    assert_eq!(field.cardinality(), FieldCardinality::Single);
+    assert_eq!(field.analyzer(), Some(AnalyzerIdentity::StandardV1));
+    assert_eq!(field.capabilities(), &capabilities);
+
+    let weight = SearchFieldWeight::new(2.5).unwrap();
+    let search_field = SearchFieldIr::new(field_name.clone(), weight);
+    assert_eq!(search_field.field().as_str(), "title");
+    assert_eq!(search_field.weight().get(), 2.5);
+
+    let definition = IndexDefinitionIr::new(
+        Some(IndexName::parse("products").unwrap()),
+        vec![field],
+        vec![search_field],
+        RankingPolicyIr::Bm25,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    assert_eq!(definition.name().unwrap().as_str(), "products");
+    assert_eq!(definition.fields().len(), 1);
+    assert_eq!(definition.default_search_fields().len(), 1);
+    assert_eq!(definition.default_ranking(), RankingPolicyIr::Bm25);
+    assert_eq!(definition.default_prefix_policy(), PrefixPolicy::Disabled);
+    assert_eq!(definition.default_typo_policy(), TypoPolicy::Disabled);
+
+    let sort = SortIr::new(
+        field_name.clone(),
+        SortDirection::Desc,
+        MissingPlacement::Last,
+    );
+    assert_eq!(sort.field().as_str(), "title");
+    assert_eq!(sort.direction(), SortDirection::Desc);
+    assert_eq!(sort.missing(), MissingPlacement::Last);
+    let facet = FacetIr::new(field_name.clone(), 7, FacetSort::ValueDesc);
+    assert_eq!(facet.field().as_str(), "title");
+    assert_eq!(facet.limit(), 7);
+    assert_eq!(facet.sort(), FacetSort::ValueDesc);
+    let comparison = ComparisonIr::new(
+        field_name.clone(),
+        ComparisonOp::Gte,
+        ScalarValueIr::Int64(42),
+    );
+    assert_eq!(comparison.field().as_str(), "title");
+    assert_eq!(comparison.op(), ComparisonOp::Gte);
+    assert_eq!(comparison.value(), &ScalarValueIr::Int64(42));
+    let range = RangeIr::new(field_name, Some(ScalarValueIr::Int64(1)), None, true, false);
+    assert_eq!(range.lower(), Some(&ScalarValueIr::Int64(1)));
+    assert!(range.upper().is_none());
+    assert!(range.include_lower());
+    assert!(!range.include_upper());
+
+    let error = PortableError::new(ErrorCode::Conflict, "conflict").with_detail(
+        "duplicate",
+        Some("document.id"),
+        "document already exists",
+    );
+    assert_eq!(error.to_string(), "conflict");
+    assert_eq!(error.details.len(), 1);
+    assert_eq!(error.details[0].path.as_deref(), Some("document.id"));
+}
+
+#[test]
 fn schema_defaults_cover_all_field_kinds() {
     let cases = [
         (
@@ -1346,7 +1426,11 @@ fn reverse_encoding_covers_ir_variants_and_error_codes() {
                 true,
             )),
         ])),
-        vec![],
+        vec![SortIr::new(
+            names[2].clone(),
+            SortDirection::Asc,
+            MissingPlacement::Last,
+        )],
         vec![],
         RankingPolicyIr::DefaultRelevanceV1,
         20,
@@ -1366,6 +1450,11 @@ fn reverse_encoding_covers_ir_variants_and_error_codes() {
     assert_eq!(
         encoded.filter().unwrap().expr_type(),
         api::FilterExprKind::FilterOr
+    );
+    assert_eq!(encoded.sort().unwrap().len(), 1);
+    assert_eq!(
+        encoded.sort().unwrap().get(0).missing().unwrap().value(),
+        api::MissingPlacement::Last
     );
 
     for code in [

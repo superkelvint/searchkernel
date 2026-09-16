@@ -53,6 +53,12 @@ impl From<bool> for ScalarValue {
     }
 }
 
+impl IntoScalarValue for ScalarValue {
+    fn into_scalar_value(self) -> ScalarValue {
+        self
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArrayValue {
     Strings(Vec<String>),

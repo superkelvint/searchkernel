@@ -44,6 +44,7 @@ pub struct Field {
     field_type: FieldType,
     indexed: bool,
     attribute: bool,
+    fast_search: bool,
     summary: bool,
 }
 
@@ -55,6 +56,7 @@ impl Field {
             field_type,
             indexed: false,
             attribute: false,
+            fast_search: false,
             summary: false,
         }
     }
@@ -68,6 +70,12 @@ impl Field {
     /// Store this field as an attribute.
     pub fn attribute(mut self) -> Self {
         self.attribute = true;
+        self
+    }
+
+    /// Enable Vespa's fast exact lookup path for this attribute.
+    pub fn fast_search(mut self) -> Self {
+        self.fast_search = true;
         self
     }
 
@@ -233,6 +241,9 @@ impl<'a> DerivedConfig<'a> {
                 quoted(&field.name),
                 field.field_type.attribute_type()
             ));
+            if field.fast_search {
+                output.push_str(&format!("attribute[{index}].fastsearch true\n"));
+            }
         }
         output
     }

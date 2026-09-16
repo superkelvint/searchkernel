@@ -109,11 +109,32 @@ impl From<String> for Facet {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// The ranking policy used to score matching documents.
-pub enum Ranking {
+pub struct Ranking {
+    pub(crate) kind: RankingKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RankingKind {
     DefaultRelevanceV1,
     Bm25,
+}
+
+impl Ranking {
+    /// Use Search Kernel's default relevance ranking profile.
+    pub fn default_relevance_v1() -> Self {
+        Self {
+            kind: RankingKind::DefaultRelevanceV1,
+        }
+    }
+
+    /// Rank text matches with BM25.
+    pub fn bm25() -> Self {
+        Self {
+            kind: RankingKind::Bm25,
+        }
+    }
 }
 
 /// The normalized meaning of a search request after schema defaults are
@@ -138,8 +159,8 @@ pub struct InspectedQuery {
 /// The builder stores caller intent. Validation, defaults, and conversion to
 /// the backend-independent request happen when [`SearchBuilder::execute`] is
 /// called.
-pub struct SearchBuilder<'a> {
-    pub(crate) index: &'a Index,
+pub struct SearchBuilder {
+    pub(crate) index: Index,
     pub(crate) query: String,
     pub(crate) search_fields: Option<Vec<crate::schema::SearchField>>,
     pub(crate) filters: Vec<Filter>,
@@ -153,8 +174,8 @@ pub struct SearchBuilder<'a> {
     pub(crate) offset: Option<u32>,
 }
 
-impl<'a> SearchBuilder<'a> {
-    pub(crate) fn new(index: &'a Index, query: impl Into<String>) -> Self {
+impl SearchBuilder {
+    pub(crate) fn new(index: Index, query: impl Into<String>) -> Self {
         Self {
             index,
             query: query.into(),
@@ -264,7 +285,7 @@ impl<'a> SearchBuilder<'a> {
     }
 }
 
-impl std::fmt::Debug for SearchBuilder<'_> {
+impl std::fmt::Debug for SearchBuilder {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("SearchBuilder")

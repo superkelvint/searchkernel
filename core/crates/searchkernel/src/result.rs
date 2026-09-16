@@ -3,6 +3,7 @@ use crate::error::{Error, Result};
 use searchkernel_ir::{self as core, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 /// Describes whether a hit count is exact or a lower bound.
 pub enum TotalHitsRelation {
     Exact,

@@ -168,4 +168,56 @@ mod tests {
         assert_eq!(allocation_id, 0);
         assert_eq!(sentinel, 0x5a);
     }
+
+    #[test]
+    fn every_missing_output_pointer_is_rejected_without_reading_outputs() {
+        let mut len = usize::MAX;
+        let mut allocation_id = u64::MAX;
+        // SAFETY: the non-null output pointers are valid writable storage.
+        let result = unsafe {
+            call(
+                0,
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                &mut len,
+                &mut allocation_id,
+            )
+        };
+        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert_eq!(len, 0);
+        assert_eq!(allocation_id, 0);
+
+        let mut data = ptr::null_mut();
+        let mut allocation_id_2 = u64::MAX;
+        // SAFETY: the non-null output pointers are valid writable storage.
+        let result = unsafe {
+            call(
+                0,
+                ptr::null(),
+                0,
+                &mut data,
+                ptr::null_mut(),
+                &mut allocation_id_2,
+            )
+        };
+        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert!(data.is_null());
+        assert_eq!(allocation_id_2, 0);
+
+        data = ptr::null_mut();
+        let mut len_3 = usize::MAX;
+        // SAFETY: the non-null output pointers are valid writable storage.
+        let result = unsafe { call(0, ptr::null(), 0, &mut data, &mut len_3, ptr::null_mut()) };
+        assert_eq!(result, status::INVALID_ARGUMENT);
+        assert!(data.is_null());
+        assert_eq!(len_3, 0);
+    }
+
+    #[test]
+    fn invalid_handle_and_close_statuses_are_stable() {
+        assert_eq!(abi_version(), crate::SK_ABI_VERSION);
+        assert_eq!(close(0), status::INVALID_HANDLE);
+        assert_eq!(close(u64::MAX), status::INVALID_HANDLE);
+    }
 }

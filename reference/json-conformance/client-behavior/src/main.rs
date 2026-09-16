@@ -5,10 +5,14 @@ use searchkernel_client::model::{
     QueryExpr, RankingPolicy, SearchField, SearchFieldSelection, SearchRequest, SortExpr,
     UpsertRequest, Value, ComparisonOp, FacetSort, MissingPlacement, SortDirection,
 };
-use searchkernel_client::{Client, ClientError, Transport};
+use searchkernel_client::{
+    AsyncClient, AsyncTransport, Client, ClientError, Transport,
+};
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Wake, Waker};
 
 #[allow(warnings)]
 #[path = "../../../../core/crates/searchkernel-ffi/generated/mod.rs"]
@@ -54,6 +58,32 @@ impl Transport for ScriptedTransport {
         let mut state = self.0.lock().unwrap();
         state.requests.push(request.to_vec());
         Ok(state.response.clone())
+    }
+}
+
+impl AsyncTransport for ScriptedTransport {
+    type Error = TestError;
+
+    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        let mut state = self.0.lock().unwrap();
+        state.requests.push(request.to_vec());
+        Ok(state.response.clone())
+    }
+}
+
+struct NoopWaker;
+
+impl Wake for NoopWaker {
+    fn wake(self: Arc<Self>) {}
+}
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    let waker = Waker::from(Arc::new(NoopWaker));
+    let mut context = Context::from_waker(&waker);
+    let mut future = Box::pin(future);
+    match future.as_mut().poll(&mut context) {
+        Poll::Ready(value) => value,
+        Poll::Pending => panic!("scripted async transport unexpectedly suspended"),
     }
 }
 
@@ -401,7 +431,136 @@ macro_rules! request_shape_case {
     }};
 }
 
+macro_rules! async_payload_decode_case {
+    ($method:ident, $request:ty, $kind:ident, $response_builder:ident) => {{
+        let transport_a = ScriptedTransport::new($response_builder("async-alpha"));
+        let client_a = AsyncClient::new(transport_a.clone());
+        let result_a = block_on(client_a.$method(<$request>::default())).unwrap_or_else(|_| {
+            panic!(
+                "async {} failed to decode first matching SKRS",
+                stringify!($method)
+            )
+        });
+        assert_ne!(
+            result_a,
+            Default::default(),
+            "async {} returned Default instead of decoding its SKRS payload",
+            stringify!($method)
+        );
+        assert_eq!(
+            request_kind(&transport_a.take_single_request()),
+            wire::RequestPayload::$kind,
+            "wrong async SKRQ for {}",
+            stringify!($method)
+        );
+
+        let transport_b = ScriptedTransport::new($response_builder("async-beta"));
+        let client_b = AsyncClient::new(transport_b.clone());
+        let result_b = block_on(client_b.$method(<$request>::default())).unwrap_or_else(|_| {
+            panic!(
+                "async {} failed to decode second matching SKRS",
+                stringify!($method)
+            )
+        });
+        assert_ne!(
+            result_a,
+            result_b,
+            "async {} result does not depend on the SKRS payload",
+            stringify!($method)
+        );
+        assert_eq!(
+            request_kind(&transport_b.take_single_request()),
+            wire::RequestPayload::$kind,
+            "wrong async SKRQ for second {} call",
+            stringify!($method)
+        );
+    }};
+}
+
+fn async_conformance() {
+    async_payload_decode_case!(
+        insert,
+        InsertRequest,
+        SearchKernel_V1_InsertRequest,
+        insert_response
+    );
+    async_payload_decode_case!(
+        upsert,
+        UpsertRequest,
+        SearchKernel_V1_UpsertRequest,
+        upsert_response
+    );
+    async_payload_decode_case!(
+        patch,
+        PatchRequest,
+        SearchKernel_V1_PatchRequest,
+        patch_response
+    );
+    async_payload_decode_case!(
+        delete,
+        DeleteRequest,
+        SearchKernel_V1_DeleteRequest,
+        delete_response
+    );
+    async_payload_decode_case!(get, GetRequest, SearchKernel_V1_GetRequest, get_response);
+    async_payload_decode_case!(
+        search,
+        SearchRequest,
+        SearchKernel_V1_SearchRequest,
+        search_response
+    );
+    async_payload_decode_case!(
+        analyze,
+        AnalyzeRequest,
+        SearchKernel_V1_AnalyzeRequest,
+        analyze_response
+    );
+    async_payload_decode_case!(
+        describe,
+        DescribeRequest,
+        SearchKernel_V1_DescribeRequest,
+        describe_response
+    );
+    async_payload_decode_case!(
+        inspect_query,
+        InspectQueryRequest,
+        SearchKernel_V1_InspectQueryRequest,
+        inspect_query_response
+    );
+
+    let transport = ScriptedTransport::new(fixture("error-00.skrs"));
+    let client = AsyncClient::new(transport.clone());
+    let error = block_on(client.search(SearchRequest::default())).unwrap_err();
+    assert!(matches!(error, ClientError::Portable(_)));
+    assert_eq!(
+        request_kind(&transport.take_single_request()),
+        wire::RequestPayload::SearchKernel_V1_SearchRequest
+    );
+
+    let transport = ScriptedTransport::new(insert_response("async-wrong-operation"));
+    let client = AsyncClient::new(transport.clone());
+    let error = block_on(client.search(SearchRequest::default())).unwrap_err();
+    assert!(matches!(error, ClientError::Protocol(_)));
+    let _ = transport.take_single_request();
+
+    struct FailingAsyncTransport;
+
+    impl AsyncTransport for FailingAsyncTransport {
+        type Error = TestError;
+
+        async fn call(&self, _: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Err(TestError)
+        }
+    }
+
+    let client = AsyncClient::new(FailingAsyncTransport);
+    let error = block_on(client.search(SearchRequest::default())).unwrap_err();
+    assert!(matches!(error, ClientError::Transport(_)));
+}
+
 fn main() {
+    async_conformance();
+
     payload_decode_case!(
         insert,
         InsertRequest,

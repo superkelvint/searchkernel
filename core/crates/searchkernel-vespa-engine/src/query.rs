@@ -99,8 +99,12 @@ impl Query {
     }
 
     /// Parse the supported YQL subset into the same model used by typed callers.
+    ///
+    /// This intentionally returns only the expression. Use
+    /// [`crate::SearchRequest::from_yql`] when the YQL source selector must be
+    /// retained for engine-side validation.
     pub fn from_yql(yql: &str) -> Result<Self> {
-        let query = yql::parse(yql)?.query;
+        let query = parse_yql(yql)?.query;
         validate_query(&query)?;
         Ok(query)
     }
@@ -801,7 +805,7 @@ mod yql {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_yql, validate_query, Query, RangeBound, MAX_QUERY_DEPTH, MAX_QUERY_NODES,
+        parse_yql, validate_query, Query, RangeBound, Value, MAX_QUERY_DEPTH, MAX_QUERY_NODES,
         MAX_YQL_BYTES,
     };
 
@@ -1094,5 +1098,56 @@ mod tests {
                 upper: RangeBound::Included(-1)
             }
         );
+    }
+
+    #[test]
+    fn typed_query_validation_rejects_empty_fields_and_nonfinite_values() {
+        let invalid_queries = [
+            Query::Term {
+                field: String::new(),
+                text: "fox".into(),
+            },
+            Query::Phrase {
+                field: "title".into(),
+                text: String::new(),
+            },
+            Query::Equals {
+                field: String::new(),
+                value: 1,
+            },
+            Query::Exists {
+                field: String::new(),
+            },
+            Query::Range {
+                field: String::new(),
+                lower: RangeBound::Unbounded,
+                upper: RangeBound::Unbounded,
+            },
+            Query::AttributeEquals {
+                field: String::new(),
+                value: Value::String("fox".into()),
+            },
+            Query::AttributeEquals {
+                field: "price".into(),
+                value: Value::Float(f64::NAN),
+            },
+            Query::AttributeRange {
+                field: String::new(),
+                lower: super::AttributeBound::Unbounded,
+                upper: super::AttributeBound::Unbounded,
+            },
+        ];
+        for query in invalid_queries {
+            assert!(
+                validate_query(&query).is_err(),
+                "accepted invalid query: {query:?}"
+            );
+        }
+
+        assert!(validate_query(&Query::AttributeEquals {
+            field: "price".into(),
+            value: Value::Float(1.5),
+        })
+        .is_ok());
     }
 }

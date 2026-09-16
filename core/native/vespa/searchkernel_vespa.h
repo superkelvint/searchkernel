@@ -108,7 +108,7 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
 /* This ABI revision reflects removal of all public aggregate structs. */
-#define SK_NATIVE_ABI_VERSION 4U
+#define SK_NATIVE_ABI_VERSION 5U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 

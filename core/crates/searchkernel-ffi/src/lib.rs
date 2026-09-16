@@ -119,14 +119,25 @@ pub extern "C" fn sk_close(handle: SkHandle) -> SkStatus {
 #[cfg(feature = "production")]
 fn lifecycle_status(error: &searchkernel::Error) -> SkStatus {
     match error {
-        searchkernel::Error::AlreadyExists(_) => SK_STATUS_ALREADY_EXISTS,
-        searchkernel::Error::NotFound(_) => SK_STATUS_NOT_FOUND,
-        searchkernel::Error::CorruptIndex(_) => SK_STATUS_CORRUPT_INDEX,
-        searchkernel::Error::IncompatibleIndex(_) => SK_STATUS_INCOMPATIBLE_INDEX,
-        searchkernel::Error::Portable(_)
-        | searchkernel::Error::Serialization(_)
-        | searchkernel::Error::Deserialization(_)
-        | searchkernel::Error::Infrastructure(_) => SK_STATUS_INTERNAL,
+        searchkernel::Error::Search { code, .. } => match code {
+            searchkernel::ErrorCode::InvalidArgument
+            | searchkernel::ErrorCode::FailedPrecondition => SK_STATUS_INVALID_ARGUMENT,
+            searchkernel::ErrorCode::AlreadyExists => SK_STATUS_ALREADY_EXISTS,
+            searchkernel::ErrorCode::NotFound => SK_STATUS_NOT_FOUND,
+            searchkernel::ErrorCode::Unsupported => SK_STATUS_UNSUPPORTED_OPERATION,
+            searchkernel::ErrorCode::CorruptIndex => SK_STATUS_CORRUPT_INDEX,
+            searchkernel::ErrorCode::IncompatibleIndex => SK_STATUS_INCOMPATIBLE_INDEX,
+            searchkernel::ErrorCode::ResourceExhausted
+            | searchkernel::ErrorCode::Conflict
+            | searchkernel::ErrorCode::Internal
+            | searchkernel::ErrorCode::Unavailable => SK_STATUS_INTERNAL,
+            _ => SK_STATUS_INTERNAL,
+        },
+        searchkernel::Error::Serialization(_) => SK_STATUS_INVALID_ARGUMENT,
+        searchkernel::Error::Deserialization(_) | searchkernel::Error::Infrastructure(_) => {
+            SK_STATUS_INTERNAL
+        }
+        _ => SK_STATUS_INTERNAL,
     }
 }
 
@@ -311,4 +322,295 @@ pub unsafe extern "C" fn sk_buffer_free(data: *mut u8, allocation_id: u64) {
     // SAFETY: the function's caller is responsible for the documented pointer
     // and token validity requirements.
     unsafe { abi::buffer_free(data, allocation_id) }
+}
+
+#[cfg(all(test, feature = "production"))]
+mod lifecycle_tests {
+    use super::*;
+    use searchkernel_ir::api;
+    use std::ffi::CString;
+    use std::path::PathBuf;
+
+    fn definition_bytes() -> Vec<u8> {
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let name = builder.create_string("title");
+        let stored = api::OptionalBool::new(true);
+        let searchable = api::OptionalBool::new(true);
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(name),
+                kind: api::FieldKind::Text,
+                cardinality: api::FieldCardinality::Single,
+                stored: Some(&stored),
+                searchable: Some(&searchable),
+                ..Default::default()
+            },
+        );
+        let fields = builder.create_vector(&[field]);
+        let definition = api::IndexDefinition::create(
+            &mut builder,
+            &api::IndexDefinitionArgs {
+                fields: Some(fields),
+                ..Default::default()
+            },
+        );
+        builder.finish(definition, None);
+        builder.finished_data().to_vec()
+    }
+
+    fn temporary_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "searchkernel-ffi-lifecycle-{label}-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn lifecycle_status_preserves_public_status_categories() {
+        let cases = [
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::AlreadyExists, "exists"),
+                SK_STATUS_ALREADY_EXISTS,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::NotFound, "missing"),
+                SK_STATUS_NOT_FOUND,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::CorruptIndex, "corrupt"),
+                SK_STATUS_CORRUPT_INDEX,
+            ),
+            (
+                searchkernel::Error::search(
+                    searchkernel::ErrorCode::IncompatibleIndex,
+                    "incompatible",
+                ),
+                SK_STATUS_INCOMPATIBLE_INDEX,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::InvalidArgument, "invalid"),
+                SK_STATUS_INVALID_ARGUMENT,
+            ),
+            (
+                searchkernel::Error::search(
+                    searchkernel::ErrorCode::FailedPrecondition,
+                    "precondition",
+                ),
+                SK_STATUS_INVALID_ARGUMENT,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::AlreadyExists, "exists"),
+                SK_STATUS_ALREADY_EXISTS,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::NotFound, "missing"),
+                SK_STATUS_NOT_FOUND,
+            ),
+            (
+                searchkernel::Error::search(searchkernel::ErrorCode::Unsupported, "unsupported"),
+                SK_STATUS_UNSUPPORTED_OPERATION,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(lifecycle_status(&error), expected);
+        }
+
+        for code in [
+            searchkernel::ErrorCode::Conflict,
+            searchkernel::ErrorCode::Internal,
+            searchkernel::ErrorCode::Unavailable,
+            searchkernel::ErrorCode::ResourceExhausted,
+        ] {
+            assert_eq!(
+                lifecycle_status(&searchkernel::Error::search(code, "internal")),
+                SK_STATUS_INTERNAL
+            );
+        }
+        assert_eq!(
+            lifecycle_status(&searchkernel::Error::Serialization("bad document".into())),
+            SK_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            lifecycle_status(&searchkernel::Error::Deserialization("bad result".into())),
+            SK_STATUS_INTERNAL
+        );
+        assert_eq!(
+            lifecycle_status(&searchkernel::Error::Infrastructure("native".into())),
+            SK_STATUS_INTERNAL
+        );
+    }
+
+    #[test]
+    fn lifecycle_path_validates_c_strings() {
+        assert_eq!(
+            lifecycle_path(std::ptr::null()).unwrap_err(),
+            "path must not be null"
+        );
+
+        let empty = CString::new("").unwrap();
+        assert_eq!(
+            lifecycle_path(empty.as_ptr()).unwrap_err(),
+            "path must not be empty"
+        );
+
+        let valid = CString::new("/tmp/searchkernel-test").unwrap();
+        assert_eq!(
+            lifecycle_path(valid.as_ptr()).unwrap(),
+            PathBuf::from("/tmp/searchkernel-test")
+        );
+
+        let invalid_utf8 = [0xff_u8, 0];
+        let error = lifecycle_path(invalid_utf8.as_ptr().cast()).unwrap_err();
+        assert_eq!(error, "path must be valid UTF-8");
+    }
+
+    #[test]
+    fn lifecycle_error_output_is_truncated_and_terminated() {
+        let mut output = [0xa5_u8; 8];
+        write_lifecycle_error("abcdefghijk", output.as_mut_ptr(), output.len());
+        assert_eq!(&output, b"abcdefg\0");
+
+        write_lifecycle_error("ignored", std::ptr::null_mut(), output.len());
+        write_lifecycle_error("ignored", output.as_mut_ptr(), 0);
+    }
+
+    #[test]
+    fn lifecycle_entrypoints_zero_handles_on_argument_errors() {
+        let mut handle = u64::MAX;
+        // SAFETY: the null output pointer is explicitly covered by the ABI.
+        assert_eq!(
+            unsafe {
+                sk_create(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            },
+            SK_STATUS_INVALID_ARGUMENT
+        );
+
+        let mut error = [0_u8; 64];
+        // SAFETY: all pointers are valid for their declared roles; the null
+        // path is rejected before any native operation is attempted.
+        assert_eq!(
+            unsafe {
+                sk_create(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    &mut handle,
+                    error.as_mut_ptr(),
+                    error.len(),
+                )
+            },
+            SK_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(handle, 0);
+        assert_eq!(
+            std::ffi::CStr::from_bytes_until_nul(&error)
+                .unwrap()
+                .to_bytes(),
+            b"path must not be null"
+        );
+
+        handle = u64::MAX;
+        // SAFETY: as above, with a valid writable handle and error buffer.
+        assert_eq!(
+            unsafe {
+                sk_open(
+                    std::ptr::null(),
+                    &mut handle,
+                    error.as_mut_ptr(),
+                    error.len(),
+                )
+            },
+            SK_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(handle, 0);
+    }
+
+    #[test]
+    fn lifecycle_can_create_reopen_and_close_native_index() {
+        let path = temporary_path("success");
+        let path = CString::new(path.to_str().unwrap()).unwrap();
+        let definition = definition_bytes();
+        let mut handle = 0;
+        let mut error = [0_u8; 512];
+
+        let status = unsafe {
+            sk_create(
+                path.as_ptr(),
+                definition.as_ptr(),
+                definition.len(),
+                &mut handle,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        assert_eq!(status, SK_STATUS_OK);
+        assert_ne!(handle, 0);
+        assert_eq!(sk_close(handle), SK_STATUS_OK);
+
+        let mut reopened = 0;
+        let status = unsafe {
+            sk_open(
+                path.as_ptr(),
+                &mut reopened,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        assert_eq!(status, SK_STATUS_OK);
+        assert_ne!(reopened, 0);
+        assert_eq!(sk_close(reopened), SK_STATUS_OK);
+        std::fs::remove_dir_all(path.to_str().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn lifecycle_reports_missing_index_and_invalid_definition() {
+        let missing = temporary_path("missing");
+        let missing = CString::new(missing.to_str().unwrap()).unwrap();
+        let mut handle = u64::MAX;
+        let mut error = [0_u8; 512];
+        let status = unsafe {
+            sk_open(
+                missing.as_ptr(),
+                &mut handle,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        assert_eq!(status, SK_STATUS_NOT_FOUND);
+        assert_eq!(handle, 0);
+        assert!(std::ffi::CStr::from_bytes_until_nul(&error)
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("index not found:"));
+
+        let invalid_path = temporary_path("invalid-definition");
+        let invalid_path = CString::new(invalid_path.to_str().unwrap()).unwrap();
+        handle = u64::MAX;
+        let invalid_definition = b"not an index definition";
+        let status = unsafe {
+            sk_create(
+                invalid_path.as_ptr(),
+                invalid_definition.as_ptr(),
+                invalid_definition.len(),
+                &mut handle,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        assert_eq!(status, SK_STATUS_INVALID_ARGUMENT);
+        assert_eq!(handle, 0);
+        assert!(std::ffi::CStr::from_bytes_until_nul(&error)
+            .unwrap()
+            .to_string_lossy()
+            .contains("invalid index definition"));
+    }
 }

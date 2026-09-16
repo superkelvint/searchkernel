@@ -347,3 +347,51 @@ fn component_corpus_is_embedded_in_transport_roots_for_json_roundtrip() {
     }
     assert_eq!(component_count, 127);
 }
+
+#[test]
+fn dispatcher_rejects_bad_framing_before_backend_execution() {
+    let context = context();
+    let backend = Arc::new(RecordingBackend::new());
+    let handle_value = crate::test_support::register_index(context, backend.clone());
+    let state = handle::lookup(handle_value).expect("registered handle");
+
+    assert_eq!(
+        dispatch::dispatch(&state, b"not a FlatBuffer"),
+        Err(crate::status::INVALID_REQUEST)
+    );
+    assert!(backend.calls().is_empty());
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let query = builder.create_string("");
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let inner = builder.finished_data().to_vec();
+
+    let unsupported_protocol = crate::test_support::wrap_request_with_protocol(
+        crate::test_support::RequestKind::Search,
+        &inner,
+        crate::transport::PROTOCOL_VERSION + 1,
+    );
+    assert_eq!(
+        dispatch::dispatch(&state, &unsupported_protocol),
+        Err(crate::status::UNSUPPORTED_PROTOCOL)
+    );
+
+    for operation in [0, u8::MAX] {
+        let unknown = crate::test_support::wrap_unknown_operation(operation, &inner);
+        let expected = if operation == 0 {
+            crate::status::INVALID_REQUEST
+        } else {
+            crate::status::UNSUPPORTED_OPERATION
+        };
+        assert_eq!(dispatch::dispatch(&state, &unknown), Err(expected));
+    }
+    assert!(backend.calls().is_empty());
+    assert!(handle::close(handle_value));
+}

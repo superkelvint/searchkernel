@@ -916,38 +916,6 @@ struct AttributeUpdateState {
     std::vector<std::pair<std::string, OwnedValue>> assignments;
 };
 
-struct LocalSearchRequestState {
-    std::string rank_profile;
-    uint32_t limit = 10;
-    uint32_t offset = 0;
-    uint32_t summary_kind = SK_SUMMARY_NONE;
-    struct Sort {
-        std::string field;
-        uint32_t order = SK_SORT_ASCENDING;
-        uint32_t missing = SK_SORT_MISSING_DEFAULT;
-    };
-    std::vector<Sort> sort;
-    std::vector<std::string> summary_fields;
-    std::vector<std::pair<std::string, double>> query_features;
-    std::vector<std::pair<std::string, std::string>> rank_properties;
-};
-
-struct LocalHitState {
-    std::string id;
-    double score = 0.0;
-    std::vector<std::pair<std::string, OwnedValue>> summary;
-};
-
-struct LocalSearchResultState {
-    uint64_t total_hit_count = 0;
-    std::vector<LocalHitState> hits;
-    std::vector<std::string> match_feature_names;
-    std::vector<double> match_feature_values;
-#ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController *failpoints = nullptr;
-#endif
-};
-
 struct LocalAggregationSpec {
     uint32_t kind = 0;
     std::string field;
@@ -968,6 +936,40 @@ struct LocalGroupState {
 
 struct LocalGroupingResultState {
     std::vector<LocalGroupState> groups;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    const FailpointController *failpoints = nullptr;
+#endif
+};
+
+struct LocalSearchRequestState {
+    std::string rank_profile;
+    uint32_t limit = 10;
+    uint32_t offset = 0;
+    uint32_t summary_kind = SK_SUMMARY_NONE;
+    struct Sort {
+        std::string field;
+        uint32_t order = SK_SORT_ASCENDING;
+        uint32_t missing = SK_SORT_MISSING_DEFAULT;
+    };
+    std::vector<Sort> sort;
+    std::vector<std::string> summary_fields;
+    std::vector<std::pair<std::string, double>> query_features;
+    std::vector<std::pair<std::string, std::string>> rank_properties;
+    std::vector<LocalGroupingRequestState> groupings;
+};
+
+struct LocalHitState {
+    std::string id;
+    double score = 0.0;
+    std::vector<std::pair<std::string, OwnedValue>> summary;
+};
+
+struct LocalSearchResultState {
+    uint64_t total_hit_count = 0;
+    std::vector<LocalHitState> hits;
+    std::vector<std::string> match_feature_names;
+    std::vector<double> match_feature_values;
+    std::vector<LocalGroupingResultState> groupings;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     const FailpointController *failpoints = nullptr;
 #endif
@@ -1019,6 +1021,7 @@ class EmbeddedEngine {
     DataDirectoryLock _data_lock;
     std::string _schema_identity;
     std::string _document_type;
+    bool _legacy_state;
     std::shared_ptr<const DocumenttypesConfig> _document_types;
     std::shared_ptr<DocumentTypeRepo> _repo;
     const DocumentType *_doc_type;
@@ -1247,6 +1250,13 @@ class EmbeddedEngine {
             if (value.kind != SK_VALUE_INTEGER) {
                 throw std::invalid_argument("wrong value type for attribute: " + field_name);
             }
+            if (_legacy_state) {
+                if (value.integer < std::numeric_limits<int32_t>::min() ||
+                    value.integer > std::numeric_limits<int32_t>::max()) {
+                    throw std::invalid_argument("integer value is outside the legacy INT32 range: " + field_name);
+                }
+                return std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value.integer));
+            }
             return std::make_unique<document::LongFieldValue>(value.integer);
         }
         if (field.type == "float") {
@@ -1291,6 +1301,13 @@ class EmbeddedEngine {
         if (field.type == "integer") {
             if (value.kind != SK_VALUE_INTEGER) {
                 throw std::invalid_argument("wrong integer value type for field: " + field_name);
+            }
+            if (_legacy_state) {
+                if (value.integer < std::numeric_limits<int32_t>::min() ||
+                    value.integer > std::numeric_limits<int32_t>::max()) {
+                    throw std::invalid_argument("integer value is outside the legacy INT32 range: " + field_name);
+                }
+                return std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value.integer));
             }
             return std::make_unique<document::LongFieldValue>(value.integer);
         }
@@ -1379,6 +1396,10 @@ class EmbeddedEngine {
             case document::FieldValue::Type::LONG:
                 owned.kind = SK_VALUE_INTEGER;
                 owned.integer = value->getAsLong();
+                break;
+            case document::FieldValue::Type::INT:
+                owned.kind = SK_VALUE_INTEGER;
+                owned.integer = value->getAsInt();
                 break;
             case document::FieldValue::Type::DOUBLE:
                 owned.kind = SK_VALUE_FLOAT;
@@ -1710,7 +1731,8 @@ class EmbeddedEngine {
             require_config_value(
                 values, "rankprofile[1].fef.property[0].value",
                 "bm25(" + text_field->name + ")");
-        } else if (profile_count == 2) {
+            return;
+        } else if (legacy_attribute_profile) {
             const auto price = std::find_if(
                 manifest.fields.begin(), manifest.fields.end(),
                 [](const auto &field) { return field.name == "price" && field.type == "float" && field.attribute; });
@@ -1725,6 +1747,52 @@ class EmbeddedEngine {
                                  "vespa.rank.firstphase");
             require_config_value(values, "rankprofile[1].fef.property[0].value",
                                  "attribute(price)");
+            return;
+        }
+
+        if (profile_count == 0) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        if (text_field != manifest.fields.end() && profile_count < 2) {
+            throw std::invalid_argument("inconsistent generated configuration");
+        }
+        for (size_t index = 1; index < profile_count; ++index) {
+            const auto prefix = "rankprofile[" + std::to_string(index) + "].";
+            const auto name = config_value(values, prefix + "name");
+            validate_manifest_identifier(name, "rank profile name");
+            if (name == "default") {
+                throw std::invalid_argument("default rank profile is reserved");
+            }
+            const auto property_section = prefix + "fef.property";
+            const auto property_count = config_section_count(values, property_section.c_str());
+            if (property_count < 2) {
+                throw std::invalid_argument("rank profile must have a first-phase expression");
+            }
+            require_config_value(values, prefix + "fef.property[0].name",
+                                 "vespa.rank.firstphase");
+            if (config_value(values, prefix + "fef.property[0].value").empty()) {
+                throw std::invalid_argument("rank profile first-phase expression is empty");
+            }
+            for (size_t property = 1; property + 1 < property_count; ++property) {
+                require_config_value(values,
+                                     prefix + "fef.property[" + std::to_string(property) + "].name",
+                                     "vespa.match.feature");
+                if (config_value(values,
+                                 prefix + "fef.property[" + std::to_string(property) + "].value")
+                        .empty()) {
+                    throw std::invalid_argument("rank profile match feature expression is empty");
+                }
+            }
+            const auto script_index = property_count - 1;
+            require_config_value(
+                values,
+                prefix + "fef.property[" + std::to_string(script_index) + "].name",
+                "rankingExpression(" + name + ").rankingScript");
+            if (config_value(values,
+                             prefix + "fef.property[" + std::to_string(script_index) + "].value")
+                    .empty()) {
+                throw std::invalid_argument("rank profile ranking script is empty");
+            }
         }
     }
 
@@ -1935,19 +2003,19 @@ class EmbeddedEngine {
         return std::make_shared<DocumenttypesConfig>(builder.config());
     }
 
-    static const document::DataType *manifest_type(const std::string &type) {
+    static const document::DataType *manifest_type(const std::string &type, bool legacy) {
         if (type == "text" || type == "string") return document::DataType::STRING;
-        if (type == "integer") return document::DataType::LONG;
+        if (type == "integer") return legacy ? document::DataType::INT : document::DataType::LONG;
         if (type == "float") return document::DataType::DOUBLE;
         if (type == "boolean") return document::DataType::BOOL;
         throw std::invalid_argument("unsupported generated schema field type: " + type);
     }
 
-    static DocumentType make_document_type(const SchemaManifest &manifest) {
+    static DocumentType make_document_type(const SchemaManifest &manifest, bool legacy) {
         DocumentType type(manifest.document_type, 0);
         int32_t field_id = 1;
         for (const auto &field : manifest.fields) {
-            type.addField(document::Field(field.name, field_id++, *manifest_type(field.type)));
+            type.addField(document::Field(field.name, field_id++, *manifest_type(field.type, legacy)));
         }
         return type;
     }
@@ -1975,6 +2043,17 @@ class EmbeddedEngine {
         require_integer_field(field_name);
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
+        if (_legacy_state) {
+            if (field.getDataType().getId() != document::DataType::T_INT) {
+                throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+            }
+            if (value < std::numeric_limits<int32_t>::min() ||
+                value > std::numeric_limits<int32_t>::max()) {
+                throw std::invalid_argument("integer value is outside the legacy INT32 range: " + field_name);
+            }
+            document->setFieldValue(field, std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value)));
+            return document;
+        }
         if (field.getDataType().getId() != document::DataType::T_LONG) {
             throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
         }
@@ -1987,12 +2066,25 @@ class EmbeddedEngine {
         require_integer_field(field_name);
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
         const auto &field = _doc_type->getField(field_name);
-        if (field.getDataType().getId() != document::DataType::T_LONG) {
-            throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
+        std::unique_ptr<document::FieldValue> assigned;
+        if (_legacy_state) {
+            if (field.getDataType().getId() != document::DataType::T_INT) {
+                throw std::invalid_argument("integer operation requires an INT32 field: " + field_name);
+            }
+            if (value < std::numeric_limits<int32_t>::min() ||
+                value > std::numeric_limits<int32_t>::max()) {
+                throw std::invalid_argument("integer value is outside the legacy INT32 range: " + field_name);
+            }
+            assigned = std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value));
+        } else {
+            if (field.getDataType().getId() != document::DataType::T_LONG) {
+                throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
+            }
+            assigned = std::make_unique<document::LongFieldValue>(value);
         }
         document::FieldUpdate field_update(field);
         field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
-            std::make_unique<document::LongFieldValue>(value)));
+            std::move(assigned)));
         update->addUpdate(std::move(field_update));
         return update;
     }
@@ -2546,6 +2638,157 @@ public:
             result.boolean = value.asBool();
         } else {
             throw std::runtime_error("unsupported summary field type");
+        }
+        return result;
+    }
+
+    Grouping make_grouping(const LocalGroupingRequestState &options) const {
+        const auto &group_field = require_manifest_field(options.group_field);
+        if (!group_field.attribute) {
+            throw std::invalid_argument("field is not an attribute: " + options.group_field);
+        }
+        if (group_field.type != "string" && group_field.type != "integer") {
+            throw UnsupportedNativeError("grouping key type is not supported by the M grouping path: " + options.group_field);
+        }
+        auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
+        level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_field.name)));
+        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
+                               ? -1
+                               : static_cast<int64_t>(options.max_groups));
+        switch (options.order) {
+        case SK_GROUP_ORDER_COUNT_ASC:
+            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), true);
+            break;
+        case SK_GROUP_ORDER_COUNT_DESC:
+            level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), false);
+            break;
+        case SK_GROUP_ORDER_VALUE_ASC:
+            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), true);
+            break;
+        case SK_GROUP_ORDER_VALUE_DESC:
+            level.addOrderBy(std::make_unique<AttributeNode>(group_field.name), false);
+            break;
+        case SK_GROUP_ORDER_NONE:
+            break;
+        default:
+            throw std::invalid_argument("unsupported grouping order");
+        }
+        for (const auto &spec : options.aggregations) {
+            const auto &field = require_attribute_field(spec.field, {"integer", "float"});
+            std::unique_ptr<AggregationResult> aggregation;
+            if (spec.kind == SK_AGGREGATION_SUM) aggregation = std::make_unique<SumAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_MIN) aggregation = std::make_unique<MinAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_MAX) aggregation = std::make_unique<MaxAggregationResult>();
+            else if (spec.kind == SK_AGGREGATION_AVERAGE) aggregation = std::make_unique<AverageAggregationResult>();
+            else throw std::invalid_argument("unsupported aggregation kind");
+            aggregation->setExpression(std::make_unique<AttributeNode>(field.name));
+            level.addResult(std::move(aggregation));
+        }
+        return Grouping().setFirstLevel(0).setLastLevel(1).addLevel(std::move(level));
+    }
+
+    void set_grouping_spec(SearchRequest &request,
+                           const std::vector<LocalGroupingRequestState> &groupings) const {
+        vespalib::nbostream buffer;
+        vespalib::NBOSerializer output(buffer);
+        output << static_cast<uint32_t>(groupings.size());
+        for (const auto &options : groupings) {
+            auto grouping = make_grouping(options);
+            grouping.serialize(output);
+        }
+        request.groupSpec.assign(buffer.data(), buffer.data() + buffer.size());
+    }
+
+    LocalGroupingResultState decode_grouping(const Grouping &result_grouping,
+                                             const LocalGroupingRequestState &options) const {
+        LocalGroupingResultState result;
+        const auto &root = result_grouping.getRoot();
+        if (options.order != SK_GROUP_ORDER_NONE && root.getChildrenSize() > 1) {
+            // Vespa's grouping post-processing restores group-id order for
+            // serialization. Reapply the requested native order to the
+            // already computed groups before exposing them through the
+            // generic M result contract.
+            auto groups = root.groups();
+            auto compare_value = [](const auto *left, const auto *right) {
+                return left->cmpId(*right) < 0;
+            };
+            auto compare_count = [](const auto *left, const auto *right, bool ascending) {
+                const auto &left_result = left->getAggregationResult(0);
+                const auto &right_result = right->getAggregationResult(0);
+                const auto &left_count = static_cast<const CountAggregationResult &>(left_result);
+                const auto &right_count = static_cast<const CountAggregationResult &>(right_result);
+                if (left_count.getCount() != right_count.getCount()) {
+                    return ascending ? left_count.getCount() < right_count.getCount()
+                                     : left_count.getCount() > right_count.getCount();
+                }
+                return left->cmpId(*right) < 0;
+            };
+            switch (options.order) {
+            case SK_GROUP_ORDER_COUNT_ASC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_count(left, right, true);
+                          });
+                break;
+            case SK_GROUP_ORDER_COUNT_DESC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_count(left, right, false);
+                          });
+                break;
+            case SK_GROUP_ORDER_VALUE_ASC:
+                std::sort(groups, groups + root.getChildrenSize(), compare_value);
+                break;
+            case SK_GROUP_ORDER_VALUE_DESC:
+                std::sort(groups, groups + root.getChildrenSize(),
+                          [&](const auto *left, const auto *right) {
+                              return compare_value(right, left);
+                          });
+                break;
+            default:
+                break;
+            }
+        }
+        result.groups.reserve(root.getChildrenSize());
+        for (uint32_t index = 0; index < root.getChildrenSize(); ++index) {
+            const auto &group = root.getChild(index);
+            LocalGroupState output_group;
+            const auto &key = group.getId();
+            if (key.getClass().inherits(StringResultNode::classId)) {
+                HoldString value(key);
+                output_group.key.kind = SK_VALUE_STRING;
+                output_group.key.string = std::string(value);
+            } else if (key.getClass().inherits(Int64ResultNode::classId)) {
+                output_group.key.kind = SK_VALUE_INTEGER;
+                output_group.key.integer = key.getInteger();
+            } else {
+                throw std::runtime_error("unsupported native grouping key type");
+            }
+            const auto &count = group.getAggregationResult(0);
+            if (!count.getClass().inherits(CountAggregationResult::classId)) throw std::runtime_error("native grouping count is missing");
+            output_group.count = static_cast<const CountAggregationResult &>(count).getCount();
+            for (size_t aggregation_index = 0; aggregation_index < options.aggregations.size(); ++aggregation_index) {
+                const auto &aggregation = group.getAggregationResult(aggregation_index + 1);
+                const auto emit = [&](const auto &node) {
+                    OwnedValue value;
+                    if (node.getClass().inherits(Int64ResultNode::classId)) {
+                        value.kind = SK_VALUE_INTEGER;
+                        value.integer = node.getInteger();
+                    } else if (node.getClass().inherits(FloatResultNode::classId)) {
+                        value.kind = SK_VALUE_FLOAT;
+                        value.floating = node.getFloat();
+                    } else {
+                        throw std::runtime_error("unsupported native aggregate result type");
+                    }
+                    output_group.aggregations.push_back(std::move(value));
+                };
+                if (aggregation.getClass().inherits(SumAggregationResult::classId)) emit(static_cast<const SumAggregationResult &>(aggregation).getSum());
+                else if (aggregation.getClass().inherits(MinAggregationResult::classId)) emit(static_cast<const MinAggregationResult &>(aggregation).getMin());
+                else if (aggregation.getClass().inherits(MaxAggregationResult::classId)) emit(static_cast<const MaxAggregationResult &>(aggregation).getMax());
+                else if (aggregation.getClass().inherits(AverageAggregationResult::classId)) emit(static_cast<const AverageAggregationResult &>(aggregation).getAverage());
+                else throw std::runtime_error("unsupported native aggregation result");
+            }
+            result.groups.push_back(std::move(output_group));
         }
         return result;
     }

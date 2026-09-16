@@ -55,10 +55,16 @@ require_sdk_manifest() {
   local manifest="$1"
   local expected
   local expected_abi
+  local source_header="$REPO_ROOT/core/native/vespa/searchkernel_vespa.h"
+  local sdk_header="$SDK/include/searchkernel_vespa.h"
   expected="$(expected_vespa_revision)"
   expected_abi="$(sed -n 's/^#define SK_NATIVE_ABI_VERSION \([0-9][0-9]*\)U$/\1/p' \
     "$REFERENCE_ROOT/NATIVE_ABI_CONTRACT.h")"
   [[ -n "$expected_abi" ]] || fail_verification "native ABI version is missing from the contract"
+  [[ -f "$source_header" ]] || fail_verification "source native ABI header is missing: $source_header"
+  [[ -f "$sdk_header" ]] || fail_verification "SDK native ABI header is missing: $sdk_header"
+  cmp -s "$source_header" "$sdk_header" ||
+    fail_verification "SDK native ABI header differs from source header"
   python3 - "$manifest" "$expected" "$expected_abi" <<'PY'
 import json
 import sys

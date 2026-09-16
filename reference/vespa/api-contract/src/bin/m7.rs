@@ -27,7 +27,9 @@ fn execute(engine: &Engine) -> Result<()> {
         lower: RangeBound::Unbounded,
         upper: RangeBound::Included(20),
     };
-    let exists = Query::Exists { field: "qty".into() };
+    let exists = Query::Exists {
+        field: "qty".into(),
+    };
 
     let _: SearchResult = engine.search(SearchRequest::new(boolean))?;
     let _: SearchResult = engine.search(SearchRequest::new(equals))?;
@@ -35,10 +37,10 @@ fn execute(engine: &Engine) -> Result<()> {
     let _: SearchResult = engine.search(SearchRequest::new(unbounded))?;
     let _: SearchResult = engine.search(SearchRequest::new(exists))?;
 
-    let parsed = Query::from_yql(
+    let parsed = SearchRequest::from_yql(
         "select * from sources * where title contains \"fox\" and qty = 10",
     )?;
-    let _: SearchResult = engine.search(SearchRequest::new(parsed))?;
+    let _: SearchResult = engine.search(parsed)?;
     Ok(())
 }
 

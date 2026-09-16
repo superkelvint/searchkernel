@@ -1,12 +1,20 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// An analyzer supported by Search Kernel.
-pub enum Analyzer {
-    StandardV1,
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, PartialEq)]
+/// An analyzer configuration supported by Search Kernel.
+pub struct Analyzer {
+    pub(crate) name: String,
+    pub(crate) version: u32,
+    pub(crate) options: BTreeMap<String, serde_json::Value>,
 }
 
 impl Analyzer {
     pub fn standard_v1() -> Self {
-        Self::StandardV1
+        Self {
+            name: "standard".to_owned(),
+            version: 1,
+            options: BTreeMap::new(),
+        }
     }
 }
 
@@ -142,7 +150,7 @@ impl Field {
 
     /// Return the configured analyzer, if any.
     pub fn configured_analyzer(&self) -> Option<Analyzer> {
-        self.analyzer
+        self.analyzer.clone()
     }
 }
 

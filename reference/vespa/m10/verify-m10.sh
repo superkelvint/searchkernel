@@ -6,6 +6,7 @@ source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
 "$SCRIPT_DIR/validate_scenarios.py"
 "$SCRIPT_DIR/validate_expected.py"
+"$SCRIPT_DIR/validate_regressions.py"
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
   check_fixture_literals --keys id,text "$s" \
     "$ROOT/core/crates/searchkernel-vespa-engine/src" \
@@ -20,7 +21,12 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m10
 "$SCRIPT_DIR/check-structure.sh"
 
 cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
-require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m10-driver" sk_engine_open
+require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m10-driver" \
+  sk_engine_open \
+  sk_engine_search_generic \
+  sk_generic_search_request_add_query_feature \
+  sk_generic_search_request_add_rank_property \
+  sk_generic_search_result_match_feature_value
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 for s in "$SCRIPT_DIR"/scenarios/[0-9][0-9]-*.json; do
@@ -46,5 +52,11 @@ while read -r id expected; do
   actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m10-error -- "$ERRORS" "$id" "$cfg" "$data")"
   [[ "$actual" == "$expected" ]] || { echo "M10 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
 done < "$TMP/error-jobs"
+
+REGRESSIONS="$SCRIPT_DIR/config-regressions.json"
+mkdir -p "$TMP/config-regressions-data"
+cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" \
+  --bin searchkernel-m10-config-regressions -- \
+  "$REGRESSIONS" "$TMP/config-regressions" "$TMP/config-regressions-data"
 
 echo 'M10 verification passed'

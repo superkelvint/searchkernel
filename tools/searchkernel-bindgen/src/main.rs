@@ -1140,6 +1140,9 @@ fn generate_docs(operations: &[Operation]) -> String {
          # Search Kernel canonical client API\n\n\
          Canonical JSON uses symbolic one-key unions, decimal strings for int64/uint64,\n\
          and base64 strings for bytes.\n\n\
+         The generated client provides synchronous `Client`/`Transport` and\n\
+         runtime-neutral asynchronous `AsyncClient`/`AsyncTransport` surfaces.\n\
+         Both surfaces use the same canonical operations and portable errors.\n\n\
          Operations:\n\n",
     );
     for operation in operations {

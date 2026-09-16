@@ -10,7 +10,7 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 ffi-test-support = []
-production = ["dep:searchkernel"]
+production = ["dep:searchkernel", "searchkernel/native"]
 
 [dependencies]
 flatbuffers = "=25.12.19"

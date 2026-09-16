@@ -16,4 +16,8 @@ path = "src/bin/driver.rs"
 name = "searchkernel-m10-error"
 path = "src/bin/error.rs"
 
+[[bin]]
+name = "searchkernel-m10-config-regressions"
+path = "src/bin/config_regressions.rs"
+
 [workspace]

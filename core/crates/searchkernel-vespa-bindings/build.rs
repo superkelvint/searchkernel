@@ -11,9 +11,39 @@ fn main() {
     let sdk = fs::canonicalize(&sdk)
         .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
     let lib_dir = sdk.join("lib");
+    let source_header = manifest_dir.join("../../native/vespa/searchkernel_vespa.h");
+    let source_header = fs::canonicalize(&source_header).unwrap_or_else(|error| {
+        panic!(
+            "canonicalize source native ABI header '{}': {error}",
+            source_header.display()
+        )
+    });
+    let using_packaged_sdk =
+        env::var_os("SK_NATIVE_SDK").is_none() && env::var_os("SK_NATIVE_ABI_HEADER").is_none();
     let header = env::var_os("SK_NATIVE_ABI_HEADER")
         .map(PathBuf::from)
         .unwrap_or_else(|| sdk.join("include/searchkernel_vespa.h"));
+    if using_packaged_sdk {
+        let source_bytes = fs::read(&source_header).unwrap_or_else(|error| {
+            panic!(
+                "read source native ABI header '{}': {error}",
+                source_header.display()
+            )
+        });
+        let sdk_bytes = fs::read(&header).unwrap_or_else(|error| {
+            panic!(
+                "read packaged native ABI header '{}': {error}",
+                header.display()
+            )
+        });
+        if source_bytes != sdk_bytes {
+            panic!(
+                "packaged native ABI header '{}' differs from source header '{}'; rebuild the SDK from the source header",
+                header.display(),
+                source_header.display()
+            );
+        }
+    }
     let rust_abi =
         fs::read_to_string(manifest_dir.join("src/abi.rs")).expect("read Rust native ABI version");
     let expected_abi = rust_abi
@@ -69,6 +99,7 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
+    println!("cargo:rerun-if-changed={}", source_header.display());
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_OUTPUT");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_CHECK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");

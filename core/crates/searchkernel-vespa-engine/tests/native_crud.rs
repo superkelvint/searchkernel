@@ -1,7 +1,7 @@
 use searchkernel_vespa_engine::{
-    Aggregation, AttributeDocument, AttributeUpdate, ConfigCompiler, Document, DocumentUpdate,
-    Engine, Field, FieldType, FieldValue, LocalGroupingRequest, LocalSearchRequest, Query,
-    ScalarValue, Schema, SortField, SummaryRequest, TextDocument, TextQuery, Value,
+    Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, Field, FieldType, FieldValue,
+    GroupingOrder, GroupingRequest, LinguisticsOptions, Query, ScalarValue, Schema, SearchRequest,
+    SortField, SummaryRequest,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -136,35 +136,38 @@ fn native_local_search_and_attribute_operations_round_trip() {
         .expect("put second local search document");
 
     let result = engine
-        .search_local(
-            &LocalSearchRequest::new(Query::True)
+        .search(
+            SearchRequest::new(Query::True)
                 .limit(10)
                 .offset(0)
-                .sort_by(SortField::descending("qty"))
+                .sort(SortField::descending("qty"))
                 .summary(SummaryRequest::Fields(vec![
                     "title".to_owned(),
                     "qty".to_owned(),
                 ])),
         )
         .expect("execute local search");
-    assert_eq!(result.total_hit_count, 2);
+    assert_eq!(result.total_hits, 2);
     assert_eq!(result.hits[0].document_id, "local-2");
     assert_eq!(
-        result.hits[0].summary["title"],
-        Value::String("beta".to_owned())
+        result.hits[0].fields["title"],
+        FieldValue::Scalar(ScalarValue::String("beta".to_owned()))
     );
-    assert_eq!(result.hits[0].summary["qty"], Value::Integer(7));
+    assert_eq!(
+        result.hits[0].fields["qty"],
+        FieldValue::Scalar(ScalarValue::Integer(7))
+    );
 
     engine
-        .put_attributes(&AttributeDocument::new("local-1").field("qty", Value::Integer(11)))
+        .put(Document::new("local-1").field("qty", 11_i64))
         .expect("put attribute document");
     engine
-        .update_attributes(&AttributeUpdate::new("local-1").assign("qty", Value::Integer(13)))
+        .update(DocumentUpdate::new("local-1").assign("qty", 13_i64))
         .expect("update attribute document");
 
     let grouped = engine
-        .group_local(
-            &LocalGroupingRequest::new(Query::True, "qty")
+        .group(
+            &GroupingRequest::new(Query::True, "qty")
                 .aggregation(Aggregation::Sum("qty".to_owned()))
                 .aggregation(Aggregation::Min("qty".to_owned()))
                 .aggregation(Aggregation::Max("qty".to_owned()))
@@ -188,27 +191,15 @@ fn native_text_crud_and_query_forms_round_trip() {
         .expect("compile text config");
 
     let engine = Engine::open(&data, &config).expect("open text engine");
-    let document = TextDocument {
-        id: "text-1",
-        field: "title",
-        text: "quick fox",
-    };
-    engine.put_text(document).expect("put analyzed text");
     engine
-        .update_text(TextDocument {
-            text: "quick fox jumps",
-            ..document
-        })
+        .put(Document::new("text-1").field("title", "quick fox"))
+        .expect("put analyzed text");
+    engine
+        .update(DocumentUpdate::new("text-1").assign("title", "quick fox jumps"))
         .expect("update analyzed text");
 
     let term = engine
-        .search_text(
-            TextQuery::Term {
-                field: "title",
-                text: "jumps",
-            },
-            "default",
-        )
+        .search(SearchRequest::new(Query::term("title", "jumps")))
         .expect("search text term");
     assert_eq!(
         term.hits
@@ -219,28 +210,104 @@ fn native_text_crud_and_query_forms_round_trip() {
     );
 
     let phrase = engine
-        .search_text(
-            TextQuery::Phrase {
-                field: "title",
-                text: "quick fox",
-            },
-            "default",
-        )
+        .search(SearchRequest::new(Query::phrase("title", "quick fox")))
         .expect("search text phrase");
     assert_eq!(phrase.hits.len(), 1);
 
     let typed = engine
-        .search_query(&Query::term("title", "jumps"), "default")
+        .search(SearchRequest::new(Query::term("title", "jumps")))
         .expect("search typed query");
     let yql = engine
-        .search_yql(
-            "select * from typea where title contains \"jumps\"",
-            "default",
-        )
+        .search(SearchRequest::new(
+            Query::from_yql("select * from typea where title contains \"jumps\"")
+                .expect("parse YQL query"),
+        ))
         .expect("search YQL query");
     assert_eq!(typed, yql);
 
     engine.close().expect("close text engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
+    let config = temporary_path("generic-config");
+    let data = temporary_path("generic-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(
+            Field::new("price", FieldType::Integer)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile generic search config");
+    let engine = Engine::open(&data, &config).expect("open generic search engine");
+
+    for (id, title, category, price) in [
+        ("generic-1", "wireless alpha", "books", Some(20_i64)),
+        ("generic-2", "wireless beta", "books", Some(10_i64)),
+        ("generic-3", "wireless gamma", "games", None),
+    ] {
+        let mut document = Document::new(id)
+            .field("title", title)
+            .field("category", category);
+        if let Some(price) = price {
+            document = document.field("price", price);
+        }
+        engine.put(document).expect("put generic search document");
+    }
+
+    let sorted = engine
+        .search(
+            SearchRequest::new(Query::term("title", "wireless"))
+                .language(LinguisticsOptions::default())
+                .sort(SortField::ascending("price").missing_first())
+                .limit(1)
+                .fields(["title"]),
+        )
+        .expect("execute generic search");
+    assert_eq!(sorted.total_hits, 3);
+    assert_eq!(sorted.hits[0].document_id, "generic-3");
+
+    let count_desc = engine
+        .group(
+            &GroupingRequest::new(Query::True, "category")
+                .max_groups(1)
+                .order(GroupingOrder::CountDescending),
+        )
+        .expect("execute count-desc grouping");
+    assert_eq!(count_desc.groups.len(), 1);
+    assert_eq!(
+        count_desc.groups[0].key,
+        searchkernel_vespa_engine::Value::String("books".into())
+    );
+    assert_eq!(count_desc.groups[0].count, 2);
+
+    let value_asc = engine
+        .group(
+            &GroupingRequest::new(Query::True, "category")
+                .max_groups(2)
+                .order(GroupingOrder::ValueAscending),
+        )
+        .expect("execute value-asc grouping");
+    assert_eq!(
+        value_asc.groups[0].key,
+        searchkernel_vespa_engine::Value::String("books".into())
+    );
+    assert_eq!(
+        value_asc.groups[1].key,
+        searchkernel_vespa_engine::Value::String("games".into())
+    );
+
+    engine.close().expect("close generic search engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

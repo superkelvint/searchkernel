@@ -272,3 +272,14 @@ multi-feature-inspection
 ```
 
 Together they cover every M10 v1 target.
+
+The verifier also runs two focused engine-open configuration regressions outside
+the eight-result corpus:
+
+```text
+attribute-only schema + one custom rank profile
+text schema + custom profile named "bm25"
+```
+
+The latter confirms that `bm25` remains legal as a custom profile name; only
+`default` is reserved.

@@ -5,7 +5,7 @@ use searchkernel_client::model::{
     QueryExpr, RankingPolicy, SearchRequest, SearchResult, UpsertRequest, UpsertResult,
     Value,
 };
-use searchkernel_client::{Client, ClientError, Transport};
+use searchkernel_client::{AsyncClient, AsyncTransport, Client, ClientError, Transport};
 
 #[derive(Debug)]
 struct TestError;
@@ -20,6 +20,16 @@ impl Transport for TestTransport {
     }
 }
 
+struct TestAsyncTransport;
+
+impl AsyncTransport for TestAsyncTransport {
+    type Error = TestError;
+
+    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        Ok(request.to_vec())
+    }
+}
+
 fn assert_default<T: Default>() {}
 
 fn assert_decoded_result<T>()
@@ -28,8 +38,31 @@ where
 {
 }
 
+async fn assert_async_client_surface() {
+    let client = AsyncClient::new(TestAsyncTransport);
+
+    let _: Result<InsertResult, ClientError<TestError>> =
+        client.insert(InsertRequest::default()).await;
+    let _: Result<UpsertResult, ClientError<TestError>> =
+        client.upsert(UpsertRequest::default()).await;
+    let _: Result<PatchResult, ClientError<TestError>> =
+        client.patch(PatchRequest::default()).await;
+    let _: Result<DeleteResult, ClientError<TestError>> =
+        client.delete(DeleteRequest::default()).await;
+    let _: Result<GetResult, ClientError<TestError>> = client.get(GetRequest::default()).await;
+    let _: Result<SearchResult, ClientError<TestError>> =
+        client.search(SearchRequest::default()).await;
+    let _: Result<AnalyzeResult, ClientError<TestError>> =
+        client.analyze(AnalyzeRequest::default()).await;
+    let _: Result<DescribeResult, ClientError<TestError>> =
+        client.describe(DescribeRequest::default()).await;
+    let _: Result<InspectQueryResult, ClientError<TestError>> =
+        client.inspect_query(InspectQueryRequest::default()).await;
+}
+
 fn main() {
     let _client = Client::new(TestTransport);
+    let _ = assert_async_client_surface;
 
     let _: fn(&Client<TestTransport>, InsertRequest) -> Result<InsertResult, ClientError<TestError>> =
         Client::insert;

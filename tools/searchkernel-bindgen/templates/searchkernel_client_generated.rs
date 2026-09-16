@@ -141,6 +141,13 @@ pub mod model {
 
 pub trait Transport { type Error; fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>; }
 
+#[allow(async_fn_in_trait)]
+pub trait AsyncTransport {
+    type Error;
+
+    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
 #[derive(Debug)]
 pub enum ClientError<E> { Transport(E), Portable(model::Error), Protocol(String) }
 
@@ -161,6 +168,30 @@ impl<T: Transport> Client<T> {
     fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
         let request = request.map_err(ClientError::Protocol)?;
         let response = self.transport.call(&request).map_err(ClientError::Transport)?;
+        R::decode(operation, &response).map_err(|error| match error {
+            DecodeError::Portable(value) => ClientError::Portable(value),
+            DecodeError::Protocol(value) => ClientError::Protocol(value),
+        })
+    }
+}
+
+pub struct AsyncClient<T: AsyncTransport> { transport: T }
+
+impl<T: AsyncTransport> AsyncClient<T> {
+    pub fn new(transport: T) -> Self { Self { transport } }
+    pub async fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_insert(request)).await }
+    pub async fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_upsert(request)).await }
+    pub async fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_patch(request)).await }
+    pub async fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_delete(request)).await }
+    pub async fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_get(request)).await }
+    pub async fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_search(request)).await }
+    pub async fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_analyze(request)).await }
+    pub async fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_describe(request)).await }
+    pub async fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_inspect(request)).await }
+
+    async fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
+        let request = request.map_err(ClientError::Protocol)?;
+        let response = self.transport.call(&request).await.map_err(ClientError::Transport)?;
         R::decode(operation, &response).map_err(|error| match error {
             DecodeError::Portable(value) => ClientError::Portable(value),
             DecodeError::Protocol(value) => ClientError::Protocol(value),

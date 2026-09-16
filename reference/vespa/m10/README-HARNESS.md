@@ -18,6 +18,8 @@ oracle/run-cpp-oracle.sh
 rust-driver/
 validate_scenarios.py
 validate_expected.py
+config-regressions.json
+validate_regressions.py
 compare.py
 canonicalize.py
 check-structure.sh
@@ -30,6 +32,11 @@ The public Rust shape is additionally frozen by:
 ```text
 reference/vespa/api-contract/src/bin/m10.rs
 ```
+
+`config-regressions.json` contains focused engine-open checks for an
+attribute-only schema with one custom profile and a text schema with a custom
+profile named `bm25`. These checks are separate from the eight-result ranking
+corpus.
 
 ## Freeze boundary
 

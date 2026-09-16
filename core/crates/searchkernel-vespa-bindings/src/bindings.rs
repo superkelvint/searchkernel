@@ -44,7 +44,7 @@ pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
 pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 4;
+pub const SK_NATIVE_ABI_VERSION: u32 = 5;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {

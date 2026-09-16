@@ -116,6 +116,12 @@ pub trait Transport {
     fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
+#[allow(async_fn_in_trait)]
+pub trait AsyncTransport {
+    type Error;
+    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
 pub enum ClientError<E> {
     Transport(E),
     Portable(model::Error),
@@ -123,6 +129,8 @@ pub enum ClientError<E> {
 }
 
 pub struct Client<T: Transport> { /* ... */ }
+
+pub struct AsyncClient<T: AsyncTransport> { /* ... */ }
 
 impl<T: Transport> Client<T> {
     pub fn new(transport: T) -> Self;
@@ -146,11 +154,40 @@ impl<T: Transport> Client<T> {
     pub fn inspect_query(&self, request: model::InspectQueryRequest)
         -> Result<model::InspectQueryResult, ClientError<T::Error>>;
 }
+
+impl<T: AsyncTransport> AsyncClient<T> {
+    pub fn new(transport: T) -> Self;
+
+    pub async fn insert(&self, request: model::InsertRequest)
+        -> Result<model::InsertResult, ClientError<T::Error>>;
+    pub async fn upsert(&self, request: model::UpsertRequest)
+        -> Result<model::UpsertResult, ClientError<T::Error>>;
+    pub async fn patch(&self, request: model::PatchRequest)
+        -> Result<model::PatchResult, ClientError<T::Error>>;
+    pub async fn delete(&self, request: model::DeleteRequest)
+        -> Result<model::DeleteResult, ClientError<T::Error>>;
+    pub async fn get(&self, request: model::GetRequest)
+        -> Result<model::GetResult, ClientError<T::Error>>;
+    pub async fn search(&self, request: model::SearchRequest)
+        -> Result<model::SearchResult, ClientError<T::Error>>;
+    pub async fn analyze(&self, request: model::AnalyzeRequest)
+        -> Result<model::AnalyzeResult, ClientError<T::Error>>;
+    pub async fn describe(&self, request: model::DescribeRequest)
+        -> Result<model::DescribeResult, ClientError<T::Error>>;
+    pub async fn inspect_query(&self, request: model::InspectQueryRequest)
+        -> Result<model::InspectQueryResult, ClientError<T::Error>>;
+}
 ```
 
 Generated request models implement `Default`; semantic validity remains C2's concern.
 
 Every client operation performs exactly one `Transport::call`, emits the matching SKRQ variant, accepts the matching SKRS response, and maps portable `Error` to `ClientError::Portable`.
+
+The async client has the same operation, encoding, decoding, and error
+semantics, performing exactly one `AsyncTransport::call` per operation. The
+async trait is runtime-neutral and is intended for generic clients; this
+contract does not require an executor or make the synchronous transport
+blocking work asynchronous.
 
 ## Operation coverage
 
