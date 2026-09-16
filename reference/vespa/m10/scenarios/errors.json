@@ -1806,6 +1806,34 @@
       "expected_error": "invalid_rank_property"
     },
     {
+      "id": "reserved-matching-thread-query-feature",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {"name": "popularity", "type": "integer", "attribute": true}
+        ],
+        "rank_profiles": [
+          {"name": "query_boost", "first_phase": "query(boost)", "match_features": []}
+        ]
+      },
+      "documents": [],
+      "operation": {
+        "search": {
+          "query": {"exists": {"field": "popularity"}},
+          "rank_profile": "query_boost",
+          "query_features": [
+            {"name": "vespa.matching.numthreadspersearch", "value": 2.0}
+          ],
+          "rank_properties": [],
+          "limit": 10,
+          "offset": 0,
+          "sort": [],
+          "summary": "none"
+        }
+      },
+      "expected_error": "invalid_query_feature"
+    },
+    {
       "id": "query-feature-rank-property-collision",
       "schema": {
         "document_type": "typea",

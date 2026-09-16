@@ -401,6 +401,10 @@ void exercise_native_engine(const std::filesystem::path &data,
                                                error.data(), ERROR_CAPACITY), "local sort");
     expect_ok(sk_local_search_request_add_query_feature(local, "feature", 1.5,
                                                         error.data(), ERROR_CAPACITY), "local feature");
+    expect_invalid(sk_local_search_request_add_query_feature(
+                       local, "vespa.matching.numthreadspersearch", 2.0, error.data(),
+                       ERROR_CAPACITY),
+                   "local reserved query feature");
     expect_ok(sk_local_search_request_add_rank_property(local, "custom", "value",
                                                         error.data(), ERROR_CAPACITY), "local property");
     sk_local_search_result *local_result = nullptr;
@@ -577,6 +581,18 @@ void exercise_native_engine(const std::filesystem::path &data,
                                            error.data(), ERROR_CAPACITY), "attribute document");
     expect_ok(sk_attribute_document_add_integer(attributes, "qty", 19, error.data(), ERROR_CAPACITY),
               "attribute integer");
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    expect_ok(sk_test_failpoint_set(engine, "attribute_mutation_before_native_call", 1,
+                                    SK_TEST_FAILPOINT_ERROR, error.data(), ERROR_CAPACITY),
+              "attribute before failpoint");
+    expect(sk_engine_put_attributes(engine, attributes, error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute before failure");
+    expect_ok(sk_test_failpoint_set(engine, "attribute_mutation_after_native_call", 1,
+                                    SK_TEST_FAILPOINT_STD_EXCEPTION, error.data(), ERROR_CAPACITY),
+              "attribute after failpoint");
+    expect(sk_engine_put_attributes(engine, attributes, error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INTERNAL, "attribute after failure");
+#endif
     expect_ok(sk_engine_put_attributes(engine, attributes, error.data(), ERROR_CAPACITY),
               "attribute put");
     sk_attribute_document_destroy(attributes);

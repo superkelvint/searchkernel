@@ -220,8 +220,10 @@ The same effective property name may not be supplied through both
 
 Search Kernel reserves the low-level Vespa property
 `vespa.matching.numthreadspersearch` and supplies the deterministic value `1`
-to its embedded matcher. Callers must not set this property through
-`rank_property`; doing so is an `invalid_rank_property` error.
+to its embedded matcher. The key is reserved in the native rank-property
+namespace and callers must not set it through either `query_feature` or
+`rank_property`; doing so is an `invalid_query_feature` or
+`invalid_rank_property` error, respectively.
 
 Feature inspection returns scalar native match features. A non-scalar/data
 feature is an explicit unsupported-value error in M10 v1; it is never coerced

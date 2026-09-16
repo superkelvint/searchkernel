@@ -1408,6 +1408,11 @@ fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<(), Error> 
         if name.len() > 256 {
             return Err(Error::message("query feature name is too long"));
         }
+        if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
+            return Err(Error::message(format!(
+                "query feature '{name}' is reserved by Search Kernel"
+            )));
+        }
         if !value.is_finite() {
             return Err(Error::message("query feature value must be finite"));
         }

@@ -144,6 +144,11 @@ duplicate property name
 collision between a query feature and request rank property with the same effective rank-property key
 the Search Kernel-reserved property `vespa.matching.numthreadspersearch`
 
+The reserved key belongs to the native rank-property namespace regardless of
+which convenience API supplies it. Callers must not set it through either
+`query_feature` or `rank_property`; doing so is an `invalid_query_feature` or
+`invalid_rank_property` error, respectively.
+
 Search Kernel owns `vespa.matching.numthreadspersearch` and supplies the
 deterministic value `1` to the embedded matcher. It is not caller-configurable
 in M10 v1.

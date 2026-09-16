@@ -3343,6 +3343,9 @@ namespace {
 void add_query_feature(LocalSearchRequestState &request, const char *name, double value) {
     validate_string_size(name, MAX_SCHEMA_IDENTIFIER_BYTES, "query feature name");
     if (*name == '\0') throw std::invalid_argument("query feature name must not be empty");
+    if (std::string_view(name) == RESERVED_RANK_PROPERTY) {
+        throw std::invalid_argument("query feature is reserved by Search Kernel");
+    }
     if (!std::isfinite(value)) throw std::invalid_argument("query feature value must be finite");
     if (std::find_if(request.query_features.begin(), request.query_features.end(),
                      [name](const auto &entry) { return entry.first == name; }) !=
