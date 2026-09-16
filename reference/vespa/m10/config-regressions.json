@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "attribute-only-custom-profile",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "popularity",
+            "type": "integer",
+            "index": false,
+            "attribute": true,
+            "summary": false
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "popular",
+            "first_phase": "attribute(popularity)",
+            "match_features": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "text-custom-bm25-profile",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "index": true,
+            "attribute": false,
+            "summary": false
+          }
+        ],
+        "rank_profiles": [
+          {
+            "name": "bm25",
+            "first_phase": "bm25(title)",
+            "match_features": []
+          }
+        ]
+      }
+    }
+  ]
+}
