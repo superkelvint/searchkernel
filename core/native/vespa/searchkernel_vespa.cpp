@@ -3063,12 +3063,9 @@ public:
         auto count = std::make_unique<CountAggregationResult>();
         count->setExpression(std::make_unique<AttributeNode>(group_field.name));
         level.addAggregationResult(std::move(count));
-        // Vespa may apply maxGroups before the serialized result is decoded,
-        // while its serialized child order is not guaranteed to reflect the
-        // requested order for this direct grouping path. Collect all groups
-        // and apply the public limit after the adapter has imposed the
-        // requested deterministic order below.
-        level.setMaxGroups(-1);
+        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
+                               ? -1
+                               : static_cast<int64_t>(options.max_groups));
         switch (options.order) {
         case SK_GROUP_ORDER_COUNT_ASC:
             level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), true);
@@ -3172,58 +3169,6 @@ public:
                 else throw std::runtime_error("unsupported native aggregation result");
             }
             result.groups.push_back(std::move(output_group));
-        }
-        const auto key_less = [](const OwnedValue &left, const OwnedValue &right) {
-            if (left.kind != right.kind) return left.kind < right.kind;
-            switch (left.kind) {
-            case SK_VALUE_BOOLEAN:
-                return left.boolean < right.boolean;
-            case SK_VALUE_STRING:
-                return left.string < right.string;
-            case SK_VALUE_INTEGER:
-                return left.integer < right.integer;
-            default:
-                return false;
-            }
-        };
-        const auto compare_key = [&](const LocalGroupState &left,
-                                     const LocalGroupState &right) {
-            if (key_less(left.key, right.key)) return true;
-            if (key_less(right.key, left.key)) return false;
-            return false;
-        };
-        switch (options.order) {
-        case SK_GROUP_ORDER_COUNT_ASC:
-            std::stable_sort(result.groups.begin(), result.groups.end(),
-                             [&](const auto &left, const auto &right) {
-                                 if (left.count != right.count) return left.count < right.count;
-                                 return compare_key(left, right);
-                             });
-            break;
-        case SK_GROUP_ORDER_COUNT_DESC:
-            std::stable_sort(result.groups.begin(), result.groups.end(),
-                             [&](const auto &left, const auto &right) {
-                                 if (left.count != right.count) return left.count > right.count;
-                                 return compare_key(left, right);
-                             });
-            break;
-        case SK_GROUP_ORDER_VALUE_ASC:
-            std::stable_sort(result.groups.begin(), result.groups.end(), compare_key);
-            break;
-        case SK_GROUP_ORDER_VALUE_DESC:
-            std::stable_sort(result.groups.begin(), result.groups.end(),
-                             [&](const auto &left, const auto &right) {
-                                 return compare_key(right, left);
-                             });
-            break;
-        case SK_GROUP_ORDER_NONE:
-            break;
-        default:
-            throw std::invalid_argument("unsupported grouping order");
-        }
-        if (options.max_groups != std::numeric_limits<uint32_t>::max() &&
-            result.groups.size() > options.max_groups) {
-            result.groups.resize(options.max_groups);
         }
         return result;
     }

@@ -4,6 +4,7 @@
 mod ffi_generated;
 use flatbuffers::{root, FlatBufferBuilder};
 use std::collections::BTreeMap;
+use std::future::Future;
 use ffi_generated::search_kernel::ffi::v1 as wire;
 
 pub mod model {
@@ -139,13 +140,12 @@ pub mod model {
     pub struct InspectQueryResult { pub resolved_request: Option<SearchRequest> }
 }
 
-pub trait Transport { type Error; fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>; }
+pub trait Transport: Send + Sync { type Error; fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>; }
 
-#[allow(async_fn_in_trait)]
-pub trait AsyncTransport {
+pub trait AsyncTransport: Send + Sync {
     type Error;
 
-    async fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn call(&self, request: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
 #[derive(Debug)]

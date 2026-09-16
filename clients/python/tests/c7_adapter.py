@@ -19,7 +19,7 @@ from searchkernel import (  # noqa: E402
     InsertRequest,
     NativeTransport,
     SearchRequest,
-    request_from_json,
+    request_from_json_text,
 )
 from searchkernel.generated.client import _read_response  # noqa: E402
 
@@ -81,8 +81,7 @@ def _run_c6_corpus(library_path: str) -> None:
         raise AssertionError(f"C6 request corpus is empty: {fixture_root}")
 
     for fixture in cases:
-        envelope = json.loads(fixture.read_text(encoding="utf-8"))
-        operation, request = request_from_json(envelope)
+        operation, request = request_from_json_text(fixture.read_text(encoding="utf-8"))
         raw_fixture = raw_root / f"{fixture.stem}.skrq"
         if not raw_fixture.exists():
             raise AssertionError(f"{fixture.name}: missing canonical raw request {raw_fixture}")

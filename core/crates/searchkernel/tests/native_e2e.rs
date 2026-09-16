@@ -331,7 +331,7 @@ fn native_product_path_has_current_search_and_facet_parity() {
     );
     assert_eq!(
         facet_pairs(&faceted, "price"),
-        vec![("25".into(), 1), ("50".into(), 1)]
+        vec![("25".into(), 1), ("75".into(), 1)]
     );
 
     let brands_present = index

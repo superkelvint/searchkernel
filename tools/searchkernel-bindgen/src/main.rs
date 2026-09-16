@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 const GENERATED_JSON: &str = include_str!("../templates/searchkernel_json_generated.rs");
 const GENERATED_CLIENT: &str = include_str!("../templates/searchkernel_client_generated.rs");
+const GENERATED_PYTHON_TEMPLATE: &str =
+    include_str!("../templates/searchkernel_python_generated.py");
 
 #[derive(Debug)]
 struct Arguments {
@@ -91,6 +93,13 @@ fn run() -> Result<(), String> {
             generated_json.as_bytes(),
         )?;
     }
+    let generated_python = generate_python_client(&operations, &enums)?;
+    write_file(
+        &arguments
+            .output_root
+            .join("clients/python/searchkernel/generated/client.py"),
+        generated_python.as_bytes(),
+    )?;
 
     let generated_root = arguments
         .output_root
@@ -149,6 +158,36 @@ fn ensure_client_template_coverage(operations: &[Operation]) -> Result<(), Strin
         ));
     }
     Ok(())
+}
+
+fn generate_python_client(
+    operations: &[Operation],
+    enums: &[EnumDefinition],
+) -> Result<String, String> {
+    let operation_names = operations
+        .iter()
+        .map(|operation| operation.name.as_str())
+        .filter(|operation| *operation != "verifier_probe")
+        .collect::<Vec<_>>();
+    let enum_values = enums
+        .iter()
+        .map(|enumeration| {
+            (
+                enumeration.full_name.clone(),
+                enumeration
+                    .variants
+                    .iter()
+                    .map(|variant| (variant.json_name.clone(), variant.value))
+                    .collect::<BTreeMap<_, _>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let operations = serde_json::to_string(&operation_names).map_err(|error| error.to_string())?;
+    let enums = serde_json::to_string(&enum_values).map_err(|error| error.to_string())?;
+    let header = format!(
+        "# BFBS-derived operation and enum inventory; do not edit\n_GENERATED_OPERATIONS = frozenset({operations})\n_GENERATED_ENUMS = {enums}\n"
+    );
+    Ok(format!("{}\n{}", GENERATED_PYTHON_TEMPLATE, header))
 }
 
 fn parse_arguments() -> Result<Arguments, String> {

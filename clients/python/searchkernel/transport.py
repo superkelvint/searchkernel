@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import threading
+import weakref
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +29,9 @@ class NativeTransport:
         self._library = library
         self._handle: Optional[int] = handle
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._in_flight = 0
+        self._finalizer = weakref.finalize(self, _finalize_handle, library, handle)
 
     @classmethod
     def open(cls, library_path: str, open_payload: bytes = b"") -> "NativeTransport":
@@ -110,10 +114,11 @@ class NativeTransport:
 
     def call(self, request: bytes) -> bytes:
         request_bytes = bytes(request)
-        with self._lock:
+        with self._condition:
             handle = self._handle
-        if handle is None:
-            raise NativeTransportError("transport is closed")
+            if handle is None:
+                raise NativeTransportError("transport is closed")
+            self._in_flight += 1
 
         request_storage = None
         if request_bytes:
@@ -147,13 +152,19 @@ class NativeTransport:
         finally:
             if bool(response_ptr) or allocation_id.value:
                 self._library.sk_buffer_free(response_ptr, allocation_id)
+            with self._condition:
+                self._in_flight -= 1
+                self._condition.notify_all()
 
     def close(self) -> None:
-        with self._lock:
+        with self._condition:
             handle = self._handle
             self._handle = None
-        if handle is None:
-            return
+            if handle is None:
+                return
+            self._finalizer.detach()
+            while self._in_flight:
+                self._condition.wait()
 
         error = (ctypes.c_uint8 * 4096)()
         try:
@@ -174,3 +185,14 @@ class NativeTransport:
 
 def _error_text(buffer) -> str:
     return bytes(buffer).split(b"\0", 1)[0].decode("utf-8", "replace")
+
+
+def _finalize_handle(library: ctypes.CDLL, handle: int) -> None:
+    """Best-effort cleanup for callers that forget explicit close()."""
+    try:
+        error = (ctypes.c_uint8 * 4096)()
+        library.sk_close(ctypes.c_uint64(handle), error, len(error))
+    except Exception:
+        # Finalizers must never make interpreter shutdown or garbage collection
+        # fail. Explicit close remains the API that reports native errors.
+        pass

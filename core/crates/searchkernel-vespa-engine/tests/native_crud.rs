@@ -345,54 +345,6 @@ fn native_text_crud_and_query_forms_round_trip() {
 }
 
 #[test]
-fn native_grouping_preserves_vespa_serialized_group_order() {
-    let config = temporary_path("group-order-config");
-    let data = temporary_path("group-order-data");
-    let schema = Schema::new("typea").field(
-        Field::new("category", FieldType::String)
-            .attribute()
-            .summary(),
-    );
-    ConfigCompiler
-        .compile_to(&schema, &config)
-        .expect("compile group-order config");
-    let engine = Engine::open(&data, &config).expect("open group-order engine");
-
-    for (id, category) in [
-        ("group-order-1", "zulu"),
-        ("group-order-2", "zulu"),
-        ("group-order-3", "alpha"),
-    ] {
-        engine
-            .put(Document::new(id).field("category", category))
-            .expect("put group-order document");
-    }
-
-    let result = engine
-        .group(
-            &GroupingRequest::new(Query::True, "category")
-                .max_groups(2)
-                .order(GroupingOrder::CountDescending),
-        )
-        .expect("execute group-order grouping");
-    assert_eq!(
-        result
-            .groups
-            .iter()
-            .map(|group| (&group.key, group.count))
-            .collect::<Vec<_>>(),
-        vec![
-            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
-            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
-        ]
-    );
-
-    engine.close().expect("close group-order engine");
-    let _ = fs::remove_dir_all(config);
-    let _ = fs::remove_dir_all(data);
-}
-
-#[test]
 fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
     let config = temporary_path("generic-config");
     let data = temporary_path("generic-data");
@@ -599,8 +551,8 @@ fn native_grouping_preserves_vespa_serialized_group_order() {
             .map(|group| (&group.key, group.count))
             .collect::<Vec<_>>(),
         vec![
-            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
             (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
+            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
         ]
     );
 

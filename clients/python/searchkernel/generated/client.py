@@ -8,6 +8,7 @@ only receives complete opaque SKRQ/SKRS buffers.
 from __future__ import annotations
 
 import base64
+import json
 import math
 import struct
 from dataclasses import dataclass, field as dc_field
@@ -654,7 +655,7 @@ def _read_index(r: _Reader, position: Optional[int]) -> Optional[IndexDefinition
     return IndexDefinition(r.string(r.offset(r.field(position, 0))), fields, default)
 
 
-def _read_response(data: bytes, operation: str) -> Any:
+def _read_response_unchecked(data: bytes, operation: str) -> Any:
     r = _Reader(data)
     if len(data) < 8 or data[4:8] != b"SKRS": raise ProtocolError("response is not a SKRS envelope")
     root = r.scalar(0, "<I", 0); version = r.scalar(r.field(root, 0), "<I", 1)
@@ -697,10 +698,20 @@ def _read_response(data: bytes, operation: str) -> Any:
     return SearchResult(hits, TotalHits(r.scalar(r.field(total, 0), "<Q", 0), relations[relation]), facet_values)
 
 
+def _read_response(data: bytes, operation: str) -> Any:
+    """Decode one response, converting every malformed-wire failure to ProtocolError."""
+    try:
+        return _read_response_unchecked(data, operation)
+    except (ClientError, ProtocolError):
+        raise
+    except Exception as error:
+        raise ProtocolError(f"malformed response: {error}") from error
+
+
 def _value_from_json(value: dict[str, Any]) -> Value:
     kind, raw = _one_variant(value, {"null", "bool", "int64", "uint64", "float64", "string", "bytes", "list", "object"}, "value")
     if kind == "null":
-        if raw != {}: raise ValueError("null value payload must be empty")
+        if raw is not None: raise ValueError("null value payload must be null")
         return Value.null()
     if kind == "bool":
         if not isinstance(raw, bool): raise ValueError("bool value must be a boolean")
@@ -743,12 +754,34 @@ def _fields(value: Any, allowed: set[str], context: str, required: set[str] | No
     return value
 
 
+def _string(value: Any, context: str) -> str:
+    if not isinstance(value, str): raise ValueError(f"{context} must be a string")
+    return value
+
+
+def _string_list(value: Any, context: str) -> list[str]:
+    if not isinstance(value, list): raise ValueError(f"{context} must be an array")
+    return [_string(item, f"{context}[{index}]") for index, item in enumerate(value)]
+
+
+def _u32(value: Any, context: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2**32 - 1:
+        raise ValueError(f"{context} must be an unsigned 32-bit integer")
+    return value
+
+
+def _enum(value: Any, allowed: set[str], context: str) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError(f"unknown {context} enum value {value!r}")
+    return value
+
+
 def _canonical_integer(value: Any, *, unsigned: bool) -> int:
     if not isinstance(value, str): raise ValueError("64-bit integer must be a canonical string")
     if not value or (value[0] == "-" and (unsigned or len(value) == 1)):
         raise ValueError("64-bit integer is not canonical")
     digits = value[1:] if value.startswith("-") else value
-    if not digits.isdigit() or (len(digits) > 1 and digits[0] == "0"):
+    if not digits.isdigit() or (len(digits) > 1 and digits[0] == "0") or value == "-0":
         raise ValueError("64-bit integer is not canonical")
     parsed = int(value)
     if unsigned and parsed > 2**64 - 1: raise ValueError("uint64 is out of range")
@@ -757,7 +790,7 @@ def _canonical_integer(value: Any, *, unsigned: bool) -> int:
 
 
 def _value_to_json(value: Value) -> dict[str, Any]:
-    if value.kind == "null": return {"null": {}}
+    if value.kind == "null": return {"null": None}
     if value.kind == "bytes": return {"bytes": base64.b64encode(value.value).decode("ascii")}
     if value.kind == "list": return {"list": [_value_to_json(x) for x in value.value]}
     if value.kind == "object": return {"object": {k: _value_to_json(value.value[k]) for k in sorted(value.value)}}
@@ -770,7 +803,8 @@ def _document_from_json(value: Optional[dict[str, Any]], result: bool = False):
     value = _fields(value, {"id", "fields"}, "document")
     fields = value.get("fields", {})
     if not isinstance(fields, dict): raise ValueError("document fields must be an object")
-    return cls(value.get("id"), {k: _value_from_json(v) for k, v in fields.items()})
+    ident = _string(value["id"], "document id") if "id" in value else None
+    return cls(ident, {k: _value_from_json(v) for k, v in fields.items()})
 
 
 def _filter_from_json(value: Optional[dict[str, Any]]) -> Optional[FilterExpr]:
@@ -785,12 +819,15 @@ def _filter_from_json(value: Optional[dict[str, Any]]) -> Optional[FilterExpr]:
         return FilterExpr("not", clause=_filter_from_json(raw["clause"]))
     if kind == "filter_exists":
         raw = _fields(raw, {"field"}, kind, {"field"})
-        return FilterExpr("exists", field=raw["field"])
+        return FilterExpr("exists", field=_string(raw["field"], "filter field"))
     if kind == "filter_comparison":
         raw = _fields(raw, {"field", "op", "value"}, kind, {"field", "op", "value"})
-        return FilterExpr("comparison", field=raw["field"], op=raw["op"], value=_value_from_json(raw["value"]))
+        op = _string(raw["op"], "comparison operator")
+        if op not in {"eq", "ne", "lt", "lte", "gt", "gte"}:
+            raise ValueError(f"unknown comparison operator {op!r}")
+        return FilterExpr("comparison", field=_string(raw["field"], "filter field"), op=op, value=_value_from_json(raw["value"]))
     raw = _fields(raw, {"field", "lower", "upper", "include_lower", "include_upper"}, kind, {"field"})
-    return FilterExpr("range", field=raw["field"], lower=_value_from_json(raw["lower"]) if "lower" in raw else None, upper=_value_from_json(raw["upper"]) if "upper" in raw else None, include_lower=raw.get("include_lower"), include_upper=raw.get("include_upper"))
+    return FilterExpr("range", field=_string(raw["field"], "range field"), lower=_value_from_json(raw["lower"]) if "lower" in raw else None, upper=_value_from_json(raw["upper"]) if "upper" in raw else None, include_lower=_boolean(raw["include_lower"], "include_lower") if "include_lower" in raw else None, include_upper=_boolean(raw["include_upper"], "include_upper") if "include_upper" in raw else None)
 
 
 def _filter_to_json(value: FilterExpr) -> dict[str, Any]:
@@ -811,7 +848,7 @@ def _query_from_json(value: Optional[dict[str, Any]]) -> Optional[QueryExpr]:
     kind, raw = _one_variant(value, {"term_query", "query_and", "query_or", "query_not"}, "query")
     if kind == "term_query":
         raw = _fields(raw, {"field", "value"}, kind, {"field", "value"})
-        return QueryExpr("term", field=raw["field"], value=_value_from_json(raw["value"]))
+        return QueryExpr("term", field=_string(raw["field"], "query field"), value=_value_from_json(raw["value"]))
     if kind in ("query_and", "query_or"):
         raw = _fields(raw, {"clauses"}, kind, {"clauses"})
         if not isinstance(raw["clauses"], list): raise ValueError("query clauses must be an array")
@@ -828,17 +865,62 @@ def _query_to_json(value: QueryExpr) -> dict[str, Any]:
 
 def _search_from_json(value: dict[str, Any]) -> SearchRequest:
     value = _fields(value, {"query", "search_fields", "filter", "sort", "facets", "ranking", "limit", "offset", "projection", "highlighting", "language", "query_expr", "timeout"}, "search")
-    selection = value.get("search_fields")
-    search_fields = None if selection is None else SearchFieldSelection([SearchField(**_fields(x, {"field", "weight"}, "search field", {"field"})) for x in selection])
-    projection = None if "projection" not in value else FieldProjection(list(value["projection"]))
-    highlighting = None if "highlighting" not in value else HighlightRequest(list(value["highlighting"]))
+    if "query" in value: query = _string(value["query"], "search.query")
+    else: query = None
+    if "search_fields" in value:
+        selection = value["search_fields"]
+        if not isinstance(selection, list): raise ValueError("search.search_fields must be an array")
+        search_fields = SearchFieldSelection([])
+        for index, item in enumerate(selection):
+            item = _fields(item, {"field", "weight"}, f"search field {index}", {"field"})
+            field = _string(item["field"], f"search field {index}.field")
+            weight = item.get("weight")
+            if "weight" in item and (isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight)):
+                raise ValueError(f"search field {index}.weight must be a finite number")
+            search_fields.fields.append(SearchField(field, weight))
+    else:
+        search_fields = None
+    projection = None if "projection" not in value else FieldProjection(_string_list(value["projection"], "search.projection"))
+    highlighting = None if "highlighting" not in value else HighlightRequest(_string_list(value["highlighting"], "search.highlighting"))
+    if "filter" in value and value["filter"] is None: raise ValueError("search.filter does not accept JSON null")
+    filter_value = _filter_from_json(value["filter"]) if "filter" in value else None
+    if "sort" in value:
+        raw_sort = value["sort"]
+        if not isinstance(raw_sort, list): raise ValueError("search.sort must be an array")
+    else:
+        raw_sort = []
+    sort = []
+    for index, item in enumerate(raw_sort):
+        item = _fields(item, {"field", "direction", "missing"}, f"sort {index}", {"field"})
+        field = _string(item["field"], f"sort {index}.field")
+        direction = _enum(item.get("direction", "unspecified"), {"unspecified", "asc", "desc"}, f"sort {index}.direction")
+        missing = None if "missing" not in item else _enum(item["missing"], {"unspecified", "first", "last"}, f"sort {index}.missing")
+        sort.append(SortExpr(field, direction, missing))
+    if "facets" in value:
+        raw_facets = value["facets"]
+        if not isinstance(raw_facets, list): raise ValueError("search.facets must be an array")
+    else:
+        raw_facets = []
+    facets = []
+    for index, item in enumerate(raw_facets):
+        item = _fields(item, {"field", "limit", "sort"}, f"facet {index}", {"field"})
+        field = _string(item["field"], f"facet {index}.field")
+        limit = None if "limit" not in item else _u32(item["limit"], f"facet {index}.limit")
+        facet_sort = None if "sort" not in item else _enum(item["sort"], {"unspecified", "count_desc", "count_asc", "value_asc", "value_desc"}, f"facet {index}.sort")
+        facets.append(FacetRequest(field, limit, facet_sort))
     if "ranking" not in value:
         ranking = None
     else:
         ranking_kind, ranking_payload = _one_variant(value["ranking"], {"default_relevance_v1", "bm25_ranking"}, "ranking")
         _fields(ranking_payload, set(), "ranking payload")
         ranking = RankingPolicy(ranking_kind)
-    return SearchRequest(value.get("query"), search_fields, _filter_from_json(value.get("filter")), [SortExpr(x["field"], x.get("direction", "unspecified"), x.get("missing")) for x in value.get("sort", [])], [FacetRequest(x["field"], x.get("limit"), x.get("sort")) for x in value.get("facets", [])], ranking, value.get("limit"), value.get("offset"), projection, highlighting, value.get("language"), _query_from_json(value.get("query_expr")), value.get("timeout"))
+    limit = None if "limit" not in value else _u32(value["limit"], "search.limit")
+    offset = None if "offset" not in value else _u32(value["offset"], "search.offset")
+    language = None if "language" not in value else _string(value["language"], "search.language")
+    if "query_expr" in value and value["query_expr"] is None: raise ValueError("search.query_expr does not accept JSON null")
+    query_expr = _query_from_json(value["query_expr"]) if "query_expr" in value else None
+    timeout = None if "timeout" not in value else _canonical_integer(value["timeout"], unsigned=True)
+    return SearchRequest(query, search_fields, filter_value, sort, facets, ranking, limit, offset, projection, highlighting, language, query_expr, timeout)
 
 
 def _search_to_json(value: SearchRequest) -> dict[str, Any]:
@@ -860,26 +942,34 @@ def _search_to_json(value: SearchRequest) -> dict[str, Any]:
 
 
 def request_from_json(value: dict[str, Any]):
-    """Construct the generated request model from canonical C6 JSON."""
+    """Convert an already-decoded request object to generated models.
+
+    Use request_from_json_text for canonical JSON text and duplicate-key rejection.
+    """
     value = _fields(value, {"protocol_version", "request"}, "request envelope", {"protocol_version", "request"})
-    if value["protocol_version"] != 1: raise ValueError("unsupported request protocol version")
+    if isinstance(value["protocol_version"], bool) or value["protocol_version"] != 1: raise ValueError("unsupported request protocol version")
     operation, payload = _one_variant(value["request"], _GENERATED_OPERATIONS, "request")
     if operation in ("insert", "upsert"):
         payload = _fields(payload, {"document"}, operation, {"document"})
         cls = InsertRequest if operation == "insert" else UpsertRequest; return operation, cls(_document_from_json(payload["document"]))
     if operation == "patch":
-        payload = _fields(payload, {"id", "operations"}, operation, {"id", "operations"})
+        payload = _fields(payload, {"id", "operations"}, operation, {"id"})
         operations = []
-        if not isinstance(payload["operations"], list): raise ValueError("patch operations must be an array")
-        for item in payload["operations"]:
-            kind, raw = _one_variant(item, {"set_field", "unset_field"}, "patch operation")
+        raw_operations = payload.get("operations", [])
+        if not isinstance(raw_operations, list): raise ValueError("patch operations must be an array")
+        for item in raw_operations:
+            kind, raw = _one_variant(item, {"none", "set_field", "unset_field"}, "patch operation")
+            if kind == "none":
+                _fields(raw, set(), kind)
+                operations.append(PatchOperation("none"))
+                continue
             raw = _fields(raw, {"field", "value"} if kind == "set_field" else {"field"}, kind, {"field"} | ({"value"} if kind == "set_field" else set()))
-            operations.append(PatchOperation({"set_field": "set", "unset_field": "unset"}[kind], raw["field"], _value_from_json(raw["value"]) if kind == "set_field" else None))
-        return operation, PatchRequest(payload["id"], operations)
+            operations.append(PatchOperation({"set_field": "set", "unset_field": "unset"}[kind], _string(raw["field"], "patch field"), _value_from_json(raw["value"]) if kind == "set_field" else None))
+        return operation, PatchRequest(_string(payload["id"], "patch id"), operations)
     if operation == "delete":
-        payload = _fields(payload, {"id"}, operation, {"id"}); return operation, DeleteRequest(payload["id"])
+        payload = _fields(payload, {"id"}, operation, {"id"}); return operation, DeleteRequest(_string(payload["id"], "delete id"))
     if operation == "get":
-        payload = _fields(payload, {"id", "projection"}, operation, {"id"}); return operation, GetRequest(payload["id"], FieldProjection(payload["projection"]) if "projection" in payload else None)
+        payload = _fields(payload, {"id", "projection"}, operation, {"id"}); return operation, GetRequest(_string(payload["id"], "get id"), FieldProjection(_string_list(payload["projection"], "get.projection")) if "projection" in payload else None)
     if operation == "search": return operation, _search_from_json(payload)
     if operation == "analyze":
         payload = _fields(payload, {"target", "text", "language"}, operation, {"text"})
@@ -890,17 +980,37 @@ def request_from_json(value: dict[str, Any]):
             kind, raw = _one_variant(raw_target, {"analyzer", "field", "none"}, "analyze target")
             if kind == "analyzer":
                 raw = _fields(raw, {"name", "version", "options"}, kind, {"name"})
-                target = AnalyzeTarget("analyzer", Analyzer(raw["name"], raw.get("version", 0), {k: _value_from_json(v) for k, v in raw.get("options", {}).items()}))
+                options = raw.get("options", {})
+                if not isinstance(options, dict): raise ValueError("analyzer options must be an object")
+                target = AnalyzeTarget("analyzer", Analyzer(_string(raw["name"], "analyzer name"), _u32(raw.get("version", 0), "analyzer version"), {k: _value_from_json(v) for k, v in options.items()}))
             elif kind == "field":
-                raw = _fields(raw, {"field"}, kind, {"field"}); target = AnalyzeTarget("field", raw["field"])
+                raw = _fields(raw, {"field"}, kind, {"field"}); target = AnalyzeTarget("field", _string(raw["field"], "analyze field"))
             else:
                 target = AnalyzeTarget("none")
-        return operation, AnalyzeRequest(target, payload["text"], payload.get("language"))
+        return operation, AnalyzeRequest(target, _string(payload["text"], "analyze text"), _string(payload["language"], "analyze language") if "language" in payload else None)
     if operation == "describe":
         _fields(payload, set(), operation); return operation, DescribeRequest()
     if operation == "inspect_query":
         payload = _fields(payload, {"request"}, operation); return operation, InspectQueryRequest(_search_from_json(payload["request"]) if "request" in payload else None)
     raise ValueError(f"unknown request operation {operation!r}")
+
+
+def _reject_duplicate_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value: raise ValueError(f"duplicate object field {key!r}")
+        value[key] = item
+    return value
+
+
+def _reject_non_json_constant(value):
+    raise ValueError(f"non-canonical JSON constant {value!r}")
+
+
+def request_from_json_text(text: str):
+    """Construct a request from canonical JSON text, rejecting duplicate keys."""
+    if not isinstance(text, str): raise TypeError("request JSON must be text")
+    return request_from_json(json.loads(text, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_non_json_constant))
 
 
 def _response_to_json(operation: str, value: Any) -> dict[str, Any]:
@@ -974,7 +1084,7 @@ __all__ = [
     "InspectQueryRequest", "InspectQueryResult", "PatchRequest", "PatchOperation",
     "PatchResult", "PortableError", "ProtocolError", "QueryExpr", "RankingPolicy",
     "SearchField", "SearchFieldSelection", "SearchRequest", "SearchResult", "SortExpr",
-    "TotalHits", "UpsertRequest", "UpsertResult", "Value", "request_from_json",
+    "TotalHits", "UpsertRequest", "UpsertResult", "Value", "request_from_json", "request_from_json_text",
 ]
 
 # BFBS-derived operation and enum inventory; do not edit
