@@ -43,6 +43,81 @@ pub mod hardening {
         }
     }
 
+    #[derive(Debug, Clone, Copy)]
+    #[repr(u32)]
+    pub enum ResultFault {
+        NullResult = sys::hardening::SK_TEST_RESULT_FAULT_NULL_RESULT,
+        NullDocumentFieldName = sys::hardening::SK_TEST_RESULT_FAULT_NULL_DOCUMENT_FIELD_NAME,
+        InvalidDocumentFieldName = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_DOCUMENT_FIELD_NAME,
+        NullDocumentString = sys::hardening::SK_TEST_RESULT_FAULT_NULL_DOCUMENT_STRING,
+        InvalidDocumentString = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_DOCUMENT_STRING,
+        UnknownDocumentKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_DOCUMENT_KIND,
+        DocumentAccessorError = sys::hardening::SK_TEST_RESULT_FAULT_DOCUMENT_ACCESSOR_ERROR,
+        NullHitId = sys::hardening::SK_TEST_RESULT_FAULT_NULL_HIT_ID,
+        InvalidHitId = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_HIT_ID,
+        NullSummaryName = sys::hardening::SK_TEST_RESULT_FAULT_NULL_SUMMARY_NAME,
+        InvalidSummaryName = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_SUMMARY_NAME,
+        NullSummaryString = sys::hardening::SK_TEST_RESULT_FAULT_NULL_SUMMARY_STRING,
+        InvalidSummaryString = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_SUMMARY_STRING,
+        UnknownSummaryKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_SUMMARY_KIND,
+        NullMatchFeatureName = sys::hardening::SK_TEST_RESULT_FAULT_NULL_MATCH_FEATURE_NAME,
+        InvalidMatchFeatureName = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_MATCH_FEATURE_NAME,
+        DuplicateMatchFeatureName =
+            sys::hardening::SK_TEST_RESULT_FAULT_DUPLICATE_MATCH_FEATURE_NAME,
+        MatchFeatureValueError = sys::hardening::SK_TEST_RESULT_FAULT_MATCH_FEATURE_VALUE_ERROR,
+        UnsupportedGroupKey = sys::hardening::SK_TEST_RESULT_FAULT_UNSUPPORTED_GROUP_KEY,
+        InvalidGroupKey = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_GROUP_KEY,
+        GroupAccessorError = sys::hardening::SK_TEST_RESULT_FAULT_GROUP_ACCESSOR_ERROR,
+        UnknownAggregationKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_AGGREGATION_KIND,
+        AggregationAccessorError = sys::hardening::SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR,
+    }
+
+    pub fn set_result_fault(engine: &Engine, fault: ResultFault) -> Result<()> {
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary
+            // diagnostic buffer remains valid for this call.
+            sys::hardening::sk_test_result_fault_set(
+                engine.handle.as_ptr(),
+                fault as u32,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn clear_result_fault(engine: &Engine) -> Result<()> {
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the temporary
+            // diagnostic buffer remains valid for this call.
+            sys::hardening::sk_test_result_fault_clear(
+                engine.handle.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)
+    }
+
+    pub fn result_destroy_count(engine: &Engine) -> Result<u64> {
+        let mut count = 0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            // SAFETY: Engine owns a live opaque handle and the output and
+            // diagnostic buffers remain valid for this call.
+            sys::hardening::sk_test_result_destroy_count(
+                engine.handle.as_ptr(),
+                &mut count,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        Ok(count)
+    }
+
     pub fn set(engine: &Engine, name: &str, hit: u32, action: Action) -> Result<()> {
         let name = cstring(name)?;
         let mut error = NativeError::new();
@@ -1693,6 +1768,7 @@ fn read_search_facet(
                 )
             }
             sys::SK_VALUE_INTEGER => Value::Integer(key_integer),
+            sys::SK_VALUE_BOOLEAN => Value::Boolean(key_integer != 0),
             _ => {
                 return Err(Error::message(
                     "native search returned unsupported facet key kind",
@@ -1917,8 +1993,17 @@ fn lower_query(
             let value_kind = attribute_range_kind(lower).or_else(|| attribute_range_kind(upper));
             match value_kind {
                 None => {
-                    let kind = numeric_attribute_range_kind(native, field)?;
-                    add_native_unbounded_attribute_range(native, field, kind)
+                    let field = cstring(field)?;
+                    let mut error = NativeError::new();
+                    let status = unsafe {
+                        sys::sk_query_add_attribute_exists(
+                            native.0.as_ptr(),
+                            field.as_ptr(),
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    };
+                    check(status, &error)
                 }
                 Some(AttributeKind::Integer) => {
                     let (lower_kind, lower_value) = integer_attribute_bound(lower)?;
@@ -2010,7 +2095,7 @@ fn validate_query_fields(native: &NativeQuery, query: &Query) -> Result<(), Erro
                     field,
                 )
             } else {
-                numeric_attribute_range_kind(native, field).map(|_| ())
+                validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
             }
         }
     }
@@ -2038,52 +2123,6 @@ fn attribute_range_kind(bound: &AttributeBound) -> Option<AttributeKind> {
         AttributeBound::Included(Value::Boolean(_))
         | AttributeBound::Excluded(Value::Boolean(_)) => Some(AttributeKind::Boolean),
     }
-}
-
-fn numeric_attribute_range_kind(native: &NativeQuery, field: &str) -> Result<AttributeKind, Error> {
-    validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)?;
-    if validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field).is_ok() {
-        return Ok(AttributeKind::Integer);
-    }
-    if validate_native_field(native, sys::SK_QUERY_FIELD_FLOAT, field).is_ok() {
-        return Ok(AttributeKind::Float);
-    }
-    Err(Error::message("unsupported attribute range field type"))
-}
-
-fn add_native_unbounded_attribute_range(
-    native: &NativeQuery,
-    field: &str,
-    kind: AttributeKind,
-) -> Result<(), Error> {
-    let field = cstring(field)?;
-    let mut error = NativeError::new();
-    let status = unsafe {
-        match kind {
-            AttributeKind::Integer => sys::sk_query_add_attribute_integer_range(
-                native.0.as_ptr(),
-                field.as_ptr(),
-                sys::SK_QUERY_BOUND_UNBOUNDED,
-                0,
-                sys::SK_QUERY_BOUND_UNBOUNDED,
-                0,
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            AttributeKind::Float => sys::sk_query_add_attribute_float_range(
-                native.0.as_ptr(),
-                field.as_ptr(),
-                sys::SK_QUERY_BOUND_UNBOUNDED,
-                0.0,
-                sys::SK_QUERY_BOUND_UNBOUNDED,
-                0.0,
-                error.as_mut_ptr(),
-                error.capacity(),
-            ),
-            AttributeKind::String | AttributeKind::Boolean => unreachable!(),
-        }
-    };
-    check(status, &error)
 }
 
 fn integer_attribute_bound(bound: &AttributeBound) -> Result<(u32, i64), Error> {
@@ -2375,6 +2414,12 @@ mod tests {
             .rank_property("vespa.matching.numthreadspersearch", "2");
         let error = super::validate_search_ranking_inputs(&reserved)
             .expect_err("Search Kernel-owned rank properties must be rejected");
+        assert!(error.to_string().contains("reserved"));
+
+        let reserved = SearchRequest::new(Query::True)
+            .query_feature("vespa.matching.numthreadspersearch", 2.0);
+        let error = super::validate_search_ranking_inputs(&reserved)
+            .expect_err("Search Kernel-owned query features must be rejected");
         assert!(error.to_string().contains("reserved"));
     }
 

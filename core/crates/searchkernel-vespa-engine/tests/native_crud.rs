@@ -1,8 +1,9 @@
 use searchkernel_vespa_engine::{
     Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
     FieldValue, GroupingOrder, GroupingRequest, LinguisticsOptions, Query, ScalarValue, Schema,
-    SearchRequest, SortField, SummaryRequest,
+    SearchRequest, SortField, SummaryRequest, Value,
 };
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -227,6 +228,74 @@ fn native_local_search_and_attribute_operations_round_trip() {
 }
 
 #[test]
+fn native_attribute_exists_matches_keyword_and_boolean_vespa_semantics() {
+    let config = temporary_path("exists-config");
+    let data = temporary_path("exists-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("keyword", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(
+            Field::new("active", FieldType::Boolean)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile exists config");
+    let engine = Engine::open(&data, &config).expect("open exists engine");
+    engine
+        .put(Document::new("absent").field("title", "absent"))
+        .expect("put absent document");
+    engine
+        .put(
+            Document::new("empty-false")
+                .field("keyword", "")
+                .field("active", false),
+        )
+        .expect("put empty and false document");
+    engine
+        .put(
+            Document::new("value-true")
+                .field("keyword", "present")
+                .field("active", true),
+        )
+        .expect("put value and true document");
+
+    let ids = |field: &str| {
+        engine
+            .search(SearchRequest::new(Query::AttributeRange {
+                field: field.to_owned(),
+                lower: searchkernel_vespa_engine::AttributeBound::Unbounded,
+                upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+            }))
+            .expect("execute exists query")
+            .hits
+            .into_iter()
+            .map(|hit| hit.document_id)
+            .collect::<BTreeSet<_>>()
+    };
+    assert_eq!(ids("keyword"), BTreeSet::from(["value-true".to_owned()]));
+    // Vespa BOOL attributes expose false for an absent source value, so
+    // existence follows the attribute view rather than source-field presence.
+    assert_eq!(
+        ids("active"),
+        BTreeSet::from([
+            "absent".to_owned(),
+            "empty-false".to_owned(),
+            "value-true".to_owned(),
+        ])
+    );
+
+    engine.close().expect("close exists engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_text_crud_and_query_forms_round_trip() {
     let config = temporary_path("text-config");
     let data = temporary_path("text-data");
@@ -271,6 +340,54 @@ fn native_text_crud_and_query_forms_round_trip() {
     assert_eq!(typed, yql);
 
     engine.close().expect("close text engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_preserves_vespa_serialized_group_order() {
+    let config = temporary_path("group-order-config");
+    let data = temporary_path("group-order-data");
+    let schema = Schema::new("typea").field(
+        Field::new("category", FieldType::String)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile group-order config");
+    let engine = Engine::open(&data, &config).expect("open group-order engine");
+
+    for (id, category) in [
+        ("group-order-1", "zulu"),
+        ("group-order-2", "zulu"),
+        ("group-order-3", "alpha"),
+    ] {
+        engine
+            .put(Document::new(id).field("category", category))
+            .expect("put group-order document");
+    }
+
+    let result = engine
+        .group(
+            &GroupingRequest::new(Query::True, "category")
+                .max_groups(2)
+                .order(GroupingOrder::CountDescending),
+        )
+        .expect("execute group-order grouping");
+    assert_eq!(
+        result
+            .groups
+            .iter()
+            .map(|group| (&group.key, group.count))
+            .collect::<Vec<_>>(),
+        vec![
+            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
+            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
+        ]
+    );
+
+    engine.close().expect("close group-order engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
@@ -390,6 +507,104 @@ fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
     );
 
     engine.close().expect("close generic search engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_boolean_attributes_support_sorting_and_faceting() {
+    let config = temporary_path("boolean-capability-config");
+    let data = temporary_path("boolean-capability-data");
+    let schema = Schema::new("typea").field(
+        Field::new("active", FieldType::Boolean)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile boolean capability config");
+    let engine = Engine::open(&data, &config).expect("open boolean capability engine");
+
+    engine
+        .put(Document::new("false-1").field("active", false))
+        .expect("put false boolean document");
+    engine
+        .put(Document::new("true-1").field("active", true))
+        .expect("put true boolean document");
+    engine
+        .put(Document::new("false-2").field("active", false))
+        .expect("put second false boolean document");
+
+    let ascending = engine
+        .search(SearchRequest::new(Query::True).sort(SortField::ascending("active")))
+        .expect("sort boolean attribute ascending");
+    assert_eq!(ascending.hits[0].document_id, "false-1");
+    assert_eq!(ascending.hits[1].document_id, "false-2");
+    assert_eq!(ascending.hits[2].document_id, "true-1");
+
+    let faceted = engine
+        .search(SearchRequest::new(Query::True).facet(FacetRequest::new(
+            "active",
+            2,
+            GroupingOrder::ValueAscending,
+        )))
+        .expect("facet boolean attribute");
+    assert_eq!(faceted.facets.len(), 1);
+    assert_eq!(faceted.facets[0].groups.len(), 2);
+    assert_eq!(faceted.facets[0].groups[0].key, Value::Boolean(false));
+    assert_eq!(faceted.facets[0].groups[0].count, 2);
+    assert_eq!(faceted.facets[0].groups[1].key, Value::Boolean(true));
+    assert_eq!(faceted.facets[0].groups[1].count, 1);
+
+    engine.close().expect("close boolean capability engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_preserves_vespa_serialized_group_order() {
+    let config = temporary_path("group-order-config");
+    let data = temporary_path("group-order-data");
+    let schema = Schema::new("typea").field(
+        Field::new("category", FieldType::String)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile group-order config");
+    let engine = Engine::open(&data, &config).expect("open group-order engine");
+
+    for (id, category) in [
+        ("group-order-1", "zulu"),
+        ("group-order-2", "zulu"),
+        ("group-order-3", "alpha"),
+    ] {
+        engine
+            .put(Document::new(id).field("category", category))
+            .expect("put group-order document");
+    }
+
+    let result = engine
+        .group(
+            &GroupingRequest::new(Query::True, "category")
+                .max_groups(2)
+                .order(GroupingOrder::CountDescending),
+        )
+        .expect("execute group-order grouping");
+    assert_eq!(
+        result
+            .groups
+            .iter()
+            .map(|group| (&group.key, group.count))
+            .collect::<Vec<_>>(),
+        vec![
+            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
+            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
+        ]
+    );
+
+    engine.close().expect("close group-order engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

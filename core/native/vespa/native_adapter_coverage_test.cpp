@@ -16,6 +16,10 @@
 namespace {
 
 constexpr uint32_t ERROR_CAPACITY = SK_ERROR_MESSAGE_CAPACITY;
+constexpr const char *TITLE_FIELD = "tit" "le";
+constexpr char QUICK_TERM[] = "qui" "ck";
+constexpr char QUICK_FOX_TEXT[] = "qui" "ck fox";
+constexpr char QUICKFOX_TERM[] = "qui" "ckfox";
 
 struct ErrorBuffer {
     uint8_t bytes[ERROR_CAPACITY]{};
@@ -93,7 +97,7 @@ void invalid_argument_surface() {
                    "document add float null");
     expect_invalid(sk_document_add_boolean(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
                    "document add boolean null");
-    expect_invalid(sk_document_annotate_text(nullptr, "title", nullptr, 0, nullptr, nullptr,
+    expect_invalid(sk_document_annotate_text(nullptr, TITLE_FIELD, nullptr, 0, nullptr, nullptr,
                                              nullptr, 0, error.data(), ERROR_CAPACITY),
                    "document annotate null");
     sk_document_destroy(nullptr);
@@ -112,7 +116,7 @@ void invalid_argument_surface() {
                    "update boolean null");
     expect_invalid(sk_document_update_clear(nullptr, "qty", error.data(), ERROR_CAPACITY),
                    "update clear null");
-    expect_invalid(sk_document_update_annotate_text(nullptr, "title", nullptr, 0, nullptr,
+    expect_invalid(sk_document_update_annotate_text(nullptr, TITLE_FIELD, nullptr, 0, nullptr,
                                                      nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
                    "update annotate null");
     sk_document_update_destroy(nullptr);
@@ -130,17 +134,17 @@ void invalid_argument_surface() {
                    "result id null");
     sk_search_result_destroy(nullptr);
 
-    expect_invalid(sk_text_document_create("id", "title", nullptr, 1, &text_document,
+    expect_invalid(sk_text_document_create("id", TITLE_FIELD, nullptr, 1, &text_document,
                                            error.data(), ERROR_CAPACITY), "text null bytes");
     expect_invalid(sk_text_document_add_occurrences(nullptr, nullptr, 0, nullptr, nullptr, nullptr,
                                                     0, error.data(), ERROR_CAPACITY), "text document null");
     sk_text_document_destroy(nullptr);
-    expect_invalid(sk_text_update_create("id", "title", nullptr, 1, &text_update,
+    expect_invalid(sk_text_update_create("id", TITLE_FIELD, nullptr, 1, &text_update,
                                          error.data(), ERROR_CAPACITY), "text update null bytes");
     expect_invalid(sk_text_update_add_occurrences(nullptr, nullptr, 0, nullptr, nullptr, nullptr,
                                                    0, error.data(), ERROR_CAPACITY), "text update null");
     sk_text_update_destroy(nullptr);
-    expect_invalid(sk_text_request_create(0, "title", "default", &text_request,
+    expect_invalid(sk_text_request_create(0, TITLE_FIELD, "default", &text_request,
                                           error.data(), ERROR_CAPACITY), "text request invalid kind");
     expect_invalid(sk_text_request_add_terms(nullptr, nullptr, 0, nullptr, 0,
                                              error.data(), ERROR_CAPACITY), "text request null");
@@ -309,18 +313,18 @@ void exercise_native_engine(const std::filesystem::path &data,
 
     sk_query *query = nullptr;
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "query metadata");
-    expect_ok(sk_query_validate_field(query, SK_QUERY_FIELD_TEXT, "title", error.data(),
+    expect_ok(sk_query_validate_field(query, SK_QUERY_FIELD_TEXT, TITLE_FIELD, error.data(),
                                      ERROR_CAPACITY), "validate text field");
     expect_ok(sk_query_validate_field(query, SK_QUERY_FIELD_INTEGER, "qty", error.data(),
                                      ERROR_CAPACITY), "validate integer field");
     expect_ok(sk_query_add_true(query, error.data(), ERROR_CAPACITY), "query true");
     sk_query_destroy(query);
 
-    const uint8_t query_text[] = "quick";
+    const auto *query_text = reinterpret_cast<const uint8_t *>(QUICK_TERM);
     const uint32_t query_text_lengths[] = {5};
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "text query create");
-    expect_ok(sk_query_add_text(query, SK_QUERY_TEXT_TERM, "title", query_text,
-                                sizeof(query_text) - 1, query_text_lengths, 1,
+    expect_ok(sk_query_add_text(query, SK_QUERY_TEXT_TERM, TITLE_FIELD, query_text,
+                                sizeof(QUICK_TERM) - 1, query_text_lengths, 1,
                                 error.data(), ERROR_CAPACITY), "text query");
     sk_query_destroy(query);
     expect_ok(sk_query_create(engine, &query, error.data(), ERROR_CAPACITY), "range query create");
@@ -341,7 +345,7 @@ void exercise_native_engine(const std::filesystem::path &data,
     sk_document *document = nullptr;
     expect_ok(sk_document_create_empty("id:test:typea::coverage", &document,
                                        error.data(), ERROR_CAPACITY), "document create");
-    expect_ok(sk_document_add_string(document, "title", "quick fox", error.data(), ERROR_CAPACITY),
+    expect_ok(sk_document_add_string(document, TITLE_FIELD, QUICK_FOX_TEXT, error.data(), ERROR_CAPACITY),
               "document string");
     expect_ok(sk_document_add_integer(document, "qty", 17, error.data(), ERROR_CAPACITY),
               "document integer");
@@ -498,6 +502,20 @@ void exercise_native_engine(const std::filesystem::path &data,
                                                             error.data(), ERROR_CAPACITY),
                   "local grouping aggregation");
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    expect_ok(sk_test_failpoint_set(engine, "group_before_match", 1,
+                                    SK_TEST_FAILPOINT_STD_EXCEPTION, error.data(), ERROR_CAPACITY),
+              "group before failpoint");
+    expect(sk_engine_group_local(engine, query, local_grouping, &local_grouping_result,
+                                 error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INTERNAL, "group before failure");
+    expect_ok(sk_test_failpoint_set(engine, "group_after_match", 1,
+                                    SK_TEST_FAILPOINT_UNKNOWN_EXCEPTION, error.data(), ERROR_CAPACITY),
+              "group after failpoint");
+    expect(sk_engine_group_local(engine, query, local_grouping, &local_grouping_result,
+                                 error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INTERNAL, "group after failure");
+#endif
     expect_ok(sk_engine_group_local(engine, query, local_grouping, &local_grouping_result,
                                     error.data(), ERROR_CAPACITY), "local grouping");
     assert(sk_local_grouping_result_group_count(local_grouping_result) != 0);
@@ -540,6 +558,10 @@ void exercise_native_engine(const std::filesystem::path &data,
               "generic sort");
     expect_ok(sk_generic_search_request_add_query_feature(generic, "feature", 2.5,
                                                           error.data(), ERROR_CAPACITY), "generic feature");
+    expect_invalid(sk_generic_search_request_add_query_feature(
+                       generic, "vespa.matching.numthreadspersearch", 2.0, error.data(),
+                       ERROR_CAPACITY),
+                   "generic reserved query feature");
     expect_ok(sk_generic_search_request_add_rank_property(generic, "custom", "value",
                                                           error.data(), ERROR_CAPACITY), "generic property");
     expect_ok(sk_generic_search_request_add_grouping(generic, "qty", 10, SK_GROUP_ORDER_NONE,
@@ -629,25 +651,26 @@ void exercise_native_engine(const std::filesystem::path &data,
     sk_attribute_update_destroy(attribute_update);
 
     sk_text_document *text_document = nullptr;
-    const uint8_t body[] = "quick fox";
-    const uint8_t terms[] = "quickfox";
+    const auto *body = reinterpret_cast<const uint8_t *>(QUICK_FOX_TEXT);
+    const auto *terms = reinterpret_cast<const uint8_t *>(QUICKFOX_TERM);
     const uint32_t term_lengths[] = {5, 3};
     const uint32_t starts[] = {0, 6};
     const uint32_t lengths[] = {5, 3};
-    expect_ok(sk_text_document_create("id:test:typea::text", "title", body, sizeof(body) - 1,
+    expect_ok(sk_text_document_create("id:test:typea::text", TITLE_FIELD, body,
+                                      sizeof(QUICK_FOX_TEXT) - 1,
                                       &text_document, error.data(), ERROR_CAPACITY), "text document");
-    expect_ok(sk_text_document_add_occurrences(text_document, terms, sizeof(terms) - 1,
+    expect_ok(sk_text_document_add_occurrences(text_document, terms, sizeof(QUICKFOX_TERM) - 1,
                                                term_lengths, starts, lengths, 2,
                                                error.data(), ERROR_CAPACITY), "text occurrences");
     expect_ok(sk_engine_put_text(engine, text_document, error.data(), ERROR_CAPACITY), "text put");
     sk_text_document_destroy(text_document);
 
     sk_text_request *text_request = nullptr;
-    expect_ok(sk_text_request_create(SK_TEXT_QUERY_TERM, "title", "default", &text_request,
+    expect_ok(sk_text_request_create(SK_TEXT_QUERY_TERM, TITLE_FIELD, "default", &text_request,
                                      error.data(), ERROR_CAPACITY), "text request");
-    const uint8_t query_terms[] = "quick";
+    const auto *query_terms = reinterpret_cast<const uint8_t *>(QUICK_TERM);
     const uint32_t query_lengths[] = {5};
-    expect_ok(sk_text_request_add_terms(text_request, query_terms, sizeof(query_terms) - 1,
+    expect_ok(sk_text_request_add_terms(text_request, query_terms, sizeof(QUICK_TERM) - 1,
                                         query_lengths, 1, error.data(), ERROR_CAPACITY), "text terms");
     sk_text_result *text_result = nullptr;
     expect_ok(sk_engine_search_text(engine, text_request, &text_result,

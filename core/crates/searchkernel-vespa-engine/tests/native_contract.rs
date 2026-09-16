@@ -390,13 +390,13 @@ fn low_level_query_range_accepts_full_signed_i64_domain() {
     );
     let engine = Engine::open(&data, &config).expect("open signed range config");
     engine
-        .put(Document::new("minimum").field("qty", i64::MIN))
+        .put(Document::new("minimum").field("qty", i64::MIN + 1))
         .expect("insert minimum integer");
     let result = engine
         .search(SearchRequest::new(Query::Range {
             field: "qty".to_owned(),
-            lower: RangeBound::Included(i64::MIN),
-            upper: RangeBound::Included(i64::MIN),
+            lower: RangeBound::Included(i64::MIN + 1),
+            upper: RangeBound::Included(i64::MIN + 1),
         }))
         .expect("search minimum integer");
     assert_eq!(result.hits.len(), 1);

@@ -108,21 +108,24 @@ extern "C" int searchkernel_query_feature_locale_regression(const char *data_dir
         return 5;
     }
 
-    const std::locale comma_locale(std::locale::classic(), new CommaDecimalNumPut);
-    GlobalLocaleGuard locale_guard(comma_locale);
     sk_generic_search_result *result = nullptr;
-    const auto status = sk_engine_search_generic(engine, query, request, &result, error,
-                                                  sizeof(error));
+    int32_t status = SK_NATIVE_STATUS_INTERNAL;
+    {
+        const std::locale comma_locale(std::locale::classic(), new CommaDecimalNumPut);
+        GlobalLocaleGuard locale_guard(comma_locale);
+        status = sk_engine_search_generic(engine, query, request, &result, error, sizeof(error));
+    }
     sk_generic_search_request_destroy(request);
     sk_query_destroy(query);
-    sk_engine_destroy(engine);
     if (status != SK_NATIVE_STATUS_OK || !result) {
+        sk_engine_destroy(engine);
         if (result) sk_generic_search_result_destroy(result);
         return 6;
     }
 
     if (sk_generic_search_result_hit_count(result) != 1) {
         sk_generic_search_result_destroy(result);
+        sk_engine_destroy(engine);
         return 7;
     }
     const char *id = nullptr;
@@ -131,16 +134,20 @@ extern "C" int searchkernel_query_feature_locale_regression(const char *data_dir
     if (sk_generic_search_result_hit(result, 0, &id, &id_length, &score, error,
                                      sizeof(error)) != SK_NATIVE_STATUS_OK) {
         sk_generic_search_result_destroy(result);
+        sk_engine_destroy(engine);
         return 8;
     }
     if (std::string(id, id_length) != "locale-1") {
         sk_generic_search_result_destroy(result);
+        sk_engine_destroy(engine);
         return 9;
     }
     if (std::abs(score - 1.5) > 1e-12) {
         sk_generic_search_result_destroy(result);
+        sk_engine_destroy(engine);
         return 10;
     }
     sk_generic_search_result_destroy(result);
+    sk_engine_destroy(engine);
     return 0;
 }

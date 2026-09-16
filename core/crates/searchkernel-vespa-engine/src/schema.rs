@@ -537,8 +537,22 @@ fn write_config(directory: &Path, name: &str, content: &str) -> Result<()> {
     let mut file = File::create(&path).map_err(|error| {
         Error::message(format!("could not create '{}': {error}", path.display()))
     })?;
-    file.write_all(content.as_bytes())
-        .map_err(|error| Error::message(format!("could not write '{}': {error}", path.display())))
+    file.write_all(content.as_bytes()).map_err(|error| {
+        Error::message(format!("could not write '{}': {error}", path.display()))
+    })?;
+    file.sync_all()
+        .map_err(|error| Error::message(format!("could not sync '{}': {error}", path.display())))
+}
+
+fn sync_directory(path: &Path) -> Result<()> {
+    File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| {
+            Error::message(format!(
+                "could not sync directory '{}': {error}",
+                path.display()
+            ))
+        })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -619,6 +633,7 @@ impl TemporaryDirectory {
     }
 
     fn install(mut self, output: &Path, state: OutputState) -> Result<()> {
+        sync_directory(&self.path)?;
         if matches!(state, OutputState::Empty) {
             fs::remove_dir(output).map_err(|error| {
                 Error::message(format!(
@@ -634,7 +649,8 @@ impl TemporaryDirectory {
             ))
         })?;
         self.installed = true;
-        Ok(())
+        let parent = output.parent().unwrap_or_else(|| Path::new("."));
+        sync_directory(parent)
     }
 
     fn remove(&self) {

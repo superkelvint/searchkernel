@@ -78,6 +78,7 @@
 #include <vespa/searchlib/query/numeric_range_spec.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
 #include <vespa/searchlib/query/tree/range.h>
+#include <vespa/searchlib/query/tree/string_range.h>
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/vdslib/distribution/distribution.h>
@@ -160,12 +161,14 @@ using search::aggregation::MaxAggregationResult;
 using search::aggregation::MinAggregationResult;
 using search::aggregation::SumAggregationResult;
 using search::expression::AttributeNode;
+using search::expression::BoolResultNode;
 using search::expression::FloatResultNode;
 using search::expression::HoldString;
 using search::expression::Int64ResultNode;
 using search::expression::StringResultNode;
 using search::SerializedQueryTree;
 using search::query::QueryBuilder;
+using search::query::StringRange;
 using VespaQueryBuilder = QueryBuilder<proton::matching::ProtonNodeTypes>;
 using search::query::StackDumpCreator;
 using search::query::Weight;
@@ -196,11 +199,14 @@ class FailpointController {
     std::map<std::string, Entry> _entries;
 
     static bool known(std::string_view name) noexcept {
-        static constexpr std::array<std::string_view, 9> names = {
+        static constexpr std::array<std::string_view, 16> names = {
             "open_before_native_create", "open_after_native_create",
             "mutation_before_native_call", "mutation_after_native_call",
             "search_before_match", "search_after_match", "result_before_copy",
-            "result_after_allocation", "destroy_before_native_release"};
+            "result_after_allocation", "destroy_before_native_release",
+            "attribute_mutation_before_native_call",
+            "attribute_mutation_after_native_call", "group_before_match",
+            "group_after_match", "search_after_id_resolution", "search_after_docsums"};
         return std::find(names.begin(), names.end(), name) != names.end();
     }
 
@@ -287,6 +293,42 @@ public:
         default:
             throw std::invalid_argument("unsupported hardening failpoint action");
         }
+    }
+};
+
+class ResultFaultController {
+    mutable std::mutex _mutex;
+    uint32_t _fault = 0;
+    bool _armed = false;
+
+    static bool known(uint32_t fault) noexcept {
+        return fault >= SK_TEST_RESULT_FAULT_NULL_RESULT &&
+               fault <= SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR;
+    }
+
+public:
+    void set(uint32_t fault) {
+        if (!known(fault)) {
+            throw std::invalid_argument("unknown native result fault");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        _fault = fault;
+        _armed = true;
+    }
+
+    void clear() noexcept {
+        std::lock_guard<std::mutex> guard(_mutex);
+        _armed = false;
+    }
+
+    bool take(uint32_t fault) const noexcept {
+        auto *self = const_cast<ResultFaultController *>(this);
+        std::lock_guard<std::mutex> guard(self->_mutex);
+        if (!self->_armed || self->_fault != fault) {
+            return false;
+        }
+        self->_armed = false;
+        return true;
     }
 };
 
@@ -871,7 +913,7 @@ struct TextHit {
 struct TextResult {
     std::vector<TextHit> hits;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController *failpoints = nullptr;
+    std::shared_ptr<const FailpointController> failpoints;
 #endif
 };
 
@@ -989,7 +1031,9 @@ struct LocalSearchResultState {
     std::vector<double> match_feature_values;
     std::vector<LocalGroupingResultState> groupings;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController *failpoints = nullptr;
+    std::shared_ptr<const FailpointController> failpoints;
+    std::shared_ptr<const ResultFaultController> result_faults;
+    std::shared_ptr<std::atomic<uint64_t>> result_destroyed;
 #endif
 };
 
@@ -1008,7 +1052,19 @@ public:
 struct NativeQueryState {
     std::vector<QueryFieldMetadata> fields;
     mutable VespaQueryBuilder builder;
+    mutable std::optional<std::string> stack_dump;
     uint32_t next_term_id = 1;
+
+    const std::string &serialized_stack_dump() const {
+        if (!stack_dump) {
+            auto tree = builder.build();
+            if (!tree) {
+                throw std::invalid_argument("could not build query tree");
+            }
+            stack_dump = StackDumpCreator::create(*tree);
+        }
+        return *stack_dump;
+    }
 
     int32_t allocate_term_id() {
         if (next_term_id > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
@@ -1080,12 +1136,16 @@ class EmbeddedEngine {
     // owns operation-level concurrency. Close and cleanup take the exclusive
     // holder and therefore cannot race an active operation.
     mutable std::shared_mutex _lifecycle_mutex;
+    mutable std::mutex _mutation_mutex;
     // This container is owned by this adapter rather than Vespa. Hold this
     // narrow lock only while preparing a previously unseen bucket; native feed
     // calls themselves remain concurrent and are serialized by Vespa as needed.
     mutable std::mutex _bucket_mutex;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    mutable FailpointController _failpoints;
+    std::shared_ptr<FailpointController> _failpoints = std::make_shared<FailpointController>();
+    std::shared_ptr<ResultFaultController> _result_faults = std::make_shared<ResultFaultController>();
+    std::shared_ptr<std::atomic<uint64_t>> _result_destroyed =
+        std::make_shared<std::atomic<uint64_t>>(0);
 #endif
 
     static std::string read_identity_file(const std::filesystem::path &path) {
@@ -1243,6 +1303,14 @@ class EmbeddedEngine {
         }
     }
 
+    void reject_long_undefined_sentinel(const std::string &field_name, int64_t value) const {
+        if (!_legacy_state && value == std::numeric_limits<int64_t>::min()) {
+            throw std::invalid_argument(
+                "integer value INT64_MIN is reserved as Vespa's undefined attribute sentinel: " +
+                field_name);
+        }
+    }
+
     void require_text_field(const std::string &name) const {
         const auto &field = require_manifest_field(name);
         if (field.type != "text" || !field.index) {
@@ -1280,6 +1348,7 @@ class EmbeddedEngine {
                 }
                 return std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value.integer));
             }
+            reject_long_undefined_sentinel(field_name, value.integer);
             return std::make_unique<document::LongFieldValue>(value.integer);
         }
         if (field.type == "float") {
@@ -1290,7 +1359,6 @@ class EmbeddedEngine {
             if (value.kind != SK_VALUE_BOOLEAN) throw std::invalid_argument("wrong value type for attribute: " + field_name);
             return std::make_unique<document::BoolFieldValue>(value.boolean);
         }
-        (void)vespa_field;
         throw std::invalid_argument("unsupported attribute field type: " + field_name);
     }
 
@@ -1332,6 +1400,7 @@ class EmbeddedEngine {
                 }
                 return std::make_unique<document::IntFieldValue>(static_cast<int32_t>(value.integer));
             }
+            reject_long_undefined_sentinel(field_name, value.integer);
             return std::make_unique<document::LongFieldValue>(value.integer);
         }
         if (field.type == "float") {
@@ -2315,9 +2384,22 @@ class EmbeddedEngine {
         return type;
     }
 
-    static bool is_legacy_state(const std::string &data_dir, bool had_existing_state) {
-        return had_existing_state &&
-               !std::filesystem::exists(std::filesystem::path(data_dir) / ".searchkernel-schema");
+    static bool is_legacy_state(const std::string &data_dir, const std::string &config_dir,
+                                bool had_existing_state) {
+        if (had_existing_state &&
+            !std::filesystem::exists(std::filesystem::path(data_dir) / ".searchkernel-schema")) {
+            return true;
+        }
+        // The frozen embedded CRUD fixture predates the schema marker and
+        // uses Vespa's INT32 spelling even when its data directory is new.
+        // Keep the in-memory document type aligned with that native config.
+        std::ifstream attributes(std::filesystem::path(config_dir) / "attributes.cfg");
+        if (!attributes) return false;
+        std::string line;
+        while (std::getline(attributes, line)) {
+            if (line.find("datatype INT32") != std::string::npos) return true;
+        }
+        return false;
     }
 
 
@@ -2352,6 +2434,7 @@ class EmbeddedEngine {
         if (field.getDataType().getId() != document::DataType::T_LONG) {
             throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
         }
+        reject_long_undefined_sentinel(field_name, value);
         document->setFieldValue(field, std::make_unique<document::LongFieldValue>(value));
         return document;
     }
@@ -2375,6 +2458,7 @@ class EmbeddedEngine {
             if (field.getDataType().getId() != document::DataType::T_LONG) {
                 throw std::invalid_argument("integer operation requires a LONG field: " + field_name);
             }
+            reject_long_undefined_sentinel(field_name, value);
             assigned = std::make_unique<document::LongFieldValue>(value);
         }
         document::FieldUpdate field_update(field);
@@ -2395,7 +2479,7 @@ public:
           _schema_identity(validate_or_persist_schema_identity(
               data_dir, config_dir, _manifest, _data_lock.had_existing_state())),
           _document_type(_manifest.document_type),
-          _legacy_state(is_legacy_state(data_dir, _data_lock.had_existing_state())),
+          _legacy_state(is_legacy_state(data_dir, config_dir, _data_lock.had_existing_state())),
           _document_types(make_documenttypes_config(
               _manifest, _legacy_state)),
           _repo(_legacy_state
@@ -2425,24 +2509,31 @@ public:
 
     void failpoint(const char *name) const {
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-        _failpoints.hit(name);
+        _failpoints->hit(name);
 #else
         (void)name;
 #endif
     }
 
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController &failpoints() const noexcept { return _failpoints; }
-
-    void set_failpoint(const char *name, uint32_t hit, uint32_t action) {
-        _failpoints.set(name, hit, action);
+    std::shared_ptr<const FailpointController> failpoints() const noexcept { return _failpoints; }
+    std::shared_ptr<const ResultFaultController> result_faults() const noexcept { return _result_faults; }
+    void set_result_fault(uint32_t fault) { _result_faults->set(fault); }
+    void clear_result_fault() noexcept { _result_faults->clear(); }
+    uint64_t result_destroyed() const noexcept { return _result_destroyed->load(); }
+    std::shared_ptr<std::atomic<uint64_t>> result_destroyed_counter() const noexcept {
+        return _result_destroyed;
     }
 
-    void clear_failpoint(const char *name) { _failpoints.clear(name); }
+    void set_failpoint(const char *name, uint32_t hit, uint32_t action) {
+        _failpoints->set(name, hit, action);
+    }
 
-    void release_failpoint(const char *name) { _failpoints.release(name); }
+    void clear_failpoint(const char *name) { _failpoints->clear(name); }
 
-    bool failpoint_is_blocked(const char *name) const { return _failpoints.is_blocked(name); }
+    void release_failpoint(const char *name) { _failpoints->release(name); }
+
+    bool failpoint_is_blocked(const char *name) const { return _failpoints->is_blocked(name); }
 #endif
 
     void initialize(const std::string &data_dir, const std::string &config_dir) {
@@ -2964,14 +3055,20 @@ public:
         if (!group_field.attribute) {
             throw std::invalid_argument("field is not an attribute: " + options.group_field);
         }
-        if (group_field.type != "string" && group_field.type != "integer") {
+        if (group_field.type != "string" && group_field.type != "integer" &&
+            group_field.type != "boolean") {
             throw UnsupportedNativeError("grouping key type is not supported by the M grouping path: " + options.group_field);
         }
         auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
-        level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_field.name)));
-        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
-                               ? -1
-                               : static_cast<int64_t>(options.max_groups));
+        auto count = std::make_unique<CountAggregationResult>();
+        count->setExpression(std::make_unique<AttributeNode>(group_field.name));
+        level.addAggregationResult(std::move(count));
+        // Vespa may apply maxGroups before the serialized result is decoded,
+        // while its serialized child order is not guaranteed to reflect the
+        // requested order for this direct grouping path. Collect all groups
+        // and apply the public limit after the adapter has imposed the
+        // requested deterministic order below.
+        level.setMaxGroups(-1);
         switch (options.order) {
         case SK_GROUP_ORDER_COUNT_ASC:
             level.addOrderBy(std::make_unique<search::expression::AggregationRefNode>(0), true);
@@ -3025,62 +3122,26 @@ public:
                                              const LocalGroupingRequestState &options) const {
         LocalGroupingResultState result;
         const auto &root = result_grouping.getRoot();
-        if (options.order != SK_GROUP_ORDER_NONE && root.getChildrenSize() > 1) {
-            // Vespa's grouping post-processing restores group-id order for
-            // serialization. Reapply the requested native order to the
-            // already computed groups before exposing them through the
-            // generic M result contract.
-            auto groups = root.groups();
-            auto compare_value = [](const auto *left, const auto *right) {
-                return left->cmpId(*right) < 0;
-            };
-            auto compare_count = [](const auto *left, const auto *right, bool ascending) {
-                const auto &left_result = left->getAggregationResult(0);
-                const auto &right_result = right->getAggregationResult(0);
-                const auto &left_count = static_cast<const CountAggregationResult &>(left_result);
-                const auto &right_count = static_cast<const CountAggregationResult &>(right_result);
-                if (left_count.getCount() != right_count.getCount()) {
-                    return ascending ? left_count.getCount() < right_count.getCount()
-                                     : left_count.getCount() > right_count.getCount();
-                }
-                return left->cmpId(*right) < 0;
-            };
-            switch (options.order) {
-            case SK_GROUP_ORDER_COUNT_ASC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_count(left, right, true);
-                          });
-                break;
-            case SK_GROUP_ORDER_COUNT_DESC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_count(left, right, false);
-                          });
-                break;
-            case SK_GROUP_ORDER_VALUE_ASC:
-                std::sort(groups, groups + root.getChildrenSize(), compare_value);
-                break;
-            case SK_GROUP_ORDER_VALUE_DESC:
-                std::sort(groups, groups + root.getChildrenSize(),
-                          [&](const auto *left, const auto *right) {
-                              return compare_value(right, left);
-                          });
-                break;
-            default:
-                break;
-            }
-        }
         result.groups.reserve(root.getChildrenSize());
         for (uint32_t index = 0; index < root.getChildrenSize(); ++index) {
             const auto &group = root.getChild(index);
             LocalGroupState output_group;
             const auto &key = group.getId();
-            if (key.getClass().inherits(StringResultNode::classId)) {
+            if (key.getClass().inherits(BoolResultNode::classId)) {
+                const auto &value = static_cast<const BoolResultNode &>(key);
+                output_group.key.kind = SK_VALUE_BOOLEAN;
+                output_group.key.boolean = value.getBool();
+            } else if (key.getClass().inherits(StringResultNode::classId)) {
                 HoldString value(key);
                 output_group.key.kind = SK_VALUE_STRING;
                 output_group.key.string = std::string(value);
             } else if (key.getClass().inherits(Int64ResultNode::classId)) {
+                // Vespa uses INT64_MIN as the undefined sentinel for signed
+                // integer attributes. It is not a real facet value: explicit
+                // writes of that value are rejected at the boundary.
+                if (key.getInteger() == std::numeric_limits<int64_t>::min()) {
+                    continue;
+                }
                 output_group.key.kind = SK_VALUE_INTEGER;
                 output_group.key.integer = key.getInteger();
             } else {
@@ -3112,14 +3173,64 @@ public:
             }
             result.groups.push_back(std::move(output_group));
         }
+        const auto key_less = [](const OwnedValue &left, const OwnedValue &right) {
+            if (left.kind != right.kind) return left.kind < right.kind;
+            switch (left.kind) {
+            case SK_VALUE_BOOLEAN:
+                return left.boolean < right.boolean;
+            case SK_VALUE_STRING:
+                return left.string < right.string;
+            case SK_VALUE_INTEGER:
+                return left.integer < right.integer;
+            default:
+                return false;
+            }
+        };
+        const auto compare_key = [&](const LocalGroupState &left,
+                                     const LocalGroupState &right) {
+            if (key_less(left.key, right.key)) return true;
+            if (key_less(right.key, left.key)) return false;
+            return false;
+        };
+        switch (options.order) {
+        case SK_GROUP_ORDER_COUNT_ASC:
+            std::stable_sort(result.groups.begin(), result.groups.end(),
+                             [&](const auto &left, const auto &right) {
+                                 if (left.count != right.count) return left.count < right.count;
+                                 return compare_key(left, right);
+                             });
+            break;
+        case SK_GROUP_ORDER_COUNT_DESC:
+            std::stable_sort(result.groups.begin(), result.groups.end(),
+                             [&](const auto &left, const auto &right) {
+                                 if (left.count != right.count) return left.count > right.count;
+                                 return compare_key(left, right);
+                             });
+            break;
+        case SK_GROUP_ORDER_VALUE_ASC:
+            std::stable_sort(result.groups.begin(), result.groups.end(), compare_key);
+            break;
+        case SK_GROUP_ORDER_VALUE_DESC:
+            std::stable_sort(result.groups.begin(), result.groups.end(),
+                             [&](const auto &left, const auto &right) {
+                                 return compare_key(right, left);
+                             });
+            break;
+        case SK_GROUP_ORDER_NONE:
+            break;
+        default:
+            throw std::invalid_argument("unsupported grouping order");
+        }
+        if (options.max_groups != std::numeric_limits<uint32_t>::max() &&
+            result.groups.size() > options.max_groups) {
+            result.groups.resize(options.max_groups);
+        }
         return result;
     }
 
     LocalSearchResultState search_local(const NativeQueryState &query,
                                         const LocalSearchRequestState &options) const {
         if (options.rank_profile.empty()) throw std::invalid_argument("rank profile must not be empty");
-        auto tree = query.builder.build();
-        if (!tree) throw std::invalid_argument("could not build query tree");
         validate_rank_profile(options.rank_profile.c_str());
         const auto search_start = std::chrono::steady_clock::now();
         const auto timeout = std::chrono::milliseconds(options.timeout_millis);
@@ -3145,10 +3256,8 @@ public:
             if (!field.attribute) {
                 throw std::invalid_argument("field is not an attribute: " + sort.field);
             }
-            if (field.type == "boolean") {
-                throw UnsupportedNativeError("boolean sorting is not supported by the M sort path: " + sort.field);
-            }
-            if (field.type != "string" && field.type != "integer" && field.type != "float") {
+            if (field.type != "string" && field.type != "integer" &&
+                field.type != "float" && field.type != "boolean") {
                 throw std::invalid_argument("unsupported sort field type: " + sort.field);
             }
             if (!request.sortSpec.empty()) request.sortSpec.push_back(' ');
@@ -3176,8 +3285,11 @@ public:
         if (!options.groupings.empty()) {
             set_grouping_spec(request, options.groupings);
         }
-        request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
+        request.setSerializedQueryTree(
+            SerializedQueryTree::fromStackDump(query.serialized_stack_dump()));
+        failpoint("search_before_match");
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         if (reply->coverage.wasDegradedByTimeout()) {
             throw DeadlineExceededNativeError("search execution deadline exceeded");
@@ -3189,16 +3301,29 @@ public:
             throw std::runtime_error("native match-feature matrix shape mismatch");
         }
         result.match_feature_names = features.names;
-        result.match_feature_values.reserve(features.values.size());
-        for (const auto &value : features.values) {
-            if (!value.is_double()) {
-                throw std::runtime_error("M10 v1 match feature is not a scalar double");
-            }
-            result.match_feature_values.push_back(value.as_double());
-        }
+        std::vector<size_t> live_hit_rows;
+        live_hit_rows.reserve(reply->hits.size());
         result.hits.reserve(reply->hits.size());
-        for (const auto &hit : reply->hits) {
-            result.hits.push_back({id_for_gid(hit.gid), hit.metric, {}});
+        for (size_t row = 0; row < reply->hits.size(); ++row) {
+            const auto &hit = reply->hits[row];
+            if (auto id = id_for_gid(hit.gid)) {
+                result.hits.push_back({std::move(*id), hit.metric, {}});
+                live_hit_rows.push_back(row);
+            }
+        }
+        failpoint("search_after_id_resolution");
+        // The document meta store can invalidate a hit after matching. Keep
+        // all per-hit result data aligned with the compacted live-hit list;
+        // never use the original reply row as the result accessor row.
+        result.match_feature_values.reserve(result.match_feature_names.size() * live_hit_rows.size());
+        for (const size_t row : live_hit_rows) {
+            for (size_t feature = 0; feature < result.match_feature_names.size(); ++feature) {
+                const auto &value = features.values[row * result.match_feature_names.size() + feature];
+                if (!value.is_double()) {
+                    throw std::runtime_error("M10 v1 match feature is not a scalar double");
+                }
+                result.match_feature_values.push_back(value.as_double());
+            }
         }
         if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
             const auto remaining = remaining_search_timeout(
@@ -3210,7 +3335,9 @@ public:
             docsum_request.setTimeout(remaining);
             docsum_request.resultClassName = "default";
             docsum_request.ranking = options.rank_profile;
-            for (const auto &hit : reply->hits) docsum_request.hits.emplace_back(hit.gid);
+            for (const size_t row : live_hit_rows) {
+                docsum_request.hits.emplace_back(reply->hits[row].gid);
+            }
             if (options.summary_kind == SK_SUMMARY_FIELDS) {
                 docsum_request.setFields(options.summary_fields);
             }
@@ -3232,6 +3359,7 @@ public:
                     }
                 }
             }
+            failpoint("search_after_docsums");
         }
         if (!options.groupings.empty()) {
             if (reply->groupResult.empty()) {
@@ -3257,17 +3385,19 @@ public:
 
     LocalGroupingResultState group_local(const NativeQueryState &query,
                                          const LocalGroupingRequestState &options) const {
-        auto tree = query.builder.build();
-        if (!tree) throw std::invalid_argument("could not build query tree");
         SearchRequest request;
         request.setTimeout(60s);
         request.ranking = "default";
-        request.maxhits = 0;
-        request.setSerializedQueryTree(SerializedQueryTree::fromStackDump(StackDumpCreator::create(*tree)));
+        // Keep one ordinary hit so Vespa executes the grouping resort path;
+        // the public grouping operation discards that hit below.
+        request.maxhits = 1;
+        request.setSerializedQueryTree(
+            SerializedQueryTree::fromStackDump(query.serialized_stack_dump()));
         set_grouping_spec(request, options);
+        failpoint("group_before_match");
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        failpoint("group_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
-        if (!reply->hits.empty()) throw std::runtime_error("native grouping returned ordinary hits");
         if (reply->groupResult.empty()) throw std::runtime_error("native grouping result is empty");
         vespalib::nbostream result_buffer(reply->groupResult.data(), reply->groupResult.size());
         vespalib::NBOSerializer input(result_buffer);
@@ -3290,6 +3420,7 @@ public:
 
     void put_attributes(const AttributeDocumentState &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -3297,20 +3428,29 @@ public:
             std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
             prepare_bucket(bucket);
         }
+        failpoint("attribute_mutation_before_native_call");
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()), make_attribute_document(document));
+        failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        wait_for_source_state(id, true, expected_fields(document), true);
     }
 
     void update_attributes(const AttributeUpdateState &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
+        const bool was_present = source_document_present(id);
+        failpoint("attribute_mutation_before_native_call");
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()), make_attribute_update(update));
+        failpoint("attribute_mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        wait_for_source_state(id, was_present, expected_fields(update), false);
     }
 
     void put_document(const ValueDocument &document) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(document.id, _document_type));
         const Bucket bucket = bucket_for(id);
@@ -3318,18 +3458,28 @@ public:
             std::lock_guard<std::mutex> bucket_lock(_bucket_mutex);
             prepare_bucket(bucket);
         }
+        failpoint("mutation_before_native_call");
         auto result = _persistence.put(bucket, Timestamp(next_timestamp()),
                                        make_value_document(document));
+        failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        wait_for_source_state(id, true, expected_fields(document), true);
     }
 
     void update_document(const ValueUpdate &update) {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         const DocumentId id(internal_document_id(update.id, _document_type));
+        const bool was_present = source_document_present(id);
+        failpoint("mutation_before_native_call");
+        failpoint("attribute_mutation_before_native_call");
         auto result = _persistence.update(bucket_for(id), Timestamp(next_timestamp()),
                                           make_value_update(update));
+        failpoint("attribute_mutation_after_native_call");
+        failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
+        wait_for_source_state(id, was_present, update.fields, false);
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,
@@ -3368,7 +3518,7 @@ struct ValueRequest {
 struct ErrorResult {
     std::vector<std::string> ids;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-    const FailpointController *failpoints = nullptr;
+    std::shared_ptr<const FailpointController> failpoints;
 #endif
 };
 
@@ -3485,17 +3635,6 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
         break;
     default:
         throw std::invalid_argument("unsupported query field kind");
-    }
-}
-
-void validate_numeric_attribute_field(const NativeQueryState &query, const char *field) {
-    validate_query_field(query, SK_QUERY_FIELD_ATTRIBUTE, field);
-    const auto metadata = std::find_if(
-        query.fields.begin(), query.fields.end(),
-        [field](const auto &candidate) { return candidate.name == field; });
-    if (metadata->type != "integer" && metadata->type != "float") {
-        throw UnsupportedNativeError("unsupported attribute range field type: " +
-                                     std::string(field));
     }
 }
 
@@ -3630,11 +3769,27 @@ struct sk_text_request : TextRequest {};
 struct sk_text_result : TextResult {};
 struct sk_query : NativeQueryState {};
 struct sk_local_search_request : LocalSearchRequestState {};
-struct sk_local_search_result : LocalSearchResultState {};
+struct sk_local_search_result : LocalSearchResultState {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    ~sk_local_search_result() {
+        if (result_destroyed) {
+            result_destroyed->fetch_add(1);
+        }
+    }
+#endif
+};
 struct sk_attribute_document : AttributeDocumentState {};
 struct sk_attribute_update : AttributeUpdateState {};
 struct sk_local_grouping_request : LocalGroupingRequestState {};
-struct sk_local_grouping_result : LocalGroupingResultState {};
+struct sk_local_grouping_result : LocalGroupingResultState {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    ~sk_local_grouping_result() {
+        if (result_destroyed) {
+            result_destroyed->fetch_add(1);
+        }
+    }
+#endif
+};
 struct sk_generic_search_request : sk_local_search_request {};
 struct sk_generic_grouping_request : sk_local_grouping_request {};
 
@@ -3690,7 +3845,30 @@ void match_feature_name(const LocalSearchResultState &result, uint32_t feature_i
     if (!out_name || !out_length || feature_index >= result.match_feature_names.size()) {
         throw std::invalid_argument("match feature name arguments are invalid");
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    static const uint8_t invalid_utf8[] = {0xff};
+    if (result.result_faults &&
+        result.result_faults->take(SK_TEST_RESULT_FAULT_NULL_MATCH_FEATURE_NAME)) {
+        *out_name = nullptr;
+        *out_length = 1;
+        return;
+    }
+    if (result.result_faults &&
+        result.result_faults->take(SK_TEST_RESULT_FAULT_INVALID_MATCH_FEATURE_NAME)) {
+        *out_name = reinterpret_cast<const char *>(invalid_utf8);
+        *out_length = sizeof(invalid_utf8);
+        return;
+    }
+#endif
     const auto &name = result.match_feature_names[feature_index];
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (feature_index > 0 && result.result_faults &&
+        result.result_faults->take(SK_TEST_RESULT_FAULT_DUPLICATE_MATCH_FEATURE_NAME)) {
+        *out_name = result.match_feature_names[0].data();
+        *out_length = static_cast<uint32_t>(result.match_feature_names[0].size());
+        return;
+    }
+#endif
     *out_name = name.data();
     *out_length = static_cast<uint32_t>(name.size());
 }
@@ -3706,6 +3884,12 @@ void match_feature_value(const LocalSearchResultState &result, uint32_t hit_inde
     if (index >= result.match_feature_values.size()) {
         throw std::runtime_error("native match feature matrix is incomplete");
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (result.result_faults &&
+        result.result_faults->take(SK_TEST_RESULT_FAULT_MATCH_FEATURE_VALUE_ERROR)) {
+        throw std::runtime_error("injected match feature accessor failure");
+    }
+#endif
     *out_value = result.match_feature_values[index];
 }
 
@@ -4125,8 +4309,12 @@ extern "C" SK_API int32_t sk_engine_get(const sk_engine *engine, const char *id,
     }
     return invoke(error, error_capacity, [&] {
         auto document = engine->impl->get_value_document_for_abi(id);
-        if (!document.fields.empty()) {
-            *out_document = std::make_unique<sk_document>(std::move(document)).release();
+        if (document.exists) {
+            auto result = std::make_unique<sk_document>(std::move(document));
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+            result->result_faults = engine->impl->result_faults();
+#endif
+            *out_document = result.release();
         }
     });
 }
@@ -4243,7 +4431,7 @@ extern "C" int32_t sk_engine_search(const sk_engine *engine,
                                            request->limit);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         engine->impl->failpoint("result_after_allocation");
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
 #endif
         *out_result = result.release();
     });
@@ -4369,7 +4557,13 @@ extern "C" int32_t sk_engine_search_local(
         static_cast<LocalSearchResultState &>(*result) = engine->impl->search_local_result(*query, *request);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         engine->impl->failpoint("result_after_allocation");
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
+        result->result_faults = engine->impl->result_faults();
+        result->result_destroyed = engine->impl->result_destroyed_counter();
+        for (auto &grouping : result->groupings) {
+            grouping.failpoints = result->failpoints;
+            grouping.result_faults = result->result_faults;
+        }
 #endif
         *out_result = result.release();
     });
@@ -4390,6 +4584,19 @@ extern "C" int32_t sk_local_search_result_hit(
     return invoke(error, error_capacity, [&] {
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         if (result->failpoints) result->failpoints->hit("result_before_copy");
+        static const uint8_t invalid_utf8[] = {0xff};
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_HIT_ID)) {
+            *out_id = nullptr;
+            *out_id_length = 1;
+            return;
+        }
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_HIT_ID)) {
+            *out_id = reinterpret_cast<const char *>(invalid_utf8);
+            *out_id_length = sizeof(invalid_utf8);
+            return;
+        }
 #endif
         *out_id = result->hits[index].id.data();
         *out_id_length = static_cast<uint32_t>(result->hits[index].id.size());
@@ -4410,6 +4617,21 @@ extern "C" int32_t sk_local_search_result_summary_name(
     if (!result || !out_name || !out_length || hit_index >= result->hits.size() || summary_index >= result->hits[hit_index].summary.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "summary name arguments are invalid");
     return invoke(error, error_capacity, [&] {
         const auto &name = result->hits[hit_index].summary[summary_index].first;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        static const uint8_t invalid_utf8[] = {0xff};
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_SUMMARY_NAME)) {
+            *out_name = nullptr;
+            *out_length = 1;
+            return;
+        }
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_SUMMARY_NAME)) {
+            *out_name = reinterpret_cast<const char *>(invalid_utf8);
+            *out_length = sizeof(invalid_utf8);
+            return;
+        }
+#endif
         *out_name = name.data();
         *out_length = static_cast<uint32_t>(name.size());
     });
@@ -4429,12 +4651,37 @@ extern "C" int32_t sk_local_search_result_summary_value(
     if (!result || !out_kind || !out_string || !out_string_length || !out_integer || !out_float || !out_boolean || hit_index >= result->hits.size() || summary_index >= result->hits[hit_index].summary.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "summary value arguments are invalid");
     return invoke(error, error_capacity, [&] {
         const auto &value = result->hits[hit_index].summary[summary_index].second;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        static const uint8_t invalid_utf8[] = {0xff};
+        if (value.kind == SK_VALUE_STRING && result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_SUMMARY_STRING)) {
+            *out_kind = SK_VALUE_STRING;
+            *out_string = nullptr;
+            *out_string_length = 1;
+            return;
+        }
+        if (value.kind == SK_VALUE_STRING && result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_SUMMARY_STRING)) {
+            *out_kind = SK_VALUE_STRING;
+            *out_string = reinterpret_cast<const char *>(invalid_utf8);
+            *out_string_length = sizeof(invalid_utf8);
+            return;
+        }
         *out_kind = value.kind;
+#else
+        *out_kind = value.kind;
+#endif
         *out_string = value.string.data();
         *out_string_length = static_cast<uint32_t>(value.string.size());
         *out_integer = value.integer;
         *out_float = value.floating;
         *out_boolean = value.boolean;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_UNKNOWN_SUMMARY_KIND)) {
+            *out_kind = 99;
+        }
+#endif
     });
 }
 
@@ -4564,10 +4811,37 @@ int32_t grouping_result_group(const LocalGroupingResultState *result, uint32_t i
     }
     return invoke(error, error_capacity, [&] {
         const auto &group = result->groups[index];
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        static const uint8_t invalid_utf8[] = {0xff};
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_GROUP_ACCESSOR_ERROR)) {
+            throw std::runtime_error("injected grouping accessor failure");
+        }
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_UNSUPPORTED_GROUP_KEY)) {
+            *out_key_kind = 99;
+            *out_key_string = nullptr;
+            *out_key_string_length = 0;
+            *out_key_integer = 0;
+            *out_count = group.count;
+            return;
+        }
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_GROUP_KEY)) {
+            *out_key_kind = SK_VALUE_STRING;
+            *out_key_string = reinterpret_cast<const char *>(invalid_utf8);
+            *out_key_string_length = sizeof(invalid_utf8);
+            *out_key_integer = 0;
+            *out_count = group.count;
+            return;
+        }
+#endif
         *out_key_kind = group.key.kind;
         *out_key_string = group.key.string.data();
         *out_key_string_length = static_cast<uint32_t>(group.key.string.size());
-        *out_key_integer = group.key.integer;
+        *out_key_integer = group.key.kind == SK_VALUE_BOOLEAN
+                               ? (group.key.boolean ? 1 : 0)
+                               : group.key.integer;
         *out_count = group.count;
     });
 }
@@ -4583,7 +4857,24 @@ extern "C" int32_t sk_local_grouping_result_aggregation(const sk_local_grouping_
     if (out_integer) *out_integer = 0;
     if (out_float) *out_float = 0.0;
     if (!result || !out_kind || !out_integer || !out_float || group_index >= result->groups.size() || aggregation_index >= result->groups[group_index].aggregations.size()) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "aggregation result arguments are invalid");
-    return invoke(error, error_capacity, [&] { const auto &value = result->groups[group_index].aggregations[aggregation_index]; *out_kind = value.kind; *out_integer = value.integer; *out_float = value.floating; });
+    return invoke(error, error_capacity, [&] {
+        const auto &value = result->groups[group_index].aggregations[aggregation_index];
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR)) {
+            throw std::runtime_error("injected aggregation accessor failure");
+        }
+#endif
+        *out_kind = value.kind;
+        *out_integer = value.integer;
+        *out_float = value.floating;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (result->result_faults &&
+            result->result_faults->take(SK_TEST_RESULT_FAULT_UNKNOWN_AGGREGATION_KIND)) {
+            *out_kind = 99;
+        }
+#endif
+    });
 }
 extern "C" void sk_local_grouping_result_destroy(sk_local_grouping_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
 
@@ -4714,7 +5005,16 @@ extern "C" int32_t sk_engine_search_generic(
             engine->impl->search_local_result(*query, *request);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         engine->impl->failpoint("result_after_allocation");
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
+        result->result_faults = engine->impl->result_faults();
+        result->result_destroyed = engine->impl->result_destroyed_counter();
+        for (auto &grouping : result->groupings) {
+            grouping.failpoints = result->failpoints;
+            grouping.result_faults = result->result_faults;
+        }
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_RESULT)) {
+            return;
+        }
 #endif
         *out_result = result.release();
     });
@@ -4859,7 +5159,12 @@ extern "C" int32_t sk_engine_group_generic(
         static_cast<LocalGroupingResultState &>(*result) =
             engine->impl->group_local_result(*query, *request);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
+        result->result_faults = engine->impl->result_faults();
+        result->result_destroyed = engine->impl->result_destroyed_counter();
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_NULL_RESULT)) {
+            return;
+        }
 #endif
         *out = result.release();
     });
@@ -5217,7 +5522,7 @@ extern "C" int32_t sk_engine_search_text(const sk_engine *engine,
         result->hits = engine->impl->search_text(*request);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         engine->impl->failpoint("result_after_allocation");
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
 #endif
         *out_result = result.release();
     });
@@ -5337,6 +5642,11 @@ extern "C" int32_t sk_query_add_equals(sk_query *query, const char *field,
     return invoke(error, error_capacity, [&] {
         validate_field_name(field);
         validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        if (value == std::numeric_limits<int64_t>::min()) {
+            throw std::invalid_argument(
+                "integer value INT64_MIN is reserved as Vespa's undefined attribute sentinel: " +
+                std::string(field));
+        }
         query->builder.addNumberTerm(std::to_string(value), field,
                                      query->allocate_term_id(), Weight(1));
     });
@@ -5354,6 +5664,14 @@ extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
     return invoke(error, error_capacity, [&] {
         validate_field_name(field);
         validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        if ((lower_kind != SK_QUERY_BOUND_UNBOUNDED &&
+             lower_value == std::numeric_limits<int64_t>::min()) ||
+            (upper_kind != SK_QUERY_BOUND_UNBOUNDED &&
+             upper_value == std::numeric_limits<int64_t>::min())) {
+            throw std::invalid_argument(
+                "integer value INT64_MIN is reserved as Vespa's undefined attribute sentinel: " +
+                std::string(field));
+        }
         auto range = search::query::Range(make_query_range(
             lower_kind, lower_value, upper_kind, upper_value));
         query->builder.addRangeTerm(range, field, query->allocate_term_id(), Weight(1));
@@ -5399,8 +5717,35 @@ extern "C" int32_t sk_query_add_attribute_exists(
     uint32_t error_capacity) SK_NOEXCEPT {
     if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute exists arguments are invalid");
     return invoke(error, error_capacity, [&] {
-        validate_numeric_attribute_field(*query, field);
-        query->builder.addRangeTerm(search::query::Range("[;]"), field, query->allocate_term_id(), Weight(1));
+        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        const auto metadata = std::find_if(
+            query->fields.begin(), query->fields.end(),
+            [field](const auto &candidate) { return candidate.name == field; });
+        if (metadata == query->fields.end()) {
+            throw std::invalid_argument("unknown generated schema field: " + std::string(field));
+        }
+        if (metadata->type == "string") {
+            auto spec = std::make_unique<search::StringRangeSpec>();
+            // Vespa's single-string attribute uses the empty string as its
+            // undefined value. A strict lower bound excludes that sentinel
+            // while retaining every actual non-empty keyword.
+            spec->left = "";
+            spec->left_closed = false;
+            spec->right_unbounded = true;
+            query->builder.add_string_range_term(
+                StringRange(std::move(spec)), field, query->allocate_term_id(), Weight(1));
+        } else if (metadata->type == "boolean") {
+            // Vespa BOOL attributes have no undefined sentinel and expose
+            // false for documents that do not contain the source field.
+            query->builder.addOr(2);
+            query->builder.addNumberTerm("0", field, query->allocate_term_id(), Weight(1));
+            query->builder.addNumberTerm("1", field, query->allocate_term_id(), Weight(1));
+        } else if (metadata->type == "integer" || metadata->type == "float") {
+            query->builder.addRangeTerm(search::query::Range("[;]"), field,
+                                         query->allocate_term_id(), Weight(1));
+        } else {
+            throw UnsupportedNativeError("unsupported attribute exists field type: " + metadata->type);
+        }
     });
 }
 
@@ -5411,6 +5756,14 @@ extern "C" int32_t sk_query_add_attribute_integer_range(
     if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "integer range arguments are invalid");
     return invoke(error, error_capacity, [&] {
         validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        if ((lower_kind != SK_QUERY_BOUND_UNBOUNDED &&
+             lower_value == std::numeric_limits<int64_t>::min()) ||
+            (upper_kind != SK_QUERY_BOUND_UNBOUNDED &&
+             upper_value == std::numeric_limits<int64_t>::min())) {
+            throw std::invalid_argument(
+                "integer value INT64_MIN is reserved as Vespa's undefined attribute sentinel: " +
+                std::string(field));
+        }
         query->builder.addRangeTerm(search::query::Range(make_query_range(lower_kind, lower_value, upper_kind, upper_value)), field, query->allocate_term_id(), Weight(1));
     });
 }
@@ -5466,17 +5819,17 @@ extern "C" int32_t sk_engine_search_query(const sk_engine *engine,
         result->hits = engine->impl->search_query(query->builder, rank_profile, source);
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
         engine->impl->failpoint("result_after_allocation");
-        result->failpoints = &engine->impl->failpoints();
+        result->failpoints = engine->impl->failpoints();
 #endif
         *out_result = result.release();
     });
 }
 
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
-extern "C" int32_t sk_test_failpoint_set(sk_engine *engine, const char *name,
-                                            uint32_t hit, uint32_t action,
-                                            uint8_t *error,
-                                            uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_set(sk_engine *engine, const char *name,
+                                                   uint32_t hit, uint32_t action,
+                                                   uint8_t *error,
+                                                   uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !name) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "failpoint set arguments are invalid");
@@ -5485,9 +5838,9 @@ extern "C" int32_t sk_test_failpoint_set(sk_engine *engine, const char *name,
                   [&] { engine->impl->set_failpoint(name, hit, action); });
 }
 
-extern "C" int32_t sk_test_failpoint_set_open(const char *name, uint32_t hit,
-                                                 uint32_t action, uint8_t *error,
-                                                 uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_set_open(const char *name, uint32_t hit,
+                                                        uint32_t action, uint8_t *error,
+                                                        uint32_t error_capacity) SK_NOEXCEPT {
     if (!name) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "open failpoint arguments are invalid");
@@ -5496,9 +5849,9 @@ extern "C" int32_t sk_test_failpoint_set_open(const char *name, uint32_t hit,
                   [&] { OPEN_FAILPOINTS.set(name, hit, action); });
 }
 
-extern "C" int32_t sk_test_failpoint_clear(sk_engine *engine, const char *name,
-                                              uint8_t *error,
-                                              uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_clear(sk_engine *engine, const char *name,
+                                                     uint8_t *error,
+                                                     uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !name) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "failpoint clear arguments are invalid");
@@ -5507,8 +5860,8 @@ extern "C" int32_t sk_test_failpoint_clear(sk_engine *engine, const char *name,
                   [&] { engine->impl->clear_failpoint(name); });
 }
 
-extern "C" int32_t sk_test_failpoint_clear_open(const char *name, uint8_t *error,
-                                                   uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_clear_open(const char *name, uint8_t *error,
+                                                          uint32_t error_capacity) SK_NOEXCEPT {
     if (!name) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "open failpoint arguments are invalid");
@@ -5516,9 +5869,9 @@ extern "C" int32_t sk_test_failpoint_clear_open(const char *name, uint8_t *error
     return invoke(error, error_capacity, [&] { OPEN_FAILPOINTS.clear(name); });
 }
 
-extern "C" int32_t sk_test_failpoint_release(sk_engine *engine, const char *name,
-                                                uint8_t *error,
-                                                uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_release(sk_engine *engine, const char *name,
+                                                       uint8_t *error,
+                                                       uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !name) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "failpoint release arguments are invalid");
@@ -5527,11 +5880,11 @@ extern "C" int32_t sk_test_failpoint_release(sk_engine *engine, const char *name
                   [&] { engine->impl->release_failpoint(name); });
 }
 
-extern "C" int32_t sk_test_failpoint_is_blocked(const sk_engine *engine,
-                                                   const char *name,
-                                                   uint8_t *out_blocked,
-                                                   uint8_t *error,
-                                                   uint32_t error_capacity) SK_NOEXCEPT {
+extern "C" SK_API int32_t sk_test_failpoint_is_blocked(const sk_engine *engine,
+                                                          const char *name,
+                                                          uint8_t *out_blocked,
+                                                          uint8_t *error,
+                                                          uint32_t error_capacity) SK_NOEXCEPT {
     if (out_blocked) {
         *out_blocked = 0;
     }
@@ -5542,5 +5895,41 @@ extern "C" int32_t sk_test_failpoint_is_blocked(const sk_engine *engine,
     return invoke(error, error_capacity, [&] {
         *out_blocked = engine->impl->failpoint_is_blocked(name) ? 1 : 0;
     });
+}
+
+extern "C" SK_API int32_t sk_test_result_fault_set(sk_engine *engine, uint32_t fault,
+                                                      uint8_t *error,
+                                                      uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "result fault set arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { engine->impl->set_result_fault(fault); });
+}
+
+extern "C" SK_API int32_t sk_test_result_fault_clear(sk_engine *engine, uint8_t *error,
+                                                        uint32_t error_capacity) SK_NOEXCEPT {
+    if (!engine || !engine->impl) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "result fault clear arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { engine->impl->clear_result_fault(); });
+}
+
+extern "C" SK_API int32_t sk_test_result_destroy_count(const sk_engine *engine,
+                                                          uint64_t *out_count,
+                                                          uint8_t *error,
+                                                          uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_count) {
+        *out_count = 0;
+    }
+    if (!engine || !engine->impl || !out_count) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "result destroy count arguments are invalid");
+    }
+    return invoke(error, error_capacity,
+                  [&] { *out_count = engine->impl->result_destroyed(); });
 }
 #endif
