@@ -26,10 +26,12 @@ run_tsan() {
     if TSAN_OPTIONS="suppressions=$suppression halt_on_error=1" \
       LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
       "$@" >"$output" 2>&1; then
+      status=0
       cat "$output"
       return 0
+    else
+      status=$?
     fi
-    status=$?
     if ! rg -q 'FATAL: ThreadSanitizer: unexpected memory mapping' "$output"; then
       cat "$output"
       return "$status"
