@@ -17,6 +17,7 @@
   "required_transport_concepts": [
     "open",
     "call",
-    "close"
+    "close",
+    "context_manager"
   ]
 }

@@ -1,18 +1,19 @@
-# C7 — Native embedded client transport verifier contract
+# C7 — Python native embedded client transport verifier contract
 
 ## Status
 
 Frozen verifier specification for C7.
 
-C7 proves that representative foreign-language runtimes can use the reusable
-native transport without introducing a second Search Kernel semantic path.
+C7 proves that the generated Python client core can use the reusable native
+transport through the already-frozen C5 ABI without introducing a second Search
+Kernel semantic path.
 
 The normative architecture is:
 
 ```text
-language facade
+Python facade
       ↓
-generated client core
+generated Python client core
       ↓
 NativeTransport
       ↓
@@ -21,15 +22,17 @@ C5 native ABI
 canonical FlatBuffers dispatcher
 ```
 
-Python and Go are the representative proof targets.
+Python is the only C7 proof target. Additional native-language transports are
+deferred to the first-class language-package milestones and cross-language
+conformance work.
 
 ## Acceptance invariant
 
-For any canonical request envelope produced by the generated client core,
-Python and Go `NativeTransport` implementations must deliver the identical
-request bytes through the C5 ABI and return the identical canonical response
-bytes while correctly owning native handles and returned buffers and while
-implementing no Search Kernel semantics of their own.
+For any canonical request envelope produced by the generated Python client
+core, Python `NativeTransport` must deliver the identical request bytes through
+the C5 ABI and return the identical canonical response bytes while correctly
+owning native handles and returned buffers and while implementing no Search
+Kernel semantics of its own.
 
 ## What C7 owns
 
@@ -40,9 +43,10 @@ implementing no Search Kernel semantics of their own.
 - native handle creation and close;
 - FFI call plumbing;
 - pointer/length conversion;
-- copying a returned native buffer into language-owned bytes;
+- copying a returned native buffer into Python-owned `bytes`;
 - freeing the native response buffer exactly once;
-- language/runtime packaging and deterministic cleanup.
+- deterministic Python lifecycle conveniences such as context-manager support;
+- packaging required to locate/load the native library.
 
 ## What C7 must not own
 
@@ -56,8 +60,10 @@ implementing no Search Kernel semantics of their own.
 - facet semantics;
 - request normalization;
 - Portable API errors;
-- FlatBuffers message interpretation beyond what the generated client core
-  requires to call the transport abstraction.
+- JSON semantics;
+- Search Kernel IR conversion;
+- FlatBuffers message interpretation beyond treating request/response envelopes
+  as opaque byte sequences at the transport boundary.
 
 The transport must be operation-agnostic. Adding a new Portable API operation
 must not require adding a new native transport method or a new C ABI function.
@@ -70,10 +76,11 @@ C7 has two complementary verifier paths.
 
 A verifier-owned C5-compatible shim is loaded in place of the real library.
 The shim intentionally does **not** implement Search Kernel. It exists only to
-make pointer, ownership, lifecycle, and byte-fidelity behavior observable.
+make pointer, ownership, lifecycle, ABI-checking, and byte-fidelity behavior
+observable.
 
 ```text
-Python/Go NativeTransport
+Python NativeTransport
       ↓
 verifier C5 shim
       ↓
@@ -89,7 +96,7 @@ library built by the repository and the canonical dispatcher backed by C3
 `RecordingBackend`/`ScriptedBackend` fixtures.
 
 ```text
-generated client core
+generated Python client core
       ↓
 NativeTransport
       ↓
@@ -104,66 +111,71 @@ The verifier shim may never satisfy this second path.
 
 C7 acceptance therefore does not require Vespa.
 
-## Frozen language-facing transport shape
+## Frozen Python transport shape
 
 C7 freezes only the small transport-facing API required by generated clients.
-Language facades may add idiomatic conveniences later, but the following
-capabilities must exist.
-
-### Python
-
-Conceptual contract:
+The production package may wrap this idiomatically, but the verifier adapter
+must expose behavior equivalent to:
 
 ```python
-NativeTransport.open(library_path: str, open_payload: bytes = b"") -> NativeTransport
+NativeTransport.open(
+    library_path: str,
+    open_payload: bytes = b"",
+) -> NativeTransport
+
 transport.call(request: bytes) -> bytes
 transport.close() -> None
 ```
 
 Requirements:
 
-- supports the context-manager protocol;
+- supports `with ... as transport:` context-manager use;
 - `close()` is idempotent;
 - a call after close fails locally and does not enter C5;
-- the returned value from `call` is language-owned `bytes`;
-- cleanup correctness does not depend on garbage collection.
+- the returned value from `call()` is Python-owned `bytes`;
+- returned bytes remain valid after the native response buffer has been freed;
+- cleanup correctness does not depend on garbage collection or `__del__`;
+- transport/native failures are raised as transport/runtime exceptions;
+- Portable API errors remain canonical response data for generated client code
+  to map.
 
-The public package/import spelling may be generated by C6, but the C7 verifier
-adapter must expose the above behavior to the probe.
+The public package/import spelling may be generated by C6. The tiny verifier
+adapter exists only to isolate the frozen verifier from cosmetic package-layout
+changes.
 
-### Go
+## Verifier adapter contract
 
-Conceptual contract:
+The repository must provide:
 
-```go
-OpenNativeTransport(options) (*NativeTransport, error)
-(*NativeTransport).Call(request []byte) ([]byte, error)
-(*NativeTransport).Close() error
+```text
+clients/python/tests/c7_adapter.py
 ```
 
-Requirements:
+with:
 
-- `Close()` is idempotent;
-- a call after close fails locally and does not enter C5;
-- the returned slice is Go-owned and remains valid after native free;
-- cleanup correctness does not depend on a finalizer.
+```python
+expected_abi_version() -> int
+open_transport(library_path: str, open_payload: bytes)
+real_c5_smoke(library_path: str) -> None
+```
 
-The public package spelling may be generated by C6, but the C7 verifier adapter
-must expose the above behavior to the probe.
+The adapter must delegate to production `NativeTransport` and generated client
+code. It may not call `ctypes`, `cffi`, `dlopen`, C5 symbols, or implement FFI
+itself.
 
 ## C5 ABI source of truth
 
-C7 must consume the already-frozen C5 ABI. It must not independently redesign
-it. All C5 symbol/type spelling used by the verifier-owned shim is isolated in:
+C7 consumes the already-frozen C5 ABI. It must not independently redesign it.
+All C5 symbol/type spelling used by the verifier-owned shim is isolated in:
 
 ```text
 shim/c5_abi_adapter.h
 ```
 
 Before freezing C7 in the repository, reconcile that one file with the actual
-C5 public header. Do not duplicate ABI spellings in the Python or Go probes.
+C5 public header. Do not duplicate ABI declarations in Python verifier code.
 
-The expected logical operations are:
+The expected logical C5 surface is:
 
 ```text
 abi_version
@@ -178,7 +190,7 @@ free response buffer
 ### Library and ABI
 
 1. load an explicitly selected native library;
-2. read/check the C5 ABI version before the first call;
+2. read/check the C5 ABI version before the first native open/call;
 3. reject an incompatible ABI version deterministically;
 4. surface a missing/unloadable library as a transport error.
 
@@ -188,62 +200,80 @@ free response buffer
 6. repeated `close()` is harmless and does not call native close twice;
 7. calling after close fails locally and does not call native `call`;
 8. two simultaneously open transports have independent handles;
-9. closing one transport does not invalidate the other.
+9. closing one transport does not invalidate the other;
+10. Python context-manager exit closes the native handle deterministically.
 
 ### Request/response bytes
 
-10. request bytes reach native `call` byte-for-byte unchanged;
-11. empty request bytes are passed unchanged;
-12. embedded NUL bytes are preserved;
-13. a large opaque envelope is not truncated;
-14. response bytes are copied byte-for-byte into language-owned memory;
-15. response bytes remain valid after the native buffer is freed.
+11. request bytes reach native `call` byte-for-byte unchanged;
+12. empty request bytes are passed unchanged;
+13. embedded NUL bytes are preserved;
+14. a large opaque envelope is not truncated;
+15. response bytes are copied byte-for-byte into Python-owned memory;
+16. response bytes remain valid after the native buffer is freed.
 
 ### Native response ownership
 
-16. every successfully returned native response allocation is freed exactly once;
-17. no double-free occurs;
-18. no outstanding response allocation remains after a repeated-call workload;
-19. native free happens even when the generated client rejects/raises while
-    interpreting the returned canonical response.
+17. every successfully returned native response allocation is freed exactly once;
+18. no double-free occurs;
+19. no outstanding response allocation remains after a repeated-call workload;
+20. native response ownership is completed inside `NativeTransport.call()` so
+    downstream generated-client parsing never owns the C5 buffer.
 
 ### Error separation
 
-20. a native transport failure is surfaced as a transport/runtime error;
-21. a canonical Portable API error returned in a successful C5 response is
-    passed unchanged to the generated client core and mapped there;
-22. NativeTransport does not translate portable error codes/messages itself.
+21. a native transport failure is surfaced as a transport/runtime exception;
+22. a canonical Portable API error returned in a successful C5 response is
+    passed unchanged to generated client code and mapped there;
+23. `NativeTransport` does not translate portable error codes/messages itself.
 
 ### Generic call invariant
 
-23. representative operations (at minimum one mutation, search, and describe or
-    inspect operation) all traverse the same generic native `call` entry point;
-24. no per-operation C ABI function is required by C7.
+24. representative operations (at minimum one mutation, one search, and one
+    describe/inspect operation) all traverse the same generic native `call`
+    entry point;
+25. no per-operation C ABI function is required by C7.
+
+## Plumbing trace requirements
+
+The frozen plumbing probe performs exactly:
+
+```text
+6 native opens
+6 native closes
+5010 native calls
+5008 response allocations
+5008 response frees
+0 native double-closes
+0 response double-frees
+0 outstanding response buffers
+```
+
+The difference between calls and allocations is intentional:
+
+- the empty request returns an empty response without allocation;
+- the reserved `FAIL` request returns a native failure without allocation.
+
+The exact call count also makes call-after-close observable: a buggy transport
+that enters C5 after close changes the frozen count and fails acceptance.
 
 ## Stress requirement
 
-The plumbing verifier must execute at least 5,000 calls in one process and end
-with:
-
-```text
-response_allocations == response_frees
-outstanding_response_buffers == 0
-double_free == 0
-```
-
-This is a correctness probe, not a performance benchmark.
+The plumbing verifier executes 5,000 repeated calls in one process. This is a
+correctness/ownership probe, not a performance benchmark.
 
 ## Structural thinness requirements
 
-The verifier performs source-structure checks on handwritten transport code.
-It must reject:
+The verifier performs source-structure checks on handwritten Python transport
+code. It must reject:
 
 - operation-specific transport methods (`search`, `insert`, `upsert`, `patch`,
   `delete`, `get`, `analyze`, `describe`, `inspect_query`, etc.);
-- handwritten filtering/ranking/facet/default logic in transport modules;
-- direct dependency from C7 language transport code on Vespa crates/libraries;
-- a separate JSON transport or JSON-to-IR path hidden inside NativeTransport;
-- reinterpretation of canonical request/response bytes in the FFI layer.
+- handwritten filtering/ranking/facet/default/IR logic in transport modules;
+- direct dependency from C7 Python transport code on Vespa;
+- a JSON transport or JSON-to-IR path hidden inside `NativeTransport`;
+- FlatBuffers request/response parsing inside the handwritten transport;
+- Portable API error mappings inside the handwritten transport.
 
 Generated client-core files are excluded from the handwritten-thinness scan.
 
@@ -254,23 +284,10 @@ C7 does not define or verify:
 - search correctness;
 - BM25 or ranking correctness;
 - filter semantics;
-- full operation conformance across languages;
+- cross-language conformance;
+- Node/TypeScript, Go, Java, PHP, Lua, or other native transports;
 - HTTP transport behavior;
 - Vespa integration;
-- concurrency/thread-safety beyond the guarantees already frozen by C5.
+- concurrency/thread-safety beyond guarantees already frozen by C5.
 
-Full cross-language semantic equivalence belongs to C10.
-
-## Forbidden shortcuts
-
-Acceptance fails if any implementation:
-
-- calls C3 backends directly from Python/Go and bypasses C5;
-- invokes Rust through a language-specific semantic API instead of the canonical
-  byte-oriented C5 dispatcher path;
-- returns fixture responses without entering native `call`;
-- leaks or double-frees native response buffers;
-- waits for GC/finalizers to satisfy deterministic-close tests;
-- adds per-operation FFI functions to make C7 pass;
-- parses canonical requests in NativeTransport to choose behavior;
-- regenerates verifier expectations during `verify-c7.sh`.
+Cross-language semantic equivalence remains a later C-series conformance goal.

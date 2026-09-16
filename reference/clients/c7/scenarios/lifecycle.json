@@ -6,7 +6,7 @@
     "call_after_close",
     "two_independent_handles",
     "close_one_keep_one",
-    "context_or_defer_cleanup",
+    "context_manager_cleanup",
     "stress_5000_calls"
   ]
 }

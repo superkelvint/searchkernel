@@ -1,12 +1,10 @@
 #define _POSIX_C_SOURCE 200809L
 #include "c5_abi_adapter.h"
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 struct sk_handle {
@@ -156,7 +154,9 @@ int32_t sk_call(sk_handle *handle,
 
     out_response->data = response;
     out_response->len = request_len;
-    if (response) trace_event("alloc", (uint64_t)(uintptr_t)response, (uint64_t)request_len);
+    if (response) {
+        trace_event("alloc", (uint64_t)(uintptr_t)response, (uint64_t)request_len);
+    }
     return 0;
 }
 

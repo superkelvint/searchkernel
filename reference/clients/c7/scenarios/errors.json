@@ -2,9 +2,13 @@
   "version": 1,
   "cases": [
     {
+      "id": "missing_library",
+      "expect": "transport_error_before_open"
+    },
+    {
       "id": "abi_mismatch",
       "shim_abi_version": 4294967295,
-      "expect": "transport_error_before_call"
+      "expect": "transport_error_before_open"
     },
     {
       "id": "native_call_failure",

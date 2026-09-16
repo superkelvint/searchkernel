@@ -2,8 +2,8 @@
 """Frozen Python C7 transport probe.
 
 The production repository supplies `clients/python/tests/c7_adapter.py`.
-That adapter must import and delegate to the production NativeTransport; it may
-not implement FFI itself.
+That adapter must import and delegate to production NativeTransport; it may not
+implement FFI itself.
 """
 
 from __future__ import annotations
@@ -11,9 +11,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import os
 from pathlib import Path
-import sys
 
 
 def load_adapter(repo: Path):
@@ -25,7 +23,7 @@ def load_adapter(repo: Path):
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    for name in ("open_transport", "expected_abi_version"):
+    for name in ("open_transport", "expected_abi_version", "real_c5_smoke"):
         if not hasattr(mod, name):
             raise RuntimeError(f"{path} must define {name}()")
     return mod
@@ -43,32 +41,38 @@ def make_bytes(case: dict) -> bytes:
 def expect_reverse(request: bytes, response: bytes, case_id: str):
     expected = request[::-1]
     if response != expected:
-        raise AssertionError(f"{case_id}: response byte mismatch: {len(response)} bytes")
+        raise AssertionError(
+            f"{case_id}: response byte mismatch: got {len(response)} bytes, "
+            f"expected {len(expected)}"
+        )
 
 
 def run_plumbing(repo: Path, library: str, scenarios: Path):
     adapter = load_adapter(repo)
     cases = json.loads(scenarios.read_text())["cases"]
 
-    # Normal open/call/close and byte-fidelity cases.
+    # 1 open, 5 calls. Tests ordinary byte fidelity and explicit close.
     transport = adapter.open_transport(library, b"")
     try:
         for case in cases:
             request = make_bytes(case)
             response = transport.call(request)
-            if not isinstance(response, (bytes, bytearray)):
-                raise AssertionError(f"{case['id']}: call() must return owned bytes")
-            response = bytes(response)
+            if type(response) is not bytes:
+                raise AssertionError(
+                    f"{case['id']}: call() must return Python-owned bytes, "
+                    f"got {type(response)!r}"
+                )
             expect_reverse(request, response, case["id"])
-            # Force an independent copy read after NativeTransport has already
-            # returned and therefore should already have freed native memory.
+            # NativeTransport.call() must have completed native free before
+            # returning. Reading/copying here must therefore be independent of
+            # the native allocation.
             if bytes(response) != request[::-1]:
                 raise AssertionError(f"{case['id']}: response invalid after native free")
     finally:
         transport.close()
-        transport.close()  # idempotence
+        transport.close()  # must not enter native close twice
 
-    # call-after-close must be rejected before native entry.
+    # Must be rejected locally; exact trace counts detect accidental native entry.
     try:
         transport.call(b"after-close")
     except Exception:
@@ -76,19 +80,20 @@ def run_plumbing(repo: Path, library: str, scenarios: Path):
     else:
         raise AssertionError("call after close unexpectedly succeeded")
 
-    # Independent handles.
+    # 2 opens, 3 calls. Independent native handles.
     a = adapter.open_transport(library, b"a")
     b = adapter.open_transport(library, b"b")
     try:
-        expect_reverse(b"one", bytes(a.call(b"one")), "handle-a")
-        expect_reverse(b"two", bytes(b.call(b"two")), "handle-b")
+        expect_reverse(b"one", a.call(b"one"), "handle-a")
+        expect_reverse(b"two", b.call(b"two"), "handle-b")
         a.close()
-        expect_reverse(b"still-live", bytes(b.call(b"still-live")), "handle-b-after-a-close")
+        expect_reverse(b"still-live", b.call(b"still-live"), "handle-b-after-a-close")
     finally:
-        a.close()
+        a.close()  # idempotent
         b.close()
 
-    # Native call failure must become a transport/runtime exception.
+    # 1 open, 1 native call. FAIL is reserved by the verifier shim and returns
+    # a native transport status failure with no canonical response allocation.
     t = adapter.open_transport(library, b"")
     try:
         try:
@@ -100,12 +105,26 @@ def run_plumbing(repo: Path, library: str, scenarios: Path):
     finally:
         t.close()
 
-    # Repeated-call ownership stress.
+    # 1 open, 1 call. Context-manager exit must deterministically close.
+    ctx = adapter.open_transport(library, b"context")
+    with ctx as entered:
+        if entered is not ctx:
+            raise AssertionError("__enter__ must return the transport instance")
+        expect_reverse(b"context-call", entered.call(b"context-call"), "context-manager")
+    ctx.close()  # must remain idempotent after __exit__
+    try:
+        ctx.call(b"context-after-close")
+    except Exception:
+        pass
+    else:
+        raise AssertionError("context-manager did not close transport")
+
+    # 1 open, exactly 5000 calls. Ownership/leak stress.
     t = adapter.open_transport(library, b"")
     try:
         for i in range(5000):
             req = i.to_bytes(8, "little") + b"c7"
-            expect_reverse(req, bytes(t.call(req)), f"stress-{i}")
+            expect_reverse(req, t.call(req), f"stress-{i}")
     finally:
         t.close()
 
@@ -122,10 +141,18 @@ def run_abi_mismatch(repo: Path, library: str):
     raise AssertionError("ABI mismatch was not rejected")
 
 
+def run_missing_library(repo: Path, library: str):
+    adapter = load_adapter(repo)
+    try:
+        adapter.open_transport(library, b"")
+    except Exception:
+        print(json.dumps({"language": "python", "mode": "missing-library", "status": "PASS"}))
+        return
+    raise AssertionError("missing/unloadable native library was not rejected")
+
+
 def run_real_c5_smoke(repo: Path, library: str):
     adapter = load_adapter(repo)
-    if not hasattr(adapter, "real_c5_smoke"):
-        raise RuntimeError("Python C7 adapter must define real_c5_smoke(library_path)")
     adapter.real_c5_smoke(library)
     print(json.dumps({"language": "python", "mode": "real-c5-smoke", "status": "PASS"}))
 
@@ -134,7 +161,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", type=Path, required=True)
     ap.add_argument("--library", required=True)
-    ap.add_argument("--mode", choices=("plumbing", "abi-mismatch", "real-c5-smoke"), required=True)
+    ap.add_argument(
+        "--mode",
+        choices=("plumbing", "abi-mismatch", "missing-library", "real-c5-smoke"),
+        required=True,
+    )
     ap.add_argument("--scenarios", type=Path)
     args = ap.parse_args()
 
@@ -145,6 +176,8 @@ def main():
         run_plumbing(repo, args.library, args.scenarios)
     elif args.mode == "abi-mismatch":
         run_abi_mismatch(repo, args.library)
+    elif args.mode == "missing-library":
+        run_missing_library(repo, args.library)
     else:
         run_real_c5_smoke(repo, args.library)
 
