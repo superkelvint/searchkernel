@@ -124,6 +124,7 @@
 #include <string>
 #include <string_view>
 #include <shared_mutex>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -1385,56 +1386,330 @@ class EmbeddedEngine {
         return update;
     }
 
-    ValueDocument get_value_document(const std::string &external_id) const {
-        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
-        require_open();
-        validate_document_id(external_id.c_str());
-        const DocumentId id(internal_document_id(external_id, _document_type));
+    bool find_lid(const DocumentId &id, search::IDocumentMetaStore::DocId &lid) const {
         auto ready_sub_db = _db->getReadySubDB();
         if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
         auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        return meta_store_guard->get().getLid(id.getGlobalId(), lid);
+    }
+
+    std::unique_ptr<Document> read_source_document(const DocumentId &id) const {
         search::IDocumentMetaStore::DocId lid = 0;
-        if (!meta_store_guard->get().getLid(id.getGlobalId(), lid)) {
-            return {external_id, {}, 0, {}};
-        }
+        if (!find_lid(id, lid)) return {};
         auto retrievers = _db->getDocumentRetrievers(storage::spi::ReadConsistency::STRONG);
         if (!retrievers || retrievers->empty()) {
             throw std::runtime_error("Vespa DocumentDB has no document retriever");
         }
-        auto document = (*retrievers)[0]->getDocument(lid, id);
-        if (!document) return {external_id, {}, 0, {}};
+        return (*retrievers)[0]->getFullDocument(lid);
+    }
+
+    std::unique_ptr<Document> read_retrieved_document(const DocumentId &id) const {
+        search::IDocumentMetaStore::DocId lid = 0;
+        if (!find_lid(id, lid)) return {};
+        auto retrievers = _db->getDocumentRetrievers(storage::spi::ReadConsistency::STRONG);
+        if (!retrievers || retrievers->empty()) {
+            throw std::runtime_error("Vespa DocumentDB has no document retriever");
+        }
+        return (*retrievers)[0]->getFullDocument(lid);
+    }
+
+    static OwnedValue owned_value(const document::FieldValue &value, const std::string &field_name) {
+        OwnedValue owned;
+        switch (value.type()) {
+        case document::FieldValue::Type::STRING:
+            owned.kind = SK_VALUE_STRING;
+            owned.string = value.getAsString();
+            break;
+        case document::FieldValue::Type::LONG:
+            owned.kind = SK_VALUE_INTEGER;
+            owned.integer = value.getAsLong();
+            break;
+        case document::FieldValue::Type::INT:
+            owned.kind = SK_VALUE_INTEGER;
+            owned.integer = value.getAsInt();
+            break;
+        case document::FieldValue::Type::DOUBLE:
+            owned.kind = SK_VALUE_FLOAT;
+            owned.floating = value.getAsDouble();
+            break;
+        case document::FieldValue::Type::BOOL:
+            owned.kind = SK_VALUE_BOOLEAN;
+            owned.boolean = value.getAsLong() != 0;
+            break;
+        default:
+            throw std::invalid_argument("unsupported retrieved document field type: " + field_name);
+        }
+        return owned;
+    }
+
+    static bool value_matches(const document::FieldValue &actual, const OwnedValue &expected) {
+        switch (expected.kind) {
+        case SK_VALUE_STRING:
+            return actual.type() == document::FieldValue::Type::STRING && actual.getAsString() == expected.string;
+        case SK_VALUE_INTEGER:
+            return (actual.type() == document::FieldValue::Type::LONG ||
+                    actual.type() == document::FieldValue::Type::INT) &&
+                   actual.getAsLong() == expected.integer;
+        case SK_VALUE_FLOAT:
+            return actual.type() == document::FieldValue::Type::DOUBLE && actual.getAsDouble() == expected.floating;
+        case SK_VALUE_BOOLEAN:
+            return actual.type() == document::FieldValue::Type::BOOL && (actual.getAsLong() != 0) == expected.boolean;
+        default:
+            return false;
+        }
+    }
+
+    static OwnedValue string_value(std::string value) {
+        OwnedValue result;
+        result.kind = SK_VALUE_STRING;
+        result.string = std::move(value);
+        return result;
+    }
+
+    static OwnedValue integer_value(int64_t value) {
+        OwnedValue result;
+        result.kind = SK_VALUE_INTEGER;
+        result.integer = value;
+        return result;
+    }
+
+    static std::vector<std::pair<std::string, std::optional<OwnedValue>>>
+    expected_fields(const ValueDocument &document) {
+        std::vector<std::pair<std::string, std::optional<OwnedValue>>> result;
+        result.reserve(document.fields.size());
+        for (const auto &field : document.fields) {
+            result.emplace_back(field.name, field.value);
+        }
+        return result;
+    }
+
+    static std::vector<std::pair<std::string, std::optional<OwnedValue>>>
+    expected_fields(const AttributeDocumentState &document) {
+        std::vector<std::pair<std::string, std::optional<OwnedValue>>> result;
+        result.reserve(document.fields.size());
+        for (const auto &field : document.fields) {
+            result.emplace_back(field.first, field.second);
+        }
+        return result;
+    }
+
+    static std::vector<std::pair<std::string, std::optional<OwnedValue>>>
+    expected_fields(const AttributeUpdateState &update) {
+        std::vector<std::pair<std::string, std::optional<OwnedValue>>> result;
+        result.reserve(update.assignments.size());
+        for (const auto &assignment : update.assignments) {
+            result.emplace_back(assignment.first, assignment.second);
+        }
+        return result;
+    }
+
+    bool source_fields_match_impl(
+        const DocumentId &id, bool expected_present,
+        const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
+        bool exact) const {
+        auto document = read_source_document(id);
+        auto observed = exact ? nullptr : read_retrieved_document(id);
+        const Document *value_document = exact ? document.get() : observed.get();
+        if (static_cast<bool>(document) != expected_present || static_cast<bool>(value_document) != expected_present) {
+            return false;
+        }
+        if (!document) return true;
+        search::IDocumentMetaStore::DocId lid = 0;
+        if (!find_lid(id, lid)) return false;
+        for (const auto &[name, value] : expected_fields) {
+            const auto &field = _doc_type->getField(name);
+            const auto manifest = std::find_if(_manifest.fields.begin(), _manifest.fields.end(),
+                                              [&name](const auto &entry) { return entry.name == name; });
+            const bool is_attribute = manifest != _manifest.fields.end() && manifest->attribute;
+            // Exact source checks deliberately skip the retrieved-document
+            // path.  In that mode the source document is also the only valid
+            // view for attributes; never dereference the absent observation.
+            const Document *field_document = is_attribute && !exact ? observed.get() : document.get();
+            if (!value) {
+                if (is_attribute) {
+                    auto actual = field_document->getValue(field);
+                    const bool boolean_default = actual && actual->type() == document::FieldValue::Type::BOOL &&
+                                                 actual->getAsLong() == 0;
+                    if (field_document->hasValue(field) && !boolean_default) {
+                        return false;
+                    }
+                } else if (static_cast<bool>(field_document->getValue(field))) {
+                    return false;
+                }
+                continue;
+            }
+            // Vespa uses the minimum signed integer as the undefined value in
+            // its numeric attribute view. The source document still carries
+            // an explicitly assigned minimum, but the native document reader
+            // cannot use the attribute presence bit to acknowledge it.
+            const bool native_default_value =
+                exact && is_attribute &&
+                ((value->kind == SK_VALUE_BOOLEAN && !value->boolean) ||
+                 (value->kind == SK_VALUE_STRING && value->string.empty()) ||
+                 (value->kind == SK_VALUE_INTEGER &&
+                  value->integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
+                                                    : std::numeric_limits<int64_t>::min())));
+            if (native_default_value) continue;
+            auto actual = field_document->getValue(field);
+            if (!actual || (!exact && !field_document->hasValue(field)) || !value_matches(*actual, *value)) {
+                return false;
+            }
+        }
+        if (exact) {
+            for (const auto &field : _manifest.fields) {
+                const bool expected = std::any_of(
+                    expected_fields.begin(), expected_fields.end(),
+                    [&field](const auto &entry) { return entry.first == field.name && entry.second.has_value(); });
+                const bool is_attribute = field.attribute;
+                const bool expected_integer_sentinel = std::any_of(
+                    expected_fields.begin(), expected_fields.end(), [&field, this](const auto &entry) {
+                        return entry.first == field.name && entry.second.has_value() &&
+                               entry.second->kind == SK_VALUE_INTEGER &&
+                               entry.second->integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
+                                                                       : std::numeric_limits<int64_t>::min());
+                    });
+                const bool expected_attribute_default = std::any_of(
+                    expected_fields.begin(), expected_fields.end(), [&field, this](const auto &entry) {
+                        if (entry.first != field.name || !entry.second.has_value() || !field.attribute) return false;
+                        const auto &value = *entry.second;
+                        return (value.kind == SK_VALUE_BOOLEAN && !value.boolean) ||
+                               (value.kind == SK_VALUE_STRING && value.string.empty()) ||
+                               (value.kind == SK_VALUE_INTEGER &&
+                                value.integer == (_legacy_state ? std::numeric_limits<int32_t>::min()
+                                                                 : std::numeric_limits<int64_t>::min()));
+                    });
+                if (expected_integer_sentinel || expected_attribute_default) continue;
+                auto actual = value_document->getValue(_doc_type->getField(field.name));
+                bool actual_present = static_cast<bool>(actual);
+                if (!expected && is_attribute && actual) {
+                    if (field.type == "boolean" && actual->type() == document::FieldValue::Type::BOOL &&
+                        actual->getAsLong() == 0) {
+                        actual_present = false;
+                    } else if ((field.type == "string" || field.type == "text") &&
+                               actual->type() == document::FieldValue::Type::STRING && actual->getAsString().empty()) {
+                        actual_present = false;
+                    } else if (field.type == "integer" &&
+                               actual->type() == document::FieldValue::Type::LONG &&
+                               actual->getAsLong() == (_legacy_state ? std::numeric_limits<int32_t>::min()
+                                                                      : std::numeric_limits<int64_t>::min())) {
+                        actual_present = false;
+                    }
+                }
+                if (actual_present != expected) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    bool source_fields_match(
+        const DocumentId &id, bool expected_present,
+        const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
+        bool exact) const {
+        try {
+            return source_fields_match_impl(id, expected_present, expected_fields, exact);
+        } catch (const std::exception &) {
+            // A summary write can publish the LID before its serialized
+            // document is readable. Treat that transient state as not yet
+            // visible and let the bounded retry complete the operation.
+            return false;
+        }
+    }
+
+    void wait_for_source_state(
+        const DocumentId &id, bool expected_present,
+        const std::vector<std::pair<std::string, std::optional<OwnedValue>>> &expected_fields,
+        bool exact) const {
+        constexpr int attempts = 1000;
+        std::string last_error;
+        for (int attempt = 0; attempt < attempts; ++attempt) {
+            try {
+                if (source_fields_match(id, expected_present, expected_fields, exact)) return;
+            } catch (const std::exception &error) {
+                // A feed operation can complete before the document store has
+                // published a readable blob. Retry the read until the native
+                // state becomes visible instead of exposing Vespa's transient
+                // stream-read exception to the caller.
+                last_error = error.what();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (!last_error.empty()) {
+            throw std::runtime_error("Vespa document operation did not become visible: " + last_error);
+        }
+        throw std::runtime_error("Vespa document operation did not become visible");
+    }
+
+    bool source_document_present(const DocumentId &id) const {
+        return static_cast<bool>(read_source_document(id));
+    }
+
+    ValueDocument get_value_document(const std::string &external_id) const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
+        require_open();
+        validate_document_id(external_id.c_str());
+        const DocumentId id(internal_document_id(external_id, _document_type));
+        auto document = read_source_document(id);
+        if (!document) {
+            ValueDocument result;
+            result.id = external_id;
+            return result;
+        }
         ValueDocument result;
         result.id = external_id;
+        result.exists = true;
         for (auto iterator = document->begin(); iterator != document->end(); ++iterator) {
             const auto &field = *iterator;
             auto value = document->getValue(field);
             if (!value) continue;
-            OwnedValue owned;
-            switch (value->type()) {
-            case document::FieldValue::Type::STRING:
-                owned.kind = SK_VALUE_STRING;
-                owned.string = value->getAsString();
-                break;
-            case document::FieldValue::Type::LONG:
-                owned.kind = SK_VALUE_INTEGER;
-                owned.integer = value->getAsLong();
-                break;
-            case document::FieldValue::Type::INT:
-                owned.kind = SK_VALUE_INTEGER;
-                owned.integer = value->getAsInt();
-                break;
-            case document::FieldValue::Type::DOUBLE:
-                owned.kind = SK_VALUE_FLOAT;
-                owned.floating = value->getAsDouble();
-                break;
-            case document::FieldValue::Type::BOOL:
-                owned.kind = SK_VALUE_BOOLEAN;
-                owned.boolean = value->getAsLong() != 0;
-                break;
-            default:
-                throw std::invalid_argument("unsupported retrieved document field type: " + field.getName());
-            }
+            OwnedValue owned = owned_value(*value, field.getName());
             result.fields.push_back({field.getName(), std::move(owned), {}});
+        }
+        search::IDocumentMetaStore::DocId lid = 0;
+        auto observed = find_lid(id, lid) ? read_retrieved_document(id) : nullptr;
+        if (observed) {
+            for (const auto &manifest_field : _manifest.fields) {
+                if (!manifest_field.attribute) continue;
+                const auto &schema_field = _doc_type->getField(manifest_field.name);
+                const auto existing = std::find_if(
+                    result.fields.begin(), result.fields.end(),
+                    [&manifest_field](const auto &entry) { return entry.name == manifest_field.name; });
+                auto observed_value = observed->getValue(schema_field);
+                if (!observed_value || !observed->hasValue(schema_field)) {
+                    if (manifest_field.attribute && existing != result.fields.end() &&
+                        existing->value.kind == SK_VALUE_STRING &&
+                        existing->value.string.empty()) {
+                        continue;
+                    }
+                    // Signed integer attributes use their minimum value as the
+                    // undefined sentinel, so an explicitly stored boundary value is
+                    // absent from the attribute view but remains in the source document.
+                    if (manifest_field.attribute && existing != result.fields.end() &&
+                        existing->value.kind == SK_VALUE_INTEGER &&
+                        existing->value.integer == (_legacy_state
+                                                        ? std::numeric_limits<int32_t>::min()
+                                                        : std::numeric_limits<int64_t>::min())) {
+                        continue;
+                    }
+                    if (existing != result.fields.end()) result.fields.erase(existing);
+                    continue;
+                }
+                // Vespa's boolean attribute has no undefined sentinel and reads as false for
+                // every document. Do not turn that storage default into a document field when
+                // the source document never contained the field.
+                if (existing == result.fields.end() && observed_value->type() == document::FieldValue::Type::BOOL &&
+                    observed_value->getAsLong() == 0) {
+                    continue;
+                }
+                DocumentFieldState state{manifest_field.name, owned_value(*observed_value, manifest_field.name), {}};
+                if (existing != result.fields.end()) {
+                    *existing = std::move(state);
+                } else {
+                    result.fields.push_back(std::move(state));
+                }
+            }
         }
         return result;
     }
@@ -2255,10 +2530,16 @@ public:
         if (replay_serial == std::numeric_limits<uint64_t>::max()) {
             throw std::runtime_error("native feed serial space exhausted");
         }
-        // Mutation timestamps are owned by this adapter. Start after the
-        // recovered feed serial so a new engine lifetime cannot submit an
-        // older update than one already persisted for the same document.
-        _next_timestamp = replay_serial + 1;
+        // Mutation timestamps are owned by this adapter. Feed serials and
+        // document timestamps are separate Vespa domains, so a replay serial
+        // is not a safe lower bound for a timestamp after reopen. Use a
+        // wall-clock value to move across engine lifetimes, while retaining
+        // the replay serial as a useful lower bound for old test data.
+        const auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        const auto timestamp_floor = static_cast<uint64_t>(std::max<int64_t>(0, now));
+        _next_timestamp = std::max(replay_serial + 1, timestamp_floor);
 
         _handler = std::make_shared<PersistenceHandlerProxy>(_db);
         _persistence.putHandler(_persistence.getWLock(), bucket_space(),
