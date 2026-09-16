@@ -1,0 +1,9 @@
+{
+  "id": "cross-boundary-repeated-recovery",
+  "boundaries": ["product", "c5"],
+  "cycles": 20,
+  "sequence": ["insert", "update", "delete", "close"],
+  "reopen_after_every_crash": true,
+  "identity_checks": true,
+  "real_process_abort": true
+}

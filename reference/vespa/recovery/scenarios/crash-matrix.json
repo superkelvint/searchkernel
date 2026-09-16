@@ -1,0 +1,11 @@
+{
+  "id": "cross-boundary-crash-matrix",
+  "boundaries": ["product", "c5"],
+  "operations": ["insert", "update", "delete", "close"],
+  "phases": ["before", "after"],
+  "matrix_repetitions": 3,
+  "accepted_mutation_outcomes": ["pre", "post"],
+  "identity_checks": true,
+  "no_fresh_index_check": true,
+  "real_process_abort": true
+}
