@@ -78,8 +78,8 @@ if s5["steps"][1]["request"]["rank_properties"] != [{"name":"boost","value":"2.0
 
 errors=json.load(open(ROOT/"scenarios/errors.json",encoding="utf-8"))
 cases=errors.get("cases",[])
-if errors.get("version") != 1 or len(cases) != 13: raise SystemExit("M10 requires exactly 13 negative cases")
-if len({c.get("id") for c in cases}) != 13: raise SystemExit("M10 negative ids must be unique")
+if errors.get("version") != 1 or len(cases) != 14: raise SystemExit("M10 requires exactly 14 negative cases")
+if len({c.get("id") for c in cases}) != 14: raise SystemExit("M10 negative ids must be unique")
 required_errors={
  "invalid_rank_profile","duplicate_rank_profile","invalid_rank_expression",
  "invalid_match_feature","duplicate_match_feature","invalid_rank_property","duplicate_rank_property",

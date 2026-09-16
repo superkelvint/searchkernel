@@ -59,6 +59,6 @@ if set(query)!= {'and'} or len(query['and'])!=2 or 'attribute_equals' not in que
 if composite['steps'][0]['op']!='group':
     raise SystemExit('M9 composite scenario must use native grouping')
 errs=json.load(open(ROOT/'scenarios/errors.json',encoding='utf-8'))
-if errs.get('version')!=1 or len(errs.get('cases',[]))!=25: raise SystemExit('M9 requires exactly 25 frozen negative cases')
-if len({c['id'] for c in errs['cases']})!=25: raise SystemExit('M9 error ids must be unique')
+if errs.get('version')!=1 or len(errs.get('cases',[]))!=27: raise SystemExit('M9 requires exactly 27 frozen negative cases')
+if len({c['id'] for c in errs['cases']})!=27: raise SystemExit('M9 error ids must be unique')
 print('M9 scenarios valid')

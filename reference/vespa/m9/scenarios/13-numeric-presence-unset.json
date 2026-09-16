@@ -57,6 +57,23 @@
       }
     },
     {
+      "id":"integer-full-range",
+      "op":"search",
+      "request":{
+        "query":{
+          "attribute_range":{
+            "field":"qty",
+            "lower":{"unbounded":true},
+            "upper":{"unbounded":true}
+          }
+        },
+        "limit":10,
+        "offset":0,
+        "sort":[{"field":"qty","order":"ascending"}],
+        "summary":{"fields":["qty"]}
+      }
+    },
+    {
       "id":"float-full-range",
       "op":"search",
       "request":{

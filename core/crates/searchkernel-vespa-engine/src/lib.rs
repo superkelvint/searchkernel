@@ -182,6 +182,7 @@ use std::path::Path;
 use std::ptr::{self, NonNull};
 
 const EXPECTED_ABI: u32 = sys::EXPECTED_ABI;
+const RESERVED_RANK_PROPERTIES: &[&str] = &["vespa.matching.numthreadspersearch"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
@@ -1399,6 +1400,11 @@ fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<(), Error> 
                 "rank property name must not be empty or too long",
             ));
         }
+        if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
+            return Err(Error::message(format!(
+                "rank property '{name}' is reserved by Search Kernel"
+            )));
+        }
         if value.is_empty() {
             return Err(Error::message("rank property value must not be empty"));
         }
@@ -1883,17 +1889,8 @@ fn lower_query(
             let value_kind = attribute_range_kind(lower).or_else(|| attribute_range_kind(upper));
             match value_kind {
                 None => {
-                    let field = cstring(field)?;
-                    let mut error = NativeError::new();
-                    let status = unsafe {
-                        sys::sk_query_add_attribute_exists(
-                            native.0.as_ptr(),
-                            field.as_ptr(),
-                            error.as_mut_ptr(),
-                            error.capacity(),
-                        )
-                    };
-                    check(status, &error)
+                    let kind = numeric_attribute_range_kind(native, field)?;
+                    add_native_unbounded_attribute_range(native, field, kind)
                 }
                 Some(AttributeKind::Integer) => {
                     let (lower_kind, lower_value) = integer_attribute_bound(lower)?;
@@ -1985,7 +1982,7 @@ fn validate_query_fields(native: &NativeQuery, query: &Query) -> Result<(), Erro
                     field,
                 )
             } else {
-                validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
+                numeric_attribute_range_kind(native, field).map(|_| ())
             }
         }
     }
@@ -2013,6 +2010,52 @@ fn attribute_range_kind(bound: &AttributeBound) -> Option<AttributeKind> {
         AttributeBound::Included(Value::Boolean(_))
         | AttributeBound::Excluded(Value::Boolean(_)) => Some(AttributeKind::Boolean),
     }
+}
+
+fn numeric_attribute_range_kind(native: &NativeQuery, field: &str) -> Result<AttributeKind, Error> {
+    validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)?;
+    if validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field).is_ok() {
+        return Ok(AttributeKind::Integer);
+    }
+    if validate_native_field(native, sys::SK_QUERY_FIELD_FLOAT, field).is_ok() {
+        return Ok(AttributeKind::Float);
+    }
+    Err(Error::message("unsupported attribute range field type"))
+}
+
+fn add_native_unbounded_attribute_range(
+    native: &NativeQuery,
+    field: &str,
+    kind: AttributeKind,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        match kind {
+            AttributeKind::Integer => sys::sk_query_add_attribute_integer_range(
+                native.0.as_ptr(),
+                field.as_ptr(),
+                sys::SK_QUERY_BOUND_UNBOUNDED,
+                0,
+                sys::SK_QUERY_BOUND_UNBOUNDED,
+                0,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            AttributeKind::Float => sys::sk_query_add_attribute_float_range(
+                native.0.as_ptr(),
+                field.as_ptr(),
+                sys::SK_QUERY_BOUND_UNBOUNDED,
+                0.0,
+                sys::SK_QUERY_BOUND_UNBOUNDED,
+                0.0,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            AttributeKind::String | AttributeKind::Boolean => unreachable!(),
+        }
+    };
+    check(status, &error)
 }
 
 fn integer_attribute_bound(bound: &AttributeBound) -> Result<(u32, i64), Error> {
@@ -2297,6 +2340,12 @@ mod tests {
         let error = super::validate_search_ranking_inputs(&collision)
             .expect_err("query-feature/rank-property collisions must be rejected");
         assert!(error.to_string().contains("collision"));
+
+        let reserved = SearchRequest::new(Query::True)
+            .rank_property("vespa.matching.numthreadspersearch", "2");
+        let error = super::validate_search_ranking_inputs(&reserved)
+            .expect_err("Search Kernel-owned rank properties must be rejected");
+        assert!(error.to_string().contains("reserved"));
     }
 
     #[test]

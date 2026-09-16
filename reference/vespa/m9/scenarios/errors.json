@@ -374,6 +374,48 @@
       "expected_error": "unsupported_field_type"
     },
     {
+      "id": "unbounded-range-string",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {"name": "category", "type": "string", "attribute": true, "summary": true}
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "category",
+              "lower": "unbounded",
+              "upper": "unbounded"
+            }
+          }
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
+      "id": "unbounded-range-boolean",
+      "schema": {
+        "document_type": "typea",
+        "fields": [
+          {"name": "active", "type": "boolean", "attribute": true, "summary": true}
+        ]
+      },
+      "operation": {
+        "search": {
+          "query": {
+            "attribute_range": {
+              "field": "active",
+              "lower": "unbounded",
+              "upper": "unbounded"
+            }
+          }
+        }
+      },
+      "expected_error": "unsupported_field_type"
+    },
+    {
       "id": "range-mixed-bound-type",
       "schema": {
         "document_type": "typea",

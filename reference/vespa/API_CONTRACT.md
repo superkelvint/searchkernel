@@ -193,7 +193,6 @@ let schema = Schema::new("typea")
 let request = SearchRequest::new(Query::term("title", "fox"))
     .rank_profile("product")
     .query_feature("boost", 2.0)
-    .rank_property("vespa.matching.numthreadspersearch", "1")
     .limit(10);
 ```
 
@@ -218,6 +217,11 @@ not part of this contract.
 
 The same effective property name may not be supplied through both
 `query_feature` and `rank_property` in one request.
+
+Search Kernel reserves the low-level Vespa property
+`vespa.matching.numthreadspersearch` and supplies the deterministic value `1`
+to its embedded matcher. Callers must not set this property through
+`rank_property`; doing so is an `invalid_rank_property` error.
 
 Feature inspection returns scalar native match features. A non-scalar/data
 feature is an explicit unsupported-value error in M10 v1; it is never coerced

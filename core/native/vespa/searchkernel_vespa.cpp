@@ -341,6 +341,7 @@ constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
     "host",           "documentid",     "position",      "split_foreach", "tokenize",
     "if",             "else",           "switch",        "case",      "sddocname",
     "relevancy",      "rankfeatures",  "summaryfeatures"};
+constexpr std::string_view RESERVED_RANK_PROPERTY = "vespa.matching.numthreadspersearch";
 
 struct QueryFieldMetadata {
     std::string name;
@@ -3290,6 +3291,17 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
     }
 }
 
+void validate_numeric_attribute_field(const NativeQueryState &query, const char *field) {
+    validate_query_field(query, SK_QUERY_FIELD_ATTRIBUTE, field);
+    const auto metadata = std::find_if(
+        query.fields.begin(), query.fields.end(),
+        [field](const auto &candidate) { return candidate.name == field; });
+    if (metadata->type != "integer" && metadata->type != "float") {
+        throw UnsupportedNativeError("unsupported attribute range field type: " +
+                                     std::string(field));
+    }
+}
+
 void add_query_operator(NativeQueryState &query, uint32_t kind, uint32_t child_count) {
     if (child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
         throw std::invalid_argument("query child count cannot be represented by Vespa");
@@ -3453,6 +3465,9 @@ void add_rank_property(LocalSearchRequestState &request, const char *name, const
     validate_string_size(value, MAX_RANK_PROFILE_BYTES, "rank property value");
     if (*name == '\0') throw std::invalid_argument("rank property name must not be empty");
     if (*value == '\0') throw std::invalid_argument("rank property value must not be empty");
+    if (std::string_view(name) == RESERVED_RANK_PROPERTY) {
+        throw std::invalid_argument("rank property is reserved by Search Kernel");
+    }
     if (std::find_if(request.rank_properties.begin(), request.rank_properties.end(),
                      [name](const auto &entry) { return entry.first == name; }) !=
         request.rank_properties.end()) {
@@ -5140,7 +5155,7 @@ extern "C" int32_t sk_query_add_attribute_exists(
     uint32_t error_capacity) SK_NOEXCEPT {
     if (!query || !field) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute exists arguments are invalid");
     return invoke(error, error_capacity, [&] {
-        validate_query_field(*query, SK_QUERY_FIELD_ATTRIBUTE, field);
+        validate_numeric_attribute_field(*query, field);
         query->builder.addRangeTerm(search::query::Range("[;]"), field, query->allocate_term_id(), Weight(1));
     });
 }

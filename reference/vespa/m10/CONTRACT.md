@@ -142,6 +142,11 @@ empty property name
 empty property value
 duplicate property name
 collision between a query feature and request rank property with the same effective rank-property key
+the Search Kernel-reserved property `vespa.matching.numthreadspersearch`
+
+Search Kernel owns `vespa.matching.numthreadspersearch` and supplies the
+deterministic value `1` to the embedded matcher. It is not caller-configurable
+in M10 v1.
 ```
 
 This is a low-level Vespa-facing API. The high-level C/I layers may expose a narrower policy later.
