@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub(crate) struct HandleState {
     pub(crate) context: Arc<IndexContext>,
     pub(crate) session: Arc<BackendSession>,
+    #[cfg(feature = "c7-test-support")]
+    pub(crate) response_override: Option<Vec<u8>>,
 }
 
 struct Registry {
@@ -50,9 +52,41 @@ pub(crate) fn register_session(context: Arc<IndexContext>, session: Arc<BackendS
         return 0;
     };
     registry.next = next;
-    registry
-        .entries
-        .insert(handle, Arc::new(HandleState { context, session }));
+    registry.entries.insert(
+        handle,
+        Arc::new(HandleState {
+            context,
+            session,
+            #[cfg(feature = "c7-test-support")]
+            response_override: None,
+        }),
+    );
+    handle
+}
+
+#[cfg(feature = "c7-test-support")]
+pub(crate) fn register_response(
+    context: Arc<IndexContext>,
+    backend: Arc<dyn Backend>,
+    response: Vec<u8>,
+) -> u64 {
+    let mut registry = lock_registry();
+    let handle = registry.next;
+    if handle == 0 {
+        return 0;
+    }
+    let Some(next) = registry.next.checked_add(1) else {
+        return 0;
+    };
+    registry.next = next;
+    registry.entries.insert(
+        handle,
+        Arc::new(HandleState {
+            context,
+            session: BackendSession::from_backend(backend),
+            response_override: Some(response),
+        }),
+    );
     handle
 }
 

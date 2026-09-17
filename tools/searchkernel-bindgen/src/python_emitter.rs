@@ -2,6 +2,8 @@ use crate::normalized::*;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+const PYTHON_JSON_CODECS: &str = include_str!("../templates/searchkernel_python_json.py");
+
 pub fn generate(model: &Model, template: &str) -> Result<String, String> {
     let projection = Projection::new(model);
     let declarations = projection.declarations()?;
@@ -32,6 +34,7 @@ pub fn generate(model: &Model, template: &str) -> Result<String, String> {
         .replace("# __MODEL_ALIASES__", &aliases)
         .replace("__SCHEMA_DESCRIPTOR__", &descriptor)
         .replace("# __STANDALONE_ENCODERS__", &standalone)
+        .replace("# __PYTHON_JSON_CODECS__", PYTHON_JSON_CODECS)
         .replace("# __CLIENT_METHODS__", &methods)
         .replace("__ALL__", &format!("{:?}", exports));
     let enum_inventory = model

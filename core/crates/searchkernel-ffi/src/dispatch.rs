@@ -8,6 +8,11 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
         return Err(status::UNSUPPORTED_PROTOCOL);
     }
 
+    #[cfg(feature = "c7-test-support")]
+    if let Some(response) = &state.response_override {
+        return Ok(response.clone());
+    }
+
     match envelope.payload_type().0 {
         transport::REQUEST_INSERT => {
             let payload = envelope
@@ -112,12 +117,12 @@ pub(crate) fn dispatch(state: &HandleState, request: &[u8]) -> Result<Vec<u8>, u
                 .payload_as_search_kernel_v1_describe_request()
                 .ok_or(status::INVALID_REQUEST)?;
             let _ = payload;
-            execute_context(state, |_| Ok(()))?.map_err(|_| status::INTERNAL)?;
-            let result = state.context.describe();
-            Ok(transport::frame_response(
+            let result = execute_context(state, |context| Ok(context.describe()))?;
+            Ok(encode_result(
+                result,
                 transport::RESPONSE_DESCRIBE,
-                |builder| {
-                    searchkernel_ir::describe_result_offset(builder, &result).as_union_value()
+                |builder, result| {
+                    searchkernel_ir::describe_result_offset(builder, result).as_union_value()
                 },
             ))
         }
@@ -223,6 +228,8 @@ mod tests {
             session: searchkernel_ir::BackendSession::from_backend(Arc::new(
                 RecordingBackend::new(),
             )),
+            #[cfg(feature = "c7-test-support")]
+            response_override: None,
         }
     }
 
@@ -273,5 +280,31 @@ mod tests {
             ),
             Err(status::INDEX_CLOSED)
         );
+    }
+
+    #[test]
+    fn context_dispatch_helper_holds_lease_until_callback_returns() {
+        let state = Arc::new(test_state());
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel();
+
+        let worker_state = Arc::clone(&state);
+        let worker = std::thread::spawn(move || {
+            execute_context(&worker_state, |_| {
+                started_sender.send(()).expect("signal describe callback");
+                release_receiver.recv().expect("wait for describe release");
+                Ok(())
+            })
+        });
+        started_receiver
+            .recv()
+            .expect("describe callback must start before close");
+
+        let close_session = Arc::clone(&state.session);
+        let closer = std::thread::spawn(move || close_session.close());
+        release_sender.send(()).expect("release describe callback");
+
+        assert_eq!(worker.join().expect("describe worker"), Ok(Ok(())));
+        closer.join().expect("close worker").expect("close session");
     }
 }

@@ -18,6 +18,7 @@ from .generated.client import (
     FacetRequest as _GeneratedFacetRequest,
     FieldDefinition as _GeneratedFieldDefinition,
     FilterExpr as _GeneratedFilterExpr,
+    InsertRequest as _GeneratedInsertRequest,
     IndexDefinition as _GeneratedIndexDefinition,
     PatchOperation as _GeneratedPatchOperation,
     PatchRequest as _GeneratedPatchRequest,
@@ -28,6 +29,9 @@ from .generated.client import (
 )
 from .generated.client import __all__ as _generated_all
 from .transport import NativeTransport, NativeTransportError
+
+
+_UNSET = object()
 
 
 def _native_library_name() -> str:
@@ -276,6 +280,209 @@ def _hit(value) -> Hit:
     return Hit(value.id, {key: _python_value(item) for key, item in value.fields.items()}, value.score, value.highlights)
 
 
+def _field_name(value: Any, label: str = "field") -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _non_negative_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{label} must be an integer")
+    if value < 0:
+        raise ValueError(f"{label} must be non-negative")
+    return value
+
+
+def _positive_int(value: Any, label: str) -> int:
+    value = _non_negative_int(value, label)
+    if value == 0:
+        raise ValueError(f"{label} must be positive")
+    return value
+
+
+class _SearchBuilderBase:
+    """Shared handwritten state and ergonomics for search-like builders."""
+
+    def __init__(self, index: "Index", query: str | None):
+        self._index = index
+        self._query = query
+        self._filter: _GeneratedFilterExpr | None = None
+        self._sort_values: list[_GeneratedSortExpr] = []
+        self._facet_values: list[_GeneratedFacetRequest] = []
+        self._limit: int | None = None
+        self._offset: int | None = None
+        self._pagination_mode: str | None = None
+        self._legacy_results: SearchResults | None = None
+
+    def filter(self, filter_expr: _GeneratedFilterExpr) -> "_SearchBuilderBase":
+        if not isinstance(filter_expr, _GeneratedFilterExpr):
+            raise TypeError("filter must be an existing structured FilterExpr")
+        self._filter = filter_expr
+        self._legacy_results = None
+        return self
+
+    def sort(self, field: str, direction: str) -> "_SearchBuilderBase":
+        field = _field_name(field)
+        if direction not in {"asc", "desc"}:
+            raise ValueError("sort direction must be 'asc' or 'desc'")
+        self._sort_values.append(_GeneratedSortExpr(field=field, direction=direction))
+        self._legacy_results = None
+        return self
+
+    def facet(
+        self,
+        field: str,
+        *,
+        limit: int | None = None,
+        sort: str | None = None,
+    ) -> "_SearchBuilderBase":
+        field = _field_name(field)
+        if limit is not None:
+            limit = _non_negative_int(limit, "facet limit")
+        if sort is not None and sort not in {
+            "count_asc",
+            "count_desc",
+            "value_asc",
+            "value_desc",
+        }:
+            raise ValueError(
+                "facet sort must be one of count_asc, count_desc, value_asc, value_desc"
+            )
+        self._facet_values.append(
+            _GeneratedFacetRequest(field=field, limit=limit, sort=sort)
+        )
+        self._legacy_results = None
+        return self
+
+    def offset(self, value: int) -> "_SearchBuilderBase":
+        self._select_offset_limit_pagination()
+        self._offset = _non_negative_int(value, "offset")
+        self._legacy_results = None
+        return self
+
+    def limit(self, value: int) -> "_SearchBuilderBase":
+        self._select_offset_limit_pagination()
+        self._limit = _non_negative_int(value, "limit")
+        self._legacy_results = None
+        return self
+
+    def page(self, page_number: int, page_size: int) -> "_SearchBuilderBase":
+        if self._pagination_mode is not None:
+            raise ValueError("page() cannot be combined with offset() or limit()")
+        page_number = _positive_int(page_number, "page number")
+        page_size = _positive_int(page_size, "page size")
+        self._pagination_mode = "page"
+        self._offset = (page_number - 1) * page_size
+        self._limit = page_size
+        self._legacy_results = None
+        return self
+
+    def _select_offset_limit_pagination(self) -> None:
+        if self._pagination_mode == "page":
+            raise ValueError("offset() and limit() cannot be combined with page()")
+        self._pagination_mode = "offset_limit"
+
+    def _add_legacy_sort(self, values: Sequence[Any] | None) -> None:
+        for value in values or []:
+            if not isinstance(value, _GeneratedSortExpr):
+                raise TypeError(
+                    "sort values must be field(...).asc() or field(...).desc()"
+                )
+            if value.direction not in {"asc", "desc"}:
+                raise ValueError("sort direction must be 'asc' or 'desc'")
+            self._sort_values.append(value)
+        self._legacy_results = None
+
+    def _add_legacy_facets(self, values: Sequence[Any] | None) -> None:
+        for value in values or []:
+            if isinstance(value, str):
+                self.facet(value)
+            elif isinstance(value, _GeneratedFacetRequest):
+                self._facet_values.append(value)
+            else:
+                raise TypeError(
+                    "facets must contain field names or generated FacetRequest values"
+                )
+        self._legacy_results = None
+
+    def _execute(self) -> SearchResults:
+        self._legacy_results = self._index._execute_search(
+            query=self._query,
+            filter_expr=self._filter,
+            sort_values=self._sort_values,
+            facet_values=self._facet_values,
+            limit=self._limit,
+            offset=self._offset,
+        )
+        return self._legacy_results
+
+    @property
+    def hits(self) -> list[Hit]:
+        return self._result_for_legacy_access().hits
+
+    @property
+    def total_hits(self) -> int:
+        return self._result_for_legacy_access().total_hits
+
+    @property
+    def facets(self) -> dict[str, list[dict[str, Any]]]:
+        return self._result_for_legacy_access().facets
+
+    @property
+    def total_hits_relation(self) -> str:
+        return self._result_for_legacy_access().total_hits_relation
+
+    def _result_for_legacy_access(self) -> SearchResults:
+        if self._legacy_results is None:
+            return self._execute()
+        return self._legacy_results
+
+
+class SearchBuilder(_SearchBuilderBase):
+    """Mutable fluent builder for full-text searches."""
+
+    def execute(self) -> SearchResults:
+        return self._execute()
+
+
+class BrowseBuilder(_SearchBuilderBase):
+    """Mutable fluent builder for structured match-all searches."""
+
+    def execute(self) -> SearchResults:
+        return self._execute()
+
+
+class PatchBuilder:
+    """Mutable fluent builder for an ordered document patch."""
+
+    def __init__(self, index: "Index", identifier: str):
+        self._index = index
+        self._identifier = identifier
+        self._operations: list[_GeneratedPatchOperation] = []
+
+    def set(self, field: str, value: Any) -> "PatchBuilder":
+        field = _field_name(field)
+        if field == "_id":
+            raise ValueError("patch field must not be _id")
+        self._operations.append(
+            _GeneratedPatchOperation(kind="set", field=field, value=_value(value))
+        )
+        return self
+
+    def unset(self, field: str) -> "PatchBuilder":
+        field = _field_name(field)
+        if field == "_id":
+            raise ValueError("patch field must not be _id")
+        self._operations.append(_GeneratedPatchOperation(kind="unset", field=field))
+        return self
+
+    def execute(self) -> None:
+        self._index._client.patch(
+            _GeneratedPatchRequest(id=self._identifier, operations=self._operations)
+        )
+
+
 class Index:
     """A synchronous on-disk Search Kernel index."""
 
@@ -324,20 +531,38 @@ class Index:
         index._client = client
         return index
 
-    def put(self, document: Mapping[str, Any]) -> None:
+    def insert(self, document: Mapping[str, Any]) -> None:
         if not isinstance(document, Mapping) or "_id" not in document:
             raise ValueError("document must contain a string _id")
-        self._client.upsert(UpsertRequest(document=_document(document["_id"], document)))
+        self._client.insert(
+            _GeneratedInsertRequest(document=_document(document["_id"], document))
+        )
+
+    def upsert(self, document: Mapping[str, Any]) -> None:
+        if not isinstance(document, Mapping) or "_id" not in document:
+            raise ValueError("document must contain a string _id")
+        self._client.upsert(
+            UpsertRequest(document=_document(document["_id"], document))
+        )
+
+    def put(self, document: Mapping[str, Any]) -> None:
+        """Compatibility alias for :meth:`upsert`."""
+        self.upsert(document)
 
     def update(self, identifier: str, values: Mapping[str, Any]) -> None:
         if not isinstance(values, Mapping):
             raise TypeError("update fields must be a mapping")
-        operations = []
+        builder = self.patch(identifier)
         for name, value in values.items():
             if not isinstance(name, str) or not name or name == "_id":
                 raise ValueError("update field names must be non-empty and not _id")
-            operations.append(_GeneratedPatchOperation(kind="set", field=name, value=_value(value)))
-        self._client.patch(_GeneratedPatchRequest(id=identifier, operations=operations))
+            builder.set(name, value)
+        builder.execute()
+
+    def patch(self, identifier: str) -> PatchBuilder:
+        if not isinstance(identifier, str) or not identifier:
+            raise ValueError("patch id must be a non-empty string")
+        return PatchBuilder(self, identifier)
 
     def get(self, identifier: str) -> dict[str, Any] | None:
         result = self._client.get(GetRequest(id=identifier))
@@ -350,31 +575,61 @@ class Index:
     def delete(self, identifier: str) -> bool:
         return bool(self._client.delete(DeleteRequest(id=identifier)).deleted)
 
-    def search(self, query: str = "", *, filter=None, sort=None, facets=None,
-               limit: int | None = None, offset: int | None = None) -> SearchResults:
+    def search(
+        self,
+        query: str = "",
+        *,
+        filter=_UNSET,
+        sort=_UNSET,
+        facets=_UNSET,
+        limit=_UNSET,
+        offset=_UNSET,
+    ) -> SearchBuilder:
         if not isinstance(query, str):
             raise TypeError("query must be a string")
-        if filter is not None and not isinstance(filter, _GeneratedFilterExpr):
-            raise TypeError("filter must be constructed with field()")
-        filter_value = None if filter is None else _coerce_filter(filter, self._field_kinds)
-        sort_values = []
-        for item in sort or []:
-            if not isinstance(item, _GeneratedSortExpr):
-                raise TypeError("sort values must be field(...).asc() or field(...).desc()")
-            sort_values.append(item)
-        facet_values = []
-        for item in facets or []:
-            if isinstance(item, str):
-                facet_values.append(_GeneratedFacetRequest(field=item))
-            elif isinstance(item, _GeneratedFacetRequest):
-                facet_values.append(item)
-            else:
-                raise TypeError("facets must contain field names or generated FacetRequest values")
+        builder = SearchBuilder(self, query)
+        legacy_call = any(
+            value is not _UNSET for value in (filter, sort, facets, limit, offset)
+        )
+        if filter is not _UNSET and filter is not None:
+            builder.filter(filter)
+        if sort is not _UNSET:
+            builder._add_legacy_sort(sort)
+        if facets is not _UNSET:
+            builder._add_legacy_facets(facets)
+        if limit is not _UNSET and limit is not None:
+            builder.limit(limit)
+        if offset is not _UNSET and offset is not None:
+            builder.offset(offset)
+        if legacy_call:
+            builder.execute()
+        return builder
+
+    def browse(self) -> BrowseBuilder:
+        return BrowseBuilder(self, None)
+
+    def _execute_search(
+        self,
+        *,
+        query: str | None,
+        filter_expr: _GeneratedFilterExpr | None,
+        sort_values: Sequence[_GeneratedSortExpr],
+        facet_values: Sequence[_GeneratedFacetRequest],
+        limit: int | None,
+        offset: int | None,
+    ) -> SearchResults:
+        if query is not None and not isinstance(query, str):
+            raise TypeError("query must be a string")
+        filter_value = (
+            None
+            if filter_expr is None
+            else _coerce_filter(filter_expr, self._field_kinds)
+        )
         result = self._client.search(_GeneratedSearchRequest(
             query=query,
             filter=filter_value,
-            sort=sort_values,
-            facets=facet_values,
+            sort=list(sort_values),
+            facets=list(facet_values),
             limit=limit,
             offset=offset,
         ))
@@ -398,5 +653,19 @@ class Index:
         self.close()
 
 
-__all__ = [*_generated_all, "Boolean", "FieldRef", "Float", "Hit", "Index", "Integer",
-           "Keyword", "SearchResults", "Text", "field"]
+__all__ = [
+    *_generated_all,
+    "Boolean",
+    "BrowseBuilder",
+    "FieldRef",
+    "Float",
+    "Hit",
+    "Index",
+    "Integer",
+    "Keyword",
+    "PatchBuilder",
+    "SearchBuilder",
+    "SearchResults",
+    "Text",
+    "field",
+]

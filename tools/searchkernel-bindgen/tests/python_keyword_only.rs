@@ -51,13 +51,6 @@ sys.modules["searchkernel"] = searchkernel
 generated_package = types.ModuleType("searchkernel.generated")
 generated_package.__path__ = [str(pathlib.Path(path).parent)]
 sys.modules["searchkernel.generated"] = generated_package
-legacy_spec = importlib.util.spec_from_file_location(
-    "searchkernel.legacy_json",
-    repository_root / "clients/python/searchkernel/legacy_json.py",
-)
-legacy = importlib.util.module_from_spec(legacy_spec)
-sys.modules[legacy_spec.name] = legacy
-legacy_spec.loader.exec_module(legacy)
 spec = importlib.util.spec_from_file_location("searchkernel.generated.client", path)
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module

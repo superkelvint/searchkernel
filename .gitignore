@@ -9,3 +9,7 @@
 **/__pycache__/*
 /vespa-deps/
 .almalinux_bash_history
+/venv/
+/lib64/
+try_searchkernel_builder_api.py
+/clients/python/build/

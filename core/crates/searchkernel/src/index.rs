@@ -102,8 +102,50 @@ fn publish_staging_directory(staging: &std::path::Path, root: &std::path::Path) 
     // durability warning, not a failed create: the index is already visible
     // at `root` and must not be reported as though publication was rolled
     // back.
-    let _ = std::fs::File::open(parent).and_then(|directory| directory.sync_all());
+    let _ = sync_published_parent(parent);
     Ok(())
+}
+
+#[cfg(feature = "native")]
+fn sync_published_parent(parent: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.replace(false)) {
+        return Err(std::io::Error::other("injected parent fsync failure"));
+    }
+    std::fs::File::open(parent).and_then(|directory| directory.sync_all())
+}
+
+#[cfg(feature = "native")]
+fn remove_published_root(root: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_PUBLISHED_CLEANUP.with(|flag| flag.replace(false)) {
+        return Err(std::io::Error::other(
+            "injected published-root cleanup failure",
+        ));
+    }
+    std::fs::remove_dir_all(root)
+}
+
+#[cfg(feature = "native")]
+fn open_native_backend(
+    data: &std::path::Path,
+    config: &std::path::Path,
+) -> std::result::Result<searchkernel_ir_adapter::VespaBackend, searchkernel_ir::PortableError> {
+    #[cfg(test)]
+    if FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.replace(false)) {
+        return Err(searchkernel_ir::PortableError::new(
+            searchkernel_ir::ErrorCode::Unavailable,
+            "injected backend open failure",
+        ));
+    }
+    searchkernel_ir_adapter::VespaBackend::open(data, config)
+}
+
+#[cfg(all(feature = "native", test))]
+thread_local! {
+    static FAIL_NEXT_PARENT_FSYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAIL_NEXT_PUBLISHED_CLEANUP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAIL_NEXT_BACKEND_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[cfg(feature = "native")]
@@ -253,14 +295,21 @@ impl Index {
             let _ = std::fs::remove_dir_all(&staging);
             return Err(error);
         }
-        let backend = match searchkernel_ir_adapter::VespaBackend::open(
-            root.join("data"),
-            root.join("config"),
-        ) {
+        let backend = match open_native_backend(&root.join("data"), &root.join("config")) {
             Ok(backend) => backend,
             Err(error) => {
-                let _ = std::fs::remove_dir_all(root);
-                return Err(Error::Infrastructure(error.to_string()));
+                return match remove_published_root(root) {
+                    Ok(()) => Err(Error::Infrastructure(error.to_string())),
+                    Err(cleanup_error) => Err(Error::search(
+                        crate::ErrorCode::Unavailable,
+                        format!("index was published but backend opening failed: {error}; cleanup failed: {cleanup_error}"),
+                    )
+                    .with_detail(
+                        "index_published",
+                        Some(root.display().to_string()),
+                        "published index remains available for recovery",
+                    )),
+                };
             }
         };
         Self::from_owned_backend(
@@ -895,13 +944,16 @@ impl IndexManifest {
         };
         manifest.validate_identity()?;
         if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
-            let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+            // The portable definition is provenance. Its raw FlatBuffers
+            // envelope must remain readable, but its semantics were resolved
+            // under the creator's defaults and must not be reinterpreted on
+            // reopen.
+            let _portable_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
                 &manifest.portable_definition_bytes,
             )
             .map_err(|error| {
                 Error::corrupt_index(format!("invalid portable index definition: {error}"))
             })?;
-            let portable = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
             let resolved_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
                 &manifest.resolved_definition_bytes,
             )
@@ -910,11 +962,6 @@ impl IndexManifest {
             })?;
             let resolved =
                 searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
-            // The portable definition records the creator's intent and is
-            // retained for provenance. Reopen semantics are governed by the
-            // persisted resolved definition, so changing today's defaults
-            // cannot make an otherwise compatible index fail to open.
-            let _ = portable;
             let _ = resolved;
         }
         manifest.definition()?;
@@ -1543,6 +1590,53 @@ mod tests {
     }
 
     #[test]
+    fn semantically_invalid_portable_provenance_does_not_block_reopen() {
+        let root = temporary_path("manifest-portable-semantics");
+        let config = root.join("config");
+        write_config(&config);
+        let resolved_definition =
+            definition_from_ir(&definition_to_ir(&manifest_definition()).unwrap());
+        let manifest = IndexManifest::for_definitions(
+            &wire::definition(&manifest_definition()),
+            &resolved_definition,
+            &config,
+        )
+        .unwrap();
+        manifest.write(&root).unwrap();
+
+        let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                // A valid FlatBuffers table with a missing required semantic
+                // field. Reopen must not reinterpret this provenance.
+                name: None,
+                kind: api::FieldKind::Text,
+                cardinality: api::FieldCardinality::Single,
+                ..Default::default()
+            },
+        );
+        let fields = builder.create_vector(&[field]);
+        let portable = api::IndexDefinition::create(
+            &mut builder,
+            &api::IndexDefinitionArgs {
+                fields: Some(fields),
+                ..Default::default()
+            },
+        );
+        builder.finish(portable, None);
+        std::fs::write(
+            root.join("manifest/portable-index-definition.bfbs"),
+            builder.finished_data(),
+        )
+        .unwrap();
+
+        let loaded = IndexManifest::read(&root).expect("portable provenance is structural only");
+        assert_eq!(loaded.definition().unwrap(), resolved_definition);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     #[cfg(feature = "native")]
     fn staged_creation_publishes_only_a_complete_index_directory() {
         let root = temporary_path("staged-create");
@@ -1553,6 +1647,44 @@ mod tests {
         publish_staging_directory(&staging, &root).unwrap();
         assert!(root.join("in-progress").is_file());
         assert!(!staging.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(feature = "native")]
+    fn parent_fsync_failure_does_not_turn_publication_into_create_failure() {
+        let root = temporary_path("staged-create-fsync");
+        let staging = create_staging_directory(&root).unwrap();
+        std::fs::write(staging.join("in-progress"), b"complete before publication").unwrap();
+        FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.set(true));
+
+        publish_staging_directory(&staging, &root)
+            .expect("parent fsync is advisory after publication");
+        assert!(root.join("in-progress").is_file());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(feature = "native")]
+    fn failed_post_publication_open_reports_recoverable_published_index() {
+        let root = temporary_path("published-open-failure");
+        FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.set(true));
+        FAIL_NEXT_PUBLISHED_CLEANUP.with(|flag| flag.set(true));
+
+        let error = match Index::create(&root, IndexDefinition::new().field(Field::text("title"))) {
+            Ok(index) => {
+                index.close().unwrap();
+                panic!("injected backend open failure unexpectedly succeeded")
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), crate::ErrorCode::Unavailable);
+        assert_eq!(error.details()[0].code, "index_published");
+        assert_eq!(error.details()[0].path.as_deref(), root.to_str());
+        assert!(root.join("manifest/index.json").is_file());
+
+        let reopened = Index::open(&root).expect("published index remains recoverable");
+        reopened.close().unwrap();
         let _ = std::fs::remove_dir_all(root);
     }
 

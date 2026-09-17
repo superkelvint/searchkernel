@@ -16,9 +16,13 @@ from searchkernel import (  # noqa: E402
     GetResult,
     IndexDefinition,
     FieldDefinition,
+    BrowseBuilder,
     Hit as PublicHit,
     Index,
     SearchResult,
+    SearchResults,
+    SearchBuilder,
+    PatchBuilder,
     Text,
     Keyword,
     Float,
@@ -62,6 +66,9 @@ class FakeClient:
 
     def upsert(self, request):
         self.calls.append(("upsert", request))
+
+    def insert(self, request):
+        self.calls.append(("insert", request))
 
     def patch(self, request):
         self.calls.append(("patch", request))
@@ -169,6 +176,121 @@ class FacadeTest(unittest.TestCase):
         request = client.calls[-1][1]
         self.assertEqual(request.filter.value.kind, "float64")
         self.assertEqual(client.calls[0][0], "describe")
+
+    def test_search_builder_accumulates_state_until_execute(self):
+        transport = FakeTransport()
+        index = Index(transport)
+        client = FakeClient()
+        index._client = client
+
+        builder = index.search("shoes")
+        self.assertIsInstance(builder, SearchBuilder)
+        self.assertIs(builder.filter(field("price") <= 100), builder)
+        self.assertIs(builder.sort("rating", "desc"), builder)
+        self.assertIs(builder.sort("price", "asc"), builder)
+        self.assertIs(builder.facet("brand"), builder)
+        self.assertIs(builder.facet("category", limit=10, sort="count_desc"), builder)
+        self.assertIs(builder.offset(2), builder)
+        self.assertIs(builder.limit(2), builder)
+        self.assertEqual(client.calls, [])
+
+        results = builder.execute()
+        self.assertIsInstance(results, SearchResults)
+        request = client.calls[-1][1]
+        self.assertEqual(request.query, "shoes")
+        self.assertEqual(request.filter.field, "price")
+        self.assertEqual(
+            [(item.field, item.direction) for item in request.sort],
+            [("rating", "desc"), ("price", "asc")],
+        )
+        self.assertEqual(
+            [(item.field, item.limit, item.sort) for item in request.facets],
+            [("brand", None, None), ("category", 10, "count_desc")],
+        )
+        self.assertEqual((request.offset, request.limit), (2, 2))
+
+    def test_search_builder_validation_and_page_numbering(self):
+        index = Index(FakeTransport())
+
+        with self.assertRaises(ValueError):
+            index.search("x").sort("price", "sideways")
+        with self.assertRaises(TypeError):
+            index.search("x").filter("price <= 100")
+        with self.assertRaises(ValueError):
+            index.search("x").offset(-1)
+        with self.assertRaises(ValueError):
+            index.search("x").limit(-1)
+        with self.assertRaises(ValueError):
+            index.search("x").page(0, 20)
+        with self.assertRaises(ValueError):
+            index.search("x").page(1, 0)
+
+        for page_number, expected_offset in ((1, 0), (2, 20), (3, 40)):
+            builder = index.search("x").page(page_number, 20)
+            self.assertEqual((builder._offset, builder._limit), (expected_offset, 20))
+
+        conflict_cases = (
+            lambda: index.search("x").page(3, 20).offset(40),
+            lambda: index.search("x").offset(40).page(3, 20),
+            lambda: index.search("x").page(3, 20).limit(20),
+            lambda: index.search("x").limit(20).page(3, 20),
+        )
+        for case in conflict_cases:
+            with self.assertRaises((TypeError, ValueError)):
+                case()
+
+    def test_browse_builder_uses_match_all_request(self):
+        transport = FakeTransport()
+        index = Index(transport)
+        client = FakeClient()
+        index._client = client
+
+        builder = index.browse()
+        self.assertIsInstance(builder, BrowseBuilder)
+        builder.filter(field("in_stock") == True).sort("price", "asc").execute()
+
+        request = client.calls[-1][1]
+        self.assertIsNone(request.query)
+        self.assertEqual(request.filter.field, "in_stock")
+        self.assertEqual(request.sort[0].direction, "asc")
+
+    def test_patch_builder_preserves_order_and_explicit_unset(self):
+        transport = FakeTransport()
+        index = Index(transport)
+        client = FakeClient()
+        index._client = client
+
+        builder = index.patch("1")
+        self.assertIsInstance(builder, PatchBuilder)
+        self.assertIs(builder.set("price", 79.0), builder)
+        self.assertIs(builder.unset("rating"), builder)
+        builder.execute()
+
+        request = client.calls[-1][1]
+        self.assertEqual(request.id, "1")
+        self.assertEqual(
+            [(operation.kind, operation.field, operation.value and operation.value.value)
+             for operation in request.operations],
+            [("set", "price", 79.0), ("unset", "rating", None)],
+        )
+
+    def test_upsert_put_and_update_use_direct_generated_operations(self):
+        transport = FakeTransport()
+        index = Index(transport)
+        client = FakeClient()
+        index._client = client
+
+        document = {"_id": "1", "price": 99.0}
+        index.insert(document)
+        index.upsert(document)
+        index.put(document)
+        index.update("1", {"price": 89.0})
+
+        self.assertEqual([name for name, _ in client.calls],
+                         ["insert", "upsert", "upsert", "patch"])
+        self.assertEqual(client.calls[0][1].document.id, "1")
+        self.assertEqual(client.calls[1][1].document.id, "1")
+        self.assertEqual(client.calls[3][1].operations[0].kind, "set")
 
 
 if __name__ == "__main__":

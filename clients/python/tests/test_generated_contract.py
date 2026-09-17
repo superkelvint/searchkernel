@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 sys.path.insert(0, "clients/python")
+sys.path.insert(0, "clients/python/tests")
 
 from searchkernel.generated.client import (
     Analyzer,
@@ -18,6 +19,7 @@ from searchkernel.generated.client import (
     ProtocolError,
     SearchField,
     SearchFieldSelection,
+    SearchRequest,
     Value,
     _Reader,
     _read_index,
@@ -32,6 +34,22 @@ from searchkernel.transport import NativeTransport
 
 
 class GeneratedContractTest(unittest.TestCase):
+    def test_c7_response_comparison_is_fail_closed(self):
+        from c7_adapter import _assert_exact_response
+
+        expected = {
+            "protocol_version": 1,
+            "response": {"insert": {"id": "fixture"}},
+        }
+        _assert_exact_response("insert", expected, expected)
+
+        mutated = {
+            "protocol_version": 1,
+            "response": {"insert": {"id": "wrong"}},
+        }
+        with self.assertRaises(AssertionError):
+            _assert_exact_response("insert", mutated, expected)
+
     def test_standalone_index_definition_encoder(self):
         expected = IndexDefinition(
             name="products",
@@ -78,6 +96,10 @@ class GeneratedContractTest(unittest.TestCase):
         )
         self.assertEqual(operation, "patch")
         self.assertEqual(request.operations, [])
+        operation, request = request_from_json(
+            {"protocol_version": 1, "request": {"search": {"query": "x"}}}
+        )
+        self.assertIs(type(request), SearchRequest)
         operation, request = request_from_json(
             {"protocol_version": 1, "request": {"patch": {"id": "a", "operations": [{"none": {}}]}}}
         )

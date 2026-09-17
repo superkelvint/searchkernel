@@ -37,7 +37,7 @@ def real_c5_smoke(library_path: str) -> None:
         client = Client(transport)
 
         try:
-            client.insert(InsertRequest(Document(id="c7-python-document")))
+            client.insert(InsertRequest(document=Document(id="c7-python-document")))
         except ClientError as error:
             if error.portable is None:
                 raise AssertionError("mutation did not traverse generated error conversion") from error
@@ -73,16 +73,22 @@ def _run_scripted_response_cases(library_path: str) -> None:
     request_root = root / "core/crates/searchkernel-json/tests/fixtures/requests"
     response_root = root / "core/crates/searchkernel-json/tests/fixtures/responses"
     expected_root = root / "reference/json-conformance/generated/responses"
-    cases = [
-        ("write.insert", "insert", "write.insert", "insert"),
-        ("write.upsert", "upsert", "write.upsert", "upsert"),
-        ("write.patch-set", "patch", "write.patch-set", "patch"),
-        ("write.delete", "delete", "write.delete", "delete"),
-        ("write.get", "get", "write.get", "get"),
-        ("search.defaults", "search", "search.defaults", "search"),
-        ("analyze.text-request", "analyze", "analyze.text-request", "analyze"),
-    ]
-    for request_stem, operation, _expected_stem, response_stem in cases:
+    success_cases = {
+        "insert": ("write.insert", "insert"),
+        "upsert": ("write.upsert", "upsert"),
+        "patch": ("write.patch-set", "patch"),
+        "delete": ("write.delete", "delete"),
+        "get": ("write.get", "get"),
+        "search": ("search.defaults", "search"),
+        "analyze": ("analyze.text-request", "analyze"),
+        "describe": ("introspection.describe-index", "describe"),
+        "inspect_query": ("introspection.inspect-query", "inspect_query"),
+    }
+    response_cases = sorted(expected_root.glob("*.json"))
+    if len(response_cases) != 67:
+        raise AssertionError(f"expected 67 frozen C7 responses, found {len(response_cases)}")
+
+    for operation, (request_stem, response_stem) in success_cases.items():
         request_path = request_root / f"{request_stem}.skrq"
         response_path = response_root / f"{response_stem}.skrs"
         expected_path = expected_root / f"{response_stem}.json"
@@ -96,36 +102,44 @@ def _run_scripted_response_cases(library_path: str) -> None:
             actual = getattr(Client(transport), operation)(request)
         actual_json = {"protocol_version": 1, "response": _response_to_json(operation, actual)}
         expected_json = json.loads(expected_path.read_text(encoding="utf-8"))
-        if actual_json != expected_json:
-            raise AssertionError(
-                f"{response_stem}: decoded response differs from frozen JSON: "
-                f"got {actual_json!r}, expected {expected_json!r}"
-            )
+        _assert_exact_response(response_stem, actual_json, expected_json)
 
     request_path = request_root / "search.defaults.skrq"
-    response_path = response_root / "error-00.skrs"
-    expected_path = expected_root / "error-00.json"
-    with open_transport(
-        library_path, f"c7-script|{request_path}|{response_path}".encode()
-    ) as transport:
-        request = request_from_json_text(
-            (root / "reference/json-conformance/generated/requests/search.defaults.json").read_text(
-                encoding="utf-8"
-            )
-        )[1]
-        try:
-            Client(transport).search(request)
-        except ClientError as error:
-            if error.portable is None:
-                raise AssertionError("scripted response was not mapped to a portable error") from error
-            actual_json = {"protocol_version": 1, "response": {"error": _error_to_json(error.portable)}}
-        else:
-            raise AssertionError("scripted error response unexpectedly succeeded")
-    expected_json = json.loads(expected_path.read_text(encoding="utf-8"))
-    if actual_json != expected_json:
+    request = request_from_json_text(
+        (root / "reference/json-conformance/generated/requests/search.defaults.json")
+        .read_text(encoding="utf-8")
+    )[1]
+    for expected_path in sorted(expected_root.glob("error-*.json")):
+        response_stem = expected_path.stem
+        response_path = response_root / f"{response_stem}.skrs"
+        with open_transport(
+            library_path, f"c7-script|{request_path}|{response_path}".encode()
+        ) as transport:
+            try:
+                Client(transport).search(request)
+            except ClientError as error:
+                if error.portable is None:
+                    raise AssertionError(
+                        f"{response_stem}: scripted response was not mapped to a portable error"
+                    ) from error
+                actual_json = {
+                    "protocol_version": 1,
+                    "response": {"error": _error_to_json(error.portable)},
+                }
+            else:
+                raise AssertionError(f"{response_stem}: scripted error response unexpectedly succeeded")
+        _assert_exact_response(
+            response_stem,
+            actual_json,
+            json.loads(expected_path.read_text(encoding="utf-8")),
+        )
+
+
+def _assert_exact_response(case: str, actual: dict, expected: dict) -> None:
+    if actual != expected:
         raise AssertionError(
-            f"error-00: decoded error differs from frozen JSON: "
-            f"got {actual_json!r}, expected {expected_json!r}"
+            f"{case}: decoded response differs from frozen JSON: "
+            f"got {actual!r}, expected {expected!r}"
         )
 
 

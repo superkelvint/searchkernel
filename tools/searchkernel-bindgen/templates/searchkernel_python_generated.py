@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import math
 import struct
+import base64
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Optional
 
@@ -555,6 +556,8 @@ def _read_index(reader: _Reader, position: Optional[int]):
 
 # __STANDALONE_ENCODERS__
 
+# __PYTHON_JSON_CODECS__
+
 class Client:
     def __init__(self, transport):
         self._transport = transport
@@ -574,11 +577,5 @@ class Client:
             raise ClientError(f"malformed native response: {error}") from error
 
 # __CLIENT_METHODS__
-
-
-from ..legacy_json import (  # noqa: E402
-    _response_to_json, _value_from_json, _value_to_json,
-    request_from_json, request_from_json_text,
-)
 
 __all__ = __ALL__

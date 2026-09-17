@@ -38,6 +38,8 @@ pub enum DecodedResponse {
     Get(searchkernel_ir::GetResult),
     Search(searchkernel_ir::SearchResult),
     Analyze(searchkernel_ir::AnalyzeResult),
+    Describe(Box<Option<searchkernel_ir::IndexDefinitionIr>>),
+    InspectQuery(Box<Option<searchkernel_ir::SearchRequestIr>>),
     Error(searchkernel_ir::PortableError),
 }
 
@@ -88,6 +90,13 @@ fn request_kind(kind: RequestKind) -> u8 {
 }
 
 pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
+    decode_response_with_context(bytes, None)
+}
+
+fn decode_response_with_context(
+    bytes: &[u8],
+    context: Option<&IndexContext>,
+) -> Result<DecodedResponse, String> {
     let envelope = transport::parse_response(bytes)
         .map_err(|_| "response is not a verified SKRS envelope".to_owned())?;
     if envelope.protocol_version() != transport::PROTOCOL_VERSION {
@@ -193,6 +202,48 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
                 tokens,
             }))
         }
+        transport::RESPONSE_DESCRIBE => {
+            let result = envelope
+                .payload_as_search_kernel_v1_describe_result()
+                .ok_or_else(|| "describe payload is missing".to_owned())?;
+            let index = result.index().and_then(|index| {
+                let has_fields = index.fields().is_some_and(|fields| !fields.is_empty());
+                if !has_fields && index.name().is_none() {
+                    None
+                } else {
+                    Some(
+                        searchkernel_ir::index_definition_to_ir(index)
+                            .map_err(|error| error.to_string()),
+                    )
+                }
+            });
+            let index = index.transpose()?;
+            Ok(DecodedResponse::Describe(Box::new(index)))
+        }
+        transport::RESPONSE_INSPECT_QUERY => {
+            let result = envelope
+                .payload_as_search_kernel_v1_inspect_query_result()
+                .ok_or_else(|| "inspect_query payload is missing".to_owned())?;
+            let resolved_request = result.resolved_request().and_then(|request| {
+                if is_empty_search_request(request) {
+                    None
+                } else {
+                    Some(
+                        context
+                            .ok_or_else(|| {
+                                "inspect_query decoding requires an index context".to_owned()
+                            })
+                            .and_then(|context| {
+                                context
+                                    .inspect_query(request)
+                                    .map_err(|error| error.to_string())
+                            }),
+                    )
+                }
+            });
+            let resolved_request = resolved_request.transpose()?;
+            Ok(DecodedResponse::InspectQuery(Box::new(resolved_request)))
+        }
         transport::RESPONSE_ERROR => Ok(DecodedResponse::Error(decode_error(
             envelope
                 .payload_as_search_kernel_v1_error()
@@ -201,6 +252,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<DecodedResponse, String> {
         0 => Err("response payload is missing".to_owned()),
         _ => Err("unsupported response payload".to_owned()),
     }
+}
+
+fn is_empty_search_request(request: api::SearchRequest<'_>) -> bool {
+    request.query().is_none()
+        && request.search_fields().is_none()
+        && request.filter().is_none()
+        && request.sort().is_none()
+        && request.facets().is_none()
+        && request.ranking().is_none()
+        && request.limit().is_none()
+        && request.offset().is_none()
+        && request.projection().is_none()
+        && request.highlighting().is_none()
+        && request.language().is_none()
+        && request.query_expr().is_none()
+        && request.timeout().is_none()
 }
 
 /// Open the deterministic C7 composition fixture through the normal C5
@@ -278,6 +345,32 @@ fn open_c7_script(
             "C7 request is not a valid SKRQ envelope".to_owned(),
         )
     })?;
+    if matches!(
+        envelope.payload_type().0,
+        transport::REQUEST_DESCRIBE | transport::REQUEST_INSPECT_QUERY
+    ) {
+        let decoded = decode_response_with_context(&response, Some(&context)).map_err(|error| {
+            (
+                crate::SK_STATUS_INVALID_ARGUMENT,
+                format!("decode C7 response fixture: {error}"),
+            )
+        })?;
+        match decoded {
+            DecodedResponse::Describe(_) | DecodedResponse::InspectQuery(_) => {
+                return Ok(handle::register_response(
+                    context,
+                    Arc::new(C7RecordingBackend::new()),
+                    response,
+                ));
+            }
+            _ => {
+                return Err((
+                    crate::SK_STATUS_INVALID_ARGUMENT,
+                    "C7 introspection response payload mismatch".to_owned(),
+                ));
+            }
+        }
+    }
     let expected = match envelope.payload_type().0 {
         transport::REQUEST_INSERT => envelope
             .payload_as_search_kernel_v1_insert_request()
@@ -379,7 +472,7 @@ fn open_c7_script(
             })?,
         _ => return Ok(register_index(context, Arc::new(C7RecordingBackend::new()))),
     };
-    let decoded = decode_response(&response).map_err(|error| {
+    let decoded = decode_response_with_context(&response, Some(&context)).map_err(|error| {
         (
             crate::SK_STATUS_INVALID_ARGUMENT,
             format!("decode C7 response fixture: {error}"),

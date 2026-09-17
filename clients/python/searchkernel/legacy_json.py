@@ -1081,7 +1081,28 @@ def _response_to_json(operation: str, value: Any) -> dict[str, Any]:
             payload["document"] = {"id": value.document.id, "fields": {k: _value_to_json(v) for k, v in sorted(value.document.fields.items())}}
         return {"get": payload}
     if operation == "analyze": return {"analyze": {"tokens": [{"surface": x.surface, "term": x.term, "position": x.position, "start_byte": x.start_byte, "end_byte": x.end_byte} for x in value.tokens]}}
-    if operation == "describe": return {"describe": {"index": None if value.index is None else {"name": value.index.name, "fields": [{"name": x.name, "kind": x.kind, "cardinality": x.cardinality, "stored": x.stored, "searchable": x.searchable, "filterable": x.filterable, "sortable": x.sortable, "facetable": x.facetable} for x in value.index.fields]}}}
+    if operation == "describe":
+        if value.index is None:
+            index = None
+        else:
+            index = {}
+            if value.index.name is not None:
+                index["name"] = value.index.name
+            if value.index.fields:
+                index["fields"] = [
+                    {
+                        "name": x.name,
+                        "kind": x.kind,
+                        "cardinality": x.cardinality,
+                        "stored": x.stored,
+                        "searchable": x.searchable,
+                        "filterable": x.filterable,
+                        "sortable": x.sortable,
+                        "facetable": x.facetable,
+                    }
+                    for x in value.index.fields
+                ]
+        return {"describe": {"index": index}}
     if operation == "inspect_query": return {"inspect_query": {"resolved_request": _search_to_json(value.resolved_request) if value.resolved_request else None}}
     hits = []
     for hit in value.hits:
