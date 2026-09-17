@@ -41,6 +41,9 @@ run_tsan() {
     unset LD_PRELOAD
     if rg -q 'FATAL: ThreadSanitizer: unexpected memory mapping' "$output"; then
       mapping=1
+    elif [[ "$status" == 139 ]] &&
+      ! rg -q 'WARNING: ThreadSanitizer|SUMMARY: ThreadSanitizer|m11 failure' "$output"; then
+      mapping=1
     else
       mapping=0
     fi
@@ -85,16 +88,19 @@ run_lane() {
   local tsan_runtime="$(cc -print-file-name=libtsan.so.2)"
   [[ -f "$asan_runtime" ]] || fail_verification "libasan runtime was not found"
   [[ -f "$tsan_runtime" ]] || fail_verification "libtsan runtime was not found"
+  local config="$TARGET/$lane/config"
+  rm -rf "$config"
+  local options=""
+  if [[ "$lane" == asan-ubsan ]]; then
+    options="$(tr '\n' ':' < "$M11/sanitizer/asan.options")"
+  fi
+  local ubsan_options="$(tr '\n' ':' < "$M11/sanitizer/ubsan.options")"
+  local lsan="$M11/sanitizer/lsan.supp"
+  local tsan="$M11/sanitizer/tsan.supp"
   case "$lane" in
     asan-ubsan) export LD_PRELOAD="$asan_runtime${base_preload:+:$base_preload}" ;;
     tsan) export LD_PRELOAD="$tsan_runtime${base_preload:+:$base_preload}" ;;
   esac
-  local config="$TARGET/$lane/config"
-  rm -rf "$config"
-  local options="$(tr '\n' ':' < "$M11/sanitizer/${lane%%-*}.options" 2>/dev/null || true)"
-  local ubsan_options="$(tr '\n' ':' < "$M11/sanitizer/ubsan.options")"
-  local lsan="$M11/sanitizer/lsan.supp"
-  local tsan="$M11/sanitizer/tsan.supp"
   case "$lane" in
     asan-ubsan)
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

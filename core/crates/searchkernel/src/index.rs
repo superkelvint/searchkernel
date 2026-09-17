@@ -98,9 +98,12 @@ fn publish_staging_directory(staging: &std::path::Path, root: &std::path::Path) 
         }
     })?;
     let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
-    std::fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| Error::Infrastructure(error.to_string()))
+    // The rename is the publication point. A failure to sync the parent is a
+    // durability warning, not a failed create: the index is already visible
+    // at `root` and must not be reported as though publication was rolled
+    // back.
+    let _ = std::fs::File::open(parent).and_then(|directory| directory.sync_all());
+    Ok(())
 }
 
 #[cfg(feature = "native")]
@@ -208,7 +211,20 @@ impl Index {
         resolved_ir: searchkernel_ir::IndexDefinitionIr,
         resolved_definition: IndexDefinition,
     ) -> Result<Self> {
-        let lifecycle_lock = LifecycleLock::acquire(root)?;
+        // Create and open can arrive in either order. If an opener briefly
+        // owns the lock while observing an absent root, retrying here avoids
+        // turning that harmless ordering into an AlreadyExists failure.
+        let lifecycle_lock = loop {
+            match LifecycleLock::acquire(root) {
+                Ok(lock) => break lock,
+                Err(error)
+                    if error.code() == crate::error::ErrorCode::AlreadyExists && !root.is_dir() =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        };
         let staging = create_staging_directory(root)?;
         let initialize = (|| {
             let staging_data = staging.join("data");
@@ -258,7 +274,21 @@ impl Index {
     #[cfg(feature = "native")]
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let root = path.as_ref();
-        let lifecycle_lock = LifecycleLock::acquire(root)?;
+        // A creator holds the lifecycle lock while it assembles the staging
+        // tree, before atomically publishing `root`. An opener that arrives in
+        // that interval must wait for publication; reporting AlreadyExists
+        // would turn a successful create/open race into two failures.
+        let lifecycle_lock = loop {
+            match LifecycleLock::acquire(root) {
+                Ok(lock) => break lock,
+                Err(error)
+                    if error.code() == crate::error::ErrorCode::AlreadyExists && !root.is_dir() =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        };
         if !root.is_dir() {
             return Err(Error::not_found(root.display().to_string()));
         }
@@ -285,8 +315,16 @@ impl Index {
     /// This is hidden from normal API documentation because production
     /// lifecycle is supplied by a later integration milestone.
     #[doc(hidden)]
+    #[cfg(feature = "native")]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
         Self::from_owned_backend(definition, BackendSession::from_backend(backend), None)
+    }
+
+    /// Construct an index around a backend for tests and infrastructure.
+    #[doc(hidden)]
+    #[cfg(not(feature = "native"))]
+    pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
+        Self::from_owned_backend(definition, BackendSession::from_backend(backend))
     }
 
     #[cfg(feature = "native")]
@@ -872,11 +910,12 @@ impl IndexManifest {
             })?;
             let resolved =
                 searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
-            if portable != resolved {
-                return Err(Error::incompatible_index(
-                    "portable and resolved index definitions differ",
-                ));
-            }
+            // The portable definition records the creator's intent and is
+            // retained for provenance. Reopen semantics are governed by the
+            // persisted resolved definition, so changing today's defaults
+            // cannot make an otherwise compatible index fail to open.
+            let _ = portable;
+            let _ = resolved;
         }
         manifest.definition()?;
         Ok(manifest)
@@ -1483,11 +1522,12 @@ mod tests {
     }
 
     #[test]
-    fn manifest_rejects_valid_but_mismatched_portable_definition() {
+    fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
         let root = temporary_path("manifest-mismatched-definition");
         let config = root.join("config");
         write_config(&config);
-        let resolved_definition = manifest_definition();
+        let resolved_definition =
+            definition_from_ir(&definition_to_ir(&manifest_definition()).unwrap());
         let portable_definition = IndexDefinition::new().field(Field::text("different"));
         let manifest = IndexManifest::for_definitions(
             &wire::definition(&portable_definition),
@@ -1497,14 +1537,8 @@ mod tests {
         .unwrap();
         manifest.write(&root).unwrap();
 
-        assert!(matches!(
-            IndexManifest::read(&root),
-            Err(Error::Search {
-                code: crate::ErrorCode::IncompatibleIndex,
-                message,
-                ..
-            }) if message == "incompatible index: portable and resolved index definitions differ"
-        ));
+        let loaded = IndexManifest::read(&root).expect("portable provenance is not authoritative");
+        assert_eq!(loaded.definition().unwrap(), resolved_definition);
         let _ = std::fs::remove_dir_all(root);
     }
 

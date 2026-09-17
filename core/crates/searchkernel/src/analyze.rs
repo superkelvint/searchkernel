@@ -55,6 +55,7 @@ impl AnalyzeBuilder {
 
 /// One token produced by linguistic analysis.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AnalyzedToken {
     pub surface: String,
     pub term: String,
@@ -65,6 +66,7 @@ pub struct AnalyzedToken {
 
 /// The tokens produced by an analysis request.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AnalyzeResult {
     pub tokens: Vec<AnalyzedToken>,
 }

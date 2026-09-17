@@ -46,11 +46,18 @@ class FakeTransport:
 class FakeClient:
     def __init__(self):
         self.calls = []
-        self.get_result = GetResult(DocumentResult("1", {"price": Value.float64(99.0)}))
+        self.get_result = GetResult(
+            document=DocumentResult(id="1", fields={"price": Value.float64(99.0)})
+        )
         self.search_result = SearchResult(
-            [HitValue()],
-            TotalHits(1, "exact"),
-            [FacetResult("brand", [FacetValue(Value.string("Acme"), 1)])],
+            hits=[HitValue()],
+            total_hits=TotalHits(value=1, relation="exact"),
+            facets=[
+                FacetResult(
+                    field="brand",
+                    values=[FacetValue(value=Value.string("Acme"), count=1)],
+                )
+            ],
         )
 
     def upsert(self, request):
@@ -65,7 +72,7 @@ class FakeClient:
 
     def delete(self, request):
         self.calls.append(("delete", request))
-        return DeleteResult(request.id, True)
+        return DeleteResult(id=request.id, deleted=True)
 
     def search(self, request):
         self.calls.append(("search", request))
@@ -73,9 +80,11 @@ class FakeClient:
 
     def describe(self, request):
         self.calls.append(("describe", request))
-        return DescribeResult(IndexDefinition(fields=[
-            FieldDefinition(name="price", kind="float64"),
-        ]))
+        return DescribeResult(
+            index=IndexDefinition(
+                fields=[FieldDefinition(name="price", kind="float64")]
+            )
+        )
 
 
 class HitValue:

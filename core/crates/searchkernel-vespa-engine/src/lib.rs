@@ -551,6 +551,7 @@ pub struct GroupingResult {
 pub struct Error {
     kind: ErrorKind,
     code: i32,
+    detail_code: Option<String>,
     message: String,
 }
 
@@ -568,11 +569,12 @@ impl Error {
         Self {
             kind: ErrorKind::InvalidArgument,
             code: 0,
+            detail_code: None,
             message: message.into(),
         }
     }
 
-    fn native(code: i32, message: impl Into<String>) -> Self {
+    fn native(code: i32, detail_code: Option<String>, message: impl Into<String>) -> Self {
         Self {
             kind: match code {
                 1 => ErrorKind::InvalidArgument,
@@ -582,6 +584,7 @@ impl Error {
                 _ => ErrorKind::Internal,
             },
             code,
+            detail_code,
             message: message.into(),
         }
     }
@@ -597,6 +600,12 @@ impl Error {
 
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    /// Returns the stable machine-readable native detail code, when supplied
+    /// by the adapter. Human-readable diagnostics are intentionally separate.
+    pub fn detail_code(&self) -> Option<&str> {
+        self.detail_code.as_deref()
     }
 }
 
@@ -617,13 +626,20 @@ fn native_error(error: &NativeError, status: i32) -> Error {
         .take_while(|&&byte| byte != 0)
         .copied()
         .collect();
-    let message = String::from_utf8_lossy(&message_bytes).into_owned();
+    let diagnostic = String::from_utf8_lossy(&message_bytes);
+    let (detail_code, message) = match diagnostic
+        .strip_prefix("SK_DETAIL_V1:")
+        .and_then(|value| value.split_once(':'))
+    {
+        Some((code, message)) => (Some(code.to_owned()), message.to_owned()),
+        None => (None, diagnostic.into_owned()),
+    };
     let message = if message.is_empty() {
         format!("native operation failed with status {status}")
     } else {
         message
     };
-    Error::native(status, message)
+    Error::native(status, detail_code, message)
 }
 
 fn check(status: i32, error: &NativeError) -> Result<(), Error> {
@@ -2328,7 +2344,7 @@ mod tests {
             (3, ErrorKind::ResourceExhausted),
             (77, ErrorKind::Internal),
         ] {
-            let error = Error::native(code, "native failure");
+            let error = Error::native(code, None, "native failure");
             assert_eq!(error.code(), code);
             assert_eq!(error.kind(), kind);
             assert_eq!(error.to_string(), "native failure");
@@ -2343,6 +2359,17 @@ mod tests {
         let nul_error = Error::from_nul(nul);
         assert_eq!(nul_error.kind(), ErrorKind::InvalidArgument);
         assert!(nul_error.to_string().contains("interior NUL"));
+    }
+
+    #[test]
+    fn native_error_decodes_stable_detail_code_without_using_message_text() {
+        let mut error = NativeError::new();
+        let diagnostic = b"SK_DETAIL_V1:facet_key_type_not_supported:unsupported";
+        error.0[..diagnostic.len()].copy_from_slice(diagnostic);
+        let decoded = check(4, &error).expect_err("native unsupported status must fail");
+        assert_eq!(decoded.kind(), ErrorKind::Unsupported);
+        assert_eq!(decoded.detail_code(), Some("facet_key_type_not_supported"));
+        assert_eq!(decoded.to_string(), "unsupported");
     }
 
     #[test]

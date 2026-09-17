@@ -7,7 +7,7 @@ REPO=$(cd "$HERE/../../.." && pwd)
 C5_VERIFY=${C5_VERIFY:-"$REPO/reference/ffi-conformance/verify.sh"}
 C6_VERIFY=${C6_VERIFY:-"$REPO/reference/json-conformance/verify.sh"}
 PY_ADAPTER=${PY_ADAPTER:-"$REPO/clients/python/tests/c7_adapter.py"}
-PY_TRANSPORT_SRC=${PY_TRANSPORT_SRC:-"$REPO/clients/python"}
+PY_TRANSPORT_SRC=${PY_TRANSPORT_SRC:-"$REPO/clients/python/searchkernel/transport.py"}
 REAL_C5_LIB=${SEARCHKERNEL_C5_TEST_LIBRARY:-}
 
 WORK=${C7_WORK_DIR:-"$REPO/target/c7-verifier"}
@@ -28,7 +28,7 @@ python3 -m py_compile \
 bash -n "$HERE/verify-c7.sh" "$HERE/shim/build.sh"
 
 [[ -f "$PY_ADAPTER" ]] || fail "missing Python verifier adapter: $PY_ADAPTER"
-[[ -d "$PY_TRANSPORT_SRC" ]] || fail "missing Python client source tree: $PY_TRANSPORT_SRC"
+[[ -e "$PY_TRANSPORT_SRC" ]] || fail "missing Python transport source: $PY_TRANSPORT_SRC"
 
 say "checking handwritten Python NativeTransport thinness"
 python3 "$HERE/tools/check_thinness.py" "$PY_TRANSPORT_SRC"

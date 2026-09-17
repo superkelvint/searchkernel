@@ -115,7 +115,7 @@ def _coerce_filter_value(value: _GeneratedValue, kind: str | None) -> _Generated
 def _coerce_filter(value: _GeneratedFilterExpr, field_kinds: dict[str, str]) -> _GeneratedFilterExpr:
     if value.kind == "comparison":
         return _GeneratedFilterExpr(
-            value.kind,
+            kind=value.kind,
             field=value.field,
             op=value.op,
             value=_coerce_filter_value(value.value, field_kinds.get(value.field)),
@@ -123,7 +123,7 @@ def _coerce_filter(value: _GeneratedFilterExpr, field_kinds: dict[str, str]) -> 
     if value.kind == "range":
         kind = field_kinds.get(value.field)
         return _GeneratedFilterExpr(
-            value.kind,
+            kind=value.kind,
             field=value.field,
             lower=None if value.lower is None else _coerce_filter_value(value.lower, kind),
             upper=None if value.upper is None else _coerce_filter_value(value.upper, kind),
@@ -132,12 +132,12 @@ def _coerce_filter(value: _GeneratedFilterExpr, field_kinds: dict[str, str]) -> 
         )
     if value.kind in {"and", "or"}:
         return _GeneratedFilterExpr(
-            value.kind,
+            kind=value.kind,
             clauses=[_coerce_filter(item, field_kinds) for item in value.clauses],
         )
     if value.kind == "not":
         return _GeneratedFilterExpr(
-            value.kind, clause=_coerce_filter(value.clause, field_kinds)
+            kind=value.kind, clause=_coerce_filter(value.clause, field_kinds)
         )
     return value
 
@@ -207,7 +207,7 @@ class FieldRef:
 
     def _compare(self, operator: str, value: Any) -> _GeneratedFilterExpr:
         return _GeneratedFilterExpr(
-            "comparison", field=self.name, op=operator, value=_value(value)
+            kind="comparison", field=self.name, op=operator, value=_value(value)
         )
 
     def __eq__(self, value: Any) -> _GeneratedFilterExpr:  # type: ignore[override]
@@ -229,10 +229,10 @@ class FieldRef:
         return self._compare("gte", value)
 
     def asc(self) -> _GeneratedSortExpr:
-        return _GeneratedSortExpr(self.name, "asc")
+        return _GeneratedSortExpr(field=self.name, direction="asc")
 
     def desc(self) -> _GeneratedSortExpr:
-        return _GeneratedSortExpr(self.name, "desc")
+        return _GeneratedSortExpr(field=self.name, direction="desc")
 
 
 def field(name: str) -> FieldRef:
@@ -269,7 +269,7 @@ def _document(identifier: Any, values: Mapping[str, Any]) -> _GeneratedDocument:
         if name == "_id":
             continue
         fields[name] = _value(value)
-    return _GeneratedDocument(identifier, fields)
+    return _GeneratedDocument(id=identifier, fields=fields)
 
 
 def _hit(value) -> Hit:
@@ -327,7 +327,7 @@ class Index:
     def put(self, document: Mapping[str, Any]) -> None:
         if not isinstance(document, Mapping) or "_id" not in document:
             raise ValueError("document must contain a string _id")
-        self._client.upsert(UpsertRequest(_document(document["_id"], document)))
+        self._client.upsert(UpsertRequest(document=_document(document["_id"], document)))
 
     def update(self, identifier: str, values: Mapping[str, Any]) -> None:
         if not isinstance(values, Mapping):
@@ -336,11 +336,11 @@ class Index:
         for name, value in values.items():
             if not isinstance(name, str) or not name or name == "_id":
                 raise ValueError("update field names must be non-empty and not _id")
-            operations.append(_GeneratedPatchOperation("set", name, _value(value)))
-        self._client.patch(_GeneratedPatchRequest(identifier, operations))
+            operations.append(_GeneratedPatchOperation(kind="set", field=name, value=_value(value)))
+        self._client.patch(_GeneratedPatchRequest(id=identifier, operations=operations))
 
     def get(self, identifier: str) -> dict[str, Any] | None:
-        result = self._client.get(GetRequest(identifier))
+        result = self._client.get(GetRequest(id=identifier))
         if result.document is None:
             return None
         return {"_id": result.document.id, **{
@@ -348,7 +348,7 @@ class Index:
         }}
 
     def delete(self, identifier: str) -> bool:
-        return bool(self._client.delete(DeleteRequest(identifier)).deleted)
+        return bool(self._client.delete(DeleteRequest(id=identifier)).deleted)
 
     def search(self, query: str = "", *, filter=None, sort=None, facets=None,
                limit: int | None = None, offset: int | None = None) -> SearchResults:
@@ -365,7 +365,7 @@ class Index:
         facet_values = []
         for item in facets or []:
             if isinstance(item, str):
-                facet_values.append(_GeneratedFacetRequest(item))
+                facet_values.append(_GeneratedFacetRequest(field=item))
             elif isinstance(item, _GeneratedFacetRequest):
                 facet_values.append(item)
             else:

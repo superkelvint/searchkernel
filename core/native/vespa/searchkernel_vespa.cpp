@@ -1038,9 +1038,13 @@ struct LocalSearchResultState {
 };
 
 class UnsupportedNativeError final : public std::runtime_error {
+    const char *_detail_code;
+
 public:
-    explicit UnsupportedNativeError(const std::string &message)
-        : std::runtime_error(message) {}
+    UnsupportedNativeError(const char *detail_code, const std::string &message)
+        : std::runtime_error(message), _detail_code(detail_code) {}
+
+    const char *detail_code() const noexcept { return _detail_code; }
 };
 
 class DeadlineExceededNativeError final : public std::runtime_error {
@@ -3008,6 +3012,10 @@ public:
     }
 
     std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
+        // The provider returns a string_view into mutable document metadata.
+        // Keep the mutation lock through the copy so concurrent feed/remove
+        // operations cannot recycle the backing storage while it is decoded.
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         auto *ready_sub_db = _db->getReadySubDB();
         if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
         auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
@@ -3057,13 +3065,21 @@ public:
         }
         if (group_field.type != "string" && group_field.type != "integer" &&
             group_field.type != "boolean") {
-            throw UnsupportedNativeError("grouping key type is not supported by the M grouping path: " + options.group_field);
+            throw UnsupportedNativeError(
+                "facet_key_type_not_supported",
+                "grouping key type is not supported by the M grouping path: " + options.group_field);
         }
         auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_field.name));
         auto count = std::make_unique<CountAggregationResult>();
         count->setExpression(std::make_unique<AttributeNode>(group_field.name));
         level.addAggregationResult(std::move(count));
-        level.setMaxGroups(options.max_groups == std::numeric_limits<uint32_t>::max()
+        // Vespa's distributed grouping path may prune to maxGroups before its
+        // final resort. That is observable for value-ordered facets: a low
+        // value can be discarded based on relevance and never reach the
+        // caller. Collect the complete set for ordered requests and apply the
+        // public limit after the result has been sorted below.
+        const bool ordered = options.order != SK_GROUP_ORDER_NONE;
+        level.setMaxGroups(ordered || options.max_groups == std::numeric_limits<uint32_t>::max()
                                ? -1
                                : static_cast<int64_t>(options.max_groups));
         switch (options.order) {
@@ -3169,6 +3185,41 @@ public:
                 else throw std::runtime_error("unsupported native aggregation result");
             }
             result.groups.push_back(std::move(output_group));
+        }
+        if (options.order != SK_GROUP_ORDER_NONE) {
+            const auto value_less = [](const OwnedValue &lhs, const OwnedValue &rhs) {
+                if (lhs.kind != rhs.kind) return lhs.kind < rhs.kind;
+                switch (lhs.kind) {
+                case SK_VALUE_STRING: return lhs.string < rhs.string;
+                case SK_VALUE_INTEGER: return lhs.integer < rhs.integer;
+                case SK_VALUE_FLOAT: return lhs.floating < rhs.floating;
+                case SK_VALUE_BOOLEAN: return lhs.boolean < rhs.boolean;
+                default: return false;
+                }
+            };
+            const auto ordered_less = [&](const LocalGroupState &lhs, const LocalGroupState &rhs) {
+                switch (options.order) {
+                case SK_GROUP_ORDER_COUNT_ASC:
+                    return lhs.count != rhs.count ? lhs.count < rhs.count
+                                                   : value_less(lhs.key, rhs.key);
+                case SK_GROUP_ORDER_COUNT_DESC:
+                    return lhs.count != rhs.count ? lhs.count > rhs.count
+                                                   : value_less(lhs.key, rhs.key);
+                case SK_GROUP_ORDER_VALUE_ASC:
+                    return value_less(lhs.key, rhs.key);
+                case SK_GROUP_ORDER_VALUE_DESC:
+                    return value_less(rhs.key, lhs.key);
+                case SK_GROUP_ORDER_NONE:
+                    return false;
+                default:
+                    return false;
+                }
+            };
+            std::stable_sort(result.groups.begin(), result.groups.end(), ordered_less);
+            if (options.max_groups != std::numeric_limits<uint32_t>::max() &&
+                result.groups.size() > options.max_groups) {
+                result.groups.resize(options.max_groups);
+            }
         }
         return result;
     }
@@ -3437,6 +3488,7 @@ public:
     LocalGroupingResultState group_local_result(const NativeQueryState &query,
                                                  const LocalGroupingRequestState &request) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
         return group_local(query, request);
     }
@@ -3475,13 +3527,28 @@ void clear_error(uint8_t *error, uint32_t error_capacity) noexcept {
 }
 
 int32_t set_error(uint8_t *error, uint32_t error_capacity, int32_t code,
-                 const char *message) noexcept {
+                 const char *message, const char *detail_code = nullptr) noexcept {
     if (!error || error_capacity == 0 || !message) {
         return code;
     }
-    const size_t length = std::strlen(message);
-    const size_t copied = std::min(length, static_cast<size_t>(error_capacity - 1));
-    std::memcpy(error, message, copied);
+    // Keep the diagnostic path allocation-free: this function is called from
+    // noexcept exception translation, including out-of-memory paths.
+    size_t copied = 0;
+    const auto append = [&](const char *value) {
+        const size_t remaining = static_cast<size_t>(error_capacity - 1) - copied;
+        const size_t length = std::strlen(value);
+        const size_t count = std::min(length, remaining);
+        std::memcpy(error + copied, value, count);
+        copied += count;
+    };
+    if (detail_code) {
+        // Stable machine-readable prefix used by the Rust adapter. The
+        // human-readable message remains after the second colon.
+        append("SK_DETAIL_V1:");
+        append(detail_code);
+        append(":");
+    }
+    append(message);
     error[copied] = '\0';
     return code;
 }
@@ -3495,7 +3562,8 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
     } catch (const std::bad_alloc &) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_OUT_OF_MEMORY, nullptr);
     } catch (const UnsupportedNativeError &exception) {
-        return set_error(error, error_capacity, SK_NATIVE_STATUS_UNSUPPORTED, exception.what());
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_UNSUPPORTED, exception.what(),
+                         exception.detail_code());
     } catch (const DeadlineExceededNativeError &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_DEADLINE_EXCEEDED, exception.what());
     } catch (const std::invalid_argument &exception) {
@@ -5689,7 +5757,9 @@ extern "C" int32_t sk_query_add_attribute_exists(
             query->builder.addRangeTerm(search::query::Range("[;]"), field,
                                          query->allocate_term_id(), Weight(1));
         } else {
-            throw UnsupportedNativeError("unsupported attribute exists field type: " + metadata->type);
+            throw UnsupportedNativeError(
+                "attribute_exists_type_not_supported",
+                "unsupported attribute exists field type: " + metadata->type);
         }
     });
 }

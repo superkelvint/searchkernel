@@ -22,6 +22,7 @@ pub enum ErrorCode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ErrorDetail {
     pub code: String,
     pub path: Option<String>,

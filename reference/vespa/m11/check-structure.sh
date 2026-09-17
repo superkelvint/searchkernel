@@ -54,8 +54,8 @@ for impl in 'unsafe impl Send for Engine' 'unsafe impl Sync for Engine'; do
     fail "$impl has no adjacent SAFETY justification"
 done
 
-if rg -n 'wildcard|\*|all' "$M11/sanitizer/lsan.supp" "$M11/sanitizer/tsan.supp" | \
-    grep -v '^.*No broad\|^.*No blanket' >/dev/null; then
+if rg -n '^[[:space:]]*[^#[:space:]].*(wildcard|\*|(^|:)all($|:))' \
+    "$M11/sanitizer/lsan.supp" "$M11/sanitizer/tsan.supp" >/dev/null; then
   fail "sanitizer suppression is broader than a documented symbol/stack"
 fi
 

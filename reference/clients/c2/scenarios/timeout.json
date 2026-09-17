@@ -1,0 +1,9 @@
+{
+  "operation": "search",
+  "cases": [
+    {"name": "absent", "request": {}, "meaning": {"timeout_ms": null}},
+    {"name": "zero", "request": {"timeout": 0}, "meaning": {"timeout_ms": 0}},
+    {"name": "normal", "request": {"timeout": 250}, "meaning": {"timeout_ms": 250}},
+    {"name": "maximum", "request": {"timeout": 18446744073709551615}, "meaning": {"timeout_ms": 18446744073709551615}}
+  ]
+}

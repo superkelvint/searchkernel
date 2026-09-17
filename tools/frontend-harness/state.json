@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "milestones": {
+    "F0": {"status": "planned", "candidate_commit": null},
+    "F1": {"status": "planned", "candidate_commit": null},
+    "F2": {"status": "planned", "candidate_commit": null},
+    "F3": {"status": "planned", "candidate_commit": null},
+    "F4": {"status": "planned", "candidate_commit": null},
+    "F5": {"status": "planned", "candidate_commit": null},
+    "F6": {"status": "planned", "candidate_commit": null},
+    "F7": {"status": "planned", "candidate_commit": null},
+    "F8": {"status": "planned", "candidate_commit": null},
+    "F9": {"status": "planned", "candidate_commit": null},
+    "F10": {"status": "planned", "candidate_commit": null},
+    "F11": {"status": "planned", "candidate_commit": null},
+    "F12": {"status": "planned", "candidate_commit": null}
+  }
+}

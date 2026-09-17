@@ -141,6 +141,7 @@ impl Ranking {
 /// The normalized meaning of a search request after schema defaults are
 /// applied.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct InspectedQuery {
     pub query: String,
     pub search_fields: Vec<crate::schema::SearchField>,

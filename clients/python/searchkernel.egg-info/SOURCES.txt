@@ -1,0 +1,13 @@
+pyproject.toml
+setup.py
+searchkernel/__init__.py
+searchkernel/client.py
+searchkernel/transport.py
+searchkernel.egg-info/PKG-INFO
+searchkernel.egg-info/SOURCES.txt
+searchkernel.egg-info/dependency_links.txt
+searchkernel.egg-info/top_level.txt
+searchkernel/generated/__init__.py
+searchkernel/generated/client.py
+tests/test_generated_contract.py
+tests/test_python_facade.py

@@ -11,12 +11,20 @@ from pathlib import Path
 sys.path.insert(0, "clients/python")
 
 from searchkernel.generated.client import (
+    Analyzer,
     ClientError,
+    FieldDefinition,
+    IndexDefinition,
     ProtocolError,
+    SearchField,
+    SearchFieldSelection,
     Value,
+    _Reader,
+    _read_index,
     _read_response,
     _value_from_json,
     _value_to_json,
+    encode_index_definition,
     request_from_json,
     request_from_json_text,
 )
@@ -24,6 +32,26 @@ from searchkernel.transport import NativeTransport
 
 
 class GeneratedContractTest(unittest.TestCase):
+    def test_standalone_index_definition_encoder(self):
+        expected = IndexDefinition(
+            name="products",
+            fields=[FieldDefinition(
+                name="title",
+                kind="text",
+                cardinality="single",
+                stored=True,
+                searchable=True,
+                analyzer=Analyzer(name="english", version=2),
+            )],
+            default_search_fields=SearchFieldSelection(
+                fields=[SearchField(field="title", weight=0.0)]
+            ),
+        )
+        encoded = encode_index_definition(expected)
+        reader = _Reader(encoded)
+        decoded = _read_index(reader, reader.scalar(0, "<I", 0))
+        self.assertEqual(decoded, expected)
+
     def test_integer_json_is_canonical(self):
         for value in (
             {"int64": 1},
@@ -122,7 +150,7 @@ class GeneratedContractTest(unittest.TestCase):
         from searchkernel.generated.client import Client, GetRequest
 
         with self.assertRaises(Exception) as raised:
-            Client(Transport()).get(GetRequest("id"))
+            Client(Transport()).get(GetRequest(id="id"))
         self.assertIn("malformed native response", str(raised.exception))
 
     def test_response_corpus_and_byte_corruption_are_protocol_safe(self):

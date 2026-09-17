@@ -275,19 +275,10 @@ impl Backend for VespaBackend {
                 lower_facet_order(facet),
             ));
         }
-        let result = self.engine.search(m_request).map_err(|error| {
-            if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported
-                && error.to_string().contains("grouping key type")
-            {
-                PortableError::unsupported(
-                    "facet_key_type_not_supported",
-                    Some("facets"),
-                    error.to_string(),
-                )
-            } else {
-                native_search_error(error, "sort_field_type_not_supported")
-            }
-        })?;
+        let result = self
+            .engine
+            .search(m_request)
+            .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
         let facets = lower_facets(&result.facets, request.facets())?;
         Ok(SearchResult {
             hits: result
@@ -784,9 +775,13 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
         searchkernel_vespa_engine::ErrorKind::ResourceExhausted => {
             PortableError::new(searchkernel_ir::ErrorCode::ResourceExhausted, message)
         }
-        searchkernel_vespa_engine::ErrorKind::Unsupported => {
-            PortableError::unsupported("native_capability_not_supported", None::<String>, message)
-        }
+        searchkernel_vespa_engine::ErrorKind::Unsupported => PortableError::unsupported(
+            error
+                .detail_code()
+                .unwrap_or("native_capability_not_supported"),
+            None::<String>,
+            message,
+        ),
         searchkernel_vespa_engine::ErrorKind::Internal => {
             PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
         }
@@ -801,7 +796,12 @@ fn native_search_error(
     unsupported_code: &'static str,
 ) -> PortableError {
     if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
-        return PortableError::unsupported(unsupported_code, Some("sort"), error.to_string());
+        let detail_code = error.detail_code().unwrap_or(unsupported_code);
+        let path = match detail_code {
+            "facet_key_type_not_supported" => Some("facets"),
+            _ => Some("sort"),
+        };
+        return PortableError::unsupported(detail_code, path, error.to_string());
     }
     native_error(error)
 }

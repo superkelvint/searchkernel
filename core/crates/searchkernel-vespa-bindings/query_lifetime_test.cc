@@ -73,7 +73,7 @@ struct GlobalLocaleGuard {
 extern "C" int searchkernel_query_feature_locale_regression(const char *data_dir,
                                                               const char *config_dir) {
     static std::mutex locale_mutex;
-    std::lock_guard lock(locale_mutex);
+    std::lock_guard<std::mutex> lock(locale_mutex);
 
     uint8_t error[SK_ERROR_MESSAGE_CAPACITY] = {};
     sk_engine *engine = nullptr;

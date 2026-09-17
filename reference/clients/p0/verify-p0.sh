@@ -11,6 +11,21 @@ mkdir -p "$WORK"
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 command -v cargo >/dev/null || { echo "cargo is required" >&2; exit 1; }
 
+(
+  cd "$REPO"
+  cargo build -q -p searchkernel-bindgen
+)
+BINDGEN_TARGET=$(cd "$REPO" && cargo metadata --format-version 1 --no-deps \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+BINDGEN="$BINDGEN_TARGET/debug/searchkernel-bindgen"
+[[ -x "$BINDGEN" ]] || { echo "searchkernel-bindgen executable not found: $BINDGEN" >&2; exit 1; }
+BFBS_ROOT="$REPO/core/crates/searchkernel-json/bfbs"
+GENERATED_OUTPUT=$(mktemp -d "$WORK/generated.XXXXXX")
+"$BINDGEN" generate --bfbs-root "$BFBS_ROOT" --output-root "$GENERATED_OUTPUT"
+"$BINDGEN" check --bfbs-root "$BFBS_ROOT" --repository-root "$REPO"
+python3 "$REPO/tools/check-python-generated-model-construction.py" \
+  "$REPO/clients/python/searchkernel"
+
 python3 -m py_compile \
   "$REPO/clients/python/searchkernel/client.py" \
   "$REPO/clients/python/searchkernel/transport.py" \

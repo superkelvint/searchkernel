@@ -105,6 +105,8 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
  * layout, allocator ownership, initialization rules, and a possible
  * allocation failure while reporting another failure. When capacity is
  * non-zero, implementations write a truncated NUL-terminated diagnostic.
+ * Capability errors may use the stable `SK_DETAIL_V1:<code>:<message>` form;
+ * callers must consume the code, not classify the human-readable message.
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 

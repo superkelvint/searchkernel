@@ -12,6 +12,7 @@ pub enum TotalHitsRelation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// The number of matching documents and its accuracy.
+#[non_exhaustive]
 pub struct TotalHits {
     pub value: u64,
     pub relation: TotalHitsRelation,
@@ -19,6 +20,7 @@ pub struct TotalHits {
 
 #[derive(Clone, Debug, PartialEq)]
 /// Search hits, total-hit information, and facet values.
+#[non_exhaustive]
 pub struct SearchResult<T> {
     pub hits: Vec<Hit<T>>,
     pub total_hits: TotalHits,
@@ -27,6 +29,7 @@ pub struct SearchResult<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 /// One matching document.
+#[non_exhaustive]
 pub struct Hit<T> {
     pub id: DocumentId,
     pub score: Option<f64>,
@@ -36,6 +39,7 @@ pub struct Hit<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 /// Facet values for one field.
+#[non_exhaustive]
 pub struct FacetResult {
     pub field: String,
     pub values: Vec<FacetValue>,
@@ -43,6 +47,7 @@ pub struct FacetResult {
 
 #[derive(Clone, Debug, PartialEq)]
 /// One distinct facet value and its document count.
+#[non_exhaustive]
 pub struct FacetValue {
     pub value: serde_json::Value,
     pub count: u64,
@@ -50,6 +55,7 @@ pub struct FacetValue {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Highlighted fragments for one field.
+#[non_exhaustive]
 pub struct HighlightResult {
     pub field: String,
     pub fragments: Vec<HighlightFragment>,
@@ -57,6 +63,7 @@ pub struct HighlightResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// One piece of highlighted text and its matching spans.
+#[non_exhaustive]
 pub struct HighlightFragment {
     pub text: String,
     pub matches: Vec<HighlightSpan>,
@@ -64,6 +71,7 @@ pub struct HighlightFragment {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A byte range inside a highlighted fragment.
+#[non_exhaustive]
 pub struct HighlightSpan {
     pub start_byte: u32,
     pub end_byte: u32,

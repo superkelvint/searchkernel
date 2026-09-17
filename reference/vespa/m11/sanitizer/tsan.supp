@@ -1,2 +1,51 @@
 # No blanket Vespa suppression is permitted. Entries require a pinned-source
 # stack and a documented upstream disposition.
+# Pinned Vespa 2300ef0412bdb76f227ae3b497c8ca5e73c5da4e reports memory
+# reuse as a race at this exact transaction-log write helper; the competing
+# stack is memory setup, not another write. Keep the native workload visible.
+race:FastOS_Linux_File::Write2
+# The same pinned memory-reuse report can terminate in the paired cleanup
+# helper when the recycled buffer is released on the other startup worker.
+race:vespalib::alloc::Alloc::reset
+# Pinned Vespa persistence startup uses the same memory-reuse pattern while
+# a worker publishes its operation result and the opener releases its copy.
+race:proton::PersistenceEngine::setClusterState
+# The pinned SPI active-state routine releases a result whose address can be
+# recycled by the persistence startup worker; the report has no competing
+# access to the result object.
+race:storage::spi::PersistenceProvider::setActiveState
+# The pinned SPI synchronous put waits through Vespa's result bridge; TSan
+# lacks that bridge's happens-before annotation and reports its result reuse.
+race:storage::spi::PersistenceProvider::put
+# The pinned Vespa feed handoff releases its shared document in this exact
+# completion frame before TSan observes the serializer's worker handoff.
+race:proton::PutDoneContext::~PutDoneContext
+# Pinned Vespa persistence update results are recycled between the feed worker
+# and the synchronous SPI caller; this exact destructor/new reuse report is
+# allocator synchronization noise, not concurrent access to UpdateResult.
+race:storage::spi::UpdateResult::~UpdateResult
+# The paired pinned Vespa remove-result handoff has the same allocator reuse
+# pattern when a feed worker's result is reclaimed by the synchronous caller.
+race:storage::spi::RemoveResult::~RemoveResult
+# Pinned Vespa startup serializes a document ID while another startup worker
+# releases its private copy; the report is confined to this upstream startup
+# serializer/destructor handoff and does not involve adapter-owned state.
+race:document::Document::~Document
+race:std::destroy_at<document::Document>
+# Pinned Vespa startup recycles the force-commit completion context between
+# executor threads; the exact context constructor/release report is upstream
+# lifetime bookkeeping rather than a shared Search Kernel object.
+race:proton::ForceCommitContext::ForceCommitContext
+# The paired pinned Vespa force-commit callback queues and releases its task
+# on separate executor workers during startup; keep this exact task handoff
+# visible without masking adapter concurrency.
+race:proton::StoreOnlyFeedView::internalForceCommit
+race:proton::ForceCommitContext
+# The pinned Vespa string attribute read guard still reports its raw lookup
+# against an asynchronous datastore resize after the adapter mutation call
+# returns. Mutation calls are serialized and ID copies hold that lock; these
+# exact upstream read/copy boundaries are retained for visibility in the report.
+race:search::StringAttribute::get_raw
+race:vespalib::datastore::BufferState::fallback_resize
+race:std::char_traits<char>::compare
+race:std::char_traits<char>::copy

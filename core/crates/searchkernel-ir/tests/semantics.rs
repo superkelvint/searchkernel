@@ -264,6 +264,20 @@ fn request_inner_vectors_absent_bytes() -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn timeout_request_bytes(timeout: Option<u64>) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let timeout = timeout.map(api::OptionalUInt64::new);
+    let root = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            timeout: timeout.as_ref(),
+            ..Default::default()
+        },
+    );
+    builder.finish(root, None);
+    builder.finished_data().to_vec()
+}
+
 fn none_document_bytes() -> Vec<u8> {
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string("doc-1");
@@ -1815,6 +1829,31 @@ fn none_value_is_missing_for_single_and_multi_fields() {
     let document = searchkernel_ir::__flatbuffers::root::<api::Document>(&bytes).unwrap();
     let error = multi.document_to_ir(document).unwrap_err();
     assert_eq!(error.details[0].code, "missing_value");
+}
+
+#[test]
+fn timeout_preserves_absence_zero_normal_and_u64_boundary_values() {
+    let context = context(Some(&["title"]));
+    for (wire_value, expected) in [
+        (None, None),
+        (Some(0), Some(0)),
+        (Some(250), Some(250)),
+        (Some(u64::MAX), Some(u64::MAX)),
+    ] {
+        let bytes = timeout_request_bytes(wire_value);
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let resolved = context.search_to_ir(request).unwrap();
+        assert_eq!(
+            resolved.timeout().map(|value| value.as_millis() as u64),
+            expected
+        );
+
+        let inspected = context.inspect_query(request).unwrap();
+        assert_eq!(
+            inspected.timeout().map(|value| value.as_millis() as u64),
+            wire_value
+        );
+    }
 }
 
 #[test]

@@ -21,7 +21,7 @@ from searchkernel import (  # noqa: E402
     SearchRequest,
     request_from_json_text,
 )
-from searchkernel.generated.client import _read_response  # noqa: E402
+from searchkernel.generated.client import _read_response, _response_to_json  # noqa: E402
 
 
 def expected_abi_version() -> int:
@@ -63,7 +63,87 @@ def real_c5_smoke(library_path: str) -> None:
         else:
             raise AssertionError("scripted Portable API error was not returned")
 
+    _run_scripted_response_cases(library_path)
     _run_c6_corpus(library_path)
+
+
+def _run_scripted_response_cases(library_path: str) -> None:
+    """Replay frozen SKRS responses and compare their complete Python meaning."""
+    root = Path(__file__).resolve().parents[3]
+    request_root = root / "core/crates/searchkernel-json/tests/fixtures/requests"
+    response_root = root / "core/crates/searchkernel-json/tests/fixtures/responses"
+    expected_root = root / "reference/json-conformance/generated/responses"
+    cases = [
+        ("write.insert", "insert", "write.insert", "insert"),
+        ("write.upsert", "upsert", "write.upsert", "upsert"),
+        ("write.patch-set", "patch", "write.patch-set", "patch"),
+        ("write.delete", "delete", "write.delete", "delete"),
+        ("write.get", "get", "write.get", "get"),
+        ("search.defaults", "search", "search.defaults", "search"),
+        ("analyze.text-request", "analyze", "analyze.text-request", "analyze"),
+    ]
+    for request_stem, operation, _expected_stem, response_stem in cases:
+        request_path = request_root / f"{request_stem}.skrq"
+        response_path = response_root / f"{response_stem}.skrs"
+        expected_path = expected_root / f"{response_stem}.json"
+        with open_transport(
+            library_path, f"c7-script|{request_path}|{response_path}".encode()
+        ) as transport:
+            request = request_from_json_text(
+                (root / "reference/json-conformance/generated/requests" / f"{request_stem}.json")
+                .read_text(encoding="utf-8")
+            )[1]
+            actual = getattr(Client(transport), operation)(request)
+        actual_json = {"protocol_version": 1, "response": _response_to_json(operation, actual)}
+        expected_json = json.loads(expected_path.read_text(encoding="utf-8"))
+        if actual_json != expected_json:
+            raise AssertionError(
+                f"{response_stem}: decoded response differs from frozen JSON: "
+                f"got {actual_json!r}, expected {expected_json!r}"
+            )
+
+    request_path = request_root / "search.defaults.skrq"
+    response_path = response_root / "error-00.skrs"
+    expected_path = expected_root / "error-00.json"
+    with open_transport(
+        library_path, f"c7-script|{request_path}|{response_path}".encode()
+    ) as transport:
+        request = request_from_json_text(
+            (root / "reference/json-conformance/generated/requests/search.defaults.json").read_text(
+                encoding="utf-8"
+            )
+        )[1]
+        try:
+            Client(transport).search(request)
+        except ClientError as error:
+            if error.portable is None:
+                raise AssertionError("scripted response was not mapped to a portable error") from error
+            actual_json = {"protocol_version": 1, "response": {"error": _error_to_json(error.portable)}}
+        else:
+            raise AssertionError("scripted error response unexpectedly succeeded")
+    expected_json = json.loads(expected_path.read_text(encoding="utf-8"))
+    if actual_json != expected_json:
+        raise AssertionError(
+            f"error-00: decoded error differs from frozen JSON: "
+            f"got {actual_json!r}, expected {expected_json!r}"
+        )
+
+
+def _error_to_json(error) -> dict:
+    return {
+        "code": error.code,
+        "message": error.message,
+        "retryable": error.retryable,
+        "details": [
+            {
+                "code": detail.code,
+                "message": detail.message,
+                "metadata": dict(sorted(detail.metadata.items())),
+                "path": detail.path,
+            }
+            for detail in error.details
+        ],
+    }
 
 
 def _run_c6_corpus(library_path: str) -> None:
