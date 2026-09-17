@@ -8,6 +8,7 @@ FlatBuffers representation.
 from __future__ import annotations
 
 import ctypes
+import os
 import threading
 import weakref
 from pathlib import Path
@@ -34,11 +35,7 @@ class NativeTransport:
         self._finalizer = weakref.finalize(self, _finalize_handle, library, handle)
 
     @classmethod
-    def open(cls, library_path: str, open_payload: bytes = b"") -> "NativeTransport":
-        payload = bytes(open_payload)
-        if b"\0" in payload:
-            raise NativeTransportError("open payload contains an embedded NUL")
-
+    def _load_library(cls, library_path: str, *, require_create: bool = False):
         try:
             library = ctypes.CDLL(str(Path(library_path)))
         except OSError as error:
@@ -59,6 +56,17 @@ class NativeTransport:
             )
 
         try:
+            if require_create:
+                create_fn = library.sk_create
+                create_fn.argtypes = [
+                    ctypes.c_char_p,
+                    ctypes.POINTER(ctypes.c_uint8),
+                    ctypes.c_size_t,
+                    ctypes.POINTER(ctypes.c_uint64),
+                    ctypes.POINTER(ctypes.c_uint8),
+                    ctypes.c_size_t,
+                ]
+                create_fn.restype = ctypes.c_uint32
             open_fn = library.sk_open
             open_fn.argtypes = [
                 ctypes.c_char_p,
@@ -88,8 +96,26 @@ class NativeTransport:
             free_fn.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint64]
             free_fn.restype = None
         except AttributeError as error:
-            raise NativeTransportError("native library is missing a C5 entry point") from error
+            missing = "create entry point" if require_create else "C5 entry point"
+            raise NativeTransportError(f"native library is missing a {missing}") from error
+        return library
 
+    @staticmethod
+    def _path_bytes(path) -> bytes:
+        try:
+            payload = path if isinstance(path, bytes) else os.fsencode(os.fspath(path))
+        except (TypeError, ValueError) as error:
+            raise NativeTransportError("index path must be a filesystem path") from error
+        if b"\0" in payload:
+            raise NativeTransportError("index path contains an embedded NUL")
+        return bytes(payload)
+
+    @classmethod
+    def open(cls, library_path: str, open_payload: bytes = b"") -> "NativeTransport":
+        payload = cls._path_bytes(open_payload)
+        library = cls._load_library(library_path)
+
+        open_fn = library.sk_open
         path = ctypes.create_string_buffer(payload + b"\0")
         handle = ctypes.c_uint64(0)
         error = (ctypes.c_uint8 * 4096)()
@@ -110,6 +136,48 @@ class NativeTransport:
             )
         if handle.value == 0:
             raise NativeTransportError("native open returned an invalid handle")
+        return cls(library, int(handle.value))
+
+    @classmethod
+    def create(
+        cls, library_path: str, index_path, definition: bytes
+    ) -> "NativeTransport":
+        path_payload = cls._path_bytes(index_path)
+        definition_bytes = bytes(definition)
+        library = cls._load_library(library_path, require_create=True)
+
+        definition_storage = None
+        if definition_bytes:
+            definition_storage = (ctypes.c_uint8 * len(definition_bytes)).from_buffer_copy(
+                definition_bytes
+            )
+            definition_ptr = ctypes.cast(
+                definition_storage, ctypes.POINTER(ctypes.c_uint8)
+            )
+        else:
+            definition_ptr = ctypes.POINTER(ctypes.c_uint8)()
+        path = ctypes.create_string_buffer(path_payload + b"\0")
+        handle = ctypes.c_uint64(0)
+        error = (ctypes.c_uint8 * 4096)()
+        try:
+            status = int(
+                library.sk_create(
+                    ctypes.cast(path, ctypes.c_char_p),
+                    definition_ptr,
+                    len(definition_bytes),
+                    ctypes.byref(handle),
+                    error,
+                    len(error),
+                )
+            )
+        except OSError as native_error:
+            raise NativeTransportError(f"native create failed: {native_error}") from native_error
+        if status != STATUS_OK:
+            raise NativeTransportError(
+                f"native create failed with status {status}: {_error_text(error)}"
+            )
+        if handle.value == 0:
+            raise NativeTransportError("native create returned an invalid handle")
         return cls(library, int(handle.value))
 
     def call(self, request: bytes) -> bytes:
