@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package searchkernel.rpc.v1;
+
+// Opaque canonical Search Kernel FlatBuffer payload.
+//
+// Request payloads MUST be a valid Search Kernel RequestEnvelope.
+// Response payloads MUST be a valid Search Kernel ResponseEnvelope.
+//
+// Search Kernel domain semantics are defined exclusively by the
+// canonical FlatBuffers schemas, not by this protobuf definition.
+message FlatBufferFrame {
+  bytes payload = 1;
+}
+
+// Transport for canonical Search Kernel FlatBuffer envelopes.
+service SearchKernel {
+  rpc Execute(FlatBufferFrame) returns (FlatBufferFrame);
+}
