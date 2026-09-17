@@ -1,4 +1,4 @@
-#![cfg(feature = "hardening")]
+#![cfg(all(feature = "hardening", searchkernel_hardening_sdk))]
 
 use searchkernel_vespa_engine::{
     hardening, Aggregation, ConfigCompiler, Document, Engine, ErrorKind, FacetRequest, Field,

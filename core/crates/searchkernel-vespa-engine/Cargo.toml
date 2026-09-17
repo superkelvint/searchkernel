@@ -3,6 +3,7 @@ name = "searchkernel-vespa-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [dependencies]
 searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings" }
