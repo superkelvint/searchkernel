@@ -1,5 +1,4 @@
 # Repository-relative paths reproduced by searchkernel-bindgen.
 core/crates/searchkernel-client/src/generated.rs
-core/crates/searchkernel-json/src/generated.rs
 clients/python/searchkernel/generated/client.py
-reference/json-conformance/generated
+reference/json-conformance/generated/schema-model.json

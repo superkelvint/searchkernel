@@ -10,20 +10,6 @@ use ffi_generated::search_kernel::ffi::v1 as wire;
 pub mod model {
     use super::BTreeMap;
 
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub enum Value {
-        #[default]
-        Null,
-        Bool(bool),
-        Int64(i64),
-        UInt64(u64),
-        Float64(f64),
-        String(String),
-        Bytes(Vec<u8>),
-        List(Vec<Value>),
-        Object(BTreeMap<String, Value>),
-    }
-
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub enum ComparisonOp {
         #[default]
@@ -112,152 +98,388 @@ pub mod model {
         LowerBound,
     }
 
-
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Document { pub id: Option<String>, pub fields: BTreeMap<String, Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FieldProjection { pub fields: Vec<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchFieldSelection { pub fields: Vec<SearchField> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchField { pub field: String, pub weight: Option<f64> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SortExpr { pub field: String, pub direction: SortDirection, pub missing: Option<MissingPlacement> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetRequest { pub field: String, pub limit: Option<u32>, pub sort: Option<FacetSort> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightRequest { pub fields: Vec<String> }
     #[derive(Debug, Clone, PartialEq)]
     pub enum FilterExpr {
         And(Vec<FilterExpr>),
         Or(Vec<FilterExpr>),
         Not(Box<FilterExpr>),
-        Comparison { field: String, op: ComparisonOp, value: Value },
-        Range { field: String, lower: Option<Value>, upper: Option<Value>, include_lower: Option<bool>, include_upper: Option<bool> },
-        Exists { field: String },
+        Comparison {
+            field: String,
+            op: ComparisonOp,
+            value: Value,
+        },
+        Range {
+            field: String,
+            include_lower: Option<bool>,
+            include_upper: Option<bool>,
+            lower: Option<Value>,
+            upper: Option<Value>,
+        },
+        Exists {
+            field: String,
+        },
     }
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum PatchOperation {
+        Set {
+            field: Option<String>,
+            value: Option<Value>,
+        },
+        Unset {
+            field: Option<String>,
+        },
+    }
+
     #[derive(Debug, Clone, PartialEq)]
     pub enum QueryExpr {
-        Term { field: String, value: Value },
+        Term {
+            field: String,
+            value: Value,
+        },
         And(Vec<QueryExpr>),
         Or(Vec<QueryExpr>),
         Not(Box<QueryExpr>),
     }
+
     #[derive(Debug, Clone, PartialEq)]
-    pub enum RankingPolicy { DefaultRelevanceV1, Bm25Ranking }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Analyzer { pub name: Option<String>, pub version: u32, pub options: BTreeMap<String, Value> }
+    pub enum RankingPolicy {
+        DefaultRelevanceV1,
+        Bm25Ranking,
+    }
 
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InsertRequest { pub document: Option<Document> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct UpsertRequest { pub document: Option<Document> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct PatchRequest { pub id: Option<String>, pub operations: Vec<PatchOperation> }
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum PatchOperation { Set { field: Option<String>, value: Option<Value> }, Unset { field: Option<String> } }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DeleteRequest { pub id: Option<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct GetRequest { pub id: Option<String>, pub projection: Option<FieldProjection> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchRequest {
-        pub query: Option<String>, pub search_fields: Option<SearchFieldSelection>,
-        pub filter: Option<FilterExpr>, pub sort: Vec<SortExpr>, pub facets: Vec<FacetRequest>,
-        pub ranking: Option<RankingPolicy>, pub limit: Option<u32>, pub offset: Option<u32>,
-        pub projection: Option<FieldProjection>, pub highlighting: Option<HighlightRequest>,
-        pub language: Option<String>, pub query_expr: Option<QueryExpr>, pub timeout: Option<u64>,
+    pub enum Value {
+        #[default]
+        Null,
+        Bool(bool),
+        Int64(i64),
+        UInt64(u64),
+        Float64(f64),
+        String(String),
+        Bytes(Vec<u8>),
+        List(Vec<Value>),
+        Object(BTreeMap<String, Value>),
     }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub enum AnalyzeTarget { #[default] None, Analyzer(Analyzer), Field(String) }
+    pub enum AnalyzeTarget {
+        #[default]
+        None,
+        Analyzer(Analyzer),
+        Field(String),
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzeRequest { pub target: AnalyzeTarget, pub text: Option<String>, pub language: Option<String> }
+    pub struct AnalyzeRequest {
+        pub language: Option<String>,
+        pub target: AnalyzeTarget,
+        pub text: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct AnalyzeResult {
+        pub tokens: Vec<AnalyzedToken>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct AnalyzedToken {
+        pub end_byte: u32,
+        pub position: u32,
+        pub start_byte: u32,
+        pub surface: String,
+        pub term: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct Analyzer {
+        pub name: Option<String>,
+        pub options: BTreeMap<String, Value>,
+        pub version: u32,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct DeleteRequest {
+        pub id: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct DeleteResult {
+        pub deleted: bool,
+        pub id: String,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct DescribeRequest;
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InspectQueryRequest { pub request: Option<SearchRequest> }
 
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct ErrorDetail { pub code: String, pub message: String, pub path: Option<String>, pub metadata: BTreeMap<String, String> }
+    #[non_exhaustive]
+    pub struct DescribeResult {
+        pub index: Option<IndexDefinition>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Error { pub code: ErrorCode, pub message: String, pub retryable: bool, pub details: Vec<ErrorDetail> }
+    pub struct Document {
+        pub fields: BTreeMap<String, Value>,
+        pub id: Option<String>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InsertResult { pub id: String }
+    #[non_exhaustive]
+    pub struct Error {
+        pub code: ErrorCode,
+        pub details: Vec<ErrorDetail>,
+        pub message: String,
+        pub retryable: bool,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct UpsertResult { pub id: String }
+    #[non_exhaustive]
+    pub struct ErrorDetail {
+        pub code: String,
+        pub message: String,
+        pub metadata: BTreeMap<String, String>,
+        pub path: Option<String>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct PatchResult { pub id: String }
+    pub struct FacetRequest {
+        pub field: String,
+        pub limit: Option<u32>,
+        pub sort: Option<FacetSort>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DeleteResult { pub id: String, pub deleted: bool }
+    #[non_exhaustive]
+    pub struct FacetResult {
+        pub field: String,
+        pub values: Vec<FacetValue>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DocumentResult { pub id: String, pub fields: BTreeMap<String, Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct GetResult { pub document: Option<DocumentResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct TotalHits { pub value: u64, pub relation: TotalHitsRelation }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightSpan { pub start_byte: u32, pub end_byte: u32 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightFragment { pub text: String, pub matches: Vec<HighlightSpan> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightResult { pub field: String, pub fragments: Vec<HighlightFragment> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Hit { pub id: String, pub score: Option<f64>, pub fields: BTreeMap<String, Value>, pub highlights: Vec<HighlightResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetValue { pub value: Value, pub count: u64 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetResult { pub field: String, pub values: Vec<FacetValue> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchResult { pub hits: Vec<Hit>, pub total_hits: TotalHits, pub facets: Vec<FacetResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzedToken { pub surface: String, pub term: String, pub position: u32, pub start_byte: u32, pub end_byte: u32 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzeResult { pub tokens: Vec<AnalyzedToken> }
+    #[non_exhaustive]
+    pub struct FacetValue {
+        pub count: u64,
+        pub value: Value,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
     pub struct FieldDefinition {
-        pub name: Option<String>, pub kind: FieldKind, pub cardinality: FieldCardinality,
-        pub stored: Option<bool>, pub searchable: Option<bool>, pub filterable: Option<bool>,
-        pub sortable: Option<bool>, pub facetable: Option<bool>, pub analyzer: Option<Analyzer>,
+        pub analyzer: Option<Analyzer>,
+        pub cardinality: FieldCardinality,
+        pub facetable: Option<bool>,
+        pub filterable: Option<bool>,
+        pub kind: FieldKind,
+        pub name: Option<String>,
+        pub searchable: Option<bool>,
+        pub sortable: Option<bool>,
+        pub stored: Option<bool>,
     }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct IndexDefinition { pub name: Option<String>, pub fields: Vec<FieldDefinition>, pub default_search_fields: Option<SearchFieldSelection> }
+    pub struct FieldProjection {
+        pub fields: Vec<String>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DescribeResult { pub index: Option<IndexDefinition> }
+    pub struct GetRequest {
+        pub id: Option<String>,
+        pub projection: Option<FieldProjection>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InspectQueryResult { pub resolved_request: Option<SearchRequest> }
+    #[non_exhaustive]
+    pub struct GetResult {
+        pub document: Option<DocumentResult>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct HighlightFragment {
+        pub matches: Vec<HighlightSpan>,
+        pub text: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct HighlightRequest {
+        pub fields: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct HighlightResult {
+        pub field: String,
+        pub fragments: Vec<HighlightFragment>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct HighlightSpan {
+        pub end_byte: u32,
+        pub start_byte: u32,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct Hit {
+        pub fields: BTreeMap<String, Value>,
+        pub highlights: Vec<HighlightResult>,
+        pub id: String,
+        pub score: Option<f64>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct IndexDefinition {
+        pub default_search_fields: Option<SearchFieldSelection>,
+        pub fields: Vec<FieldDefinition>,
+        pub name: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct InsertRequest {
+        pub document: Option<Document>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct InsertResult {
+        pub id: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct InspectQueryRequest {
+        pub request: Option<SearchRequest>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct InspectQueryResult {
+        pub resolved_request: Option<SearchRequest>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct PatchRequest {
+        pub id: Option<String>,
+        pub operations: Vec<PatchOperation>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct PatchResult {
+        pub id: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct SearchField {
+        pub field: String,
+        pub weight: Option<f64>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct SearchFieldSelection {
+        pub fields: Vec<SearchField>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct SearchRequest {
+        pub facets: Vec<FacetRequest>,
+        pub filter: Option<FilterExpr>,
+        pub highlighting: Option<HighlightRequest>,
+        pub language: Option<String>,
+        pub limit: Option<u32>,
+        pub offset: Option<u32>,
+        pub projection: Option<FieldProjection>,
+        pub query: Option<String>,
+        pub query_expr: Option<QueryExpr>,
+        pub ranking: Option<RankingPolicy>,
+        pub search_fields: Option<SearchFieldSelection>,
+        pub sort: Vec<SortExpr>,
+        pub timeout: Option<u64>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct SearchResult {
+        pub facets: Vec<FacetResult>,
+        pub hits: Vec<Hit>,
+        pub total_hits: TotalHits,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct SortExpr {
+        pub direction: SortDirection,
+        pub field: String,
+        pub missing: Option<MissingPlacement>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct TotalHits {
+        pub relation: TotalHitsRelation,
+        pub value: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct UpsertRequest {
+        pub document: Option<Document>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct UpsertResult {
+        pub id: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Default)]
+    #[non_exhaustive]
+    pub struct DocumentResult {
+        pub fields: BTreeMap<String, Value>,
+        pub id: String,
+    }
+
+
 }
 
-pub trait Transport: Send + Sync { type Error; fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>; }
+pub trait Transport: Send + Sync {
+    type Error;
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
 
 pub trait AsyncTransport: Send + Sync {
     type Error;
-
     fn call(&self, request: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
 #[derive(Debug)]
-pub enum ClientError<E> { Transport(E), Portable(model::Error), Protocol(String) }
+pub enum ClientError<E> {
+    Transport(E),
+    Portable(model::Error),
+    Protocol(String),
+}
 
 pub struct Client<T: Transport> { transport: T }
 
 impl<T: Transport> Client<T> {
     pub fn new(transport: T) -> Self { Self { transport } }
-    pub fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_insert(request)) }
-    pub fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_upsert(request)) }
-    pub fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_patch(request)) }
-    pub fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_delete(request)) }
-    pub fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_get(request)) }
-    pub fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_search(request)) }
-    pub fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_analyze(request)) }
-    pub fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_describe(request)) }
-    pub fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_inspect(request)) }
+    pub fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_operation_analyze(request)) }
+    pub fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_operation_delete(request)) }
+    pub fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_operation_describe(request)) }
+    pub fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_operation_get(request)) }
+    pub fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_operation_insert(request)) }
+    pub fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_operation_inspect_query(request)) }
+    pub fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_operation_patch(request)) }
+    pub fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_operation_search(request)) }
+    pub fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_operation_upsert(request)) }
 
     fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
         let request = request.map_err(ClientError::Protocol)?;
         let response = self.transport.call(&request).map_err(ClientError::Transport)?;
         R::decode(operation, &response).map_err(|error| match error {
-            DecodeError::Portable(value) => ClientError::Portable(value),
-            DecodeError::Protocol(value) => ClientError::Protocol(value),
+            DecodeError::Portable(error) => ClientError::Portable(error),
+            DecodeError::Protocol(message) => ClientError::Protocol(message),
         })
     }
 }
@@ -266,201 +488,47 @@ pub struct AsyncClient<T: AsyncTransport> { transport: T }
 
 impl<T: AsyncTransport> AsyncClient<T> {
     pub fn new(transport: T) -> Self { Self { transport } }
-    pub async fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_insert(request)).await }
-    pub async fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_upsert(request)).await }
-    pub async fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_patch(request)).await }
-    pub async fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_delete(request)).await }
-    pub async fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_get(request)).await }
-    pub async fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_search(request)).await }
-    pub async fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_analyze(request)).await }
-    pub async fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_describe(request)).await }
-    pub async fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_inspect(request)).await }
+    pub async fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_operation_analyze(request)).await }
+    pub async fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_operation_delete(request)).await }
+    pub async fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_operation_describe(request)).await }
+    pub async fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_operation_get(request)).await }
+    pub async fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_operation_insert(request)).await }
+    pub async fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_operation_inspect_query(request)).await }
+    pub async fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_operation_patch(request)).await }
+    pub async fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_operation_search(request)).await }
+    pub async fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_operation_upsert(request)).await }
 
     async fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
         let request = request.map_err(ClientError::Protocol)?;
         let response = self.transport.call(&request).await.map_err(ClientError::Transport)?;
         R::decode(operation, &response).map_err(|error| match error {
-            DecodeError::Portable(value) => ClientError::Portable(value),
-            DecodeError::Protocol(value) => ClientError::Protocol(value),
+            DecodeError::Portable(error) => ClientError::Portable(error),
+            DecodeError::Protocol(message) => ClientError::Protocol(message),
         })
     }
 }
 
-fn finish(builder: &mut FlatBufferBuilder, kind: wire::RequestPayload, payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) -> Vec<u8> {
-    let root = wire::RequestEnvelope::create(builder, &wire::RequestEnvelopeArgs { protocol_version: 1, payload_type: kind, payload: Some(payload) });
-    builder.finish(root, Some(wire::REQUEST_ENVELOPE_IDENTIFIER));
-    builder.finished_data().to_vec()
+#[derive(Debug)]
+enum DecodeError {
+    Portable(model::Error),
+    Protocol(String),
 }
 
-fn document<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::Document) -> Result<flatbuffers::WIPOffset<wire::Document<'a>>, String> {
-    let id = value.id.as_deref().map(|id| builder.create_string(id));
-    let mut entries = Vec::with_capacity(value.fields.len());
-    for (key, value) in value.fields { let key = builder.create_string(&key); let value = model_value(builder, value)?; entries.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); }
-    let fields = if entries.is_empty() { None } else { Some(builder.create_vector(&entries)) };
-    Ok(wire::Document::create(builder, &wire::DocumentArgs { id, fields }))
+trait DecodeResponse: Sized {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError>;
 }
 
-fn model_value<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::Value) -> Result<flatbuffers::WIPOffset<wire::Value<'a>>, String> {
-    let (kind_type, kind) = match value {
-        model::Value::Null => { let payload = wire::NullValueValue::create(builder, &wire::NullValueValueArgs { value: wire::NullValue::Null }); (wire::ValueKind::NullValueValue, Some(payload.as_union_value())) }
-        model::Value::Bool(value) => { let payload = wire::BoolValue::create(builder, &wire::BoolValueArgs { value }); (wire::ValueKind::BoolValue, Some(payload.as_union_value())) }
-        model::Value::Int64(value) => { let payload = wire::Int64Value::create(builder, &wire::Int64ValueArgs { value }); (wire::ValueKind::Int64Value, Some(payload.as_union_value())) }
-        model::Value::UInt64(value) => { let payload = wire::UInt64Value::create(builder, &wire::UInt64ValueArgs { value }); (wire::ValueKind::UInt64Value, Some(payload.as_union_value())) }
-        model::Value::Float64(value) => { if !value.is_finite() { return Err("non-finite float is not portable".to_owned()); } let payload = wire::Float64Value::create(builder, &wire::Float64ValueArgs { value }); (wire::ValueKind::Float64Value, Some(payload.as_union_value())) }
-        model::Value::String(value) => { let value = builder.create_string(&value); let payload = wire::StringValue::create(builder, &wire::StringValueArgs { value: Some(value) }); (wire::ValueKind::StringValue, Some(payload.as_union_value())) }
-        model::Value::Bytes(value) => { let value = builder.create_vector(&value); let payload = wire::BytesValue::create(builder, &wire::BytesValueArgs { value: Some(value) }); (wire::ValueKind::BytesValue, Some(payload.as_union_value())) }
-        model::Value::List(values) => { let values = values.into_iter().map(|value| model_value(builder, value)).collect::<Result<Vec<_>, _>>()?; let values = builder.create_vector(&values); let payload = wire::ValueList::create(builder, &wire::ValueListArgs { values: Some(values) }); (wire::ValueKind::ValueList, Some(payload.as_union_value())) }
-        model::Value::Object(values) => { let mut entries = Vec::with_capacity(values.len()); for (key, value) in values { let key = builder.create_string(&key); let value = model_value(builder, value)?; entries.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let values = builder.create_vector(&entries); let payload = wire::ValueObject::create(builder, &wire::ValueObjectArgs { fields: Some(values) }); (wire::ValueKind::ValueObject, Some(payload.as_union_value())) }
-    };
-    Ok(wire::Value::create(builder, &wire::ValueArgs { kind_type, kind }))
+fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> {
+    value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}")))
 }
 
-fn model_object(value: Option<model::Value>, path: &str) -> Result<BTreeMap<String, model::Value>, String> {
-    match value { Some(model::Value::Object(value)) => Ok(value), _ => Err(format!("{path} must be an object")) }
-}
-fn model_string(value: Option<&model::Value>, path: &str) -> Result<String, String> {
-    match value { Some(model::Value::String(value)) => Ok(value.clone()), _ => Err(format!("{path} must be a string")) }
-}
-fn model_u32(value: Option<&model::Value>, path: &str) -> Result<u32, String> {
-    match value { Some(model::Value::UInt64(value)) => u32::try_from(*value).map_err(|_| format!("{path} is out of range")), Some(model::Value::Int64(value)) => u32::try_from(*value).map_err(|_| format!("{path} is out of range")), _ => Err(format!("{path} must be an integer")) }
-}
-fn model_bool(value: Option<&model::Value>, path: &str) -> Result<bool, String> { match value { Some(model::Value::Bool(value)) => Ok(*value), _ => Err(format!("{path} must be a boolean")) } }
-fn model_optional_bool(value: Option<&model::Value>) -> Option<wire::OptionalBool> { value.and_then(|value| match value { model::Value::Bool(value) => Some(wire::OptionalBool::new(*value)), _ => None }) }
-fn model_optional_f64(value: Option<&model::Value>) -> Option<wire::OptionalDouble> { value.and_then(|value| match value { model::Value::Float64(value) if value.is_finite() => Some(wire::OptionalDouble::new(*value)), _ => None }) }
-
-fn model_filter<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FilterExpr) -> Result<flatbuffers::WIPOffset<wire::FilterExpr<'a>>, String> {
-    let (expr_type, expr) = match value {
-        model::FilterExpr::And(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::FilterExprKind::FilterAnd, wire::FilterAnd::create(builder, &wire::FilterAndArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::FilterExpr::Or(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::FilterExprKind::FilterOr, wire::FilterOr::create(builder, &wire::FilterOrArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::FilterExpr::Not(clause) => {
-            let clause = model_filter(builder, *clause)?;
-            (wire::FilterExprKind::FilterNot, wire::FilterNot::create(builder, &wire::FilterNotArgs { clause: Some(clause) }).as_union_value())
-        }
-        model::FilterExpr::Comparison { field, op, value } => {
-            let field = builder.create_string(&field);
-            let value = model_value(builder, value)?;
-            let op = encode_comparison_op(op);
-            (wire::FilterExprKind::FilterComparison, wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: Some(field), op, value: Some(value) }).as_union_value())
-        }
-        model::FilterExpr::Range { field, lower, upper, include_lower, include_upper } => {
-            let field = builder.create_string(&field);
-            let lower = lower.map(|value| model_value(builder, value)).transpose()?;
-            let upper = upper.map(|value| model_value(builder, value)).transpose()?;
-            let include_lower = include_lower.map(wire::OptionalBool::new);
-            let include_upper = include_upper.map(wire::OptionalBool::new);
-            (wire::FilterExprKind::FilterRange, wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: Some(field), lower, upper, include_lower: include_lower.as_ref(), include_upper: include_upper.as_ref() }).as_union_value())
-        }
-        model::FilterExpr::Exists { field } => {
-            let field = builder.create_string(&field);
-            (wire::FilterExprKind::FilterExists, wire::FilterExists::create(builder, &wire::FilterExistsArgs { field: Some(field) }).as_union_value())
-        }
-    };
-    Ok(wire::FilterExpr::create(builder, &wire::FilterExprArgs { expr_type, expr: Some(expr) }))
+fn finite_f32(value: f32, path: &str) -> Result<f32, String> {
+    value.is_finite().then_some(value).ok_or_else(|| format!("non-finite {path} is not portable"))
 }
 
-fn model_query<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::QueryExpr) -> Result<flatbuffers::WIPOffset<wire::QueryExpr<'a>>, String> {
-    let (expr_type, expr) = match value {
-        model::QueryExpr::Term { field, value } => {
-            let field = builder.create_string(&field);
-            let value = model_value(builder, value)?;
-            (wire::QueryExprKind::TermQuery, wire::TermQuery::create(builder, &wire::TermQueryArgs { field: Some(field), value: Some(value) }).as_union_value())
-        }
-        model::QueryExpr::And(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::QueryExprKind::QueryAnd, wire::QueryAnd::create(builder, &wire::QueryAndArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::QueryExpr::Or(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::QueryExprKind::QueryOr, wire::QueryOr::create(builder, &wire::QueryOrArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::QueryExpr::Not(clause) => {
-            let clause = model_query(builder, *clause)?;
-            (wire::QueryExprKind::QueryNot, wire::QueryNot::create(builder, &wire::QueryNotArgs { clause: Some(clause) }).as_union_value())
-        }
-    };
-    Ok(wire::QueryExpr::create(builder, &wire::QueryExprArgs { expr_type, expr: Some(expr) }))
+fn finite_f64(value: f64, path: &str) -> Result<f64, String> {
+    value.is_finite().then_some(value).ok_or_else(|| format!("non-finite {path} is not portable"))
 }
-
-fn model_projection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FieldProjection) -> flatbuffers::WIPOffset<wire::FieldProjection<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::FieldProjection::create(builder, &wire::FieldProjectionArgs { fields: Some(fields) }) }
-fn model_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::SearchFieldSelection) -> Result<flatbuffers::WIPOffset<wire::SearchFieldSelection<'a>>, String> { let mut fields = Vec::with_capacity(value.fields.len()); for field in value.fields { let name = builder.create_string(&field.field); let weight = field.weight.map(|value| { if !value.is_finite() { return Err("non-finite search field weight is not portable".to_owned()); } Ok(wire::OptionalDouble::new(value)) }).transpose()?; fields.push(wire::SearchField::create(builder, &wire::SearchFieldArgs { field: Some(name), weight: weight.as_ref() })); } let fields = builder.create_vector(&fields); Ok(wire::SearchFieldSelection::create(builder, &wire::SearchFieldSelectionArgs { fields: Some(fields) })) }
-fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = encode_sort_direction(value.direction); let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(encode_missing_placement(value))); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(encode_facet_sort(value))); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_highlighting<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::HighlightRequest) -> flatbuffers::WIPOffset<wire::HighlightRequest<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: Some(fields) }) }
-fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value { model::RankingPolicy::DefaultRelevanceV1 => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), model::RankingPolicy::Bm25Ranking => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
-
-fn encode_insert(value: model::InsertRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let doc = match value.document { Some(v) => Some(document(&mut b, v)?), None => None };
-    let payload = wire::InsertRequest::create(&mut b, &wire::InsertRequestArgs { document: doc });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InsertRequest, payload.as_union_value()))
-}
-fn encode_upsert(value: model::UpsertRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let doc = match value.document { Some(v) => Some(document(&mut b, v)?), None => None };
-    let payload = wire::UpsertRequest::create(&mut b, &wire::UpsertRequestArgs { document: doc });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_UpsertRequest, payload.as_union_value()))
-}
-fn encode_patch(value: model::PatchRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let mut operations = Vec::with_capacity(value.operations.len());
-    for operation in value.operations { let (operation_type, operation_value) = match operation { model::PatchOperation::Unset { field } => { let field = field.as_deref().map(|v| b.create_string(v)); (wire::PatchOperationKind::UnsetField, wire::UnsetField::create(&mut b, &wire::UnsetFieldArgs { field }).as_union_value()) }, model::PatchOperation::Set { field, value } => { let field = field.as_deref().map(|v| b.create_string(v)); let value = value.map(|v| model_value(&mut b, v)).transpose()?; (wire::PatchOperationKind::SetField, wire::SetField::create(&mut b, &wire::SetFieldArgs { field, value }).as_union_value()) } }; operations.push(wire::PatchOperation::create(&mut b, &wire::PatchOperationArgs { operation_type, operation: Some(operation_value) })); }
-    let operations = if operations.is_empty() { None } else { Some(b.create_vector(&operations)) };
-    let payload = wire::PatchRequest::create(&mut b, &wire::PatchRequestArgs { id, operations });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_PatchRequest, payload.as_union_value()))
-}
-fn encode_delete(value: model::DeleteRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let payload = wire::DeleteRequest::create(&mut b, &wire::DeleteRequestArgs { id });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_DeleteRequest, payload.as_union_value()))
-}
-fn encode_get(value: model::GetRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let projection = value.projection.map(|projection| { let fields = projection.fields.iter().map(|v| b.create_string(v)).collect::<Vec<_>>(); let fields = b.create_vector(&fields); wire::FieldProjection::create(&mut b, &wire::FieldProjectionArgs { fields: Some(fields) }) });
-    let payload = wire::GetRequest::create(&mut b, &wire::GetRequestArgs { id, projection });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_GetRequest, payload.as_union_value()))
-}
-fn model_search<'a>(mut b: &mut FlatBufferBuilder<'a>, value: model::SearchRequest) -> Result<flatbuffers::WIPOffset<wire::SearchRequest<'a>>, String> {
-    let query = value.query.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
-    let search_fields = value.search_fields.map(|value| model_selection(&mut b, value)).transpose()?; let filter = value.filter.map(|value| model_filter(&mut b, value)).transpose()?; let sort = model_sort(&mut b, value.sort)?; let facets = model_facets(&mut b, value.facets)?; let ranking = value.ranking.map(|value| model_ranking(&mut b, value)).transpose()?; let projection = value.projection.map(|value| model_projection(&mut b, value)); let highlighting = value.highlighting.map(|value| model_highlighting(&mut b, value)); let query_expr = value.query_expr.map(|value| model_query(&mut b, value)).transpose()?;
-    let limit = value.limit.map(wire::OptionalUInt32::new); let offset = value.offset.map(wire::OptionalUInt32::new); let timeout = value.timeout.map(wire::OptionalUInt64::new);
-    Ok(wire::SearchRequest::create(b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr, timeout: timeout.as_ref() }))
-}
-fn encode_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let request = model_search(&mut b, value)?;
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_SearchRequest, request.as_union_value()))
-}
-fn encode_analyze(value: model::AnalyzeRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let target = match value.target { model::AnalyzeTarget::None => (wire::AnalyzeTarget::NONE, None), model::AnalyzeTarget::Analyzer(value) => { let name = value.name.as_deref().map(|v| b.create_string(v)); let mut entries = Vec::with_capacity(value.options.len()); for (key, value) in value.options { let key = b.create_string(&key); let value = model_value(&mut b, value)?; entries.push(wire::ValueEntry::create(&mut b, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let options = Some(b.create_vector(&entries)); let target = wire::Analyzer::create(&mut b, &wire::AnalyzerArgs { name, version: value.version, options }); (wire::AnalyzeTarget::Analyzer, Some(target.as_union_value())) }, model::AnalyzeTarget::Field(field) => { let field = b.create_string(&field); let target = wire::AnalyzeFieldTarget::create(&mut b, &wire::AnalyzeFieldTargetArgs { field: Some(field) }); (wire::AnalyzeTarget::AnalyzeFieldTarget, Some(target.as_union_value())) } };
-    let text = value.text.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
-    let request = wire::AnalyzeRequest::create(&mut b, &wire::AnalyzeRequestArgs { target_type: target.0, target: target.1, text, language });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_AnalyzeRequest, request.as_union_value()))
-}
-fn encode_describe(_: model::DescribeRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let p = wire::DescribeRequest::create(&mut b, &wire::DescribeRequestArgs {}); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_DescribeRequest, p.as_union_value())) }
-fn encode_inspect(value: model::InspectQueryRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let request = value.request.map(|request| model_search(&mut b, request)).transpose()?; let p = wire::InspectQueryRequest::create(&mut b, &wire::InspectQueryRequestArgs { request }); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InspectQueryRequest, p.as_union_value())) }
-
-#[derive(Debug)] enum DecodeError { Portable(model::Error), Protocol(String) }
-trait DecodeResponse: Sized { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError>; }
-fn envelope<'a>(operation: &str, bytes: &'a [u8]) -> Result<wire::ResponseEnvelope<'a>, DecodeError> {
-    if bytes.len() < 8 || bytes[4..8] != *wire::RESPONSE_ENVELOPE_IDENTIFIER.as_bytes() { return Err(DecodeError::Protocol("missing SKRS file identifier".to_owned())); }
-    let value = root::<wire::ResponseEnvelope<'a>>(bytes).map_err(|e| DecodeError::Protocol(e.to_string()))?;
-    if value.protocol_version() != 1 { return Err(DecodeError::Protocol("unsupported protocol version".to_owned())); }
-    if value.payload_type() == wire::ResponsePayload::SearchKernel_V1_Error { let error = value.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol("error response payload is missing".to_owned()))?; return Err(DecodeError::Portable(model::Error { code: decode_error_code(error.code())?, message: error.message().unwrap_or_default().to_owned(), retryable: error.retryable(), details: decode_error_details(error.details())? })); }
-    let expected = format!("SearchKernel_V1_{}Result", operation.to_case_pascal());
-    let actual = format!("{:?}", value.payload_type());
-    if actual != expected { return Err(DecodeError::Protocol(format!("response variant does not match operation {operation}"))); }
-    Ok(value)
-}
-trait CasePascal { fn to_case_pascal(&self) -> String; }
-impl CasePascal for str { fn to_case_pascal(&self) -> String { self.split('_').map(|part| { let mut chars = part.chars(); match chars.next() { Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(), None => String::new() } }).collect() } }
-fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> { value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}"))) }
 
 fn encode_comparison_op(value: model::ComparisonOp) -> wire::ComparisonOp {
     match value {
@@ -473,8 +541,9 @@ fn encode_comparison_op(value: model::ComparisonOp) -> wire::ComparisonOp {
         model::ComparisonOp::Gte => wire::ComparisonOp(6),
     }
 }
+
 fn decode_comparison_op(value: wire::ComparisonOp) -> Result<model::ComparisonOp, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::ComparisonOp::Unspecified),
         1 => Ok(model::ComparisonOp::Eq),
         2 => Ok(model::ComparisonOp::Ne),
@@ -482,7 +551,7 @@ fn decode_comparison_op(value: wire::ComparisonOp) -> Result<model::ComparisonOp
         4 => Ok(model::ComparisonOp::Lte),
         5 => Ok(model::ComparisonOp::Gt),
         6 => Ok(model::ComparisonOp::Gte),
-        _ => Err(DecodeError::Protocol("unknown comparison op".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown comparison_op".to_owned())),
     }
 }
 
@@ -501,8 +570,9 @@ fn encode_error_code(value: model::ErrorCode) -> wire::ErrorCode {
         model::ErrorCode::DeadlineExceeded => wire::ErrorCode(10),
     }
 }
+
 fn decode_error_code(value: wire::ErrorCode) -> Result<model::ErrorCode, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::ErrorCode::Unspecified),
         1 => Ok(model::ErrorCode::InvalidArgument),
         2 => Ok(model::ErrorCode::NotFound),
@@ -514,7 +584,7 @@ fn decode_error_code(value: wire::ErrorCode) -> Result<model::ErrorCode, DecodeE
         8 => Ok(model::ErrorCode::Internal),
         9 => Ok(model::ErrorCode::Unavailable),
         10 => Ok(model::ErrorCode::DeadlineExceeded),
-        _ => Err(DecodeError::Protocol("unknown error code".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown error_code".to_owned())),
     }
 }
 
@@ -527,14 +597,15 @@ fn encode_facet_sort(value: model::FacetSort) -> wire::FacetSort {
         model::FacetSort::ValueDesc => wire::FacetSort(4),
     }
 }
+
 fn decode_facet_sort(value: wire::FacetSort) -> Result<model::FacetSort, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::FacetSort::Unspecified),
         1 => Ok(model::FacetSort::CountDesc),
         2 => Ok(model::FacetSort::CountAsc),
         3 => Ok(model::FacetSort::ValueAsc),
         4 => Ok(model::FacetSort::ValueDesc),
-        _ => Err(DecodeError::Protocol("unknown facet sort".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown facet_sort".to_owned())),
     }
 }
 
@@ -545,12 +616,13 @@ fn encode_field_cardinality(value: model::FieldCardinality) -> wire::FieldCardin
         model::FieldCardinality::Multi => wire::FieldCardinality(2),
     }
 }
+
 fn decode_field_cardinality(value: wire::FieldCardinality) -> Result<model::FieldCardinality, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::FieldCardinality::Unspecified),
         1 => Ok(model::FieldCardinality::Single),
         2 => Ok(model::FieldCardinality::Multi),
-        _ => Err(DecodeError::Protocol("unknown field cardinality".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown field_cardinality".to_owned())),
     }
 }
 
@@ -564,15 +636,16 @@ fn encode_field_kind(value: model::FieldKind) -> wire::FieldKind {
         model::FieldKind::Bool => wire::FieldKind(5),
     }
 }
+
 fn decode_field_kind(value: wire::FieldKind) -> Result<model::FieldKind, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::FieldKind::Unspecified),
         1 => Ok(model::FieldKind::Text),
         2 => Ok(model::FieldKind::Keyword),
         3 => Ok(model::FieldKind::Int64),
         4 => Ok(model::FieldKind::Float64),
         5 => Ok(model::FieldKind::Bool),
-        _ => Err(DecodeError::Protocol("unknown field kind".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown field_kind".to_owned())),
     }
 }
 
@@ -583,12 +656,13 @@ fn encode_missing_placement(value: model::MissingPlacement) -> wire::MissingPlac
         model::MissingPlacement::Last => wire::MissingPlacement(2),
     }
 }
+
 fn decode_missing_placement(value: wire::MissingPlacement) -> Result<model::MissingPlacement, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::MissingPlacement::Unspecified),
         1 => Ok(model::MissingPlacement::First),
         2 => Ok(model::MissingPlacement::Last),
-        _ => Err(DecodeError::Protocol("unknown missing placement".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown missing_placement".to_owned())),
     }
 }
 
@@ -598,11 +672,12 @@ fn encode_null_value(value: model::NullValue) -> wire::NullValue {
         model::NullValue::Null => wire::NullValue(1),
     }
 }
+
 fn decode_null_value(value: wire::NullValue) -> Result<model::NullValue, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::NullValue::Unspecified),
         1 => Ok(model::NullValue::Null),
-        _ => Err(DecodeError::Protocol("unknown null value".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown null_value".to_owned())),
     }
 }
 
@@ -613,12 +688,13 @@ fn encode_sort_direction(value: model::SortDirection) -> wire::SortDirection {
         model::SortDirection::Desc => wire::SortDirection(2),
     }
 }
+
 fn decode_sort_direction(value: wire::SortDirection) -> Result<model::SortDirection, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::SortDirection::Unspecified),
         1 => Ok(model::SortDirection::Asc),
         2 => Ok(model::SortDirection::Desc),
-        _ => Err(DecodeError::Protocol("unknown sort direction".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown sort_direction".to_owned())),
     }
 }
 
@@ -629,602 +705,965 @@ fn encode_total_hits_relation(value: model::TotalHitsRelation) -> wire::TotalHit
         model::TotalHitsRelation::LowerBound => wire::TotalHitsRelation(2),
     }
 }
+
 fn decode_total_hits_relation(value: wire::TotalHitsRelation) -> Result<model::TotalHitsRelation, DecodeError> {
-    match value.0 {
+    match i64::from(value.0) {
         0 => Ok(model::TotalHitsRelation::Unspecified),
         1 => Ok(model::TotalHitsRelation::Exact),
         2 => Ok(model::TotalHitsRelation::LowerBound),
-        _ => Err(DecodeError::Protocol("unknown total hits relation".to_owned())),
+        _ => Err(DecodeError::Protocol("unknown total_hits_relation".to_owned())),
     }
 }
 
-
-
-fn decode_error_details(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ErrorDetail<'_>>>>) -> Result<Vec<model::ErrorDetail>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut metadata = BTreeMap::new(); if let Some(values) = item.metadata() { for entry in values.iter() { metadata.insert(entry.key().to_owned(), required_string(entry.value(), "error.metadata.value")?); } } result.push(model::ErrorDetail { code: required_string(item.code(), "error.detail.code")?, message: required_string(item.message(), "error.detail.message")?, path: item.path().map(ToOwned::to_owned), metadata }); } }
-    Ok(result)
+fn encode_union_analyze_target<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::AnalyzeTarget) -> Result<(wire::AnalyzeTarget, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::AnalyzeTarget::None => Ok((wire::AnalyzeTarget::NONE, None)),
+        model::AnalyzeTarget::Analyzer(field_0) => {
+            let payload = encode_table_analyzer(builder, field_0)?;
+            Ok((wire::AnalyzeTarget::Analyzer, Some(payload.as_union_value())))
+        }
+        model::AnalyzeTarget::Field(field_0) => {
+            let field = Some(builder.create_string(field_0));
+            let payload = wire::AnalyzeFieldTarget::create(builder, &wire::AnalyzeFieldTargetArgs { field: field });
+            Ok((wire::AnalyzeTarget::AnalyzeFieldTarget, Some(payload.as_union_value())))
+        }
+    }
 }
 
-fn decode_value(value: wire::Value<'_>) -> Result<model::Value, DecodeError> {
+fn encode_union_filter_expr_kind<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::FilterExpr) -> Result<(wire::FilterExprKind, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::FilterExpr::And(field_0) => {
+            let mut clauses_items = Vec::with_capacity((field_0).len());
+            for item in field_0 { clauses_items.push(encode_table_filter_expr(builder, item)?); }
+            let clauses = if (field_0).is_empty() { None } else { Some(builder.create_vector(&clauses_items)) };
+            let payload = wire::FilterAnd::create(builder, &wire::FilterAndArgs { clauses: clauses });
+            Ok((wire::FilterExprKind::FilterAnd, Some(payload.as_union_value())))
+        }
+        model::FilterExpr::Or(field_0) => {
+            let mut clauses_items = Vec::with_capacity((field_0).len());
+            for item in field_0 { clauses_items.push(encode_table_filter_expr(builder, item)?); }
+            let clauses = if (field_0).is_empty() { None } else { Some(builder.create_vector(&clauses_items)) };
+            let payload = wire::FilterOr::create(builder, &wire::FilterOrArgs { clauses: clauses });
+            Ok((wire::FilterExprKind::FilterOr, Some(payload.as_union_value())))
+        }
+        model::FilterExpr::Not(field_0) => {
+            let clause = Some(encode_table_filter_expr(builder, field_0)?);
+            let payload = wire::FilterNot::create(builder, &wire::FilterNotArgs { clause: clause });
+            Ok((wire::FilterExprKind::FilterNot, Some(payload.as_union_value())))
+        }
+        model::FilterExpr::Comparison { field, op, value } => {
+            let field = Some(builder.create_string(field));
+            let op = encode_comparison_op(*op);
+            let value = Some(encode_table_value(builder, value)?);
+            let payload = wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: field, op: op, value: value });
+            Ok((wire::FilterExprKind::FilterComparison, Some(payload.as_union_value())))
+        }
+        model::FilterExpr::Range { field, include_lower, include_upper, lower, upper } => {
+            let field = Some(builder.create_string(field));
+            let include_lower_storage = (*include_lower).map(|item| wire::OptionalBool::new(item));
+            let include_lower = include_lower_storage.as_ref();
+            let include_upper_storage = (*include_upper).map(|item| wire::OptionalBool::new(item));
+            let include_upper = include_upper_storage.as_ref();
+            let lower = (lower).as_ref().map(|item| encode_table_value(builder, item)).transpose()?;
+            let upper = (upper).as_ref().map(|item| encode_table_value(builder, item)).transpose()?;
+            let payload = wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: field, include_lower: include_lower, include_upper: include_upper, lower: lower, upper: upper });
+            Ok((wire::FilterExprKind::FilterRange, Some(payload.as_union_value())))
+        }
+        model::FilterExpr::Exists { field } => {
+            let field = Some(builder.create_string(field));
+            let payload = wire::FilterExists::create(builder, &wire::FilterExistsArgs { field: field });
+            Ok((wire::FilterExprKind::FilterExists, Some(payload.as_union_value())))
+        }
+    }
+}
+
+fn encode_table_filter_expr<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::FilterExpr) -> Result<flatbuffers::WIPOffset<wire::FilterExpr<'a>>, String> {
+    let (expr_type, expr) = encode_union_filter_expr_kind(builder, value)?;
+    Ok(wire::FilterExpr::create(builder, &wire::FilterExprArgs { expr_type, expr }))
+}
+
+fn decode_union_filter_expr_kind(value: wire::FilterExpr<'_>) -> Result<model::FilterExpr, DecodeError> {
+    match value.expr_type() {
+        wire::FilterExprKind::FilterAnd => {
+            let payload = value.expr_as_filter_and().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::And(match payload.clauses() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_filter_expr_kind(item)?); } result }, None => Vec::new() }))
+        }
+        wire::FilterExprKind::FilterOr => {
+            let payload = value.expr_as_filter_or().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::Or(match payload.clauses() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_filter_expr_kind(item)?); } result }, None => Vec::new() }))
+        }
+        wire::FilterExprKind::FilterNot => {
+            let payload = value.expr_as_filter_not().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::Not(Box::new(decode_union_filter_expr_kind(payload.clause().ok_or_else(|| DecodeError::Protocol("missing response field FilterNot.clause".to_owned()))?)?)))
+        }
+        wire::FilterExprKind::FilterComparison => {
+            let payload = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::Comparison {
+                field: required_string(payload.field(), "FilterComparison.field")?,
+                op: decode_comparison_op(payload.op())?,
+                value: decode_union_value_kind(payload.value().ok_or_else(|| DecodeError::Protocol("missing response field FilterComparison.value".to_owned()))?)?,
+            })
+        }
+        wire::FilterExprKind::FilterRange => {
+            let payload = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::Range {
+                field: required_string(payload.field(), "FilterRange.field")?,
+                include_lower: payload.include_lower().map(|item| Ok(item.value())).transpose()?,
+                include_upper: payload.include_upper().map(|item| Ok(item.value())).transpose()?,
+                lower: payload.lower().map(decode_union_value_kind).transpose()?,
+                upper: payload.upper().map(decode_union_value_kind).transpose()?,
+            })
+        }
+        wire::FilterExprKind::FilterExists => {
+            let payload = value.expr_as_filter_exists().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::FilterExpr::Exists {
+                field: required_string(payload.field(), "FilterExists.field")?,
+            })
+        }
+        _ => Err(DecodeError::Protocol("unknown filter_expr discriminator".to_owned())),
+    }
+}
+
+fn encode_union_patch_operation_kind<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::PatchOperation) -> Result<(wire::PatchOperationKind, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::PatchOperation::Set { field, value } => {
+            let field = (field).as_deref().map(|item| builder.create_string(item));
+            let value = (value).as_ref().map(|item| encode_table_value(builder, item)).transpose()?;
+            let payload = wire::SetField::create(builder, &wire::SetFieldArgs { field: field, value: value });
+            Ok((wire::PatchOperationKind::SetField, Some(payload.as_union_value())))
+        }
+        model::PatchOperation::Unset { field } => {
+            let field = (field).as_deref().map(|item| builder.create_string(item));
+            let payload = wire::UnsetField::create(builder, &wire::UnsetFieldArgs { field: field });
+            Ok((wire::PatchOperationKind::UnsetField, Some(payload.as_union_value())))
+        }
+    }
+}
+
+fn encode_table_patch_operation<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::PatchOperation) -> Result<flatbuffers::WIPOffset<wire::PatchOperation<'a>>, String> {
+    let (operation_type, operation) = encode_union_patch_operation_kind(builder, value)?;
+    Ok(wire::PatchOperation::create(builder, &wire::PatchOperationArgs { operation_type, operation }))
+}
+
+fn decode_union_patch_operation_kind(value: wire::PatchOperation<'_>) -> Result<model::PatchOperation, DecodeError> {
+    match value.operation_type() {
+        wire::PatchOperationKind::SetField => {
+            let payload = value.operation_as_set_field().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::PatchOperation::Set {
+                field: payload.field().map(ToOwned::to_owned),
+                value: payload.value().map(decode_union_value_kind).transpose()?,
+            })
+        }
+        wire::PatchOperationKind::UnsetField => {
+            let payload = value.operation_as_unset_field().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::PatchOperation::Unset {
+                field: payload.field().map(ToOwned::to_owned),
+            })
+        }
+        _ => Err(DecodeError::Protocol("unknown patch_operation discriminator".to_owned())),
+    }
+}
+
+fn encode_union_query_expr_kind<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::QueryExpr) -> Result<(wire::QueryExprKind, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::QueryExpr::Term { field, value } => {
+            let field = Some(builder.create_string(field));
+            let value = Some(encode_table_value(builder, value)?);
+            let payload = wire::TermQuery::create(builder, &wire::TermQueryArgs { field: field, value: value });
+            Ok((wire::QueryExprKind::TermQuery, Some(payload.as_union_value())))
+        }
+        model::QueryExpr::And(field_0) => {
+            let mut clauses_items = Vec::with_capacity((field_0).len());
+            for item in field_0 { clauses_items.push(encode_table_query_expr(builder, item)?); }
+            let clauses = if (field_0).is_empty() { None } else { Some(builder.create_vector(&clauses_items)) };
+            let payload = wire::QueryAnd::create(builder, &wire::QueryAndArgs { clauses: clauses });
+            Ok((wire::QueryExprKind::QueryAnd, Some(payload.as_union_value())))
+        }
+        model::QueryExpr::Or(field_0) => {
+            let mut clauses_items = Vec::with_capacity((field_0).len());
+            for item in field_0 { clauses_items.push(encode_table_query_expr(builder, item)?); }
+            let clauses = if (field_0).is_empty() { None } else { Some(builder.create_vector(&clauses_items)) };
+            let payload = wire::QueryOr::create(builder, &wire::QueryOrArgs { clauses: clauses });
+            Ok((wire::QueryExprKind::QueryOr, Some(payload.as_union_value())))
+        }
+        model::QueryExpr::Not(field_0) => {
+            let clause = Some(encode_table_query_expr(builder, field_0)?);
+            let payload = wire::QueryNot::create(builder, &wire::QueryNotArgs { clause: clause });
+            Ok((wire::QueryExprKind::QueryNot, Some(payload.as_union_value())))
+        }
+    }
+}
+
+fn encode_table_query_expr<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::QueryExpr) -> Result<flatbuffers::WIPOffset<wire::QueryExpr<'a>>, String> {
+    let (expr_type, expr) = encode_union_query_expr_kind(builder, value)?;
+    Ok(wire::QueryExpr::create(builder, &wire::QueryExprArgs { expr_type, expr }))
+}
+
+fn decode_union_query_expr_kind(value: wire::QueryExpr<'_>) -> Result<model::QueryExpr, DecodeError> {
+    match value.expr_type() {
+        wire::QueryExprKind::TermQuery => {
+            let payload = value.expr_as_term_query().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::QueryExpr::Term {
+                field: required_string(payload.field(), "TermQuery.field")?,
+                value: decode_union_value_kind(payload.value().ok_or_else(|| DecodeError::Protocol("missing response field TermQuery.value".to_owned()))?)?,
+            })
+        }
+        wire::QueryExprKind::QueryAnd => {
+            let payload = value.expr_as_query_and().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::QueryExpr::And(match payload.clauses() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_query_expr_kind(item)?); } result }, None => Vec::new() }))
+        }
+        wire::QueryExprKind::QueryOr => {
+            let payload = value.expr_as_query_or().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::QueryExpr::Or(match payload.clauses() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_query_expr_kind(item)?); } result }, None => Vec::new() }))
+        }
+        wire::QueryExprKind::QueryNot => {
+            let payload = value.expr_as_query_not().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::QueryExpr::Not(Box::new(decode_union_query_expr_kind(payload.clause().ok_or_else(|| DecodeError::Protocol("missing response field QueryNot.clause".to_owned()))?)?)))
+        }
+        _ => Err(DecodeError::Protocol("unknown query_expr discriminator".to_owned())),
+    }
+}
+
+fn encode_union_ranking_policy_kind<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::RankingPolicy) -> Result<(wire::RankingPolicyKind, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::RankingPolicy::DefaultRelevanceV1 => {
+            let payload = wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {  });
+            Ok((wire::RankingPolicyKind::DefaultRelevanceV1, Some(payload.as_union_value())))
+        }
+        model::RankingPolicy::Bm25Ranking => {
+            let payload = wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {  });
+            Ok((wire::RankingPolicyKind::Bm25Ranking, Some(payload.as_union_value())))
+        }
+    }
+}
+
+fn encode_table_ranking_policy<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> {
+    let (policy_type, policy) = encode_union_ranking_policy_kind(builder, value)?;
+    Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type, policy }))
+}
+
+fn decode_union_ranking_policy_kind(value: wire::RankingPolicy<'_>) -> Result<model::RankingPolicy, DecodeError> {
+    match value.policy_type() {
+        wire::RankingPolicyKind::DefaultRelevanceV1 => {
+            let payload = value.policy_as_default_relevance_v1().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::RankingPolicy::DefaultRelevanceV1)
+        }
+        wire::RankingPolicyKind::Bm25Ranking => {
+            let payload = value.policy_as_bm_25_ranking().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::RankingPolicy::Bm25Ranking)
+        }
+        _ => Err(DecodeError::Protocol("unknown ranking_policy discriminator".to_owned())),
+    }
+}
+
+fn encode_union_value_kind<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::Value) -> Result<(wire::ValueKind, Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>), String> {
+    match value {
+        model::Value::Null => {
+            let value = wire::NullValue(1);
+            let payload = wire::NullValueValue::create(builder, &wire::NullValueValueArgs { value: value });
+            Ok((wire::ValueKind::NullValueValue, Some(payload.as_union_value())))
+        }
+        model::Value::Bool(field_0) => {
+            let value = *field_0;
+            let payload = wire::BoolValue::create(builder, &wire::BoolValueArgs { value: value });
+            Ok((wire::ValueKind::BoolValue, Some(payload.as_union_value())))
+        }
+        model::Value::Int64(field_0) => {
+            let value = *field_0;
+            let payload = wire::Int64Value::create(builder, &wire::Int64ValueArgs { value: value });
+            Ok((wire::ValueKind::Int64Value, Some(payload.as_union_value())))
+        }
+        model::Value::UInt64(field_0) => {
+            let value = *field_0;
+            let payload = wire::UInt64Value::create(builder, &wire::UInt64ValueArgs { value: value });
+            Ok((wire::ValueKind::UInt64Value, Some(payload.as_union_value())))
+        }
+        model::Value::Float64(field_0) => {
+            let value = finite_f64(*field_0, "Float64Value.value")?;
+            let payload = wire::Float64Value::create(builder, &wire::Float64ValueArgs { value: value });
+            Ok((wire::ValueKind::Float64Value, Some(payload.as_union_value())))
+        }
+        model::Value::String(field_0) => {
+            let value = Some(builder.create_string(field_0));
+            let payload = wire::StringValue::create(builder, &wire::StringValueArgs { value: value });
+            Ok((wire::ValueKind::StringValue, Some(payload.as_union_value())))
+        }
+        model::Value::Bytes(field_0) => {
+            let mut value_items = Vec::with_capacity((field_0).len());
+            value_items.extend(field_0.iter().copied());
+            let value = if (field_0).is_empty() { None } else { Some(builder.create_vector(&value_items)) };
+            let payload = wire::BytesValue::create(builder, &wire::BytesValueArgs { value: value });
+            Ok((wire::ValueKind::BytesValue, Some(payload.as_union_value())))
+        }
+        model::Value::List(field_0) => {
+            let mut values_items = Vec::with_capacity((field_0).len());
+            for item in field_0 { values_items.push(encode_table_value(builder, item)?); }
+            let values = if (field_0).is_empty() { None } else { Some(builder.create_vector(&values_items)) };
+            let payload = wire::ValueList::create(builder, &wire::ValueListArgs { values: values });
+            Ok((wire::ValueKind::ValueList, Some(payload.as_union_value())))
+        }
+        model::Value::Object(field_0) => {
+            let mut fields_items = Vec::with_capacity((field_0).len());
+            for (key, item) in field_0 {
+                let map_key = Some(builder.create_string(key));
+                let map_value = Some(encode_table_value(builder, item)?);
+                fields_items.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: map_key, value: map_value }));
+            }
+            let fields = Some(builder.create_vector(&fields_items));
+            let payload = wire::ValueObject::create(builder, &wire::ValueObjectArgs { fields: fields });
+            Ok((wire::ValueKind::ValueObject, Some(payload.as_union_value())))
+        }
+    }
+}
+
+fn encode_table_value<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::Value) -> Result<flatbuffers::WIPOffset<wire::Value<'a>>, String> {
+    let (kind_type, kind) = encode_union_value_kind(builder, value)?;
+    Ok(wire::Value::create(builder, &wire::ValueArgs { kind_type, kind }))
+}
+
+fn decode_union_value_kind(value: wire::Value<'_>) -> Result<model::Value, DecodeError> {
     match value.kind_type() {
-        wire::ValueKind::NONE => Err(DecodeError::Protocol("missing value".to_owned())),
-        wire::ValueKind::NullValueValue => Ok(model::Value::Null),
-        wire::ValueKind::BoolValue => Ok(model::Value::Bool(value.kind_as_bool_value().ok_or_else(|| DecodeError::Protocol("missing bool value".to_owned()))?.value())),
-        wire::ValueKind::Int64Value => Ok(model::Value::Int64(value.kind_as_int_64_value().ok_or_else(|| DecodeError::Protocol("missing int64 value".to_owned()))?.value())),
-        wire::ValueKind::UInt64Value => Ok(model::Value::UInt64(value.kind_as_uint_64_value().ok_or_else(|| DecodeError::Protocol("missing uint64 value".to_owned()))?.value())),
-        wire::ValueKind::Float64Value => Ok(model::Value::Float64(value.kind_as_float_64_value().ok_or_else(|| DecodeError::Protocol("missing float64 value".to_owned()))?.value())),
-        wire::ValueKind::StringValue => Ok(model::Value::String(required_string(value.kind_as_string_value().ok_or_else(|| DecodeError::Protocol("missing string value".to_owned()))?.value(), "value.string")?)),
-        wire::ValueKind::BytesValue => { let bytes = value.kind_as_bytes_value().ok_or_else(|| DecodeError::Protocol("missing bytes value".to_owned()))?.value().map(|v| v.bytes().to_vec()).unwrap_or_default(); Ok(model::Value::Bytes(bytes)) }
-        wire::ValueKind::ValueList => { let list = value.kind_as_value_list().ok_or_else(|| DecodeError::Protocol("missing list value".to_owned()))?; let values = list.values().map(|v| v.iter().map(decode_value).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::Value::List(values)) }
-        wire::ValueKind::ValueObject => { let object = value.kind_as_value_object().ok_or_else(|| DecodeError::Protocol("missing object value".to_owned()))?; Ok(model::Value::Object(decode_entries(object.fields())?)) }
+        wire::ValueKind::NullValueValue => {
+            let payload = value.kind_as_null_value_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Null)
+        }
+        wire::ValueKind::BoolValue => {
+            let payload = value.kind_as_bool_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Bool(payload.value()))
+        }
+        wire::ValueKind::Int64Value => {
+            let payload = value.kind_as_int_64_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Int64(payload.value()))
+        }
+        wire::ValueKind::UInt64Value => {
+            let payload = value.kind_as_uint_64_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::UInt64(payload.value()))
+        }
+        wire::ValueKind::Float64Value => {
+            let payload = value.kind_as_float_64_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Float64(payload.value()))
+        }
+        wire::ValueKind::StringValue => {
+            let payload = value.kind_as_string_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::String(required_string(payload.value(), "StringValue.value")?))
+        }
+        wire::ValueKind::BytesValue => {
+            let payload = value.kind_as_bytes_value().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Bytes(match payload.value() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(item); } result }, None => Vec::new() }))
+        }
+        wire::ValueKind::ValueList => {
+            let payload = value.kind_as_value_list().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::List(match payload.values() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_value_kind(item)?); } result }, None => Vec::new() }))
+        }
+        wire::ValueKind::ValueObject => {
+            let payload = value.kind_as_value_object().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?;
+            Ok(model::Value::Object(match payload.fields() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), decode_union_value_kind(entry.value().ok_or_else(|| DecodeError::Protocol("missing map value".to_owned()))?)?); } result }, None => BTreeMap::new() }))
+        }
         _ => Err(DecodeError::Protocol("unknown value discriminator".to_owned())),
     }
 }
-fn decode_entries(values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ValueEntry<'_>>>>) -> Result<BTreeMap<String, model::Value>, DecodeError> {
-    let mut result = BTreeMap::new();
-    if let Some(values) = values { for entry in values.iter() { result.insert(entry.key().to_owned(), decode_value(entry.value().ok_or_else(|| DecodeError::Protocol("missing value entry".to_owned()))?)?); } }
-    Ok(result)
+
+fn encode_table_analyze_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::AnalyzeRequest) -> Result<flatbuffers::WIPOffset<wire::AnalyzeRequest<'a>>, String> {
+    let language = (&value.language).as_deref().map(|item| builder.create_string(item));
+    let (target_type, target) = encode_union_analyze_target(builder, &value.target)?;
+    let text = (&value.text).as_deref().map(|item| builder.create_string(item));
+    Ok(wire::AnalyzeRequest::create(builder, &wire::AnalyzeRequestArgs { language: language, target_type, target, text: text }))
 }
-fn decode_document(document: wire::Document<'_>) -> Result<model::DocumentResult, DecodeError> {
-    Ok(model::DocumentResult { id: required_string(document.id(), "document.id")?, fields: decode_entries(document.fields())? })
-}
-fn decode_highlights(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::HighlightResult<'_>>>>) -> Result<Vec<model::HighlightResult>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut fragments = Vec::new(); if let Some(values) = item.fragments() { for fragment in values.iter() { let matches = fragment.matches().map(|spans| spans.iter().map(|span| model::HighlightSpan { start_byte: span.start_byte(), end_byte: span.end_byte() }).collect()).unwrap_or_default(); fragments.push(model::HighlightFragment { text: required_string(fragment.text(), "highlight.text")?, matches }); } } result.push(model::HighlightResult { field: required_string(item.field(), "highlight.field")?, fragments }); } }
-    Ok(result)
-}
-fn decode_hit(hit: wire::Hit<'_>) -> Result<model::Hit, DecodeError> {
-    Ok(model::Hit { id: required_string(hit.id(), "hit.id")?, score: hit.score().map(|score| score.value()), fields: decode_entries(hit.fields())?, highlights: decode_highlights(hit.highlights())? })
-}
-fn decode_facets(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::FacetResult<'_>>>>) -> Result<Vec<model::FacetResult>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut values = Vec::new(); if let Some(entries) = item.values() { for entry in entries.iter() { values.push(model::FacetValue { value: decode_value(entry.value().ok_or_else(|| DecodeError::Protocol("missing facet value".to_owned()))?)?, count: entry.count() }); } } result.push(model::FacetResult { field: required_string(item.field(), "facet.field")?, values }); } }
-    Ok(result)
-}
-fn decode_selection(value: wire::SearchFieldSelection<'_>) -> Result<model::SearchFieldSelection, DecodeError> {
-    let fields = value.fields().map(|fields| fields.iter().map(|field| Ok(model::SearchField { field: required_string(field.field(), "search_fields.field")?, weight: field.weight().map(|weight| weight.value()) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::SearchFieldSelection { fields })
-}
-fn decode_projection(value: wire::FieldProjection<'_>) -> model::FieldProjection { model::FieldProjection { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
-fn decode_highlighting(value: wire::HighlightRequest<'_>) -> model::HighlightRequest { model::HighlightRequest { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
-fn decode_filter(value: wire::FilterExpr<'_>) -> Result<model::FilterExpr, DecodeError> {
-    match value.expr_type() {
-        wire::FilterExprKind::FilterAnd => { let node = value.expr_as_filter_and().ok_or_else(|| DecodeError::Protocol("missing filter_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::And(clauses)) }
-        wire::FilterExprKind::FilterOr => { let node = value.expr_as_filter_or().ok_or_else(|| DecodeError::Protocol("missing filter_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::Or(clauses)) }
-        wire::FilterExprKind::FilterNot => { let node = value.expr_as_filter_not().ok_or_else(|| DecodeError::Protocol("missing filter_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing filter_not clause".to_owned()))?; Ok(model::FilterExpr::Not(Box::new(decode_filter(clause)?))) }
-        wire::FilterExprKind::FilterComparison => { let node = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing filter_comparison payload".to_owned()))?; Ok(model::FilterExpr::Comparison { field: required_string(node.field(), "filter_comparison.field")?, op: decode_comparison_op(node.op())?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing filter_comparison.value".to_owned()))?)? }) }
-        wire::FilterExprKind::FilterRange => { let node = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing filter_range payload".to_owned()))?; Ok(model::FilterExpr::Range { field: required_string(node.field(), "filter_range.field")?, lower: node.lower().map(decode_value).transpose()?, upper: node.upper().map(decode_value).transpose()?, include_lower: node.include_lower().map(|v| v.value()), include_upper: node.include_upper().map(|v| v.value()) }) }
-        wire::FilterExprKind::FilterExists => { let node = value.expr_as_filter_exists().ok_or_else(|| DecodeError::Protocol("missing filter_exists payload".to_owned()))?; Ok(model::FilterExpr::Exists { field: required_string(node.field(), "filter_exists.field")? }) }
-        _ => Err(DecodeError::Protocol("unknown filter discriminator".to_owned())),
-    }
-}
-fn decode_query(value: wire::QueryExpr<'_>) -> Result<model::QueryExpr, DecodeError> {
-    match value.expr_type() {
-        wire::QueryExprKind::TermQuery => { let node = value.expr_as_term_query().ok_or_else(|| DecodeError::Protocol("missing term_query payload".to_owned()))?; Ok(model::QueryExpr::Term { field: required_string(node.field(), "term_query.field")?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing term_query.value".to_owned()))?)? }) }
-        wire::QueryExprKind::QueryAnd => { let node = value.expr_as_query_and().ok_or_else(|| DecodeError::Protocol("missing query_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::And(clauses)) }
-        wire::QueryExprKind::QueryOr => { let node = value.expr_as_query_or().ok_or_else(|| DecodeError::Protocol("missing query_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::Or(clauses)) }
-        wire::QueryExprKind::QueryNot => { let node = value.expr_as_query_not().ok_or_else(|| DecodeError::Protocol("missing query_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing query_not clause".to_owned()))?; Ok(model::QueryExpr::Not(Box::new(decode_query(clause)?))) }
-        _ => Err(DecodeError::Protocol("unknown query discriminator".to_owned())),
-    }
-}
-fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::SearchRequest, DecodeError> {
-    let sort = value.sort().map(|items| items.iter().map(|item| Ok(model::SortExpr { field: required_string(item.field(), "sort.field")?, direction: decode_sort_direction(item.direction())?, missing: item.missing().map(|missing| decode_missing_placement(missing.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    let facets = value.facets().map(|items| items.iter().map(|item| Ok(model::FacetRequest { field: required_string(item.field(), "facet.field")?, limit: item.limit().map(|limit| limit.value()), sort: item.sort().map(|sort| decode_facet_sort(sort.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::SearchRequest {
-        query: value.query().map(ToOwned::to_owned),
-        search_fields: value.search_fields().map(decode_selection).transpose()?,
-        filter: value.filter().map(decode_filter).transpose()?, sort, facets,
-        ranking: value.ranking().map(|ranking| match ranking.policy_type() { wire::RankingPolicyKind::DefaultRelevanceV1 => Ok(model::RankingPolicy::DefaultRelevanceV1), wire::RankingPolicyKind::Bm25Ranking => Ok(model::RankingPolicy::Bm25Ranking), _ => Err(DecodeError::Protocol("unknown ranking discriminator".to_owned())) }).transpose()?,
-        limit: value.limit().map(|value| value.value()), offset: value.offset().map(|value| value.value()),
-        projection: value.projection().map(decode_projection), highlighting: value.highlighting().map(decode_highlighting),
-        language: value.language().map(ToOwned::to_owned), query_expr: value.query_expr().map(decode_query).transpose()?, timeout: value.timeout().map(|value| value.value()),
+
+fn decode_table_analyze_request(value: wire::AnalyzeRequest<'_>) -> Result<model::AnalyzeRequest, DecodeError> {
+    Ok(model::AnalyzeRequest {
+        language: value.language().map(ToOwned::to_owned),
+        target: { match value.target_type() { wire::AnalyzeTarget::NONE => Ok(model::AnalyzeTarget::None), wire::AnalyzeTarget::Analyzer => { let payload = value.target_as_analyzer().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?; Ok(model::AnalyzeTarget::Analyzer(decode_table_analyzer(payload)?)) }, wire::AnalyzeTarget::AnalyzeFieldTarget => { let payload = value.target_as_analyze_field_target().ok_or_else(|| DecodeError::Protocol("missing union payload".to_owned()))?; Ok(model::AnalyzeTarget::Field(required_string(payload.field(), "AnalyzeFieldTarget.field")?)) }, _ => Err(DecodeError::Protocol("unknown analyze_target discriminator".to_owned())) } }?,
+        text: value.text().map(ToOwned::to_owned),
     })
 }
-fn decode_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> { Ok(model::Analyzer { name: value.name().map(ToOwned::to_owned), version: value.version(), options: decode_entries(value.options())? }) }
-fn decode_index(value: wire::IndexDefinition<'_>) -> Result<model::IndexDefinition, DecodeError> {
-    let fields = value.fields().map(|items| items.iter().map(|field| Ok(model::FieldDefinition { name: field.name().map(ToOwned::to_owned), kind: decode_field_kind(field.kind())?, cardinality: decode_field_cardinality(field.cardinality())?, stored: field.stored().map(|v| v.value()), searchable: field.searchable().map(|v| v.value()), filterable: field.filterable().map(|v| v.value()), sortable: field.sortable().map(|v| v.value()), facetable: field.facetable().map(|v| v.value()), analyzer: field.analyzer().map(decode_analyzer).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::IndexDefinition { name: value.name().map(ToOwned::to_owned), fields, default_search_fields: value.default_search_fields().map(decode_selection).transpose()? })
+
+fn decode_table_analyze_result(value: wire::AnalyzeResult<'_>) -> Result<model::AnalyzeResult, DecodeError> {
+    Ok(model::AnalyzeResult {
+        tokens: match value.tokens() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_analyzed_token(item)?); } result }, None => Vec::new() },
+    })
 }
 
-impl DecodeResponse for model::InsertResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_insert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
-impl DecodeResponse for model::UpsertResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_upsert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
-impl DecodeResponse for model::PatchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_patch_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
+fn decode_table_analyzed_token(value: wire::AnalyzedToken<'_>) -> Result<model::AnalyzedToken, DecodeError> {
+    Ok(model::AnalyzedToken {
+        end_byte: value.end_byte(),
+        position: value.position(),
+        start_byte: value.start_byte(),
+        surface: required_string(value.surface(), "AnalyzedToken.surface")?,
+        term: required_string(value.term(), "AnalyzedToken.term")?,
+    })
+}
 
-impl DecodeResponse for model::DeleteResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_delete_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")?, deleted: value.deleted() }) } }
-impl DecodeResponse for model::GetResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_get_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let document = value.document().map(decode_document).transpose()?; Ok(Self { document }) } }
-impl DecodeResponse for model::SearchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let total = value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field total_hits".to_owned()))?; let hits = value.hits().map(|items| items.iter().map(decode_hit).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); let facets = decode_facets(value.facets())?; Ok(Self { hits, total_hits: model::TotalHits { value: total.value(), relation: decode_total_hits_relation(total.relation())? }, facets }) } }
-impl DecodeResponse for model::AnalyzeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_analyze_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let tokens = value.tokens().map(|items| items.iter().map(|token| Ok(model::AnalyzedToken { surface: required_string(token.surface(), "token.surface")?, term: required_string(token.term(), "token.term")?, position: token.position(), start_byte: token.start_byte(), end_byte: token.end_byte() })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default(); Ok(Self { tokens }) } }
-impl DecodeResponse for model::DescribeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { index: value.index().map(decode_index).transpose()? }) } }
-impl DecodeResponse for model::InspectQueryResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { resolved_request: value.resolved_request().map(decode_search_request).transpose()? }) } }
+fn encode_table_analyzer<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::Analyzer) -> Result<flatbuffers::WIPOffset<wire::Analyzer<'a>>, String> {
+    let name = (&value.name).as_deref().map(|item| builder.create_string(item));
+    let mut options_items = Vec::with_capacity((&value.options).len());
+    for (key, item) in &value.options {
+        let map_key = Some(builder.create_string(key));
+        let map_value = Some(encode_table_value(builder, item)?);
+        options_items.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: map_key, value: map_value }));
+    }
+    let options = Some(builder.create_vector(&options_items));
+    let version = *&value.version;
+    Ok(wire::Analyzer::create(builder, &wire::AnalyzerArgs { name: name, options: options, version: version }))
+}
 
-#[cfg(test)]
-mod generated_value_tests {
-    use super::*;
+fn decode_table_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> {
+    Ok(model::Analyzer {
+        name: value.name().map(ToOwned::to_owned),
+        options: match value.options() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), decode_union_value_kind(entry.value().ok_or_else(|| DecodeError::Protocol("missing map value".to_owned()))?)?); } result }, None => BTreeMap::new() },
+        version: value.version(),
+    })
+}
 
-    #[test]
-    fn wire_none_is_missing_but_explicit_null_is_semantic_null() {
-        let mut builder = FlatBufferBuilder::new();
-        let missing = wire::Value::create(
-            &mut builder,
-            &wire::ValueArgs {
-                kind_type: wire::ValueKind::NONE,
-                kind: None,
-            },
-        );
-        builder.finish_minimal(missing);
-        let missing = root::<wire::Value>(builder.finished_data()).expect("decode missing value");
-        assert!(matches!(
-            decode_value(missing),
-            Err(DecodeError::Protocol(message)) if message == "missing value"
-        ));
+fn encode_table_delete_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::DeleteRequest) -> Result<flatbuffers::WIPOffset<wire::DeleteRequest<'a>>, String> {
+    let id = (&value.id).as_deref().map(|item| builder.create_string(item));
+    Ok(wire::DeleteRequest::create(builder, &wire::DeleteRequestArgs { id: id }))
+}
 
-        let mut builder = FlatBufferBuilder::new();
-        let null = wire::NullValueValue::create(
-            &mut builder,
-            &wire::NullValueValueArgs {
-                value: wire::NullValue::Null,
-            },
-        );
-        let value = wire::Value::create(
-            &mut builder,
-            &wire::ValueArgs {
-                kind_type: wire::ValueKind::NullValueValue,
-                kind: Some(null.as_union_value()),
-            },
-        );
-        builder.finish_minimal(value);
-        let value = root::<wire::Value>(builder.finished_data()).expect("decode explicit null");
-        assert_eq!(decode_value(value).expect("explicit null"), model::Value::Null);
+fn decode_table_delete_request(value: wire::DeleteRequest<'_>) -> Result<model::DeleteRequest, DecodeError> {
+    Ok(model::DeleteRequest {
+        id: value.id().map(ToOwned::to_owned),
+    })
+}
+
+fn decode_table_delete_result(value: wire::DeleteResult<'_>) -> Result<model::DeleteResult, DecodeError> {
+    Ok(model::DeleteResult {
+        deleted: value.deleted(),
+        id: required_string(value.id(), "DeleteResult.id")?,
+    })
+}
+
+fn encode_table_describe_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::DescribeRequest) -> Result<flatbuffers::WIPOffset<wire::DescribeRequest<'a>>, String> {
+    Ok(wire::DescribeRequest::create(builder, &wire::DescribeRequestArgs {  }))
+}
+
+fn decode_table_describe_request(value: wire::DescribeRequest<'_>) -> Result<model::DescribeRequest, DecodeError> {
+    Ok(model::DescribeRequest)
+}
+
+fn decode_table_describe_result(value: wire::DescribeResult<'_>) -> Result<model::DescribeResult, DecodeError> {
+    Ok(model::DescribeResult {
+        index: value.index().map(decode_table_index_definition).transpose()?,
+    })
+}
+
+fn encode_table_document<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::Document) -> Result<flatbuffers::WIPOffset<wire::Document<'a>>, String> {
+    let mut fields_items = Vec::with_capacity((&value.fields).len());
+    for (key, item) in &value.fields {
+        let map_key = Some(builder.create_string(key));
+        let map_value = Some(encode_table_value(builder, item)?);
+        fields_items.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: map_key, value: map_value }));
+    }
+    let fields = Some(builder.create_vector(&fields_items));
+    let id = (&value.id).as_deref().map(|item| builder.create_string(item));
+    Ok(wire::Document::create(builder, &wire::DocumentArgs { fields: fields, id: id }))
+}
+
+fn decode_table_document(value: wire::Document<'_>) -> Result<model::Document, DecodeError> {
+    Ok(model::Document {
+        fields: match value.fields() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), decode_union_value_kind(entry.value().ok_or_else(|| DecodeError::Protocol("missing map value".to_owned()))?)?); } result }, None => BTreeMap::new() },
+        id: value.id().map(ToOwned::to_owned),
+    })
+}
+
+fn decode_table_error(value: wire::Error<'_>) -> Result<model::Error, DecodeError> {
+    Ok(model::Error {
+        code: decode_error_code(value.code())?,
+        details: match value.details() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_error_detail(item)?); } result }, None => Vec::new() },
+        message: required_string(value.message(), "Error.message")?,
+        retryable: value.retryable(),
+    })
+}
+
+fn decode_table_error_detail(value: wire::ErrorDetail<'_>) -> Result<model::ErrorDetail, DecodeError> {
+    Ok(model::ErrorDetail {
+        code: required_string(value.code(), "ErrorDetail.code")?,
+        message: required_string(value.message(), "ErrorDetail.message")?,
+        metadata: match value.metadata() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), required_string(entry.value(), "map value")?); } result }, None => BTreeMap::new() },
+        path: value.path().map(ToOwned::to_owned),
+    })
+}
+
+fn encode_table_facet_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::FacetRequest) -> Result<flatbuffers::WIPOffset<wire::FacetRequest<'a>>, String> {
+    let field = Some(builder.create_string(&value.field));
+    let limit_storage = (*&value.limit).map(|item| wire::OptionalUInt32::new(item));
+    let limit = limit_storage.as_ref();
+    let sort_storage = (*&value.sort).map(|item| wire::OptionalFacetSort::new(encode_facet_sort(item)));
+    let sort = sort_storage.as_ref();
+    Ok(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: field, limit: limit, sort: sort }))
+}
+
+fn decode_table_facet_request(value: wire::FacetRequest<'_>) -> Result<model::FacetRequest, DecodeError> {
+    Ok(model::FacetRequest {
+        field: required_string(value.field(), "FacetRequest.field")?,
+        limit: value.limit().map(|item| Ok(item.value())).transpose()?,
+        sort: value.sort().map(|item| decode_facet_sort(item.value())).transpose()?,
+    })
+}
+
+fn decode_table_facet_result(value: wire::FacetResult<'_>) -> Result<model::FacetResult, DecodeError> {
+    Ok(model::FacetResult {
+        field: required_string(value.field(), "FacetResult.field")?,
+        values: match value.values() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_facet_value(item)?); } result }, None => Vec::new() },
+    })
+}
+
+fn decode_table_facet_value(value: wire::FacetValue<'_>) -> Result<model::FacetValue, DecodeError> {
+    Ok(model::FacetValue {
+        count: value.count(),
+        value: decode_union_value_kind(value.value().ok_or_else(|| DecodeError::Protocol("missing response field FacetValue.value".to_owned()))?)?,
+    })
+}
+
+fn encode_table_field_definition<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::FieldDefinition) -> Result<flatbuffers::WIPOffset<wire::FieldDefinition<'a>>, String> {
+    let analyzer = (&value.analyzer).as_ref().map(|item| encode_table_analyzer(builder, item)).transpose()?;
+    let cardinality = encode_field_cardinality(*&value.cardinality);
+    let facetable_storage = (*&value.facetable).map(|item| wire::OptionalBool::new(item));
+    let facetable = facetable_storage.as_ref();
+    let filterable_storage = (*&value.filterable).map(|item| wire::OptionalBool::new(item));
+    let filterable = filterable_storage.as_ref();
+    let kind = encode_field_kind(*&value.kind);
+    let name = (&value.name).as_deref().map(|item| builder.create_string(item));
+    let searchable_storage = (*&value.searchable).map(|item| wire::OptionalBool::new(item));
+    let searchable = searchable_storage.as_ref();
+    let sortable_storage = (*&value.sortable).map(|item| wire::OptionalBool::new(item));
+    let sortable = sortable_storage.as_ref();
+    let stored_storage = (*&value.stored).map(|item| wire::OptionalBool::new(item));
+    let stored = stored_storage.as_ref();
+    Ok(wire::FieldDefinition::create(builder, &wire::FieldDefinitionArgs { analyzer: analyzer, cardinality: cardinality, facetable: facetable, filterable: filterable, kind: kind, name: name, searchable: searchable, sortable: sortable, stored: stored }))
+}
+
+fn decode_table_field_definition(value: wire::FieldDefinition<'_>) -> Result<model::FieldDefinition, DecodeError> {
+    Ok(model::FieldDefinition {
+        analyzer: value.analyzer().map(decode_table_analyzer).transpose()?,
+        cardinality: decode_field_cardinality(value.cardinality())?,
+        facetable: value.facetable().map(|item| Ok(item.value())).transpose()?,
+        filterable: value.filterable().map(|item| Ok(item.value())).transpose()?,
+        kind: decode_field_kind(value.kind())?,
+        name: value.name().map(ToOwned::to_owned),
+        searchable: value.searchable().map(|item| Ok(item.value())).transpose()?,
+        sortable: value.sortable().map(|item| Ok(item.value())).transpose()?,
+        stored: value.stored().map(|item| Ok(item.value())).transpose()?,
+    })
+}
+
+fn encode_table_field_projection<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::FieldProjection) -> Result<flatbuffers::WIPOffset<wire::FieldProjection<'a>>, String> {
+    let mut fields_items = Vec::with_capacity((&value.fields).len());
+    for item in &value.fields { fields_items.push(builder.create_string(item)); }
+    let fields = if (&value.fields).is_empty() { None } else { Some(builder.create_vector(&fields_items)) };
+    Ok(wire::FieldProjection::create(builder, &wire::FieldProjectionArgs { fields: fields }))
+}
+
+fn decode_table_field_projection(value: wire::FieldProjection<'_>) -> Result<model::FieldProjection, DecodeError> {
+    Ok(model::FieldProjection {
+        fields: match value.fields() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(item.to_owned()); } result }, None => Vec::new() },
+    })
+}
+
+fn encode_table_get_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::GetRequest) -> Result<flatbuffers::WIPOffset<wire::GetRequest<'a>>, String> {
+    let id = (&value.id).as_deref().map(|item| builder.create_string(item));
+    let projection = (&value.projection).as_ref().map(|item| encode_table_field_projection(builder, item)).transpose()?;
+    Ok(wire::GetRequest::create(builder, &wire::GetRequestArgs { id: id, projection: projection }))
+}
+
+fn decode_table_get_request(value: wire::GetRequest<'_>) -> Result<model::GetRequest, DecodeError> {
+    Ok(model::GetRequest {
+        id: value.id().map(ToOwned::to_owned),
+        projection: value.projection().map(decode_table_field_projection).transpose()?,
+    })
+}
+
+fn decode_table_get_result(value: wire::GetResult<'_>) -> Result<model::GetResult, DecodeError> {
+    Ok(model::GetResult {
+        document: value.document().map(decode_alias_document_result).transpose()?,
+    })
+}
+
+fn decode_table_highlight_fragment(value: wire::HighlightFragment<'_>) -> Result<model::HighlightFragment, DecodeError> {
+    Ok(model::HighlightFragment {
+        matches: match value.matches() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_highlight_span(item)?); } result }, None => Vec::new() },
+        text: required_string(value.text(), "HighlightFragment.text")?,
+    })
+}
+
+fn encode_table_highlight_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::HighlightRequest) -> Result<flatbuffers::WIPOffset<wire::HighlightRequest<'a>>, String> {
+    let mut fields_items = Vec::with_capacity((&value.fields).len());
+    for item in &value.fields { fields_items.push(builder.create_string(item)); }
+    let fields = if (&value.fields).is_empty() { None } else { Some(builder.create_vector(&fields_items)) };
+    Ok(wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: fields }))
+}
+
+fn decode_table_highlight_request(value: wire::HighlightRequest<'_>) -> Result<model::HighlightRequest, DecodeError> {
+    Ok(model::HighlightRequest {
+        fields: match value.fields() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(item.to_owned()); } result }, None => Vec::new() },
+    })
+}
+
+fn decode_table_highlight_result(value: wire::HighlightResult<'_>) -> Result<model::HighlightResult, DecodeError> {
+    Ok(model::HighlightResult {
+        field: required_string(value.field(), "HighlightResult.field")?,
+        fragments: match value.fragments() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_highlight_fragment(item)?); } result }, None => Vec::new() },
+    })
+}
+
+fn decode_table_highlight_span(value: wire::HighlightSpan<'_>) -> Result<model::HighlightSpan, DecodeError> {
+    Ok(model::HighlightSpan {
+        end_byte: value.end_byte(),
+        start_byte: value.start_byte(),
+    })
+}
+
+fn decode_table_hit(value: wire::Hit<'_>) -> Result<model::Hit, DecodeError> {
+    Ok(model::Hit {
+        fields: match value.fields() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), decode_union_value_kind(entry.value().ok_or_else(|| DecodeError::Protocol("missing map value".to_owned()))?)?); } result }, None => BTreeMap::new() },
+        highlights: match value.highlights() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_highlight_result(item)?); } result }, None => Vec::new() },
+        id: required_string(value.id(), "Hit.id")?,
+        score: value.score().map(|item| Ok(item.value())).transpose()?,
+    })
+}
+
+fn encode_table_index_definition<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::IndexDefinition) -> Result<flatbuffers::WIPOffset<wire::IndexDefinition<'a>>, String> {
+    let default_search_fields = (&value.default_search_fields).as_ref().map(|item| encode_table_search_field_selection(builder, item)).transpose()?;
+    let mut fields_items = Vec::with_capacity((&value.fields).len());
+    for item in &value.fields { fields_items.push(encode_table_field_definition(builder, item)?); }
+    let fields = if (&value.fields).is_empty() { None } else { Some(builder.create_vector(&fields_items)) };
+    let name = (&value.name).as_deref().map(|item| builder.create_string(item));
+    Ok(wire::IndexDefinition::create(builder, &wire::IndexDefinitionArgs { default_search_fields: default_search_fields, fields: fields, name: name }))
+}
+
+fn decode_table_index_definition(value: wire::IndexDefinition<'_>) -> Result<model::IndexDefinition, DecodeError> {
+    Ok(model::IndexDefinition {
+        default_search_fields: value.default_search_fields().map(decode_table_search_field_selection).transpose()?,
+        fields: match value.fields() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_field_definition(item)?); } result }, None => Vec::new() },
+        name: value.name().map(ToOwned::to_owned),
+    })
+}
+
+fn encode_table_insert_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::InsertRequest) -> Result<flatbuffers::WIPOffset<wire::InsertRequest<'a>>, String> {
+    let document = (&value.document).as_ref().map(|item| encode_table_document(builder, item)).transpose()?;
+    Ok(wire::InsertRequest::create(builder, &wire::InsertRequestArgs { document: document }))
+}
+
+fn decode_table_insert_request(value: wire::InsertRequest<'_>) -> Result<model::InsertRequest, DecodeError> {
+    Ok(model::InsertRequest {
+        document: value.document().map(decode_table_document).transpose()?,
+    })
+}
+
+fn decode_table_insert_result(value: wire::InsertResult<'_>) -> Result<model::InsertResult, DecodeError> {
+    Ok(model::InsertResult {
+        id: required_string(value.id(), "InsertResult.id")?,
+    })
+}
+
+fn encode_table_inspect_query_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::InspectQueryRequest) -> Result<flatbuffers::WIPOffset<wire::InspectQueryRequest<'a>>, String> {
+    let request = (&value.request).as_ref().map(|item| encode_table_search_request(builder, item)).transpose()?;
+    Ok(wire::InspectQueryRequest::create(builder, &wire::InspectQueryRequestArgs { request: request }))
+}
+
+fn decode_table_inspect_query_request(value: wire::InspectQueryRequest<'_>) -> Result<model::InspectQueryRequest, DecodeError> {
+    Ok(model::InspectQueryRequest {
+        request: value.request().map(decode_table_search_request).transpose()?,
+    })
+}
+
+fn decode_table_inspect_query_result(value: wire::InspectQueryResult<'_>) -> Result<model::InspectQueryResult, DecodeError> {
+    Ok(model::InspectQueryResult {
+        resolved_request: value.resolved_request().map(decode_table_search_request).transpose()?,
+    })
+}
+
+fn encode_table_patch_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::PatchRequest) -> Result<flatbuffers::WIPOffset<wire::PatchRequest<'a>>, String> {
+    let id = (&value.id).as_deref().map(|item| builder.create_string(item));
+    let mut operations_items = Vec::with_capacity((&value.operations).len());
+    for item in &value.operations { operations_items.push(encode_table_patch_operation(builder, item)?); }
+    let operations = if (&value.operations).is_empty() { None } else { Some(builder.create_vector(&operations_items)) };
+    Ok(wire::PatchRequest::create(builder, &wire::PatchRequestArgs { id: id, operations: operations }))
+}
+
+fn decode_table_patch_request(value: wire::PatchRequest<'_>) -> Result<model::PatchRequest, DecodeError> {
+    Ok(model::PatchRequest {
+        id: value.id().map(ToOwned::to_owned),
+        operations: match value.operations() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_union_patch_operation_kind(item)?); } result }, None => Vec::new() },
+    })
+}
+
+fn decode_table_patch_result(value: wire::PatchResult<'_>) -> Result<model::PatchResult, DecodeError> {
+    Ok(model::PatchResult {
+        id: required_string(value.id(), "PatchResult.id")?,
+    })
+}
+
+fn encode_table_search_field<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::SearchField) -> Result<flatbuffers::WIPOffset<wire::SearchField<'a>>, String> {
+    let field = Some(builder.create_string(&value.field));
+    let weight_storage = (*&value.weight).map(|item| wire::OptionalDouble::new(item));
+    let weight = weight_storage.as_ref();
+    Ok(wire::SearchField::create(builder, &wire::SearchFieldArgs { field: field, weight: weight }))
+}
+
+fn decode_table_search_field(value: wire::SearchField<'_>) -> Result<model::SearchField, DecodeError> {
+    Ok(model::SearchField {
+        field: required_string(value.field(), "SearchField.field")?,
+        weight: value.weight().map(|item| Ok(item.value())).transpose()?,
+    })
+}
+
+fn encode_table_search_field_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::SearchFieldSelection) -> Result<flatbuffers::WIPOffset<wire::SearchFieldSelection<'a>>, String> {
+    let mut fields_items = Vec::with_capacity((&value.fields).len());
+    for item in &value.fields { fields_items.push(encode_table_search_field(builder, item)?); }
+    let fields = if (&value.fields).is_empty() { None } else { Some(builder.create_vector(&fields_items)) };
+    Ok(wire::SearchFieldSelection::create(builder, &wire::SearchFieldSelectionArgs { fields: fields }))
+}
+
+fn decode_table_search_field_selection(value: wire::SearchFieldSelection<'_>) -> Result<model::SearchFieldSelection, DecodeError> {
+    Ok(model::SearchFieldSelection {
+        fields: match value.fields() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_search_field(item)?); } result }, None => Vec::new() },
+    })
+}
+
+fn encode_table_search_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::SearchRequest) -> Result<flatbuffers::WIPOffset<wire::SearchRequest<'a>>, String> {
+    let mut facets_items = Vec::with_capacity((&value.facets).len());
+    for item in &value.facets { facets_items.push(encode_table_facet_request(builder, item)?); }
+    let facets = if (&value.facets).is_empty() { None } else { Some(builder.create_vector(&facets_items)) };
+    let filter = (&value.filter).as_ref().map(|item| encode_table_filter_expr(builder, item)).transpose()?;
+    let highlighting = (&value.highlighting).as_ref().map(|item| encode_table_highlight_request(builder, item)).transpose()?;
+    let language = (&value.language).as_deref().map(|item| builder.create_string(item));
+    let limit_storage = (*&value.limit).map(|item| wire::OptionalUInt32::new(item));
+    let limit = limit_storage.as_ref();
+    let offset_storage = (*&value.offset).map(|item| wire::OptionalUInt32::new(item));
+    let offset = offset_storage.as_ref();
+    let projection = (&value.projection).as_ref().map(|item| encode_table_field_projection(builder, item)).transpose()?;
+    let query = (&value.query).as_deref().map(|item| builder.create_string(item));
+    let query_expr = (&value.query_expr).as_ref().map(|item| encode_table_query_expr(builder, item)).transpose()?;
+    let ranking = (&value.ranking).as_ref().map(|item| encode_table_ranking_policy(builder, item)).transpose()?;
+    let search_fields = (&value.search_fields).as_ref().map(|item| encode_table_search_field_selection(builder, item)).transpose()?;
+    let mut sort_items = Vec::with_capacity((&value.sort).len());
+    for item in &value.sort { sort_items.push(encode_table_sort_expr(builder, item)?); }
+    let sort = if (&value.sort).is_empty() { None } else { Some(builder.create_vector(&sort_items)) };
+    let timeout_storage = (*&value.timeout).map(|item| wire::OptionalUInt64::new(item));
+    let timeout = timeout_storage.as_ref();
+    Ok(wire::SearchRequest::create(builder, &wire::SearchRequestArgs { facets: facets, filter: filter, highlighting: highlighting, language: language, limit: limit, offset: offset, projection: projection, query: query, query_expr: query_expr, ranking: ranking, search_fields: search_fields, sort: sort, timeout: timeout }))
+}
+
+fn decode_table_search_request(value: wire::SearchRequest<'_>) -> Result<model::SearchRequest, DecodeError> {
+    Ok(model::SearchRequest {
+        facets: match value.facets() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_facet_request(item)?); } result }, None => Vec::new() },
+        filter: value.filter().map(decode_union_filter_expr_kind).transpose()?,
+        highlighting: value.highlighting().map(decode_table_highlight_request).transpose()?,
+        language: value.language().map(ToOwned::to_owned),
+        limit: value.limit().map(|item| Ok(item.value())).transpose()?,
+        offset: value.offset().map(|item| Ok(item.value())).transpose()?,
+        projection: value.projection().map(decode_table_field_projection).transpose()?,
+        query: value.query().map(ToOwned::to_owned),
+        query_expr: value.query_expr().map(decode_union_query_expr_kind).transpose()?,
+        ranking: value.ranking().map(decode_union_ranking_policy_kind).transpose()?,
+        search_fields: value.search_fields().map(decode_table_search_field_selection).transpose()?,
+        sort: match value.sort() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_sort_expr(item)?); } result }, None => Vec::new() },
+        timeout: value.timeout().map(|item| Ok(item.value())).transpose()?,
+    })
+}
+
+fn decode_table_search_result(value: wire::SearchResult<'_>) -> Result<model::SearchResult, DecodeError> {
+    Ok(model::SearchResult {
+        facets: match value.facets() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_facet_result(item)?); } result }, None => Vec::new() },
+        hits: match value.hits() { Some(items) => { let mut result = Vec::with_capacity(items.len()); for item in items.iter() { result.push(decode_table_hit(item)?); } result }, None => Vec::new() },
+        total_hits: decode_table_total_hits(value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field SearchResult.total_hits".to_owned()))?)?,
+    })
+}
+
+fn encode_table_sort_expr<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::SortExpr) -> Result<flatbuffers::WIPOffset<wire::SortExpr<'a>>, String> {
+    let direction = encode_sort_direction(*&value.direction);
+    let field = Some(builder.create_string(&value.field));
+    let missing_storage = (*&value.missing).map(|item| wire::OptionalMissingPlacement::new(encode_missing_placement(item)));
+    let missing = missing_storage.as_ref();
+    Ok(wire::SortExpr::create(builder, &wire::SortExprArgs { direction: direction, field: field, missing: missing }))
+}
+
+fn decode_table_sort_expr(value: wire::SortExpr<'_>) -> Result<model::SortExpr, DecodeError> {
+    Ok(model::SortExpr {
+        direction: decode_sort_direction(value.direction())?,
+        field: required_string(value.field(), "SortExpr.field")?,
+        missing: value.missing().map(|item| decode_missing_placement(item.value())).transpose()?,
+    })
+}
+
+fn decode_table_total_hits(value: wire::TotalHits<'_>) -> Result<model::TotalHits, DecodeError> {
+    Ok(model::TotalHits {
+        relation: decode_total_hits_relation(value.relation())?,
+        value: value.value(),
+    })
+}
+
+fn encode_table_upsert_request<'a>(builder: &mut FlatBufferBuilder<'a>, value: &model::UpsertRequest) -> Result<flatbuffers::WIPOffset<wire::UpsertRequest<'a>>, String> {
+    let document = (&value.document).as_ref().map(|item| encode_table_document(builder, item)).transpose()?;
+    Ok(wire::UpsertRequest::create(builder, &wire::UpsertRequestArgs { document: document }))
+}
+
+fn decode_table_upsert_request(value: wire::UpsertRequest<'_>) -> Result<model::UpsertRequest, DecodeError> {
+    Ok(model::UpsertRequest {
+        document: value.document().map(decode_table_document).transpose()?,
+    })
+}
+
+fn decode_table_upsert_result(value: wire::UpsertResult<'_>) -> Result<model::UpsertResult, DecodeError> {
+    Ok(model::UpsertResult {
+        id: required_string(value.id(), "UpsertResult.id")?,
+    })
+}
+
+fn decode_alias_document_result(value: wire::Document<'_>) -> Result<model::DocumentResult, DecodeError> {
+    Ok(model::DocumentResult {
+        fields: match value.fields() { Some(items) => { let mut result = BTreeMap::new(); for entry in items.iter() { result.insert(entry.key().to_owned(), decode_union_value_kind(entry.value().ok_or_else(|| DecodeError::Protocol("missing map value".to_owned()))?)?); } result }, None => BTreeMap::new() },
+        id: required_string(value.id(), "Document.id")?,
+    })
+}
+
+fn finish_request(builder: &mut FlatBufferBuilder<'_>, payload_type: wire::RequestPayload, payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) -> Vec<u8> {
+    let envelope = wire::RequestEnvelope::create(builder, &wire::RequestEnvelopeArgs { protocol_version: 1, payload_type, payload: Some(payload) });
+    builder.finish(envelope, Some("SKRQ"));
+    builder.finished_data().to_vec()
+}
+
+fn encode_operation_analyze(value: model::AnalyzeRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_analyze_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_AnalyzeRequest, payload.as_union_value()))
+}
+
+fn encode_operation_delete(value: model::DeleteRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_delete_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_DeleteRequest, payload.as_union_value()))
+}
+
+fn encode_operation_describe(value: model::DescribeRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_describe_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_DescribeRequest, payload.as_union_value()))
+}
+
+fn encode_operation_get(value: model::GetRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_get_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_GetRequest, payload.as_union_value()))
+}
+
+fn encode_operation_insert(value: model::InsertRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_insert_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_InsertRequest, payload.as_union_value()))
+}
+
+fn encode_operation_inspect_query(value: model::InspectQueryRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_inspect_query_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_InspectQueryRequest, payload.as_union_value()))
+}
+
+fn encode_operation_patch(value: model::PatchRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_patch_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_PatchRequest, payload.as_union_value()))
+}
+
+fn encode_operation_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_search_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_SearchRequest, payload.as_union_value()))
+}
+
+fn encode_operation_upsert(value: model::UpsertRequest) -> Result<Vec<u8>, String> {
+    let mut builder = FlatBufferBuilder::new();
+    let payload = encode_table_upsert_request(&mut builder, &value)?;
+    Ok(finish_request(&mut builder, wire::RequestPayload::SearchKernel_V1_UpsertRequest, payload.as_union_value()))
+}
+
+fn response_envelope<'a>(bytes: &'a [u8], expected_tag: i64, operation: &str) -> Result<wire::ResponseEnvelope<'a>, DecodeError> {
+    if bytes.len() < 8 || bytes[4..8] != *b"SKRS" {
+        return Err(DecodeError::Protocol("missing SKRS file identifier".to_owned()));
+    }
+    let value = root::<wire::ResponseEnvelope<'a>>(bytes).map_err(|error| DecodeError::Protocol(error.to_string()))?;
+    if value.protocol_version() != 1 {
+        return Err(DecodeError::Protocol("unsupported protocol version".to_owned()));
+    }
+    if i64::from(value.payload_type().0) == 8 {
+        let error = value.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol("error response payload is missing".to_owned()))?;
+        return Err(DecodeError::Portable(decode_table_error(error)?));
+    }
+    if i64::from(value.payload_type().0) != expected_tag {
+        return Err(DecodeError::Protocol(format!("response variant does not match operation {operation}")));
+    }
+    Ok(value)
+}
+
+impl DecodeResponse for model::AnalyzeResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 7, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_analyze_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_analyze_result(value)
     }
 }
 
+impl DecodeResponse for model::DeleteResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 4, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_delete_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_delete_result(value)
+    }
+}
 
-// BFBS-derived client inventory.
-// table SearchKernel.FFI.V1.RequestEnvelope
-// field SearchKernel.FFI.V1.RequestEnvelope.payload
-// field SearchKernel.FFI.V1.RequestEnvelope.payload_type
-// field SearchKernel.FFI.V1.RequestEnvelope.protocol_version
-// table SearchKernel.V1.AnalyzeFieldTarget
-// field SearchKernel.V1.AnalyzeFieldTarget.field
-// table SearchKernel.V1.AnalyzeRequest
-// field SearchKernel.V1.AnalyzeRequest.language
-// field SearchKernel.V1.AnalyzeRequest.target
-// field SearchKernel.V1.AnalyzeRequest.target_type
-// field SearchKernel.V1.AnalyzeRequest.text
-// table SearchKernel.V1.AnalyzeResult
-// field SearchKernel.V1.AnalyzeResult.tokens
-// table SearchKernel.V1.AnalyzedToken
-// field SearchKernel.V1.AnalyzedToken.end_byte
-// field SearchKernel.V1.AnalyzedToken.position
-// field SearchKernel.V1.AnalyzedToken.start_byte
-// field SearchKernel.V1.AnalyzedToken.surface
-// field SearchKernel.V1.AnalyzedToken.term
-// table SearchKernel.V1.Analyzer
-// field SearchKernel.V1.Analyzer.name
-// field SearchKernel.V1.Analyzer.options
-// field SearchKernel.V1.Analyzer.version
-// table SearchKernel.V1.Bm25Ranking
-// table SearchKernel.V1.BoolValue
-// field SearchKernel.V1.BoolValue.value
-// table SearchKernel.V1.BytesValue
-// field SearchKernel.V1.BytesValue.value
-// table SearchKernel.V1.DefaultRelevanceV1
-// table SearchKernel.V1.DeleteRequest
-// field SearchKernel.V1.DeleteRequest.id
-// table SearchKernel.V1.DeleteResult
-// field SearchKernel.V1.DeleteResult.deleted
-// field SearchKernel.V1.DeleteResult.id
-// table SearchKernel.V1.DescribeRequest
-// table SearchKernel.V1.DescribeResult
-// field SearchKernel.V1.DescribeResult.index
-// table SearchKernel.V1.Document
-// field SearchKernel.V1.Document.fields
-// field SearchKernel.V1.Document.id
-// table SearchKernel.V1.Error
-// field SearchKernel.V1.Error.code
-// field SearchKernel.V1.Error.details
-// field SearchKernel.V1.Error.message
-// field SearchKernel.V1.Error.retryable
-// table SearchKernel.V1.ErrorDetail
-// field SearchKernel.V1.ErrorDetail.code
-// field SearchKernel.V1.ErrorDetail.message
-// field SearchKernel.V1.ErrorDetail.metadata
-// field SearchKernel.V1.ErrorDetail.path
-// table SearchKernel.V1.FacetRequest
-// field SearchKernel.V1.FacetRequest.field
-// field SearchKernel.V1.FacetRequest.limit
-// field SearchKernel.V1.FacetRequest.sort
-// table SearchKernel.V1.FacetResult
-// field SearchKernel.V1.FacetResult.field
-// field SearchKernel.V1.FacetResult.values
-// table SearchKernel.V1.FacetValue
-// field SearchKernel.V1.FacetValue.count
-// field SearchKernel.V1.FacetValue.value
-// table SearchKernel.V1.FieldDefinition
-// field SearchKernel.V1.FieldDefinition.analyzer
-// field SearchKernel.V1.FieldDefinition.cardinality
-// field SearchKernel.V1.FieldDefinition.facetable
-// field SearchKernel.V1.FieldDefinition.filterable
-// field SearchKernel.V1.FieldDefinition.kind
-// field SearchKernel.V1.FieldDefinition.name
-// field SearchKernel.V1.FieldDefinition.searchable
-// field SearchKernel.V1.FieldDefinition.sortable
-// field SearchKernel.V1.FieldDefinition.stored
-// table SearchKernel.V1.FieldProjection
-// field SearchKernel.V1.FieldProjection.fields
-// table SearchKernel.V1.FilterAnd
-// field SearchKernel.V1.FilterAnd.clauses
-// table SearchKernel.V1.FilterComparison
-// field SearchKernel.V1.FilterComparison.field
-// field SearchKernel.V1.FilterComparison.op
-// field SearchKernel.V1.FilterComparison.value
-// table SearchKernel.V1.FilterExists
-// field SearchKernel.V1.FilterExists.field
-// table SearchKernel.V1.FilterExpr
-// field SearchKernel.V1.FilterExpr.expr
-// field SearchKernel.V1.FilterExpr.expr_type
-// table SearchKernel.V1.FilterNot
-// field SearchKernel.V1.FilterNot.clause
-// table SearchKernel.V1.FilterOr
-// field SearchKernel.V1.FilterOr.clauses
-// table SearchKernel.V1.FilterRange
-// field SearchKernel.V1.FilterRange.field
-// field SearchKernel.V1.FilterRange.include_lower
-// field SearchKernel.V1.FilterRange.include_upper
-// field SearchKernel.V1.FilterRange.lower
-// field SearchKernel.V1.FilterRange.upper
-// table SearchKernel.V1.Float64Value
-// field SearchKernel.V1.Float64Value.value
-// table SearchKernel.V1.GetRequest
-// field SearchKernel.V1.GetRequest.id
-// field SearchKernel.V1.GetRequest.projection
-// table SearchKernel.V1.GetResult
-// field SearchKernel.V1.GetResult.document
-// table SearchKernel.V1.HighlightFragment
-// field SearchKernel.V1.HighlightFragment.matches
-// field SearchKernel.V1.HighlightFragment.text
-// table SearchKernel.V1.HighlightRequest
-// field SearchKernel.V1.HighlightRequest.fields
-// table SearchKernel.V1.HighlightResult
-// field SearchKernel.V1.HighlightResult.field
-// field SearchKernel.V1.HighlightResult.fragments
-// table SearchKernel.V1.HighlightSpan
-// field SearchKernel.V1.HighlightSpan.end_byte
-// field SearchKernel.V1.HighlightSpan.start_byte
-// table SearchKernel.V1.Hit
-// field SearchKernel.V1.Hit.fields
-// field SearchKernel.V1.Hit.highlights
-// field SearchKernel.V1.Hit.id
-// field SearchKernel.V1.Hit.score
-// table SearchKernel.V1.IndexDefinition
-// field SearchKernel.V1.IndexDefinition.default_search_fields
-// field SearchKernel.V1.IndexDefinition.fields
-// field SearchKernel.V1.IndexDefinition.name
-// table SearchKernel.V1.InsertRequest
-// field SearchKernel.V1.InsertRequest.document
-// table SearchKernel.V1.InsertResult
-// field SearchKernel.V1.InsertResult.id
-// table SearchKernel.V1.InspectQueryRequest
-// field SearchKernel.V1.InspectQueryRequest.request
-// table SearchKernel.V1.InspectQueryResult
-// field SearchKernel.V1.InspectQueryResult.resolved_request
-// table SearchKernel.V1.Int64Value
-// field SearchKernel.V1.Int64Value.value
-// table SearchKernel.V1.NullValueValue
-// field SearchKernel.V1.NullValueValue.value
-// table SearchKernel.V1.OptionalBool
-// field SearchKernel.V1.OptionalBool.value
-// table SearchKernel.V1.OptionalDouble
-// field SearchKernel.V1.OptionalDouble.value
-// table SearchKernel.V1.OptionalFacetSort
-// field SearchKernel.V1.OptionalFacetSort.value
-// table SearchKernel.V1.OptionalMissingPlacement
-// field SearchKernel.V1.OptionalMissingPlacement.value
-// table SearchKernel.V1.OptionalUInt32
-// field SearchKernel.V1.OptionalUInt32.value
-// table SearchKernel.V1.OptionalUInt64
-// field SearchKernel.V1.OptionalUInt64.value
-// table SearchKernel.V1.PatchOperation
-// field SearchKernel.V1.PatchOperation.operation
-// field SearchKernel.V1.PatchOperation.operation_type
-// table SearchKernel.V1.PatchRequest
-// field SearchKernel.V1.PatchRequest.id
-// field SearchKernel.V1.PatchRequest.operations
-// table SearchKernel.V1.PatchResult
-// field SearchKernel.V1.PatchResult.id
-// table SearchKernel.V1.QueryAnd
-// field SearchKernel.V1.QueryAnd.clauses
-// table SearchKernel.V1.QueryExpr
-// field SearchKernel.V1.QueryExpr.expr
-// field SearchKernel.V1.QueryExpr.expr_type
-// table SearchKernel.V1.QueryNot
-// field SearchKernel.V1.QueryNot.clause
-// table SearchKernel.V1.QueryOr
-// field SearchKernel.V1.QueryOr.clauses
-// table SearchKernel.V1.RankingPolicy
-// field SearchKernel.V1.RankingPolicy.policy
-// field SearchKernel.V1.RankingPolicy.policy_type
-// table SearchKernel.V1.SearchField
-// field SearchKernel.V1.SearchField.field
-// field SearchKernel.V1.SearchField.weight
-// table SearchKernel.V1.SearchFieldSelection
-// field SearchKernel.V1.SearchFieldSelection.fields
-// table SearchKernel.V1.SearchRequest
-// field SearchKernel.V1.SearchRequest.facets
-// field SearchKernel.V1.SearchRequest.filter
-// field SearchKernel.V1.SearchRequest.highlighting
-// field SearchKernel.V1.SearchRequest.language
-// field SearchKernel.V1.SearchRequest.limit
-// field SearchKernel.V1.SearchRequest.offset
-// field SearchKernel.V1.SearchRequest.projection
-// field SearchKernel.V1.SearchRequest.query
-// field SearchKernel.V1.SearchRequest.query_expr
-// field SearchKernel.V1.SearchRequest.ranking
-// field SearchKernel.V1.SearchRequest.search_fields
-// field SearchKernel.V1.SearchRequest.sort
-// field SearchKernel.V1.SearchRequest.timeout
-// table SearchKernel.V1.SearchResult
-// field SearchKernel.V1.SearchResult.facets
-// field SearchKernel.V1.SearchResult.hits
-// field SearchKernel.V1.SearchResult.total_hits
-// table SearchKernel.V1.SetField
-// field SearchKernel.V1.SetField.field
-// field SearchKernel.V1.SetField.value
-// table SearchKernel.V1.SortExpr
-// field SearchKernel.V1.SortExpr.direction
-// field SearchKernel.V1.SortExpr.field
-// field SearchKernel.V1.SortExpr.missing
-// table SearchKernel.V1.StringEntry
-// field SearchKernel.V1.StringEntry.key
-// field SearchKernel.V1.StringEntry.value
-// table SearchKernel.V1.StringValue
-// field SearchKernel.V1.StringValue.value
-// table SearchKernel.V1.TermQuery
-// field SearchKernel.V1.TermQuery.field
-// field SearchKernel.V1.TermQuery.value
-// table SearchKernel.V1.TotalHits
-// field SearchKernel.V1.TotalHits.relation
-// field SearchKernel.V1.TotalHits.value
-// table SearchKernel.V1.UInt64Value
-// field SearchKernel.V1.UInt64Value.value
-// table SearchKernel.V1.UnsetField
-// field SearchKernel.V1.UnsetField.field
-// table SearchKernel.V1.UpsertRequest
-// field SearchKernel.V1.UpsertRequest.document
-// table SearchKernel.V1.UpsertResult
-// field SearchKernel.V1.UpsertResult.id
-// table SearchKernel.V1.Value
-// field SearchKernel.V1.Value.kind
-// field SearchKernel.V1.Value.kind_type
-// table SearchKernel.V1.ValueEntry
-// field SearchKernel.V1.ValueEntry.key
-// field SearchKernel.V1.ValueEntry.value
-// table SearchKernel.V1.ValueList
-// field SearchKernel.V1.ValueList.values
-// table SearchKernel.V1.ValueObject
-// field SearchKernel.V1.ValueObject.fields
-// table SearchKernel.FFI.V1.ResponseEnvelope
-// field SearchKernel.FFI.V1.ResponseEnvelope.payload
-// field SearchKernel.FFI.V1.ResponseEnvelope.payload_type
-// field SearchKernel.FFI.V1.ResponseEnvelope.protocol_version
-// table SearchKernel.V1.AnalyzeFieldTarget
-// field SearchKernel.V1.AnalyzeFieldTarget.field
-// table SearchKernel.V1.AnalyzeRequest
-// field SearchKernel.V1.AnalyzeRequest.language
-// field SearchKernel.V1.AnalyzeRequest.target
-// field SearchKernel.V1.AnalyzeRequest.target_type
-// field SearchKernel.V1.AnalyzeRequest.text
-// table SearchKernel.V1.AnalyzeResult
-// field SearchKernel.V1.AnalyzeResult.tokens
-// table SearchKernel.V1.AnalyzedToken
-// field SearchKernel.V1.AnalyzedToken.end_byte
-// field SearchKernel.V1.AnalyzedToken.position
-// field SearchKernel.V1.AnalyzedToken.start_byte
-// field SearchKernel.V1.AnalyzedToken.surface
-// field SearchKernel.V1.AnalyzedToken.term
-// table SearchKernel.V1.Analyzer
-// field SearchKernel.V1.Analyzer.name
-// field SearchKernel.V1.Analyzer.options
-// field SearchKernel.V1.Analyzer.version
-// table SearchKernel.V1.Bm25Ranking
-// table SearchKernel.V1.BoolValue
-// field SearchKernel.V1.BoolValue.value
-// table SearchKernel.V1.BytesValue
-// field SearchKernel.V1.BytesValue.value
-// table SearchKernel.V1.DefaultRelevanceV1
-// table SearchKernel.V1.DeleteRequest
-// field SearchKernel.V1.DeleteRequest.id
-// table SearchKernel.V1.DeleteResult
-// field SearchKernel.V1.DeleteResult.deleted
-// field SearchKernel.V1.DeleteResult.id
-// table SearchKernel.V1.DescribeRequest
-// table SearchKernel.V1.DescribeResult
-// field SearchKernel.V1.DescribeResult.index
-// table SearchKernel.V1.Document
-// field SearchKernel.V1.Document.fields
-// field SearchKernel.V1.Document.id
-// table SearchKernel.V1.Error
-// field SearchKernel.V1.Error.code
-// field SearchKernel.V1.Error.details
-// field SearchKernel.V1.Error.message
-// field SearchKernel.V1.Error.retryable
-// table SearchKernel.V1.ErrorDetail
-// field SearchKernel.V1.ErrorDetail.code
-// field SearchKernel.V1.ErrorDetail.message
-// field SearchKernel.V1.ErrorDetail.metadata
-// field SearchKernel.V1.ErrorDetail.path
-// table SearchKernel.V1.FacetRequest
-// field SearchKernel.V1.FacetRequest.field
-// field SearchKernel.V1.FacetRequest.limit
-// field SearchKernel.V1.FacetRequest.sort
-// table SearchKernel.V1.FacetResult
-// field SearchKernel.V1.FacetResult.field
-// field SearchKernel.V1.FacetResult.values
-// table SearchKernel.V1.FacetValue
-// field SearchKernel.V1.FacetValue.count
-// field SearchKernel.V1.FacetValue.value
-// table SearchKernel.V1.FieldDefinition
-// field SearchKernel.V1.FieldDefinition.analyzer
-// field SearchKernel.V1.FieldDefinition.cardinality
-// field SearchKernel.V1.FieldDefinition.facetable
-// field SearchKernel.V1.FieldDefinition.filterable
-// field SearchKernel.V1.FieldDefinition.kind
-// field SearchKernel.V1.FieldDefinition.name
-// field SearchKernel.V1.FieldDefinition.searchable
-// field SearchKernel.V1.FieldDefinition.sortable
-// field SearchKernel.V1.FieldDefinition.stored
-// table SearchKernel.V1.FieldProjection
-// field SearchKernel.V1.FieldProjection.fields
-// table SearchKernel.V1.FilterAnd
-// field SearchKernel.V1.FilterAnd.clauses
-// table SearchKernel.V1.FilterComparison
-// field SearchKernel.V1.FilterComparison.field
-// field SearchKernel.V1.FilterComparison.op
-// field SearchKernel.V1.FilterComparison.value
-// table SearchKernel.V1.FilterExists
-// field SearchKernel.V1.FilterExists.field
-// table SearchKernel.V1.FilterExpr
-// field SearchKernel.V1.FilterExpr.expr
-// field SearchKernel.V1.FilterExpr.expr_type
-// table SearchKernel.V1.FilterNot
-// field SearchKernel.V1.FilterNot.clause
-// table SearchKernel.V1.FilterOr
-// field SearchKernel.V1.FilterOr.clauses
-// table SearchKernel.V1.FilterRange
-// field SearchKernel.V1.FilterRange.field
-// field SearchKernel.V1.FilterRange.include_lower
-// field SearchKernel.V1.FilterRange.include_upper
-// field SearchKernel.V1.FilterRange.lower
-// field SearchKernel.V1.FilterRange.upper
-// table SearchKernel.V1.Float64Value
-// field SearchKernel.V1.Float64Value.value
-// table SearchKernel.V1.GetRequest
-// field SearchKernel.V1.GetRequest.id
-// field SearchKernel.V1.GetRequest.projection
-// table SearchKernel.V1.GetResult
-// field SearchKernel.V1.GetResult.document
-// table SearchKernel.V1.HighlightFragment
-// field SearchKernel.V1.HighlightFragment.matches
-// field SearchKernel.V1.HighlightFragment.text
-// table SearchKernel.V1.HighlightRequest
-// field SearchKernel.V1.HighlightRequest.fields
-// table SearchKernel.V1.HighlightResult
-// field SearchKernel.V1.HighlightResult.field
-// field SearchKernel.V1.HighlightResult.fragments
-// table SearchKernel.V1.HighlightSpan
-// field SearchKernel.V1.HighlightSpan.end_byte
-// field SearchKernel.V1.HighlightSpan.start_byte
-// table SearchKernel.V1.Hit
-// field SearchKernel.V1.Hit.fields
-// field SearchKernel.V1.Hit.highlights
-// field SearchKernel.V1.Hit.id
-// field SearchKernel.V1.Hit.score
-// table SearchKernel.V1.IndexDefinition
-// field SearchKernel.V1.IndexDefinition.default_search_fields
-// field SearchKernel.V1.IndexDefinition.fields
-// field SearchKernel.V1.IndexDefinition.name
-// table SearchKernel.V1.InsertRequest
-// field SearchKernel.V1.InsertRequest.document
-// table SearchKernel.V1.InsertResult
-// field SearchKernel.V1.InsertResult.id
-// table SearchKernel.V1.InspectQueryRequest
-// field SearchKernel.V1.InspectQueryRequest.request
-// table SearchKernel.V1.InspectQueryResult
-// field SearchKernel.V1.InspectQueryResult.resolved_request
-// table SearchKernel.V1.Int64Value
-// field SearchKernel.V1.Int64Value.value
-// table SearchKernel.V1.NullValueValue
-// field SearchKernel.V1.NullValueValue.value
-// table SearchKernel.V1.OptionalBool
-// field SearchKernel.V1.OptionalBool.value
-// table SearchKernel.V1.OptionalDouble
-// field SearchKernel.V1.OptionalDouble.value
-// table SearchKernel.V1.OptionalFacetSort
-// field SearchKernel.V1.OptionalFacetSort.value
-// table SearchKernel.V1.OptionalMissingPlacement
-// field SearchKernel.V1.OptionalMissingPlacement.value
-// table SearchKernel.V1.OptionalUInt32
-// field SearchKernel.V1.OptionalUInt32.value
-// table SearchKernel.V1.OptionalUInt64
-// field SearchKernel.V1.OptionalUInt64.value
-// table SearchKernel.V1.PatchOperation
-// field SearchKernel.V1.PatchOperation.operation
-// field SearchKernel.V1.PatchOperation.operation_type
-// table SearchKernel.V1.PatchRequest
-// field SearchKernel.V1.PatchRequest.id
-// field SearchKernel.V1.PatchRequest.operations
-// table SearchKernel.V1.PatchResult
-// field SearchKernel.V1.PatchResult.id
-// table SearchKernel.V1.QueryAnd
-// field SearchKernel.V1.QueryAnd.clauses
-// table SearchKernel.V1.QueryExpr
-// field SearchKernel.V1.QueryExpr.expr
-// field SearchKernel.V1.QueryExpr.expr_type
-// table SearchKernel.V1.QueryNot
-// field SearchKernel.V1.QueryNot.clause
-// table SearchKernel.V1.QueryOr
-// field SearchKernel.V1.QueryOr.clauses
-// table SearchKernel.V1.RankingPolicy
-// field SearchKernel.V1.RankingPolicy.policy
-// field SearchKernel.V1.RankingPolicy.policy_type
-// table SearchKernel.V1.SearchField
-// field SearchKernel.V1.SearchField.field
-// field SearchKernel.V1.SearchField.weight
-// table SearchKernel.V1.SearchFieldSelection
-// field SearchKernel.V1.SearchFieldSelection.fields
-// table SearchKernel.V1.SearchRequest
-// field SearchKernel.V1.SearchRequest.facets
-// field SearchKernel.V1.SearchRequest.filter
-// field SearchKernel.V1.SearchRequest.highlighting
-// field SearchKernel.V1.SearchRequest.language
-// field SearchKernel.V1.SearchRequest.limit
-// field SearchKernel.V1.SearchRequest.offset
-// field SearchKernel.V1.SearchRequest.projection
-// field SearchKernel.V1.SearchRequest.query
-// field SearchKernel.V1.SearchRequest.query_expr
-// field SearchKernel.V1.SearchRequest.ranking
-// field SearchKernel.V1.SearchRequest.search_fields
-// field SearchKernel.V1.SearchRequest.sort
-// field SearchKernel.V1.SearchRequest.timeout
-// table SearchKernel.V1.SearchResult
-// field SearchKernel.V1.SearchResult.facets
-// field SearchKernel.V1.SearchResult.hits
-// field SearchKernel.V1.SearchResult.total_hits
-// table SearchKernel.V1.SetField
-// field SearchKernel.V1.SetField.field
-// field SearchKernel.V1.SetField.value
-// table SearchKernel.V1.SortExpr
-// field SearchKernel.V1.SortExpr.direction
-// field SearchKernel.V1.SortExpr.field
-// field SearchKernel.V1.SortExpr.missing
-// table SearchKernel.V1.StringEntry
-// field SearchKernel.V1.StringEntry.key
-// field SearchKernel.V1.StringEntry.value
-// table SearchKernel.V1.StringValue
-// field SearchKernel.V1.StringValue.value
-// table SearchKernel.V1.TermQuery
-// field SearchKernel.V1.TermQuery.field
-// field SearchKernel.V1.TermQuery.value
-// table SearchKernel.V1.TotalHits
-// field SearchKernel.V1.TotalHits.relation
-// field SearchKernel.V1.TotalHits.value
-// table SearchKernel.V1.UInt64Value
-// field SearchKernel.V1.UInt64Value.value
-// table SearchKernel.V1.UnsetField
-// field SearchKernel.V1.UnsetField.field
-// table SearchKernel.V1.UpsertRequest
-// field SearchKernel.V1.UpsertRequest.document
-// table SearchKernel.V1.UpsertResult
-// field SearchKernel.V1.UpsertResult.id
-// table SearchKernel.V1.Value
-// field SearchKernel.V1.Value.kind
-// field SearchKernel.V1.Value.kind_type
-// table SearchKernel.V1.ValueEntry
-// field SearchKernel.V1.ValueEntry.key
-// field SearchKernel.V1.ValueEntry.value
-// table SearchKernel.V1.ValueList
-// field SearchKernel.V1.ValueList.values
-// table SearchKernel.V1.ValueObject
-// field SearchKernel.V1.ValueObject.fields
-// generated operation coverage: insert,upsert,patch,delete,get,search,analyze,describe,inspect_query
+impl DecodeResponse for model::DescribeResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 9, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_describe_result(value)
+    }
+}
+
+impl DecodeResponse for model::GetResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 5, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_get_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_get_result(value)
+    }
+}
+
+impl DecodeResponse for model::InsertResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 1, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_insert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_insert_result(value)
+    }
+}
+
+impl DecodeResponse for model::InspectQueryResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 10, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_inspect_query_result(value)
+    }
+}
+
+impl DecodeResponse for model::PatchResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 3, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_patch_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_patch_result(value)
+    }
+}
+
+impl DecodeResponse for model::SearchResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 6, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_search_result(value)
+    }
+}
+
+impl DecodeResponse for model::UpsertResult {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> {
+        let envelope = response_envelope(bytes, 2, operation)?;
+        let value = envelope.payload_as_search_kernel_v1_upsert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?;
+        decode_table_upsert_result(value)
+    }
+}

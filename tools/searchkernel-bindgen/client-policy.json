@@ -1,0 +1,58 @@
+{
+  "required_fields": [
+    "SearchKernel.V1.AnalyzedToken.surface",
+    "SearchKernel.V1.AnalyzedToken.term",
+    "SearchKernel.V1.Error.message",
+    "SearchKernel.V1.ErrorDetail.code",
+    "SearchKernel.V1.ErrorDetail.message",
+    "SearchKernel.V1.StringValue.value",
+    "SearchKernel.V1.AnalyzeFieldTarget.field",
+    "SearchKernel.V1.FacetRequest.field",
+    "SearchKernel.V1.FacetResult.field",
+    "SearchKernel.V1.FacetValue.value",
+    "SearchKernel.V1.FilterComparison.field",
+    "SearchKernel.V1.FilterComparison.value",
+    "SearchKernel.V1.FilterExists.field",
+    "SearchKernel.V1.FilterNot.clause",
+    "SearchKernel.V1.FilterRange.field",
+    "SearchKernel.V1.HighlightFragment.text",
+    "SearchKernel.V1.HighlightResult.field",
+    "SearchKernel.V1.Hit.id",
+    "SearchKernel.V1.InsertResult.id",
+    "SearchKernel.V1.PatchResult.id",
+    "SearchKernel.V1.QueryNot.clause",
+    "SearchKernel.V1.SearchField.field",
+    "SearchKernel.V1.SearchResult.total_hits",
+    "SearchKernel.V1.SortExpr.field",
+    "SearchKernel.V1.TermQuery.field",
+    "SearchKernel.V1.TermQuery.value",
+    "SearchKernel.V1.UpsertResult.id",
+    "SearchKernel.V1.DeleteResult.id"
+  ],
+  "response_aliases": {
+    "SearchKernel.V1.GetResult.document": {
+      "name": "DocumentResult",
+      "required_fields": ["id"]
+    }
+  },
+  "union_variants": {
+    "SearchKernel.V1.AnalyzeTarget.Analyzer": "Analyzer",
+    "SearchKernel.V1.AnalyzeTarget.AnalyzeFieldTarget": "Field",
+    "SearchKernel.V1.PatchOperationKind.SetField": "Set",
+    "SearchKernel.V1.PatchOperationKind.UnsetField": "Unset",
+    "SearchKernel.V1.ValueKind.NullValueValue": "Null"
+  },
+  "named_union_variants": [
+    "SearchKernel.V1.FilterExprKind.FilterExists",
+    "SearchKernel.V1.PatchOperationKind.UnsetField"
+  ],
+  "unit_union_variants": [
+    "SearchKernel.V1.ValueKind.NullValueValue"
+  ],
+  "union_defaults": {
+    "SearchKernel.V1.Value": "Null"
+  },
+  "standalone_encoders": {
+    "SearchKernel.V1.IndexDefinition": "encode_index_definition"
+  }
+}

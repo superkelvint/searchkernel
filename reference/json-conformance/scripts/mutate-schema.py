@@ -6,7 +6,31 @@ root=Path(a.schema_dir); main=root/'searchkernel.fbs'; req=root/'searchkernel_ff
 mt=main.read_text(); rt=req.read_text(); st=resp.read_text(); marker='// -----------------------------------------------------------------------------\n// Portable errors'
 if marker not in mt: raise SystemExit('portable errors marker missing')
 if a.mode=='probe':
-    defs='// C6 verifier synthetic BFBS-only operation.\ntable VerifierProbeRequest {\n  token:string;\n}\n\ntable VerifierProbeResult {\n  token:string;\n}\n\n'
+    defs='''// C6 verifier synthetic BFBS-only operation and type surface.
+table VerifierProbePayload {
+  signed_value:long;
+  ratio:double;
+  enabled:bool;
+  mode:FieldKind;
+}
+
+union VerifierProbeValue {
+  VerifierProbePayload
+}
+
+table VerifierProbeRequest {
+  token:string;
+  payload:VerifierProbePayload;
+  value:VerifierProbeValue;
+}
+
+table VerifierProbeResult {
+  token:string;
+  payload:VerifierProbePayload;
+  value:VerifierProbeValue;
+}
+
+'''
     mt=mt.replace(marker,defs+marker,1)
     needle='  timeout:OptionalUInt64;\n}'; repl='  timeout:OptionalUInt64;\n\n  // C6 verifier synthetic field.\n  verifier_probe_field:uint;\n}'
     if needle not in mt: raise SystemExit('SearchRequest insertion point missing')

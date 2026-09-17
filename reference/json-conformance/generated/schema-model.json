@@ -1,0 +1,3985 @@
+{
+  "boxed_references": [
+    {
+      "source": "SearchKernel.V1.FilterExpr",
+      "target": "SearchKernel.V1.FilterNot"
+    },
+    {
+      "source": "SearchKernel.V1.FilterNot",
+      "target": "SearchKernel.V1.FilterExpr"
+    },
+    {
+      "source": "SearchKernel.V1.QueryExpr",
+      "target": "SearchKernel.V1.QueryNot"
+    },
+    {
+      "source": "SearchKernel.V1.QueryNot",
+      "target": "SearchKernel.V1.QueryExpr"
+    }
+  ],
+  "enums": [
+    {
+      "kind": "union",
+      "name": "SearchKernel.FFI.V1.RequestPayload",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "SearchKernel_V1_InsertRequest",
+          "payload": "SearchKernel.V1.InsertRequest",
+          "value": 1
+        },
+        {
+          "name": "SearchKernel_V1_UpsertRequest",
+          "payload": "SearchKernel.V1.UpsertRequest",
+          "value": 2
+        },
+        {
+          "name": "SearchKernel_V1_PatchRequest",
+          "payload": "SearchKernel.V1.PatchRequest",
+          "value": 3
+        },
+        {
+          "name": "SearchKernel_V1_DeleteRequest",
+          "payload": "SearchKernel.V1.DeleteRequest",
+          "value": 4
+        },
+        {
+          "name": "SearchKernel_V1_GetRequest",
+          "payload": "SearchKernel.V1.GetRequest",
+          "value": 5
+        },
+        {
+          "name": "SearchKernel_V1_SearchRequest",
+          "payload": "SearchKernel.V1.SearchRequest",
+          "value": 6
+        },
+        {
+          "name": "SearchKernel_V1_AnalyzeRequest",
+          "payload": "SearchKernel.V1.AnalyzeRequest",
+          "value": 7
+        },
+        {
+          "name": "SearchKernel_V1_DescribeRequest",
+          "payload": "SearchKernel.V1.DescribeRequest",
+          "value": 8
+        },
+        {
+          "name": "SearchKernel_V1_InspectQueryRequest",
+          "payload": "SearchKernel.V1.InspectQueryRequest",
+          "value": 9
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.FFI.V1.ResponsePayload",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "SearchKernel_V1_InsertResult",
+          "payload": "SearchKernel.V1.InsertResult",
+          "value": 1
+        },
+        {
+          "name": "SearchKernel_V1_UpsertResult",
+          "payload": "SearchKernel.V1.UpsertResult",
+          "value": 2
+        },
+        {
+          "name": "SearchKernel_V1_PatchResult",
+          "payload": "SearchKernel.V1.PatchResult",
+          "value": 3
+        },
+        {
+          "name": "SearchKernel_V1_DeleteResult",
+          "payload": "SearchKernel.V1.DeleteResult",
+          "value": 4
+        },
+        {
+          "name": "SearchKernel_V1_GetResult",
+          "payload": "SearchKernel.V1.GetResult",
+          "value": 5
+        },
+        {
+          "name": "SearchKernel_V1_SearchResult",
+          "payload": "SearchKernel.V1.SearchResult",
+          "value": 6
+        },
+        {
+          "name": "SearchKernel_V1_AnalyzeResult",
+          "payload": "SearchKernel.V1.AnalyzeResult",
+          "value": 7
+        },
+        {
+          "name": "SearchKernel_V1_Error",
+          "payload": "SearchKernel.V1.Error",
+          "value": 8
+        },
+        {
+          "name": "SearchKernel_V1_DescribeResult",
+          "payload": "SearchKernel.V1.DescribeResult",
+          "value": 9
+        },
+        {
+          "name": "SearchKernel_V1_InspectQueryResult",
+          "payload": "SearchKernel.V1.InspectQueryResult",
+          "value": 10
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.AnalyzeTarget",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Analyzer",
+          "payload": "SearchKernel.V1.Analyzer",
+          "value": 1
+        },
+        {
+          "name": "AnalyzeFieldTarget",
+          "payload": "SearchKernel.V1.AnalyzeFieldTarget",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.ComparisonOp",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Eq",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "Ne",
+          "payload": null,
+          "value": 2
+        },
+        {
+          "name": "Lt",
+          "payload": null,
+          "value": 3
+        },
+        {
+          "name": "Lte",
+          "payload": null,
+          "value": 4
+        },
+        {
+          "name": "Gt",
+          "payload": null,
+          "value": 5
+        },
+        {
+          "name": "Gte",
+          "payload": null,
+          "value": 6
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.ErrorCode",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "InvalidArgument",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "NotFound",
+          "payload": null,
+          "value": 2
+        },
+        {
+          "name": "AlreadyExists",
+          "payload": null,
+          "value": 3
+        },
+        {
+          "name": "FailedPrecondition",
+          "payload": null,
+          "value": 4
+        },
+        {
+          "name": "Conflict",
+          "payload": null,
+          "value": 5
+        },
+        {
+          "name": "Unsupported",
+          "payload": null,
+          "value": 6
+        },
+        {
+          "name": "ResourceExhausted",
+          "payload": null,
+          "value": 7
+        },
+        {
+          "name": "Internal",
+          "payload": null,
+          "value": 8
+        },
+        {
+          "name": "Unavailable",
+          "payload": null,
+          "value": 9
+        },
+        {
+          "name": "DeadlineExceeded",
+          "payload": null,
+          "value": 10
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.FacetSort",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "CountDesc",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "CountAsc",
+          "payload": null,
+          "value": 2
+        },
+        {
+          "name": "ValueAsc",
+          "payload": null,
+          "value": 3
+        },
+        {
+          "name": "ValueDesc",
+          "payload": null,
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.FieldCardinality",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Single",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "Multi",
+          "payload": null,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.FieldKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Text",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "Keyword",
+          "payload": null,
+          "value": 2
+        },
+        {
+          "name": "Int64",
+          "payload": null,
+          "value": 3
+        },
+        {
+          "name": "Float64",
+          "payload": null,
+          "value": 4
+        },
+        {
+          "name": "Bool",
+          "payload": null,
+          "value": 5
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.FilterExprKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "FilterAnd",
+          "payload": "SearchKernel.V1.FilterAnd",
+          "value": 1
+        },
+        {
+          "name": "FilterOr",
+          "payload": "SearchKernel.V1.FilterOr",
+          "value": 2
+        },
+        {
+          "name": "FilterNot",
+          "payload": "SearchKernel.V1.FilterNot",
+          "value": 3
+        },
+        {
+          "name": "FilterComparison",
+          "payload": "SearchKernel.V1.FilterComparison",
+          "value": 4
+        },
+        {
+          "name": "FilterRange",
+          "payload": "SearchKernel.V1.FilterRange",
+          "value": 5
+        },
+        {
+          "name": "FilterExists",
+          "payload": "SearchKernel.V1.FilterExists",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.MissingPlacement",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "First",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "Last",
+          "payload": null,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.NullValue",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Null",
+          "payload": null,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.PatchOperationKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "SetField",
+          "payload": "SearchKernel.V1.SetField",
+          "value": 1
+        },
+        {
+          "name": "UnsetField",
+          "payload": "SearchKernel.V1.UnsetField",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.QueryExprKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "TermQuery",
+          "payload": "SearchKernel.V1.TermQuery",
+          "value": 1
+        },
+        {
+          "name": "QueryAnd",
+          "payload": "SearchKernel.V1.QueryAnd",
+          "value": 2
+        },
+        {
+          "name": "QueryOr",
+          "payload": "SearchKernel.V1.QueryOr",
+          "value": 3
+        },
+        {
+          "name": "QueryNot",
+          "payload": "SearchKernel.V1.QueryNot",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.RankingPolicyKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "DefaultRelevanceV1",
+          "payload": "SearchKernel.V1.DefaultRelevanceV1",
+          "value": 1
+        },
+        {
+          "name": "Bm25Ranking",
+          "payload": "SearchKernel.V1.Bm25Ranking",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.SortDirection",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Asc",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "Desc",
+          "payload": null,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "SearchKernel.V1.TotalHitsRelation",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "Unspecified",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "Exact",
+          "payload": null,
+          "value": 1
+        },
+        {
+          "name": "LowerBound",
+          "payload": null,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "union",
+      "name": "SearchKernel.V1.ValueKind",
+      "underlying": "ubyte",
+      "variants": [
+        {
+          "name": "NONE",
+          "payload": null,
+          "value": 0
+        },
+        {
+          "name": "NullValueValue",
+          "payload": "SearchKernel.V1.NullValueValue",
+          "value": 1
+        },
+        {
+          "name": "BoolValue",
+          "payload": "SearchKernel.V1.BoolValue",
+          "value": 2
+        },
+        {
+          "name": "Int64Value",
+          "payload": "SearchKernel.V1.Int64Value",
+          "value": 3
+        },
+        {
+          "name": "UInt64Value",
+          "payload": "SearchKernel.V1.UInt64Value",
+          "value": 4
+        },
+        {
+          "name": "Float64Value",
+          "payload": "SearchKernel.V1.Float64Value",
+          "value": 5
+        },
+        {
+          "name": "StringValue",
+          "payload": "SearchKernel.V1.StringValue",
+          "value": 6
+        },
+        {
+          "name": "BytesValue",
+          "payload": "SearchKernel.V1.BytesValue",
+          "value": 7
+        },
+        {
+          "name": "ValueList",
+          "payload": "SearchKernel.V1.ValueList",
+          "value": 8
+        },
+        {
+          "name": "ValueObject",
+          "payload": "SearchKernel.V1.ValueObject",
+          "value": 9
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "objects": [
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "payload",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.FFI.V1.RequestPayload"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "payload_type",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.FFI.V1.RequestPayload"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 1,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "protocol_version",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.FFI.V1.RequestEnvelope"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "payload",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.FFI.V1.ResponsePayload"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "payload_type",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.FFI.V1.ResponsePayload"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 1,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "protocol_version",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.FFI.V1.ResponseEnvelope"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.AnalyzeFieldTarget"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "language",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "target",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.AnalyzeTarget"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "target_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.AnalyzeTarget"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "text",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.AnalyzeRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "tokens",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.AnalyzedToken"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.AnalyzeResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 4,
+          "key": false,
+          "name": "end_byte",
+          "offset": 12,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "position",
+          "offset": 8,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "start_byte",
+          "offset": 10,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "surface",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "term",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.AnalyzedToken"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "name",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "options",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Value"
+            },
+            "entry": "SearchKernel.V1.ValueEntry",
+            "key": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "map",
+            "name": "SearchKernel.V1.ValueEntry"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "version",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Analyzer"
+    },
+    {
+      "ergonomic": null,
+      "fields": [],
+      "kind": "table",
+      "name": "SearchKernel.V1.Bm25Ranking"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "bool",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.BoolValue"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "base": "ubyte",
+              "kind": "scalar"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.BytesValue"
+    },
+    {
+      "ergonomic": null,
+      "fields": [],
+      "kind": "table",
+      "name": "SearchKernel.V1.DefaultRelevanceV1"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.DeleteRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "deleted",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "bool",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.DeleteResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [],
+      "kind": "table",
+      "name": "SearchKernel.V1.DescribeRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "index",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.IndexDefinition"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.DescribeResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "fields",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Value"
+            },
+            "entry": "SearchKernel.V1.ValueEntry",
+            "key": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "map",
+            "name": "SearchKernel.V1.ValueEntry"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Document"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "code",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.ErrorCode"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "details",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.ErrorDetail"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "message",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "retryable",
+          "offset": 10,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "bool",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Error"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "code",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "message",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "metadata",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "entry": "SearchKernel.V1.StringEntry",
+            "key": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "map",
+            "name": "SearchKernel.V1.StringEntry"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "path",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.ErrorDetail"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "limit",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalUInt32"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "sort",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalFacetSort"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FacetRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "values",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FacetValue"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FacetResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "count",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ulong",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FacetValue"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 8,
+          "key": false,
+          "name": "analyzer",
+          "offset": 20,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Analyzer"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "cardinality",
+          "offset": 8,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.FieldCardinality"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 7,
+          "key": false,
+          "name": "facetable",
+          "offset": 18,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 5,
+          "key": false,
+          "name": "filterable",
+          "offset": 14,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "kind",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.FieldKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "name",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 4,
+          "key": false,
+          "name": "searchable",
+          "offset": 12,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 6,
+          "key": false,
+          "name": "sortable",
+          "offset": 16,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "stored",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FieldDefinition"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "fields",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FieldProjection"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clauses",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FilterExpr"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterAnd"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "op",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.ComparisonOp"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "value",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterComparison"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterExists"
+    },
+    {
+      "ergonomic": "union_variant",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "expr",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.FilterExprKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "expr_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.FilterExprKind"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterExpr"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": true,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clause",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.FilterExpr"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterNot"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clauses",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FilterExpr"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterOr"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "include_lower",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 4,
+          "key": false,
+          "name": "include_upper",
+          "offset": 12,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalBool"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "lower",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "upper",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.FilterRange"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "double",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Float64Value"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "projection",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.FieldProjection"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.GetRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "document",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Document"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.GetResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "matches",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.HighlightSpan"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "text",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.HighlightFragment"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "fields",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.HighlightRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "fragments",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.HighlightFragment"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.HighlightResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "end_byte",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "start_byte",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.HighlightSpan"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "fields",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Value"
+            },
+            "entry": "SearchKernel.V1.ValueEntry",
+            "key": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "map",
+            "name": "SearchKernel.V1.ValueEntry"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "highlights",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.HighlightResult"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "score",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalDouble"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Hit"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "default_search_fields",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.SearchFieldSelection"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "fields",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FieldDefinition"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "name",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.IndexDefinition"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "document",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Document"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.InsertRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.InsertResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "request",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.SearchRequest"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.InspectQueryRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "resolved_request",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.SearchRequest"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.InspectQueryResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "long",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Int64Value"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.NullValue"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.NullValueValue"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "bool",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalBool"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "double",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalDouble"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.FacetSort"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalFacetSort"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.MissingPlacement"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalMissingPlacement"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "uint",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalUInt32"
+    },
+    {
+      "ergonomic": "optional_scalar",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 0,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ulong",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "struct",
+      "name": "SearchKernel.V1.OptionalUInt64"
+    },
+    {
+      "ergonomic": "union_variant",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "operation",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.PatchOperationKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "operation_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.PatchOperationKind"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.PatchOperation"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "operations",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.PatchOperation"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.PatchRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.PatchResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clauses",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.QueryExpr"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.QueryAnd"
+    },
+    {
+      "ergonomic": "union_variant",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "expr",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.QueryExprKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "expr_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.QueryExprKind"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.QueryExpr"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": true,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clause",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.QueryExpr"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.QueryNot"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "clauses",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.QueryExpr"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.QueryOr"
+    },
+    {
+      "ergonomic": "union_variant",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "policy",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.RankingPolicyKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "policy_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.RankingPolicyKind"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.RankingPolicy"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "weight",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalDouble"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SearchField"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "fields",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.SearchField"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SearchFieldSelection"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 4,
+          "key": false,
+          "name": "facets",
+          "offset": 12,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FacetRequest"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "filter",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.FilterExpr"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 9,
+          "key": false,
+          "name": "highlighting",
+          "offset": 22,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.HighlightRequest"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 10,
+          "key": false,
+          "name": "language",
+          "offset": 24,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 6,
+          "key": false,
+          "name": "limit",
+          "offset": 16,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalUInt32"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 7,
+          "key": false,
+          "name": "offset",
+          "offset": 18,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalUInt32"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 8,
+          "key": false,
+          "name": "projection",
+          "offset": 20,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.FieldProjection"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "query",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 11,
+          "key": false,
+          "name": "query_expr",
+          "offset": 26,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.QueryExpr"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 5,
+          "key": false,
+          "name": "ranking",
+          "offset": 14,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.RankingPolicy"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "search_fields",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.SearchFieldSelection"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 3,
+          "key": false,
+          "name": "sort",
+          "offset": 10,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.SortExpr"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 12,
+          "key": false,
+          "name": "timeout",
+          "offset": 28,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalUInt64"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SearchRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "facets",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.FacetResult"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "hits",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Hit"
+            },
+            "kind": "vector"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "total_hits",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.TotalHits"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SearchResult"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "value",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SetField"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "direction",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.SortDirection"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 2,
+          "key": false,
+          "name": "missing",
+          "offset": 8,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.OptionalMissingPlacement"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.SortExpr"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": true,
+          "name": "key",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": true,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "value",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.StringEntry"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.StringValue"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "value",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.TermQuery"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "relation",
+          "offset": 6,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ubyte",
+            "kind": "enum",
+            "name": "SearchKernel.V1.TotalHitsRelation"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ulong",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.TotalHits"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "value",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "ulong",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.UInt64Value"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "field",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.UnsetField"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "document",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Document"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.UpsertRequest"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "id",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": true,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.UpsertResult"
+    },
+    {
+      "ergonomic": "union_variant",
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "kind",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "union",
+            "name": "SearchKernel.V1.ValueKind"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "kind_type",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "enum",
+            "name": "SearchKernel.V1.ValueKind"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.Value"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": true,
+          "name": "key",
+          "offset": 4,
+          "optional": false,
+          "protocol_required": false,
+          "recursive": false,
+          "required": true,
+          "type": {
+            "base": "string",
+            "kind": "scalar"
+          }
+        },
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 1,
+          "key": false,
+          "name": "value",
+          "offset": 6,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": false,
+          "required": false,
+          "type": {
+            "kind": "object",
+            "name": "SearchKernel.V1.Value"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.ValueEntry"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "values",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Value"
+            },
+            "kind": "vector"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.ValueList"
+    },
+    {
+      "ergonomic": null,
+      "fields": [
+        {
+          "boxed": false,
+          "default_integer": 0,
+          "default_real": 0.0,
+          "id": 0,
+          "key": false,
+          "name": "fields",
+          "offset": 4,
+          "optional": true,
+          "protocol_required": false,
+          "recursive": true,
+          "required": false,
+          "type": {
+            "element": {
+              "kind": "object",
+              "name": "SearchKernel.V1.Value"
+            },
+            "entry": "SearchKernel.V1.ValueEntry",
+            "key": {
+              "base": "string",
+              "kind": "scalar"
+            },
+            "kind": "map",
+            "name": "SearchKernel.V1.ValueEntry"
+          }
+        }
+      ],
+      "kind": "table",
+      "name": "SearchKernel.V1.ValueObject"
+    }
+  ],
+  "operations": [
+    {
+      "operation": "analyze",
+      "request": "SearchKernel.V1.AnalyzeRequest",
+      "request_tag": 7,
+      "request_variant": "SearchKernel_V1_AnalyzeRequest",
+      "response": "SearchKernel.V1.AnalyzeResult",
+      "response_tag": 7,
+      "response_variant": "SearchKernel_V1_AnalyzeResult"
+    },
+    {
+      "operation": "delete",
+      "request": "SearchKernel.V1.DeleteRequest",
+      "request_tag": 4,
+      "request_variant": "SearchKernel_V1_DeleteRequest",
+      "response": "SearchKernel.V1.DeleteResult",
+      "response_tag": 4,
+      "response_variant": "SearchKernel_V1_DeleteResult"
+    },
+    {
+      "operation": "describe",
+      "request": "SearchKernel.V1.DescribeRequest",
+      "request_tag": 8,
+      "request_variant": "SearchKernel_V1_DescribeRequest",
+      "response": "SearchKernel.V1.DescribeResult",
+      "response_tag": 9,
+      "response_variant": "SearchKernel_V1_DescribeResult"
+    },
+    {
+      "operation": "get",
+      "request": "SearchKernel.V1.GetRequest",
+      "request_tag": 5,
+      "request_variant": "SearchKernel_V1_GetRequest",
+      "response": "SearchKernel.V1.GetResult",
+      "response_tag": 5,
+      "response_variant": "SearchKernel_V1_GetResult"
+    },
+    {
+      "operation": "insert",
+      "request": "SearchKernel.V1.InsertRequest",
+      "request_tag": 1,
+      "request_variant": "SearchKernel_V1_InsertRequest",
+      "response": "SearchKernel.V1.InsertResult",
+      "response_tag": 1,
+      "response_variant": "SearchKernel_V1_InsertResult"
+    },
+    {
+      "operation": "inspect_query",
+      "request": "SearchKernel.V1.InspectQueryRequest",
+      "request_tag": 9,
+      "request_variant": "SearchKernel_V1_InspectQueryRequest",
+      "response": "SearchKernel.V1.InspectQueryResult",
+      "response_tag": 10,
+      "response_variant": "SearchKernel_V1_InspectQueryResult"
+    },
+    {
+      "operation": "patch",
+      "request": "SearchKernel.V1.PatchRequest",
+      "request_tag": 3,
+      "request_variant": "SearchKernel_V1_PatchRequest",
+      "response": "SearchKernel.V1.PatchResult",
+      "response_tag": 3,
+      "response_variant": "SearchKernel_V1_PatchResult"
+    },
+    {
+      "operation": "search",
+      "request": "SearchKernel.V1.SearchRequest",
+      "request_tag": 6,
+      "request_variant": "SearchKernel_V1_SearchRequest",
+      "response": "SearchKernel.V1.SearchResult",
+      "response_tag": 6,
+      "response_variant": "SearchKernel_V1_SearchResult"
+    },
+    {
+      "operation": "upsert",
+      "request": "SearchKernel.V1.UpsertRequest",
+      "request_tag": 2,
+      "request_variant": "SearchKernel_V1_UpsertRequest",
+      "response": "SearchKernel.V1.UpsertResult",
+      "response_tag": 2,
+      "response_variant": "SearchKernel_V1_UpsertResult"
+    }
+  ],
+  "recursive_references": [
+    {
+      "source": "SearchKernel.V1.FilterAnd",
+      "target": "SearchKernel.V1.FilterExpr"
+    },
+    {
+      "source": "SearchKernel.V1.FilterExpr",
+      "target": "SearchKernel.V1.FilterAnd"
+    },
+    {
+      "source": "SearchKernel.V1.FilterExpr",
+      "target": "SearchKernel.V1.FilterNot"
+    },
+    {
+      "source": "SearchKernel.V1.FilterExpr",
+      "target": "SearchKernel.V1.FilterOr"
+    },
+    {
+      "source": "SearchKernel.V1.FilterNot",
+      "target": "SearchKernel.V1.FilterExpr"
+    },
+    {
+      "source": "SearchKernel.V1.FilterOr",
+      "target": "SearchKernel.V1.FilterExpr"
+    },
+    {
+      "source": "SearchKernel.V1.QueryAnd",
+      "target": "SearchKernel.V1.QueryExpr"
+    },
+    {
+      "source": "SearchKernel.V1.QueryExpr",
+      "target": "SearchKernel.V1.QueryAnd"
+    },
+    {
+      "source": "SearchKernel.V1.QueryExpr",
+      "target": "SearchKernel.V1.QueryNot"
+    },
+    {
+      "source": "SearchKernel.V1.QueryExpr",
+      "target": "SearchKernel.V1.QueryOr"
+    },
+    {
+      "source": "SearchKernel.V1.QueryNot",
+      "target": "SearchKernel.V1.QueryExpr"
+    },
+    {
+      "source": "SearchKernel.V1.QueryOr",
+      "target": "SearchKernel.V1.QueryExpr"
+    },
+    {
+      "source": "SearchKernel.V1.Value",
+      "target": "SearchKernel.V1.ValueList"
+    },
+    {
+      "source": "SearchKernel.V1.Value",
+      "target": "SearchKernel.V1.ValueObject"
+    },
+    {
+      "source": "SearchKernel.V1.ValueList",
+      "target": "SearchKernel.V1.Value"
+    },
+    {
+      "source": "SearchKernel.V1.ValueObject",
+      "target": "SearchKernel.V1.Value"
+    }
+  ],
+  "roots": [
+    {
+      "identifier": "SKRQ",
+      "side": "request",
+      "table": "SearchKernel.FFI.V1.RequestEnvelope",
+      "union": "SearchKernel.FFI.V1.RequestPayload"
+    },
+    {
+      "identifier": "SKRS",
+      "side": "response",
+      "table": "SearchKernel.FFI.V1.ResponseEnvelope",
+      "union": "SearchKernel.FFI.V1.ResponsePayload"
+    }
+  ]
+}

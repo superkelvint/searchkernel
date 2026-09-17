@@ -10,167 +10,37 @@ use ffi_generated::search_kernel::ffi::v1 as wire;
 pub mod model {
     use super::BTreeMap;
 
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub enum Value {
-        #[default]
-        Null,
-        Bool(bool),
-        Int64(i64),
-        UInt64(u64),
-        Float64(f64),
-        String(String),
-        Bytes(Vec<u8>),
-        List(Vec<Value>),
-        Object(BTreeMap<String, Value>),
-    }
-
-    // __BFBS_CLIENT_ENUMS__
-
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Document { pub id: Option<String>, pub fields: BTreeMap<String, Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FieldProjection { pub fields: Vec<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchFieldSelection { pub fields: Vec<SearchField> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchField { pub field: String, pub weight: Option<f64> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SortExpr { pub field: String, pub direction: SortDirection, pub missing: Option<MissingPlacement> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetRequest { pub field: String, pub limit: Option<u32>, pub sort: Option<FacetSort> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightRequest { pub fields: Vec<String> }
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum FilterExpr {
-        And(Vec<FilterExpr>),
-        Or(Vec<FilterExpr>),
-        Not(Box<FilterExpr>),
-        Comparison { field: String, op: ComparisonOp, value: Value },
-        Range { field: String, lower: Option<Value>, upper: Option<Value>, include_lower: Option<bool>, include_upper: Option<bool> },
-        Exists { field: String },
-    }
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum QueryExpr {
-        Term { field: String, value: Value },
-        And(Vec<QueryExpr>),
-        Or(Vec<QueryExpr>),
-        Not(Box<QueryExpr>),
-    }
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum RankingPolicy { DefaultRelevanceV1, Bm25Ranking }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Analyzer { pub name: Option<String>, pub version: u32, pub options: BTreeMap<String, Value> }
-
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InsertRequest { pub document: Option<Document> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct UpsertRequest { pub document: Option<Document> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct PatchRequest { pub id: Option<String>, pub operations: Vec<PatchOperation> }
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum PatchOperation { Set { field: Option<String>, value: Option<Value> }, Unset { field: Option<String> } }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DeleteRequest { pub id: Option<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct GetRequest { pub id: Option<String>, pub projection: Option<FieldProjection> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchRequest {
-        pub query: Option<String>, pub search_fields: Option<SearchFieldSelection>,
-        pub filter: Option<FilterExpr>, pub sort: Vec<SortExpr>, pub facets: Vec<FacetRequest>,
-        pub ranking: Option<RankingPolicy>, pub limit: Option<u32>, pub offset: Option<u32>,
-        pub projection: Option<FieldProjection>, pub highlighting: Option<HighlightRequest>,
-        pub language: Option<String>, pub query_expr: Option<QueryExpr>, pub timeout: Option<u64>,
-    }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub enum AnalyzeTarget { #[default] None, Analyzer(Analyzer), Field(String) }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzeRequest { pub target: AnalyzeTarget, pub text: Option<String>, pub language: Option<String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DescribeRequest;
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InspectQueryRequest { pub request: Option<SearchRequest> }
-
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct ErrorDetail { pub code: String, pub message: String, pub path: Option<String>, pub metadata: BTreeMap<String, String> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Error { pub code: ErrorCode, pub message: String, pub retryable: bool, pub details: Vec<ErrorDetail> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InsertResult { pub id: String }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct UpsertResult { pub id: String }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct PatchResult { pub id: String }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DeleteResult { pub id: String, pub deleted: bool }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DocumentResult { pub id: String, pub fields: BTreeMap<String, Value> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct GetResult { pub document: Option<DocumentResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct TotalHits { pub value: u64, pub relation: TotalHitsRelation }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightSpan { pub start_byte: u32, pub end_byte: u32 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightFragment { pub text: String, pub matches: Vec<HighlightSpan> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct HighlightResult { pub field: String, pub fragments: Vec<HighlightFragment> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct Hit { pub id: String, pub score: Option<f64>, pub fields: BTreeMap<String, Value>, pub highlights: Vec<HighlightResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetValue { pub value: Value, pub count: u64 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FacetResult { pub field: String, pub values: Vec<FacetValue> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct SearchResult { pub hits: Vec<Hit>, pub total_hits: TotalHits, pub facets: Vec<FacetResult> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzedToken { pub surface: String, pub term: String, pub position: u32, pub start_byte: u32, pub end_byte: u32 }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct AnalyzeResult { pub tokens: Vec<AnalyzedToken> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct FieldDefinition {
-        pub name: Option<String>, pub kind: FieldKind, pub cardinality: FieldCardinality,
-        pub stored: Option<bool>, pub searchable: Option<bool>, pub filterable: Option<bool>,
-        pub sortable: Option<bool>, pub facetable: Option<bool>, pub analyzer: Option<Analyzer>,
-    }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct IndexDefinition { pub name: Option<String>, pub fields: Vec<FieldDefinition>, pub default_search_fields: Option<SearchFieldSelection> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct DescribeResult { pub index: Option<IndexDefinition> }
-    #[derive(Debug, Clone, PartialEq, Default)]
-    pub struct InspectQueryResult { pub resolved_request: Option<SearchRequest> }
+// __MODEL_DECLARATIONS__
 }
 
-pub trait Transport: Send + Sync { type Error; fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>; }
+pub trait Transport: Send + Sync {
+    type Error;
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
 
 pub trait AsyncTransport: Send + Sync {
     type Error;
-
     fn call(&self, request: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
 #[derive(Debug)]
-pub enum ClientError<E> { Transport(E), Portable(model::Error), Protocol(String) }
+pub enum ClientError<E> {
+    Transport(E),
+    Portable(model::__PORTABLE_ERROR__),
+    Protocol(String),
+}
 
 pub struct Client<T: Transport> { transport: T }
 
 impl<T: Transport> Client<T> {
     pub fn new(transport: T) -> Self { Self { transport } }
-    pub fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_insert(request)) }
-    pub fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_upsert(request)) }
-    pub fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_patch(request)) }
-    pub fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_delete(request)) }
-    pub fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_get(request)) }
-    pub fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_search(request)) }
-    pub fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_analyze(request)) }
-    pub fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_describe(request)) }
-    pub fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_inspect(request)) }
-
+// __SYNC_METHODS__
     fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
         let request = request.map_err(ClientError::Protocol)?;
         let response = self.transport.call(&request).map_err(ClientError::Transport)?;
         R::decode(operation, &response).map_err(|error| match error {
-            DecodeError::Portable(value) => ClientError::Portable(value),
-            DecodeError::Protocol(value) => ClientError::Protocol(value),
+            DecodeError::Portable(error) => ClientError::Portable(error),
+            DecodeError::Protocol(message) => ClientError::Protocol(message),
         })
     }
 }
@@ -179,339 +49,37 @@ pub struct AsyncClient<T: AsyncTransport> { transport: T }
 
 impl<T: AsyncTransport> AsyncClient<T> {
     pub fn new(transport: T) -> Self { Self { transport } }
-    pub async fn insert(&self, request: model::InsertRequest) -> Result<model::InsertResult, ClientError<T::Error>> { self.call("insert", encode_insert(request)).await }
-    pub async fn upsert(&self, request: model::UpsertRequest) -> Result<model::UpsertResult, ClientError<T::Error>> { self.call("upsert", encode_upsert(request)).await }
-    pub async fn patch(&self, request: model::PatchRequest) -> Result<model::PatchResult, ClientError<T::Error>> { self.call("patch", encode_patch(request)).await }
-    pub async fn delete(&self, request: model::DeleteRequest) -> Result<model::DeleteResult, ClientError<T::Error>> { self.call("delete", encode_delete(request)).await }
-    pub async fn get(&self, request: model::GetRequest) -> Result<model::GetResult, ClientError<T::Error>> { self.call("get", encode_get(request)).await }
-    pub async fn search(&self, request: model::SearchRequest) -> Result<model::SearchResult, ClientError<T::Error>> { self.call("search", encode_search(request)).await }
-    pub async fn analyze(&self, request: model::AnalyzeRequest) -> Result<model::AnalyzeResult, ClientError<T::Error>> { self.call("analyze", encode_analyze(request)).await }
-    pub async fn describe(&self, request: model::DescribeRequest) -> Result<model::DescribeResult, ClientError<T::Error>> { self.call("describe", encode_describe(request)).await }
-    pub async fn inspect_query(&self, request: model::InspectQueryRequest) -> Result<model::InspectQueryResult, ClientError<T::Error>> { self.call("inspect_query", encode_inspect(request)).await }
-
+// __ASYNC_METHODS__
     async fn call<R: DecodeResponse>(&self, operation: &str, request: Result<Vec<u8>, String>) -> Result<R, ClientError<T::Error>> {
         let request = request.map_err(ClientError::Protocol)?;
         let response = self.transport.call(&request).await.map_err(ClientError::Transport)?;
         R::decode(operation, &response).map_err(|error| match error {
-            DecodeError::Portable(value) => ClientError::Portable(value),
-            DecodeError::Protocol(value) => ClientError::Protocol(value),
+            DecodeError::Portable(error) => ClientError::Portable(error),
+            DecodeError::Protocol(message) => ClientError::Protocol(message),
         })
     }
 }
 
-fn finish(builder: &mut FlatBufferBuilder, kind: wire::RequestPayload, payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) -> Vec<u8> {
-    let root = wire::RequestEnvelope::create(builder, &wire::RequestEnvelopeArgs { protocol_version: 1, payload_type: kind, payload: Some(payload) });
-    builder.finish(root, Some(wire::REQUEST_ENVELOPE_IDENTIFIER));
-    builder.finished_data().to_vec()
+#[derive(Debug)]
+enum DecodeError {
+    Portable(model::__PORTABLE_ERROR__),
+    Protocol(String),
 }
 
-fn document<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::Document) -> Result<flatbuffers::WIPOffset<wire::Document<'a>>, String> {
-    let id = value.id.as_deref().map(|id| builder.create_string(id));
-    let mut entries = Vec::with_capacity(value.fields.len());
-    for (key, value) in value.fields { let key = builder.create_string(&key); let value = model_value(builder, value)?; entries.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); }
-    let fields = if entries.is_empty() { None } else { Some(builder.create_vector(&entries)) };
-    Ok(wire::Document::create(builder, &wire::DocumentArgs { id, fields }))
+trait DecodeResponse: Sized {
+    fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError>;
 }
 
-fn model_value<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::Value) -> Result<flatbuffers::WIPOffset<wire::Value<'a>>, String> {
-    let (kind_type, kind) = match value {
-        model::Value::Null => { let payload = wire::NullValueValue::create(builder, &wire::NullValueValueArgs { value: wire::NullValue::Null }); (wire::ValueKind::NullValueValue, Some(payload.as_union_value())) }
-        model::Value::Bool(value) => { let payload = wire::BoolValue::create(builder, &wire::BoolValueArgs { value }); (wire::ValueKind::BoolValue, Some(payload.as_union_value())) }
-        model::Value::Int64(value) => { let payload = wire::Int64Value::create(builder, &wire::Int64ValueArgs { value }); (wire::ValueKind::Int64Value, Some(payload.as_union_value())) }
-        model::Value::UInt64(value) => { let payload = wire::UInt64Value::create(builder, &wire::UInt64ValueArgs { value }); (wire::ValueKind::UInt64Value, Some(payload.as_union_value())) }
-        model::Value::Float64(value) => { if !value.is_finite() { return Err("non-finite float is not portable".to_owned()); } let payload = wire::Float64Value::create(builder, &wire::Float64ValueArgs { value }); (wire::ValueKind::Float64Value, Some(payload.as_union_value())) }
-        model::Value::String(value) => { let value = builder.create_string(&value); let payload = wire::StringValue::create(builder, &wire::StringValueArgs { value: Some(value) }); (wire::ValueKind::StringValue, Some(payload.as_union_value())) }
-        model::Value::Bytes(value) => { let value = builder.create_vector(&value); let payload = wire::BytesValue::create(builder, &wire::BytesValueArgs { value: Some(value) }); (wire::ValueKind::BytesValue, Some(payload.as_union_value())) }
-        model::Value::List(values) => { let values = values.into_iter().map(|value| model_value(builder, value)).collect::<Result<Vec<_>, _>>()?; let values = builder.create_vector(&values); let payload = wire::ValueList::create(builder, &wire::ValueListArgs { values: Some(values) }); (wire::ValueKind::ValueList, Some(payload.as_union_value())) }
-        model::Value::Object(values) => { let mut entries = Vec::with_capacity(values.len()); for (key, value) in values { let key = builder.create_string(&key); let value = model_value(builder, value)?; entries.push(wire::ValueEntry::create(builder, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let values = builder.create_vector(&entries); let payload = wire::ValueObject::create(builder, &wire::ValueObjectArgs { fields: Some(values) }); (wire::ValueKind::ValueObject, Some(payload.as_union_value())) }
-    };
-    Ok(wire::Value::create(builder, &wire::ValueArgs { kind_type, kind }))
+fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> {
+    value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}")))
 }
 
-fn model_object(value: Option<model::Value>, path: &str) -> Result<BTreeMap<String, model::Value>, String> {
-    match value { Some(model::Value::Object(value)) => Ok(value), _ => Err(format!("{path} must be an object")) }
-}
-fn model_string(value: Option<&model::Value>, path: &str) -> Result<String, String> {
-    match value { Some(model::Value::String(value)) => Ok(value.clone()), _ => Err(format!("{path} must be a string")) }
-}
-fn model_u32(value: Option<&model::Value>, path: &str) -> Result<u32, String> {
-    match value { Some(model::Value::UInt64(value)) => u32::try_from(*value).map_err(|_| format!("{path} is out of range")), Some(model::Value::Int64(value)) => u32::try_from(*value).map_err(|_| format!("{path} is out of range")), _ => Err(format!("{path} must be an integer")) }
-}
-fn model_bool(value: Option<&model::Value>, path: &str) -> Result<bool, String> { match value { Some(model::Value::Bool(value)) => Ok(*value), _ => Err(format!("{path} must be a boolean")) } }
-fn model_optional_bool(value: Option<&model::Value>) -> Option<wire::OptionalBool> { value.and_then(|value| match value { model::Value::Bool(value) => Some(wire::OptionalBool::new(*value)), _ => None }) }
-fn model_optional_f64(value: Option<&model::Value>) -> Option<wire::OptionalDouble> { value.and_then(|value| match value { model::Value::Float64(value) if value.is_finite() => Some(wire::OptionalDouble::new(*value)), _ => None }) }
-
-fn model_filter<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FilterExpr) -> Result<flatbuffers::WIPOffset<wire::FilterExpr<'a>>, String> {
-    let (expr_type, expr) = match value {
-        model::FilterExpr::And(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::FilterExprKind::FilterAnd, wire::FilterAnd::create(builder, &wire::FilterAndArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::FilterExpr::Or(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_filter(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::FilterExprKind::FilterOr, wire::FilterOr::create(builder, &wire::FilterOrArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::FilterExpr::Not(clause) => {
-            let clause = model_filter(builder, *clause)?;
-            (wire::FilterExprKind::FilterNot, wire::FilterNot::create(builder, &wire::FilterNotArgs { clause: Some(clause) }).as_union_value())
-        }
-        model::FilterExpr::Comparison { field, op, value } => {
-            let field = builder.create_string(&field);
-            let value = model_value(builder, value)?;
-            let op = encode_comparison_op(op);
-            (wire::FilterExprKind::FilterComparison, wire::FilterComparison::create(builder, &wire::FilterComparisonArgs { field: Some(field), op, value: Some(value) }).as_union_value())
-        }
-        model::FilterExpr::Range { field, lower, upper, include_lower, include_upper } => {
-            let field = builder.create_string(&field);
-            let lower = lower.map(|value| model_value(builder, value)).transpose()?;
-            let upper = upper.map(|value| model_value(builder, value)).transpose()?;
-            let include_lower = include_lower.map(wire::OptionalBool::new);
-            let include_upper = include_upper.map(wire::OptionalBool::new);
-            (wire::FilterExprKind::FilterRange, wire::FilterRange::create(builder, &wire::FilterRangeArgs { field: Some(field), lower, upper, include_lower: include_lower.as_ref(), include_upper: include_upper.as_ref() }).as_union_value())
-        }
-        model::FilterExpr::Exists { field } => {
-            let field = builder.create_string(&field);
-            (wire::FilterExprKind::FilterExists, wire::FilterExists::create(builder, &wire::FilterExistsArgs { field: Some(field) }).as_union_value())
-        }
-    };
-    Ok(wire::FilterExpr::create(builder, &wire::FilterExprArgs { expr_type, expr: Some(expr) }))
+fn finite_f32(value: f32, path: &str) -> Result<f32, String> {
+    value.is_finite().then_some(value).ok_or_else(|| format!("non-finite {path} is not portable"))
 }
 
-fn model_query<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::QueryExpr) -> Result<flatbuffers::WIPOffset<wire::QueryExpr<'a>>, String> {
-    let (expr_type, expr) = match value {
-        model::QueryExpr::Term { field, value } => {
-            let field = builder.create_string(&field);
-            let value = model_value(builder, value)?;
-            (wire::QueryExprKind::TermQuery, wire::TermQuery::create(builder, &wire::TermQueryArgs { field: Some(field), value: Some(value) }).as_union_value())
-        }
-        model::QueryExpr::And(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::QueryExprKind::QueryAnd, wire::QueryAnd::create(builder, &wire::QueryAndArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::QueryExpr::Or(clauses) => {
-            let clauses = clauses.into_iter().map(|clause| model_query(builder, clause)).collect::<Result<Vec<_>, _>>()?;
-            let clauses = builder.create_vector(&clauses);
-            (wire::QueryExprKind::QueryOr, wire::QueryOr::create(builder, &wire::QueryOrArgs { clauses: Some(clauses) }).as_union_value())
-        }
-        model::QueryExpr::Not(clause) => {
-            let clause = model_query(builder, *clause)?;
-            (wire::QueryExprKind::QueryNot, wire::QueryNot::create(builder, &wire::QueryNotArgs { clause: Some(clause) }).as_union_value())
-        }
-    };
-    Ok(wire::QueryExpr::create(builder, &wire::QueryExprArgs { expr_type, expr: Some(expr) }))
+fn finite_f64(value: f64, path: &str) -> Result<f64, String> {
+    value.is_finite().then_some(value).ok_or_else(|| format!("non-finite {path} is not portable"))
 }
 
-fn model_projection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::FieldProjection) -> flatbuffers::WIPOffset<wire::FieldProjection<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::FieldProjection::create(builder, &wire::FieldProjectionArgs { fields: Some(fields) }) }
-fn model_selection<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::SearchFieldSelection) -> Result<flatbuffers::WIPOffset<wire::SearchFieldSelection<'a>>, String> { let mut fields = Vec::with_capacity(value.fields.len()); for field in value.fields { let name = builder.create_string(&field.field); let weight = field.weight.map(|value| { if !value.is_finite() { return Err("non-finite search field weight is not portable".to_owned()); } Ok(wire::OptionalDouble::new(value)) }).transpose()?; fields.push(wire::SearchField::create(builder, &wire::SearchFieldArgs { field: Some(name), weight: weight.as_ref() })); } let fields = builder.create_vector(&fields); Ok(wire::SearchFieldSelection::create(builder, &wire::SearchFieldSelectionArgs { fields: Some(fields) })) }
-fn model_sort<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::SortExpr>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::SortExpr<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let direction = encode_sort_direction(value.direction); let missing = value.missing.map(|value| wire::OptionalMissingPlacement::new(encode_missing_placement(value))); result.push(wire::SortExpr::create(builder, &wire::SortExprArgs { field: Some(field), direction, missing: missing.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_facets<'a>(builder: &mut FlatBufferBuilder<'a>, values: Vec<model::FacetRequest>) -> Result<Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<wire::FacetRequest<'a>>>>>, String> { if values.is_empty() { return Ok(None); } let mut result = Vec::with_capacity(values.len()); for value in values { let field = builder.create_string(&value.field); let limit = value.limit.map(wire::OptionalUInt32::new); let sort = value.sort.map(|value| wire::OptionalFacetSort::new(encode_facet_sort(value))); result.push(wire::FacetRequest::create(builder, &wire::FacetRequestArgs { field: Some(field), limit: limit.as_ref(), sort: sort.as_ref() })); } Ok(Some(builder.create_vector(&result))) }
-fn model_highlighting<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::HighlightRequest) -> flatbuffers::WIPOffset<wire::HighlightRequest<'a>> { let fields = value.fields.iter().map(|value| builder.create_string(value)).collect::<Vec<_>>(); let fields = builder.create_vector(&fields); wire::HighlightRequest::create(builder, &wire::HighlightRequestArgs { fields: Some(fields) }) }
-fn model_ranking<'a>(builder: &mut FlatBufferBuilder<'a>, value: model::RankingPolicy) -> Result<flatbuffers::WIPOffset<wire::RankingPolicy<'a>>, String> { let policy = match value { model::RankingPolicy::DefaultRelevanceV1 => (wire::RankingPolicyKind::DefaultRelevanceV1, wire::DefaultRelevanceV1::create(builder, &wire::DefaultRelevanceV1Args {}).as_union_value()), model::RankingPolicy::Bm25Ranking => (wire::RankingPolicyKind::Bm25Ranking, wire::Bm25Ranking::create(builder, &wire::Bm25RankingArgs {}).as_union_value()) }; Ok(wire::RankingPolicy::create(builder, &wire::RankingPolicyArgs { policy_type: policy.0, policy: Some(policy.1) })) }
-
-fn encode_insert(value: model::InsertRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let doc = match value.document { Some(v) => Some(document(&mut b, v)?), None => None };
-    let payload = wire::InsertRequest::create(&mut b, &wire::InsertRequestArgs { document: doc });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InsertRequest, payload.as_union_value()))
-}
-fn encode_upsert(value: model::UpsertRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let doc = match value.document { Some(v) => Some(document(&mut b, v)?), None => None };
-    let payload = wire::UpsertRequest::create(&mut b, &wire::UpsertRequestArgs { document: doc });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_UpsertRequest, payload.as_union_value()))
-}
-fn encode_patch(value: model::PatchRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let mut operations = Vec::with_capacity(value.operations.len());
-    for operation in value.operations { let (operation_type, operation_value) = match operation { model::PatchOperation::Unset { field } => { let field = field.as_deref().map(|v| b.create_string(v)); (wire::PatchOperationKind::UnsetField, wire::UnsetField::create(&mut b, &wire::UnsetFieldArgs { field }).as_union_value()) }, model::PatchOperation::Set { field, value } => { let field = field.as_deref().map(|v| b.create_string(v)); let value = value.map(|v| model_value(&mut b, v)).transpose()?; (wire::PatchOperationKind::SetField, wire::SetField::create(&mut b, &wire::SetFieldArgs { field, value }).as_union_value()) } }; operations.push(wire::PatchOperation::create(&mut b, &wire::PatchOperationArgs { operation_type, operation: Some(operation_value) })); }
-    let operations = if operations.is_empty() { None } else { Some(b.create_vector(&operations)) };
-    let payload = wire::PatchRequest::create(&mut b, &wire::PatchRequestArgs { id, operations });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_PatchRequest, payload.as_union_value()))
-}
-fn encode_delete(value: model::DeleteRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let payload = wire::DeleteRequest::create(&mut b, &wire::DeleteRequestArgs { id });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_DeleteRequest, payload.as_union_value()))
-}
-fn encode_get(value: model::GetRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let id = value.id.as_deref().map(|v| b.create_string(v));
-    let projection = value.projection.map(|projection| { let fields = projection.fields.iter().map(|v| b.create_string(v)).collect::<Vec<_>>(); let fields = b.create_vector(&fields); wire::FieldProjection::create(&mut b, &wire::FieldProjectionArgs { fields: Some(fields) }) });
-    let payload = wire::GetRequest::create(&mut b, &wire::GetRequestArgs { id, projection });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_GetRequest, payload.as_union_value()))
-}
-fn model_search<'a>(mut b: &mut FlatBufferBuilder<'a>, value: model::SearchRequest) -> Result<flatbuffers::WIPOffset<wire::SearchRequest<'a>>, String> {
-    let query = value.query.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
-    let search_fields = value.search_fields.map(|value| model_selection(&mut b, value)).transpose()?; let filter = value.filter.map(|value| model_filter(&mut b, value)).transpose()?; let sort = model_sort(&mut b, value.sort)?; let facets = model_facets(&mut b, value.facets)?; let ranking = value.ranking.map(|value| model_ranking(&mut b, value)).transpose()?; let projection = value.projection.map(|value| model_projection(&mut b, value)); let highlighting = value.highlighting.map(|value| model_highlighting(&mut b, value)); let query_expr = value.query_expr.map(|value| model_query(&mut b, value)).transpose()?;
-    let limit = value.limit.map(wire::OptionalUInt32::new); let offset = value.offset.map(wire::OptionalUInt32::new); let timeout = value.timeout.map(wire::OptionalUInt64::new);
-    Ok(wire::SearchRequest::create(b, &wire::SearchRequestArgs { query, search_fields, filter, sort, facets, ranking, limit: limit.as_ref(), offset: offset.as_ref(), projection, highlighting, language, query_expr, timeout: timeout.as_ref() }))
-}
-fn encode_search(value: model::SearchRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let request = model_search(&mut b, value)?;
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_SearchRequest, request.as_union_value()))
-}
-fn encode_analyze(value: model::AnalyzeRequest) -> Result<Vec<u8>, String> {
-    let mut b = FlatBufferBuilder::new(); let target = match value.target { model::AnalyzeTarget::None => (wire::AnalyzeTarget::NONE, None), model::AnalyzeTarget::Analyzer(value) => { let name = value.name.as_deref().map(|v| b.create_string(v)); let mut entries = Vec::with_capacity(value.options.len()); for (key, value) in value.options { let key = b.create_string(&key); let value = model_value(&mut b, value)?; entries.push(wire::ValueEntry::create(&mut b, &wire::ValueEntryArgs { key: Some(key), value: Some(value) })); } let options = Some(b.create_vector(&entries)); let target = wire::Analyzer::create(&mut b, &wire::AnalyzerArgs { name, version: value.version, options }); (wire::AnalyzeTarget::Analyzer, Some(target.as_union_value())) }, model::AnalyzeTarget::Field(field) => { let field = b.create_string(&field); let target = wire::AnalyzeFieldTarget::create(&mut b, &wire::AnalyzeFieldTargetArgs { field: Some(field) }); (wire::AnalyzeTarget::AnalyzeFieldTarget, Some(target.as_union_value())) } };
-    let text = value.text.as_deref().map(|v| b.create_string(v)); let language = value.language.as_deref().map(|v| b.create_string(v));
-    let request = wire::AnalyzeRequest::create(&mut b, &wire::AnalyzeRequestArgs { target_type: target.0, target: target.1, text, language });
-    Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_AnalyzeRequest, request.as_union_value()))
-}
-fn encode_describe(_: model::DescribeRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let p = wire::DescribeRequest::create(&mut b, &wire::DescribeRequestArgs {}); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_DescribeRequest, p.as_union_value())) }
-fn encode_inspect(value: model::InspectQueryRequest) -> Result<Vec<u8>, String> { let mut b = FlatBufferBuilder::new(); let request = value.request.map(|request| model_search(&mut b, request)).transpose()?; let p = wire::InspectQueryRequest::create(&mut b, &wire::InspectQueryRequestArgs { request }); Ok(finish(&mut b, wire::RequestPayload::SearchKernel_V1_InspectQueryRequest, p.as_union_value())) }
-
-#[derive(Debug)] enum DecodeError { Portable(model::Error), Protocol(String) }
-trait DecodeResponse: Sized { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError>; }
-fn envelope<'a>(operation: &str, bytes: &'a [u8]) -> Result<wire::ResponseEnvelope<'a>, DecodeError> {
-    if bytes.len() < 8 || bytes[4..8] != *wire::RESPONSE_ENVELOPE_IDENTIFIER.as_bytes() { return Err(DecodeError::Protocol("missing SKRS file identifier".to_owned())); }
-    let value = root::<wire::ResponseEnvelope<'a>>(bytes).map_err(|e| DecodeError::Protocol(e.to_string()))?;
-    if value.protocol_version() != 1 { return Err(DecodeError::Protocol("unsupported protocol version".to_owned())); }
-    if value.payload_type() == wire::ResponsePayload::SearchKernel_V1_Error { let error = value.payload_as_search_kernel_v1_error().ok_or_else(|| DecodeError::Protocol("error response payload is missing".to_owned()))?; return Err(DecodeError::Portable(model::Error { code: decode_error_code(error.code())?, message: error.message().unwrap_or_default().to_owned(), retryable: error.retryable(), details: decode_error_details(error.details())? })); }
-    let expected = format!("SearchKernel_V1_{}Result", operation.to_case_pascal());
-    let actual = format!("{:?}", value.payload_type());
-    if actual != expected { return Err(DecodeError::Protocol(format!("response variant does not match operation {operation}"))); }
-    Ok(value)
-}
-trait CasePascal { fn to_case_pascal(&self) -> String; }
-impl CasePascal for str { fn to_case_pascal(&self) -> String { self.split('_').map(|part| { let mut chars = part.chars(); match chars.next() { Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(), None => String::new() } }).collect() } }
-fn required_string(value: Option<&str>, path: &str) -> Result<String, DecodeError> { value.map(ToOwned::to_owned).ok_or_else(|| DecodeError::Protocol(format!("missing response field {path}"))) }
-
-// __BFBS_CLIENT_ENUM_CONVERSIONS__
-
-fn decode_error_details(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ErrorDetail<'_>>>>) -> Result<Vec<model::ErrorDetail>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut metadata = BTreeMap::new(); if let Some(values) = item.metadata() { for entry in values.iter() { metadata.insert(entry.key().to_owned(), required_string(entry.value(), "error.metadata.value")?); } } result.push(model::ErrorDetail { code: required_string(item.code(), "error.detail.code")?, message: required_string(item.message(), "error.detail.message")?, path: item.path().map(ToOwned::to_owned), metadata }); } }
-    Ok(result)
-}
-
-fn decode_value(value: wire::Value<'_>) -> Result<model::Value, DecodeError> {
-    match value.kind_type() {
-        wire::ValueKind::NONE => Err(DecodeError::Protocol("missing value".to_owned())),
-        wire::ValueKind::NullValueValue => Ok(model::Value::Null),
-        wire::ValueKind::BoolValue => Ok(model::Value::Bool(value.kind_as_bool_value().ok_or_else(|| DecodeError::Protocol("missing bool value".to_owned()))?.value())),
-        wire::ValueKind::Int64Value => Ok(model::Value::Int64(value.kind_as_int_64_value().ok_or_else(|| DecodeError::Protocol("missing int64 value".to_owned()))?.value())),
-        wire::ValueKind::UInt64Value => Ok(model::Value::UInt64(value.kind_as_uint_64_value().ok_or_else(|| DecodeError::Protocol("missing uint64 value".to_owned()))?.value())),
-        wire::ValueKind::Float64Value => Ok(model::Value::Float64(value.kind_as_float_64_value().ok_or_else(|| DecodeError::Protocol("missing float64 value".to_owned()))?.value())),
-        wire::ValueKind::StringValue => Ok(model::Value::String(required_string(value.kind_as_string_value().ok_or_else(|| DecodeError::Protocol("missing string value".to_owned()))?.value(), "value.string")?)),
-        wire::ValueKind::BytesValue => { let bytes = value.kind_as_bytes_value().ok_or_else(|| DecodeError::Protocol("missing bytes value".to_owned()))?.value().map(|v| v.bytes().to_vec()).unwrap_or_default(); Ok(model::Value::Bytes(bytes)) }
-        wire::ValueKind::ValueList => { let list = value.kind_as_value_list().ok_or_else(|| DecodeError::Protocol("missing list value".to_owned()))?; let values = list.values().map(|v| v.iter().map(decode_value).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::Value::List(values)) }
-        wire::ValueKind::ValueObject => { let object = value.kind_as_value_object().ok_or_else(|| DecodeError::Protocol("missing object value".to_owned()))?; Ok(model::Value::Object(decode_entries(object.fields())?)) }
-        _ => Err(DecodeError::Protocol("unknown value discriminator".to_owned())),
-    }
-}
-fn decode_entries(values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::ValueEntry<'_>>>>) -> Result<BTreeMap<String, model::Value>, DecodeError> {
-    let mut result = BTreeMap::new();
-    if let Some(values) = values { for entry in values.iter() { result.insert(entry.key().to_owned(), decode_value(entry.value().ok_or_else(|| DecodeError::Protocol("missing value entry".to_owned()))?)?); } }
-    Ok(result)
-}
-fn decode_document(document: wire::Document<'_>) -> Result<model::DocumentResult, DecodeError> {
-    Ok(model::DocumentResult { id: required_string(document.id(), "document.id")?, fields: decode_entries(document.fields())? })
-}
-fn decode_highlights(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::HighlightResult<'_>>>>) -> Result<Vec<model::HighlightResult>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut fragments = Vec::new(); if let Some(values) = item.fragments() { for fragment in values.iter() { let matches = fragment.matches().map(|spans| spans.iter().map(|span| model::HighlightSpan { start_byte: span.start_byte(), end_byte: span.end_byte() }).collect()).unwrap_or_default(); fragments.push(model::HighlightFragment { text: required_string(fragment.text(), "highlight.text")?, matches }); } } result.push(model::HighlightResult { field: required_string(item.field(), "highlight.field")?, fragments }); } }
-    Ok(result)
-}
-fn decode_hit(hit: wire::Hit<'_>) -> Result<model::Hit, DecodeError> {
-    Ok(model::Hit { id: required_string(hit.id(), "hit.id")?, score: hit.score().map(|score| score.value()), fields: decode_entries(hit.fields())?, highlights: decode_highlights(hit.highlights())? })
-}
-fn decode_facets(items: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<wire::FacetResult<'_>>>>) -> Result<Vec<model::FacetResult>, DecodeError> {
-    let mut result = Vec::new();
-    if let Some(items) = items { for item in items.iter() { let mut values = Vec::new(); if let Some(entries) = item.values() { for entry in entries.iter() { values.push(model::FacetValue { value: decode_value(entry.value().ok_or_else(|| DecodeError::Protocol("missing facet value".to_owned()))?)?, count: entry.count() }); } } result.push(model::FacetResult { field: required_string(item.field(), "facet.field")?, values }); } }
-    Ok(result)
-}
-fn decode_selection(value: wire::SearchFieldSelection<'_>) -> Result<model::SearchFieldSelection, DecodeError> {
-    let fields = value.fields().map(|fields| fields.iter().map(|field| Ok(model::SearchField { field: required_string(field.field(), "search_fields.field")?, weight: field.weight().map(|weight| weight.value()) })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::SearchFieldSelection { fields })
-}
-fn decode_projection(value: wire::FieldProjection<'_>) -> model::FieldProjection { model::FieldProjection { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
-fn decode_highlighting(value: wire::HighlightRequest<'_>) -> model::HighlightRequest { model::HighlightRequest { fields: value.fields().map(|fields| fields.iter().map(ToOwned::to_owned).collect()).unwrap_or_default() } }
-fn decode_filter(value: wire::FilterExpr<'_>) -> Result<model::FilterExpr, DecodeError> {
-    match value.expr_type() {
-        wire::FilterExprKind::FilterAnd => { let node = value.expr_as_filter_and().ok_or_else(|| DecodeError::Protocol("missing filter_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::And(clauses)) }
-        wire::FilterExprKind::FilterOr => { let node = value.expr_as_filter_or().ok_or_else(|| DecodeError::Protocol("missing filter_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_filter).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::FilterExpr::Or(clauses)) }
-        wire::FilterExprKind::FilterNot => { let node = value.expr_as_filter_not().ok_or_else(|| DecodeError::Protocol("missing filter_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing filter_not clause".to_owned()))?; Ok(model::FilterExpr::Not(Box::new(decode_filter(clause)?))) }
-        wire::FilterExprKind::FilterComparison => { let node = value.expr_as_filter_comparison().ok_or_else(|| DecodeError::Protocol("missing filter_comparison payload".to_owned()))?; Ok(model::FilterExpr::Comparison { field: required_string(node.field(), "filter_comparison.field")?, op: decode_comparison_op(node.op())?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing filter_comparison.value".to_owned()))?)? }) }
-        wire::FilterExprKind::FilterRange => { let node = value.expr_as_filter_range().ok_or_else(|| DecodeError::Protocol("missing filter_range payload".to_owned()))?; Ok(model::FilterExpr::Range { field: required_string(node.field(), "filter_range.field")?, lower: node.lower().map(decode_value).transpose()?, upper: node.upper().map(decode_value).transpose()?, include_lower: node.include_lower().map(|v| v.value()), include_upper: node.include_upper().map(|v| v.value()) }) }
-        wire::FilterExprKind::FilterExists => { let node = value.expr_as_filter_exists().ok_or_else(|| DecodeError::Protocol("missing filter_exists payload".to_owned()))?; Ok(model::FilterExpr::Exists { field: required_string(node.field(), "filter_exists.field")? }) }
-        _ => Err(DecodeError::Protocol("unknown filter discriminator".to_owned())),
-    }
-}
-fn decode_query(value: wire::QueryExpr<'_>) -> Result<model::QueryExpr, DecodeError> {
-    match value.expr_type() {
-        wire::QueryExprKind::TermQuery => { let node = value.expr_as_term_query().ok_or_else(|| DecodeError::Protocol("missing term_query payload".to_owned()))?; Ok(model::QueryExpr::Term { field: required_string(node.field(), "term_query.field")?, value: decode_value(node.value().ok_or_else(|| DecodeError::Protocol("missing term_query.value".to_owned()))?)? }) }
-        wire::QueryExprKind::QueryAnd => { let node = value.expr_as_query_and().ok_or_else(|| DecodeError::Protocol("missing query_and payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::And(clauses)) }
-        wire::QueryExprKind::QueryOr => { let node = value.expr_as_query_or().ok_or_else(|| DecodeError::Protocol("missing query_or payload".to_owned()))?; let clauses = node.clauses().map(|clauses| clauses.iter().map(decode_query).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); Ok(model::QueryExpr::Or(clauses)) }
-        wire::QueryExprKind::QueryNot => { let node = value.expr_as_query_not().ok_or_else(|| DecodeError::Protocol("missing query_not payload".to_owned()))?; let clause = node.clause().ok_or_else(|| DecodeError::Protocol("missing query_not clause".to_owned()))?; Ok(model::QueryExpr::Not(Box::new(decode_query(clause)?))) }
-        _ => Err(DecodeError::Protocol("unknown query discriminator".to_owned())),
-    }
-}
-fn decode_search_request(value: wire::SearchRequest<'_>) -> Result<model::SearchRequest, DecodeError> {
-    let sort = value.sort().map(|items| items.iter().map(|item| Ok(model::SortExpr { field: required_string(item.field(), "sort.field")?, direction: decode_sort_direction(item.direction())?, missing: item.missing().map(|missing| decode_missing_placement(missing.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    let facets = value.facets().map(|items| items.iter().map(|item| Ok(model::FacetRequest { field: required_string(item.field(), "facet.field")?, limit: item.limit().map(|limit| limit.value()), sort: item.sort().map(|sort| decode_facet_sort(sort.value())).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::SearchRequest {
-        query: value.query().map(ToOwned::to_owned),
-        search_fields: value.search_fields().map(decode_selection).transpose()?,
-        filter: value.filter().map(decode_filter).transpose()?, sort, facets,
-        ranking: value.ranking().map(|ranking| match ranking.policy_type() { wire::RankingPolicyKind::DefaultRelevanceV1 => Ok(model::RankingPolicy::DefaultRelevanceV1), wire::RankingPolicyKind::Bm25Ranking => Ok(model::RankingPolicy::Bm25Ranking), _ => Err(DecodeError::Protocol("unknown ranking discriminator".to_owned())) }).transpose()?,
-        limit: value.limit().map(|value| value.value()), offset: value.offset().map(|value| value.value()),
-        projection: value.projection().map(decode_projection), highlighting: value.highlighting().map(decode_highlighting),
-        language: value.language().map(ToOwned::to_owned), query_expr: value.query_expr().map(decode_query).transpose()?, timeout: value.timeout().map(|value| value.value()),
-    })
-}
-fn decode_analyzer(value: wire::Analyzer<'_>) -> Result<model::Analyzer, DecodeError> { Ok(model::Analyzer { name: value.name().map(ToOwned::to_owned), version: value.version(), options: decode_entries(value.options())? }) }
-fn decode_index(value: wire::IndexDefinition<'_>) -> Result<model::IndexDefinition, DecodeError> {
-    let fields = value.fields().map(|items| items.iter().map(|field| Ok(model::FieldDefinition { name: field.name().map(ToOwned::to_owned), kind: decode_field_kind(field.kind())?, cardinality: decode_field_cardinality(field.cardinality())?, stored: field.stored().map(|v| v.value()), searchable: field.searchable().map(|v| v.value()), filterable: field.filterable().map(|v| v.value()), sortable: field.sortable().map(|v| v.value()), facetable: field.facetable().map(|v| v.value()), analyzer: field.analyzer().map(decode_analyzer).transpose()? })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default();
-    Ok(model::IndexDefinition { name: value.name().map(ToOwned::to_owned), fields, default_search_fields: value.default_search_fields().map(decode_selection).transpose()? })
-}
-
-impl DecodeResponse for model::InsertResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_insert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
-impl DecodeResponse for model::UpsertResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_upsert_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
-impl DecodeResponse for model::PatchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_patch_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")? }) } }
-
-impl DecodeResponse for model::DeleteResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_delete_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { id: required_string(value.id(), "id")?, deleted: value.deleted() }) } }
-impl DecodeResponse for model::GetResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_get_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let document = value.document().map(decode_document).transpose()?; Ok(Self { document }) } }
-impl DecodeResponse for model::SearchResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_search_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let total = value.total_hits().ok_or_else(|| DecodeError::Protocol("missing response field total_hits".to_owned()))?; let hits = value.hits().map(|items| items.iter().map(decode_hit).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default(); let facets = decode_facets(value.facets())?; Ok(Self { hits, total_hits: model::TotalHits { value: total.value(), relation: decode_total_hits_relation(total.relation())? }, facets }) } }
-impl DecodeResponse for model::AnalyzeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_analyze_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; let tokens = value.tokens().map(|items| items.iter().map(|token| Ok(model::AnalyzedToken { surface: required_string(token.surface(), "token.surface")?, term: required_string(token.term(), "token.term")?, position: token.position(), start_byte: token.start_byte(), end_byte: token.end_byte() })).collect::<Result<Vec<_>, DecodeError>>()).transpose()?.unwrap_or_default(); Ok(Self { tokens }) } }
-impl DecodeResponse for model::DescribeResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_describe_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { index: value.index().map(decode_index).transpose()? }) } }
-impl DecodeResponse for model::InspectQueryResult { fn decode(operation: &str, bytes: &[u8]) -> Result<Self, DecodeError> { let e = envelope(operation, bytes)?; let value = e.payload_as_search_kernel_v1_inspect_query_result().ok_or_else(|| DecodeError::Protocol("response payload is missing".to_owned()))?; Ok(Self { resolved_request: value.resolved_request().map(decode_search_request).transpose()? }) } }
-
-#[cfg(test)]
-mod generated_value_tests {
-    use super::*;
-
-    #[test]
-    fn wire_none_is_missing_but_explicit_null_is_semantic_null() {
-        let mut builder = FlatBufferBuilder::new();
-        let missing = wire::Value::create(
-            &mut builder,
-            &wire::ValueArgs {
-                kind_type: wire::ValueKind::NONE,
-                kind: None,
-            },
-        );
-        builder.finish_minimal(missing);
-        let missing = root::<wire::Value>(builder.finished_data()).expect("decode missing value");
-        assert!(matches!(
-            decode_value(missing),
-            Err(DecodeError::Protocol(message)) if message == "missing value"
-        ));
-
-        let mut builder = FlatBufferBuilder::new();
-        let null = wire::NullValueValue::create(
-            &mut builder,
-            &wire::NullValueValueArgs {
-                value: wire::NullValue::Null,
-            },
-        );
-        let value = wire::Value::create(
-            &mut builder,
-            &wire::ValueArgs {
-                kind_type: wire::ValueKind::NullValueValue,
-                kind: Some(null.as_union_value()),
-            },
-        );
-        builder.finish_minimal(value);
-        let value = root::<wire::Value>(builder.finished_data()).expect("decode explicit null");
-        assert_eq!(decode_value(value).expect("explicit null"), model::Value::Null);
-    }
-}
+// __CODECS__
