@@ -2,19 +2,19 @@
 
 Search Kernel is a Rust interface to Vespa's local C++ search engine.
 
-The project does not reimplement Vespa's search engine. It wraps the existing C++ engine and replaces only the parts of Vespa's Java request/configuration plane that are required to use that engine as an embedded library.
+The project does not reimplement Vespa's search engine. It wraps the existing C++ engine and replaces only the parts of Vespa's Java request/configuration plane required to use that engine as a local product.
 
 The roadmap is organized around three deliberately separate tracks:
 
 ```text
 M-series — embedded Vespa capability
-C-series — portable API, generated clients, and transports
-I-series — integration between the two
+C-series — portable API, Rust product API, RPC clients
+I-series — integration between the portable semantics and Vespa
 ```
 
-The M-series and C-series are orthogonal. They meet only through the I-series.
+The M-series and C-series remain orthogonal. They meet only through the I-series.
 
-The final semantic runtime architecture is:
+The final semantic runtime architecture remains:
 
 ```text
 Portable API (FlatBuffers contract)
@@ -38,71 +38,70 @@ Vespa model and runtime
    └── ranking
 ```
 
-The client/runtime architecture is:
+The client/runtime architecture is now deliberately asymmetric:
 
 ```text
-                     FlatBuffers contract
-                            │
-                       C6 generation
-                            │
-              ┌─────────────┴─────────────┐
-              │                           │
-     generated client core         generated JSON codec
-              │                           │
-         Transport API                    │
-          /       \                       │
-         /         \                      │
-  NativeTransport  HttpTransport          │
-       │                │                 │
-       │                └──── HTTP/JSON ──┘
-       │                         │
-       │                    searchkerneld
-       │
-      C5
-       │
-       └───────────────┬─────────────────
-                       │
-              canonical FB dispatcher
-                       │
-              searchkernel-ir
-```
+RUST
 
-The same daemon also supports direct binary HTTP:
+Rust application
+    │
+    ▼
+idiomatic Rust Search Kernel API
+    │
+    ▼
+Search Kernel IR
+    │
+    ▼
+Vespa adapter/runtime
 
-```text
-HTTP/FlatBuffers
-      │
-      └───────────────► canonical FB dispatcher
-```
 
-The important invariant is:
+NON-RUST
 
-> Native clients and HTTP clients do not implement separate Search Kernel semantics.
-
-For JSON specifically:
-
-```text
-JSON
-  ↓
-generated JSON codec
-  ↓
-canonical FlatBuffers
-  ↓
-one shared dispatcher
-  ↓
+language facade
+    │
+    ▼
+flatc-generated FlatBuffers models
+    │
+    ▼
+canonical RequestEnvelope bytes
+    │
+    ▼
+generated gRPC client
+    │
+    ▼
+UDS by default / TCP where appropriate
+    │
+    ▼
+searchkerneld
+    │
+    ▼
+canonical FlatBuffer dispatcher
+    │
+    ▼
 searchkernel-ir
 ```
 
-There must not be independent:
+FlatBuffers remains the sole portable domain contract.
 
-```text
-JSON → IR
-FlatBuffers → IR
+The gRPC schema is transport-only and intentionally tiny, conceptually:
+
+```proto
+message Frame {
+  bytes payload = 1;
+}
+
+service SearchKernel {
+  rpc Execute(Frame) returns (Frame);
+}
 ```
 
-paths.
+The protobuf must not duplicate Search Kernel requests, query expressions, ranking models, values, errors, or operation unions.
 
-The Portable API describes what the caller expressed. Search Kernel IR describes the fully validated and explicit meaning of that request. Backend lowering describes how that meaning is represented by the execution engine.
+The important invariant is:
+
+> Rust, gRPC clients, and any optional browser/JSON edge all converge on the same portable semantics in `searchkernel-ir`.
+
+There must not be independent transport-specific semantic implementations.
 
 ---
 
@@ -113,33 +112,34 @@ Search Kernel does need replacements for a small set of functionality that norma
 - index-time linguistics;
 - query-time linguistics;
 - construction of Vespa query trees;
-- generation of the Proton configuration required by the supported schema subset;
-- search-request and ranking properties.
+- generation of Proton configuration required by the supported schema subset;
+- search-request and ranking property construction.
 
 Search Kernel does **not** initially reproduce Vespa's Java/container application layer, including:
 
 - Vespa search chains;
 - Vespa's Java HTTP/search APIs;
-- query profiles;
-- spelling correction;
-- synonym systems;
+- query profiles as a product abstraction;
+- spelling correction unless explicitly added;
 - distributed dispatch;
-- result merging across nodes;
+- distributed result merging;
 - MessageBus;
 - Slobrok;
 - Config Server;
 - Config Proxy;
 - Java file distribution.
 
-Search Kernel **does** define its own small transport surface where useful:
+The supported product access paths are:
 
 ```text
-embedded native transport
-HTTP/JSON
-HTTP/FlatBuffers
+Rust                 direct embedded API
+non-Rust SDKs        gRPC carrying canonical FlatBuffer envelopes
+browser/admin edge   optional browser-compatible gateway over the same contract
 ```
 
-These expose the Search Kernel Portable API. They are not reimplementations of Vespa's Java request layer.
+On Unix-like systems, local non-Rust clients should prefer a Unix-domain socket. TCP remains available where UDS is unavailable or deployment requires it.
+
+The former portable client C ABI and per-language `NativeTransport` architecture are retired. The Rust ↔ Vespa C++ native boundary remains required and is unaffected.
 
 ---
 
@@ -529,16 +529,14 @@ For ranking assets such as constants or models, embedded operation uses explicit
 
 ---
 
-## M11 v2 — Full-surface wrapper hardening
+## M11 — Low-level wrapper hardening
 
-Harden the complete M0–M10 native surface, `searchkernel-ir-adapter`, and the
-production C5 FFI boundary. The verifier replays one deterministic torture
-workload through direct Vespa, the real IR adapter, and production C5 calls.
+Harden the complete M0–M10 `searchkernel-vespa-engine` surface independently of the portable client transport.
 
 Cover:
 
 - lifecycle races;
-- malformed inputs;
+- malformed native inputs;
 - native failures;
 - repeated reopen;
 - supported concurrency;
@@ -546,36 +544,46 @@ Cover:
 - resource leaks;
 - native sanitizers;
 - long-running mutation/search workloads;
-- M8 sorting/summaries/results, M9 grouping/facets/attribute mutation, and M10
-  ranking/match features at each applicable boundary.
+- M8 sorting/summaries/results;
+- M9 grouping/facets/attribute mutation;
+- M10 ranking/match features.
 
-Failpoint builds remain test-only; the C5 lane uses production symbols and no
-test backend or semantic mock.
+M11 does not depend on gRPC, language clients, or a portable client C ABI.
 
 ---
 
-# C-series — Portable API, generated clients, and transports
+# C-series — Portable API, Rust API, and RPC clients
 
-The C-series is orthogonal to the M-series.
+The C-series remains orthogonal to the M-series.
 
-Its product is the portable Search Kernel application API and everything needed to expose that API consistently across languages and transports:
+Its final product surface is deliberately smaller than the previous native-client architecture:
 
 ```text
-searchkernel-protocol / generated FlatBuffers artifacts
-searchkernel-ir
-searchkernel
-searchkernel-ffi
-searchkernel-json
-searchkerneld
-searchkernel-bindgen
-language packages
+api/*.fbs                         canonical portable domain contract
+searchkernel-ir                   portable semantics
+searchkernel                      idiomatic direct Rust API
+searchkernel-testkit              standalone semantic verification
+searchkernel-rpc / searchkerneld  transport host
+flatc                             language FlatBuffers model generation
+standard gRPC generators          RPC stub generation
+searchkernel-bindgen              Search-Kernel-specific BFBS metadata/invariants only
+language packages                 thin ergonomic facades
 ```
 
-The C-series must remain runnable and verifiable without linking `searchkernel-vespa-engine`.
+The following are **not** final product components:
 
-It may use recording and scripted test backends, but must never grow a fake production search engine.
+```text
+portable client C ABI
+searchkernel-ffi
+per-language NativeTransport implementations
+custom Go/Java/Node/PHP native bindings
+custom universal transport abstraction
+custom multi-language RPC stub generation
+```
 
-The C-series has one canonical semantic path:
+The C-series must remain runnable and verifiable without linking `searchkernel-vespa-engine` where the milestone concerns only portable semantics or transport framing. Recording and scripted backends are allowed for standalone acceptance, but must never become a production search engine.
+
+The canonical semantic path is:
 
 ```text
 caller representation
@@ -588,6 +596,19 @@ searchkernel-ir (*_to_ir)
         ↓
 Search Kernel IR
 ```
+
+### Capability stages
+
+Portable growth is intentionally staged:
+
+```text
+REPRESENTED  FlatBuffers can express it
+SEMANTIC     *_to_ir() validates and resolves it
+EXECUTABLE   Vespa integration implements it
+ERGONOMIC    a high-level SDK offers convenient syntax
+```
+
+A feature does not need to advance through all four stages in the same change.
 
 ---
 
@@ -788,574 +809,306 @@ Verification uses C3 only.
 
 ---
 
-## C5 — Portable native ABI
+## C5 — Historical portable client ABI — retired
 
-Implement:
+C5 implemented the former byte-oriented portable C ABI used by first-party native language transports.
+
+That architecture is superseded by gRPC and is **not** part of the final product runtime.
+
+Do not extend C5 for new operations or languages.
+
+After the gRPC path and migrated Python client are proven, remove:
 
 ```text
 searchkernel-ffi
+portable sk_call-style client ABI
+portable handle/buffer ownership machinery
+FFI conformance dedicated to that client boundary
+language NativeTransport implementations
+native client packaging built around that ABI
 ```
 
-with a deliberately tiny language-neutral ABI based on:
+This retirement does **not** affect:
 
 ```text
-opaque handles
-request bytes
-response bytes
-status/error codes
-explicit buffer ownership
-close/free
+searchkernel-vespa-bindings
+Search Kernel C++ adapter ABI
+Rust ↔ Vespa native integration
 ```
 
-Do not mirror every high-level object as a C function.
-
-The FFI transports the canonical FlatBuffers request/response envelopes.
-
-Conceptually:
-
-```text
-NativeTransport
-    ↓
-sk_call(handle, request_bytes)
-    ↓
-canonical FlatBuffers dispatcher
-```
-
-The native ABI is transport plumbing, not the semantic definition of Search Kernel.
-
-Adding a portable operation should normally not require adding another per-operation C function.
+Historical C5 verifier artifacts may remain in repository history, but must not remain an active acceptance dependency after cutover.
 
 ---
 
-## C6 — BFBS-driven generation and portable client core
+## C6 — BFBS tooling — narrowed final scope
 
-C6 is the central client-generation milestone.
+C6 established BFBS normalization and generation infrastructure. The final architecture keeps the parts that are Search Kernel-specific and removes the obligation to become a universal SDK compiler.
 
-Implement:
-
-```text
-tools/searchkernel-bindgen
-```
-
-The generator consumes the canonical BFBS schema IR:
+Keep `searchkernel-bindgen` for capabilities such as:
 
 ```text
-api/*.fbs
-   ↓
-pinned flatc
-   ↓
-*.bfbs
-   ↓
-searchkernel-bindgen
+BFBS normalization
+schema/reference validation
+union/map/presence metadata
+operation and root inventory
+contract invariants
+conformance metadata
+documentation/schema metadata where useful
 ```
 
-`searchkernel-bindgen` must not parse `.fbs` source itself.
-
-### Generated outputs
-
-Generate the mechanical portions of the portable client/runtime surface:
+Standard tooling owns standard code generation:
 
 ```text
-request/response models
-enums
-symbolic union adapters
-serialization glue
-portable error mappings
-operation scaffolding
-generated client core
-Transport abstraction scaffolding
-language conformance fixtures
-documentation stubs
-canonical JSON codec artifacts
-JSON Schema / OpenAPI-compatible metadata
+flatc                  → language FlatBuffers model types
+standard gRPC tooling  → RPC client/server stubs
 ```
 
-Language-specific façades remain small and idiomatic.
-
-### Generated client core
-
-The generated client layer should conceptually target:
+The following are no longer required bindgen responsibilities:
 
 ```text
-Client
-  │
-  ├── insert(...)
-  ├── upsert(...)
-  ├── patch(...)
-  ├── delete(...)
-  ├── get(...)
-  ├── search(...)
-  ├── analyze(...)
-  ├── describe(...)
-  └── inspect_query(...)
-         │
-         ▼
-         Transport boundary
-         ├── synchronous `Transport`
-         └── asynchronous `AsyncTransport`
-              │
-         ▼
- call(canonical request) → canonical response
+custom generated transport abstraction
+custom NativeTransport client core
+per-language RPC plumbing
+custom Rust/Python/Go/Java/Node/PHP transport emitters
 ```
 
-The embedded engine remains synchronous. `AsyncTransport` and its corresponding
-async client surface are additive portable-client APIs; they do not wrap the
-blocking native engine in futures or require a runtime dependency.
+Existing generated artifacts may remain temporarily during migration. Delete them once the replacement paths no longer depend on them.
 
-The exact host-language shape may differ idiomatically, but operation coverage and portable meaning must be generated from the same BFBS source.
-
-### Transport abstraction
-
-Clients are built around a transport boundary, conceptually:
-
-```text
-Transport
-    call(request) -> response
-```
-
-Transport implementations may differ.
-
-Semantics may not.
-
-### Canonical JSON codec
-
-C6 also generates the JSON ↔ FlatBuffers codec used by HTTP.
-
-The required path is:
-
-```text
-JSON
-  ↓
-generated JSON codec
-  ↓
-canonical FlatBuffers
-  ↓
-shared dispatcher
-```
-
-Never:
-
-```text
-JSON → IR
-```
-
-directly.
-
-Responses follow the inverse path:
-
-```text
-canonical FlatBuffers response
-  ↓
-generated JSON codec
-  ↓
-JSON
-```
-
-### JSON union representation
-
-Generated nested FlatBuffers unions are represented as symbolic one-key objects.
-
-Examples:
-
-```json
-{"string":"x"}
-```
-
-```json
-{"term_query":{"field":"title","term":"rust"}}
-```
-
-A union object must contain exactly one recognized variant key.
-
-Reject:
-
-```text
-zero variant keys
-multiple variant keys
-unknown variant keys
-```
-
-Do not expose FlatBuffers discriminator fields such as:
-
-```text
-payload_type
-kind_type
-expr_type
-```
-
-in the public JSON representation.
-
-### JSON scalar policy
-
-Freeze these rules:
-
-```text
-bool            → JSON boolean
-bounded 32-bit integers/counts
-                → JSON number
-finite float32/float64
-                → JSON number
-
-portable int64  → canonical base-10 JSON string
-portable uint64 → canonical base-10 JSON string
-
-bytes           → base64 JSON string
-```
-
-NaN and ±Infinity are rejected as non-portable values where the portable/core semantics reject them.
-
-`int64` / `uint64` strings must round-trip the full domain without relying on JavaScript or PHP numeric precision.
-
-### Presence
-
-The JSON codec must preserve all distinctions represented by the FlatBuffers contract:
-
-```text
-absent
-explicit false
-explicit zero
-explicit empty string
-explicit empty list
-present non-empty value
-```
-
-JSON `null` is not a generic synonym for absence.
-
-A field may accept JSON null only where the Portable API itself represents a semantic null value.
-
-### Strictness
-
-Generated JSON decoding should reject:
-
-```text
-unknown fields
-duplicate fields
-invalid enum names
-invalid union forms
-out-of-range integers
-malformed canonical integer strings
-```
-
-### Generated, not handwritten
-
-Per-message JSON mappings must not be handwritten.
-
-The only handwritten JSON policy should be small global rules that BFBS cannot decide by itself, such as:
-
-```text
-union presentation
-int64/uint64 textual representation
-bytes encoding
-null policy
-unknown-field policy
-operation naming conventions
-```
-
-### Coverage invariant
-
-For every Portable API operation:
-
-```text
-Portable operation exists
-        ⇕
-canonical request union variant exists
-        ⇕
-canonical response union variant exists
-        ⇕
-shared dispatcher covers it
-        ⇕
-generated client core covers it
-        ⇕
-generated JSON codec covers it
-```
-
-Adding a new schema construct must either generate complete support or fail generation explicitly.
-
-Silently incomplete generated support is forbidden.
+C6 must continue to fail closed when BFBS contains schema features that Search Kernel-specific tooling claims to understand but cannot normalize safely.
 
 ---
 
-## C7 — Native embedded client transport
+## C7 — gRPC transport and `searchkerneld`
 
-Implement the reusable native transport used by languages that embed Search Kernel in-process.
+Implement the replacement non-Rust transport as a small, transport-only RPC layer.
 
-Architecture:
+### RPC contract
 
-```text
-language facade
-      ↓
-generated client core
-      ↓
-NativeTransport
-      ↓
-C5 native ABI
-      ↓
-canonical FlatBuffers dispatcher
+The `.proto` must contain no Search Kernel domain model. Conceptually:
+
+```proto
+syntax = "proto3";
+
+package searchkernel.rpc.v1;
+
+message Frame {
+  bytes payload = 1;
+}
+
+service SearchKernel {
+  rpc Execute(Frame) returns (Frame);
+}
 ```
 
-Representative targets should prove the pattern.
+`Frame.payload` is a canonical FlatBuffers `RequestEnvelope` or `ResponseEnvelope`.
 
-Python and Go are good initial proofs because they exercise substantially different native-integration ecosystems.
+Do not add one protobuf RPC method per Search Kernel operation merely for convenience. Operation discovery remains owned by the FlatBuffers request/response unions.
 
-Node.js and Java may follow the same architecture.
-
-### Requirements
-
-Native transports must remain thin.
-
-They own:
+### Server path
 
 ```text
-native library loading
-handle lifecycle
-FFI call plumbing
-buffer ownership
-language/runtime-specific packaging
-```
-
-They do not own:
-
-```text
-Search Kernel defaults
-filter semantics
-ranking semantics
-portable validation
-operation definitions
-portable error definitions
-```
-
-Those remain in the shared generated/core layers.
-
----
-
-## C8 — `searchkerneld` and HTTP transports
-
-Implement:
-
-```text
-searchkerneld
-```
-
-as a small transport host for the same Portable API.
-
-It is not a second Search Kernel semantic implementation.
-
-### HTTP/JSON
-
-```text
-HTTP/JSON
+gRPC Frame
     ↓
-generated JSON codec
+payload bytes
     ↓
-canonical FlatBuffers
+FlatBuffer verifier
+    ↓
+canonical RequestEnvelope
     ↓
 shared dispatcher
-```
-
-### HTTP/FlatBuffers
-
-Also support direct binary requests:
-
-```text
-HTTP/FlatBuffers
     ↓
-canonical FlatBuffers
+*_to_ir()
     ↓
-shared dispatcher
+backend
+    ↓
+canonical ResponseEnvelope bytes
+    ↓
+gRPC Frame
 ```
 
-This exists for workloads where JSON is inherently inefficient, including:
+### Transport behavior
+
+Support:
 
 ```text
-bulk indexing
-large documents
-dense vectors / embeddings
-tensor-heavy payloads
-large responses
+Unix-domain socket   preferred local path on Unix-like systems
+TCP                  supported fallback / deployment option
 ```
 
-JSON remains the simple interoperable transport.
-
-FlatBuffers-over-HTTP remains the high-throughput transport.
-
-### Server responsibilities
-
-`searchkerneld` may own transport concerns such as:
+Transport concerns may include:
 
 ```text
-HTTP routing
-content negotiation
-request-size limits
-timeouts
 connection handling
-index/session addressing
+deadlines/cancellation
+message-size limits
+socket addressing
 transport-level errors
+health/readiness
 ```
 
-It must not independently implement request semantics.
+They must not include Search Kernel request semantics.
 
-There must not be handwritten per-operation semantic handlers that bypass the canonical FlatBuffers dispatcher.
+### Standalone verification
 
-### C-series independence
+C7 acceptance may use C3 `RecordingBackend` and `ScriptedBackend`.
 
-C8 must be verifiable using C3 recording/scripted backends.
+Verify at minimum:
 
-It does not require Vespa.
+- valid RequestEnvelope round trip;
+- malformed FlatBuffer rejection;
+- wrong root/envelope rejection;
+- request/response size limits;
+- UDS request/response path;
+- TCP request/response path where supported;
+- identical `*_to_ir()` output for direct portable input and RPC-carried input;
+- gRPC transport errors remain distinct from portable Search Kernel errors.
+
+C7 is implemented additively beside the old client path. Do not delete the old path until C8 proves the migrated user-facing client.
 
 ---
 
-## C9 — First-class language façades and packages
+## C8 — Python gRPC client and cutover
 
-Deliver first-class language packages as thin façades over the generated client/runtime architecture.
+Migrate the existing Python product API onto the new RPC architecture without redesigning its user-facing semantics.
 
-Initial targets:
+### Low-level stack
 
 ```text
-Rust
-Python
+flatc-generated Python FlatBuffer models
+        +
+standard generated Python gRPC stub
+        +
+small Search Kernel transport wrapper
+```
+
+### Ergonomic facade
+
+Preserve the useful high-level Python surface such as:
+
+```text
+Index
+SearchBuilder
+field()/FieldRef helpers
+filters
+ranking selection
+result wrappers
+portable error mapping
+```
+
+The Python facade may provide Python-specific syntax sugar. It must not independently implement Search Kernel defaults, field capability rules, ranking semantics, or request validation that belongs in `searchkernel-ir`.
+
+### Verification and cutover
+
+During migration, run the old and new Python paths side-by-side for the same portable scenarios.
+
+Verify:
+
+```text
+same high-level call
+    ↓
+old path canonical meaning == new gRPC path canonical meaning
+```
+
+Once the gRPC path passes the portable Python corpus:
+
+1. make gRPC the authoritative Python transport;
+2. remove Python `NativeTransport` and native-library discovery/package logic;
+3. remove the portable client FFI and its active verifier dependencies;
+4. remove obsolete generated transport/client-core machinery no longer used by Rust or Python.
+
+The deletion is part of C8 completion, not an optional cleanup milestone.
+
+---
+
+## C9 — Additional language facades on demand
+
+Additional first-party language clients use the same architecture:
+
+```text
+idiomatic facade
+    ↓
+flatc-generated FlatBuffers models
+    ↓
+canonical RequestEnvelope bytes
+    ↓
+standard generated gRPC stub
+```
+
+Candidate languages include:
+
+```text
 Node.js / TypeScript
-PHP
 Go
 Java
+PHP
 ```
 
-The important distinction is transport preference, not separate semantics.
+Do not add a custom native transport or Search Kernel-specific RPC generator for a new language.
 
-### Preferred initial transports
+A language becomes first-class only when there is a concrete product reason to support and package it. The roadmap does not require all candidate languages to be implemented before the core product can stabilize.
 
-```text
-Rust                 embedded/direct
-Python               NativeTransport
-Node.js / TypeScript NativeTransport
-Go                   NativeTransport
-Java                 NativeTransport
+Each first-class package must prove:
 
-PHP                  HttpTransport
-```
-
-Where useful, languages may expose additional transports later:
-
-```text
-NativeTransport
-HttpJsonTransport
-HttpFlatBuffersTransport
-```
-
-but the user-facing semantics remain the same.
-
-### PHP
-
-PHP should not require a native extension for the initial first-class client.
-
-Primary path:
-
-```text
-PHP facade
-    ↓
-generated client support
-    ↓
-HTTP/JSON
-    ↓
-searchkerneld
-```
-
-A higher-throughput PHP path may use HTTP/FlatBuffers without requiring a Search Kernel PHP native extension.
-
-### Language façades
-
-Language syntax may be idiomatic.
-
-Examples include:
-
-```text
-Rust builders
-Python operators / kwargs
-TypeScript options
-PHP fluent methods
-Go functional options
-Java builders / records
-```
-
-These are presentation differences only.
-
-Defaults, validation, request meaning, portable errors, and operation coverage must not be independently redefined by each SDK.
+- canonical request construction;
+- canonical response interpretation;
+- portable error mapping;
+- UDS where the language/runtime supports the chosen local target syntax;
+- TCP fallback;
+- no language-specific semantic defaults.
 
 ---
 
-## C10 — Cross-language and cross-transport portable conformance
+## C10 — Portable cross-language conformance
 
-Complete the standalone C-series by proving that all supported clients and transports express the same Portable API semantics before Vespa is involved.
+Prove that every first-class non-Rust facade represents the same portable semantics.
 
-Run the same scenario corpus through representative paths such as:
-
-```text
-Rust high-level API
-
-Python NativeTransport
-Go NativeTransport
-Node NativeTransport
-Java NativeTransport
-
-PHP HTTP/JSON
-raw HTTP/JSON
-HTTP/FlatBuffers
-```
-
-against:
+Representative path:
 
 ```text
-RecordingBackend
-ScriptedBackend
+different language facades
+        ↓
+flatc-generated models
+        ↓
+canonical FlatBuffer envelopes
+        ↓
+gRPC
+        ↓
+shared dispatcher
+        ↓
+same *_to_ir()
+        ↓
+identical canonical IR
 ```
 
 ### Request-side invariant
 
-All equivalent client operations must produce the same canonical IR:
+Equivalent client operations must produce equivalent canonical IR.
 
-```text
-different languages
-different syntax
-different transports
-        ↓
-canonical FlatBuffers
-        ↓
-same *_to_ir()
-        ↓
-identical Search Kernel IR
-```
+Byte-for-byte FlatBuffer identity is not required unless a canonical byte encoding is explicitly promised.
 
 ### Response-side invariant
 
-The same scripted canonical response/error must produce equivalent language-level meaning across all supported clients and transports.
+A canonical scripted response/error must produce equivalent language-level meaning in every first-class SDK.
 
-C10 is the point at which:
+### What C10 no longer tests
 
-> Adding another language is packaging and idiomatic façade work, not another Search Kernel semantic implementation.
+C10 does not maintain a native-vs-HTTP-vs-FFI transport matrix.
+
+The portable client transport is gRPC. Rust is separately verified as the direct embedded API. Optional browser/JSON gateways have their own edge conformance and must still converge on the same FlatBuffers/IR semantics.
 
 ---
 
 # I-series — Integration
 
-The I-series is the only place the C-series and M-series meet.
+The I-series is the only series that depends on both M and C artifacts.
 
-Its core implementation is:
+The integration implementation belongs in:
 
 ```text
 searchkernel-ir-adapter
 ```
 
-which may depend on both:
-
-```text
-searchkernel-ir
-searchkernel-vespa-engine
-```
-
-No other crate should need to understand both public object models.
-
-Integration may begin incrementally as matching C- and M-series capabilities become available.
-
-It does not need to wait for C10 or M11.
+The I-series translates already-frozen Search Kernel IR semantics into already-verified Vespa capabilities. It does not own client transport.
 
 ---
 
@@ -1504,55 +1257,72 @@ All remain high-level Search Kernel semantics.
 
 ---
 
-## I9 — Cross-language and cross-transport real-engine conformance
+## I9 — Rust and gRPC real-engine conformance
 
-Take the C10 client/transport matrix and run it against the real integrated Vespa backend.
-
-Representative paths include:
+Run the same representative product scenarios through the two supported execution entry points:
 
 ```text
-Rust embedded
-Python embedded
-Node embedded
-Go embedded
-Java embedded
+Rust direct embedded API
 
-PHP HTTP/JSON
-raw HTTP/JSON
-HTTP/FlatBuffers
+first-class non-Rust facade
+    ↓
+gRPC
+    ↓
+searchkerneld
 ```
+
+against the real integrated Vespa backend.
 
 A representative fixture should cover:
 
 ```text
-create index
+create/open index
 bulk insert
 search
 filter
-facet
+facet/group where supported
 sort
-update
-search
+ranking/query inputs where supported
+patch/update
+search again
 delete
 close
 reopen
 search
 ```
 
-Where vector/tensor support exists, include representative binary-heavy payloads and compare JSON and FlatBuffers transport semantics.
+Where vector/tensor support exists, include representative binary-heavy payloads.
 
-All clients and transports must produce equivalent canonical outcomes.
+Required invariant:
+
+```text
+same portable intent
+    ↓
+Rust direct path and gRPC path
+    ↓
+equivalent Search Kernel IR meaning
+    ↓
+equivalent real-engine outcome
+```
+
+I9 does not resurrect native foreign-language clients or a portable client FFI.
 
 ---
 
 ## I10 — Packaging and product hardening
 
-Produce clean-machine packages for supported platforms and languages.
-
-Test without:
+Produce clean-machine packages for the supported product modes:
 
 ```text
-Vespa source
+Rust embedded library/package
+searchkerneld daemon
+selected first-class gRPC language SDKs
+```
+
+The target machine must not require:
+
+```text
+Vespa source checkout
 Vespa development container
 Vespa build tools
 Vespa Java runtime/services
@@ -1562,9 +1332,8 @@ Record:
 
 ```text
 Search Kernel version
-Portable API version
-BFBS/schema version
-native ABI version
+portable FlatBuffers API version/BFBS identity
+gRPC transport version
 pinned Vespa revision
 target platform
 ```
@@ -1573,7 +1342,8 @@ Then harden the complete product for:
 
 ```text
 lifecycle races
-malformed requests
+malformed FlatBuffer payloads
+malformed RPC frames
 native failures
 crash/recovery
 concurrency
@@ -1584,16 +1354,17 @@ startup time
 RSS/PSS
 indexing throughput
 query latency
-HTTP overhead
-JSON codec overhead
-binary HTTP throughput
+UDS RPC overhead
+TCP RPC overhead where relevant
 ```
+
+The benchmark goal is not to prove that RPC equals an in-process function call. It is to verify that the local RPC boundary is operationally acceptable for supported workloads and that serialization/transport overhead is measured rather than assumed.
 
 ---
 
 # Parallel execution
 
-The intended development shape after M2 is:
+The intended development shape is now:
 
 ```text
 M TRACK
@@ -1601,46 +1372,53 @@ M TRACK
 M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11
 
 
-C TRACK
+PORTABLE / CLIENT TRACK
 
-C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 -> C9 -> C10
+C1 -> C2 -> C3 -> C4
+              │
+              ├── current FBS/IR parity widening
+              │
+              ▼
+             C7 -> C8 -> C9 -> C10
+
+C5 is retired.
+C6 is retained only in its narrowed BFBS-tooling role.
 ```
 
-These arrows mean dependencies inside each track.
+Transport migration must not be mixed into the same agent task as a large FlatBuffers/IR redesign.
 
-There are no implicit diagonal dependencies.
-
-For example:
+The preferred sequence is:
 
 ```text
-C6 does not require M6.
-C8 does not require M8.
-M7 does not require C7.
+1. finish/freeze the current query-language + FBS + IR widening
+2. implement C7 gRPC beside the old path
+3. prove C8 Python through gRPC
+4. delete portable client FFI/native transports/obsolete client machinery
+5. simplify bindgen to its surviving BFBS responsibilities
+6. add more language facades only when needed
 ```
 
-Integration trails whichever capabilities are ready:
+Integration trails whichever semantic/backend capabilities are ready:
 
 ```text
 C1/C2 + M6
-    -> I2 schema mapping can begin
+    -> I2 schema mapping
 
 C4 + M2/M5
-    -> I3 writes can begin
+    -> I3 writes
 
 C4 + M3/M4/M7
-    -> I4 lexical search can begin
+    -> I4 lexical search
 
 C4 + M8
-    -> I5 result integration can begin
+    -> I5 results
 
 C4 + M9
-    -> I6 facets can begin
+    -> I6 facets/grouping
 
 C4 + M10
-    -> I7 ranking can begin
+    -> I7 ranking
 ```
-
-C6–C10 may continue independently while I2–I8 progress.
 
 ---
 
@@ -1664,10 +1442,6 @@ Java may remain a test/oracle dependency.
 
 It must not become a runtime dependency.
 
-For every series, checked-in verifier contracts, scenarios, and expected outputs define the frozen specification.
-
----
-
 ## C-series
 
 Authority is:
@@ -1685,64 +1459,40 @@ portable conformance corpus
 Verification asks:
 
 ```text
-did this public language operation produce the correct canonical request?
+did the caller produce the correct canonical FlatBuffer request?
 
-did JSON decode into the same canonical FlatBuffers request?
+did the request reach the same *_to_ir() implementation?
 
-did all transports reach the same *_to_ir() implementation?
-
-did equivalent operations produce identical canonical IR?
+did equivalent language operations produce equivalent canonical IR?
 
 did canonical responses produce equivalent language-level results/errors?
 ```
 
-No real search engine is required for C-series acceptance.
+For C7/C8 additionally verify that gRPC is transport-only and does not introduce a second domain schema.
 
 ### Generation verification
 
-C6 must include reproducibility checks conceptually equivalent to:
+The build should verify reproducible generated artifacts from the pinned toolchains:
 
 ```text
-regenerate BFBS
-regenerate bindgen artifacts
-git diff --exit-code
+.fbs -> flatc language models / BFBS
+.proto -> standard gRPC stubs
+BFBS -> Search Kernel-specific metadata where retained
 ```
 
-A schema change without regenerated artifacts must fail CI.
+A schema change without regenerated checked-in artifacts, where artifacts are intentionally checked in, must fail CI.
 
 ### BFBS coverage
 
-The generator must fail on FlatBuffers features it does not understand.
+Search Kernel BFBS tooling must fail on schema features it claims to normalize but cannot represent safely.
 
-It must not silently skip unknown fields, unions, attributes, or schema features.
+It must not silently skip unknown fields, unions, attributes, references, or presence semantics.
 
-### JSON equivalence
+### RPC envelope verification
 
-For every portable conformance fixture:
+Every RPC request must validate the FlatBuffer root/envelope before dispatch.
 
-```text
-FlatBuffers A
-    ↓
-FB → JSON
-    ↓
-JSON → FB
-    ↓
-FlatBuffers B
-```
-
-verify semantic equivalence.
-
-Where applicable, assert:
-
-```text
-A → *_to_ir()
-==
-B → *_to_ir()
-```
-
-Byte-for-byte FlatBuffer identity is not required unless canonical byte encoding is explicitly guaranteed.
-
----
+Malformed bytes, wrong roots, unsupported protocol versions, and oversized requests must fail before `*_to_ir()`.
 
 ## I-series
 
@@ -1764,23 +1514,21 @@ It may not redefine either side.
 
 # Client parity rule
 
-Once a language package or transport becomes first-class, a Portable API change is not complete until:
+Once a language package becomes first-class, a portable API change is complete for that language when:
 
 ```text
 canonical .fbs updated
 +
-BFBS regenerated
-+
-searchkernel-bindgen outputs regenerated
+BFBS / flatc outputs refreshed as required
 +
 searchkernel-ir semantics updated
 +
-affected generated client/runtime artifacts refreshed
+portable conformance passes
 +
-affected transport conformance passes
-+
-affected language façade conformance passes
+affected ergonomic facade tests pass
 ```
+
+The gRPC `.proto` should normally remain unchanged when domain operations or fields are added.
 
 Language syntax may differ idiomatically.
 
@@ -1792,11 +1540,14 @@ There must never be independent definitions such as:
 Python defaults
 Go defaults
 PHP defaults
-HTTP defaults
-native defaults
+Java defaults
+Node defaults
+RPC defaults
 ```
 
 for the same portable operation.
+
+A newly represented portable capability does **not** require immediate ergonomic sugar in every language.
 
 ---
 
@@ -1804,65 +1555,41 @@ for the same portable operation.
 
 ## After M4
 
-The low-level track has proven:
-
-```text
-Rust
-  ↓
-Rust linguistics
-  ↓
-native boundary
-  ↓
-Vespa text indexing + matching
-```
-
-using a pre-generated configuration fixture.
+The low-level track has proven real Rust-analysis → Vespa text indexing/matching.
 
 ## After C4
 
 The high-level Rust product API is usable and testable without Vespa.
 
-This is the first API/product checkpoint.
+## After contract parity freeze
 
-## After C5
+The widened query-language/FBS/IR contract can represent the intended Vespa request surface without forcing backend or SDK work in the same change.
 
-The portable in-process binary ABI is proven.
+## After C7
 
-Foreign runtimes can use one stable request/response byte transport rather than a per-operation C ABI.
-
-## After C6
-
-The schema-driven client architecture is proven:
+The replacement transport is proven:
 
 ```text
-.fbs
- ↓
-BFBS
- ↓
-searchkernel-bindgen
- ↓
-generated client/runtime + JSON codec
+canonical FlatBuffer envelope
+    ↓
+gRPC Frame
+    ↓
+UDS/TCP
+    ↓
+searchkerneld
+    ↓
+same *_to_ir()
 ```
 
-Adding an operation no longer requires independently updating each client protocol implementation.
+No domain semantics exist in protobuf.
 
 ## After C8
 
-Both transport families are proven without Vespa:
-
-```text
-embedded/native
-HTTP/JSON
-HTTP/FlatBuffers
-```
-
-and all converge on the same canonical FlatBuffers dispatcher.
+Python has migrated to gRPC with its existing ergonomic API preserved, and the portable client FFI/native-client path has been removed from the active product.
 
 ## After C10
 
-The portable multi-language product surface is proven independently of Vespa.
-
-Different languages and transports produce the same Search Kernel IR and consume the same portable results/errors.
+Every first-class non-Rust SDK uses the same gRPC transport pattern and passes the same portable conformance corpus.
 
 ## After M8
 
@@ -1872,13 +1599,9 @@ The low-level wrapper can construct schemas/queries and execute useful local sea
 
 The high-level API performs real lexical search through Vespa.
 
-This is the first integrated product checkpoint.
-
 ## After I9
 
-All first-class languages and transports pass the same real-engine conformance scenarios.
-
-This is the multi-language, multi-transport product checkpoint.
+Rust direct execution and first-class gRPC clients pass the same real-engine product scenarios.
 
 ---
 
@@ -1891,7 +1614,7 @@ Updating Vespa is an explicit compatibility exercise, not routine dependency chu
 Every upgrade must verify:
 
 - C++ adapter compatibility;
-- native ABI behavior;
+- the Rust ↔ Vespa native boundary;
 - Java-replacement parity where relevant;
 - search behavior;
 - persisted-index compatibility.
@@ -1910,13 +1633,14 @@ Possible later work includes:
 - tensors;
 - ONNX/model ranking;
 - richer grouping;
-- additional first-class language façades such as C#, Ruby, and Swift;
-- optional additional transports such as gRPC if real usage justifies them;
+- additional first-class language facades such as C#, Ruby, and Swift;
+- browser-specific gRPC-Web/Connect or HTTP gateway work if required;
+- streaming RPC only if a measured workload justifies it;
 - dependency/runtime slimming.
 
-New language packages should reuse the C6–C10 architecture rather than introduce new semantic implementations.
+A new language package should use standard FlatBuffers model generation plus standard gRPC stubs and a thin idiomatic facade.
 
-New transports must converge on the same canonical FlatBuffers request/response path before semantic processing.
+Do not reintroduce a first-party per-language native transport without a concrete requirement that cannot be met by the daemon architecture.
 
 ---
 
@@ -1939,25 +1663,34 @@ prefer the first until real usage demonstrates why the second is necessary.
 When choosing between:
 
 ```text
-derive client/transport behavior from the canonical FlatBuffers schema
+standard FlatBuffers/gRPC generation
 ```
 
 and:
 
 ```text
-maintain another language- or transport-specific protocol definition
+Search Kernel-specific transport/client code generation
 ```
 
-always choose the first.
+prefer the standard tooling.
+
+When widening the portable API, prefer:
+
+```text
+represent -> resolve semantics -> execute -> add ergonomic sugar
+```
+
+over forcing every layer to change in one milestone.
 
 The desired end state is:
 
 ```text
-one portable contract
-one BFBS compiler IR
+one canonical FlatBuffers domain contract
 one API → IR semantic implementation
-one integrated Vespa backend
-many generated façades and transports
+one direct Rust product API
+one small gRPC transport for non-Rust clients
+one required Rust ↔ Vespa native boundary
+thin language facades
 ```
 
-not many independently maintained Search Kernel implementations.
+not a matrix of native ABIs, transports, and independently generated client runtimes.

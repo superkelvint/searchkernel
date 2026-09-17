@@ -274,8 +274,7 @@ Where appropriate:
 - prevent the fake backend from being compiled into acceptance drivers;
 - reject fixture IDs or values appearing in production source;
 - reject Vespa headers outside the native adapter;
-- reject raw FFI outside `searchkernel-vespa-bindings` and the portable FFI
-  boundary;
+- reject raw FFI outside `searchkernel-vespa-bindings`; the retired portable client FFI must not reappear;
 - compile the frozen API fixture;
 - review `reference/vespa/` changes against the verifier/specification commit;
 - run a separate reviewer looking specifically for bypasses.
@@ -456,19 +455,22 @@ The I-series explicitly names cross-track dependencies when integration requires
 
 ## 7.1 Repository shape
 
+Target final shape after the transport migration:
+
 ```text
 searchkernel2/
 ├── api/
 │   └── *.fbs
+├── rpc/
+│   └── searchkernel.proto
 ├── core/
 │   ├── crates/
 │   │   ├── searchkernel-protocol/
 │   │   ├── searchkernel-ir/
 │   │   ├── searchkernel/
-│   │   ├── searchkernel-ffi/
 │   │   ├── searchkernel-testkit/
-│   │   ├── searchkernel-client/
-│   │   ├── searchkernel-json/
+│   │   ├── searchkernel-rpc/
+│   │   ├── searchkernel-json/        # optional edge/debug codec
 │   │   ├── searchkernel-vespa-engine/
 │   │   ├── searchkernel-vespa-bindings/
 │   │   └── searchkernel-ir-adapter/
@@ -476,18 +478,17 @@ searchkernel2/
 │       ├── vespa/
 │       └── sdk/
 ├── clients/
+│   ├── python/
 │   └── README.md
 ├── searchkerneld/
-│   └── README.md
 ├── searchkernel-web/
-│   └── README.md
 ├── upstream/
 │   └── vespa/
 ├── reference/
 │   ├── api-conformance/
 │   ├── clients/
-│   ├── ffi-conformance/
-│   ├── json-conformance/
+│   ├── rpc-conformance/
+│   ├── json-conformance/            # only while JSON remains supported
 │   └── vespa/
 ├── tools/
 │   └── searchkernel-bindgen/
@@ -495,6 +496,18 @@ searchkernel2/
 ├── AGENTS.md
 └── README.md
 ```
+
+The following old client-platform components are removed after gRPC cutover:
+
+```text
+searchkernel-ffi
+portable client C ABI
+NativeTransport implementations
+portable native FFI conformance
+custom generated transport/client core where no longer used
+```
+
+The required Rust ↔ Vespa native boundary under `searchkernel-vespa-bindings` remains.
 
 ## 7.2 Dependency firewall
 
@@ -910,21 +923,18 @@ Ranking evaluation remains C++.
 
 ---
 
-## M11 v2 — Full-surface wrapper hardening
+## M11 — Low-level hardening
 
 ### Goal
 
-Harden `searchkernel-vespa-engine` across M0–M10, then replay the same torture
-workload through `searchkernel-ir-adapter` and production C5 calls. Preserve
-the lifecycle, malformed-input, failpoint, concurrency, resource, sanitizer,
-and stress guarantees at every supported boundary.
+Harden `searchkernel-vespa-engine` independently of the client transport architecture.
 
 Exercise:
 
 ```text
 ASan / UBSan
 lifecycle races
-malformed input
+malformed native input
 native failure
 repeated reopen
 supported concurrency
@@ -936,14 +946,13 @@ disk growth
 native errors
 ```
 
-The M11 verifier consumes the production C5 ABI, but does not use C-series test
-backends or introduce a second semantic implementation.
+M11 has no dependency on the retired portable client FFI or on gRPC.
 
 ---
 
-# 9. C-series — High-Level API and Clients
+# 9. C-series — High-Level API and RPC Clients
 
-The C-series has its own verifier hierarchy:
+The C-series verifier hierarchy remains:
 
 ```text
 reference/clients/cN/
@@ -953,9 +962,33 @@ reference/clients/cN/
     verify-cN.sh
 ```
 
-Where API-shape compilation is relevant, also maintain language-specific compile/typecheck fixtures.
+Where language API shape matters, maintain compile/typecheck fixtures.
 
-C-series acceptance never requires a working Vespa engine.
+C-series acceptance does not require a working Vespa engine unless a milestone explicitly moves into I-series integration.
+
+The final client architecture is:
+
+```text
+Rust
+    direct high-level API
+
+non-Rust
+    idiomatic facade
+        ↓
+    flatc-generated FlatBuffers model types
+        ↓
+    canonical RequestEnvelope bytes
+        ↓
+    standard generated gRPC stub
+        ↓
+    searchkerneld
+        ↓
+    shared dispatcher
+        ↓
+    searchkernel-ir
+```
+
+The portable client C ABI and first-party per-language native transports are retired.
 
 ## C1 — Portable API contract
 
@@ -968,6 +1001,8 @@ Freeze the language-neutral semantic request/response model.
 ```text
 api/*.fbs
 ```
+
+FlatBuffers is the canonical domain contract.
 
 ### Initial messages
 
@@ -1003,9 +1038,7 @@ Error
 
 ### Rules
 
-The protobuf is canonical plumbing, not user-facing style.
-
-It must not encode Rust-only concepts such as:
+The `.fbs` schema must not encode Rust-only concepts such as:
 
 ```text
 lifetimes
@@ -1014,14 +1047,17 @@ AsRef<Path>
 Rust enum memory layout
 ```
 
-Every C-series public API operation must be representable losslessly in C1.
+Every portable operation must be representable losslessly in C1.
+
+The gRPC `.proto` is **not** part of the Search Kernel domain model. It is transport framing only.
 
 ### Verify
 
-- schema evolution compatibility tests;
+- schema evolution compatibility checks;
 - encode/decode round trips;
 - canonical representation fixtures;
-- stable field/tag numbering checks.
+- BFBS reproducibility;
+- stable identifiers/discriminators where compatibility requires them.
 
 ---
 
@@ -1047,27 +1083,18 @@ resolved field definitions
 analyzer identity/version
 filter type checking
 ranking policies
-facet semantics
-prefix/typo policies
+facet/grouping semantics
 portable errors
 resolved requests
 ```
 
 ### Critical rule
 
-Defaults are resolved here, not in individual SDKs or the Vespa adapter.
-
-For example:
-
-```text
-Field::text("title")
-```
-
-resolves to a complete `ResolvedField` before reaching any backend.
+Defaults and portable validation are resolved here, not in individual SDKs, gRPC handlers, or the Vespa adapter.
 
 ### Verify
 
-Golden inputs -> canonical resolved values.
+Golden portable inputs -> canonical IR.
 
 No Vespa dependency is allowed.
 
@@ -1077,7 +1104,7 @@ No Vespa dependency is allowed.
 
 ### Goal
 
-Allow the complete high-level/client surface to be developed without real search.
+Allow the complete portable/client surface to be developed without real search.
 
 ### Crate
 
@@ -1087,42 +1114,25 @@ searchkernel-testkit
 
 ### RecordingBackend
 
-Receives resolved operations and records them exactly.
+Records resolved operations exactly.
 
-It is used to prove:
+Used to prove:
 
 ```text
-language API call
+client/API request
     ↓
-correct portable/resolved request
+correct Search Kernel IR
 ```
 
 ### ScriptedBackend
 
-Returns predefined responses/errors.
+Returns predefined portable responses/errors.
 
-It is used to prove:
-
-```text
-portable response
-    ↓
-correct language result/error
-```
+Used to prove response mapping without implementing search.
 
 ### Forbidden behavior
 
-The testkit must not implement:
-
-```text
-BM25
-prefix matching
-fuzzy matching
-faceting
-ranking
-search execution
-```
-
-It is infrastructure for API verification, not another backend.
+The testkit must not grow BM25, query matching, grouping, ranking, fuzzy search, faceting, or another production search engine.
 
 ---
 
@@ -1130,7 +1140,9 @@ It is infrastructure for API verification, not another backend.
 
 ### Goal
 
-Implement the product-facing Rust API.
+Maintain the ergonomic direct Rust product API.
+
+Rust remains in-process and does not call gRPC merely to reach the local engine.
 
 ### Target surface
 
@@ -1169,55 +1181,43 @@ let results = index
 
 ### Verify
 
-Compile fixtures plus C3 canonical-request/result scenarios.
-
-The Rust package must still build without `searchkernel-vespa-engine`.
+C3 only.
 
 ---
 
-## C5 — Portable native ABI
+## C5 — Historical portable client ABI — retire
 
-### Goal
+### Status
 
-Create the universal in-process transport used by non-Rust clients.
+Superseded by the gRPC architecture.
 
-### Crate
+The old `searchkernel-ffi` byte-oriented client ABI is not part of the final runtime.
+
+Do not extend it.
+
+Its only role during migration is to keep the existing Python/native path working until C8 cutover.
+
+After C8 equivalence passes, delete:
 
 ```text
 searchkernel-ffi
+sk_call-style portable client ABI
+portable handles/buffers/status layer
+portable FFI conformance as an active suite
+Python NativeTransport
+future cgo/JNI/N-API client plans
+native client packaging built around C5
 ```
 
-### ABI shape
-
-Prefer a small surface around:
-
-```text
-ABI version
-open/create handle
-call with request bytes
-receive response bytes
-close handle
-free returned buffer
-```
-
-Only portable primitives cross the boundary:
-
-```text
-opaque handles
-pointer + length byte buffers
-integer status codes
-explicit ownership
-```
-
-Do not expose Rust strings, Vecs, trait objects, callbacks, or language-GC objects through the universal ABI.
+Do not delete or weaken `searchkernel-vespa-bindings`; that is the separate required Rust ↔ C++ engine boundary.
 
 ---
 
-## C6 — Binding generator
+## C6 — BFBS tooling — narrow, do not expand
 
 ### Goal
 
-Automate the mechanical portions of language-client maintenance.
+Retain only Search Kernel-specific BFBS tooling that remains valuable after standard generators take over client plumbing.
 
 ### Tool
 
@@ -1225,92 +1225,252 @@ Automate the mechanical portions of language-client maintenance.
 tools/searchkernel-bindgen
 ```
 
-### Generate
+### Keep
 
 ```text
-request/response models
-enums/tagged unions
-serialization glue
-error mappings
-documentation stubs
-conformance fixtures
+owned BFBS normalization
+reference/union validation
+presence/default metadata
+map/keyed-vector metadata where required
+root and operation inventory
+contract diagnostics
+conformance/documentation metadata
 ```
 
-The generator must not force every language to mimic Rust method-chaining syntax.
+### Stop owning
 
-Handwritten facades should remain small.
-
----
-
-## C7 — Python client
-
-### Goal
-
-Deliver an idiomatic Python frontend to the C1 semantics.
+```text
+universal generated client core
+generic Transport / AsyncTransport abstraction
+per-language native transports
+custom gRPC stub generation
+custom language wire-model generation already provided by flatc
+```
 
 ### Verify
 
-The canonical Python scenarios must produce the same resolved requests and response meanings as the Rust C4 client.
-
-No Python-specific search semantics are allowed.
-
-Real Vespa execution is deferred to I-series verification.
-
----
-
-## C8 — Node.js / TypeScript client
-
-### Goal
-
-Deliver an idiomatic Node/TypeScript frontend.
-
-TypeScript types should be generated or mechanically synchronized with C1.
-
-### Verify
-
-Run the same portable conformance scenarios as C4/C7.
-
-No real Vespa dependency is required.
+- deterministic normalization;
+- malformed/orphan diagnostics;
+- schema mutation coverage for invariants Search Kernel actually owns;
+- no stale generated client artifacts remain required after C8 cleanup.
 
 ---
 
-## C9 — PHP client
+## C7 — gRPC envelope and daemon
 
 ### Goal
 
-Deliver an idiomatic PHP frontend.
+Build the replacement non-Rust transport beside the old path.
 
-The public API may use fluent PHP conventions, while request meaning remains C1.
+### Transport schema
 
-A production package should prefer a normal extension/native package; raw PHP FFI is acceptable as a development path but not the semantic contract.
+Add:
+
+```text
+rpc/searchkernel.proto
+```
+
+with a deliberately tiny contract, conceptually:
+
+```proto
+syntax = "proto3";
+
+package searchkernel.rpc.v1;
+
+message Frame {
+  bytes payload = 1;
+}
+
+service SearchKernel {
+  rpc Execute(Frame) returns (Frame);
+}
+```
+
+No Search Kernel domain fields belong in protobuf.
+
+### Runtime crate
+
+Implement a small reusable RPC service layer, for example:
+
+```text
+searchkernel-rpc
+```
+
+`searchkerneld` owns process configuration and hosts that service.
+
+### Server execution path
+
+```text
+Frame.payload
+    ↓
+verify FlatBuffer root/envelope
+    ↓
+shared canonical dispatcher
+    ↓
+*_to_ir()
+    ↓
+backend
+    ↓
+canonical ResponseEnvelope bytes
+```
+
+### Required transport support
+
+```text
+Unix-domain socket on supported Unix-like systems
+TCP fallback / explicit network mode
+```
 
 ### Verify
 
-Run the same portable conformance scenarios.
+With `RecordingBackend` / `ScriptedBackend`:
+
+- UDS request/response;
+- TCP request/response where supported;
+- malformed FlatBuffer rejection;
+- wrong root/envelope rejection;
+- unsupported protocol version rejection;
+- request/response size limits;
+- portable errors remain portable payload errors;
+- gRPC failures remain transport errors;
+- direct portable request and gRPC-carried request produce identical IR.
+
+### Forbidden shortcuts
+
+- protobuf domain model;
+- one protobuf request type per Search Kernel operation;
+- gRPC handler-specific defaults or validation;
+- direct gRPC → Vespa semantic path bypassing `*_to_ir()`.
 
 ---
 
-## C10 — Go client
+## C8 — Python gRPC migration and old-path deletion
 
 ### Goal
 
-Deliver an idiomatic Go frontend.
+Move the existing ergonomic Python API to gRPC without changing its Search Kernel semantics.
 
-Use Go conventions such as `context.Context`, explicit errors, and functional options where appropriate rather than mechanically reproducing Rust builders.
+### Build first: low-level proof
 
-Embedded operation may rely on cgo.
+Before touching the facade, prove:
+
+```text
+flatc-generated Python models
+    ↓
+RequestEnvelope bytes
+    ↓
+generated gRPC stub
+    ↓
+UDS
+    ↓
+Rust searchkerneld
+    ↓
+RecordingBackend / ScriptedBackend
+```
+
+### Then port the facade
+
+Preserve user-facing concepts such as:
+
+```text
+Index
+SearchBuilder
+field()/FieldRef
+filter operators
+ranking selection
+result wrappers
+```
+
+The facade owns syntax sugar only.
+
+### Equivalence gate
+
+Temporarily run old and new Python paths against the same canonical scenarios.
+
+Require equivalent canonical request meaning and response meaning.
+
+### Cutover gate
+
+C8 is not complete until the old client transport is deleted:
+
+```text
+Python NativeTransport removed
+portable client FFI removed
+portable FFI verifier removed from active CI
+obsolete generated transport/client-core code removed
+native-client packaging removed
+```
+
+The Vespa C++ native boundary remains untouched.
+
+---
+
+## C9 — Additional language facades on demand
+
+### Goal
+
+Add languages only when there is a concrete product need.
+
+Candidates:
+
+```text
+Node.js / TypeScript
+Go
+Java
+PHP
+```
+
+Each uses:
+
+```text
+flatc-generated domain models
++
+standard generated gRPC stub
++
+small idiomatic facade
+```
+
+No new language may require a Search Kernel-specific native transport or custom RPC generator as a condition of first-class support.
 
 ### Verify
 
-Run the same portable conformance scenarios.
+Run the shared portable conformance scenarios.
+
+Use language-native compile/type checks where applicable.
+
+---
+
+## C10 — Cross-language portable conformance
+
+### Goal
+
+Prove equivalent portable semantics across every first-class language facade.
+
+### Request invariant
+
+```text
+equivalent language call
+    ↓
+canonical FlatBuffer request
+    ↓
+gRPC/shared dispatcher where non-Rust
+    ↓
+identical Search Kernel IR
+```
+
+### Response invariant
+
+A canonical scripted response/error must produce equivalent language-level meaning in all first-class clients.
+
+C10 does not maintain a native-vs-HTTP-vs-FFI matrix.
+
+Rust direct and non-Rust gRPC are the two product entry patterns.
 
 ---
 
 # 10. I-series — Integration
 
-The I-series is the only series that depends on both M and C artifacts. Its
-acceptance artifacts belong under the appropriate `reference/` conformance
-area when an integration milestone is added.
+The I-series is the only series that depends on both M and C artifacts.
 
 The integration implementation belongs in:
 
@@ -1318,15 +1478,15 @@ The integration implementation belongs in:
 searchkernel-ir-adapter
 ```
 
+Transport does not belong in the I-series.
+
 ## I1 — Adapter skeleton and firewall
 
 ### Goal
 
-Create the composition boundary without yet mapping significant functionality.
+Create the composition boundary without mapping significant functionality.
 
 ### Verify
-
-Enforce the dependency rule:
 
 ```text
 C-series crates -> no searchkernel-vespa-engine dependency
@@ -1334,15 +1494,13 @@ M-series crates -> no searchkernel-ir dependency
 integration crate -> may depend on both
 ```
 
-Also verify that no low-level Vespa types leak into the public high-level API.
+No low-level Vespa types leak into the public high-level API.
 
 ---
 
 ## I2 — Index lifecycle and schema
 
 ### Dependencies
-
-At minimum:
 
 ```text
 C1/C2
@@ -1351,26 +1509,13 @@ M1/M6
 
 ### Goal
 
-Compile `ResolvedIndexDefinition` into the low-level Vespa configuration and wire real `IndexRuntime::create/open`.
-
-### Verify
-
-For canonical schemas, inspect both:
-
-```text
-resolved high-level semantics
-compiled Vespa configuration
-```
-
-then instantiate the real engine.
+Compile `ResolvedIndexDefinition` into low-level Vespa configuration and wire real `IndexRuntime::create/open`.
 
 ---
 
 ## I3 — Document operations
 
 ### Dependencies
-
-At minimum:
 
 ```text
 C1-C4
@@ -1379,22 +1524,7 @@ M2/M5
 
 ### Goal
 
-Map:
-
-```text
-insert
-upsert
-patch
-get
-delete
-bulk
-```
-
-onto the real low-level engine.
-
-### Verify
-
-Use high-level operations and confirm real Vespa state/search behavior.
+Map insert/upsert/patch/get/delete/bulk onto the real engine.
 
 No scripted backend is allowed in I-series acceptance.
 
@@ -1404,8 +1534,6 @@ No scripted backend is allowed in I-series acceptance.
 
 ### Dependencies
 
-At minimum:
-
 ```text
 C1-C4
 M3/M4/M7
@@ -1413,25 +1541,7 @@ M3/M4/M7
 
 ### Goal
 
-Compile resolved high-level queries into low-level Vespa queries.
-
-Cover:
-
-```text
-search text
-search-field selection/weights
-analysis
-terms
-phrases
-AND/OR/NOT
-exact filters
-range filters
-exists
-```
-
-### Verify
-
-High-level request -> real Matcher -> high-level result.
+Compile resolved high-level queries into low-level Vespa queries and execute the real Matcher.
 
 ---
 
@@ -1448,17 +1558,6 @@ M8
 
 Map the high-level result contract onto local Vespa search/docsums.
 
-Cover:
-
-```text
-hits
-totals
-projection
-sorting
-limit/offset
-highlighting/snippets where supported
-```
-
 ---
 
 ## I6 — Facets and grouping
@@ -1472,9 +1571,7 @@ M9
 
 ### Goal
 
-Compile high-level facet/group operations onto native grouping.
-
-Keep facet semantics owned by `searchkernel-ir`.
+Compile high-level facet/group operations onto native grouping while keeping portable semantics in `searchkernel-ir`.
 
 ---
 
@@ -1489,17 +1586,7 @@ M10
 
 ### Goal
 
-Compile high-level ranking policies into supported Vespa ranking configuration/request inputs.
-
-Initial policies:
-
-```text
-DefaultRelevanceV1
-BM25
-search-field weights
-business tie-break fields
-hard sorts
-```
+Compile high-level ranking policies, rank-profile selection, query inputs/features, and other supported ranking request state into Vespa.
 
 ---
 
@@ -1507,56 +1594,42 @@ hard sorts
 
 ### Goal
 
-Integrate semantic conveniences that may compile into multiple Vespa primitives:
+Integrate any Search Kernel-owned conveniences that compile into multiple Vespa primitives.
 
-```text
-prefix
-fuzzy/typo tolerance
-synonyms
-presets
-curations
-facet-value search
-```
-
-The C-series specifies their behavior.
-
-The M-series supplies the underlying capabilities.
-
-The I-series owns only the translation.
+The C-series specifies their behavior; the M-series supplies capabilities; I-series owns only translation.
 
 ---
 
-## I9 — Cross-language real-engine conformance
+## I9 — Rust/direct vs gRPC real-engine conformance
 
 ### Dependencies
 
-First-class C-series clients plus the required integrated product surface.
+Integrated product surface plus C7/C8 and any additional first-class C9 clients under test.
 
 ### Goal
 
-Run one scenario corpus through:
+Run the same representative product corpus through:
 
 ```text
-Rust
-Python
-Node.js / TypeScript
-PHP
-Go
+Rust direct embedded API
+Python gRPC
+additional first-class gRPC facades where available
 ```
 
-against the real embedded engine.
+against real Vespa.
 
 ### Canonical scenario
 
 At minimum:
 
 ```text
-create product index
+create/open product index
 bulk insert documents
 search text
 filter
-facet
+facet/group where supported
 sort
+ranking/query inputs where supported
 patch document
 search again
 delete
@@ -1565,7 +1638,7 @@ reopen
 search
 ```
 
-All clients must have equivalent semantic outcomes.
+All entry paths must have equivalent semantic outcomes.
 
 ---
 
@@ -1573,7 +1646,13 @@ All clients must have equivalent semantic outcomes.
 
 ### Goal
 
-Produce supported clean-machine packages and exercise the complete system.
+Produce supported clean-machine packages for:
+
+```text
+Rust embedded
+searchkerneld
+selected first-class gRPC language SDKs
+```
 
 The target machine must not require:
 
@@ -1583,8 +1662,6 @@ Vespa development container
 Vespa build tools
 Vespa Java runtime/services
 ```
-
-Package at least the first-class clients selected for release.
 
 Then run:
 
@@ -1597,73 +1674,50 @@ long-running workloads
 resource/leak tests
 package-size measurements
 startup measurements
+UDS RPC overhead measurements
+TCP RPC overhead measurements where relevant
 ```
 
 ---
 
 # 11. Orthogonal sequencing rules
 
-The intended post-M2 implementation schedule is:
+The intended sequencing is:
 
 ```text
 M TRACK
-
 M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11
 
+C CONTRACT/API
+C1 -> C2 -> C3 -> C4
 
-C TRACK
-
-C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 -> C9 -> C10
+TRANSPORT RESET
+finish/freeze current FBS+IR widening
+    -> C7
+    -> C8
+    -> delete C5/native-client path
+    -> narrow C6 to surviving BFBS responsibilities
+    -> C9/C10 on demand
 ```
 
-These arrows mean dependencies **inside the track only**.
+Do not combine the current large FBS/IR parity expansion and the transport rewrite in one implementation task.
 
-There are no implicit diagonal dependencies.
-
-For example, all of the following are valid states:
-
-```text
-M5 complete, C2 complete
-M8 complete, C4 complete
-M4 complete, C9 complete
-C10 complete, M6 complete
-```
-
-Integration milestones are the only place where cross-track prerequisites are declared.
-
-This is important for both human teams and coding agents: an M-series task should not start editing C-series code merely because it needs a convenient abstraction, and a C-series task should not import Vespa merely to make a standalone test pass.
+There are no implicit diagonal dependencies between M and C. I-series milestones state their own cross-track prerequisites.
 
 ---
 
 # 12. Client parity rule
 
-Once a client becomes first-class, a change to the portable API is not complete until:
+A portable feature progresses independently through:
 
 ```text
-C1 contract updated
-+
-C2 semantics updated
-+
-generated bindings refreshed
-+
-all affected client conformance suites pass
+represented in FlatBuffers
+resolved in Search Kernel IR
+executable by the backend
+ergonomic in a facade
 ```
 
-Language syntax may differ idiomatically.
-
-Semantic meaning may not drift.
-
-Examples:
-
-```text
-Rust builder
-Python kwargs/operators
-TypeScript options
-PHP fluent methods
-Go functional options
-```
-
-may all represent the same C1 request.
+Once a language facade becomes first-class, it may lag in ergonomic sugar, but it must always be possible to represent supported low-level portable requests through the generated FlatBuffers model layer.
 
 Defaults and validation are never independently redefined by each SDK.
 
@@ -1685,8 +1739,6 @@ fmt/clippy/tests pass
 verify M0 ... verify MN pass
 ```
 
-The implementing agent must not modify earlier M-series contracts or verifiers to make new work pass.
-
 ## C-series milestone N
 
 Complete only when:
@@ -1695,12 +1747,13 @@ Complete only when:
 portable/client contract frozen
 canonical expected request/result behavior frozen
 implementation complete
-all affected language compile/type checks pass
-C-series conformance tests through CN pass
-no Vespa dependency has leaked into standalone C-series crates
+required generated artifacts reproducible
+relevant language compile/type checks pass
+C-series verifier passes
+no Vespa dependency leaked into standalone semantic/client tests
 ```
 
-C-series completion does not require real search.
+For C7/C8 specifically, transport code must remain semantic-free and C8 must delete the retired portable client FFI path.
 
 ## I-series milestone N
 
@@ -1737,44 +1790,44 @@ For every M milestone:
 11. independent verifier
 ```
 
-Reviewer focus:
-
-```text
-fake backend
-fixture-specific logic
-Rust reimplementation of Vespa behavior
-Java runtime dependency sneaking into production
-native library linked but not actually used
-API-contract bypass
-unsafe ownership shortcuts
-modified verifier/goldens
-```
-
 ## C-series
 
-For every C milestone:
+For contract/semantic work:
 
 ```text
-1. freeze portable/high-level semantics
+1. freeze portable semantics
 2. define canonical request/response fixtures
-3. define language compile/type fixtures where relevant
-4. review verifier and commit specification
-5. implementation agent
-6. parity reviewer
-7. fixer
-8. independent verifier
+3. review verifier and commit specification
+4. implementation agent
+5. parity reviewer
+6. fixer
+7. independent verifier
 ```
+
+For C7/C8 transport migration, use additive tasks only:
+
+```text
+1. add tiny .proto and generated Rust/Python stubs
+2. add standalone gRPC service around existing dispatcher
+3. prove low-level Python FlatBuffer round trip over UDS
+4. port Python facade without deleting old path
+5. run old/new equivalence corpus
+6. cut over
+7. delete portable FFI/native path
+8. simplify bindgen only after deletion
+```
+
+Do **not** ask an implementation agent to "refactor C5/C6/C7 to gRPC" in one pass.
 
 Reviewer focus:
 
 ```text
-language-specific semantic drift
-defaults duplicated in SDK
-validation duplicated inconsistently
-Rust-specific assumptions in portable API
+second domain schema sneaking into protobuf
+transport-specific defaults/validation
+language semantic drift
+old FFI kept alive through compatibility shims
+custom generator growing where flatc/gRPC tooling already suffices
 Vespa dependency leakage
-fake search implementation in testkit
-handwritten generated-code divergence
 ```
 
 ## I-series
@@ -1782,8 +1835,8 @@ handwritten generated-code divergence
 For every I milestone:
 
 ```text
-1. identify previously committed C semantics
-2. identify already-verified M capability
+1. identify committed C semantics
+2. identify verified M capability
 3. define translation contract
 4. freeze end-to-end scenarios
 5. implement adapter
@@ -1797,24 +1850,40 @@ The integration agent does not redesign either public API.
 
 # 15. Immediate work
 
-M0–M2 are complete and remain unchanged.
+The current priority is to reduce simultaneous moving parts.
 
-The project can now start **two independent next milestones in parallel**:
-
-```text
-M3 — Linguistics compatibility
-```
-
-and:
+Execute in this order:
 
 ```text
-C1 — Portable API contract
+1. Finish and freeze the current query-language / FlatBuffers / IR widening.
+   - represent the desired Vespa surface
+   - complete *_to_ir() semantics
+   - freeze positive/negative conformance cases
+   - do not require all backend lowering or SDK sugar yet
+
+2. Implement C7 as a greenfield additive RPC path.
+   - tiny bytes-only .proto
+   - Rust gRPC service
+   - UDS first, TCP fallback
+   - existing canonical dispatcher / *_to_ir()
+   - no deletion of old client path yet
+
+3. Prove one deliberately low-level Python request over gRPC.
+
+4. Port the existing Python ergonomic facade to the gRPC path.
+
+5. Run old-vs-new Python canonical equivalence.
+
+6. Cut over and delete:
+   - searchkernel-ffi / portable client ABI
+   - Python NativeTransport
+   - portable FFI conformance from active CI
+   - obsolete generated client/transport machinery
+   - native-client packaging/plans
+
+7. Re-audit searchkernel-bindgen and keep only the BFBS responsibilities still justified.
+
+8. Add further language facades only when product demand requires them.
 ```
 
-M3's oracle comes from the pinned Vespa Java linguistics implementation.
-
-C1 freezes the language-neutral product contract, including the protobuf representation required for later Rust/Python/Node/PHP/Go clients.
-
-Neither task should depend on the other.
-
-The first useful integration work can begin once its named prerequisites exist; there is no need to wait for either entire track to finish.
+The transport migration must treat the frozen FlatBuffers contract and `searchkernel-ir` semantics as inputs, not redesign them while moving plumbing.
