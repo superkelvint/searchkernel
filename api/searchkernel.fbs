@@ -969,6 +969,29 @@ table GroupingAliasReference {
   name:string;
 }
 
+// Structured accessors required by Vespa grouping expressions such as
+// my_map{"foo"}.my_field and attributes.key/value. These remain explicit in
+// resolved IR instead of hiding raw grouping fragments in field names.
+table GroupingMemberExpression {
+  base:GroupingExpression;
+  member:string;
+}
+
+table GroupingMapLookupExpression {
+  base:GroupingExpression;
+  key:GroupingExpression;
+}
+
+// predefined(...) bucket argument. Boundaries are explicit so resolved IR
+// preserves finite/infinite endpoints and inclusion semantics without relying
+// on source spelling such as bucket[0,1000>.
+table GroupingBucketExpression {
+  lower:RangeBound;
+  upper:RangeBound;
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
+}
+
 // Aggregations are also expressions, since Vespa allows constructs such as
 // order(-count()) and order(max(price) * count()).
 table GroupingAggregationExpression {
@@ -982,6 +1005,9 @@ union GroupingExpressionKind {
   GroupingUnaryExpression,
   GroupingBinaryExpression,
   GroupingAliasReference,
+  GroupingMemberExpression,
+  GroupingMapLookupExpression,
+  GroupingBucketExpression,
   GroupingAggregationExpression
 }
 
@@ -1082,6 +1108,10 @@ table GroupingFilterRange {
   expression:GroupingExpression;
   lower:GroupingExpression;
   upper:GroupingExpression;
+  // Vespa range(min,max,expr) defaults to inclusive lower and exclusive upper.
+  // C2 resolves absent values to true/false respectively.
+  include_lower:OptionalBool;
+  include_upper:OptionalBool;
 }
 
 table GroupingFilterIsTrue {
@@ -1119,8 +1149,9 @@ table GroupingEachOperation {
 }
 
 table GroupingGroupOperation {
+  // group(expr) selects the grouping key; nested branches remain sibling
+  // all(...)/each(...) operations in the enclosing operation list.
   expression:GroupingExpression;
-  operations:[GroupingOperation];
 }
 
 table GroupingOutputOperation {
@@ -1198,7 +1229,9 @@ table GroupingOperation {
 }
 
 table StructuredGroupingSource {
-  operations:[GroupingOperation];
+  // One Vespa grouping statement has all(...) as its structural root. Multiple
+  // grouping statements are represented by multiple GroupingRequest entries.
+  root:GroupingAllOperation;
 }
 
 union GroupingSourceKind {
@@ -1217,7 +1250,9 @@ table GroupingRequest {
 // available, inspection of such a request may return Unsupported rather than
 // lie about resolution.
 table ResolvedGroupingRequest {
-  operations:[GroupingOperation];
+  // Resolved grouping is canonical and rooted exactly like a Vespa grouping
+  // statement; no alternative top-level operation-vector encoding exists.
+  root:GroupingAllOperation;
   continuations:[string];
 }
 
