@@ -3,17 +3,17 @@ include "searchkernel.fbs";
 namespace SearchKernel.FFI.V1;
 
 union ResponsePayload {
-  SearchKernel.V1.InsertResult,
-  SearchKernel.V1.UpsertResult,
-  SearchKernel.V1.PatchResult,
-  SearchKernel.V1.DeleteResult,
-  SearchKernel.V1.GetResult,
-  SearchKernel.V1.SearchResult,
-  SearchKernel.V1.AnalyzeResult,
+  SearchKernel.V2.InsertResult,
+  SearchKernel.V2.UpsertResult,
+  SearchKernel.V2.PatchResult,
+  SearchKernel.V2.DeleteResult,
+  SearchKernel.V2.GetResult,
+  SearchKernel.V2.SearchResult,
+  SearchKernel.V2.AnalyzeResult,
   // Keep Error at its existing discriminant. New variants are appended.
-  SearchKernel.V1.Error,
-  SearchKernel.V1.DescribeResult,
-  SearchKernel.V1.InspectQueryResult
+  SearchKernel.V2.Error,
+  SearchKernel.V2.DescribeResult,
+  SearchKernel.V2.InspectQueryResult
 }
 
 table ResponseEnvelope {

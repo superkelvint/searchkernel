@@ -3,15 +3,15 @@ include "searchkernel.fbs";
 namespace SearchKernel.FFI.V1;
 
 union RequestPayload {
-  SearchKernel.V1.InsertRequest,
-  SearchKernel.V1.UpsertRequest,
-  SearchKernel.V1.PatchRequest,
-  SearchKernel.V1.DeleteRequest,
-  SearchKernel.V1.GetRequest,
-  SearchKernel.V1.SearchRequest,
-  SearchKernel.V1.AnalyzeRequest,
-  SearchKernel.V1.DescribeRequest,
-  SearchKernel.V1.InspectQueryRequest
+  SearchKernel.V2.InsertRequest,
+  SearchKernel.V2.UpsertRequest,
+  SearchKernel.V2.PatchRequest,
+  SearchKernel.V2.DeleteRequest,
+  SearchKernel.V2.GetRequest,
+  SearchKernel.V2.SearchRequest,
+  SearchKernel.V2.AnalyzeRequest,
+  SearchKernel.V2.DescribeRequest,
+  SearchKernel.V2.InspectQueryRequest
 }
 
 table RequestEnvelope {
