@@ -84,10 +84,28 @@ pub fn compile_index_definition(
 /// Validate the subset of the portable schema that the current M ABI can
 /// execute without losing document values.
 pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr) -> Result<()> {
+    if !definition.properties().is_empty()
+        || !definition.schema_inherits().is_empty()
+        || !definition.document_inherits().is_empty()
+        || !definition.structs().is_empty()
+        || !definition.fieldsets().is_empty()
+        || !definition.schema_fields().is_empty()
+        || !definition.imported_fields().is_empty()
+        || !definition.document_summaries().is_empty()
+        || !definition.rank_profiles().is_empty()
+        || !definition.constants().is_empty()
+        || !definition.onnx_models().is_empty()
+    {
+        return Err(PortableError::unsupported(
+            "schema_feature_not_supported",
+            Some("schema"),
+            "the current native adapter cannot lower rich schema-level configuration",
+        ));
+    }
     for (index, field) in definition.fields().iter().enumerate() {
         if matches!(
-            field.cardinality(),
-            searchkernel_ir::FieldCardinality::Multi
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
         ) {
             return Err(PortableError::unsupported(
                 "multi_valued_fields_not_supported",
@@ -100,8 +118,13 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
 
         let field_path = format!("fields[{index}]");
-        if matches!(field.kind(), searchkernel_ir::FieldKind::Text)
-            && !field.capabilities().searchable()
+        if matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String)
+        ) && !matches!(
+            field.matching().map(|value| value.mode),
+            Some(searchkernel_ir::MatchingModeIr::Exact | searchkernel_ir::MatchingModeIr::Word)
+        ) && !field.capabilities().searchable()
         {
             return Err(PortableError::unsupported(
                 "unsupported_field_capability",
@@ -112,8 +135,10 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 ),
             ));
         }
-        if matches!(field.kind(), searchkernel_ir::FieldKind::Float64)
-            && field.capabilities().facetable()
+        if matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64)
+        ) && field.capabilities().groupable()
         {
             return Err(PortableError::unsupported(
                 "unsupported_field_capability",
@@ -123,6 +148,55 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                     field.name().as_str()
                 ),
             ));
+        }
+        if !field.properties().is_empty()
+            || !field.struct_fields().is_empty()
+            || field.indexing_script().is_some()
+            || field.matching().is_some_and(|value| {
+                !value.options.is_empty()
+                    || !matches!(
+                        value.mode,
+                        searchkernel_ir::MatchingModeIr::Unspecified
+                            | searchkernel_ir::MatchingModeIr::Text
+                            | searchkernel_ir::MatchingModeIr::Exact
+                            | searchkernel_ir::MatchingModeIr::Word
+                    )
+            })
+            || field
+                .index()
+                .is_some_and(|value| value.hnsw.is_some() || !value.options.is_empty())
+            || field.attribute().is_some_and(|value| {
+                value.fast_access.is_some()
+                    || value.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified
+                    || !value.options.is_empty()
+            })
+            || field
+                .summary()
+                .is_some_and(|value| !value.options.is_empty())
+            || field.analyzer().is_some_and(|value| {
+                value.name != "standard" || value.version != 1 || !value.options.is_empty()
+            })
+        {
+            return Err(PortableError::unsupported(
+                "schema_feature_not_supported",
+                Some(format!("fields[{index}]")),
+                "the current native adapter cannot lower this rich field configuration",
+            ));
+        }
+        match field.data_type() {
+            searchkernel_ir::DataTypeIr::Primitive(
+                searchkernel_ir::PrimitiveDataTypeIr::String
+                | searchkernel_ir::PrimitiveDataTypeIr::Bool
+                | searchkernel_ir::PrimitiveDataTypeIr::Int64
+                | searchkernel_ir::PrimitiveDataTypeIr::Float64,
+            ) => {}
+            _ => {
+                return Err(PortableError::unsupported(
+                    "data_type_not_supported",
+                    Some(format!("fields[{index}].data_type")),
+                    "the current native adapter cannot lower this V2 data type",
+                ))
+            }
         }
     }
     Ok(())
@@ -1037,12 +1111,12 @@ fn unsupported(message: impl Into<String>) -> PortableError {
 mod tests {
     use super::*;
     use searchkernel_ir::{
-        AnalyzerIdentity, ComparisonIr, ComparisonOp, FieldCapabilities, FieldCardinality, FieldIr,
-        FieldKind, FieldName, FieldValueIr, GroupingAggregationIr, GroupingAllIr,
-        GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
-        HighlightingIr, IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, QueryIr,
-        RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection,
-        SortIr, TypoPolicy,
+        ComparisonIr, ComparisonOp, DataTypeIr, FieldCapabilities, FieldIr, FieldKind, FieldName,
+        FieldValueIr, GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr,
+        GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
+        IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, PrimitiveDataTypeIr,
+        QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
+        SortDirection, SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -1199,9 +1273,8 @@ mod tests {
             None,
             vec![FieldIr::new(
                 field("tags"),
-                FieldKind::Keyword,
-                FieldCardinality::Multi,
-                None::<AnalyzerIdentity>,
+                DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+                None,
                 FieldCapabilities::new(false, false, true, false, false),
             )],
             Vec::new(),
@@ -1232,9 +1305,15 @@ mod tests {
                 None,
                 vec![FieldIr::new(
                     field("value"),
-                    kind,
-                    FieldCardinality::Single,
-                    None::<AnalyzerIdentity>,
+                    match kind {
+                        FieldKind::Text | FieldKind::Keyword => {
+                            DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+                        }
+                        FieldKind::Float64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                        FieldKind::Int64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                        FieldKind::Bool => DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                    },
+                    None,
                     capabilities,
                 )],
                 Vec::new(),
@@ -1253,9 +1332,8 @@ mod tests {
             None,
             vec![FieldIr::new(
                 field("active"),
-                FieldKind::Bool,
-                FieldCardinality::Single,
-                None::<AnalyzerIdentity>,
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+                None,
                 FieldCapabilities::new(true, false, true, true, true),
             )],
             Vec::new(),

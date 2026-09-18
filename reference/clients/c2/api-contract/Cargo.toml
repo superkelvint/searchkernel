@@ -9,6 +9,7 @@ searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol"
 searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir", features = ["test-support"] }
 
 [dev-dependencies]
+flatbuffers = "=25.12.19"
 serde_json = "1"
 
 [workspace]

@@ -793,8 +793,11 @@ fn ranking_name(value: RankingPolicyIr) -> &'static str {
         RankingPolicyIr::Bm25 => "bm25",
     }
 }
+fn field_analyzer_name(value: Option<&searchkernel_ir::AnalyzerIr>) -> Option<&str> {
+    value.map(|value| value.name.as_str())
+}
 fn analyzer_name(value: Option<AnalyzerIdentity>) -> Option<&'static str> {
-    value.map(|v| match v {
+    value.map(|value| match value {
         AnalyzerIdentity::StandardV1 => "standard_v1",
     })
 }
@@ -815,7 +818,7 @@ fn cardinality_name(value: FieldCardinality) -> &'static str {
 }
 fn field_json(value: &FieldIr) -> JsonValue {
     let capabilities = value.capabilities();
-    json!({"name":value.name().as_str(),"kind":field_kind_name(value.kind()),"cardinality":cardinality_name(value.cardinality()),"analyzer":analyzer_name(value.analyzer()),"capabilities":{"stored":capabilities.stored(),"searchable":capabilities.searchable(),"filterable":capabilities.filterable(),"sortable":capabilities.sortable(),"facetable":capabilities.facetable()}})
+    json!({"name":value.name().as_str(),"kind":field_kind_name(value.kind()),"cardinality":cardinality_name(value.cardinality()),"analyzer":field_analyzer_name(value.analyzer()),"capabilities":{"stored":capabilities.stored(),"searchable":capabilities.searchable(),"filterable":capabilities.filterable(),"sortable":capabilities.sortable(),"facetable":capabilities.facetable()}})
 }
 fn index_json_value(value: &IndexDefinitionIr) -> JsonValue {
     json!({"name":value.name().map(IndexName::as_str),"fields":value.fields().iter().map(field_json).collect::<Vec<_>>(),"default_search_fields":search_fields_json(value.default_search_fields()),"default_ranking":ranking_name(value.default_ranking()),"default_prefix_policy":"disabled","default_typo_policy":"disabled"})
@@ -823,7 +826,7 @@ fn index_json_value(value: &IndexDefinitionIr) -> JsonValue {
 fn describe_json(value: &IndexDefinitionIr) -> JsonValue {
     let fields = value.fields().iter().map(|field| {
         let capabilities = field.capabilities();
-        let analyzer = field.analyzer().map(|_| json!({"name":"standard","options":{},"version":1}));
+        let analyzer = field.analyzer().map(|analyzer| json!({"name":analyzer.name,"options":{},"version":analyzer.version}));
         json!({"name":field.name().as_str(),"kind":field_kind_name(field.kind()),"cardinality":cardinality_name(field.cardinality()),"stored":capabilities.stored(),"searchable":capabilities.searchable(),"filterable":capabilities.filterable(),"sortable":capabilities.sortable(),"facetable":capabilities.facetable(),"analyzer":analyzer})
     }).collect::<Vec<_>>();
     json!({"index":{"name":value.name().map(IndexName::as_str),"fields":fields,"default_search_fields":{"fields":value.default_search_fields().iter().map(|field|json!({"field":field.field().as_str(),"weight":field.weight().get()})).collect::<Vec<_>>()}}})

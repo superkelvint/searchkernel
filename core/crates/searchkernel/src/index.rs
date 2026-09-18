@@ -1198,10 +1198,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             .filterable(capabilities.filterable())
             .sortable(capabilities.sortable())
             .facetable(capabilities.facetable());
-        if matches!(
-            field.analyzer(),
-            Some(searchkernel_ir::AnalyzerIdentity::StandardV1)
-        ) {
+        if field.analyzer().is_some_and(|analyzer| {
+            analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
+        }) {
             value = value.analyzer(Analyzer::standard_v1());
         }
         result = result.field(value);
@@ -1374,7 +1373,7 @@ fn config_identity(config: &std::path::Path) -> Result<serde_json::Value> {
 mod tests {
     use super::*;
     use crate::{Analyzer, Field, SearchField};
-    use searchkernel_ir::{AnalyzerIdentity, FieldCardinality, FieldKind};
+    use searchkernel_ir::{FieldCardinality, FieldKind};
     use searchkernel_testkit::RecordingBackend;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1489,7 +1488,9 @@ mod tests {
         assert_eq!(fields[0].name().as_str(), "title");
         assert_eq!(fields[0].kind(), FieldKind::Text);
         assert_eq!(fields[0].cardinality(), FieldCardinality::Single);
-        assert_eq!(fields[0].analyzer(), Some(AnalyzerIdentity::StandardV1));
+        assert!(fields[0]
+            .analyzer()
+            .is_some_and(|analyzer| analyzer.name == "standard" && analyzer.version == 1));
         assert!(!fields[0].capabilities().stored());
         assert!(fields[0].capabilities().searchable());
 

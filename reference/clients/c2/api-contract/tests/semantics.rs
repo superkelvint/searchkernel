@@ -3,6 +3,80 @@ include!(concat!(
     "/../../../../core/crates/searchkernel-ir/tests/semantics.rs"
 ));
 
+fn context(searchable: Option<&[&str]>) -> searchkernel_ir::IndexContext {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let primitive = api::PrimitiveDataType::create(
+        &mut builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: api::PrimitiveDataTypeKind::String,
+        },
+    );
+    let data_type = api::DataType::create(
+        &mut builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
+    let fields = searchable
+        .unwrap_or(&[])
+        .iter()
+        .map(|name| {
+            let name = builder.create_string(name);
+            let searchable = api::OptionalBool::new(true);
+            api::FieldDefinition::create(
+                &mut builder,
+                &api::FieldDefinitionArgs {
+                    name: Some(name),
+                    data_type: Some(data_type),
+                    searchable: Some(&searchable),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let fields = builder.create_vector(&fields);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(definition, None);
+    let definition =
+        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(builder.finished_data())
+            .expect("valid index definition");
+    searchkernel_ir::IndexContext::from_api(definition).expect("valid index context")
+}
+
+fn timeout_request_bytes(timeout: Option<u64>) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string("query");
+    let query = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query.as_union_value()),
+        },
+    );
+    let timeout = timeout.map(api::OptionalUInt64::new);
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            timeout_ms: timeout.as_ref(),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
 #[test]
 fn frozen_timeout_corpus_is_executed_by_search_and_inspection() {
     let scenarios: serde_json::Value =

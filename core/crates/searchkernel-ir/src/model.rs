@@ -113,6 +113,48 @@ impl AsRef<str> for LanguageHint {
     }
 }
 
+/// The physical V2 document type.  Matching and index configuration are
+/// intentionally modelled separately; `Text` and `Keyword` are not document
+/// types in the portable contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataTypeIr {
+    Primitive(PrimitiveDataTypeIr),
+    Tensor {
+        type_spec: String,
+    },
+    Array(Box<DataTypeIr>),
+    Map {
+        key_type: Box<DataTypeIr>,
+        value_type: Box<DataTypeIr>,
+    },
+    WeightedSet(Box<DataTypeIr>),
+    Struct {
+        fields: Vec<StructFieldIr>,
+    },
+    StructReference {
+        name: String,
+    },
+    Predicate,
+    Position,
+    Reference {
+        document_type: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrimitiveDataTypeIr {
+    String,
+    Bool,
+    Byte,
+    Int32,
+    Int64,
+    Float32,
+    Float64,
+    Raw,
+}
+
+/// Derived query type used by the existing request validator.  It is not a
+/// schema representation: `FieldIr` stores the complete `DataTypeIr` above.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldKind {
     Text,
@@ -122,6 +164,7 @@ pub enum FieldKind {
     Bool,
 }
 
+/// Derived collection shape used only by existing request validation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldCardinality {
     Single,
@@ -133,13 +176,84 @@ pub enum AnalyzerIdentity {
     StandardV1,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructFieldIr {
+    pub name: String,
+    pub data_type: DataTypeIr,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchingModeIr {
+    Unspecified,
+    Text,
+    Word,
+    Exact,
+    Gram,
+}
+
+pub type SchemaPropertiesIr = std::collections::BTreeMap<String, RequestValueIr>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnalyzerIr {
+    pub name: String,
+    pub version: u32,
+    pub options: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchingConfigIr {
+    pub mode: MatchingModeIr,
+    pub options: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HnswIndexConfigIr {
+    pub max_links_per_node: Option<u32>,
+    pub neighbors_to_explore_at_insert: Option<u32>,
+    pub options: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexConfigIr {
+    pub enabled: Option<bool>,
+    pub hnsw: Option<HnswIndexConfigIr>,
+    pub options: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DistanceMetricIr {
+    Unspecified,
+    Euclidean,
+    Angular,
+    DotProduct,
+    PrenormalizedAngular,
+    GeoDegrees,
+    Hamming,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributeConfigIr {
+    pub enabled: Option<bool>,
+    pub fast_search: Option<bool>,
+    pub fast_access: Option<bool>,
+    pub distance_metric: DistanceMetricIr,
+    pub options: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SummaryConfigIr {
+    pub enabled: Option<bool>,
+    pub options: SchemaPropertiesIr,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FieldCapabilities {
     pub(crate) stored: bool,
     pub(crate) searchable: bool,
     pub(crate) filterable: bool,
     pub(crate) sortable: bool,
-    pub(crate) facetable: bool,
+    /// Canonical grouping/attribute capability resolved from V2 `facetable`.
+    pub(crate) groupable: bool,
 }
 
 impl FieldCapabilities {
@@ -149,14 +263,14 @@ impl FieldCapabilities {
         searchable: bool,
         filterable: bool,
         sortable: bool,
-        facetable: bool,
+        groupable: bool,
     ) -> Self {
         Self {
             stored,
             searchable,
             filterable,
             sortable,
-            facetable,
+            groupable,
         }
     }
 
@@ -176,35 +290,65 @@ impl FieldCapabilities {
         self.sortable
     }
 
+    pub fn groupable(&self) -> bool {
+        self.groupable
+    }
+
+    /// Compatibility accessor for callers that still use the old facade name.
+    /// The canonical IR stores this as the resolved grouping capability.
     pub fn facetable(&self) -> bool {
-        self.facetable
+        self.groupable()
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FieldIr {
     pub(crate) name: FieldName,
-    pub(crate) kind: FieldKind,
-    pub(crate) cardinality: FieldCardinality,
-    pub(crate) analyzer: Option<AnalyzerIdentity>,
+    pub(crate) data_type: DataTypeIr,
+    pub(crate) analyzer: Option<AnalyzerIr>,
     pub(crate) capabilities: FieldCapabilities,
+    pub(crate) matching: Option<MatchingConfigIr>,
+    pub(crate) index: Option<IndexConfigIr>,
+    pub(crate) attribute: Option<AttributeConfigIr>,
+    pub(crate) summary: Option<SummaryConfigIr>,
+    pub(crate) indexing_script: Option<String>,
+    pub(crate) properties: SchemaPropertiesIr,
+    pub(crate) struct_fields: Vec<StructFieldConfigIr>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructFieldConfigIr {
+    pub path: String,
+    pub indexing_script: Option<String>,
+    pub matching: Option<MatchingConfigIr>,
+    pub index: Option<IndexConfigIr>,
+    pub attribute: Option<AttributeConfigIr>,
+    pub summary: Option<SummaryConfigIr>,
+    pub rank: Option<String>,
+    pub query_commands: Vec<String>,
+    pub properties: SchemaPropertiesIr,
 }
 
 impl FieldIr {
     #[cfg(any(test, feature = "test-support"))]
     pub fn new(
         name: FieldName,
-        kind: FieldKind,
-        cardinality: FieldCardinality,
-        analyzer: Option<AnalyzerIdentity>,
+        data_type: DataTypeIr,
+        analyzer: Option<AnalyzerIr>,
         capabilities: FieldCapabilities,
     ) -> Self {
         Self {
             name,
-            kind,
-            cardinality,
+            data_type,
             analyzer,
             capabilities,
+            matching: None,
+            index: None,
+            attribute: None,
+            summary: None,
+            indexing_script: None,
+            properties: SchemaPropertiesIr::new(),
+            struct_fields: Vec::new(),
         }
     }
 
@@ -212,21 +356,100 @@ impl FieldIr {
         &self.name
     }
 
+    pub fn data_type(&self) -> &DataTypeIr {
+        &self.data_type
+    }
+
     pub fn kind(&self) -> FieldKind {
-        self.kind
+        match self.query_scalar_type().unwrap_or(QueryScalarType::Keyword) {
+            QueryScalarType::Text => FieldKind::Text,
+            QueryScalarType::Keyword => FieldKind::Keyword,
+            QueryScalarType::Int64 => FieldKind::Int64,
+            QueryScalarType::Float64 => FieldKind::Float64,
+            QueryScalarType::Bool => FieldKind::Bool,
+        }
     }
 
     pub fn cardinality(&self) -> FieldCardinality {
-        self.cardinality
+        if self.is_multi_valued() {
+            FieldCardinality::Multi
+        } else {
+            FieldCardinality::Single
+        }
     }
 
-    pub fn analyzer(&self) -> Option<AnalyzerIdentity> {
-        self.analyzer
+    pub fn analyzer(&self) -> Option<&AnalyzerIr> {
+        self.analyzer.as_ref()
     }
 
     pub fn capabilities(&self) -> &FieldCapabilities {
         &self.capabilities
     }
+
+    pub fn matching(&self) -> Option<&MatchingConfigIr> {
+        self.matching.as_ref()
+    }
+    pub fn index(&self) -> Option<&IndexConfigIr> {
+        self.index.as_ref()
+    }
+    pub fn attribute(&self) -> Option<&AttributeConfigIr> {
+        self.attribute.as_ref()
+    }
+    pub fn summary(&self) -> Option<&SummaryConfigIr> {
+        self.summary.as_ref()
+    }
+    pub fn indexing_script(&self) -> Option<&str> {
+        self.indexing_script.as_deref()
+    }
+    pub fn properties(&self) -> &SchemaPropertiesIr {
+        &self.properties
+    }
+    pub fn struct_fields(&self) -> &[StructFieldConfigIr] {
+        &self.struct_fields
+    }
+
+    pub(crate) fn query_scalar_type(&self) -> Option<QueryScalarType> {
+        let primitive = self.data_type.scalar_primitive()?;
+        match primitive {
+            PrimitiveDataTypeIr::String => match self.matching.as_ref().map(|m| m.mode) {
+                Some(MatchingModeIr::Exact | MatchingModeIr::Word) => {
+                    Some(QueryScalarType::Keyword)
+                }
+                _ => Some(QueryScalarType::Text),
+            },
+            PrimitiveDataTypeIr::Bool => Some(QueryScalarType::Bool),
+            PrimitiveDataTypeIr::Int64 => Some(QueryScalarType::Int64),
+            PrimitiveDataTypeIr::Float64 => Some(QueryScalarType::Float64),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_multi_valued(&self) -> bool {
+        self.data_type.is_multi_valued()
+    }
+}
+
+impl DataTypeIr {
+    pub(crate) fn scalar_primitive(&self) -> Option<PrimitiveDataTypeIr> {
+        match self {
+            Self::Primitive(kind) => Some(*kind),
+            Self::Array(element) | Self::WeightedSet(element) => element.scalar_primitive(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_multi_valued(&self) -> bool {
+        matches!(self, Self::Array(_) | Self::WeightedSet(_))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum QueryScalarType {
+    Text,
+    Keyword,
+    Int64,
+    Float64,
+    Bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -327,7 +550,7 @@ impl InsertRequestIr {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpsertRequestIr {
     pub(crate) document: DocumentIr,
-    /// Vespa document-selection test-and-set condition. `None` is an
+    /// Document-selection test-and-set condition. `None` is an
     /// unconditional upsert; an empty portable string is normalized to None.
     pub(crate) condition: Option<String>,
 }
@@ -391,7 +614,7 @@ impl PatchRequestIr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeleteRequestIr {
     pub(crate) id: DocumentId,
-    /// Vespa document-selection test-and-set condition. `None` is an
+    /// Document-selection test-and-set condition. `None` is an
     /// unconditional delete; an empty portable string is normalized to None.
     pub(crate) condition: Option<String>,
 }
@@ -627,7 +850,7 @@ pub enum QueryIr {
     Or(Vec<QueryIr>),
     Not(Box<QueryIr>),
     /// A YQL source is intentionally kept separate from the portable typed
-    /// query tree.  Its syntax belongs to Vespa, but its request-level
+    /// query tree. Its syntax belongs to the backend, but its request-level
     /// parameters are still portable request semantics.
     Yql {
         source: String,
@@ -861,6 +1084,121 @@ pub enum HighlightingIr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct NamedStructDefinitionIr {
+    pub name: String,
+    pub fields: Vec<StructFieldIr>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldSetDefinitionIr {
+    pub name: String,
+    pub fields: Vec<FieldName>,
+    pub matching: Option<MatchingConfigIr>,
+    pub query_commands: Vec<String>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportedFieldDefinitionIr {
+    pub reference_field: FieldName,
+    pub target_field: String,
+    pub alias: FieldName,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentSummaryFieldDefinitionIr {
+    pub name: String,
+    pub source: String,
+    pub data_type: DataTypeIr,
+    pub struct_fields: Vec<String>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentSummaryDefinitionIr {
+    pub name: String,
+    pub inherits: Vec<String>,
+    pub fields: Vec<DocumentSummaryFieldDefinitionIr>,
+    pub from_disk: Option<bool>,
+    pub omit_summary_features: Option<bool>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankProfileInputIr {
+    pub name: String,
+    pub data_type: DataTypeIr,
+    pub default_value: RequestValueIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankFunctionDefinitionIr {
+    pub name: String,
+    pub arguments: Vec<String>,
+    pub expression: String,
+    pub inline: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankPhaseDefinitionIr {
+    pub expression: Option<String>,
+    pub rerank_count: Option<u32>,
+    pub rank_score_drop_limit: Option<f64>,
+    pub properties: SchemaPropertiesIr,
+    pub total_rerank_count: Option<u32>,
+    pub keep_rank_count: Option<u32>,
+    pub total_keep_rank_count: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConstantSourceIr {
+    Literal(RequestValueIr),
+    File { path: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConstantDefinitionIr {
+    pub name: String,
+    pub data_type: DataTypeIr,
+    pub source: ConstantSourceIr,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OnnxModelDefinitionIr {
+    pub name: String,
+    pub file: String,
+    pub inputs: std::collections::BTreeMap<String, String>,
+    pub outputs: std::collections::BTreeMap<String, String>,
+    pub gpu_device: Option<u32>,
+    pub intraop_threads: Option<u32>,
+    pub interop_threads: Option<u32>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankProfileDefinitionIr {
+    pub name: String,
+    pub inherits: Vec<String>,
+    pub inputs: Vec<RankProfileInputIr>,
+    pub functions: Vec<RankFunctionDefinitionIr>,
+    pub first_phase: Option<RankPhaseDefinitionIr>,
+    pub second_phase: Option<RankPhaseDefinitionIr>,
+    pub global_phase: Option<RankPhaseDefinitionIr>,
+    pub rank_features: Vec<String>,
+    pub match_features: Vec<String>,
+    pub summary_features: Vec<String>,
+    pub sort_features: Vec<String>,
+    pub constants: Vec<ConstantDefinitionIr>,
+    pub onnx_models: Vec<OnnxModelDefinitionIr>,
+    pub rank_properties: std::collections::BTreeMap<String, String>,
+    pub strict: Option<bool>,
+    pub properties: SchemaPropertiesIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct IndexDefinitionIr {
     pub(crate) name: Option<IndexName>,
     pub(crate) fields: Vec<FieldIr>,
@@ -868,6 +1206,18 @@ pub struct IndexDefinitionIr {
     pub(crate) default_ranking: RankingPolicyIr,
     pub(crate) default_prefix_policy: PrefixPolicy,
     pub(crate) default_typo_policy: TypoPolicy,
+    pub(crate) properties: SchemaPropertiesIr,
+    pub(crate) document_type: Option<String>,
+    pub(crate) schema_inherits: Vec<String>,
+    pub(crate) document_inherits: Vec<String>,
+    pub(crate) structs: Vec<NamedStructDefinitionIr>,
+    pub(crate) fieldsets: Vec<FieldSetDefinitionIr>,
+    pub(crate) schema_fields: Vec<FieldIr>,
+    pub(crate) imported_fields: Vec<ImportedFieldDefinitionIr>,
+    pub(crate) document_summaries: Vec<DocumentSummaryDefinitionIr>,
+    pub(crate) rank_profiles: Vec<RankProfileDefinitionIr>,
+    pub(crate) constants: Vec<ConstantDefinitionIr>,
+    pub(crate) onnx_models: Vec<OnnxModelDefinitionIr>,
 }
 
 impl IndexDefinitionIr {
@@ -894,6 +1244,18 @@ impl IndexDefinitionIr {
             default_ranking,
             default_prefix_policy,
             default_typo_policy,
+            properties: SchemaPropertiesIr::new(),
+            document_type: None,
+            schema_inherits: Vec::new(),
+            document_inherits: Vec::new(),
+            structs: Vec::new(),
+            fieldsets: Vec::new(),
+            schema_fields: Vec::new(),
+            imported_fields: Vec::new(),
+            document_summaries: Vec::new(),
+            rank_profiles: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
         })
     }
 
@@ -919,6 +1281,43 @@ impl IndexDefinitionIr {
 
     pub fn default_typo_policy(&self) -> TypoPolicy {
         self.default_typo_policy
+    }
+
+    pub fn properties(&self) -> &SchemaPropertiesIr {
+        &self.properties
+    }
+    pub fn document_type(&self) -> Option<&str> {
+        self.document_type.as_deref()
+    }
+    pub fn schema_inherits(&self) -> &[String] {
+        &self.schema_inherits
+    }
+    pub fn document_inherits(&self) -> &[String] {
+        &self.document_inherits
+    }
+    pub fn structs(&self) -> &[NamedStructDefinitionIr] {
+        &self.structs
+    }
+    pub fn fieldsets(&self) -> &[FieldSetDefinitionIr] {
+        &self.fieldsets
+    }
+    pub fn schema_fields(&self) -> &[FieldIr] {
+        &self.schema_fields
+    }
+    pub fn imported_fields(&self) -> &[ImportedFieldDefinitionIr] {
+        &self.imported_fields
+    }
+    pub fn document_summaries(&self) -> &[DocumentSummaryDefinitionIr] {
+        &self.document_summaries
+    }
+    pub fn rank_profiles(&self) -> &[RankProfileDefinitionIr] {
+        &self.rank_profiles
+    }
+    pub fn constants(&self) -> &[ConstantDefinitionIr] {
+        &self.constants
+    }
+    pub fn onnx_models(&self) -> &[OnnxModelDefinitionIr] {
+        &self.onnx_models
     }
 }
 

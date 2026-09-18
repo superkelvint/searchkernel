@@ -525,20 +525,38 @@ fn filter_error(code: impl Into<String>, span: Span, message: impl Into<String>)
 mod tests {
     use super::*;
     use crate::{
-        api, AnalyzerIdentity, FieldCapabilities, FieldCardinality, FieldIr, FieldName,
-        IndexContext, PrefixPolicy, RankingPolicyIr, TypoPolicy,
+        api, AnalyzerIr, DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexContext,
+        PrefixPolicy, PrimitiveDataTypeIr, RankingPolicyIr, TypoPolicy,
     };
     use std::collections::BTreeSet;
 
     fn schema() -> IndexDefinitionIr {
         let field = |name, kind, filterable| {
-            FieldIr::new(
+            let data_type = match kind {
+                FieldKind::Text | FieldKind::Keyword => {
+                    DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+                }
+                FieldKind::Int64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                FieldKind::Float64 => DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                FieldKind::Bool => DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+            };
+            let mut field = FieldIr::new(
                 FieldName::parse(name).unwrap(),
-                kind,
-                FieldCardinality::Single,
-                (kind == FieldKind::Text).then_some(AnalyzerIdentity::StandardV1),
+                data_type,
+                (kind == FieldKind::Text).then(|| AnalyzerIr {
+                    name: "standard".to_owned(),
+                    version: 1,
+                    options: std::collections::BTreeMap::new(),
+                }),
                 FieldCapabilities::new(false, false, filterable, false, false),
-            )
+            );
+            if kind == FieldKind::Keyword {
+                field.matching = Some(crate::MatchingConfigIr {
+                    mode: crate::MatchingModeIr::Exact,
+                    options: std::collections::BTreeMap::new(),
+                });
+            }
+            field
         };
         IndexDefinitionIr::new(
             None,
