@@ -352,6 +352,21 @@ impl FieldIr {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_attribute_config(&mut self, config: Option<AttributeConfigIr>) {
+        self.attribute = config;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_index_config(&mut self, config: Option<IndexConfigIr>) {
+        self.index = config;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_summary_config(&mut self, config: Option<SummaryConfigIr>) {
+        self.summary = config;
+    }
+
     pub fn name(&self) -> &FieldName {
         &self.name
     }
@@ -1259,12 +1274,41 @@ impl IndexDefinitionIr {
         })
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_document_type(&mut self, document_type: impl Into<String>) {
+        self.document_type = Some(document_type.into());
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_schema_fields(&mut self, fields: Vec<FieldIr>) {
+        self.schema_fields = fields;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
+        self.imported_fields = fields;
+    }
+
     pub fn name(&self) -> Option<&IndexName> {
         self.name.as_ref()
     }
 
     pub fn fields(&self) -> &[FieldIr] {
         &self.fields
+    }
+
+    /// Fields that may be addressed by query-side operations.  Document
+    /// fields are feedable and queryable; schema-only fields are queryable but
+    /// are derived by indexing expressions and must not be accepted in a
+    /// document write.
+    pub(crate) fn query_fields(&self) -> impl Iterator<Item = &FieldIr> {
+        self.fields.iter().chain(self.schema_fields.iter())
+    }
+
+    pub(crate) fn imported_alias(&self, name: &str) -> bool {
+        self.imported_fields
+            .iter()
+            .any(|field| field.alias.as_str() == name)
     }
 
     pub fn default_search_fields(&self) -> &[SearchFieldIr] {

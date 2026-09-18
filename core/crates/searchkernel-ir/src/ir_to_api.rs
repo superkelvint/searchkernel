@@ -555,11 +555,23 @@ fn field_definition_offset<'a>(
 ) -> flatbuffers::WIPOffset<api::FieldDefinition<'a>> {
     let name = builder.create_string(field.name.as_str());
     let data_type = data_type_offset(builder, &field.data_type);
-    let stored = api::OptionalBool::new(field.capabilities.stored);
-    let searchable = api::OptionalBool::new(field.capabilities.searchable);
-    let filterable = api::OptionalBool::new(field.capabilities.filterable);
-    let sortable = api::OptionalBool::new(field.capabilities.sortable);
-    let facetable = api::OptionalBool::new(field.capabilities.groupable);
+    // Indexing-script-only fields have no product-level capability settings in
+    // the canonical V2 form.  Their resolved IR capabilities are defaults, so
+    // emitting them back as explicit booleans would make the next API→IR pass
+    // (correctly) diagnose a contradictory typed/script representation.
+    let script_only = field.indexing_script.is_some()
+        && field.analyzer.is_none()
+        && field.matching.is_none()
+        && field.index.is_none()
+        && field.attribute.is_none()
+        && field.summary.is_none()
+        && field.properties.is_empty()
+        && field.struct_fields.is_empty();
+    let stored = (!script_only).then(|| api::OptionalBool::new(field.capabilities.stored));
+    let searchable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.searchable));
+    let filterable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.filterable));
+    let sortable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.sortable));
+    let facetable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.groupable));
     let indexing_script = field
         .indexing_script
         .as_ref()
@@ -591,11 +603,11 @@ fn field_definition_offset<'a>(
         &api::FieldDefinitionArgs {
             name: Some(name),
             data_type: Some(data_type),
-            stored: Some(&stored),
-            searchable: Some(&searchable),
-            filterable: Some(&filterable),
-            sortable: Some(&sortable),
-            facetable: Some(&facetable),
+            stored: stored.as_ref(),
+            searchable: searchable.as_ref(),
+            filterable: filterable.as_ref(),
+            sortable: sortable.as_ref(),
+            facetable: facetable.as_ref(),
             analyzer,
             matching,
             index,
@@ -3416,7 +3428,7 @@ fn rich_v2_index_definition_round_trips_through_ir() {
             FieldName::parse(name).unwrap(),
             data_type,
             None,
-            FieldCapabilities::new(true, false, false, false, false),
+            FieldCapabilities::new(true, false, true, false, false),
         )
     };
     let mut text = field("text", DataTypeIr::Primitive(PrimitiveDataTypeIr::String));
@@ -3574,6 +3586,121 @@ fn rich_v2_index_definition_round_trips_through_ir() {
     let api = flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap();
     let second = crate::index_definition_to_ir(api).unwrap();
     assert_eq!(first, second);
+}
+
+#[cfg(test)]
+#[test]
+fn indexing_script_only_field_round_trips_through_v2_without_typed_capabilities() {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let name = builder.create_string("derived");
+    let primitive = api::PrimitiveDataType::create(
+        &mut builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: api::PrimitiveDataTypeKind::String,
+        },
+    );
+    let data_type = api::DataType::create(
+        &mut builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
+    let indexing_script = builder.create_string("input title | attribute(derived)");
+    let field = api::FieldDefinition::create(
+        &mut builder,
+        &api::FieldDefinitionArgs {
+            name: Some(name),
+            data_type: Some(data_type),
+            indexing_script: Some(indexing_script),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(definition, None);
+    let first = crate::index_definition_to_ir(
+        flatbuffers::root::<api::IndexDefinition>(builder.finished_data()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        first.fields()[0].indexing_script(),
+        Some("input title | attribute(derived)")
+    );
+
+    let bytes = index_definition_ir_to_api(&first);
+    let second =
+        crate::index_definition_to_ir(flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
+            .unwrap();
+    assert_eq!(first, second);
+}
+
+#[cfg(test)]
+#[test]
+fn rank_phase_controls_are_validated_against_their_phase() {
+    use crate::{
+        DataTypeIr, FieldCapabilities, FieldIr, FieldName, IndexDefinitionIr, PrimitiveDataTypeIr,
+        RankPhaseDefinitionIr, RankProfileDefinitionIr,
+    };
+    use std::collections::BTreeMap;
+
+    let field = FieldIr::new(
+        FieldName::parse("title").unwrap(),
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+        None,
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let mut definition = IndexDefinitionIr::new(
+        None,
+        vec![field],
+        Vec::new(),
+        crate::RankingPolicyIr::DefaultRelevanceV1,
+        crate::PrefixPolicy::Disabled,
+        crate::TypoPolicy::Disabled,
+    )
+    .unwrap();
+    definition.rank_profiles = vec![RankProfileDefinitionIr {
+        name: "invalid".to_owned(),
+        inherits: Vec::new(),
+        inputs: Vec::new(),
+        functions: Vec::new(),
+        first_phase: Some(RankPhaseDefinitionIr {
+            expression: Some("nativeRank(title)".to_owned()),
+            rerank_count: Some(10),
+            rank_score_drop_limit: None,
+            properties: BTreeMap::new(),
+            total_rerank_count: None,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }),
+        second_phase: None,
+        global_phase: None,
+        rank_features: Vec::new(),
+        match_features: Vec::new(),
+        summary_features: Vec::new(),
+        sort_features: Vec::new(),
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+        rank_properties: BTreeMap::new(),
+        strict: None,
+        properties: BTreeMap::new(),
+    }];
+
+    let bytes = index_definition_ir_to_api(&definition);
+    let error =
+        crate::index_definition_to_ir(flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
+            .unwrap_err();
+    assert_eq!(error.details[0].code, "invalid_rank_phase");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("rank_profiles[0].first_phase")
+    );
 }
 
 fn document_offset<'a>(

@@ -149,11 +149,24 @@ fn bind_predicate(
 }
 
 fn resolve_field<'a>(name: &str, span: Span, schema: &'a IndexDefinitionIr) -> Result<&'a FieldIr> {
-    schema
-        .fields()
-        .iter()
+    if let Some(field) = schema
+        .query_fields()
         .find(|field| field.name().as_str() == name)
-        .ok_or_else(|| filter_error("unknown_field", span, format!("unknown field `{name}`")))
+    {
+        return Ok(field);
+    }
+    if schema.imported_alias(name) {
+        return Err(filter_error(
+            "imported_field_query_not_supported",
+            span,
+            format!("imported field alias `{name}` has no local type for query binding"),
+        ));
+    }
+    Err(filter_error(
+        "unknown_field",
+        span,
+        format!("unknown field `{name}`"),
+    ))
 }
 
 fn ensure_filterable(field: &FieldIr, span: Span) -> Result<()> {

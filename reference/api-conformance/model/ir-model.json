@@ -3,7 +3,8 @@
     "FlatBuffers generated types terminate at *_to_ir.",
     "IR is owned Rust and contains no wire lifetimes/unions.",
     "Goldens encode product meaning, not FlatBuffers bytes.",
-    "Human-readable error messages are not golden-stable."
+    "Human-readable error messages are not golden-stable.",
+    "V2 schema IR preserves document/feed fields separately from query-visible schema-only fields."
   ],
   "types": {
     "AnalyzeRequestIr": [
@@ -11,12 +12,30 @@
       "text",
       "language"
     ],
+    "DataTypeIr": [
+      "primitive",
+      "tensor",
+      "array",
+      "map",
+      "weighted_set",
+      "struct",
+      "struct_reference",
+      "predicate",
+      "position",
+      "reference"
+    ],
     "FieldIr": [
       "name",
-      "kind",
-      "cardinality",
+      "data_type",
       "analyzer",
-      "capabilities"
+      "capabilities",
+      "matching",
+      "index",
+      "attribute",
+      "summary",
+      "indexing_script",
+      "properties",
+      "struct_fields"
     ],
     "IndexDefinitionIr": [
       "name",
@@ -24,7 +43,98 @@
       "default_search_fields",
       "default_ranking",
       "default_prefix_policy",
-      "default_typo_policy"
+      "default_typo_policy",
+      "properties",
+      "document_type",
+      "schema_inherits",
+      "document_inherits",
+      "structs",
+      "fieldsets",
+      "schema_fields",
+      "imported_fields",
+      "document_summaries",
+      "rank_profiles",
+      "constants",
+      "onnx_models"
+    ],
+    "MatchingConfigIr": [
+      "mode",
+      "options"
+    ],
+    "IndexConfigIr": [
+      "enabled",
+      "hnsw",
+      "options"
+    ],
+    "AttributeConfigIr": [
+      "enabled",
+      "fast_search",
+      "fast_access",
+      "distance_metric",
+      "options"
+    ],
+    "SummaryConfigIr": [
+      "enabled",
+      "options"
+    ],
+    "StructFieldConfigIr": [
+      "path",
+      "indexing_script",
+      "matching",
+      "index",
+      "attribute",
+      "summary",
+      "rank",
+      "query_commands",
+      "properties"
+    ],
+    "FieldSetDefinitionIr": [
+      "name",
+      "fields",
+      "matching",
+      "query_commands",
+      "properties"
+    ],
+    "ImportedFieldDefinitionIr": [
+      "reference_field",
+      "target_field",
+      "alias",
+      "properties"
+    ],
+    "DocumentSummaryDefinitionIr": [
+      "name",
+      "inherits",
+      "fields",
+      "from_disk",
+      "omit_summary_features",
+      "properties"
+    ],
+    "RankProfileDefinitionIr": [
+      "name",
+      "inherits",
+      "inputs",
+      "functions",
+      "first_phase",
+      "second_phase",
+      "global_phase",
+      "rank_features",
+      "match_features",
+      "summary_features",
+      "sort_features",
+      "constants",
+      "onnx_models",
+      "rank_properties",
+      "strict",
+      "properties"
+    ],
+    "RankPhaseDefinitionIr": [
+      "expression",
+      "rerank_count",
+      "rank_score_drop_limit",
+      "properties",
+      "total_rerank_count",
+      "keep_rank_count",
+      "total_keep_rank_count"
     ],
     "PortableErrorStableProjection": [
       "code",
@@ -47,5 +157,5 @@
       "typo_policy"
     ]
   },
-  "version": "searchkernel-ir/v1"
+  "version": "searchkernel-ir/v2"
 }

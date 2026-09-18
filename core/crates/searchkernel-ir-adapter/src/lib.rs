@@ -31,8 +31,9 @@ pub fn compile_index_definition(
     validate_index_definition(definition)?;
     let mut schema = Schema::new(
         definition
-            .name()
-            .map_or("searchkernel", searchkernel_ir::IndexName::as_str),
+            .document_type()
+            .or_else(|| definition.name().map(searchkernel_ir::IndexName::as_str))
+            .unwrap_or("searchkernel"),
     );
     for field in definition.fields() {
         if matches!(
@@ -60,16 +61,24 @@ pub fn compile_index_definition(
         if capabilities.searchable() {
             native = native.indexed();
         }
-        if matches!(field.kind(), searchkernel_ir::FieldKind::Keyword) && capabilities.filterable()
-        {
-            native = native.fast_search();
-        }
-        if capabilities.filterable()
-            || capabilities.sortable()
-            || capabilities.facetable()
-            || !matches!(field.kind(), searchkernel_ir::FieldKind::Text)
-        {
+        let attribute = field.attribute();
+        let attribute_enabled = attribute
+            .and_then(|value| value.enabled)
+            .unwrap_or_else(|| {
+                capabilities.filterable()
+                    || capabilities.sortable()
+                    || capabilities.groupable()
+                    || !matches!(field.kind(), searchkernel_ir::FieldKind::Text)
+            });
+        if attribute_enabled {
             native = native.attribute();
+        }
+        let fast_search = attribute.and_then(|value| value.fast_search).unwrap_or(
+            matches!(field.kind(), searchkernel_ir::FieldKind::Keyword)
+                && capabilities.filterable(),
+        );
+        if fast_search {
+            native = native.fast_search();
         }
         if capabilities.stored() {
             native = native.summary();
@@ -118,6 +127,81 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
 
         let field_path = format!("fields[{index}]");
+        let capabilities = field.capabilities();
+        let attribute_enabled = field.attribute().and_then(|value| value.enabled);
+        let capability_requires_attribute =
+            capabilities.filterable() || capabilities.sortable() || capabilities.groupable();
+        if attribute_enabled == Some(false) && capability_requires_attribute {
+            return Err(PortableError::invalid(
+                "invalid_capability",
+                Some(format!("{field_path}.attribute.enabled")),
+                "attribute.enabled=false conflicts with an attribute-backed field capability",
+            ));
+        }
+        if attribute_enabled == Some(false)
+            && !matches!(field.kind(), searchkernel_ir::FieldKind::Text)
+        {
+            return Err(PortableError::unsupported(
+                "attribute_disabled_not_supported",
+                Some(format!("{field_path}.attribute.enabled")),
+                "the current native schema requires non-text fields to be attributes",
+            ));
+        }
+        if field
+            .attribute()
+            .and_then(|value| value.fast_search)
+            .is_some_and(|value| value)
+            && !capabilities.filterable()
+        {
+            return Err(PortableError::invalid(
+                "invalid_capability",
+                Some(format!("{field_path}.attribute.fast_search")),
+                "attribute.fast_search requires a filterable field",
+            ));
+        }
+        if field
+            .attribute()
+            .and_then(|value| value.fast_search)
+            .is_some_and(|value| value)
+            && attribute_enabled == Some(false)
+        {
+            return Err(PortableError::invalid(
+                "invalid_capability",
+                Some(format!("{field_path}.attribute.fast_search")),
+                "attribute.fast_search cannot be enabled when attribute.enabled is false",
+            ));
+        }
+        if field
+            .index()
+            .and_then(|value| value.enabled)
+            .zip(Some(capabilities.searchable()))
+            .is_some_and(|(configured, resolved)| configured != resolved)
+        {
+            return Err(PortableError::invalid(
+                "invalid_capability",
+                Some(format!("{field_path}.index.enabled")),
+                "index.enabled conflicts with the resolved searchable capability",
+            ));
+        }
+        if field
+            .summary()
+            .and_then(|value| value.enabled)
+            .zip(Some(capabilities.stored()))
+            .is_some_and(|(configured, resolved)| configured != resolved)
+        {
+            return Err(PortableError::invalid(
+                "invalid_capability",
+                Some(format!("{field_path}.summary.enabled")),
+                "summary.enabled conflicts with the resolved stored capability",
+            ));
+        }
+        if capabilities.searchable() && !matches!(field.kind(), searchkernel_ir::FieldKind::Text) {
+            return Err(PortableError::unsupported(
+                "unsupported_field_capability",
+                Some(format!("{field_path}.searchable")),
+                "the current native schema indexes text fields only",
+            ));
+        }
         if matches!(
             field.data_type(),
             searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String)
@@ -1111,12 +1195,12 @@ fn unsupported(message: impl Into<String>) -> PortableError {
 mod tests {
     use super::*;
     use searchkernel_ir::{
-        ComparisonIr, ComparisonOp, DataTypeIr, FieldCapabilities, FieldIr, FieldKind, FieldName,
-        FieldValueIr, GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr,
-        GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
-        IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, PrimitiveDataTypeIr,
-        QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
-        SortDirection, SortIr, TypoPolicy,
+        AttributeConfigIr, ComparisonIr, ComparisonOp, DataTypeIr, FieldCapabilities, FieldIr,
+        FieldKind, FieldName, FieldValueIr, GroupingAggregationIr, GroupingAllIr,
+        GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
+        HighlightingIr, IndexConfigIr, IndexDefinitionIr, IndexName, LanguageHint,
+        MissingPlacement, PrefixPolicy, PrimitiveDataTypeIr, QueryIr, RangeIr, RankingPolicyIr,
+        ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -1288,6 +1372,151 @@ mod tests {
     }
 
     #[test]
+    fn document_type_drives_native_schema_identity() {
+        let definition = {
+            let field = FieldIr::new(
+                field("title"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, true, false, false, false),
+            );
+            let mut definition = IndexDefinitionIr::new(
+                Some(IndexName::parse("index_name").unwrap()),
+                vec![field],
+                Vec::new(),
+                RankingPolicyIr::DefaultRelevanceV1,
+                PrefixPolicy::Disabled,
+                TypoPolicy::Disabled,
+            )
+            .unwrap();
+            definition.set_document_type("document_type");
+            definition
+        };
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-document-type-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        compile_index_definition(&definition, &root).expect("schema compiles");
+        let manifest =
+            std::fs::read_to_string(root.join("searchkernel-schema.json")).expect("manifest");
+        assert!(manifest.contains("\"document_type\":\"document_type\""));
+        assert!(!manifest.contains("\"document_type\":\"index_name\""));
+        std::fs::remove_dir_all(root).expect("remove temporary schema");
+    }
+
+    #[test]
+    fn typed_attribute_settings_are_lowered_and_contradictions_fail_closed() {
+        let mut value_field = FieldIr::new(
+            field("value"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            None,
+            FieldCapabilities::new(true, false, true, false, false),
+        );
+        value_field.set_attribute_config(Some(AttributeConfigIr {
+            enabled: Some(true),
+            fast_search: Some(true),
+            fast_access: None,
+            distance_metric: searchkernel_ir::DistanceMetricIr::Unspecified,
+            options: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![value_field],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        validate_index_definition(&definition).expect("typed attribute settings are supported");
+        let root = std::env::temp_dir().join(format!(
+            "searchkernel-adapter-attribute-settings-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        compile_index_definition(&definition, &root).expect("schema compiles");
+        let attributes =
+            std::fs::read_to_string(root.join("attributes.cfg")).expect("attributes config");
+        assert!(attributes.contains("fastsearch true"));
+        std::fs::remove_dir_all(root).expect("remove temporary schema");
+
+        let mut contradictory = FieldIr::new(
+            field("value"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            None,
+            FieldCapabilities::new(true, false, true, false, false),
+        );
+        contradictory.set_attribute_config(Some(AttributeConfigIr {
+            enabled: Some(false),
+            fast_search: None,
+            fast_access: None,
+            distance_metric: searchkernel_ir::DistanceMetricIr::Unspecified,
+            options: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![contradictory],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let error = validate_index_definition(&definition).expect_err("contradiction rejected");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::InvalidArgument);
+        assert_eq!(error.details[0].code, "invalid_capability");
+    }
+
+    #[test]
+    fn typed_index_and_summary_settings_cannot_disagree_with_resolved_capabilities() {
+        let mut index_field = FieldIr::new(
+            field("value"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            None,
+            FieldCapabilities::new(true, false, false, false, false),
+        );
+        index_field.set_index_config(Some(IndexConfigIr {
+            enabled: Some(true),
+            hnsw: None,
+            options: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![index_field],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let error = validate_index_definition(&definition).expect_err("index contradiction");
+        assert_eq!(error.details[0].code, "invalid_capability");
+
+        let mut summary_field = FieldIr::new(
+            field("value"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            None,
+            FieldCapabilities::new(true, false, false, false, false),
+        );
+        summary_field.set_summary_config(Some(searchkernel_ir::SummaryConfigIr {
+            enabled: Some(false),
+            options: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![summary_field],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let error = validate_index_definition(&definition).expect_err("summary contradiction");
+        assert_eq!(error.details[0].code, "invalid_capability");
+    }
+
+    #[test]
     fn unsupported_schema_capabilities_are_rejected_before_m_configuration() {
         for (kind, capabilities, expected_path) in [
             (
@@ -1372,7 +1601,6 @@ mod tests {
                 Ok(expected)
             );
         }
-
         let arrays = [
             (
                 vec![

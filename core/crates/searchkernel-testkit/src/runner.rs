@@ -794,7 +794,13 @@ fn ranking_name(value: RankingPolicyIr) -> &'static str {
     }
 }
 fn field_analyzer_name(value: Option<&searchkernel_ir::AnalyzerIr>) -> Option<&str> {
-    value.map(|value| value.name.as_str())
+    value.map(|value| {
+        if value.name == "standard" && value.version == 1 && value.options.is_empty() {
+            "standard_v1"
+        } else {
+            value.name.as_str()
+        }
+    })
 }
 fn analyzer_name(value: Option<AnalyzerIdentity>) -> Option<&'static str> {
     value.map(|value| match value {
@@ -1479,6 +1485,7 @@ impl WireBuilder {
             "bool" => api::PrimitiveDataTypeKind::Bool,
             _ => api::PrimitiveDataTypeKind::String,
         };
+        let is_string = matches!(kind, api::PrimitiveDataTypeKind::String);
         let primitive =
             api::PrimitiveDataType::create(&mut self.builder, &api::PrimitiveDataTypeArgs { kind });
         let element_type = api::DataType::create(
@@ -1505,13 +1512,15 @@ impl WireBuilder {
         } else {
             element_type
         };
-        let matching = api::MatchingConfig::create(
-            &mut self.builder,
-            &api::MatchingConfigArgs {
-                mode: matching_mode,
-                options: None,
-            },
-        );
+        let matching = is_string.then(|| {
+            api::MatchingConfig::create(
+                &mut self.builder,
+                &api::MatchingConfigArgs {
+                    mode: matching_mode,
+                    options: None,
+                },
+            )
+        });
         let stored = input
             .get("stored")
             .and_then(JsonValue::as_bool)
@@ -1551,7 +1560,7 @@ impl WireBuilder {
                 sortable: sortable.as_ref(),
                 facetable: facetable.as_ref(),
                 analyzer,
-                matching: Some(matching),
+                matching,
                 ..Default::default()
             },
         ))

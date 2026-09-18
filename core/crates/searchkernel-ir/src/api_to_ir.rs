@@ -79,10 +79,8 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         .iter()
         .chain(schema_fields.iter())
         .collect::<Vec<_>>();
-    let searchable_fields = all_fields
-        .iter()
-        .map(|field| (*field).clone())
-        .collect::<Vec<_>>();
+    let document_field_refs = fields.iter().collect::<Vec<_>>();
+    let searchable_fields = all_fields.clone();
     validate_struct_references(&fields, &structs)?;
     validate_struct_references(&schema_fields, &structs)?;
     let default_search_fields = match definition.default_search_fields() {
@@ -99,7 +97,11 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
         }
     };
     let fieldsets = fieldsets_to_ir(definition.fieldsets(), &all_fields)?;
-    let imported_fields = imported_fields_to_ir(definition.imported_fields(), &all_fields)?;
+    // Imported fields are fed from document/reference fields.  Schema-only
+    // fields are query-visible, but are not document values and cannot be the
+    // reference anchor for an imported alias.
+    let imported_fields =
+        imported_fields_to_ir(definition.imported_fields(), &document_field_refs)?;
     let document_summaries =
         document_summaries_to_ir(definition.document_summaries(), &all_fields)?;
     let constants = constants_to_ir(definition.constants(), "constants")?;
@@ -141,7 +143,14 @@ pub fn analyzer_to_ir(
 
 pub struct IndexContext {
     definition: IndexDefinitionIr,
-    fields: BTreeMap<String, usize>,
+    document_fields: BTreeMap<String, usize>,
+    query_fields: BTreeMap<String, QueryFieldRef>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum QueryFieldRef {
+    Document(usize),
+    Schema(usize),
 }
 
 impl std::fmt::Debug for IndexContext {
@@ -155,13 +164,30 @@ impl std::fmt::Debug for IndexContext {
 impl IndexContext {
     pub fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
         let definition = index_definition_to_ir(definition)?;
-        let fields = definition
+        let document_fields = definition
             .fields
             .iter()
             .enumerate()
             .map(|(i, f)| (f.name.as_str().to_owned(), i))
             .collect();
-        Ok(Self { definition, fields })
+        let mut query_fields = definition
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.as_str().to_owned(), QueryFieldRef::Document(i)))
+            .collect::<BTreeMap<_, _>>();
+        query_fields.extend(
+            definition
+                .schema_fields
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (f.name.as_str().to_owned(), QueryFieldRef::Schema(i))),
+        );
+        Ok(Self {
+            definition,
+            document_fields,
+            query_fields,
+        })
     }
 
     pub fn definition(&self) -> &IndexDefinitionIr {
@@ -287,7 +313,7 @@ impl IndexContext {
                         "analyze request must select an analyzer or field",
                     )
                 })?;
-                let field = self.field(
+                let field = self.query_field(
                     target.field().unwrap_or_default(),
                     "target.field".to_owned(),
                 )?;
@@ -343,7 +369,22 @@ impl IndexContext {
         &self,
         selection: api::SearchFieldSelection<'_>,
     ) -> Result<Vec<SearchFieldIr>> {
-        search_fields_to_ir_at(selection, &self.definition.fields, "search_fields")
+        if let Some(fields) = selection.fields() {
+            for (index, field) in fields.iter().enumerate() {
+                if self
+                    .definition
+                    .imported_alias(field.field().unwrap_or_default())
+                {
+                    return Err(PortableError::unsupported(
+                        "imported_field_query_not_supported",
+                        Some(format!("search_fields.fields[{index}].field")),
+                        "imported field aliases are preserved in the schema but have no local type for query binding",
+                    ));
+                }
+            }
+        }
+        let fields = self.definition.query_fields().collect::<Vec<_>>();
+        search_fields_to_ir_at(selection, &fields, "search_fields")
     }
     pub fn query_to_ir(
         &self,
@@ -461,10 +502,23 @@ impl IndexContext {
     }
 
     fn field(&self, name: &str, path: String) -> Result<&FieldIr> {
-        self.fields
+        self.document_fields
             .get(name)
             .map(|&i| &self.definition.fields[i])
             .ok_or_else(|| invalid("unknown_field", Some(path), "field is not defined"))
+    }
+
+    fn query_field(&self, name: &str, path: String) -> Result<&FieldIr> {
+        match self.query_fields.get(name).copied() {
+            Some(QueryFieldRef::Document(index)) => Ok(&self.definition.fields[index]),
+            Some(QueryFieldRef::Schema(index)) => Ok(&self.definition.schema_fields[index]),
+            None if self.definition.imported_alias(name) => Err(PortableError::unsupported(
+                "imported_field_query_not_supported",
+                Some(path),
+                "imported field aliases are preserved in the schema but have no local type for query binding",
+            )),
+            None => Err(invalid("unknown_field", Some(path), "field is not defined")),
+        }
     }
 
     fn patch_operation_to_ir(
@@ -648,7 +702,7 @@ impl IndexContext {
                         "query contains requires a field",
                     )
                 })?;
-                let field = self.field(
+                let field = self.query_field(
                     field_name.path().unwrap_or_default(),
                     format!("{path}.contains.field.path"),
                 )?;
@@ -887,7 +941,7 @@ impl IndexContext {
                         "filter expression must select an operation",
                     )
                 })?;
-                let f = self.field(
+                let f = self.query_field(
                     n.field().and_then(|field| field.path()).unwrap_or_default(),
                     format!("{path}.exists.field.path"),
                 )?;
@@ -926,7 +980,7 @@ impl IndexContext {
         c: api::FilterComparison<'_>,
         path: &str,
     ) -> Result<ComparisonIr> {
-        let f = self.field(
+        let f = self.query_field(
             c.field().and_then(|field| field.path()).unwrap_or_default(),
             format!("{path}.field.path"),
         )?;
@@ -981,7 +1035,7 @@ impl IndexContext {
         input: api::FilterIn<'_>,
         path: &str,
     ) -> Result<(FieldName, Vec<ScalarValueIr>)> {
-        let f = self.field(
+        let f = self.query_field(
             input
                 .field()
                 .and_then(|field| field.path())
@@ -1025,7 +1079,7 @@ impl IndexContext {
         Ok((f.name.clone(), values))
     }
     fn range_to_ir_at(&self, r: api::FilterRange<'_>, path: &str) -> Result<RangeIr> {
-        let f = self.field(
+        let f = self.query_field(
             r.field().and_then(|field| field.path()).unwrap_or_default(),
             format!("{path}.field.path"),
         )?;
@@ -1104,7 +1158,7 @@ impl IndexContext {
                 "only field sort targets are supported by the embedded IR",
             ));
         }
-        let f = self.field(
+        let f = self.query_field(
             target
                 .target_as_field_sort_target()
                 .and_then(|target| target.field())
@@ -1186,8 +1240,7 @@ impl IndexContext {
         match p {
             None => out.extend(
                 self.definition
-                    .fields
-                    .iter()
+                    .query_fields()
                     .filter(|f| f.capabilities.stored)
                     .map(|f| f.name.clone()),
             ),
@@ -1195,7 +1248,7 @@ impl IndexContext {
                 if let Some(fs) = p.fields() {
                     let mut seen = BTreeSet::new();
                     for (i, n) in fs.iter().enumerate() {
-                        let f = self.field(n, format!("projection.fields[{i}]"))?;
+                        let f = self.query_field(n, format!("projection.fields[{i}]"))?;
                         if !f.capabilities.stored {
                             return Err(invalid(
                                 "field_not_stored",
@@ -1228,7 +1281,7 @@ impl IndexContext {
         let mut seen = BTreeSet::new();
         if let Some(fs) = h.fields() {
             for (i, n) in fs.iter().enumerate() {
-                let f = self.field(n, format!("highlighting.fields[{i}]"))?;
+                let f = self.query_field(n, format!("highlighting.fields[{i}]"))?;
                 if f.kind() != FieldKind::Text || !f.capabilities.searchable {
                     return Err(invalid(
                         "invalid_highlight",
@@ -2670,6 +2723,11 @@ fn field_to_ir_at(
     let filterable = definition.filterable().map(|value| value.value());
     let sortable = definition.sortable().map(|value| value.value());
     let groupable = definition.facetable().map(|value| value.value());
+    let attribute_fast_search = attribute.as_ref().and_then(|value| value.fast_search);
+    let indexing_script = definition
+        .indexing_script()
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
     check_bool_agreement(
         stored,
         summary.as_ref().and_then(|value| value.enabled),
@@ -2684,6 +2742,16 @@ fn field_to_ir_at(
         "searchable",
         "index.enabled",
     )?;
+    if attribute_fast_search
+        .zip(filterable)
+        .is_some_and(|(fast_search, filterable)| fast_search && !filterable)
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.fast_search")),
+            "attribute.fast_search requires a filterable field",
+        ));
+    }
     let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
     if matching.is_some() && !string_type {
         return Err(invalid(
@@ -2692,22 +2760,76 @@ fn field_to_ir_at(
             "matching is valid only for string fields",
         ));
     }
+    let keyword = string_type
+        && matches!(
+            matching.as_ref().map(|value| value.mode),
+            Some(MatchingModeIr::Exact | MatchingModeIr::Word)
+        );
     let analyzer = analyzer_config_to_ir(
         definition.analyzer(),
-        string_type,
+        string_type && !keyword,
         &format!("{path}.analyzer"),
     )?;
+    let default_searchable = string_type && !keyword && indexing_script.is_none();
+    let default_filterable = if indexing_script.is_some() {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        true
+    };
+    let default_sortable = if indexing_script.is_some() {
+        false
+    } else {
+        !data_type.is_multi_valued() && (!string_type || keyword)
+    };
+    let default_groupable = if indexing_script.is_some() {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::Bool)
+    };
+    let analyzer = if string_type && !keyword && indexing_script.is_none() {
+        Some(analyzer.unwrap_or(AnalyzerIr {
+            name: "standard".to_owned(),
+            version: 1,
+            options: SchemaPropertiesIr::new(),
+        }))
+    } else {
+        analyzer
+    };
     let capabilities = FieldCapabilities {
         stored: stored
             .or_else(|| summary.as_ref().and_then(|value| value.enabled))
             .unwrap_or(true),
         searchable: searchable
             .or_else(|| index.as_ref().and_then(|value| value.enabled))
-            .unwrap_or(false),
-        filterable: filterable.unwrap_or(false),
-        sortable: sortable.unwrap_or(false),
-        groupable: groupable.unwrap_or(false),
+            .unwrap_or(default_searchable),
+        filterable: filterable
+            .or(attribute_fast_search.filter(|value| *value))
+            .unwrap_or(default_filterable),
+        sortable: sortable.unwrap_or(default_sortable),
+        groupable: groupable.unwrap_or(default_groupable),
     };
+    if attribute
+        .as_ref()
+        .and_then(|value| value.enabled)
+        .is_some_and(|enabled| !enabled)
+        && (capabilities.filterable
+            || capabilities.sortable
+            || capabilities.groupable
+            || !matches!(
+                &data_type,
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+            ))
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.enabled")),
+            "attribute.enabled=false conflicts with the resolved attribute-backed capabilities",
+        ));
+    }
     if data_type.is_multi_valued() && capabilities.sortable {
         return Err(invalid(
             "invalid_capability",
@@ -2735,10 +2857,6 @@ fn field_to_ir_at(
             "a distance metric requires a tensor field",
         ));
     }
-    let indexing_script = definition
-        .indexing_script()
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
     if indexing_script.is_some()
         && (stored.is_some()
             || searchable.is_some()
@@ -2812,7 +2930,7 @@ fn analyzer_config_to_ir(
         return Err(invalid(
             "invalid_analyzer",
             Some(path),
-            "only string fields may specify an analyzer",
+            "only text fields may specify an analyzer",
         ));
     }
     analyzer
@@ -3709,6 +3827,66 @@ fn rank_phase_to_ir(
         .transpose()
 }
 
+#[derive(Clone, Copy)]
+enum RankPhaseKind {
+    First,
+    Second,
+    Global,
+}
+
+fn validate_rank_phase(
+    value: Option<&RankPhaseDefinitionIr>,
+    kind: RankPhaseKind,
+    path: &str,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value
+        .rank_score_drop_limit
+        .is_some_and(|limit| !limit.is_finite())
+    {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(format!("{path}.rank_score_drop_limit")),
+            "rank-score-drop-limit must be finite",
+        ));
+    }
+    if value.rerank_count.is_some() && value.total_rerank_count.is_some() {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "rerank_count and total_rerank_count are mutually exclusive",
+        ));
+    }
+    if value.keep_rank_count.is_some() && value.total_keep_rank_count.is_some() {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "keep_rank_count and total_keep_rank_count are mutually exclusive",
+        ));
+    }
+    let invalid_for_phase = match kind {
+        RankPhaseKind::First => value.rerank_count.is_some() || value.total_rerank_count.is_some(),
+        RankPhaseKind::Second => {
+            value.keep_rank_count.is_some() || value.total_keep_rank_count.is_some()
+        }
+        RankPhaseKind::Global => {
+            value.keep_rank_count.is_some()
+                || value.total_keep_rank_count.is_some()
+                || value.total_rerank_count.is_some()
+        }
+    };
+    if invalid_for_phase {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "rank-phase controls are not applicable to this phase",
+        ));
+    }
+    Ok(())
+}
+
 fn rank_profiles_to_ir(
     values: Option<
         flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::RankProfileDefinition<'_>>>,
@@ -3805,20 +3983,35 @@ fn rank_profiles_to_ir(
                     });
                 }
             }
+            let first_phase =
+                rank_phase_to_ir(value.first_phase(), &format!("{path}.first_phase"))?;
+            let second_phase =
+                rank_phase_to_ir(value.second_phase(), &format!("{path}.second_phase"))?;
+            let global_phase =
+                rank_phase_to_ir(value.global_phase(), &format!("{path}.global_phase"))?;
+            validate_rank_phase(
+                first_phase.as_ref(),
+                RankPhaseKind::First,
+                &format!("{path}.first_phase"),
+            )?;
+            validate_rank_phase(
+                second_phase.as_ref(),
+                RankPhaseKind::Second,
+                &format!("{path}.second_phase"),
+            )?;
+            validate_rank_phase(
+                global_phase.as_ref(),
+                RankPhaseKind::Global,
+                &format!("{path}.global_phase"),
+            )?;
             output.push(RankProfileDefinitionIr {
                 name,
                 inherits: strings_to_ir(value.inherits(), &format!("{path}.inherits"))?,
                 inputs,
                 functions,
-                first_phase: rank_phase_to_ir(value.first_phase(), &format!("{path}.first_phase"))?,
-                second_phase: rank_phase_to_ir(
-                    value.second_phase(),
-                    &format!("{path}.second_phase"),
-                )?,
-                global_phase: rank_phase_to_ir(
-                    value.global_phase(),
-                    &format!("{path}.global_phase"),
-                )?,
+                first_phase,
+                second_phase,
+                global_phase,
                 rank_features: strings_to_ir(
                     value.rank_features(),
                     &format!("{path}.rank_features"),
@@ -3856,7 +4049,7 @@ fn rank_profiles_to_ir(
 }
 fn search_fields_to_ir_at(
     selection: api::SearchFieldSelection<'_>,
-    fields: &[FieldIr],
+    fields: &[&FieldIr],
     path: &str,
 ) -> Result<Vec<SearchFieldIr>> {
     let mut search_fields = Vec::new();
@@ -3867,6 +4060,7 @@ fn search_fields_to_ir_at(
             let f = fields
                 .iter()
                 .find(|field| field.name.as_str() == search_field.field().unwrap_or_default())
+                .copied()
                 .ok_or_else(|| {
                     invalid(
                         "unknown_field",
@@ -4385,13 +4579,167 @@ mod tests {
             TypoPolicy::Disabled,
         )
         .unwrap();
-        let fields = definition
+        let document_fields = definition
             .fields()
             .iter()
             .enumerate()
             .map(|(index, field)| (field.name().as_str().to_owned(), index))
             .collect();
-        IndexContext { definition, fields }
+        let query_fields = definition
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                (
+                    field.name().as_str().to_owned(),
+                    QueryFieldRef::Document(index),
+                )
+            })
+            .collect();
+        IndexContext {
+            definition,
+            document_fields,
+            query_fields,
+        }
+    }
+
+    #[test]
+    fn schema_only_fields_are_query_visible_but_not_feedable() {
+        let mut definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                FieldName::parse("title").unwrap(),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, true, false, false, false),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        definition.set_schema_fields(vec![FieldIr::new(
+            FieldName::parse("derived").unwrap(),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            None,
+            FieldCapabilities::new(true, true, true, true, false),
+        )]);
+        let bytes = crate::index_definition_ir_to_api(&definition);
+        let context = IndexContext::from_api(
+            crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+        )
+        .unwrap();
+
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let name = builder.create_string("derived");
+        let weight = api::OptionalDouble::new(1.0);
+        let search_field = api::SearchField::create(
+            &mut builder,
+            &api::SearchFieldArgs {
+                field: Some(name),
+                weight: Some(&weight),
+            },
+        );
+        let fields = builder.create_vector(&[search_field]);
+        let selection = api::SearchFieldSelection::create(
+            &mut builder,
+            &api::SearchFieldSelectionArgs {
+                fields: Some(fields),
+            },
+        );
+        builder.finish(selection, None);
+        let selection =
+            crate::__flatbuffers::root::<api::SearchFieldSelection>(builder.finished_data())
+                .unwrap();
+        assert_eq!(context.search_fields_to_ir(selection).unwrap().len(), 1);
+
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 3 });
+        let value = api::Value::create(
+            &mut builder,
+            &api::ValueArgs {
+                kind_type: api::ValueKind::Int64Value,
+                kind: Some(value.as_union_value()),
+            },
+        );
+        builder.finish(value, None);
+        let value = crate::__flatbuffers::root::<api::Value>(builder.finished_data()).unwrap();
+        let error = context.value_to_ir("derived", value).unwrap_err();
+        assert_eq!(error.details[0].code, "unknown_field");
+    }
+
+    #[test]
+    fn imported_aliases_are_preserved_but_explicitly_not_query_bound() {
+        let mut definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                FieldName::parse("parent").unwrap(),
+                DataTypeIr::Reference {
+                    document_type: "parent".to_owned(),
+                },
+                None,
+                FieldCapabilities::new(false, false, false, false, false),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        definition.set_imported_fields(vec![ImportedFieldDefinitionIr {
+            reference_field: FieldName::parse("parent").unwrap(),
+            target_field: "name".to_owned(),
+            alias: FieldName::parse("parent_name").unwrap(),
+            properties: BTreeMap::new(),
+        }]);
+        let bytes = crate::index_definition_ir_to_api(&definition);
+        let context = IndexContext::from_api(
+            crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+        )
+        .unwrap();
+        let error = crate::bind_filter_expression(
+            "parent_name = 'Acme'",
+            context.definition(),
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        assert_eq!(error.details[0].code, "imported_field_query_not_supported");
+
+        let mut invalid = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                FieldName::parse("title").unwrap(),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, true, false, false, false),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        invalid.set_schema_fields(vec![FieldIr::new(
+            FieldName::parse("derived_ref").unwrap(),
+            DataTypeIr::Reference {
+                document_type: "parent".to_owned(),
+            },
+            None,
+            FieldCapabilities::new(false, false, false, false, false),
+        )]);
+        invalid.set_imported_fields(vec![ImportedFieldDefinitionIr {
+            reference_field: FieldName::parse("derived_ref").unwrap(),
+            target_field: "name".to_owned(),
+            alias: FieldName::parse("derived_name").unwrap(),
+            properties: BTreeMap::new(),
+        }]);
+        let bytes = crate::index_definition_ir_to_api(&invalid);
+        let error = crate::index_definition_to_ir(
+            crate::__flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error.details[0].code, "unknown_field");
     }
 
     #[test]
