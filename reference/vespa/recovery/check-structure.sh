@@ -20,10 +20,3 @@ if ! rg -n 'IndexRuntime::(create|open)' "$DRIVER/src/main.rs" >/dev/null; then
   echo "recovery driver does not exercise the product lifecycle" >&2
   exit 1
 fi
-
-for symbol in sk_create sk_open sk_call sk_close sk_buffer_free; do
-  rg -n "sk_${symbol#sk_}" "$DRIVER/src/main.rs" >/dev/null || {
-    echo "recovery driver does not exercise C5 symbol: $symbol" >&2
-    exit 1
-  }
-done

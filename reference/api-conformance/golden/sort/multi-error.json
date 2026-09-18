@@ -4,7 +4,7 @@
     "details": [
       {
         "code": "field_not_sortable",
-        "path": "sort.field"
+        "path": "sort.target.field"
       }
     ],
     "retryable": false

@@ -15,10 +15,6 @@ export CARGO_TARGET_DIR="$DRIVER_TARGET"
 cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml"
 DRIVER="$DRIVER_TARGET/debug/searchkernel-recovery-driver"
 require_native_driver "$DRIVER"
-for symbol in sk_create sk_open sk_call sk_close sk_buffer_free; do
-  nm "$DRIVER" 2>/dev/null | grep -E "[[:space:]]${symbol}$" >/dev/null ||
-    fail_verification "recovery driver does not contain C5 symbol: $symbol"
-done
 
 TARGET="$ROOT/target/vespa-verifier/recovery"
 rm -rf "$TARGET"
@@ -31,4 +27,4 @@ LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$DRIVER" missing "$TARGET/missing"
 
-echo "cross-boundary recovery PASS"
+echo "product recovery PASS"

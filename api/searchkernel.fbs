@@ -1368,29 +1368,6 @@ table GroupingBucketExpression {
   include_upper:OptionalBool;
 }
 
-// Aggregations are also expressions, since Vespa allows constructs such as
-// order(-count()) and order(max(price) * count()).
-table GroupingAggregationExpression {
-  aggregation:AggregationKind;
-}
-
-union GroupingExpressionKind {
-  GroupingAttributeExpression,
-  GroupingLiteralExpression,
-  GroupingFunctionExpression,
-  GroupingUnaryExpression,
-  GroupingBinaryExpression,
-  GroupingAliasReference,
-  GroupingMemberExpression,
-  GroupingMapLookupExpression,
-  GroupingBucketExpression,
-  GroupingAggregationExpression
-}
-
-table GroupingExpression {
-  expr:GroupingExpressionKind;
-}
-
 // -----------------------------------------------------------------------------
 // Grouping aggregations
 // -----------------------------------------------------------------------------
@@ -1444,6 +1421,31 @@ union AggregationKind {
   StdDevAggregation,
   QuantilesAggregation,
   SummaryAggregation
+}
+
+// Aggregations are also expressions, since Vespa allows constructs such as
+// order(-count()) and order(max(price) * count()).  `AggregationKind` must be
+// declared before this field because flatc does not permit forward union
+// references.
+table GroupingAggregationExpression {
+  aggregation:AggregationKind;
+}
+
+union GroupingExpressionKind {
+  GroupingAttributeExpression,
+  GroupingLiteralExpression,
+  GroupingFunctionExpression,
+  GroupingUnaryExpression,
+  GroupingBinaryExpression,
+  GroupingAliasReference,
+  GroupingMemberExpression,
+  GroupingMapLookupExpression,
+  GroupingBucketExpression,
+  GroupingAggregationExpression
+}
+
+table GroupingExpression {
+  expr:GroupingExpressionKind;
 }
 
 // output(...) accepts a grouping expression rather than only an aggregator so

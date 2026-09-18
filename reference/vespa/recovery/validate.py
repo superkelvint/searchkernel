@@ -12,8 +12,8 @@ if actual != expected:
 with (scenario_dir / "crash-matrix.json").open(encoding="utf-8") as stream:
     matrix = json.load(stream)
 if matrix != {
-    "id": "cross-boundary-crash-matrix",
-    "boundaries": ["product", "c5"],
+    "id": "product-crash-matrix",
+    "boundaries": ["product"],
     "operations": ["insert", "update", "delete", "close"],
     "phases": ["before", "after"],
     "matrix_repetitions": 3,
@@ -27,8 +27,8 @@ if matrix != {
 with (scenario_dir / "repeated.json").open(encoding="utf-8") as stream:
     repeated = json.load(stream)
 if repeated != {
-    "id": "cross-boundary-repeated-recovery",
-    "boundaries": ["product", "c5"],
+    "id": "product-repeated-recovery",
+    "boundaries": ["product"],
     "cycles": 20,
     "sequence": ["insert", "update", "delete", "close"],
     "reopen_after_every_crash": True,

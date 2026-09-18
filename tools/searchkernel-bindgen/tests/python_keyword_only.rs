@@ -34,7 +34,7 @@ fn freshly_generated_python_models_are_keyword_only() {
         String::from_utf8_lossy(&generation.stderr)
     );
 
-    let generated_client = output_root.join("clients/python/searchkernel/generated/client.py");
+    let generated_models = output_root.join("clients/python/searchkernel/generated/models.py");
     let python = r#"
 import dataclasses
 import importlib.util
@@ -51,7 +51,7 @@ sys.modules["searchkernel"] = searchkernel
 generated_package = types.ModuleType("searchkernel.generated")
 generated_package.__path__ = [str(pathlib.Path(path).parent)]
 sys.modules["searchkernel.generated"] = generated_package
-spec = importlib.util.spec_from_file_location("searchkernel.generated.client", path)
+spec = importlib.util.spec_from_file_location("searchkernel.generated.models", path)
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
@@ -91,7 +91,7 @@ assert module.IndexDefinition(name="products", fields=[]).name == "products"
         .args([
             "-c",
             python,
-            generated_client.to_str().expect("client path is UTF-8"),
+            generated_models.to_str().expect("models path is UTF-8"),
             repository_root.to_str().expect("repository path is UTF-8"),
         ])
         .output()

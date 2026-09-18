@@ -23,11 +23,11 @@ fi
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 "$flatc_bin" --binary --schema -I "$root/api" -o "$temporary" \
-    "$root/api/searchkernel_ffi_request.fbs"
+    "$root/api/searchkernel_request.fbs"
 "$flatc_bin" --binary --schema -I "$root/api" -o "$temporary" \
-    "$root/api/searchkernel_ffi_response.fbs"
+    "$root/api/searchkernel_response.fbs"
 
-cmp "$temporary/searchkernel_ffi_request.bfbs" \
-    "$root/core/crates/searchkernel-json/bfbs/searchkernel_ffi_request.bfbs"
-cmp "$temporary/searchkernel_ffi_response.bfbs" \
-    "$root/core/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs"
+cmp "$temporary/searchkernel_request.bfbs" \
+    "$root/core/crates/searchkernel-json/bfbs/searchkernel_request.bfbs"
+cmp "$temporary/searchkernel_response.bfbs" \
+    "$root/core/crates/searchkernel-json/bfbs/searchkernel_response.bfbs"

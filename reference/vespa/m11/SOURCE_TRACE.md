@@ -9,7 +9,7 @@ declarations are generated from that header and the hardening controls are
 feature-gated in `searchkernel-vespa-bindings`. M8–M10 result, grouping, and
 ranking paths are reached through the same native generic/local calls. The
 adapter trace is `core/crates/searchkernel-ir-adapter/src/lib.rs`; production
-C5 calls enter through `core/crates/searchkernel-ffi/src/{abi,dispatch,buffer}.rs`.
+The retired portable client ABI is intentionally not part of this hardening lane.
 
 Behavioral expectations for mutation, text matching, query lowering, schema,
 and persistence are inherited from the frozen M0–M10 contracts and the pinned

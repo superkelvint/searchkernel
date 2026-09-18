@@ -345,6 +345,7 @@ mod tests {
                 assert!(backend
                     .upsert(UpsertRequestIr {
                         document: document(),
+                        condition: None,
                     })
                     .is_err());
                 assert!(backend
@@ -358,6 +359,7 @@ mod tests {
                     .delete(DeleteRequestIr {
                         id: crate::DocumentId::parse("session-test-document")
                             .expect("valid test document ID"),
+                        condition: None,
                     })
                     .is_err());
                 assert!(backend

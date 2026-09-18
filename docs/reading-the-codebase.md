@@ -54,8 +54,8 @@ core/crates/searchkernel-ir/
 core/crates/searchkernel-protocol/
   Generated Rust views of the FlatBuffers schemas
 
-core/crates/searchkernel-client/
-  Generated portable client transport types
+core/crates/searchkernel-dispatch/
+  Canonical V2 envelope validation, routing, and response construction
 
 core/crates/searchkernel-json/
   FlatBuffers JSON conversion and generated JSON support
@@ -69,8 +69,6 @@ core/crates/searchkernel-vespa-engine/
 core/crates/searchkernel-vespa-bindings/
   Raw Rust declarations for the native ABI
 
-core/crates/searchkernel-ffi/
-  C ABI framing, verification, dispatch, and buffer ownership
 
 core/native/vespa/
   Search Kernel-owned C++ adapter around Vespa

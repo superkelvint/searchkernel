@@ -4,7 +4,7 @@
     "details": [
       {
         "code": "unknown_field",
-        "path": "sort.field"
+        "path": "sort.target.field"
       }
     ],
     "retryable": false

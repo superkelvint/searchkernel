@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel.generated import client as generated  # noqa: E402
+from searchkernel.generated import models as generated  # noqa: E402
 
 
 def _generated_dataclasses() -> list[type]:

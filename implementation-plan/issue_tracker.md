@@ -1,12 +1,13 @@
 # Issue Tracker
 
-### 1. Add a real C7 verifier and wire it into acceptance
+### 1. Historical: C7 native-transport verifier
 
-**Status: Complete.**
+**Status: Retired.**
 
 **Root cause:** The Python/C7 implementation exists, but there is no frozen C7 acceptance harness under `reference/clients/c7/`, so regressions can pass the rest of the verifier suite unnoticed.
 
-**Fixed when:** A C7 contract/verifier exists, exercises the Python NativeTransport path, and is run by the normal acceptance flow.
+**Historical resolution:** The portable C ABI and Python NativeTransport were
+retired; this verifier is intentionally no longer part of acceptance.
 
 ### 2. Make C7 response testing exact
 

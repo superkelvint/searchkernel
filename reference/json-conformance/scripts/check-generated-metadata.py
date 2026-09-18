@@ -56,7 +56,7 @@ def validate(instance,schema,root,path='$'):
     if 'maximum' in schema and instance>schema['maximum']: raise ValueError(f'{path}: above maximum')
 manifest=json.loads((generated/'manifest.json').read_text())
 if manifest.get('generated_by')!='searchkernel-bindgen' or manifest.get('format_version')!=1: raise SystemExit('invalid manifest header')
-for name in ['searchkernel_ffi_request.bfbs','searchkernel_ffi_response.bfbs']:
+for name in ['searchkernel_request.bfbs','searchkernel_response.bfbs']:
     want=hashlib.sha256((root/'core/crates/searchkernel-json/bfbs'/name).read_bytes()).hexdigest()
     try: got=manifest['bfbs'][name]['sha256']
     except Exception as exc: raise SystemExit(f'manifest missing hash for {name}: {exc}')
@@ -78,7 +78,7 @@ if [p.stem for p in sj] != [p.stem for p in sb]: raise SystemExit('response JSON
 if len(rj)!=77 or len(sj)!=67: raise SystemExit(f'frozen corpus changed: {len(rj)} requests, {len(sj)} responses')
 for path,envelope in [(p,'request') for p in rj]+[(p,'response') for p in sj]:
     obj=json.loads(path.read_text(),object_pairs_hook=reject_dupes)
-    if obj.get('protocol_version')!=1: raise SystemExit(f'{path.name}: protocol_version')
+    if obj.get('protocol_version')!=2: raise SystemExit(f'{path.name}: protocol_version')
     union=obj.get(envelope)
     if not isinstance(union,dict) or len(union)!=1: raise SystemExit(f'{path.name}: {envelope} must be one-key object')
     rendered=json.dumps(obj,sort_keys=True)

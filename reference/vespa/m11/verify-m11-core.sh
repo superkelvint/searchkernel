@@ -22,7 +22,6 @@ run_m11_driver lifecycle "$TARGET/lifecycle"
 run_m11_driver reopen "$TARGET/reopen"
 run_m11_driver advanced "$TARGET/advanced"
 run_m11_driver adapter "$TARGET/adapter"
-run_m11_driver c5 "$TARGET/c5"
 run_m11_driver malformed "$TARGET/malformed"
 run_m11_driver failures "$TARGET/failures"
 

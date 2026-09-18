@@ -1,3 +1,3 @@
-"""Generated BFBS wire and client definitions."""
+"""Generated BFBS-derived domain value models."""
 
-from .client import *  # noqa: F401,F403
+from .models import *  # noqa: F401,F403

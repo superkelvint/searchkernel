@@ -19,10 +19,9 @@
    Risk      Silent semantic drift in presence/default handling, malformed unions, nested values, duplicate fields, and error metadata.
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Rank      5
-   Area      Generated Rust client
-   Evidence  core/crates/searchkernel-client/tests/behavior.rs:77 has one test covering all sync operations through a scripted success
-             response. AsyncClient is untested.
-   Risk      Transport errors, malformed responses, protocol errors, async behavior, and less-common nested/request variants.
+   Area      Historical generated Rust client
+   Evidence  The custom generated transport client was retired with the portable C ABI.
+   Risk      Future gRPC client coverage is deferred to the gRPC transport milestone.
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Rank      6
    Area      Testkit conformance runner

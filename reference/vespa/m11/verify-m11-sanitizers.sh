@@ -125,7 +125,6 @@ run_lane() {
         "$binary" adapter "$config" "$TARGET/$lane/adapter"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$binary" c5 "$config" "$TARGET/$lane/c5"
         ASAN_OPTIONS="$options" UBSAN_OPTIONS="$ubsan_options" LSAN_OPTIONS="suppressions=$lsan" \
         LD_LIBRARY_PATH="$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$binary" concurrency "$config" "$TARGET/$lane/concurrency"
@@ -137,7 +136,6 @@ run_lane() {
       run_tsan "$sdk" "$tsan" "$binary" reopen "$config" "$TARGET/$lane/reopen"
       run_tsan "$sdk" "$tsan" "$binary" advanced "$config" "$TARGET/$lane/advanced"
       run_tsan "$sdk" "$tsan" "$binary" adapter "$config" "$TARGET/$lane/adapter"
-      run_tsan "$sdk" "$tsan" "$binary" c5 "$config" "$TARGET/$lane/c5"
       ;;
   esac
   export LD_PRELOAD="$base_preload"

@@ -3,8 +3,7 @@
 The Rust workspace is split by responsibility. The crates currently live here:
 
 - `searchkernel` — the product-facing fluent API.
-- `searchkernel-client` — generated portable client transport types.
-- `searchkernel-ffi` — the portable C ABI transport layer.
+- `searchkernel-dispatch` — transport-independent canonical V2 request dispatch.
 - `searchkernel-ir` — validation, defaults, and the owned intermediate
   representation.
 - `searchkernel-ir-adapter` — the integration boundary between IR and Vespa.

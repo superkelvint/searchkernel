@@ -4,9 +4,7 @@ use crate::analyze::{AnalyzeBuilder, AnalyzeTarget};
 use crate::filter::{pending_value, ComparisonOp, Filter, FilterNode};
 use crate::patch::{Patch, PatchOperation};
 use crate::schema::{Analyzer, Field, FieldKind, IndexDefinition, SearchField};
-use crate::search::{
-    Facet, FacetSort, MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection,
-};
+use crate::search::{MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection};
 use crate::{Error, Result};
 use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
@@ -39,6 +37,7 @@ pub(crate) fn upsert(id: &str, value: &Value) -> Result<Vec<u8>> {
         &mut builder,
         &api::UpsertRequestArgs {
             document: Some(document),
+            condition: None,
         },
     );
     builder.finish(root, None);
@@ -68,7 +67,13 @@ pub(crate) fn patch(id: &str, patch: &Patch) -> Result<Vec<u8>> {
 pub(crate) fn delete(id: &str) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let id = builder.create_string(id);
-    let root = api::DeleteRequest::create(&mut builder, &api::DeleteRequestArgs { id: Some(id) });
+    let root = api::DeleteRequest::create(
+        &mut builder,
+        &api::DeleteRequestArgs {
+            id: Some(id),
+            condition: None,
+        },
+    );
     builder.finish(root, None);
     builder.finished_data().to_vec()
 }
@@ -139,7 +144,20 @@ pub(crate) fn analyze(request: &AnalyzeBuilder) -> Result<Vec<u8>> {
 
 pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let query = builder.create_string(&request.query);
+    let query_text = builder.create_string(&request.query);
+    let query_value = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs {
+            text: Some(query_text),
+        },
+    );
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query_value.as_union_value()),
+        },
+    );
     let search_fields = request
         .search_fields
         .as_ref()
@@ -152,18 +170,23 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
             &Filter::all(filters.iter().cloned()),
         )?),
     };
+    let filter = filter.map(|filter| {
+        let filters = builder.create_vector(&[filter]);
+        api::FilterRequest::create(
+            &mut builder,
+            &api::FilterRequestArgs {
+                structured: Some(filters),
+                sources: None,
+                parameters: None,
+            },
+        )
+    });
     let sorts = request
         .sorts
         .iter()
         .map(|sort| sort_expr(&mut builder, sort))
         .collect::<Vec<_>>();
     let sorts = builder.create_vector(&sorts);
-    let facets = request
-        .facets
-        .iter()
-        .map(|facet| facet_request(&mut builder, facet))
-        .collect::<Vec<_>>();
-    let facets = builder.create_vector(&facets);
     let ranking = request
         .ranking
         .as_ref()
@@ -178,31 +201,53 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
         .highlighting
         .as_ref()
         .map(|fields| highlighting(&mut builder, fields));
-    let language = request
-        .language
-        .as_deref()
-        .map(|value| builder.create_string(value));
     let timeout = request
         .timeout
         .map(timeout_millis)
         .transpose()?
         .map(api::OptionalUInt64::new);
+    let query_model = request.language.as_deref().map(|language| {
+        let language = builder.create_string(language);
+        api::QueryModel::create(
+            &mut builder,
+            &api::QueryModelArgs {
+                language: Some(language),
+                ..Default::default()
+            },
+        )
+    });
+    let presentation = match (projection, highlighting) {
+        (None, None) => None,
+        (fields, highlighting) => Some(api::PresentationRequest::create(
+            &mut builder,
+            &api::PresentationRequestArgs {
+                summary: None,
+                fields,
+                highlighting,
+                format: None,
+                bolding: None,
+                timing: None,
+            },
+        )),
+    };
     let root = api::SearchRequest::create(
         &mut builder,
         &api::SearchRequestArgs {
             query: Some(query),
             search_fields,
-            filter,
+            filters: filter,
             sort: Some(sorts),
-            facets: Some(facets),
             ranking,
             limit: limit.as_ref(),
             offset: offset.as_ref(),
-            projection,
-            highlighting,
-            language,
-            query_expr: None,
-            timeout: timeout.as_ref(),
+            timeout_ms: timeout.as_ref(),
+            grouping: None,
+            inputs: None,
+            query_model,
+            presentation,
+            properties: None,
+            query_profile: None,
+            search_chain: None,
         },
     );
     builder.finish(root, None);
@@ -249,6 +294,8 @@ fn index_definition<'a>(
             name,
             fields: Some(fields),
             default_search_fields,
+            properties: None,
+            ..Default::default()
         },
     )
 }
@@ -267,22 +314,38 @@ fn field_definition<'a>(
     let filterable = field.filterable.map(api::OptionalBool::new);
     let sortable = field.sortable.map(api::OptionalBool::new);
     let facetable = field.facetable.map(api::OptionalBool::new);
+    let data_type = data_type(builder, field.kind, field.multi);
+    let matching = matches!(field.kind, FieldKind::Text | FieldKind::Keyword).then(|| {
+        api::MatchingConfig::create(
+            builder,
+            &api::MatchingConfigArgs {
+                mode: match field.kind {
+                    FieldKind::Text => api::MatchingMode::Text,
+                    FieldKind::Keyword => api::MatchingMode::Exact,
+                    _ => api::MatchingMode::Unspecified,
+                },
+                options: None,
+            },
+        )
+    });
     api::FieldDefinition::create(
         builder,
         &api::FieldDefinitionArgs {
             name: Some(name),
-            kind: field_kind(field.kind),
-            cardinality: if field.multi {
-                api::FieldCardinality::Multi
-            } else {
-                api::FieldCardinality::Unspecified
-            },
+            data_type: Some(data_type),
             stored: stored.as_ref(),
             searchable: searchable.as_ref(),
             filterable: filterable.as_ref(),
             sortable: sortable.as_ref(),
             facetable: facetable.as_ref(),
             analyzer,
+            matching,
+            index: None,
+            attribute: None,
+            summary: None,
+            indexing_script: None,
+            properties: None,
+            ..Default::default()
         },
     )
 }
@@ -521,6 +584,39 @@ fn value_offset<'a>(
     )
 }
 
+fn range_bound<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+) -> flatbuffers::WIPOffset<api::RangeBound<'a>> {
+    let (bound_type, bound) = match value {
+        Some(value) => {
+            let value = value_offset(builder, value);
+            let bound = api::FiniteRangeBound::create(
+                builder,
+                &api::FiniteRangeBoundArgs { value: Some(value) },
+            );
+            (
+                api::RangeBoundKind::FiniteRangeBound,
+                bound.as_union_value(),
+            )
+        }
+        None => {
+            let bound = api::UnboundedRangeBound::create(builder, &api::UnboundedRangeBoundArgs {});
+            (
+                api::RangeBoundKind::UnboundedRangeBound,
+                bound.as_union_value(),
+            )
+        }
+    };
+    api::RangeBound::create(
+        builder,
+        &api::RangeBoundArgs {
+            bound_type,
+            bound: Some(bound),
+        },
+    )
+}
+
 fn filter_expr<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     filter: &Filter,
@@ -565,7 +661,7 @@ fn filter_expr<'a>(
             (api::FilterExprKind::FilterNot, value.as_union_value())
         }
         Filter(FilterNode::Comparison { field, op, value }) => {
-            let field = builder.create_string(field);
+            let field = query_field_ref(builder, field);
             let value = value_offset(builder, pending_value(value).map_err(Error::Serialization)?);
             let value = api::FilterComparison::create(
                 builder,
@@ -581,27 +677,29 @@ fn filter_expr<'a>(
             )
         }
         Filter(FilterNode::Range { field, bounds }) => {
-            let field = builder.create_string(field);
+            let field = query_field_ref(builder, field);
             let lower = bounds
                 .lower
                 .as_ref()
-                .map(|value| pending_value(value).map(|value| value_offset(builder, value)))
+                .map(|value| pending_value(value).map(|value| range_bound(builder, Some(value))))
                 .transpose()
                 .map_err(Error::Serialization)?;
             let upper = bounds
                 .upper
                 .as_ref()
-                .map(|value| pending_value(value).map(|value| value_offset(builder, value)))
+                .map(|value| pending_value(value).map(|value| range_bound(builder, Some(value))))
                 .transpose()
                 .map_err(Error::Serialization)?;
+            let lower = lower.unwrap_or_else(|| range_bound(builder, None));
+            let upper = upper.unwrap_or_else(|| range_bound(builder, None));
             let include_lower = bounds.include_lower.map(api::OptionalBool::new);
             let include_upper = bounds.include_upper.map(api::OptionalBool::new);
             let value = api::FilterRange::create(
                 builder,
                 &api::FilterRangeArgs {
                     field: Some(field),
-                    lower,
-                    upper,
+                    lower: Some(lower),
+                    upper: Some(upper),
                     include_lower: include_lower.as_ref(),
                     include_upper: include_upper.as_ref(),
                 },
@@ -609,7 +707,7 @@ fn filter_expr<'a>(
             (api::FilterExprKind::FilterRange, value.as_union_value())
         }
         Filter(FilterNode::Exists { field }) => {
-            let field = builder.create_string(field);
+            let field = query_field_ref(builder, field);
             let value =
                 api::FilterExists::create(builder, &api::FilterExistsArgs { field: Some(field) });
             (api::FilterExprKind::FilterExists, value.as_union_value())
@@ -663,45 +761,66 @@ fn sort_expr<'a>(
     sort: &Sort,
 ) -> flatbuffers::WIPOffset<api::SortExpr<'a>> {
     let field = builder.create_string(&sort.field);
-    let missing = sort.missing.map(|missing| {
-        api::OptionalMissingPlacement::new(match missing {
-            MissingPlacement::First => api::MissingPlacement::First,
-            MissingPlacement::Last => api::MissingPlacement::Last,
-        })
-    });
+    let field =
+        api::FieldSortTarget::create(builder, &api::FieldSortTargetArgs { field: Some(field) });
+    let target = api::SortTarget::create(
+        builder,
+        &api::SortTargetArgs {
+            target_type: api::SortTargetKind::FieldSortTarget,
+            target: Some(field.as_union_value()),
+        },
+    );
+    let missing = sort.missing.map(|missing| missing_policy(builder, missing));
     api::SortExpr::create(
         builder,
         &api::SortExprArgs {
-            field: Some(field),
+            target: Some(target),
             direction: match sort.direction {
                 SortDirection::Asc => api::SortDirection::Asc,
                 SortDirection::Desc => api::SortDirection::Desc,
             },
-            missing: missing.as_ref(),
+            missing,
+            annotations: None,
         },
     )
 }
 
-fn facet_request<'a>(
+fn query_field_ref<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    facet: &Facet,
-) -> flatbuffers::WIPOffset<api::FacetRequest<'a>> {
-    let field = builder.create_string(&facet.field);
-    let limit = facet.limit.map(api::OptionalUInt32::new);
-    let sort = facet.sort.map(|sort| {
-        api::OptionalFacetSort::new(match sort {
-            FacetSort::CountDesc => api::FacetSort::CountDesc,
-            FacetSort::CountAsc => api::FacetSort::CountAsc,
-            FacetSort::ValueAsc => api::FacetSort::ValueAsc,
-            FacetSort::ValueDesc => api::FacetSort::ValueDesc,
-        })
-    });
-    api::FacetRequest::create(
+    path: &str,
+) -> flatbuffers::WIPOffset<api::QueryFieldRef<'a>> {
+    let path = builder.create_string(path);
+    api::QueryFieldRef::create(
         builder,
-        &api::FacetRequestArgs {
-            field: Some(field),
-            limit: limit.as_ref(),
-            sort: sort.as_ref(),
+        &api::QueryFieldRefArgs {
+            path: Some(path),
+            element_index: None,
+        },
+    )
+}
+
+fn missing_policy<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    missing: MissingPlacement,
+) -> flatbuffers::WIPOffset<api::MissingPolicy<'a>> {
+    let (policy_type, policy) = match missing {
+        MissingPlacement::First => {
+            let policy = api::MissingFirst::create(builder, &api::MissingFirstArgs {});
+            (
+                api::MissingPolicyKind::MissingFirst,
+                policy.as_union_value(),
+            )
+        }
+        MissingPlacement::Last => {
+            let policy = api::MissingLast::create(builder, &api::MissingLastArgs {});
+            (api::MissingPolicyKind::MissingLast, policy.as_union_value())
+        }
+    };
+    api::MissingPolicy::create(
+        builder,
+        &api::MissingPolicyArgs {
+            policy_type,
+            policy: Some(policy),
         },
     )
 }
@@ -709,27 +828,62 @@ fn facet_request<'a>(
 fn ranking_policy<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     ranking: &Ranking,
-) -> flatbuffers::WIPOffset<api::RankingPolicy<'a>> {
-    let (policy_type, policy) = match ranking.kind {
-        super::search::RankingKind::DefaultRelevanceV1 => (
-            api::RankingPolicyKind::DefaultRelevanceV1,
-            api::DefaultRelevanceV1::create(builder, &api::DefaultRelevanceV1Args {})
-                .as_union_value(),
-        ),
-        super::search::RankingKind::Bm25 => (
-            api::RankingPolicyKind::Bm25Ranking,
-            api::Bm25Ranking::create(builder, &api::Bm25RankingArgs {}).as_union_value(),
-        ),
-    };
-    api::RankingPolicy::create(
+) -> flatbuffers::WIPOffset<api::RankingRequest<'a>> {
+    let profile = builder.create_string(match ranking.kind {
+        super::search::RankingKind::DefaultRelevanceV1 => "default",
+        super::search::RankingKind::Bm25 => "bm25",
+    });
+    api::RankingRequest::create(
         builder,
-        &api::RankingPolicyArgs {
-            policy_type,
-            policy: Some(policy),
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            properties: None,
         },
     )
 }
 
+fn data_type<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    kind: FieldKind,
+    multi: bool,
+) -> flatbuffers::WIPOffset<api::DataType<'a>> {
+    let primitive = api::PrimitiveDataType::create(
+        builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: match kind {
+                FieldKind::Text | FieldKind::Keyword => api::PrimitiveDataTypeKind::String,
+                FieldKind::Int64 => api::PrimitiveDataTypeKind::Int64,
+                FieldKind::Float64 => api::PrimitiveDataTypeKind::Float64,
+                FieldKind::Bool => api::PrimitiveDataTypeKind::Bool,
+            },
+        },
+    );
+    let primitive = api::DataType::create(
+        builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
+    if !multi {
+        return primitive;
+    }
+    let array = api::ArrayDataType::create(
+        builder,
+        &api::ArrayDataTypeArgs {
+            element_type: Some(primitive),
+        },
+    );
+    api::DataType::create(
+        builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::ArrayDataType,
+            kind: Some(array.as_union_value()),
+        },
+    )
+}
+
+/*
 fn field_kind(kind: FieldKind) -> api::FieldKind {
     match kind {
         FieldKind::Text => api::FieldKind::Text,
@@ -739,6 +893,7 @@ fn field_kind(kind: FieldKind) -> api::FieldKind {
         FieldKind::Bool => api::FieldKind::Bool,
     }
 }
+*/
 
 fn comparison_op(op: ComparisonOp) -> api::ComparisonOp {
     match op {
@@ -797,7 +952,6 @@ mod tests {
                 field("price").range(Range::new().lower(10).include_upper(false)),
             ]))
             .sort(Sort::desc("price").missing_last())
-            .facet(Facet::new("brand").limit(5).sort(FacetSort::ValueAsc))
             .ranking(Ranking::bm25())
             .limit(10)
             .offset(2)
@@ -809,21 +963,52 @@ mod tests {
         let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
             .expect("encoded search request");
 
-        assert_eq!(encoded.query(), Some("headphones"));
+        assert_eq!(
+            encoded
+                .query()
+                .and_then(|query| query.source_as_search_kernel_text_query())
+                .and_then(|query| query.text()),
+            Some("headphones")
+        );
         assert_eq!(encoded.search_fields().unwrap().fields().unwrap().len(), 1);
         assert_eq!(
-            encoded.filter().unwrap().expr_type(),
+            encoded
+                .filters()
+                .unwrap()
+                .structured()
+                .unwrap()
+                .get(0)
+                .expr_type(),
             api::FilterExprKind::FilterOr
         );
         assert_eq!(encoded.sort().unwrap().len(), 1);
-        assert_eq!(encoded.facets().unwrap().len(), 1);
         assert!(encoded.ranking().is_some());
         assert_eq!(encoded.limit().unwrap().value(), 10);
         assert_eq!(encoded.offset().unwrap().value(), 2);
-        assert_eq!(encoded.projection().unwrap().fields().unwrap().len(), 1);
-        assert_eq!(encoded.highlighting().unwrap().fields().unwrap().len(), 1);
-        assert_eq!(encoded.language(), Some("en-us"));
-        assert_eq!(encoded.timeout().unwrap().value(), 200);
+        assert_eq!(
+            encoded
+                .presentation()
+                .unwrap()
+                .fields()
+                .unwrap()
+                .fields()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            encoded
+                .presentation()
+                .unwrap()
+                .highlighting()
+                .unwrap()
+                .fields()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(encoded.query_model().unwrap().language(), Some("en-us"));
+        assert_eq!(encoded.timeout_ms().unwrap().value(), 200);
     }
 
     #[test]

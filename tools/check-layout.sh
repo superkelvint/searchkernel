@@ -8,7 +8,7 @@ required=(
     core/crates/searchkernel-protocol
     core/crates/searchkernel-ir
     core/crates/searchkernel-json
-    core/crates/searchkernel-ffi
+    core/crates/searchkernel-dispatch
     core/crates/searchkernel-testkit
     core/crates/searchkernel-ir-adapter
     core/crates/searchkernel-vespa-engine

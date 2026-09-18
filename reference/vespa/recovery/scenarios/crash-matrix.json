@@ -1,6 +1,6 @@
 {
-  "id": "cross-boundary-crash-matrix",
-  "boundaries": ["product", "c5"],
+  "id": "product-crash-matrix",
+  "boundaries": ["product"],
   "operations": ["insert", "update", "delete", "close"],
   "phases": ["before", "after"],
   "matrix_repetitions": 3,

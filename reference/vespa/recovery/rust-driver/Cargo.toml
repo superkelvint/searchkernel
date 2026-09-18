@@ -5,10 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-flatbuffers = "=25.12.19"
 searchkernel = { path = "../../../../core/crates/searchkernel", features = ["native"] }
-searchkernel-ffi = { path = "../../../../core/crates/searchkernel-ffi", features = ["production"] }
-searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol" }
 serde_json = "1"
 
 [workspace]

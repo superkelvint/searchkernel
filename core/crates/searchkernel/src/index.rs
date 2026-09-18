@@ -820,6 +820,11 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
             }
             Ok(crate::field(range.field().as_str()).range(bounds))
         }
+        FilterIr::In { field, values } => values
+            .iter()
+            .map(|value| scalar_to_json(value).map(|value| crate::field(field.as_str()).eq(value)))
+            .collect::<Result<Vec<_>>>()
+            .map(crate::Filter::any),
         FilterIr::Exists { field } => Ok(crate::field(field.as_str()).exists()),
     }
 }
@@ -1605,14 +1610,14 @@ mod tests {
         manifest.write(&root).unwrap();
 
         let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+        let invalid_name = builder.create_string("invalid");
         let field = api::FieldDefinition::create(
             &mut builder,
             &api::FieldDefinitionArgs {
                 // A valid FlatBuffers table with a missing required semantic
                 // field. Reopen must not reinterpret this provenance.
-                name: None,
-                kind: api::FieldKind::Text,
-                cardinality: api::FieldCardinality::Single,
+                name: Some(invalid_name),
+                data_type: None,
                 ..Default::default()
             },
         );
@@ -1959,7 +1964,7 @@ mod tests {
 #[cfg(test)]
 mod api_tests {
     use super::*;
-    use crate::{field, Analyzer, Facet, Filter, Ranking, SearchBuilder, Sort};
+    use crate::{field, Analyzer, Filter, Ranking, SearchBuilder, Sort};
     use searchkernel_ir::{api, IndexContext, OperationIr};
     use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
     use serde_json::json;
@@ -2074,20 +2079,6 @@ mod api_tests {
             .filter(field("category").eq("books"))
             .sort(Sort::asc("brand").missing_last())
             .sort(Sort::desc("category").missing_first())
-            .facets([
-                Facet::new("brand")
-                    .limit(3)
-                    .sort(crate::FacetSort::CountDesc),
-                Facet::new("category")
-                    .limit(4)
-                    .sort(crate::FacetSort::CountAsc),
-                Facet::new("region")
-                    .limit(5)
-                    .sort(crate::FacetSort::ValueAsc),
-                Facet::new("channel")
-                    .limit(6)
-                    .sort(crate::FacetSort::ValueDesc),
-            ])
             .ranking(Ranking::bm25())
             .limit(7)
             .offset(2)
@@ -2302,11 +2293,7 @@ mod api_tests {
             inspected.sorts[1].missing,
             Some(crate::MissingPlacement::First)
         );
-        assert_eq!(inspected.facets.len(), 4);
-        assert_eq!(inspected.facets[0].limit, Some(3));
-        assert_eq!(inspected.facets[1].sort, Some(crate::FacetSort::CountAsc));
-        assert_eq!(inspected.facets[2].sort, Some(crate::FacetSort::ValueAsc));
-        assert_eq!(inspected.facets[3].sort, Some(crate::FacetSort::ValueDesc));
+        assert!(inspected.facets.is_empty());
         assert_eq!(inspected.ranking.kind, crate::search::RankingKind::Bm25);
         assert_eq!(inspected.limit, 7);
         assert_eq!(inspected.offset, 2);

@@ -1,0 +1,25 @@
+include "searchkernel.fbs";
+
+namespace SearchKernel.Protocol.V2;
+
+union RequestPayload {
+  SearchKernel.V2.InsertRequest,
+  SearchKernel.V2.UpsertRequest,
+  SearchKernel.V2.PatchRequest,
+  SearchKernel.V2.DeleteRequest,
+  SearchKernel.V2.GetRequest,
+  SearchKernel.V2.SearchRequest,
+  SearchKernel.V2.AnalyzeRequest,
+  SearchKernel.V2.DescribeRequest,
+  SearchKernel.V2.InspectQueryRequest
+}
+
+table RequestEnvelope {
+  // Zero is deliberately invalid. A V1 writer that omits its default version
+  // must decode as zero and be rejected rather than masquerading as V2.
+  protocol_version:uint = 0;
+  payload:RequestPayload;
+}
+
+root_type RequestEnvelope;
+file_identifier "SKRQ";

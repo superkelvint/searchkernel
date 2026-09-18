@@ -7,8 +7,8 @@ boundary between callers and Search Kernel.
 
 1. Read `searchkernel.fbs` for the domain model: indexes, documents, values,
    queries, filters, and results.
-2. Read `searchkernel_ffi_request.fbs` and `searchkernel_ffi_response.fbs` for
-   the small request/response envelopes used by the native ABI.
+2. Read `searchkernel_request.fbs` and `searchkernel_response.fbs` for the
+   neutral canonical request/response envelopes used by dispatchers.
 3. Follow the Rust conversion code in
    `core/crates/searchkernel-ir/src/api_to_ir.rs` and
    `core/crates/searchkernel-ir/src/ir_to_api.rs`.

@@ -6,14 +6,13 @@ use std::path::{Path, PathBuf};
 
 mod normalized;
 mod python_emitter;
-mod rust_emitter;
 
-const RUST_TEMPLATE: &str = include_str!("../templates/searchkernel_client_generated.rs");
-const PYTHON_TEMPLATE: &str = include_str!("../templates/searchkernel_python_generated.py");
+const PYTHON_TEMPLATE: &str = include_str!("../templates/searchkernel_python_models.py");
+const JSON_TEMPLATE: &str = include_str!("../templates/searchkernel_json_generated.rs");
 const GENERATED_PATHS: [&str; 3] = [
-    "core/crates/searchkernel-client/src/generated.rs",
-    "clients/python/searchkernel/generated/client.py",
+    "clients/python/searchkernel/generated/models.py",
     "reference/json-conformance/generated/schema-model.json",
+    "core/crates/searchkernel-json/src/generated.rs",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,19 +37,18 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = parse_arguments()?;
-    let request_path = arguments.bfbs_root.join("searchkernel_ffi_request.bfbs");
-    let response_path = arguments.bfbs_root.join("searchkernel_ffi_response.bfbs");
+    let request_path = arguments.bfbs_root.join("searchkernel_request.bfbs");
+    let response_path = arguments.bfbs_root.join("searchkernel_response.bfbs");
     let request_bytes = read_bytes(&request_path)?;
     let response_bytes = read_bytes(&response_path)?;
     let request = read_schema(&request_bytes, &request_path)?;
     let response = read_schema(&response_bytes, &response_path)?;
     let model = normalized::normalize(&request, &response)?;
-    let rust = rust_emitter::generate(&model, RUST_TEMPLATE)?;
     let generated = [
-        format!("{}\n", rust.trim_end()).into_bytes(),
         python_emitter::generate(&model, PYTHON_TEMPLATE)?.into_bytes(),
         serde_json::to_vec_pretty(&normalized::schema_model(&model))
             .map_err(|error| error.to_string())?,
+        format!("{}\n", JSON_TEMPLATE.trim_end()).into_bytes(),
     ];
 
     for (relative, mut contents) in GENERATED_PATHS.into_iter().zip(generated) {

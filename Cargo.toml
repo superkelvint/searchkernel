@@ -7,9 +7,8 @@ members = [
     "core/crates/searchkernel-vespa-bindings",
     "core/crates/searchkernel-vespa-engine",
     "core/crates/searchkernel-testkit",
-    "core/crates/searchkernel-ffi",
     "core/crates/searchkernel-json",
-    "core/crates/searchkernel-client",
+    "core/crates/searchkernel-dispatch",
     "core/crates/searchkernel-ir-adapter",
     "tools/searchkernel-bindgen",
 ]

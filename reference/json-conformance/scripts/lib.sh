@@ -36,8 +36,8 @@ find_flatc() {
 generate_bfbs() {
   local flatc=$1 schema_dir=$2 output_dir=$3
   mkdir -p "$output_dir"
-  "$flatc" --binary --schema -I "$schema_dir" -o "$output_dir" "$schema_dir/searchkernel_ffi_request.fbs"
-  "$flatc" --binary --schema -I "$schema_dir" -o "$output_dir" "$schema_dir/searchkernel_ffi_response.fbs"
+  "$flatc" --binary --schema -I "$schema_dir" -o "$output_dir" "$schema_dir/searchkernel_request.fbs"
+  "$flatc" --binary --schema -I "$schema_dir" -o "$output_dir" "$schema_dir/searchkernel_response.fbs"
 }
 
 bindgen_binary() {

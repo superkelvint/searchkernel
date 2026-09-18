@@ -1,0 +1,13 @@
+[package]
+name = "searchkernel-dispatch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+flatbuffers = "=25.12.19"
+searchkernel-ir = { path = "../searchkernel-ir" }
+searchkernel-protocol = { path = "../searchkernel-protocol" }
+
+[dev-dependencies]
+searchkernel-testkit = { path = "../searchkernel-testkit" }

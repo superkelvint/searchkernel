@@ -47,11 +47,6 @@ build_m11_driver() {
     sk_generic_search_request_add_grouping \
     sk_generic_search_result_match_feature_value \
     sk_test_failpoint_set sk_test_failpoint_is_blocked
-  local symbol
-  for symbol in sk_abi_version sk_call sk_close sk_buffer_free sk_create sk_open; do
-    nm "$M11_DRIVER" 2>/dev/null | grep -E "[[:space:]]${symbol}$" >/dev/null ||
-      fail_verification "M11 driver does not contain production C5 symbol: $symbol"
-  done
   rm -rf "$M11_CONFIG"
   mkdir -p "$(dirname "$M11_CONFIG")"
   LD_LIBRARY_PATH="$M11_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

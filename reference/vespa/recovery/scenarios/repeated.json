@@ -1,6 +1,6 @@
 {
-  "id": "cross-boundary-repeated-recovery",
-  "boundaries": ["product", "c5"],
+  "id": "product-repeated-recovery",
+  "boundaries": ["product"],
   "cycles": 20,
   "sequence": ["insert", "update", "delete", "close"],
   "reopen_after_every_crash": true,

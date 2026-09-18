@@ -1,10 +1,10 @@
 {
   "bfbs": {
-    "searchkernel_ffi_request.bfbs": {
-      "sha256": "4ad5f9b992eea2640732460207ea199fa7d3ddb3d94f669926d1115712285a3f"
+    "searchkernel_request.bfbs": {
+      "sha256": "6cded305acc8338ece80243e7393b3440766eb78810ba28a1a14eb987fc371c9"
     },
-    "searchkernel_ffi_response.bfbs": {
-      "sha256": "d62f4d4a643a42d3cc35c3aaa36912c7034d786b888e9229029d78b448d78736"
+    "searchkernel_response.bfbs": {
+      "sha256": "9826a5c577bc70e8b501c7934d3a9dc50926165dff8e8226ddf828a1a6e5d0c1"
     }
   },
   "format_version": 1,

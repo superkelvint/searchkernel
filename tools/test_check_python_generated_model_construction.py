@@ -20,13 +20,13 @@ class GeneratedModelCheckerTest(unittest.TestCase):
             path = Path(directory) / "handwritten.py"
             path.write_text(source, encoding="utf-8")
             names = checker._generated_model_names(
-                _ROOT / "clients/python/searchkernel/generated/client.py"
+                _ROOT / "clients/python/searchkernel/generated/models.py"
             )
             return checker._analyze_file(path, names)
 
     def test_rejects_positional_generated_model_construction(self):
         violations = self._violations(
-            "from .generated.client import Document, UpsertRequest\n"
+            "from .generated.models import Document, UpsertRequest\n"
             "Document(identifier, fields)\n"
             "UpsertRequest(document)\n"
         )
@@ -38,14 +38,14 @@ class GeneratedModelCheckerTest(unittest.TestCase):
     def test_allows_keyword_construction_and_local_shadowing(self):
         self.assertEqual(
             self._violations(
-                "from .generated.client import Document\n"
+                "from .generated.models import Document\n"
                 "Document(id=identifier, fields=fields)\n"
             ),
             [],
         )
         self.assertEqual(
             self._violations(
-                "from .generated.client import Document\n"
+                "from .generated.models import Document\n"
                 "class Document:\n"
                 "    pass\n"
                 "Document(identifier, fields)\n"

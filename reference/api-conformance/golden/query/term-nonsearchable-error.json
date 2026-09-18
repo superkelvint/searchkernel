@@ -4,7 +4,7 @@
     "details": [
       {
         "code": "field_not_searchable",
-        "path": "query_expr.term.field"
+        "path": "query_expr.contains.field"
       }
     ],
     "retryable": false

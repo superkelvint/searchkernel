@@ -49,7 +49,7 @@ fn assert_no_wire_discriminators(value: &Value) {
 #[test]
 fn canonical_symbolic_union_json_is_accepted() {
     let json = br#"{
-        "protocol_version": 1,
+        "protocol_version": 2,
         "request": {"search": {"query": "foo"}}
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("canonical request JSON");
@@ -63,7 +63,7 @@ fn canonical_symbolic_union_json_is_accepted() {
 #[test]
 fn semantic_missing_fields_are_preserved_for_core_validation() {
     let json = br#"{
-        "protocol_version": 1,
+        "protocol_version": 2,
         "request": {"insert": {}}
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("codec must preserve absent document");
@@ -77,7 +77,7 @@ fn semantic_missing_fields_are_preserved_for_core_validation() {
 #[test]
 fn lower_only_range_is_preserved() {
     let json = br#"{
-        "protocol_version": 1,
+        "protocol_version": 2,
         "request": {"search": {"filter": {"filter_range": {
             "field": "price",
             "lower": {"float64": 10.0}
@@ -94,7 +94,7 @@ fn lower_only_range_is_preserved() {
 #[test]
 fn engine_timeout_is_preserved_in_canonical_json() {
     let json = br#"{
-        "protocol_version": 1,
+        "protocol_version": 2,
         "request": {"search": {"query": "foo", "timeout": 200}}
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("timeout request JSON");
@@ -108,7 +108,7 @@ fn engine_timeout_is_preserved_in_canonical_json() {
 #[test]
 fn official_flatbuffers_union_json_is_rejected() {
     let json = br#"{
-        "protocol_version": 1,
+        "protocol_version": 2,
         "payload_type": "SearchKernel_V1_SearchRequest",
         "payload": {"query": "foo"}
     }"#;
@@ -120,12 +120,24 @@ fn malformed_inputs_are_rejected() {
     assert!(request_json_to_flatbuffer(br#"{"#).is_err());
     assert!(request_flatbuffer_to_json(b"not a FlatBuffer").is_err());
 
-    let mut embedded_nul = br#"{\"protocol_version\":1}"#.to_vec();
+    let mut embedded_nul = br#"{\"protocol_version\":2}"#.to_vec();
     embedded_nul.push(0);
     embedded_nul.extend_from_slice(b"garbage");
     assert!(matches!(
         request_json_to_flatbuffer(&embedded_nul),
         Err(JsonCodecError::InvalidJson(message)) if message == "JSON input contains NUL byte"
+    ));
+}
+
+#[test]
+fn stale_v1_request_envelope_is_rejected() {
+    let json = br#"{
+        "protocol_version": 1,
+        "request": {"search": {"query": "foo"}}
+    }"#;
+    assert!(matches!(
+        request_json_to_flatbuffer(json),
+        Err(JsonCodecError::Contract(message)) if message == "unsupported protocol_version 1"
     ));
 }
 

@@ -9,7 +9,7 @@ bad=0
 fail() { echo "M11 structural check: $*" >&2; bad=1; }
 
 if rg -n --glob '*.rs' --glob '*.toml' \
-    'searchkernel-ir|searchkernel_ir|searchkernel-testkit|searchkernel_testkit|searchkernel-ffi|searchkernel_ffi' \
+    'searchkernel-ir|searchkernel_ir|searchkernel-testkit|searchkernel_testkit' \
     "$ROOT/core/crates/searchkernel-vespa-engine/src" "$ROOT/core/crates/searchkernel-vespa-bindings/src" \
     "$ROOT/core/crates/searchkernel-vespa-engine/Cargo.toml" "$ROOT/core/crates/searchkernel-vespa-bindings/Cargo.toml"; then
   fail "forbidden IR/testkit/FFI dependency escaped the native engine boundary"

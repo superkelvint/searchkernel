@@ -3,7 +3,7 @@
 M11 hardens the standalone `searchkernel-vespa-engine` wrapper across the
 complete M0–M10 native surface: sorting, document summaries, results, grouping,
 facets, attribute mutation, and ranking. The same torture workload also runs
-through the real `searchkernel-ir-adapter` and production C5 FFI lifecycle and
+through the real `searchkernel-ir-adapter` and direct native engine lifecycle and
 call entry points. M11 adds no search semantics.
 
 The safety contract is:

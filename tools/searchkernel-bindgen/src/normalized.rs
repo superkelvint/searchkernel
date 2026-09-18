@@ -98,8 +98,12 @@ pub struct Model {
     pub boxed_edges: BTreeSet<(String, String)>,
     pub policy: ClientPolicy,
     pub error_payload: String,
+    #[allow(dead_code)]
     pub error_variant: String,
+    #[allow(dead_code)]
     pub error_tag: i64,
+    #[allow(dead_code)]
+    pub protocol_version: u32,
 }
 
 pub fn normalize(request: &Schema<'_>, response: &Schema<'_>) -> Result<Model, String> {
@@ -119,6 +123,7 @@ pub fn normalize(request: &Schema<'_>, response: &Schema<'_>) -> Result<Model, S
     let recursive_edges = find_recursive_edges(&objects, &enums, true);
     let boxed_edges = find_recursive_edges(&objects, &enums, false);
     let policy = load_policy(&objects, &enums)?;
+    let protocol_version = protocol_version(&objects, &request_root, &response_root)?;
     Ok(Model {
         objects,
         enums,
@@ -130,7 +135,44 @@ pub fn normalize(request: &Schema<'_>, response: &Schema<'_>) -> Result<Model, S
         error_payload,
         error_variant,
         error_tag,
+        protocol_version,
     })
+}
+
+fn protocol_version(
+    objects: &BTreeMap<String, NormalizedObject>,
+    request: &Root,
+    response: &Root,
+) -> Result<u32, String> {
+    let version = |root: &Root| -> Result<u32, String> {
+        let table = objects
+            .get(&root.table)
+            .ok_or_else(|| format!("missing {} envelope table", root.side))?;
+        let field = table
+            .fields
+            .iter()
+            .find(|field| field.name == "protocol_version")
+            .ok_or_else(|| format!("{} envelope has no protocol_version", root.side))?;
+        if field.ty.kind != "scalar" || field.ty.base.as_deref() != Some("uint") {
+            return Err(format!(
+                "{} envelope protocol_version must be uint",
+                root.side
+            ));
+        }
+        u32::try_from(field.default_integer)
+            .map_err(|_| format!("{} envelope protocol_version is invalid", root.side))
+    };
+    let request_version = version(request)?;
+    let response_version = version(response)?;
+    if request_version != response_version {
+        return Err("request and response protocol_version defaults differ".to_owned());
+    }
+    if request_version != 0 {
+        return Err(
+            "V2 payload envelopes must use fail-closed protocol_version default 0".to_owned(),
+        );
+    }
+    Ok(request_version)
 }
 
 fn normalize_schema(
@@ -293,9 +335,9 @@ fn normalize_vector(schema: &Schema<'_>, ty: &Type<'_>) -> Result<NormalizedType
         return Ok(vector_type(element));
     }
     if keys.len() != 1 || entry.fields().len() != 2 {
-        return Err(format!(
-            "keyed vector {entry_name} must have one key and one value"
-        ));
+        // A FlatBuffers key attribute also enables lookup-by-key on ordinary
+        // tables. It does not make a multi-field object vector a semantic map.
+        return Ok(vector_type(element));
     }
     let key = normalize_type(schema, &keys[0].type_())?;
     if key.kind != "scalar" || key.base.as_deref() != Some("string") {
@@ -803,6 +845,7 @@ pub fn snake_case(value: &str) -> String {
         })
 }
 
+#[allow(dead_code)]
 pub fn rust_variant_name(name: &str) -> String {
     name.rsplit_once('_')
         .map_or(name, |(_, suffix)| suffix)
@@ -930,11 +973,10 @@ mod tests {
     use flatbuffers::root;
 
     fn baseline_model() -> Model {
-        let request_bytes = include_bytes!(
-            "../../../core/crates/searchkernel-json/bfbs/searchkernel_ffi_request.bfbs"
-        );
+        let request_bytes =
+            include_bytes!("../../../core/crates/searchkernel-json/bfbs/searchkernel_request.bfbs");
         let response_bytes = include_bytes!(
-            "../../../core/crates/searchkernel-json/bfbs/searchkernel_ffi_response.bfbs"
+            "../../../core/crates/searchkernel-json/bfbs/searchkernel_response.bfbs"
         );
         let request = root::<Schema<'_>>(request_bytes).expect("request BFBS");
         let response = root::<Schema<'_>>(response_bytes).expect("response BFBS");
@@ -944,12 +986,12 @@ mod tests {
     #[test]
     fn preserves_enum_identity_union_tags_and_operation_tags() {
         let model = baseline_model();
-        let field_kind = &model.enums["SearchKernel.V1.FieldKind"];
-        assert_eq!(field_kind.underlying, "ubyte");
-        assert!(field_kind
+        let primitive_kind = &model.enums["SearchKernel.V2.PrimitiveDataTypeKind"];
+        assert_eq!(primitive_kind.underlying, "ubyte");
+        assert!(primitive_kind
             .variants
             .iter()
-            .any(|variant| variant.name == "Float64" && variant.value == 4));
+            .any(|variant| variant.name == "Float64" && variant.value == 7));
         let search = model
             .operations
             .iter()
@@ -957,21 +999,21 @@ mod tests {
             .expect("search operation");
         assert_eq!((search.request_tag, search.response_tag), (6, 6));
         assert_eq!(model.error_tag, 8);
-        assert_eq!(model.error_payload, "SearchKernel.V1.Error");
+        assert_eq!(model.error_payload, "SearchKernel.V2.Error");
     }
 
     #[test]
     fn derives_optional_enum_maps_and_recursive_boxing() {
         let model = baseline_model();
-        let optional = &model.objects["SearchKernel.V1.OptionalFacetSort"];
-        assert_eq!(optional.kind, "struct");
-        assert_eq!(optional.fields[0].ty.kind, "enum");
+        let optional = &model.objects["SearchKernel.V2.MissingPolicy"];
+        assert_eq!(optional.kind, "table");
+        assert_eq!(optional.fields[0].ty.kind, "union");
         assert_eq!(
             optional.fields[0].ty.name.as_deref(),
-            Some("SearchKernel.V1.FacetSort")
+            Some("SearchKernel.V2.MissingPolicyKind")
         );
 
-        let fields = model.objects["SearchKernel.V1.Document"]
+        let fields = model.objects["SearchKernel.V2.Document"]
             .fields
             .iter()
             .find(|field| field.name == "fields")
@@ -979,7 +1021,7 @@ mod tests {
         assert_eq!(fields.ty.kind, "map");
         assert_eq!(
             fields.ty.map_entry.as_deref(),
-            Some("SearchKernel.V1.ValueEntry")
+            Some("SearchKernel.V2.ValueEntry")
         );
         assert_eq!(
             fields
@@ -987,22 +1029,22 @@ mod tests {
                 .element
                 .as_deref()
                 .and_then(|ty| ty.name.as_deref()),
-            Some("SearchKernel.V1.Value")
+            Some("SearchKernel.V2.Value")
         );
         assert!(model.recursive_edges.contains(&(
-            "SearchKernel.V1.Value".to_owned(),
-            "SearchKernel.V1.ValueList".to_owned()
+            "SearchKernel.V2.Value".to_owned(),
+            "SearchKernel.V2.ValueList".to_owned()
         )));
         assert!(model.boxed_edges.contains(&(
-            "SearchKernel.V1.FilterNot".to_owned(),
-            "SearchKernel.V1.FilterExpr".to_owned()
+            "SearchKernel.V2.FilterNot".to_owned(),
+            "SearchKernel.V2.FilterExpr".to_owned()
         )));
     }
 
     #[test]
     fn rejects_conflicts_missing_references_and_stale_policy() {
         let mut model = baseline_model();
-        let original = model.objects["SearchKernel.V1.Document"].clone();
+        let original = model.objects["SearchKernel.V2.Document"].clone();
         let mut conflicting = original.clone();
         conflicting.kind = "struct".to_owned();
         let mut merged = BTreeMap::from([(original.name.clone(), original)]);
@@ -1032,7 +1074,7 @@ mod tests {
         .unwrap_err()
         .contains("missing object reference"));
 
-        model.objects.remove("SearchKernel.V1.AnalyzedToken");
+        model.objects.remove("SearchKernel.V2.AnalyzedToken");
         let error = load_policy(&model.objects, &model.enums).unwrap_err();
         assert!(error.contains("AnalyzedToken"), "{error}");
     }

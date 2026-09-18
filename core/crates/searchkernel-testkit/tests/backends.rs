@@ -23,12 +23,24 @@ fn context() -> IndexContext {
             options: None,
         },
     );
+    let primitive = api::PrimitiveDataType::create(
+        &mut builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: api::PrimitiveDataTypeKind::String,
+        },
+    );
+    let data_type = api::DataType::create(
+        &mut builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
     let field = api::FieldDefinition::create(
         &mut builder,
         &api::FieldDefinitionArgs {
             name: Some(name),
-            kind: api::FieldKind::Text,
-            cardinality: api::FieldCardinality::Single,
+            data_type: Some(data_type),
             stored: Some(&stored),
             searchable: Some(&searchable),
             analyzer: Some(analyzer),
@@ -85,6 +97,7 @@ fn upsert() -> UpsertRequestIr {
         &mut builder,
         &api::UpsertRequestArgs {
             document: Some(document),
+            condition: None,
         },
     );
     builder.finish(request, None);
@@ -124,8 +137,13 @@ fn patch() -> PatchRequestIr {
 fn delete() -> DeleteRequestIr {
     let mut builder = FlatBufferBuilder::new();
     let id = builder.create_string("a");
-    let request =
-        api::DeleteRequest::create(&mut builder, &api::DeleteRequestArgs { id: Some(id) });
+    let request = api::DeleteRequest::create(
+        &mut builder,
+        &api::DeleteRequestArgs {
+            id: Some(id),
+            condition: None,
+        },
+    );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
     context()
@@ -152,7 +170,21 @@ fn get() -> GetRequestIr {
 
 fn search() -> SearchRequestIr {
     let mut builder = FlatBufferBuilder::new();
-    let request = api::SearchRequest::create(&mut builder, &api::SearchRequestArgs::default());
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            ..Default::default()
+        },
+    );
     builder.finish(request, None);
     let bytes = builder.finished_data().to_vec();
     context()

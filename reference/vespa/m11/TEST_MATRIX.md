@@ -12,7 +12,6 @@
 | M9 state | grouping, facets, filtered/sorted attributes, attribute failpoints | native state remains coherent |
 | M10 ranking | rank profiles, query features, rank properties, match features | finite deterministic scores/features |
 | Adapter | real `searchkernel-ir-adapter` CRUD, projection, filter, sort, facets | no semantic fallback |
-| Production C5 | `sk_create`, `sk_open`, `sk_call`, buffer release, `sk_close` | stable status and ownership |
 | Exceptions | `std::exception`, bad allocation, unknown exception | stable native status, no ABI unwind |
 | Concurrency | concurrent searches, readers/writers, disjoint writers | no impossible state or corruption |
 | Stress | fixed-seed state trace and mixed worker workload | exact quiescent verification |

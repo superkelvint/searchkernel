@@ -55,7 +55,6 @@ searchkernel2/
 ├── reference/
 │   ├── api-conformance/    # Portable API semantic corpus
 │   ├── clients/            # client contracts and scenarios
-│   ├── ffi-conformance/    # native ABI contract and verifier
 │   ├── json-conformance/   # JSON/BFBS generation contract and verifier
 │   └── vespa/              # Vespa lifecycle contracts and verifiers
 ├── tools/

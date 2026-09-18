@@ -2,8 +2,6 @@ use crate::normalized::*;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-const PYTHON_JSON_CODECS: &str = include_str!("../templates/searchkernel_python_json.py");
-
 pub fn generate(model: &Model, template: &str) -> Result<String, String> {
     let projection = Projection::new(model);
     let declarations = projection.declarations()?;
@@ -15,47 +13,12 @@ pub fn generate(model: &Model, template: &str) -> Result<String, String> {
     } else {
         String::new()
     };
-    let standalone = standalone_encoders(model);
-    let methods = model
-        .operations
-        .iter()
-        .map(|operation| {
-            format!(
-                "    def {}(self, request):\n        return self._call(\"{}\", request)\n",
-                operation.name, operation.name
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let descriptor = descriptor(model, &projection.public_objects)?;
     let exports = projection.exports(model);
     let generated = template
         .replace("# __MODEL_DECLARATIONS__", &declarations)
         .replace("# __MODEL_ALIASES__", &aliases)
-        .replace("__SCHEMA_DESCRIPTOR__", &descriptor)
-        .replace("# __STANDALONE_ENCODERS__", &standalone)
-        .replace("# __PYTHON_JSON_CODECS__", PYTHON_JSON_CODECS)
-        .replace("# __CLIENT_METHODS__", &methods)
         .replace("__ALL__", &format!("{:?}", exports));
-    let enum_inventory = model
-        .enums
-        .values()
-        .map(|enumeration| {
-            (
-                short_type_name(&enumeration.name).to_owned(),
-                enumeration
-                    .variants
-                    .iter()
-                    .map(|variant| (py_snake(&variant.name), variant.value))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let enum_inventory = serde_json::to_string(&enum_inventory)
-        .map_err(|error| format!("serialize generated enum inventory: {error}"))?;
-    Ok(format!(
-        "{generated}\n# BFBS-derived enum mappings; do not edit\n_GENERATED_ENUM_VARIANTS = {enum_inventory}\n"
-    ))
+    Ok(format!("{}\n", generated.trim_end()))
 }
 
 struct Projection<'a> {
@@ -222,7 +185,12 @@ impl<'a> Projection<'a> {
                     .iter()
                     .filter(|field| !is_union_tag(payload, field))
                 {
-                    fields.insert(field.name.clone(), self.python_type(&field.ty));
+                    let field_name = if name == "DataType" && field.name == "kind" {
+                        "payload_kind".to_owned()
+                    } else {
+                        field.name.clone()
+                    };
+                    fields.insert(field_name, self.python_type(&field.ty));
                 }
             }
         }
@@ -318,7 +286,10 @@ impl<'a> Projection<'a> {
                 _ if required => (format!("Optional[{ty}]"), "None".to_owned()),
                 _ => (format!("Optional[{ty}]"), "None".to_owned()),
             };
-            output.push_str(&format!("    {}: {annotation} = {default}\n", field.name));
+            output.push_str(&format!(
+                "    {}: {annotation} = {default}\n",
+                py_identifier(&field.name)
+            ));
         }
         output.push('\n');
         Ok(output)
@@ -376,23 +347,11 @@ impl<'a> Projection<'a> {
                 .values()
                 .map(|alias| alias.name.clone()),
         );
-        result.extend(
-            [
-                "PortableError",
-                "Client",
-                "ClientError",
-                "ProtocolError",
-                "encode_index_definition",
-                "request_from_json",
-                "request_from_json_text",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
-        );
         result.into_iter().collect()
     }
 }
 
+#[allow(dead_code)]
 fn descriptor(model: &Model, public_objects: &BTreeSet<String>) -> Result<String, String> {
     let mut value = schema_model(model);
     let object = value
@@ -447,6 +406,7 @@ fn descriptor(model: &Model, public_objects: &BTreeSet<String>) -> Result<String
     serde_json::to_string(&value).map_err(|error| error.to_string())
 }
 
+#[allow(dead_code)]
 fn standalone_encoders(model: &Model) -> String {
     model.policy.standalone_encoders.iter().map(|(name, function)| format!(
         "def {function}(value: {}) -> bytes:\n    b = _Builder(b\"\\0\\0\\0\\0\")\n    return b.finish(_encode_table(b, {name:?}, value))\n",
@@ -482,4 +442,52 @@ fn py_snake(value: &str) -> String {
             result.push(character.to_ascii_lowercase());
             result
         })
+}
+
+fn py_identifier(value: &str) -> String {
+    let name = py_snake(value);
+    if matches!(
+        name.as_str(),
+        "and"
+            | "as"
+            | "assert"
+            | "async"
+            | "await"
+            | "break"
+            | "case"
+            | "class"
+            | "continue"
+            | "def"
+            | "del"
+            | "elif"
+            | "else"
+            | "except"
+            | "false"
+            | "finally"
+            | "for"
+            | "from"
+            | "global"
+            | "if"
+            | "import"
+            | "in"
+            | "is"
+            | "lambda"
+            | "match"
+            | "none"
+            | "nonlocal"
+            | "not"
+            | "or"
+            | "pass"
+            | "raise"
+            | "return"
+            | "true"
+            | "try"
+            | "while"
+            | "with"
+            | "yield"
+    ) {
+        format!("{name}_")
+    } else {
+        name
+    }
 }

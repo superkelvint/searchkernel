@@ -485,9 +485,6 @@ fn all_filter_operators_and_search_options_cross_the_boundary() {
         .filter(filters)
         .sort(Sort::asc("price").missing_first())
         .sort(Sort::desc("brand").missing_last())
-        .facet(Facet::new("brand").limit(0).sort(FacetSort::CountAsc))
-        .facet(Facet::new("in_stock").sort(FacetSort::ValueAsc))
-        .facet(Facet::new("category").sort(FacetSort::ValueDesc))
         .ranking(Ranking::default_relevance_v1())
         .projection(["title"])
         .highlight(["title"])
@@ -500,7 +497,7 @@ fn all_filter_operators_and_search_options_cross_the_boundary() {
     };
     assert_eq!(request.search_fields()[0].weight().get(), 0.0);
     assert_eq!(request.sort().len(), 2);
-    assert_eq!(request.facets().len(), 3);
+    assert!(request.facets().is_empty());
     assert_eq!(request.ranking(), RankingPolicyIr::DefaultRelevanceV1);
     assert_eq!(request.language().unwrap().as_str(), "en-us");
     let Some(FilterIr::Or(filters)) = request.filter() else {

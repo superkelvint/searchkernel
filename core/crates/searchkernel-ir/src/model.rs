@@ -327,16 +327,32 @@ impl InsertRequestIr {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpsertRequestIr {
     pub(crate) document: DocumentIr,
+    /// Vespa document-selection test-and-set condition. `None` is an
+    /// unconditional upsert; an empty portable string is normalized to None.
+    pub(crate) condition: Option<String>,
 }
 
 impl UpsertRequestIr {
     #[cfg(any(test, feature = "test-support"))]
     pub fn new(document: DocumentIr) -> Self {
-        Self { document }
+        Self {
+            document,
+            condition: None,
+        }
     }
 
     pub fn document(&self) -> &DocumentIr {
         &self.document
+    }
+
+    pub fn condition(&self) -> Option<&str> {
+        self.condition.as_deref()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
+        self.condition = Some(condition.into());
+        self
     }
 }
 
@@ -375,16 +391,32 @@ impl PatchRequestIr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeleteRequestIr {
     pub(crate) id: DocumentId,
+    /// Vespa document-selection test-and-set condition. `None` is an
+    /// unconditional delete; an empty portable string is normalized to None.
+    pub(crate) condition: Option<String>,
 }
 
 impl DeleteRequestIr {
     #[cfg(any(test, feature = "test-support"))]
     pub fn new(id: DocumentId) -> Self {
-        Self { id }
+        Self {
+            id,
+            condition: None,
+        }
     }
 
     pub fn id(&self) -> &DocumentId {
         &self.id
+    }
+
+    pub fn condition(&self) -> Option<&str> {
+        self.condition.as_deref()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
+        self.condition = Some(condition.into());
+        self
     }
 }
 
@@ -516,7 +548,13 @@ pub enum FilterIr {
     Not(Box<FilterIr>),
     Comparison(ComparisonIr),
     Range(RangeIr),
-    Exists { field: FieldName },
+    In {
+        field: FieldName,
+        values: Vec<ScalarValueIr>,
+    },
+    Exists {
+        field: FieldName,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

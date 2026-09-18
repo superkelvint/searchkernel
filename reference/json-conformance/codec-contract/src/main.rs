@@ -90,7 +90,7 @@ fn assert_response_roundtrip_corpus() {
 
 fn assert_minimal_request_shape() {
     let input = br#"{
-      "protocol_version": 1,
+      "protocol_version":2,
       "request": {"search": {"query": "foo"}}
     }"#;
     let fb = request_json_to_flatbuffer(input).expect("canonical request JSON must decode");
@@ -101,7 +101,7 @@ fn assert_minimal_request_shape() {
 
 fn assert_symbolic_nested_unions() {
     let input = br#"{
-      "protocol_version": 1,
+      "protocol_version":2,
       "request": {
         "search": {
           "query": "wireless",
@@ -123,13 +123,7 @@ fn assert_symbolic_nested_unions() {
               ]
             }
           },
-          "ranking": {"bm25_ranking": {}},
-          "query_expr": {
-            "term_query": {
-              "field": "title",
-              "value": {"string": "wireless"}
-            }
-          }
+          "ranking": "bm25"
         }
       }
     }"#;
@@ -141,19 +135,11 @@ fn assert_symbolic_nested_unions() {
 
 fn assert_scalar_policy() {
     let input = br#"{
-      "protocol_version": 1,
+      "protocol_version":2,
       "response": {
         "search": {
-          "total_hits": {"value": "9007199254740993", "relation": "exact"},
-          "facets": [{
-            "field": "values",
-            "values": [
-              {"value": {"int64": "-9223372036854775808"}, "count": "42"},
-              {"value": {"uint64": "18446744073709551615"}, "count": "18446744073709551615"},
-              {"value": {"bytes": "AAH/"}, "count": "1"},
-              {"value": {"float64": 1.5}, "count": "1"}
-            ]
-          }]
+          "hits": [],
+          "total_hits": {"value": "9007199254740993", "relation": "exact"}
         }
       }
     }"#;
@@ -162,24 +148,19 @@ fn assert_scalar_policy() {
     assert_eq!(output, json(input));
 
     for invalid in [
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"int64":42},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"uint64":18446744073709551615},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"int64":"+1"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"int64":"01"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"int64":"-0"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"bytes":"***"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"int64":"9223372036854775808"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"uint64":"18446744073709551616"},"count":"1"}]}]}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{"facets":[{"field":"x","values":[{"value":{"uint64":"-1"},"count":"1"}]}]}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":42,"relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"+1","relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"01","relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"-1","relation":"exact"}}}}"#.as_slice(),
     ] {
         assert!(response_json_to_flatbuffer(invalid).is_err(), "invalid canonical scalar was accepted: {}", String::from_utf8_lossy(invalid));
     }
 }
 
 fn assert_presence_policy() {
-    let absent = br#"{"protocol_version":1,"request":{"search":{"query":"x"}}}"#;
-    let empty = br#"{"protocol_version":1,"request":{"search":{"query":"x","search_fields":[]}}}"#;
-    let zero = br#"{"protocol_version":1,"request":{"search":{"query":"x","limit":0}}}"#;
+    let absent = br#"{"protocol_version":2,"request":{"search":{"query":"x"}}}"#;
+    let empty = br#"{"protocol_version":2,"request":{"search":{"query":"x","search_fields":[]}}}"#;
+    let zero = br#"{"protocol_version":2,"request":{"search":{"query":"x","limit":0}}}"#;
 
     let absent_fb = request_json_to_flatbuffer(absent).unwrap();
     let empty_fb = request_json_to_flatbuffer(empty).unwrap();
@@ -198,17 +179,17 @@ fn assert_presence_policy() {
 
 fn assert_strict_rejections() {
     let invalid: &[&[u8]] = &[
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","limt":20}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","query":"y"}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","limit":null}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","filter":{}}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","filter":{"filter_exists":{"field":"a"},"filter_not":{"clause":{"filter_exists":{"field":"b"}}}}}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","filter":{"made_up":{"field":"a"}}}}}"#,
-        br#"{"protocol_version":1,"request":{}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x"},"get":{"id":"1"}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","ranking":{"made_up":{}}}}}"#,
-        br#"{"protocol_version":1,"request":{"search":{"query":"x","sort":[{"field":"x","direction":"made_up"}]}}}"#,
-        br#"{"protocol_version":1,"payload_type":"SearchKernel_V1_SearchRequest","payload":{"query":"x"}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","limt":20}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","query":"y"}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","limit":null}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","filter":{}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","filter":{"filter_exists":{"field":"a"},"filter_not":{"clause":{"filter_exists":{"field":"b"}}}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","filter":{"made_up":{"field":"a"}}}}}"#,
+        br#"{"protocol_version":2,"request":{}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x"},"get":{"id":"1"}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","ranking":{"made_up":{}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query":"x","sort":[{"field":"x","direction":"made_up"}]}}}"#,
+        br#"{"protocol_version":2,"payload_type":"SearchKernel_V1_SearchRequest","payload":{"query":"x"}}"#,
     ];
     for bytes in invalid {
         assert!(

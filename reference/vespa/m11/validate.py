@@ -13,7 +13,6 @@ required = {
     "concurrency.json",
     "advanced.json",
     "adapter.json",
-    "c5.json",
 }
 actual = {path.name for path in scenarios.glob("*.json")}
 if actual != required:
@@ -48,7 +47,6 @@ if seed != "seed=0x4d1120260914":
 for filename, keys in {
     "advanced.json": ["direct_engine", "sorting", "summaries", "results", "grouping", "facets", "attribute_mutation", "ranking", "match_features"],
     "adapter.json": ["real_vespa_backend", "facets", "sort", "projection"],
-    "c5.json": ["buffer_release", "malformed_and_status_paths"],
 }.items():
     with (scenarios / filename).open(encoding="utf-8") as stream:
         value = json.load(stream)

@@ -197,6 +197,13 @@ impl Backend for VespaBackend {
     }
 
     fn upsert(&self, request: UpsertRequestIr) -> Result<UpsertResult> {
+        if request.condition().is_some() {
+            return Err(PortableError::unsupported(
+                "conditional_mutation_not_supported",
+                Some("condition"),
+                "the current native Vespa adapter cannot execute upsert test-and-set conditions",
+            ));
+        }
         let document = lower_document(request.document())?;
         let id = document.id().to_owned();
         #[cfg(test)]
@@ -236,6 +243,13 @@ impl Backend for VespaBackend {
     }
 
     fn delete(&self, request: DeleteRequestIr) -> Result<DeleteResult> {
+        if request.condition().is_some() {
+            return Err(PortableError::unsupported(
+                "conditional_mutation_not_supported",
+                Some("condition"),
+                "the current native Vespa adapter cannot execute delete test-and-set conditions",
+            ));
+        }
         let deleted = self
             .engine
             .delete(request.id().as_str())
@@ -662,6 +676,17 @@ fn lower_filter(filter: &FilterIr) -> Result<Query> {
         }),
         FilterIr::Comparison(comparison) => lower_comparison(comparison),
         FilterIr::Range(range) => lower_range(range),
+        FilterIr::In { field, values } => Ok(Query::Or(
+            values
+                .iter()
+                .map(|value| {
+                    Ok(Query::AttributeEquals {
+                        field: field.to_string(),
+                        value: lower_attribute_value(value)?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        )),
     }
 }
 

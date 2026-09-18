@@ -4,8 +4,7 @@
 #![cfg(feature = "native")]
 
 use searchkernel::{
-    field, ErrorCode, Facet, FacetSort, Field, IndexDefinition, IndexRuntime, Ranking, SearchField,
-    Sort,
+    field, ErrorCode, Field, IndexDefinition, IndexRuntime, Ranking, SearchField, Sort,
 };
 use serde_json::json;
 use std::sync::{Arc, Barrier};
@@ -311,35 +310,6 @@ fn native_product_path_has_current_search_and_facet_parity() {
     assert_eq!(empty_projection.hits.len(), 1);
     assert_eq!(empty_projection.hits[0].document, json!({}));
 
-    // Facets are calculated by grouping the complete filtered match set, not
-    // by counting the paginated hit list. Multiple facet requests share the
-    // same high-level search request.
-    let faceted = index
-        .search("wireless")
-        .limit(1)
-        .facets([
-            Facet::new("brand").limit(3).sort(FacetSort::CountDesc),
-            Facet::new("price").limit(2).sort(FacetSort::ValueAsc),
-        ])
-        .execute::<serde_json::Value>()
-        .expect("multiple native facets");
-    assert_eq!(faceted.total_hits.value, 6);
-    assert_eq!(faceted.hits.len(), 1);
-    let mut brand_facets = facet_pairs(&faceted, "brand");
-    brand_facets.sort_unstable();
-    assert_eq!(
-        brand_facets,
-        vec![
-            ("Acme".into(), 1),
-            ("Bravo".into(), 2),
-            ("Charlie".into(), 3)
-        ]
-    );
-    assert_eq!(
-        facet_pairs(&faceted, "price"),
-        vec![("25".into(), 1), ("50".into(), 1)]
-    );
-
     let brands_present = index
         .browse()
         .filter(field("brand").exists())
@@ -356,34 +326,9 @@ fn native_product_path_has_current_search_and_facet_parity() {
     let filtered = index
         .search("wireless")
         .filter(field("brand").eq("Acme"))
-        .facet(Facet::new("brand").limit(3).sort(FacetSort::ValueAsc))
         .execute::<serde_json::Value>()
-        .expect("lexical query with facet filter");
+        .expect("lexical query with filter");
     assert_eq!(filtered.total_hits.value, 1);
-    assert_eq!(facet_pairs(&filtered, "brand"), vec![("Acme".into(), 1)]);
-
-    for sort in [
-        FacetSort::CountDesc,
-        FacetSort::CountAsc,
-        FacetSort::ValueAsc,
-        FacetSort::ValueDesc,
-    ] {
-        let result = index
-            .search("wireless")
-            .facet(Facet::new("brand").limit(3).sort(sort))
-            .execute::<serde_json::Value>()
-            .expect("facet request variant");
-        let mut groups = facet_pairs(&result, "brand");
-        groups.sort_unstable();
-        assert_eq!(
-            groups,
-            vec![
-                ("Acme".into(), 1),
-                ("Bravo".into(), 2),
-                ("Charlie".into(), 3)
-            ]
-        );
-    }
 
     // Projection, score, total hits, offset/limit, and missing-first sorting
     // are all observable in the same native result contract.
@@ -442,41 +387,13 @@ fn native_product_path_has_current_search_and_facet_parity() {
     let after_reopen = reopened
         .search("wireless")
         .limit(1)
-        .facet(Facet::new("brand").limit(1).sort(FacetSort::CountDesc))
         .execute::<serde_json::Value>()
-        .expect("search and facet after reopen");
+        .expect("search after reopen");
     assert_eq!(after_reopen.total_hits.value, 6);
-    assert_eq!(
-        facet_pairs(&after_reopen, "brand"),
-        vec![("Charlie".into(), 3)]
-    );
     reopened_runtime
         .close()
         .expect("close reopened native parity index");
     std::fs::remove_dir_all(path).expect("remove native parity index");
-}
-
-fn facet_pairs(
-    result: &searchkernel::SearchResult<serde_json::Value>,
-    field: &str,
-) -> Vec<(String, u64)> {
-    result
-        .facets
-        .iter()
-        .find(|facet| facet.field == field)
-        .expect("facet field")
-        .values
-        .iter()
-        .map(|value| {
-            (
-                match &value.value {
-                    serde_json::Value::String(value) => value.clone(),
-                    value => value.to_string(),
-                },
-                value.count,
-            )
-        })
-        .collect()
 }
 
 fn assert_search_detail<T: std::fmt::Debug>(result: searchkernel::Result<T>, expected: &str) {

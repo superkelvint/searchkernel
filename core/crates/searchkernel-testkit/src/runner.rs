@@ -9,55 +9,13 @@ use searchkernel_ir::{
     RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
     UpsertRequestIr, WriteRequestIr, WriteRequestRef,
 };
+use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
 use serde_json::{json, Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
-
-#[allow(warnings)]
-mod transport_bindings {
-    pub mod search_kernel {
-        pub mod ffi {
-            pub mod v1 {
-                pub use searchkernel_ir::api::*;
-
-                mod request_payload_generated {
-                    include!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../searchkernel-ffi/generated/search_kernel/ffi/v1/request_payload_generated.rs"
-                    ));
-                }
-                pub use request_payload_generated::*;
-
-                mod request_envelope_generated {
-                    include!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../searchkernel-ffi/generated/search_kernel/ffi/v1/request_envelope_generated.rs"
-                    ));
-                }
-                pub use request_envelope_generated::*;
-
-                mod response_payload_generated {
-                    include!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../searchkernel-ffi/generated/search_kernel/ffi/v1/response_payload_generated.rs"
-                    ));
-                }
-                pub use response_payload_generated::*;
-
-                mod response_envelope_generated {
-                    include!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../searchkernel-ffi/generated/search_kernel/ffi/v1/response_envelope_generated.rs"
-                    ));
-                }
-                pub use response_envelope_generated::*;
-            }
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The number of conformance cases that passed, grouped by category.
@@ -83,12 +41,12 @@ pub fn build_component_transport_case(
 ) -> StdResult<TransportCase, String> {
     let mut builder = WireBuilder::new();
     let request = |builder: &mut WireBuilder,
-                   payload_type: transport_bindings::search_kernel::ffi::v1::RequestPayload,
+                   payload_type: transport::RequestPayload,
                    payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>| {
-        let envelope = transport_bindings::search_kernel::ffi::v1::RequestEnvelope::create(
+        let envelope = transport::RequestEnvelope::create(
             &mut builder.builder,
-            &transport_bindings::search_kernel::ffi::v1::RequestEnvelopeArgs {
-                protocol_version: 1,
+            &transport::RequestEnvelopeArgs {
+                protocol_version: PROTOCOL_VERSION,
                 payload_type,
                 payload: Some(payload),
             },
@@ -99,12 +57,12 @@ pub fn build_component_transport_case(
     };
     let response =
         |builder: &mut WireBuilder,
-         payload_type: transport_bindings::search_kernel::ffi::v1::ResponsePayload,
+         payload_type: transport::ResponsePayload,
          payload: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>| {
-            let envelope = transport_bindings::search_kernel::ffi::v1::ResponseEnvelope::create(
+            let envelope = transport::ResponseEnvelope::create(
                 &mut builder.builder,
-                &transport_bindings::search_kernel::ffi::v1::ResponseEnvelopeArgs {
-                    protocol_version: 1,
+                &transport::ResponseEnvelopeArgs {
+                    protocol_version: PROTOCOL_VERSION,
                     payload_type,
                     payload: Some(payload),
                 },
@@ -117,15 +75,13 @@ pub fn build_component_transport_case(
     match operation {
         "index_definition_to_ir" => {
             let index = builder.index(input)?;
-            let payload = transport_bindings::search_kernel::ffi::v1::DescribeResult::create(
+            let payload = transport::DescribeResult::create(
                 &mut builder.builder,
-                &transport_bindings::search_kernel::ffi::v1::DescribeResultArgs {
-                    index: Some(index),
-                },
+                &transport::DescribeResultArgs { index: Some(index) },
             );
             response(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_DescribeResult,
+                transport::ResponsePayload::SearchKernel_V2_DescribeResult,
                 payload.as_union_value(),
             )
         }
@@ -140,15 +96,13 @@ pub fn build_component_transport_case(
                     ..Default::default()
                 },
             );
-            let payload = transport_bindings::search_kernel::ffi::v1::DescribeResult::create(
+            let payload = transport::DescribeResult::create(
                 &mut builder.builder,
-                &transport_bindings::search_kernel::ffi::v1::DescribeResultArgs {
-                    index: Some(index),
-                },
+                &transport::DescribeResultArgs { index: Some(index) },
             );
             response(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::ResponsePayload::SearchKernel_V1_DescribeResult,
+                transport::ResponsePayload::SearchKernel_V2_DescribeResult,
                 payload.as_union_value(),
             )
         }
@@ -156,7 +110,7 @@ pub fn build_component_transport_case(
             let payload = builder.analyze(input)?;
             request(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_AnalyzeRequest,
+                transport::RequestPayload::SearchKernel_V2_AnalyzeRequest,
                 payload.as_union_value(),
             )
         }
@@ -170,7 +124,7 @@ pub fn build_component_transport_case(
             );
             request(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_InsertRequest,
+                transport::RequestPayload::SearchKernel_V2_InsertRequest,
                 payload.as_union_value(),
             )
         }
@@ -194,7 +148,7 @@ pub fn build_component_transport_case(
             );
             request(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_InsertRequest,
+                transport::RequestPayload::SearchKernel_V2_InsertRequest,
                 payload.as_union_value(),
             )
         }
@@ -211,7 +165,7 @@ pub fn build_component_transport_case(
             let payload = builder.search(&component_search_input(operation, input))?;
             request(
                 &mut builder,
-                transport_bindings::search_kernel::ffi::v1::RequestPayload::SearchKernel_V1_SearchRequest,
+                transport::RequestPayload::SearchKernel_V2_SearchRequest,
                 payload.as_union_value(),
             )
         }
@@ -435,7 +389,7 @@ fn execute(
     input: &JsonValue,
     index_json: Option<&JsonValue>,
 ) -> StdResult<JsonValue, ExecError> {
-    let bytes = if matches!(operation, "describe" | "inspect_query") {
+    let bytes = if matches!(operation, "describe" | "inspect_query" | "facet_to_ir") {
         Vec::new()
     } else {
         WireBuilder::new().build(operation, input)?
@@ -600,16 +554,12 @@ fn execute(
             ))
         }
         "facet_to_ir" => {
-            let context = context.ok_or("operation requires index fixture")?;
-            let root = flatbuffers::root::<api::FacetRequest>(&bytes)
-                .map_err(|error| error.to_string())?;
-            ok(facet_json(
-                &context.facet_to_ir(root).map_err(ExecError::Portable)?,
-            ))
+            let context = context.ok_or("facet_to_ir requires index fixture")?;
+            ok(facet_from_json(input, &context).map_err(ExecError::Portable)?)
         }
         "ranking_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
-            let root = flatbuffers::root::<api::RankingPolicy>(&bytes)
+            let root = flatbuffers::root::<api::RankingRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
             ok(json!(ranking_name(
                 context
@@ -651,9 +601,32 @@ fn execute(
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::SearchRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            ok(search_json(
-                &context.search_to_ir(root).map_err(ExecError::Portable)?,
-            ))
+            let mut output = search_json(&context.search_to_ir(root).map_err(ExecError::Portable)?);
+            if let Some(items) = input.get("facets").and_then(JsonValue::as_array) {
+                let mut seen = std::collections::BTreeSet::new();
+                let facets = items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let facet = facet_from_json_at(item, &context, &format!("facets[{index}]"))
+                            .map_err(ExecError::Portable)?;
+                        let field = facet
+                            .get("field")
+                            .and_then(JsonValue::as_str)
+                            .unwrap_or_default();
+                        if !seen.insert(field.to_owned()) {
+                            return Err(ExecError::Portable(PortableError::invalid(
+                                "duplicate_facet_field",
+                                Some(format!("facets[{index}].field")),
+                                "facet fields must be unique",
+                            )));
+                        }
+                        Ok(facet)
+                    })
+                    .collect::<StdResult<Vec<_>, ExecError>>()?;
+                output["facets"] = JsonValue::Array(facets);
+            }
+            ok(output)
         }
         "analyze_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
@@ -932,6 +905,9 @@ fn filter_json(value: &FilterIr) -> JsonValue {
         FilterIr::Not(v) => json!({"not":filter_json(v)}),
         FilterIr::Comparison(v) => json!({"comparison":comparison_json(v)}),
         FilterIr::Range(v) => json!({"range":range_json(v)}),
+        FilterIr::In { field, values } => {
+            json!({"in":{"field":field.as_str(),"values":values.iter().map(scalar_json).collect::<Vec<_>>()}})
+        }
         FilterIr::Exists { field } => json!({"exists":{"field":field.as_str()}}),
     }
 }
@@ -953,6 +929,66 @@ fn sort_json(value: &SortIr) -> JsonValue {
 fn facet_json(value: &FacetIr) -> JsonValue {
     json!({"field":value.field().as_str(),"limit":value.limit(),"sort":match value.sort() {FacetSort::CountDesc=>"count_desc",FacetSort::CountAsc=>"count_asc",FacetSort::ValueAsc=>"value_asc",FacetSort::ValueDesc=>"value_desc"}})
 }
+
+fn facet_from_json(
+    input: &JsonValue,
+    context: &IndexContext,
+) -> StdResult<JsonValue, PortableError> {
+    facet_from_json_at(input, context, "facet")
+}
+
+fn facet_from_json_at(
+    input: &JsonValue,
+    context: &IndexContext,
+    path: &str,
+) -> StdResult<JsonValue, PortableError> {
+    let field_name = input
+        .get("field")
+        .and_then(JsonValue::as_str)
+        .unwrap_or_default();
+    let field = context
+        .definition()
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == field_name)
+        .ok_or_else(|| {
+            PortableError::invalid(
+                "unknown_field",
+                Some(format!("{path}.field")),
+                "facet field does not exist",
+            )
+        })?;
+    if !field.capabilities().facetable() {
+        return Err(PortableError::invalid(
+            "field_not_facetable",
+            Some(format!("{path}.field")),
+            "field is not facetable",
+        ));
+    }
+    let sort = match input.get("sort").and_then(JsonValue::as_str) {
+        None => "count_desc",
+        Some("count_desc") => "count_desc",
+        Some("count_asc") => "count_asc",
+        Some("value_asc") => "value_asc",
+        Some("value_desc") => "value_desc",
+        Some(_) => {
+            return Err(PortableError::invalid(
+                "invalid_facet",
+                Some(format!("{path}.sort")),
+                "facet sort is unknown",
+            ))
+        }
+    };
+    let limit = input.get("limit").and_then(JsonValue::as_u64).unwrap_or(10);
+    let limit = u32::try_from(limit).map_err(|_| {
+        PortableError::invalid(
+            "invalid_facet",
+            Some(format!("{path}.limit")),
+            "facet limit is out of range",
+        )
+    })?;
+    Ok(json!({"field": field.name().as_str(), "limit": limit, "sort": sort}))
+}
 fn analyze_json(value: &AnalyzeRequestIr) -> JsonValue {
     json!({"analyzer":analyzer_name(Some(value.analyzer())),"text":value.text(),"language":value.language().map(LanguageHint::as_str)})
 }
@@ -973,6 +1009,17 @@ impl WireBuilder {
 
     fn text(&mut self, value: &str) -> flatbuffers::WIPOffset<&'static str> {
         self.builder.create_string(value)
+    }
+
+    fn query_field(&mut self, value: &str) -> flatbuffers::WIPOffset<api::QueryFieldRef<'static>> {
+        let path = self.text(value);
+        api::QueryFieldRef::create(
+            &mut self.builder,
+            &api::QueryFieldRefArgs {
+                path: Some(path),
+                element_index: None,
+            },
+        )
     }
 
     fn finish<T: flatbuffers::Follow<'static>>(
@@ -1041,10 +1088,7 @@ impl WireBuilder {
                 let root = self.sort(input)?;
                 self.finish(root)
             }
-            "facet_to_ir" => {
-                let root = self.facet(input)?;
-                self.finish(root)
-            }
+            "facet_to_ir" => Err("facet_to_ir is handled directly by the corpus runner".to_owned()),
             "ranking_to_ir" => {
                 let root = self.ranking(input)?;
                 self.finish(root)
@@ -1076,6 +1120,7 @@ impl WireBuilder {
                         &mut self.builder,
                         &api::UpsertRequestArgs {
                             document: Some(document),
+                            condition: None,
                         },
                     );
                     self.finish(root)
@@ -1086,8 +1131,13 @@ impl WireBuilder {
                     .get("id")
                     .and_then(JsonValue::as_str)
                     .map(|v| self.text(v));
-                let root =
-                    api::DeleteRequest::create(&mut self.builder, &api::DeleteRequestArgs { id });
+                let root = api::DeleteRequest::create(
+                    &mut self.builder,
+                    &api::DeleteRequestArgs {
+                        id,
+                        condition: None,
+                    },
+                );
                 self.finish(root)
             }
             "get_to_ir" => {
@@ -1151,6 +1201,7 @@ impl WireBuilder {
                             &mut self.builder,
                             &api::UpsertRequestArgs {
                                 document: Some(document),
+                                condition: None,
                             },
                         );
                         self.finish(root)
@@ -1162,7 +1213,10 @@ impl WireBuilder {
                             .map(|v| self.text(v));
                         let root = api::DeleteRequest::create(
                             &mut self.builder,
-                            &api::DeleteRequestArgs { id },
+                            &api::DeleteRequestArgs {
+                                id,
+                                condition: None,
+                            },
                         );
                         self.finish(root)
                     }
@@ -1372,27 +1426,53 @@ impl WireBuilder {
         &mut self,
         input: &JsonValue,
     ) -> StdResult<flatbuffers::WIPOffset<api::FieldDefinition<'static>>, String> {
-        let kind = match input
+        let kind = input
             .get("kind")
             .and_then(JsonValue::as_str)
-            .unwrap_or("unspecified")
-        {
-            "text" => api::FieldKind::Text,
-            "keyword" => api::FieldKind::Keyword,
-            "int64" => api::FieldKind::Int64,
-            "float64" => api::FieldKind::Float64,
-            "bool" => api::FieldKind::Bool,
-            _ => api::FieldKind::Unspecified,
+            .unwrap_or("string");
+        let matching_mode = match kind {
+            "keyword" => api::MatchingMode::Exact,
+            _ => api::MatchingMode::Text,
         };
-        let cardinality = match input
-            .get("cardinality")
-            .and_then(JsonValue::as_str)
-            .unwrap_or("single")
-        {
-            "multi" => api::FieldCardinality::Multi,
-            "single" => api::FieldCardinality::Single,
-            _ => api::FieldCardinality::Unspecified,
+        let kind = match kind {
+            "int64" => api::PrimitiveDataTypeKind::Int64,
+            "float64" => api::PrimitiveDataTypeKind::Float64,
+            "bool" => api::PrimitiveDataTypeKind::Bool,
+            _ => api::PrimitiveDataTypeKind::String,
         };
+        let primitive =
+            api::PrimitiveDataType::create(&mut self.builder, &api::PrimitiveDataTypeArgs { kind });
+        let element_type = api::DataType::create(
+            &mut self.builder,
+            &api::DataTypeArgs {
+                kind_type: api::DataTypeKind::PrimitiveDataType,
+                kind: Some(primitive.as_union_value()),
+            },
+        );
+        let data_type = if input.get("cardinality").and_then(JsonValue::as_str) == Some("multi") {
+            let array = api::ArrayDataType::create(
+                &mut self.builder,
+                &api::ArrayDataTypeArgs {
+                    element_type: Some(element_type),
+                },
+            );
+            api::DataType::create(
+                &mut self.builder,
+                &api::DataTypeArgs {
+                    kind_type: api::DataTypeKind::ArrayDataType,
+                    kind: Some(array.as_union_value()),
+                },
+            )
+        } else {
+            element_type
+        };
+        let matching = api::MatchingConfig::create(
+            &mut self.builder,
+            &api::MatchingConfigArgs {
+                mode: matching_mode,
+                options: None,
+            },
+        );
         let stored = input
             .get("stored")
             .and_then(JsonValue::as_bool)
@@ -1425,14 +1505,15 @@ impl WireBuilder {
             &mut self.builder,
             &api::FieldDefinitionArgs {
                 name,
-                kind,
-                cardinality,
+                data_type: Some(data_type),
                 stored: stored.as_ref(),
                 searchable: searchable.as_ref(),
                 filterable: filterable.as_ref(),
                 sortable: sortable.as_ref(),
                 facetable: facetable.as_ref(),
                 analyzer,
+                matching: Some(matching),
+                ..Default::default()
             },
         ))
     }
@@ -1537,6 +1618,8 @@ impl WireBuilder {
                 name,
                 fields,
                 default_search_fields,
+                properties: None,
+                ..Default::default()
             },
         ))
     }
@@ -1548,7 +1631,7 @@ impl WireBuilder {
         let field = input
             .get("field")
             .and_then(JsonValue::as_str)
-            .map(|v| self.text(v));
+            .map(|v| self.query_field(v));
         let op = match input
             .get("op")
             .and_then(JsonValue::as_str)
@@ -1576,9 +1659,15 @@ impl WireBuilder {
         let field = input
             .get("field")
             .and_then(JsonValue::as_str)
-            .map(|v| self.text(v));
-        let lower = input.get("lower").map(|v| self.value(v)).transpose()?;
-        let upper = input.get("upper").map(|v| self.value(v)).transpose()?;
+            .map(|v| self.query_field(v));
+        let lower = input
+            .get("lower")
+            .map(|v| self.range_bound(v))
+            .transpose()?;
+        let upper = input
+            .get("upper")
+            .map(|v| self.range_bound(v))
+            .transpose()?;
         let include_lower = input
             .get("include_lower")
             .and_then(JsonValue::as_bool)
@@ -1595,6 +1684,24 @@ impl WireBuilder {
                 upper,
                 include_lower: include_lower.as_ref(),
                 include_upper: include_upper.as_ref(),
+            },
+        ))
+    }
+
+    fn range_bound(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::RangeBound<'static>>, String> {
+        let value = self.value(input)?;
+        let finite = api::FiniteRangeBound::create(
+            &mut self.builder,
+            &api::FiniteRangeBoundArgs { value: Some(value) },
+        );
+        Ok(api::RangeBound::create(
+            &mut self.builder,
+            &api::RangeBoundArgs {
+                bound_type: api::RangeBoundKind::FiniteRangeBound,
+                bound: Some(finite.as_union_value()),
             },
         ))
     }
@@ -1670,7 +1777,7 @@ impl WireBuilder {
                 let field = value
                     .get("field")
                     .and_then(JsonValue::as_str)
-                    .map(|v| self.text(v));
+                    .map(|v| self.query_field(v));
                 (
                     api::FilterExprKind::FilterExists,
                     api::FilterExists::create(&mut self.builder, &api::FilterExistsArgs { field })
@@ -1709,49 +1816,49 @@ impl WireBuilder {
             _ => api::SortDirection::Unspecified,
         };
         let missing = input.get("missing").and_then(JsonValue::as_str).map(|v| {
-            api::OptionalMissingPlacement::new(match v {
-                "first" => api::MissingPlacement::First,
-                "last" => api::MissingPlacement::Last,
-                _ => api::MissingPlacement::Unspecified,
-            })
+            let (policy_type, policy) = match v {
+                "first" => {
+                    let policy =
+                        api::MissingFirst::create(&mut self.builder, &api::MissingFirstArgs {});
+                    (
+                        api::MissingPolicyKind::MissingFirst,
+                        policy.as_union_value(),
+                    )
+                }
+                _ => {
+                    let policy =
+                        api::MissingLast::create(&mut self.builder, &api::MissingLastArgs {});
+                    (api::MissingPolicyKind::MissingLast, policy.as_union_value())
+                }
+            };
+            api::MissingPolicy::create(
+                &mut self.builder,
+                &api::MissingPolicyArgs {
+                    policy_type,
+                    policy: Some(policy),
+                },
+            )
+        });
+        let target = field.map(|field| {
+            let field = api::FieldSortTarget::create(
+                &mut self.builder,
+                &api::FieldSortTargetArgs { field: Some(field) },
+            );
+            api::SortTarget::create(
+                &mut self.builder,
+                &api::SortTargetArgs {
+                    target_type: api::SortTargetKind::FieldSortTarget,
+                    target: Some(field.as_union_value()),
+                },
+            )
         });
         Ok(api::SortExpr::create(
             &mut self.builder,
             &api::SortExprArgs {
-                field,
+                target,
                 direction,
-                missing: missing.as_ref(),
-            },
-        ))
-    }
-
-    fn facet(
-        &mut self,
-        input: &JsonValue,
-    ) -> StdResult<flatbuffers::WIPOffset<api::FacetRequest<'static>>, String> {
-        let field = input
-            .get("field")
-            .and_then(JsonValue::as_str)
-            .map(|v| self.text(v));
-        let limit = input
-            .get("limit")
-            .and_then(JsonValue::as_u64)
-            .map(|v| api::OptionalUInt32::new(v as u32));
-        let sort = input.get("sort").and_then(JsonValue::as_str).map(|v| {
-            api::OptionalFacetSort::new(match v {
-                "count_desc" => api::FacetSort::CountDesc,
-                "count_asc" => api::FacetSort::CountAsc,
-                "value_asc" => api::FacetSort::ValueAsc,
-                "value_desc" => api::FacetSort::ValueDesc,
-                _ => api::FacetSort::Unspecified,
-            })
-        });
-        Ok(api::FacetRequest::create(
-            &mut self.builder,
-            &api::FacetRequestArgs {
-                field,
-                limit: limit.as_ref(),
-                sort: sort.as_ref(),
+                missing,
+                annotations: None,
             },
         ))
     }
@@ -1759,35 +1866,20 @@ impl WireBuilder {
     fn ranking(
         &mut self,
         input: &JsonValue,
-    ) -> StdResult<flatbuffers::WIPOffset<api::RankingPolicy<'static>>, String> {
-        let (policy_type, policy) = if input.get("bm25").is_some() {
-            (
-                api::RankingPolicyKind::Bm25Ranking,
-                Some(
-                    api::Bm25Ranking::create(&mut self.builder, &api::Bm25RankingArgs {})
-                        .as_union_value(),
-                ),
-            )
-        } else if input.get("default").is_some() || input.as_object().is_some_and(|v| v.is_empty())
-        {
-            (
-                api::RankingPolicyKind::DefaultRelevanceV1,
-                Some(
-                    api::DefaultRelevanceV1::create(
-                        &mut self.builder,
-                        &api::DefaultRelevanceV1Args {},
-                    )
-                    .as_union_value(),
-                ),
-            )
+    ) -> StdResult<flatbuffers::WIPOffset<api::RankingRequest<'static>>, String> {
+        let profile = if input.get("_union").and_then(JsonValue::as_str) == Some("NONE") {
+            None
+        } else if input.get("bm25").is_some() {
+            Some("bm25")
         } else {
-            (api::RankingPolicyKind::NONE, None)
+            Some("default")
         };
-        Ok(api::RankingPolicy::create(
+        let profile = profile.map(|value| self.text(value));
+        Ok(api::RankingRequest::create(
             &mut self.builder,
-            &api::RankingPolicyArgs {
-                policy_type,
-                policy,
+            &api::RankingRequestArgs {
+                profile,
+                properties: None,
             },
         ))
     }
@@ -1803,12 +1895,28 @@ impl WireBuilder {
             let field = value
                 .get("field")
                 .and_then(JsonValue::as_str)
-                .map(|v| self.text(v));
+                .ok_or("query term requires a field")?;
+            let field = self.query_field(field);
             let value = value.get("value").map(|v| self.value(v)).transpose()?;
+            let term = api::TermQuery::create(&mut self.builder, &api::TermQueryArgs { value });
+            let item = api::QueryExpr::create(
+                &mut self.builder,
+                &api::QueryExprArgs {
+                    expr_type: api::QueryExprKind::TermQuery,
+                    expr: Some(term.as_union_value()),
+                    annotations: None,
+                },
+            );
             (
-                api::QueryExprKind::TermQuery,
-                api::TermQuery::create(&mut self.builder, &api::TermQueryArgs { field, value })
-                    .as_union_value(),
+                api::QueryExprKind::QueryContains,
+                api::QueryContains::create(
+                    &mut self.builder,
+                    &api::QueryContainsArgs {
+                        field: Some(field),
+                        item: Some(item),
+                    },
+                )
+                .as_union_value(),
             )
         } else if let Some(values) = object.get("all").or_else(|| object.get("and")) {
             let values = values
@@ -1872,6 +1980,7 @@ impl WireBuilder {
             &api::QueryExprArgs {
                 expr_type,
                 expr: Some(expr),
+                annotations: None,
             },
         ))
     }
@@ -1880,31 +1989,71 @@ impl WireBuilder {
         &mut self,
         input: &JsonValue,
     ) -> StdResult<flatbuffers::WIPOffset<api::SearchRequest<'static>>, String> {
-        let query = input
+        let query_text = input
             .get("query")
             .and_then(JsonValue::as_str)
             .map(|v| self.text(v));
+        let query_expr = input
+            .get("query_expr")
+            .map(|v| self.query_expr(v))
+            .transpose()?;
+        let query_source = if let Some(query_expr) = query_expr {
+            let typed = api::TypedQuery::create(
+                &mut self.builder,
+                &api::TypedQueryArgs {
+                    query: Some(query_expr),
+                },
+            );
+            Some(api::QuerySource::create(
+                &mut self.builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::TypedQuery,
+                    source: Some(typed.as_union_value()),
+                },
+            ))
+        } else if let Some(text) = query_text {
+            let source = api::SearchKernelTextQuery::create(
+                &mut self.builder,
+                &api::SearchKernelTextQueryArgs { text: Some(text) },
+            );
+            Some(api::QuerySource::create(
+                &mut self.builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::SearchKernelTextQuery,
+                    source: Some(source.as_union_value()),
+                },
+            ))
+        } else {
+            let source = api::MatchAllQuery::create(&mut self.builder, &api::MatchAllQueryArgs {});
+            Some(api::QuerySource::create(
+                &mut self.builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::MatchAllQuery,
+                    source: Some(source.as_union_value()),
+                },
+            ))
+        };
         let search_fields = input
             .get("search_fields")
             .map(|v| self.selection(v))
             .transpose()?;
         let filter = input.get("filter").map(|v| self.filter(v)).transpose()?;
+        let filters = filter.map(|filter| self.builder.create_vector(&[filter]));
+        let filters = filters.map(|structured| {
+            api::FilterRequest::create(
+                &mut self.builder,
+                &api::FilterRequestArgs {
+                    structured: Some(structured),
+                    ..Default::default()
+                },
+            )
+        });
         let sorts = input
             .get("sort")
             .and_then(JsonValue::as_array)
             .map(|v| {
                 v.iter()
                     .map(|x| self.sort(x))
-                    .collect::<StdResult<Vec<_>, _>>()
-            })
-            .transpose()?
-            .map(|v| self.builder.create_vector(&v));
-        let facets = input
-            .get("facets")
-            .and_then(JsonValue::as_array)
-            .map(|v| {
-                v.iter()
-                    .map(|x| self.facet(x))
                     .collect::<StdResult<Vec<_>, _>>()
             })
             .transpose()?
@@ -1934,26 +2083,45 @@ impl WireBuilder {
             .get("language")
             .and_then(JsonValue::as_str)
             .map(|v| self.text(v));
-        let query_expr = input
-            .get("query_expr")
-            .map(|v| self.query_expr(v))
-            .transpose()?;
+        let query_model = language.map(|language| {
+            api::QueryModel::create(
+                &mut self.builder,
+                &api::QueryModelArgs {
+                    language: Some(language),
+                    ..Default::default()
+                },
+            )
+        });
+        let presentation = if projection.is_some() || highlighting.is_some() {
+            Some(api::PresentationRequest::create(
+                &mut self.builder,
+                &api::PresentationRequestArgs {
+                    fields: projection,
+                    highlighting,
+                    ..Default::default()
+                },
+            ))
+        } else {
+            None
+        };
         Ok(api::SearchRequest::create(
             &mut self.builder,
             &api::SearchRequestArgs {
-                query,
+                query: query_source,
                 search_fields,
-                filter,
+                filters,
                 sort: sorts,
-                facets,
+                grouping: None,
                 ranking,
+                inputs: None,
                 limit: limit.as_ref(),
                 offset: offset.as_ref(),
-                projection,
-                highlighting,
-                language,
-                query_expr,
-                timeout: timeout.as_ref(),
+                timeout_ms: timeout.as_ref(),
+                query_model,
+                presentation,
+                properties: None,
+                query_profile: None,
+                search_chain: None,
             },
         ))
     }

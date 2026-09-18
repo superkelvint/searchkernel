@@ -146,7 +146,6 @@ fn main() {
         .cpp(true)
         .file(manifest_dir.join("native_header_namespace_check.cc"))
         .include(sdk.join("include"))
-        .include(manifest_dir.join("../searchkernel-ffi/include"))
         .warnings(true)
         .compile("searchkernel_vespa_header_namespace");
 }

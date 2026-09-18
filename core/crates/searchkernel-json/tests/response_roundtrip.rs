@@ -71,7 +71,7 @@ fn malformed_response_is_rejected() {
 #[test]
 fn deadline_exceeded_is_a_supported_error_code() {
     let input = br#"{
-      "protocol_version": 1,
+      "protocol_version": 2,
       "response": {
         "error": {
           "code": "deadline_exceeded",
@@ -91,9 +91,9 @@ fn deadline_exceeded_is_a_supported_error_code() {
 #[test]
 fn response_payload_required_fields_are_enforced_by_the_codec() {
     for input in [
-        br#"{"protocol_version":1,"response":{"insert":{}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"search":{}}}"#.as_slice(),
-        br#"{"protocol_version":1,"response":{"error":{}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"insert":{}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"error":{}}}"#.as_slice(),
     ] {
         assert!(
             response_json_to_flatbuffer(input).is_err(),
@@ -106,19 +106,11 @@ fn response_payload_required_fields_are_enforced_by_the_codec() {
 #[test]
 fn canonical_scalar_policy_round_trips() {
     let json = br#"{
-      "protocol_version": 1,
+      "protocol_version": 2,
       "response": {
         "search": {
-          "total_hits": {"value": "9007199254740993", "relation": "exact"},
-          "facets": [{
-            "field": "values",
-            "values": [
-              {"value": {"int64": "-9223372036854775808"}, "count": "42"},
-              {"value": {"uint64": "18446744073709551615"}, "count": "18446744073709551615"},
-              {"value": {"bytes": "AAH/"}, "count": "1"},
-              {"value": {"float64": 1.5}, "count": "1"}
-            ]
-          }]
+          "hits": [],
+          "total_hits": {"value": "9007199254740993", "relation": "exact"}
         }
       }
     }"#;

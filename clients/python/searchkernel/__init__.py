@@ -1,7 +1,8 @@
-"""Python client for the Search Kernel portable API."""
+"""Search Kernel's transport-independent Python domain models.
 
-from .client import *  # noqa: F401,F403
-from .client import __all__ as _client_all
-from .transport import NativeTransport, NativeTransportError
+The former portable native transport has been retired. A gRPC transport will
+be added separately; this package intentionally contains no executable client.
+"""
 
-__all__ = [*_client_all, "NativeTransport", "NativeTransportError"]
+from .generated.models import *  # noqa: F401,F403
+from .generated.models import __all__

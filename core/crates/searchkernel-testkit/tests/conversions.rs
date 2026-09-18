@@ -1,61 +1,124 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
-use searchkernel_ir::{api, field_to_ir, IndexContext};
+use searchkernel_ir::{api, IndexContext, QueryIr, RankingPolicyIr};
 
-fn fixture() -> Vec<u8> {
+fn context() -> IndexContext {
     let mut builder = FlatBufferBuilder::new();
-    let field_name = builder.create_string("title");
-    let enabled = api::OptionalBool::new(true);
-    let disabled = api::OptionalBool::new(false);
-    let field = api::FieldDefinition::create(
+    let analyzer_name = builder.create_string("standard");
+    let analyzer = api::Analyzer::create(
+        &mut builder,
+        &api::AnalyzerArgs {
+            name: Some(analyzer_name),
+            version: 1,
+            ..Default::default()
+        },
+    );
+    let title_name = builder.create_string("title");
+    let title_type = string_type(&mut builder);
+    let title = api::FieldDefinition::create(
         &mut builder,
         &api::FieldDefinitionArgs {
-            name: Some(field_name),
-            kind: api::FieldKind::Text,
-            cardinality: api::FieldCardinality::Single,
-            stored: Some(&enabled),
-            searchable: Some(&enabled),
-            filterable: Some(&disabled),
-            sortable: Some(&disabled),
-            facetable: Some(&disabled),
-            analyzer: None,
+            name: Some(title_name),
+            data_type: Some(title_type),
+            stored: Some(&api::OptionalBool::new(true)),
+            searchable: Some(&api::OptionalBool::new(true)),
+            analyzer: Some(analyzer),
+            ..Default::default()
         },
     );
     let brand_name = builder.create_string("brand");
+    let brand_type = string_type(&mut builder);
+    let brand_matching = api::MatchingConfig::create(
+        &mut builder,
+        &api::MatchingConfigArgs {
+            mode: api::MatchingMode::Exact,
+            ..Default::default()
+        },
+    );
     let brand = api::FieldDefinition::create(
         &mut builder,
         &api::FieldDefinitionArgs {
             name: Some(brand_name),
-            kind: api::FieldKind::Keyword,
-            cardinality: api::FieldCardinality::Single,
-            stored: Some(&enabled),
-            searchable: Some(&disabled),
-            filterable: Some(&enabled),
-            sortable: Some(&enabled),
-            facetable: Some(&enabled),
-            analyzer: None,
+            data_type: Some(brand_type),
+            matching: Some(brand_matching),
+            filterable: Some(&api::OptionalBool::new(true)),
+            sortable: Some(&api::OptionalBool::new(true)),
+            ..Default::default()
         },
     );
-    let fields = builder.create_vector(&[field, brand]);
-    let _ = fields;
+    let fields = builder.create_vector(&[title, brand]);
+    let definition = api::IndexDefinition::create(
+        &mut builder,
+        &api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(definition, None);
+    IndexContext::from_api(root::<api::IndexDefinition>(builder.finished_data()).unwrap()).unwrap()
+}
 
-    let string = builder.create_string("headphones");
-    let string_value = api::StringValue::create(
+fn string_type<'a>(
+    builder: &mut FlatBufferBuilder<'a>,
+) -> flatbuffers::WIPOffset<api::DataType<'a>> {
+    let primitive = api::PrimitiveDataType::create(
+        builder,
+        &api::PrimitiveDataTypeArgs {
+            kind: api::PrimitiveDataTypeKind::String,
+        },
+    );
+    api::DataType::create(
+        builder,
+        &api::DataTypeArgs {
+            kind_type: api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    )
+}
+
+#[test]
+fn representative_v2_converters_use_direct_core_calls() {
+    let context = context();
+    let mut builder = FlatBufferBuilder::new();
+    let query_text = builder.create_string("headphones");
+    let query_node = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs {
+            text: Some(query_text),
+        },
+    );
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query_node.as_union_value()),
+        },
+    );
+    let value_text = builder.create_string("Acme");
+    let value_node = api::StringValue::create(
         &mut builder,
         &api::StringValueArgs {
-            value: Some(string),
+            value: Some(value_text),
         },
     );
     let value = api::Value::create(
         &mut builder,
         &api::ValueArgs {
             kind_type: api::ValueKind::StringValue,
-            kind: Some(string_value.as_union_value()),
+            kind: Some(value_node.as_union_value()),
+        },
+    );
+    let brand_path = builder.create_string("brand");
+    let brand = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(brand_path),
+            element_index: None,
         },
     );
     let comparison = api::FilterComparison::create(
         &mut builder,
         &api::FilterComparisonArgs {
-            field: Some(brand_name),
+            field: Some(brand),
             op: api::ComparisonOp::Eq,
             value: Some(value),
         },
@@ -67,108 +130,33 @@ fn fixture() -> Vec<u8> {
             expr: Some(comparison.as_union_value()),
         },
     );
-    let facet = api::FacetRequest::create(
+    let structured = builder.create_vector(&[filter]);
+    let filters = api::FilterRequest::create(
         &mut builder,
-        &api::FacetRequestArgs {
-            field: Some(brand_name),
-            limit: None,
-            sort: None,
-        },
-    );
-    let term = api::TermQuery::create(
-        &mut builder,
-        &api::TermQueryArgs {
-            field: Some(field_name),
-            value: Some(value),
-        },
-    );
-    let query_expr = api::QueryExpr::create(
-        &mut builder,
-        &api::QueryExprArgs {
-            expr_type: api::QueryExprKind::TermQuery,
-            expr: Some(term.as_union_value()),
-        },
-    );
-    let facets = builder.create_vector(&[facet]);
-    let search = api::SearchRequest::create(
-        &mut builder,
-        &api::SearchRequestArgs {
-            query: None,
-            filter: Some(filter),
-            facets: Some(facets),
-            query_expr: Some(query_expr),
+        &api::FilterRequestArgs {
+            structured: Some(structured),
             ..Default::default()
         },
     );
-    builder.finish(search, None);
-    builder.finished_data().to_vec()
-}
-
-#[test]
-fn representative_converters_are_direct_core_calls() {
-    let bytes = fixture();
-    let search = root::<api::SearchRequest>(&bytes).unwrap();
-    let definition_bytes = {
-        // The search fixture is intentionally rooted at SearchRequest. Build a
-        // separate schema buffer to exercise the component entry points too.
-        let mut builder = FlatBufferBuilder::new();
-        let name = builder.create_string("title");
-        let field = api::FieldDefinition::create(
-            &mut builder,
-            &api::FieldDefinitionArgs {
-                name: Some(name),
-                kind: api::FieldKind::Text,
-                cardinality: api::FieldCardinality::Single,
-                stored: Some(&api::OptionalBool::new(true)),
-                searchable: Some(&api::OptionalBool::new(true)),
-                filterable: Some(&api::OptionalBool::new(false)),
-                sortable: Some(&api::OptionalBool::new(false)),
-                facetable: Some(&api::OptionalBool::new(false)),
-                analyzer: None,
-            },
-        );
-        let brand_name = builder.create_string("brand");
-        let brand = api::FieldDefinition::create(
-            &mut builder,
-            &api::FieldDefinitionArgs {
-                name: Some(brand_name),
-                kind: api::FieldKind::Keyword,
-                cardinality: api::FieldCardinality::Single,
-                stored: Some(&api::OptionalBool::new(true)),
-                searchable: Some(&api::OptionalBool::new(false)),
-                filterable: Some(&api::OptionalBool::new(true)),
-                sortable: Some(&api::OptionalBool::new(true)),
-                facetable: Some(&api::OptionalBool::new(true)),
-                analyzer: None,
-            },
-        );
-        let fields = builder.create_vector(&[field, brand]);
-        let definition = api::IndexDefinition::create(
-            &mut builder,
-            &api::IndexDefinitionArgs {
-                name: None,
-                fields: Some(fields),
-                default_search_fields: None,
-            },
-        );
-        builder.finish(definition, None);
-        builder.finished_data().to_vec()
-    };
-    let definition = root::<api::IndexDefinition>(&definition_bytes).unwrap();
-    let field = definition.fields().unwrap().get(0);
-    assert_eq!(field_to_ir(field).unwrap().name().as_str(), "title");
-
-    let context = IndexContext::from_api(definition).unwrap();
-    let query = context
-        .query_to_ir("", Some(search.query_expr().unwrap()))
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = root::<api::SearchRequest>(builder.finished_data()).unwrap();
+    let title = context
+        .definition()
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == "title")
         .unwrap();
-    assert!(matches!(query, searchkernel_ir::QueryIr::Term { .. }));
-    let filter = search.filter().unwrap();
-    let comparison = filter.expr_as_filter_comparison().unwrap();
-    assert!(context
-        .value_to_ir("brand", comparison.value().unwrap())
-        .is_ok());
-    assert!(context.filter_to_ir(filter).is_ok());
-    assert!(context.facet_to_ir(search.facets().unwrap().get(0)).is_ok());
-    assert!(context.search_to_ir(search).is_ok());
+    assert_eq!(title.name().as_str(), "title");
+    let converted = context.search_to_ir(request).unwrap();
+    assert!(matches!(converted.query(), QueryIr::Text(text) if text == "headphones"));
+    assert!(converted.filter().is_some());
+    assert_eq!(converted.ranking(), RankingPolicyIr::DefaultRelevanceV1);
 }

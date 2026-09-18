@@ -24,6 +24,6 @@ fi
 
 mkdir -p "$output"
 "$flatc_bin" --binary --schema -I "$root/api" -o "$output" \
-    "$root/api/searchkernel_ffi_request.fbs"
+    "$root/api/searchkernel_request.fbs"
 "$flatc_bin" --binary --schema -I "$root/api" -o "$output" \
-    "$root/api/searchkernel_ffi_response.fbs"
+    "$root/api/searchkernel_response.fbs"

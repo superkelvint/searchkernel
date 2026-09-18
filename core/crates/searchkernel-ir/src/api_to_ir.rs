@@ -1,16 +1,16 @@
 //! FlatBuffers API to owned Search Kernel IR conversion.
 
 use crate::error::{PortableError, Result};
+use crate::filter_expression::{bind_filter_expression_with_references, FilterParameters};
 use crate::model::{
     AnalyzeRequestIr, AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentId,
-    DocumentIr, FacetIr, FacetSort, FieldCapabilities, FieldCardinality, FieldIr, FieldKind,
-    FieldName, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexDefinitionIr, IndexName,
-    InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr, PatchRequestIr,
-    PrefixPolicy, ProjectionIr, QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr,
-    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, TypoPolicy, UpsertRequestIr,
-    WriteRequestIr,
+    DocumentIr, FieldCapabilities, FieldCardinality, FieldIr, FieldKind, FieldName, FieldValueIr,
+    FilterIr, GetRequestIr, HighlightingIr, IndexDefinitionIr, IndexName, InsertRequestIr,
+    LanguageHint, MissingPlacement, PatchOperationIr, PatchRequestIr, PrefixPolicy, ProjectionIr,
+    QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
+    SearchRequestIr, SortDirection, SortIr, TypoPolicy, UpsertRequestIr, Value, WriteRequestIr,
 };
-use searchkernel_protocol::v1 as api;
+use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -37,7 +37,7 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
     if let Some(views) = field_views {
         for (index, field) in views.iter().enumerate() {
             let path = format!("fields[{index}]");
-            let name = parse_field_name(field.name().unwrap_or_default(), format!("{path}.name"))?;
+            let name = parse_field_name(field.name(), format!("{path}.name"))?;
             if !names.insert(name.clone()) {
                 return Err(invalid(
                     "duplicate_field",
@@ -80,7 +80,7 @@ pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<In
 }
 
 pub fn field_to_ir(field: api::FieldDefinition<'_>) -> Result<FieldIr> {
-    let name = parse_field_name(field.name().unwrap_or_default(), "name".to_owned())?;
+    let name = parse_field_name(field.name(), "name".to_owned())?;
     field_to_ir_at(field, name, "field")
 }
 
@@ -134,6 +134,7 @@ impl IndexContext {
     pub fn upsert_to_ir(&self, request: api::UpsertRequest<'_>) -> Result<UpsertRequestIr> {
         Ok(UpsertRequestIr {
             document: self.document_from_optional(request.document(), "document")?,
+            condition: condition_to_ir(request.condition()),
         })
     }
     pub fn patch_to_ir(&self, request: api::PatchRequest<'_>) -> Result<PatchRequestIr> {
@@ -164,6 +165,7 @@ impl IndexContext {
     pub fn delete_to_ir(&self, request: api::DeleteRequest<'_>) -> Result<DeleteRequestIr> {
         Ok(DeleteRequestIr {
             id: self.document_id(request.id(), "id")?,
+            condition: condition_to_ir(request.condition()),
         })
     }
     pub fn get_to_ir(&self, request: api::GetRequest<'_>) -> Result<GetRequestIr> {
@@ -173,7 +175,8 @@ impl IndexContext {
         })
     }
     pub fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
-        let query = self.query_to_ir(request.query().unwrap_or_default(), request.query_expr())?;
+        reject_nonempty_v2_search_fields(request)?;
+        let query = self.query_source_to_ir(request.query())?;
         let search_fields_wrapper = request.search_fields();
         let search_fields = match search_fields_wrapper {
             None => self.definition.default_search_fields.clone(),
@@ -186,19 +189,17 @@ impl IndexContext {
                 "a text query requires at least one searchable field",
             ));
         }
-        let filter = request
-            .filter()
-            .map(|f| self.filter_to_ir_at(f, "filter"))
-            .transpose()?;
+        let filter = self.filters_to_ir(request.filters())?;
         let sort = self.sorts_to_ir(request.sort())?;
-        let facets = self.facets_to_ir(request.facets())?;
+        let facets = Vec::new();
         let ranking = ranking_to_ir(request.ranking())?;
-        let language = match request.language() {
-            None => None,
-            Some(v) => Some(parse_language(v, "language")?),
-        };
+        let language = request
+            .query_model()
+            .and_then(|model| model.language())
+            .map(|v| parse_language(v, "query_model.language"))
+            .transpose()?;
         let timeout = request
-            .timeout()
+            .timeout_ms()
             .map(|value| Duration::from_millis(value.value()));
         Ok(SearchRequestIr {
             query,
@@ -209,8 +210,9 @@ impl IndexContext {
             ranking,
             limit: request.limit().map_or(20, |v| v.value()),
             offset: request.offset().map_or(0, |v| v.value()),
-            projection: self.projection_to_ir(request.projection())?,
-            highlighting: self.highlighting_to_ir(request.highlighting())?,
+            projection: self.projection_to_ir(request.presentation().and_then(|p| p.fields()))?,
+            highlighting: self
+                .highlighting_to_ir(request.presentation().and_then(|p| p.highlighting()))?,
             language,
             timeout,
             prefix_policy: PrefixPolicy::Disabled,
@@ -312,6 +314,45 @@ impl IndexContext {
             None => Ok(QueryIr::Text(text.to_owned())),
         }
     }
+
+    fn query_source_to_ir(&self, source: Option<api::QuerySource<'_>>) -> Result<QueryIr> {
+        let source = source.ok_or_else(|| {
+            invalid(
+                "missing_query",
+                Some("query"),
+                "search request requires a query",
+            )
+        })?;
+        match source.source_type() {
+            api::QuerySourceKind::SearchKernelTextQuery => self.query_to_ir(
+                source
+                    .source_as_search_kernel_text_query()
+                    .and_then(|query| query.text())
+                    .unwrap_or_default(),
+                None,
+            ),
+            api::QuerySourceKind::TypedQuery => {
+                let query = source
+                    .source_as_typed_query()
+                    .and_then(|query| query.query())
+                    .ok_or_else(|| {
+                        invalid("missing_query", Some("query"), "typed query is missing")
+                    })?;
+                self.query_expr_to_ir(query, "query")
+            }
+            api::QuerySourceKind::MatchAllQuery => Ok(QueryIr::MatchAll),
+            api::QuerySourceKind::YqlQuery => Err(PortableError::unsupported(
+                "unsupported_query_source",
+                Some("query"),
+                "YQL query sources are not supported by the embedded IR",
+            )),
+            _ => Err(invalid(
+                "invalid_query",
+                Some("query"),
+                "unknown query source",
+            )),
+        }
+    }
     pub fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
         self.filter_to_ir_at(filter, "filter")
     }
@@ -323,9 +364,6 @@ impl IndexContext {
     }
     pub fn sort_to_ir(&self, sort: api::SortExpr<'_>) -> Result<SortIr> {
         self.sort_to_ir_at(sort, "sort")
-    }
-    pub fn facet_to_ir(&self, facet: api::FacetRequest<'_>) -> Result<FacetIr> {
-        self.facet_to_ir_at(facet, "facet")
     }
     pub fn projection_to_ir(
         &self,
@@ -341,7 +379,7 @@ impl IndexContext {
     }
     pub fn ranking_to_ir(
         &self,
-        ranking: Option<api::RankingPolicy<'_>>,
+        ranking: Option<api::RankingRequest<'_>>,
     ) -> Result<RankingPolicyIr> {
         ranking_to_ir(ranking)
     }
@@ -524,35 +562,61 @@ impl IndexContext {
     fn query_expr_to_ir(&self, expression: api::QueryExpr<'_>, path: &str) -> Result<QueryIr> {
         let tag = expression.expr_type();
         match tag {
-            api::QueryExprKind::TermQuery => {
-                let term = expression.expr_as_term_query().ok_or_else(|| {
+            api::QueryExprKind::TermQuery => Err(invalid(
+                "missing_query_field",
+                Some(format!("{path}.term_query")),
+                "query term requires a containing field",
+            )),
+            api::QueryExprKind::QueryContains => {
+                let contains = expression.expr_as_query_contains().ok_or_else(|| {
                     invalid(
                         "invalid_query",
                         Some(path),
                         "query expression must select an operation",
                     )
                 })?;
+                let field_name = contains.field().ok_or_else(|| {
+                    invalid(
+                        "missing_query_field",
+                        Some(format!("{path}.contains.field")),
+                        "query contains requires a field",
+                    )
+                })?;
                 let field = self.field(
-                    term.field().unwrap_or_default(),
-                    format!("{path}.term.field"),
+                    field_name.path().unwrap_or_default(),
+                    format!("{path}.contains.field.path"),
                 )?;
                 if !field.capabilities.searchable {
                     return Err(invalid(
                         "field_not_searchable",
-                        Some(format!("{path}.term.field")),
+                        Some(format!("{path}.contains.field")),
                         "query term requires a searchable field",
                     ));
                 }
+                let item = contains.item().ok_or_else(|| {
+                    invalid(
+                        "missing_query_item",
+                        Some(format!("{path}.contains.item")),
+                        "query contains requires an item",
+                    )
+                })?;
+                let term = item.expr_as_term_query().ok_or_else(|| {
+                    invalid(
+                        "unsupported_query",
+                        Some(format!("{path}.contains.item")),
+                        "only term query items are supported by the embedded IR",
+                    )
+                })?;
                 let value = term.value().ok_or_else(|| {
                     invalid(
                         "missing_value",
-                        Some(format!("{path}.term.value")),
+                        Some(format!("{path}.contains.item.value")),
                         "query term requires a value",
                     )
                 })?;
                 Ok(QueryIr::Term {
                     field: field.name.clone(),
-                    value: scalar_to_ir(value, field.kind, format!("{path}.term.value"))?,
+                    value: scalar_to_ir(value, field.kind, format!("{path}.contains.item.value"))?,
                 })
             }
             api::QueryExprKind::QueryAnd => {
@@ -618,6 +682,51 @@ impl IndexContext {
             )),
         }
     }
+    fn filters_to_ir(&self, filters: Option<api::FilterRequest<'_>>) -> Result<Option<FilterIr>> {
+        let Some(filters) = filters else {
+            return Ok(None);
+        };
+        let mut clauses = filters
+            .structured()
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        self.filter_to_ir_at(value, &format!("filters.structured[{index}]"))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let parameters = filter_parameters(filters.parameters())?;
+        let mut referenced_parameters = BTreeSet::new();
+        if let Some(sources) = filters.sources() {
+            for (clause_index, source) in sources.iter().enumerate() {
+                let bound =
+                    bind_filter_expression_with_references(source, &self.definition, &parameters)
+                        .map_err(|error| decorate_filter_source_error(error, clause_index))?;
+                referenced_parameters.extend(bound.referenced_parameters().iter().cloned());
+                clauses.push(bound.expression().clone());
+            }
+        }
+        if let Some((name, _)) = parameters
+            .iter()
+            .find(|(name, _)| !referenced_parameters.contains(*name))
+        {
+            return Err(invalid(
+                "unused_parameter",
+                Some(format!("filters.parameters.{name}")),
+                format!("parameter `:{name}` is not referenced by a filter source"),
+            ));
+        }
+        Ok(match clauses.len() {
+            0 => None,
+            1 => clauses.into_iter().next(),
+            _ => Some(FilterIr::And(clauses)),
+        })
+    }
+
     fn filter_to_ir_at(&self, filter: api::FilterExpr<'_>, path: &str) -> Result<FilterIr> {
         let tag = filter.expr_type();
         match tag {
@@ -709,8 +818,8 @@ impl IndexContext {
                     )
                 })?;
                 let f = self.field(
-                    n.field().unwrap_or_default(),
-                    format!("{path}.exists.field"),
+                    n.field().and_then(|field| field.path()).unwrap_or_default(),
+                    format!("{path}.exists.field.path"),
                 )?;
                 if !f.capabilities.filterable {
                     return Err(invalid(
@@ -723,6 +832,18 @@ impl IndexContext {
                     field: f.name.clone(),
                 })
             }
+            api::FilterExprKind::FilterIn => self
+                .in_to_ir_at(
+                    filter.expr_as_filter_in().ok_or_else(|| {
+                        invalid(
+                            "invalid_filter",
+                            Some(path),
+                            "filter expression must select an operation",
+                        )
+                    })?,
+                    &format!("{path}.in"),
+                )
+                .map(|(field, values)| FilterIr::In { field, values }),
             _ => Err(invalid(
                 "invalid_filter",
                 Some(path),
@@ -735,7 +856,10 @@ impl IndexContext {
         c: api::FilterComparison<'_>,
         path: &str,
     ) -> Result<ComparisonIr> {
-        let f = self.field(c.field().unwrap_or_default(), format!("{path}.field"))?;
+        let f = self.field(
+            c.field().and_then(|field| field.path()).unwrap_or_default(),
+            format!("{path}.field.path"),
+        )?;
         if !f.capabilities.filterable {
             return Err(invalid(
                 "field_not_filterable",
@@ -782,8 +906,59 @@ impl IndexContext {
             value: scalar_to_ir(v, f.kind, format!("{path}.value"))?,
         })
     }
+    fn in_to_ir_at(
+        &self,
+        input: api::FilterIn<'_>,
+        path: &str,
+    ) -> Result<(FieldName, Vec<ScalarValueIr>)> {
+        let f = self.field(
+            input
+                .field()
+                .and_then(|field| field.path())
+                .unwrap_or_default(),
+            format!("{path}.field.path"),
+        )?;
+        if !f.capabilities.filterable {
+            return Err(invalid(
+                "field_not_filterable",
+                Some(format!("{path}.field")),
+                "IN requires a filterable field",
+            ));
+        }
+        if !matches!(f.kind, FieldKind::Keyword | FieldKind::Int64) {
+            return Err(invalid(
+                "invalid_filter",
+                Some(path),
+                "IN requires a Keyword or Int64 field",
+            ));
+        }
+        let values = input
+            .values()
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        scalar_to_ir(value, f.kind, format!("{path}.values[{index}]"))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        if values.is_empty() {
+            return Err(invalid(
+                "empty_in",
+                Some(path),
+                "IN requires at least one value",
+            ));
+        }
+        Ok((f.name.clone(), values))
+    }
     fn range_to_ir_at(&self, r: api::FilterRange<'_>, path: &str) -> Result<RangeIr> {
-        let f = self.field(r.field().unwrap_or_default(), format!("{path}.field"))?;
+        let f = self.field(
+            r.field().and_then(|field| field.path()).unwrap_or_default(),
+            format!("{path}.field.path"),
+        )?;
         if !f.capabilities.filterable {
             return Err(invalid(
                 "field_not_filterable",
@@ -798,8 +973,8 @@ impl IndexContext {
                 "range requires an Int64 or Float64 field",
             ));
         }
-        let lower = r.lower();
-        let upper = r.upper();
+        let lower = finite_range_bound(r.lower(), &format!("{path}.lower"))?;
+        let upper = finite_range_bound(r.upper(), &format!("{path}.upper"))?;
         if lower.is_none() && upper.is_none() {
             return Err(invalid(
                 "invalid_range",
@@ -807,14 +982,14 @@ impl IndexContext {
                 "range requires at least one bound",
             ));
         }
-        if lower.is_none() && r.include_lower().is_some() {
+        if lower.is_none() && r.include_lower().is_some_and(|v| v.value()) {
             return Err(invalid(
                 "invalid_range",
                 Some(format!("{path}.include_lower")),
                 "lower inclusion requires a lower bound",
             ));
         }
-        if upper.is_none() && r.include_upper().is_some() {
+        if upper.is_none() && r.include_upper().is_some_and(|v| v.value()) {
             return Err(invalid(
                 "invalid_range",
                 Some(format!("{path}.include_upper")),
@@ -845,18 +1020,38 @@ impl IndexContext {
         })
     }
     fn sort_to_ir_at(&self, s: api::SortExpr<'_>, path: &str) -> Result<SortIr> {
-        let f = self.field(s.field().unwrap_or_default(), format!("{path}.field"))?;
+        let target = s.target().ok_or_else(|| {
+            invalid(
+                "invalid_sort",
+                Some(path),
+                "sort expression requires a target",
+            )
+        })?;
+        if target.target_type() != api::SortTargetKind::FieldSortTarget {
+            return Err(PortableError::unsupported(
+                "unsupported_sort",
+                Some(path),
+                "only field sort targets are supported by the embedded IR",
+            ));
+        }
+        let f = self.field(
+            target
+                .target_as_field_sort_target()
+                .and_then(|target| target.field())
+                .unwrap_or_default(),
+            format!("{path}.target.field"),
+        )?;
         if !f.capabilities.sortable {
             return Err(invalid(
                 "field_not_sortable",
-                Some(format!("{path}.field")),
+                Some(format!("{path}.target.field")),
                 "sort requires a sortable field",
             ));
         }
         if f.cardinality != FieldCardinality::Single {
             return Err(invalid(
                 "invalid_capability",
-                Some(format!("{path}.field")),
+                Some(format!("{path}.target.field")),
                 "multi-valued fields cannot be sortable",
             ));
         }
@@ -873,14 +1068,18 @@ impl IndexContext {
         };
         let missing = match s.missing() {
             None => MissingPlacement::Last,
-            Some(v) => match v.value().0 {
-                1 => MissingPlacement::First,
-                2 => MissingPlacement::Last,
+            Some(v) => match v.policy_type() {
+                api::MissingPolicyKind::MissingFirst if v.policy_as_missing_first().is_some() => {
+                    MissingPlacement::First
+                }
+                api::MissingPolicyKind::MissingLast if v.policy_as_missing_last().is_some() => {
+                    MissingPlacement::Last
+                }
                 _ => {
                     return Err(invalid(
                         "invalid_sort",
                         Some(format!("{path}.missing")),
-                        "missing placement is unknown",
+                        "missing policy is unsupported or missing its payload",
                     ))
                 }
             },
@@ -912,12 +1111,13 @@ impl IndexContext {
         }
         Ok(out)
     }
+    /*
     fn facet_to_ir_at(&self, f: api::FacetRequest<'_>, path: &str) -> Result<FacetIr> {
         let field = self.field(f.field().unwrap_or_default(), format!("{path}.field"))?;
         if !field.capabilities.facetable {
             return Err(invalid(
                 "field_not_facetable",
-                Some(format!("{path}.field")),
+                        Some(format!("{path}.target.field")),
                 "facet requires a facetable field",
             ));
         }
@@ -944,7 +1144,8 @@ impl IndexContext {
             sort,
         })
     }
-    fn facets_to_ir(
+    */
+    /* fn facets_to_ir(
         &self,
         facets: Option<
             flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FacetRequest<'_>>>,
@@ -966,7 +1167,7 @@ impl IndexContext {
             }
         }
         Ok(out)
-    }
+    } */
     fn projection_to_ir_at(&self, p: Option<api::FieldProjection<'_>>) -> Result<ProjectionIr> {
         let mut out = Vec::new();
         match p {
@@ -1043,36 +1244,113 @@ impl IndexContext {
     }
 }
 
+fn reject_nonempty_v2_search_fields(request: api::SearchRequest<'_>) -> Result<()> {
+    let unsupported = |path: &str, message: &str| {
+        PortableError::unsupported("v2_search_field_not_supported", Some(path), message)
+    };
+    if request.grouping().is_some_and(|values| !values.is_empty()) {
+        return Err(unsupported(
+            "grouping",
+            "V2 grouping is not yet lowered by the current IR adapter",
+        ));
+    }
+    if request.inputs().is_some_and(|values| !values.is_empty()) {
+        return Err(unsupported(
+            "inputs",
+            "V2 query inputs are not yet lowered by the current IR adapter",
+        ));
+    }
+    if request
+        .properties()
+        .is_some_and(|values| !values.is_empty())
+    {
+        return Err(unsupported(
+            "properties",
+            "V2 generic query properties are not yet lowered by the current IR adapter",
+        ));
+    }
+    if request
+        .query_profile()
+        .is_some_and(|value| !value.is_empty())
+    {
+        return Err(unsupported(
+            "query_profile",
+            "V2 query profiles require a container-aware execution path",
+        ));
+    }
+    if request
+        .search_chain()
+        .is_some_and(|value| !value.is_empty())
+    {
+        return Err(unsupported(
+            "search_chain",
+            "V2 search chains require a container-aware execution path",
+        ));
+    }
+    if request
+        .ranking()
+        .and_then(|ranking| ranking.properties())
+        .is_some_and(|values| !values.is_empty())
+    {
+        return Err(unsupported(
+            "ranking.properties",
+            "V2 ranking properties are not yet lowered by the current IR adapter",
+        ));
+    }
+    if let Some(model) = request.query_model() {
+        let has_unsupported = model.query_string().is_some_and(|value| !value.is_empty())
+            || model.default_index().is_some_and(|value| !value.is_empty())
+            || model.encoding().is_some_and(|value| !value.is_empty())
+            || model.filter().is_some_and(|value| !value.is_empty())
+            || model.locale().is_some_and(|value| !value.is_empty())
+            || model.type_().is_some()
+            || model.sources().is_some_and(|values| !values.is_empty())
+            || model.restrict().is_some_and(|values| !values.is_empty())
+            || model.search_path().is_some_and(|value| !value.is_empty())
+            || model.search_group().is_some();
+        if has_unsupported {
+            return Err(unsupported(
+                "query_model",
+                "only query_model.language is currently supported by the embedded execution path",
+            ));
+        }
+    }
+    if let Some(presentation) = request.presentation() {
+        if presentation
+            .summary()
+            .is_some_and(|value| !value.is_empty())
+            || presentation.format().is_some_and(|value| !value.is_empty())
+            || presentation.bolding().is_some()
+            || presentation.timing().is_some()
+        {
+            return Err(unsupported(
+                "presentation",
+                "only V2 presentation fields and highlighting are currently supported",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn condition_to_ir(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 fn field_to_ir_at(
     definition: api::FieldDefinition<'_>,
     name: FieldName,
     path: &str,
 ) -> Result<FieldIr> {
-    let kind = match definition.kind().0 {
-        1 => FieldKind::Text,
-        2 => FieldKind::Keyword,
-        3 => FieldKind::Int64,
-        4 => FieldKind::Float64,
-        5 => FieldKind::Bool,
-        _ => {
-            return Err(invalid(
-                "invalid_field_kind",
-                Some(format!("{path}.kind")),
-                "field kind is unspecified or unknown",
-            ))
-        }
-    };
-    let cardinality = match definition.cardinality().0 {
-        0 | 1 => FieldCardinality::Single,
-        2 => FieldCardinality::Multi,
-        _ => {
-            return Err(invalid(
-                "invalid_cardinality",
-                Some(format!("{path}.cardinality")),
-                "field cardinality is unknown",
-            ))
-        }
-    };
+    let data_type = definition.data_type().ok_or_else(|| {
+        invalid(
+            "invalid_data_type",
+            Some(format!("{path}.data_type")),
+            "field data type is required",
+        )
+    })?;
+    let (kind, cardinality) = field_kind_and_cardinality(data_type, definition.matching(), path)?;
     let defaults = match kind {
         FieldKind::Text => FieldCapabilities {
             stored: true,
@@ -1164,6 +1442,81 @@ fn field_to_ir_at(
         capabilities,
     })
 }
+
+fn field_kind_and_cardinality(
+    data_type: api::DataType<'_>,
+    matching: Option<api::MatchingConfig<'_>>,
+    path: &str,
+) -> Result<(FieldKind, FieldCardinality)> {
+    let mut cardinality = FieldCardinality::Single;
+    let mut data_type = data_type;
+    loop {
+        match data_type.kind_type() {
+            api::DataTypeKind::PrimitiveDataType => {
+                let primitive = data_type.kind_as_primitive_data_type().ok_or_else(|| {
+                    invalid(
+                        "invalid_data_type",
+                        Some(path),
+                        "primitive data type is missing",
+                    )
+                })?;
+                let kind = match primitive.kind() {
+                    api::PrimitiveDataTypeKind::String => match matching.map(|v| v.mode()) {
+                        Some(api::MatchingMode::Exact) | Some(api::MatchingMode::Word) => {
+                            FieldKind::Keyword
+                        }
+                        _ => FieldKind::Text,
+                    },
+                    api::PrimitiveDataTypeKind::Bool => FieldKind::Bool,
+                    api::PrimitiveDataTypeKind::Int64 => FieldKind::Int64,
+                    api::PrimitiveDataTypeKind::Float64 => FieldKind::Float64,
+                    _ => {
+                        return Err(PortableError::unsupported(
+                            "unsupported_data_type",
+                            Some(path),
+                            "the embedded IR supports string, bool, int64, and float64 fields",
+                        ))
+                    }
+                };
+                return Ok((kind, cardinality));
+            }
+            api::DataTypeKind::ArrayDataType => {
+                cardinality = FieldCardinality::Multi;
+                data_type = data_type
+                    .kind_as_array_data_type()
+                    .and_then(|v| v.element_type())
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(path),
+                            "array element type is missing",
+                        )
+                    })?;
+            }
+            api::DataTypeKind::WeightedSetDataType => {
+                cardinality = FieldCardinality::Multi;
+                data_type = data_type
+                    .kind_as_weighted_set_data_type()
+                    .and_then(|v| v.element_type())
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(path),
+                            "weighted-set element type is missing",
+                        )
+                    })?;
+            }
+            _ => {
+                return Err(PortableError::unsupported(
+                    "unsupported_data_type",
+                    Some(path),
+                    "the embedded IR does not support this field data type",
+                ))
+            }
+        }
+    }
+}
+
 fn analyzer_to_ir_at(
     analyzer: Option<api::Analyzer<'_>>,
     kind: FieldKind,
@@ -1241,43 +1594,222 @@ fn search_fields_to_ir_at(
             search_fields.push(SearchFieldIr {
                 field: f.name.clone(),
                 weight,
-            })
+            });
         }
     }
     Ok(search_fields)
 }
-fn ranking_to_ir(r: Option<api::RankingPolicy<'_>>) -> Result<RankingPolicyIr> {
+
+fn decorate_filter_source_error(mut error: PortableError, clause_index: usize) -> PortableError {
+    for detail in &mut error.details {
+        detail
+            .metadata
+            .insert("clause_index".to_owned(), clause_index.to_string());
+        // Parser and binder offsets are local to the source clause.
+        if let Some(start) = detail.metadata.remove("span_start") {
+            detail.metadata.insert("start_offset".to_owned(), start);
+        }
+        if let Some(end) = detail.metadata.remove("span_end") {
+            detail.metadata.insert("end_offset".to_owned(), end);
+        }
+    }
+    error
+}
+fn ranking_to_ir(r: Option<api::RankingRequest<'_>>) -> Result<RankingPolicyIr> {
     let Some(r) = r else {
         return Ok(RankingPolicyIr::DefaultRelevanceV1);
     };
-    match r.policy_type() {
-        api::RankingPolicyKind::DefaultRelevanceV1 => {
-            r.policy_as_default_relevance_v1().ok_or_else(|| {
-                invalid(
-                    "invalid_ranking",
-                    Some("ranking"),
-                    "ranking policy must select a policy",
-                )
-            })?;
-            Ok(RankingPolicyIr::DefaultRelevanceV1)
-        }
-        api::RankingPolicyKind::Bm25Ranking => {
-            r.policy_as_bm_25_ranking().ok_or_else(|| {
-                invalid(
-                    "invalid_ranking",
-                    Some("ranking"),
-                    "ranking policy must select a policy",
-                )
-            })?;
-            Ok(RankingPolicyIr::Bm25)
-        }
-        _ => Err(invalid(
+    let profile = r.profile().ok_or_else(|| {
+        invalid(
             "invalid_ranking",
             Some("ranking"),
-            "ranking policy must select a policy",
+            "ranking request must select a profile",
+        )
+    })?;
+    match profile {
+        "" | "default" | "default-relevance" => Ok(RankingPolicyIr::DefaultRelevanceV1),
+        "bm25" => Ok(RankingPolicyIr::Bm25),
+        _ => Err(PortableError::unsupported(
+            "unsupported_ranking",
+            Some("ranking.profile"),
+            "the embedded IR supports only the default and bm25 ranking profiles",
         )),
     }
 }
+
+fn finite_range_bound<'a>(
+    bound: Option<api::RangeBound<'a>>,
+    path: &str,
+) -> Result<Option<api::Value<'a>>> {
+    let Some(bound) = bound else {
+        return Ok(None);
+    };
+    match bound.bound_type() {
+        api::RangeBoundKind::FiniteRangeBound => bound
+            .bound_as_finite_range_bound()
+            .and_then(|value| value.value())
+            .map(Some)
+            .ok_or_else(|| invalid("invalid_range", Some(path), "finite range bound is missing")),
+        api::RangeBoundKind::NegativeInfinityBound
+        | api::RangeBoundKind::PositiveInfinityBound
+        | api::RangeBoundKind::UnboundedRangeBound => Ok(None),
+        _ => Err(invalid("invalid_range", Some(path), "unknown range bound")),
+    }
+}
+
+fn filter_parameters(
+    entries: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
+) -> Result<FilterParameters> {
+    let mut parameters = BTreeMap::new();
+    let Some(entries) = entries else {
+        return Ok(parameters);
+    };
+    for (index, entry) in entries.iter().enumerate() {
+        let name = entry.key().to_owned();
+        if parameters.contains_key(&name) {
+            return Err(invalid(
+                "duplicate_parameter",
+                Some(format!("filters.parameters[{index}]")),
+                format!("parameter `:{name}` occurs more than once"),
+            ));
+        }
+        let value = entry.value().ok_or_else(|| {
+            invalid(
+                "missing_value",
+                Some(format!("filters.parameters[{index}].value")),
+                "parameter value is required",
+            )
+        })?;
+        parameters.insert(
+            name,
+            value_from_api(value, format!("filters.parameters[{index}].value"))?,
+        );
+    }
+    Ok(parameters)
+}
+
+fn value_from_api(value: api::Value<'_>, path: String) -> Result<Value> {
+    match value.kind_type() {
+        api::ValueKind::NullValueValue => Ok(Value::Null),
+        api::ValueKind::BoolValue => value
+            .kind_as_bool_value()
+            .map(|value| Value::Bool(value.value()))
+            .ok_or_else(|| invalid("missing_value", Some(path), "boolean value is missing")),
+        api::ValueKind::Int64Value => value
+            .kind_as_int_64_value()
+            .map(|value| Value::Int64(value.value()))
+            .ok_or_else(|| invalid("missing_value", Some(path), "integer value is missing")),
+        api::ValueKind::UInt64Value => value
+            .kind_as_uint_64_value()
+            .map(|value| Value::UInt64(value.value()))
+            .ok_or_else(|| {
+                invalid(
+                    "missing_value",
+                    Some(path),
+                    "unsigned integer value is missing",
+                )
+            }),
+        api::ValueKind::Float64Value => {
+            let value = value
+                .kind_as_float_64_value()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path.clone()),
+                        "float value is missing",
+                    )
+                })?
+                .value();
+            if value.is_finite() {
+                Ok(Value::Float64(value))
+            } else {
+                Err(invalid(
+                    "non_finite_number",
+                    Some(path),
+                    "floating-point parameters must be finite",
+                ))
+            }
+        }
+        api::ValueKind::StringValue => value
+            .kind_as_string_value()
+            .and_then(|value| value.value())
+            .map(|value| Value::String(value.to_owned()))
+            .ok_or_else(|| invalid("missing_value", Some(path), "string value is missing")),
+        api::ValueKind::BytesValue => value
+            .kind_as_bytes_value()
+            .and_then(|value| value.value())
+            .map(|value| Value::Bytes(value.iter().collect()))
+            .ok_or_else(|| invalid("missing_value", Some(path), "bytes value is missing")),
+        api::ValueKind::ValueList => {
+            let values = value
+                .kind_as_value_list()
+                .ok_or_else(|| {
+                    invalid("missing_value", Some(path.clone()), "value list is missing")
+                })?
+                .values()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            value_from_api(value, format!("{path}.values[{index}]"))
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(Value::List(values))
+        }
+        api::ValueKind::ValueObject => {
+            let mut fields = BTreeMap::new();
+            if let Some(entries) = value
+                .kind_as_value_object()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path.clone()),
+                        "value object is missing",
+                    )
+                })?
+                .fields()
+            {
+                for (index, entry) in entries.iter().enumerate() {
+                    let name = entry.key().to_owned();
+                    if fields.contains_key(&name) {
+                        return Err(invalid(
+                            "duplicate_parameter_field",
+                            Some(format!("{path}.fields[{index}]")),
+                            format!("field `{name}` occurs more than once"),
+                        ));
+                    }
+                    let value = entry.value().ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.fields[{index}].value")),
+                            "object value is missing",
+                        )
+                    })?;
+                    fields.insert(
+                        name,
+                        value_from_api(value, format!("{path}.fields[{index}].value"))?,
+                    );
+                }
+            }
+            Ok(Value::Object(fields))
+        }
+        api::ValueKind::NONE => Err(invalid(
+            "missing_value",
+            Some(path),
+            "parameter value must select a kind",
+        )),
+        _ => Err(PortableError::unsupported(
+            "unsupported_parameter_value",
+            Some(path),
+            "parameter value kind is not supported by the embedded IR",
+        )),
+    }
+}
+
 fn scalar_to_ir(v: api::Value<'_>, kind: FieldKind, path: String) -> Result<ScalarValueIr> {
     if v.kind_type() == api::ValueKind::NONE {
         return Err(invalid(
@@ -1377,6 +1909,7 @@ fn parse_field_name(v: &str, path: String) -> Result<FieldName> {
         )
     })
 }
+
 fn parse_language(v: &str, path: &str) -> Result<LanguageHint> {
     LanguageHint::parse(v.to_owned()).map_err(|_| {
         invalid(
@@ -1505,4 +2038,67 @@ fn invalid(
     message: impl Into<String>,
 ) -> PortableError {
     PortableError::invalid(code, path, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn context() -> IndexContext {
+        let field = |name, kind| {
+            FieldIr::new(
+                FieldName::parse(name).unwrap(),
+                kind,
+                FieldCardinality::Single,
+                None,
+                FieldCapabilities::new(false, false, true, false, false),
+            )
+        };
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![
+                field("brand", FieldKind::Keyword),
+                field("price", FieldKind::Int64),
+            ],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let fields = definition
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| (field.name().as_str().to_owned(), index))
+            .collect();
+        IndexContext { definition, fields }
+    }
+
+    #[test]
+    fn repeated_source_errors_identify_clause_and_local_offsets() {
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let first = builder.create_string("brand = 'Acme'");
+        let second = builder.create_string("price <= ");
+        let sources = builder.create_vector(&[first, second]);
+        let request = api::FilterRequest::create(
+            &mut builder,
+            &api::FilterRequestArgs {
+                sources: Some(sources),
+                ..Default::default()
+            },
+        );
+        builder.finish(request, None);
+        let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+            .expect("valid filter request");
+
+        let error = context().filters_to_ir(Some(request)).unwrap_err();
+        let detail = &error.details[0];
+        assert_eq!(detail.code, "syntax_error");
+        assert_eq!(detail.metadata.get("clause_index"), Some(&"1".to_owned()));
+        assert!(detail.metadata.contains_key("start_offset"));
+        assert!(detail.metadata.contains_key("end_offset"));
+        assert!(!detail.metadata.contains_key("span_start"));
+        assert!(!detail.metadata.contains_key("span_end"));
+    }
 }

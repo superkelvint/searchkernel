@@ -1,4 +1,4 @@
-# C6 — BFBS-driven generation and portable client core
+# C6 — BFBS-driven generation and retained JSON codec
 
 This directory freezes the C6 acceptance contract.
 
@@ -7,8 +7,8 @@ This directory freezes the C6 acceptance contract.
 The checked-in FlatBuffers schemas under `api/` are normative. The pinned FlatBuffers compiler is exactly `25.12.19`.
 
 ```text
-api/searchkernel_ffi_request.fbs
-api/searchkernel_ffi_response.fbs
+api/searchkernel_request.fbs
+api/searchkernel_response.fbs
        │
        │ flatc 25.12.19 -b --schema
        ▼
@@ -70,7 +70,7 @@ Rules:
 `GENERATED_PATHS.txt` freezes the checked-in generated tree:
 
 ```text
-core/crates/searchkernel-client/src/generated.rs
+clients/python/searchkernel/generated/models.py
 core/crates/searchkernel-json/src/generated.rs
 reference/json-conformance/generated/
 ```
@@ -98,96 +98,17 @@ Generated JSON fixture names correspond one-for-one with canonical `.skrq` / `.s
   "generated_by": "searchkernel-bindgen",
   "format_version": 1,
   "bfbs": {
-    "searchkernel_ffi_request.bfbs": {"sha256": "..."},
-    "searchkernel_ffi_response.bfbs": {"sha256": "..."}
+    "searchkernel_request.bfbs": {"sha256": "..."},
+    "searchkernel_response.bfbs": {"sha256": "..."}
   }
 }
 ```
 
 Hashes must equal the exact committed BFBS bytes.
 
-## Generated portable client API
+## Retired portable client API
 
-C6 provides `core/crates/searchkernel-client/` with this frozen minimum public API:
-
-```rust
-pub trait Transport: Send + Sync {
-    type Error;
-    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Self::Error>;
-}
-
-pub trait AsyncTransport: Send + Sync {
-    type Error;
-    fn call(&self, request: &[u8])
-        -> impl std::future::Future<Output = Result<Vec<u8>, Self::Error>> + Send;
-}
-
-pub enum ClientError<E> {
-    Transport(E),
-    Portable(model::Error),
-    Protocol(String),
-}
-
-pub struct Client<T: Transport> { /* ... */ }
-
-pub struct AsyncClient<T: AsyncTransport> { /* ... */ }
-
-impl<T: Transport> Client<T> {
-    pub fn new(transport: T) -> Self;
-
-    pub fn insert(&self, request: model::InsertRequest)
-        -> Result<model::InsertResult, ClientError<T::Error>>;
-    pub fn upsert(&self, request: model::UpsertRequest)
-        -> Result<model::UpsertResult, ClientError<T::Error>>;
-    pub fn patch(&self, request: model::PatchRequest)
-        -> Result<model::PatchResult, ClientError<T::Error>>;
-    pub fn delete(&self, request: model::DeleteRequest)
-        -> Result<model::DeleteResult, ClientError<T::Error>>;
-    pub fn get(&self, request: model::GetRequest)
-        -> Result<model::GetResult, ClientError<T::Error>>;
-    pub fn search(&self, request: model::SearchRequest)
-        -> Result<model::SearchResult, ClientError<T::Error>>;
-    pub fn analyze(&self, request: model::AnalyzeRequest)
-        -> Result<model::AnalyzeResult, ClientError<T::Error>>;
-    pub fn describe(&self, request: model::DescribeRequest)
-        -> Result<model::DescribeResult, ClientError<T::Error>>;
-    pub fn inspect_query(&self, request: model::InspectQueryRequest)
-        -> Result<model::InspectQueryResult, ClientError<T::Error>>;
-}
-
-impl<T: AsyncTransport> AsyncClient<T> {
-    pub fn new(transport: T) -> Self;
-
-    pub async fn insert(&self, request: model::InsertRequest)
-        -> Result<model::InsertResult, ClientError<T::Error>>;
-    pub async fn upsert(&self, request: model::UpsertRequest)
-        -> Result<model::UpsertResult, ClientError<T::Error>>;
-    pub async fn patch(&self, request: model::PatchRequest)
-        -> Result<model::PatchResult, ClientError<T::Error>>;
-    pub async fn delete(&self, request: model::DeleteRequest)
-        -> Result<model::DeleteResult, ClientError<T::Error>>;
-    pub async fn get(&self, request: model::GetRequest)
-        -> Result<model::GetResult, ClientError<T::Error>>;
-    pub async fn search(&self, request: model::SearchRequest)
-        -> Result<model::SearchResult, ClientError<T::Error>>;
-    pub async fn analyze(&self, request: model::AnalyzeRequest)
-        -> Result<model::AnalyzeResult, ClientError<T::Error>>;
-    pub async fn describe(&self, request: model::DescribeRequest)
-        -> Result<model::DescribeResult, ClientError<T::Error>>;
-    pub async fn inspect_query(&self, request: model::InspectQueryRequest)
-        -> Result<model::InspectQueryResult, ClientError<T::Error>>;
-}
-```
-
-Generated request models implement `Default`; semantic validity remains C2's concern.
-
-Every client operation performs exactly one `Transport::call`, emits the matching SKRQ variant, accepts the matching SKRS response, and maps portable `Error` to `ClientError::Portable`.
-
-The async client has the same operation, encoding, decoding, and error
-semantics, performing exactly one `AsyncTransport::call` per operation. The
-async trait is runtime-neutral and is intended for generic clients; this
-contract does not require an executor or make the synchronous transport
-blocking work asynchronous.
+The custom Rust transport client and portable native ABI were retired. Bindgen now emits only BFBS-derived Python domain value models; future execution transports are outside this contract.
 
 ## Operation coverage
 
@@ -225,13 +146,13 @@ Official FlatBuffers JSON is not public Search Kernel JSON.
 Request:
 
 ```json
-{"protocol_version":1,"request":{"search":{"query":"foo"}}}
+{"protocol_version":2,"request":{"search":{"query":"foo"}}}
 ```
 
 Response:
 
 ```json
-{"protocol_version":1,"response":{"search":{}}}
+{"protocol_version":2,"response":{"search":{}}}
 ```
 
 Portable error uses the one-key `error` response variant.

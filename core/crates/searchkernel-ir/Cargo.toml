@@ -10,6 +10,7 @@ test-support = []
 
 [dependencies]
 searchkernel-protocol = { path = "../searchkernel-protocol" }
+searchkernel-filter = { path = "../searchkernel-filter" }
 flatbuffers = "=25.12.19"
 
 [dev-dependencies]

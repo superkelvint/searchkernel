@@ -50,7 +50,7 @@ def _module_name(node: ast.AST) -> str | None:
 
 
 def _is_generated_import(module: str | None) -> bool:
-    return module in {"generated.client", "searchkernel.generated.client"}
+    return module in {"generated.models", "searchkernel.generated.models"}
 
 
 def _analyze_file(path: Path, model_names: set[str]) -> list[tuple[Path, int, str]]:
@@ -69,13 +69,13 @@ def _analyze_file(path: Path, model_names: set[str]) -> list[tuple[Path, int, st
 
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "searchkernel.generated.client":
+                if alias.name == "searchkernel.generated.models":
                     generated_module_aliases.add(alias.asname or "searchkernel")
         elif isinstance(node, ast.ImportFrom):
             module = node.module
-            if module == "generated" and any(alias.name == "client" for alias in node.names):
+            if module == "generated" and any(alias.name == "models" for alias in node.names):
                 for alias in node.names:
-                    if alias.name == "client":
+                    if alias.name == "models":
                         generated_module_aliases.add(alias.asname or alias.name)
             if not _is_generated_import(module):
                 continue
@@ -107,7 +107,7 @@ def main() -> int:
     args = parser.parse_args()
 
     package_root = args.package_root.resolve()
-    generated_path = package_root / "generated" / "client.py"
+    generated_path = package_root / "generated" / "models.py"
     if not generated_path.is_file():
         print(f"generated client not found: {generated_path}", file=sys.stderr)
         return 2

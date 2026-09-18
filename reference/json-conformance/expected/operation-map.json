@@ -1,52 +1,52 @@
 {
   "format_version": 1,
-  "protocol_version": 1,
-  "error_response": "SearchKernel.V1.Error",
+  "protocol_version": 2,
+  "error_response": "SearchKernel.V2.Error",
   "operations": [
     {
       "operation": "insert",
-      "request": "SearchKernel.V1.InsertRequest",
-      "response": "SearchKernel.V1.InsertResult"
+      "request": "SearchKernel.V2.InsertRequest",
+      "response": "SearchKernel.V2.InsertResult"
     },
     {
       "operation": "upsert",
-      "request": "SearchKernel.V1.UpsertRequest",
-      "response": "SearchKernel.V1.UpsertResult"
+      "request": "SearchKernel.V2.UpsertRequest",
+      "response": "SearchKernel.V2.UpsertResult"
     },
     {
       "operation": "patch",
-      "request": "SearchKernel.V1.PatchRequest",
-      "response": "SearchKernel.V1.PatchResult"
+      "request": "SearchKernel.V2.PatchRequest",
+      "response": "SearchKernel.V2.PatchResult"
     },
     {
       "operation": "delete",
-      "request": "SearchKernel.V1.DeleteRequest",
-      "response": "SearchKernel.V1.DeleteResult"
+      "request": "SearchKernel.V2.DeleteRequest",
+      "response": "SearchKernel.V2.DeleteResult"
     },
     {
       "operation": "get",
-      "request": "SearchKernel.V1.GetRequest",
-      "response": "SearchKernel.V1.GetResult"
+      "request": "SearchKernel.V2.GetRequest",
+      "response": "SearchKernel.V2.GetResult"
     },
     {
       "operation": "search",
-      "request": "SearchKernel.V1.SearchRequest",
-      "response": "SearchKernel.V1.SearchResult"
+      "request": "SearchKernel.V2.SearchRequest",
+      "response": "SearchKernel.V2.SearchResult"
     },
     {
       "operation": "analyze",
-      "request": "SearchKernel.V1.AnalyzeRequest",
-      "response": "SearchKernel.V1.AnalyzeResult"
+      "request": "SearchKernel.V2.AnalyzeRequest",
+      "response": "SearchKernel.V2.AnalyzeResult"
     },
     {
       "operation": "describe",
-      "request": "SearchKernel.V1.DescribeRequest",
-      "response": "SearchKernel.V1.DescribeResult"
+      "request": "SearchKernel.V2.DescribeRequest",
+      "response": "SearchKernel.V2.DescribeResult"
     },
     {
       "operation": "inspect_query",
-      "request": "SearchKernel.V1.InspectQueryRequest",
-      "response": "SearchKernel.V1.InspectQueryResult"
+      "request": "SearchKernel.V2.InspectQueryRequest",
+      "response": "SearchKernel.V2.InspectQueryResult"
     }
   ]
 }

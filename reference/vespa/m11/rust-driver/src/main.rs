@@ -5,7 +5,6 @@ use searchkernel_ir::{
     SearchRequestIr, SortDirection, SortIr, TypoPolicy,
 };
 use searchkernel_ir_adapter::VespaBackend;
-use searchkernel_protocol::v1 as api;
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
     ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
@@ -13,7 +12,6 @@ use searchkernel_vespa_engine::{
 };
 use std::collections::BTreeMap;
 use std::env;
-use std::ffi::CString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,25 +20,6 @@ use std::time::Duration;
 
 const SEED: u64 = 0x4d11_2026_0914;
 type AnyResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-#[allow(warnings)]
-mod ffi_wire {
-    pub mod search_kernel {
-        pub mod ffi {
-            pub mod v1 {
-                pub use searchkernel_protocol::v1::*;
-                mod request_payload_generated {
-                    include!("../../../../../core/crates/searchkernel-ffi/generated/search_kernel/ffi/v1/request_payload_generated.rs");
-                }
-                pub use request_payload_generated::*;
-                mod request_envelope_generated {
-                    include!("../../../../../core/crates/searchkernel-ffi/generated/search_kernel/ffi/v1/request_envelope_generated.rs");
-                }
-                pub use request_envelope_generated::*;
-            }
-        }
-    }
-}
 
 fn schema() -> Schema {
     Schema::new("typea")
@@ -349,335 +328,6 @@ fn adapter_torture(config: &Path, data: &Path) -> AnyResult<()> {
     let backend = Arc::try_unwrap(backend).map_err(|_| "IR adapter owners remain")?;
     Backend::close(Box::new(backend))?;
     eprintln!("adapter torture=crud search filter sort facets projection");
-    Ok(())
-}
-
-fn c5_definition() -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let title_name = builder.create_string("title");
-    let category_name = builder.create_string("category");
-    let qty_name = builder.create_string("qty");
-    let title = api::FieldDefinition::create(
-        &mut builder,
-        &api::FieldDefinitionArgs {
-            name: Some(title_name),
-            kind: api::FieldKind::Text,
-            cardinality: api::FieldCardinality::Single,
-            ..Default::default()
-        },
-    );
-    let category = api::FieldDefinition::create(
-        &mut builder,
-        &api::FieldDefinitionArgs {
-            name: Some(category_name),
-            kind: api::FieldKind::Keyword,
-            cardinality: api::FieldCardinality::Single,
-            ..Default::default()
-        },
-    );
-    let qty = api::FieldDefinition::create(
-        &mut builder,
-        &api::FieldDefinitionArgs {
-            name: Some(qty_name),
-            kind: api::FieldKind::Int64,
-            cardinality: api::FieldCardinality::Single,
-            ..Default::default()
-        },
-    );
-    let fields = builder.create_vector(&[title, category, qty]);
-    let name = builder.create_string("c5");
-    let definition = api::IndexDefinition::create(
-        &mut builder,
-        &api::IndexDefinitionArgs {
-            name: Some(name),
-            fields: Some(fields),
-            default_search_fields: None,
-        },
-    );
-    builder.finish(definition, None);
-    builder.finished_data().to_vec()
-}
-
-fn c5_string_value<'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    value: &str,
-) -> flatbuffers::WIPOffset<api::Value<'a>> {
-    let text = builder.create_string(value);
-    let scalar = api::StringValue::create(builder, &api::StringValueArgs { value: Some(text) });
-    api::Value::create(
-        builder,
-        &api::ValueArgs {
-            kind_type: api::ValueKind::StringValue,
-            kind: Some(scalar.as_union_value()),
-        },
-    )
-}
-
-fn c5_int_value<'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    value: i64,
-) -> flatbuffers::WIPOffset<api::Value<'a>> {
-    let scalar = api::Int64Value::create(builder, &api::Int64ValueArgs { value });
-    api::Value::create(
-        builder,
-        &api::ValueArgs {
-            kind_type: api::ValueKind::Int64Value,
-            kind: Some(scalar.as_union_value()),
-        },
-    )
-}
-
-fn c5_insert_inner(id: &str, category: &str, qty: i64) -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let id_offset = builder.create_string(id);
-    let title_value = c5_string_value(&mut builder, "c5 wireless torture");
-    let category_value = c5_string_value(&mut builder, category);
-    let qty_value = c5_int_value(&mut builder, qty);
-    let title_key = builder.create_string("title");
-    let category_key = builder.create_string("category");
-    let qty_key = builder.create_string("qty");
-    let entries = [
-        api::ValueEntry::create(
-            &mut builder,
-            &api::ValueEntryArgs {
-                key: Some(title_key),
-                value: Some(title_value),
-            },
-        ),
-        api::ValueEntry::create(
-            &mut builder,
-            &api::ValueEntryArgs {
-                key: Some(category_key),
-                value: Some(category_value),
-            },
-        ),
-        api::ValueEntry::create(
-            &mut builder,
-            &api::ValueEntryArgs {
-                key: Some(qty_key),
-                value: Some(qty_value),
-            },
-        ),
-    ];
-    let fields = builder.create_vector(&entries);
-    let document = api::Document::create(
-        &mut builder,
-        &api::DocumentArgs {
-            id: Some(id_offset),
-            fields: Some(fields),
-        },
-    );
-    let request = api::InsertRequest::create(
-        &mut builder,
-        &api::InsertRequestArgs {
-            document: Some(document),
-        },
-    );
-    builder.finish(request, None);
-    builder.finished_data().to_vec()
-}
-
-fn c5_inner(kind: u8, inner: &[u8]) -> Vec<u8> {
-    let root_offset = u32::from_le_bytes(inner[..4].try_into().expect("inner root")) as usize;
-    let mut copied = Vec::with_capacity(inner.len() + 4);
-    copied.resize(4, 0);
-    copied.extend_from_slice(inner);
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let inner_vector = builder.create_byte_string(&copied);
-    let payload_value = inner_vector.value() - 8 - root_offset as u32;
-    let payload = flatbuffers::WIPOffset::<flatbuffers::UnionWIPOffset>::new(payload_value);
-    let envelope = ffi_wire::search_kernel::ffi::v1::RequestEnvelope::create(
-        &mut builder,
-        &ffi_wire::search_kernel::ffi::v1::RequestEnvelopeArgs {
-            protocol_version: 1,
-            payload_type: ffi_wire::search_kernel::ffi::v1::RequestPayload(kind),
-            payload: Some(payload),
-        },
-    );
-    builder.finish(
-        envelope,
-        Some(ffi_wire::search_kernel::ffi::v1::REQUEST_ENVELOPE_IDENTIFIER),
-    );
-    builder.finished_data().to_vec()
-}
-
-fn c5_simple_inner(kind: u8, id: &str) -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let id_offset = builder.create_string(id);
-    if kind == 4 {
-        let root = api::DeleteRequest::create(
-            &mut builder,
-            &api::DeleteRequestArgs {
-                id: Some(id_offset),
-            },
-        );
-        builder.finish(root, None);
-    } else {
-        let root = api::GetRequest::create(
-            &mut builder,
-            &api::GetRequestArgs {
-                id: Some(id_offset),
-                projection: None,
-            },
-        );
-        builder.finish(root, None);
-    }
-    builder.finished_data().to_vec()
-}
-
-fn c5_search_inner() -> Vec<u8> {
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let query = builder.create_string("wireless");
-    let root = api::SearchRequest::create(
-        &mut builder,
-        &api::SearchRequestArgs {
-            query: Some(query),
-            ..Default::default()
-        },
-    );
-    builder.finish(root, None);
-    builder.finished_data().to_vec()
-}
-
-fn c5_call(handle: searchkernel_ffi::SkHandle, request: &[u8]) -> AnyResult<Vec<u8>> {
-    let mut data = std::ptr::null_mut();
-    let mut length = 0;
-    let mut allocation_id = 0;
-    // SAFETY: request and all output pointers remain valid for this call.
-    let status = unsafe {
-        searchkernel_ffi::sk_call(
-            handle,
-            request.as_ptr(),
-            request.len(),
-            &mut data,
-            &mut length,
-            &mut allocation_id,
-        )
-    };
-    if status != searchkernel_ffi::SK_STATUS_OK {
-        return Err(format!("production C5 status {status}").into());
-    }
-    if data.is_null() || length == 0 || allocation_id == 0 {
-        return Err("production C5 returned an invalid output triple".into());
-    }
-    // SAFETY: the successful C5 call owns a response buffer of `length` bytes.
-    let bytes = unsafe { std::slice::from_raw_parts(data, length).to_vec() };
-    // SAFETY: release the exact pointer/token pair returned by sk_call.
-    unsafe { searchkernel_ffi::sk_buffer_free(data, allocation_id) };
-    Ok(bytes)
-}
-
-fn c5_expect_status(
-    handle: searchkernel_ffi::SkHandle,
-    request: &[u8],
-    expected: u32,
-) -> AnyResult<()> {
-    let mut data = std::ptr::null_mut();
-    let mut length = 0;
-    let mut allocation_id = 0;
-    // SAFETY: request and all output pointers remain valid for this call.
-    let status = unsafe {
-        searchkernel_ffi::sk_call(
-            handle,
-            request.as_ptr(),
-            request.len(),
-            &mut data,
-            &mut length,
-            &mut allocation_id,
-        )
-    };
-    if status != expected || !data.is_null() || length != 0 || allocation_id != 0 {
-        return Err(format!("production C5 malformed status {status}, expected {expected}").into());
-    }
-    Ok(())
-}
-
-fn c5_torture(_config: &Path, root: &Path) -> AnyResult<()> {
-    if searchkernel_ffi::sk_abi_version() != searchkernel_ffi::SK_ABI_VERSION {
-        return Err("production C5 ABI version mismatch".into());
-    }
-    if root.exists() {
-        fs::remove_dir_all(root)?;
-    }
-    if let Some(parent) = root.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let definition = c5_definition();
-    let path = CString::new(root.to_string_lossy().as_bytes())?;
-    let mut handle = 0;
-    let mut error = vec![0_u8; 1024];
-    // SAFETY: all pointers refer to live, correctly sized buffers.
-    let status = unsafe {
-        searchkernel_ffi::sk_create(
-            path.as_ptr(),
-            definition.as_ptr(),
-            definition.len(),
-            &mut handle,
-            error.as_mut_ptr(),
-            error.len(),
-        )
-    };
-    if status != searchkernel_ffi::SK_STATUS_OK || handle == 0 {
-        return Err(format!("production C5 create status {status}").into());
-    }
-    let insert = c5_inner(1, &c5_insert_inner("c5-a", "audio", 7));
-    c5_call(handle, &insert)?;
-    c5_call(handle, &c5_inner(6, &c5_search_inner()))?;
-    c5_call(handle, &c5_inner(5, &c5_simple_inner(5, "c5-a")))?;
-    let mut callers = Vec::new();
-    for _ in 0..4 {
-        let request = c5_inner(6, &c5_search_inner());
-        callers.push(thread::spawn(move || -> AnyResult<()> {
-            for _ in 0..100 {
-                c5_call(handle, &request)?;
-            }
-            Ok(())
-        }));
-    }
-    for caller in callers {
-        caller.join().map_err(|_| "C5 caller panicked")??;
-    }
-    c5_call(handle, &c5_inner(4, &c5_simple_inner(4, "c5-a")))?;
-    c5_expect_status(handle, &[], searchkernel_ffi::SK_STATUS_INVALID_REQUEST)?;
-    c5_expect_status(
-        handle,
-        b"SKRQ\0\0\0\0",
-        searchkernel_ffi::SK_STATUS_INVALID_REQUEST,
-    )?;
-    // SAFETY: a live handle and a writable error buffer are supplied.
-    let close_status = searchkernel_ffi::sk_close(handle, error.as_mut_ptr(), error.len());
-    if close_status != searchkernel_ffi::SK_STATUS_OK {
-        return Err(format!("production C5 close status {close_status}").into());
-    }
-    c5_expect_status(
-        handle,
-        &c5_inner(6, &c5_search_inner()),
-        searchkernel_ffi::SK_STATUS_INVALID_HANDLE,
-    )?;
-    if searchkernel_ffi::sk_close(handle, error.as_mut_ptr(), error.len())
-        != searchkernel_ffi::SK_STATUS_INVALID_HANDLE
-    {
-        return Err("production C5 close was not idempotently rejected".into());
-    }
-    let mut reopened = 0;
-    // SAFETY: path is a valid NUL-terminated C string and output storage is valid.
-    let open_status = unsafe {
-        searchkernel_ffi::sk_open(
-            path.as_ptr(),
-            &mut reopened,
-            error.as_mut_ptr(),
-            error.len(),
-        )
-    };
-    if open_status != searchkernel_ffi::SK_STATUS_OK || reopened == 0 {
-        return Err(format!("production C5 reopen status {open_status}").into());
-    }
-    c5_call(reopened, &c5_inner(6, &c5_search_inner()))?;
-    let close_status = searchkernel_ffi::sk_close(reopened, error.as_mut_ptr(), error.len());
-    if close_status != searchkernel_ffi::SK_STATUS_OK {
-        return Err(format!("production C5 second close status {close_status}").into());
-    }
-    eprintln!("c5 torture=create open call insert search get delete reopen close");
     Ok(())
 }
 
@@ -1087,10 +737,6 @@ fn resource_snapshot(data: &Path) -> AnyResult<ResourceSnapshot> {
 }
 
 fn resources(config: &Path, data: &Path) -> AnyResult<()> {
-    let adapter_data = data.with_file_name("resources-adapter");
-    let c5_data = data.with_file_name("resources-c5");
-    adapter_torture(config, &adapter_data)?;
-    c5_torture(config, &c5_data)?;
     let engine = open(config, data)?;
     put(&engine, "resource", 1)?;
     search_ids(&engine, 1, 10)?;
@@ -1200,8 +846,7 @@ fn stress(config: &Path, data: &Path) -> AnyResult<()> {
 fn torture(config: &Path, root: &Path) -> AnyResult<()> {
     stress(config, &root.join("direct"))?;
     adapter_torture(config, &root.join("adapter"))?;
-    c5_torture(config, &root.join("c5"))?;
-    println!("torture seed={SEED} lanes=direct,searchkernel-ir-adapter,production-c5");
+    println!("torture seed={SEED} lanes=direct,searchkernel-ir-adapter");
     Ok(())
 }
 
@@ -1322,7 +967,6 @@ fn main() {
         "reopen" => reopen(&config, &data),
         "advanced" => advanced_direct(&config, &data),
         "adapter" => adapter_torture(&config, &data),
-        "c5" => c5_torture(&config, &data),
         "malformed" => malformed(&config, &data),
         "failures" => failures(&config, &data),
         "resources" => resources(&config, &data),
