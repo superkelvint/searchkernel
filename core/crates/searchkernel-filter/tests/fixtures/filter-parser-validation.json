@@ -1,0 +1,1495 @@
+{
+  "format_version": 1,
+  "contract": {
+    "description": "Frozen standalone syntax-parser verification corpus for Search Kernel filter expressions. No schema binding is exercised here.",
+    "span_unit": "utf8_byte_offset",
+    "span_interval": "[start,end)",
+    "identifier_regex": "[A-Za-z_][A-Za-z0-9_]*",
+    "parameter_regex": ":[A-Za-z_][A-Za-z0-9_]*",
+    "number_regex": "-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?",
+    "keywords_case_insensitive": true,
+    "logical_ast": "n_ary",
+    "parentheses": "no_group_node; widen contained expression outer span to include parentheses",
+    "in_single_parameter": "IN (:name) is InValues::Parameter; lists with commas are InValues::Values",
+    "numeric_semantics": "preserve exact source text; no numeric conversion in parser"
+  },
+  "limits": {
+    "expression_bytes": 65536,
+    "tokens": 16384,
+    "nesting_depth": 64,
+    "ast_nodes": 4096,
+    "in_values": 1024,
+    "parameter_references": 1024
+  },
+  "canonical_ast": {
+    "compare": {
+      "kind": "compare",
+      "span": [
+        "start",
+        "end"
+      ],
+      "field": {
+        "name": "fieldName",
+        "span": [
+          "start",
+          "end"
+        ]
+      },
+      "op": "eq|lt|lte|gt|gte",
+      "value": "canonical value object"
+    },
+    "in": {
+      "kind": "in",
+      "span": [
+        "start",
+        "end"
+      ],
+      "field": {
+        "name": "fieldName",
+        "span": [
+          "start",
+          "end"
+        ]
+      },
+      "values": "values-list or single-list-parameter object"
+    },
+    "and_or": {
+      "kind": "and|or",
+      "span": [
+        "start",
+        "end"
+      ],
+      "items": [
+        "canonical expression",
+        "..."
+      ]
+    },
+    "not": {
+      "kind": "not",
+      "span": [
+        "start",
+        "end"
+      ],
+      "expr": "canonical expression"
+    },
+    "values": {
+      "string": {
+        "kind": "string",
+        "value": "decoded string",
+        "span": [
+          "start",
+          "end"
+        ]
+      },
+      "number": {
+        "kind": "number",
+        "source": "exact literal source",
+        "span": [
+          "start",
+          "end"
+        ]
+      },
+      "boolean": {
+        "kind": "boolean",
+        "value": true,
+        "span": [
+          "start",
+          "end"
+        ]
+      },
+      "parameter": {
+        "kind": "parameter",
+        "name": "without colon",
+        "span": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  "generator_contract": {
+    "nested_parentheses": "source = '(' * depth + predicate + ')' * depth",
+    "or_chain": "source = ' OR '.join(f'f{i} = 1' for i in range(count))",
+    "in_list": "source = 'f IN (' + ', '.join('1' for _ in range(count)) + ')'",
+    "parameter_chain": "source = ' OR '.join(f'f{i} = :p{i}' for i in range(count))",
+    "repeat": "source = text repeated count times"
+  },
+  "cases": [
+    {
+      "id": "P001_simple_string_equality",
+      "source": "brand = 'Acme'",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            14
+          ],
+          "field": {
+            "name": "brand",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "eq",
+          "value": {
+            "kind": "string",
+            "value": "Acme",
+            "span": [
+              8,
+              14
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P002_boolean_equality",
+      "source": "in_stock = true",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            15
+          ],
+          "field": {
+            "name": "in_stock",
+            "span": [
+              0,
+              8
+            ]
+          },
+          "op": "eq",
+          "value": {
+            "kind": "boolean",
+            "value": true,
+            "span": [
+              11,
+              15
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P003_lt_numeric",
+      "source": "price < 100",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            11
+          ],
+          "field": {
+            "name": "price",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "lt",
+          "value": {
+            "kind": "number",
+            "source": "100",
+            "span": [
+              8,
+              11
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P004_lte_numeric",
+      "source": "price <= 100",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            12
+          ],
+          "field": {
+            "name": "price",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "lte",
+          "value": {
+            "kind": "number",
+            "source": "100",
+            "span": [
+              9,
+              12
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P005_gt_numeric",
+      "source": "rating > 3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            10
+          ],
+          "field": {
+            "name": "rating",
+            "span": [
+              0,
+              6
+            ]
+          },
+          "op": "gt",
+          "value": {
+            "kind": "number",
+            "source": "3",
+            "span": [
+              9,
+              10
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P006_gte_numeric",
+      "source": "rating >= 4",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            11
+          ],
+          "field": {
+            "name": "rating",
+            "span": [
+              0,
+              6
+            ]
+          },
+          "op": "gte",
+          "value": {
+            "kind": "number",
+            "source": "4",
+            "span": [
+              10,
+              11
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P007_and_binds_tighter_than_or",
+      "source": "A = 1 OR B = 2 AND C = 3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "or",
+          "span": [
+            0,
+            24
+          ],
+          "items": [
+            {
+              "kind": "compare",
+              "span": [
+                0,
+                5
+              ],
+              "field": {
+                "name": "A",
+                "span": [
+                  0,
+                  1
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "1",
+                "span": [
+                  4,
+                  5
+                ]
+              }
+            },
+            {
+              "kind": "and",
+              "span": [
+                9,
+                24
+              ],
+              "items": [
+                {
+                  "kind": "compare",
+                  "span": [
+                    9,
+                    14
+                  ],
+                  "field": {
+                    "name": "B",
+                    "span": [
+                      9,
+                      10
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "2",
+                    "span": [
+                      13,
+                      14
+                    ]
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "span": [
+                    19,
+                    24
+                  ],
+                  "field": {
+                    "name": "C",
+                    "span": [
+                      19,
+                      20
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "3",
+                    "span": [
+                      23,
+                      24
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "P008_parentheses_override_precedence",
+      "source": "(A = 1 OR B = 2) AND C = 3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "and",
+          "span": [
+            0,
+            26
+          ],
+          "items": [
+            {
+              "kind": "or",
+              "span": [
+                0,
+                16
+              ],
+              "items": [
+                {
+                  "kind": "compare",
+                  "span": [
+                    1,
+                    6
+                  ],
+                  "field": {
+                    "name": "A",
+                    "span": [
+                      1,
+                      2
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "1",
+                    "span": [
+                      5,
+                      6
+                    ]
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "span": [
+                    10,
+                    15
+                  ],
+                  "field": {
+                    "name": "B",
+                    "span": [
+                      10,
+                      11
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "2",
+                    "span": [
+                      14,
+                      15
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "compare",
+              "span": [
+                21,
+                26
+              ],
+              "field": {
+                "name": "C",
+                "span": [
+                  21,
+                  22
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "3",
+                "span": [
+                  25,
+                  26
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "P009_not_parenthesized",
+      "source": "NOT (brand = 'Budget')",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "not",
+          "span": [
+            0,
+            22
+          ],
+          "expr": {
+            "kind": "compare",
+            "span": [
+              4,
+              22
+            ],
+            "field": {
+              "name": "brand",
+              "span": [
+                5,
+                10
+              ]
+            },
+            "op": "eq",
+            "value": {
+              "kind": "string",
+              "value": "Budget",
+              "span": [
+                13,
+                21
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "P010_nested_not",
+      "source": "NOT NOT active = true",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "not",
+          "span": [
+            0,
+            21
+          ],
+          "expr": {
+            "kind": "not",
+            "span": [
+              4,
+              21
+            ],
+            "expr": {
+              "kind": "compare",
+              "span": [
+                8,
+                21
+              ],
+              "field": {
+                "name": "active",
+                "span": [
+                  8,
+                  14
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "boolean",
+                "value": true,
+                "span": [
+                  17,
+                  21
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "P011_keyword_in",
+      "source": "brand IN ('Acme', 'TrailCo', 'Contoso')",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "in",
+          "span": [
+            0,
+            39
+          ],
+          "field": {
+            "name": "brand",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "values": {
+            "kind": "values",
+            "items": [
+              {
+                "kind": "string",
+                "value": "Acme",
+                "span": [
+                  10,
+                  16
+                ]
+              },
+              {
+                "kind": "string",
+                "value": "TrailCo",
+                "span": [
+                  18,
+                  27
+                ]
+              },
+              {
+                "kind": "string",
+                "value": "Contoso",
+                "span": [
+                  29,
+                  38
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P012_integer_in",
+      "source": "rating IN (1, 2, 3)",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "in",
+          "span": [
+            0,
+            19
+          ],
+          "field": {
+            "name": "rating",
+            "span": [
+              0,
+              6
+            ]
+          },
+          "values": {
+            "kind": "values",
+            "items": [
+              {
+                "kind": "number",
+                "source": "1",
+                "span": [
+                  11,
+                  12
+                ]
+              },
+              {
+                "kind": "number",
+                "source": "2",
+                "span": [
+                  14,
+                  15
+                ]
+              },
+              {
+                "kind": "number",
+                "source": "3",
+                "span": [
+                  17,
+                  18
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P013_scalar_parameter",
+      "source": "price <= :max_price",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            19
+          ],
+          "field": {
+            "name": "price",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "lte",
+          "value": {
+            "kind": "parameter",
+            "name": "max_price",
+            "span": [
+              9,
+              19
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P014_list_parameter_in",
+      "source": "brand IN (:brands)",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "in",
+          "span": [
+            0,
+            18
+          ],
+          "field": {
+            "name": "brand",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "values": {
+            "kind": "parameter",
+            "name": "brands",
+            "span": [
+              10,
+              17
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P015_doubled_quote_string",
+      "source": "publisher = 'O''Reilly'",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            23
+          ],
+          "field": {
+            "name": "publisher",
+            "span": [
+              0,
+              9
+            ]
+          },
+          "op": "eq",
+          "value": {
+            "kind": "string",
+            "value": "O'Reilly",
+            "span": [
+              12,
+              23
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P016_negative_exponent_number_preserved",
+      "source": "price >= -1.25e+3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            17
+          ],
+          "field": {
+            "name": "price",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "gte",
+          "value": {
+            "kind": "number",
+            "source": "-1.25e+3",
+            "span": [
+              9,
+              17
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P017_utf8_string_uses_byte_spans",
+      "source": "brand = 'Café'",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            15
+          ],
+          "field": {
+            "name": "brand",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "eq",
+          "value": {
+            "kind": "string",
+            "value": "Café",
+            "span": [
+              8,
+              15
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P018_semantic_type_mismatch_is_parser_valid",
+      "source": "price <= true",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "compare",
+          "span": [
+            0,
+            13
+          ],
+          "field": {
+            "name": "price",
+            "span": [
+              0,
+              5
+            ]
+          },
+          "op": "lte",
+          "value": {
+            "kind": "boolean",
+            "value": true,
+            "span": [
+              9,
+              13
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P019_keywords_case_insensitive",
+      "source": "a = 1 and b = 2 Or c = 3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "or",
+          "span": [
+            0,
+            24
+          ],
+          "items": [
+            {
+              "kind": "and",
+              "span": [
+                0,
+                15
+              ],
+              "items": [
+                {
+                  "kind": "compare",
+                  "span": [
+                    0,
+                    5
+                  ],
+                  "field": {
+                    "name": "a",
+                    "span": [
+                      0,
+                      1
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "1",
+                    "span": [
+                      4,
+                      5
+                    ]
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "span": [
+                    10,
+                    15
+                  ],
+                  "field": {
+                    "name": "b",
+                    "span": [
+                      10,
+                      11
+                    ]
+                  },
+                  "op": "eq",
+                  "value": {
+                    "kind": "number",
+                    "source": "2",
+                    "span": [
+                      14,
+                      15
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "compare",
+              "span": [
+                19,
+                24
+              ],
+              "field": {
+                "name": "c",
+                "span": [
+                  19,
+                  20
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "3",
+                "span": [
+                  23,
+                  24
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "P020_mixed_in_value_list_with_scalar_parameter",
+      "source": "rating IN (1, :two, 3)",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "in",
+          "span": [
+            0,
+            22
+          ],
+          "field": {
+            "name": "rating",
+            "span": [
+              0,
+              6
+            ]
+          },
+          "values": {
+            "kind": "values",
+            "items": [
+              {
+                "kind": "number",
+                "source": "1",
+                "span": [
+                  11,
+                  12
+                ]
+              },
+              {
+                "kind": "parameter",
+                "name": "two",
+                "span": [
+                  14,
+                  18
+                ]
+              },
+              {
+                "kind": "number",
+                "source": "3",
+                "span": [
+                  20,
+                  21
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "P021_identifier_keyword_prefixes",
+      "source": "android = 1 AND origin = 2 AND inside = 3",
+      "expected": {
+        "ok": true,
+        "ast": {
+          "kind": "and",
+          "span": [
+            0,
+            41
+          ],
+          "items": [
+            {
+              "kind": "compare",
+              "span": [
+                0,
+                11
+              ],
+              "field": {
+                "name": "android",
+                "span": [
+                  0,
+                  7
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "1",
+                "span": [
+                  10,
+                  11
+                ]
+              }
+            },
+            {
+              "kind": "compare",
+              "span": [
+                16,
+                26
+              ],
+              "field": {
+                "name": "origin",
+                "span": [
+                  16,
+                  22
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "2",
+                "span": [
+                  25,
+                  26
+                ]
+              }
+            },
+            {
+              "kind": "compare",
+              "span": [
+                31,
+                41
+              ],
+              "field": {
+                "name": "inside",
+                "span": [
+                  31,
+                  37
+                ]
+              },
+              "op": "eq",
+              "value": {
+                "kind": "number",
+                "source": "3",
+                "span": [
+                  40,
+                  41
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "N001_empty_source",
+      "source": "",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            0,
+            0
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N002_whitespace_only",
+      "source": "   ",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            3,
+            3
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N003_double_equals",
+      "source": "brand == 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            6,
+            8
+          ],
+          "reason": "invalid_operator"
+        }
+      }
+    },
+    {
+      "id": "N004_not_equals_not_in_v1",
+      "source": "brand != 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            6,
+            8
+          ],
+          "reason": "invalid_operator"
+        }
+      }
+    },
+    {
+      "id": "N005_unclosed_string",
+      "source": "brand = 'Acme",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            8,
+            13
+          ],
+          "reason": "unclosed_string"
+        }
+      }
+    },
+    {
+      "id": "N006_unclosed_parenthesis",
+      "source": "(brand = 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            15,
+            15
+          ],
+          "reason": "expected_right_paren"
+        }
+      }
+    },
+    {
+      "id": "N007_dangling_and",
+      "source": "brand = 'Acme' AND",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            18,
+            18
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N008_dangling_or",
+      "source": "brand = 'Acme' OR",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            17,
+            17
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N009_leading_and",
+      "source": "AND brand = 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            0,
+            3
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N010_empty_in",
+      "source": "brand IN ()",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "empty_in",
+          "span": [
+            9,
+            11
+          ]
+        }
+      }
+    },
+    {
+      "id": "N011_trailing_comma_in",
+      "source": "brand IN ('Acme',)",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            17,
+            18
+          ],
+          "reason": "expected_in_value"
+        }
+      }
+    },
+    {
+      "id": "N012_double_comma_in",
+      "source": "brand IN ('Acme',, 'TrailCo')",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            17,
+            18
+          ],
+          "reason": "expected_in_value"
+        }
+      }
+    },
+    {
+      "id": "N013_in_requires_parentheses",
+      "source": "brand IN 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            9,
+            15
+          ],
+          "reason": "expected_left_paren"
+        }
+      }
+    },
+    {
+      "id": "N014_invalid_parameter_name",
+      "source": "price = :1bad",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            8,
+            9
+          ],
+          "reason": "invalid_parameter"
+        }
+      }
+    },
+    {
+      "id": "N015_bare_identifier_is_not_value",
+      "source": "brand = Acme",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            8,
+            12
+          ],
+          "reason": "expected_value"
+        }
+      }
+    },
+    {
+      "id": "N016_missing_operator",
+      "source": "brand 'Acme'",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            6,
+            12
+          ],
+          "reason": "expected_operator"
+        }
+      }
+    },
+    {
+      "id": "N017_trailing_identifier",
+      "source": "brand = 'Acme' foo",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            15,
+            18
+          ],
+          "reason": "unexpected_token"
+        }
+      }
+    },
+    {
+      "id": "N018_trailing_semicolon",
+      "source": "brand = 'Acme';",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            14,
+            15
+          ],
+          "reason": "unexpected_token"
+        }
+      }
+    },
+    {
+      "id": "N019_lone_not",
+      "source": "NOT",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            3,
+            3
+          ],
+          "reason": "expected_expression"
+        }
+      }
+    },
+    {
+      "id": "N020_extra_right_parenthesis",
+      "source": "brand = 'Acme')",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            14,
+            15
+          ],
+          "reason": "unexpected_token"
+        }
+      }
+    },
+    {
+      "id": "N021_missing_comma_in",
+      "source": "rating IN (1 :x)",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            13,
+            15
+          ],
+          "reason": "unexpected_token"
+        }
+      }
+    },
+    {
+      "id": "N022_plus_prefixed_number_not_supported",
+      "source": "price = +1",
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "syntax_error",
+          "span": [
+            8,
+            9
+          ],
+          "reason": "expected_value"
+        }
+      }
+    },
+    {
+      "id": "C001_expression_byte_limit",
+      "input": {
+        "generator": "repeat",
+        "text": " ",
+        "count": 65537
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "span": [
+            0,
+            65537
+          ],
+          "limit": "expression_bytes"
+        }
+      }
+    },
+    {
+      "id": "C002_nesting_depth_limit",
+      "input": {
+        "generator": "nested_parentheses",
+        "depth": 65,
+        "predicate": "a = 1"
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "limit": "nesting_depth"
+        }
+      }
+    },
+    {
+      "id": "C003_in_value_limit",
+      "input": {
+        "generator": "in_list",
+        "count": 1025
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "limit": "in_values"
+        }
+      }
+    },
+    {
+      "id": "C004_parameter_reference_limit",
+      "input": {
+        "generator": "parameter_chain",
+        "count": 1025
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "limit": "parameter_references"
+        }
+      }
+    },
+    {
+      "id": "C005_ast_node_limit",
+      "input": {
+        "generator": "or_chain",
+        "count": 4096
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "limit": "ast_nodes"
+        }
+      }
+    },
+    {
+      "id": "C006_token_limit",
+      "input": {
+        "generator": "or_chain",
+        "count": 4097
+      },
+      "expected": {
+        "ok": false,
+        "error": {
+          "kind": "expression_too_complex",
+          "limit": "tokens"
+        }
+      }
+    }
+  ]
+}

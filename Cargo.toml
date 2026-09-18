@@ -2,6 +2,7 @@
 members = [
     "core/crates/searchkernel-protocol",
     "core/crates/searchkernel-ir",
+    "core/crates/searchkernel-filter",
     "core/crates/searchkernel",
     "core/crates/searchkernel-vespa-bindings",
     "core/crates/searchkernel-vespa-engine",
