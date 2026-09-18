@@ -555,18 +555,11 @@ fn field_definition_offset<'a>(
 ) -> flatbuffers::WIPOffset<api::FieldDefinition<'a>> {
     let name = builder.create_string(field.name.as_str());
     let data_type = data_type_offset(builder, &field.data_type);
-    // Indexing-script-only fields have no product-level capability settings in
-    // the canonical V2 form.  Their resolved IR capabilities are defaults, so
-    // emitting them back as explicit booleans would make the next API→IR pass
-    // (correctly) diagnose a contradictory typed/script representation.
-    let script_only = field.indexing_script.is_some()
-        && field.analyzer.is_none()
-        && field.matching.is_none()
-        && field.index.is_none()
-        && field.attribute.is_none()
-        && field.summary.is_none()
-        && field.properties.is_empty()
-        && field.struct_fields.is_empty();
+    // An indexing script owns the field's resolved capabilities in the
+    // canonical V2 form.  Long-tail properties and nested struct-field
+    // configuration are independent metadata and must not force inferred
+    // capability booleans back into the wire representation.
+    let script_only = field.indexing_script.is_some();
     let stored = (!script_only).then(|| api::OptionalBool::new(field.capabilities.stored));
     let searchable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.searchable));
     let filterable = (!script_only).then(|| api::OptionalBool::new(field.capabilities.filterable));
@@ -3639,6 +3632,84 @@ fn indexing_script_only_field_round_trips_through_v2_without_typed_capabilities(
         crate::index_definition_to_ir(flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap())
             .unwrap();
     assert_eq!(first, second);
+}
+
+#[cfg(test)]
+#[test]
+fn indexing_script_with_unrelated_metadata_round_trips_losslessly() {
+    fn round_trip(include_properties: bool, include_struct_fields: bool) {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let name = builder.create_string("derived");
+        let primitive = api::PrimitiveDataType::create(
+            &mut builder,
+            &api::PrimitiveDataTypeArgs {
+                kind: api::PrimitiveDataTypeKind::String,
+            },
+        );
+        let data_type = api::DataType::create(
+            &mut builder,
+            &api::DataTypeArgs {
+                kind_type: api::DataTypeKind::PrimitiveDataType,
+                kind: Some(primitive.as_union_value()),
+            },
+        );
+        let indexing_script = builder.create_string("input title | attribute(derived)");
+        let properties = include_properties.then(|| {
+            request_value_entries_offset(
+                &mut builder,
+                &std::collections::BTreeMap::from([(
+                    "some.unrelated.setting".to_owned(),
+                    ir::RequestValueIr::String("preserve".to_owned()),
+                )]),
+            )
+            .expect("property entry")
+        });
+        let struct_fields = include_struct_fields.then(|| {
+            let path = builder.create_string("nested");
+            let field = api::StructFieldConfig::create(
+                &mut builder,
+                &api::StructFieldConfigArgs {
+                    path: Some(path),
+                    ..Default::default()
+                },
+            );
+            builder.create_vector(&[field])
+        });
+        let field = api::FieldDefinition::create(
+            &mut builder,
+            &api::FieldDefinitionArgs {
+                name: Some(name),
+                data_type: Some(data_type),
+                indexing_script: Some(indexing_script),
+                properties,
+                struct_fields,
+                ..Default::default()
+            },
+        );
+        let fields = builder.create_vector(&[field]);
+        let definition = api::IndexDefinition::create(
+            &mut builder,
+            &api::IndexDefinitionArgs {
+                fields: Some(fields),
+                ..Default::default()
+            },
+        );
+        builder.finish(definition, None);
+
+        let first = crate::index_definition_to_ir(
+            flatbuffers::root::<api::IndexDefinition>(builder.finished_data()).unwrap(),
+        )
+        .unwrap();
+        let bytes = index_definition_ir_to_api(&first);
+        let second = crate::index_definition_to_ir(
+            flatbuffers::root::<api::IndexDefinition>(&bytes).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(first, second);
+    }
+
+    round_trip(true, false);
+    round_trip(false, true);
 }
 
 #[cfg(test)]

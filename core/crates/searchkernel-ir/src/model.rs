@@ -367,6 +367,11 @@ impl FieldIr {
         self.summary = config;
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_matching_config(&mut self, config: Option<MatchingConfigIr>) {
+        self.matching = config;
+    }
+
     pub fn name(&self) -> &FieldName {
         &self.name
     }

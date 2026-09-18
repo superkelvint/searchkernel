@@ -195,6 +195,16 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 "summary.enabled conflicts with the resolved stored capability",
             ));
         }
+        if field
+            .matching()
+            .is_some_and(|value| value.mode == searchkernel_ir::MatchingModeIr::Word)
+        {
+            return Err(PortableError::unsupported(
+                "matching_mode_not_supported",
+                Some(format!("{field_path}.matching.mode")),
+                "the current native schema has no word-matching representation",
+            ));
+        }
         if capabilities.searchable() && !matches!(field.kind(), searchkernel_ir::FieldKind::Text) {
             return Err(PortableError::unsupported(
                 "unsupported_field_capability",
@@ -243,7 +253,6 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                         searchkernel_ir::MatchingModeIr::Unspecified
                             | searchkernel_ir::MatchingModeIr::Text
                             | searchkernel_ir::MatchingModeIr::Exact
-                            | searchkernel_ir::MatchingModeIr::Word
                     )
             })
             || field
@@ -1199,8 +1208,9 @@ mod tests {
         FieldKind, FieldName, FieldValueIr, GroupingAggregationIr, GroupingAllIr,
         GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
         HighlightingIr, IndexConfigIr, IndexDefinitionIr, IndexName, LanguageHint,
-        MissingPlacement, PrefixPolicy, PrimitiveDataTypeIr, QueryIr, RangeIr, RankingPolicyIr,
-        ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
+        MatchingConfigIr, MatchingModeIr, MissingPlacement, PrefixPolicy, PrimitiveDataTypeIr,
+        QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
+        SortDirection, SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -1514,6 +1524,32 @@ mod tests {
         .unwrap();
         let error = validate_index_definition(&definition).expect_err("summary contradiction");
         assert_eq!(error.details[0].code, "invalid_capability");
+    }
+
+    #[test]
+    fn word_matching_is_rejected_instead_of_narrowed_to_exact() {
+        let mut title = FieldIr::new(
+            field("title"),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            None,
+            FieldCapabilities::new(true, true, false, false, false),
+        );
+        title.set_matching_config(Some(MatchingConfigIr {
+            mode: MatchingModeIr::Word,
+            options: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![title],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .unwrap();
+        let error = validate_index_definition(&definition).expect_err("word matching rejected");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "matching_mode_not_supported");
     }
 
     #[test]
