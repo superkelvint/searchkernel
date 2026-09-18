@@ -681,17 +681,9 @@ impl Index {
                     })
                     .collect(),
                 facets: normalized
-                    .facets()
+                    .grouping()
                     .iter()
-                    .map(|facet| {
-                        let value = Facet::new(facet.field().as_str()).limit(facet.limit());
-                        value.sort(match facet.sort() {
-                            searchkernel_ir::FacetSort::CountDesc => FacetSort::CountDesc,
-                            searchkernel_ir::FacetSort::CountAsc => FacetSort::CountAsc,
-                            searchkernel_ir::FacetSort::ValueAsc => FacetSort::ValueAsc,
-                            searchkernel_ir::FacetSort::ValueDesc => FacetSort::ValueDesc,
-                        })
-                    })
+                    .filter_map(facet_from_grouping)
                     .collect(),
                 ranking: match normalized.ranking() {
                     searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => {
@@ -766,6 +758,51 @@ impl Index {
             Error::infrastructure(format!("invalid generated get request: {error}"))
         })
     }
+}
+
+fn facet_from_grouping(grouping: &searchkernel_ir::GroupingRequestIr) -> Option<Facet> {
+    use searchkernel_ir::{GroupingExpressionIr as Expr, GroupingOperationIr as Op};
+    let field = match grouping.root.operations.first()? {
+        Op::Group(Expr::Attribute(field)) => field,
+        _ => return None,
+    };
+    let each = match grouping.root.operations.get(1)? {
+        Op::Each(each) => each,
+        _ => return None,
+    };
+    let limit = each
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Op::Max(Some(limit)) => Some(*limit),
+            _ => None,
+        })?;
+    let order = each
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Op::Order(expressions) => expressions.first(),
+            _ => None,
+        })?;
+    let sort = match order {
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Aggregation(value) if matches!(value.as_ref(), searchkernel_ir::GroupingAggregationIr::Count)) => {
+            FacetSort::CountDesc
+        }
+        Expr::Aggregation(value)
+            if matches!(
+                value.as_ref(),
+                searchkernel_ir::GroupingAggregationIr::Count
+            ) =>
+        {
+            FacetSort::CountAsc
+        }
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Attribute(_)) => {
+            FacetSort::ValueDesc
+        }
+        Expr::Attribute(_) => FacetSort::ValueAsc,
+        _ => return None,
+    };
+    Some(Facet::new(field).limit(limit).sort(sort))
 }
 
 fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {

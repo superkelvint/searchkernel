@@ -292,7 +292,6 @@ mod tests {
             Vec::new(),
             None,
             Vec::new(),
-            Vec::new(),
             crate::RankingPolicyIr::DefaultRelevanceV1,
             10,
             0,

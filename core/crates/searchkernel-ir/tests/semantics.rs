@@ -241,6 +241,164 @@ fn v2_structured_filter_sort_and_ranking_convert_to_ir() {
 }
 
 #[test]
+fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
+    let context = index_context();
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let source = builder.create_string("select * from sources * where true");
+    let yql = api::YqlQuery::create(
+        &mut builder,
+        &api::YqlQueryArgs {
+            source: Some(source),
+            parameters: None,
+        },
+    );
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::YqlQuery,
+            source: Some(yql.as_union_value()),
+        },
+    );
+    let root = api::GroupingAllOperation::create(
+        &mut builder,
+        &api::GroupingAllOperationArgs {
+            operations: None,
+            label: None,
+        },
+    );
+    let structured = api::StructuredGroupingSource::create(
+        &mut builder,
+        &api::StructuredGroupingSourceArgs { root: Some(root) },
+    );
+    let continuation = builder.create_string("next-page");
+    let continuations = builder.create_vector(&[continuation]);
+    let grouping = api::GroupingRequest::create(
+        &mut builder,
+        &api::GroupingRequestArgs {
+            source_type: api::GroupingSourceKind::StructuredGroupingSource,
+            source: Some(structured.as_union_value()),
+            continuations: Some(continuations),
+        },
+    );
+    let grouping = builder.create_vector(&[grouping]);
+    let rank_key = builder.create_string("rank.foo");
+    let rank_value = builder.create_string("bar");
+    let rank_property = api::StringEntry::create(
+        &mut builder,
+        &api::StringEntryArgs {
+            key: Some(rank_key),
+            value: Some(rank_value),
+        },
+    );
+    let rank_properties = builder.create_vector(&[rank_property]);
+    let profile = builder.create_string("custom-profile");
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            properties: Some(rank_properties),
+        },
+    );
+    let input_name = builder.create_string("query(vec)");
+    let expression = builder.create_string("embed(model,@q)");
+    let input = api::ExpressionQueryInput::create(
+        &mut builder,
+        &api::ExpressionQueryInputArgs {
+            expression: Some(expression),
+        },
+    );
+    let input = api::QueryInput::create(
+        &mut builder,
+        &api::QueryInputArgs {
+            name: Some(input_name),
+            input_type: api::QueryInputKind::ExpressionQueryInput,
+            input: Some(input.as_union_value()),
+        },
+    );
+    let inputs = builder.create_vector(&[input]);
+    let language = builder.create_string("en-US");
+    let default_index = builder.create_string("title");
+    let query_model = api::QueryModel::create(
+        &mut builder,
+        &api::QueryModelArgs {
+            language: Some(language),
+            default_index: Some(default_index),
+            ..Default::default()
+        },
+    );
+    let summary = builder.create_string("short");
+    let presentation = api::PresentationRequest::create(
+        &mut builder,
+        &api::PresentationRequestArgs {
+            summary: Some(summary),
+            ..Default::default()
+        },
+    );
+    let property_key = builder.create_string("trace.level");
+    let property_value = standalone_value(&mut builder, "3");
+    let property = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(property_key),
+            value: Some(property_value),
+        },
+    );
+    let properties = builder.create_vector(&[property]);
+    let query_profile = builder.create_string("profile-a");
+    let search_chain = builder.create_string("chain-a");
+    let limit = api::OptionalUInt32::new(3);
+    let offset = api::OptionalUInt32::new(4);
+    let timeout = api::OptionalUInt64::new(50);
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            grouping: Some(grouping),
+            ranking: Some(ranking),
+            inputs: Some(inputs),
+            limit: Some(&limit),
+            offset: Some(&offset),
+            timeout_ms: Some(&timeout),
+            query_model: Some(query_model),
+            presentation: Some(presentation),
+            properties: Some(properties),
+            query_profile: Some(query_profile),
+            search_chain: Some(search_chain),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request =
+        searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+            .expect("valid V2 search request");
+
+    let converted = context.search_to_ir(request).expect("all controls resolve");
+    assert!(matches!(converted.query(), QueryIr::Yql { .. }));
+    assert_eq!(converted.grouping().len(), 1);
+    assert_eq!(converted.grouping()[0].continuations, ["next-page"]);
+    assert_eq!(converted.ranking_request().profile, "custom-profile");
+    assert!(
+        matches!(converted.inputs().get("query(vec)"), Some(QueryInputIr::Expression(value)) if value == "embed(model,@q)")
+    );
+    assert_eq!(
+        converted.query_model().default_index.as_deref(),
+        Some("title")
+    );
+    assert_eq!(converted.presentation().summary.as_deref(), Some("short"));
+    assert!(
+        matches!(converted.properties().get("trace.level"), Some(RequestValueIr::String(value)) if value == "3")
+    );
+    assert_eq!(converted.query_profile(), Some("profile-a"));
+    assert_eq!(converted.search_chain(), Some("chain-a"));
+    assert_eq!(converted.limit(), 3);
+    assert_eq!(converted.offset(), 4);
+    assert_eq!(
+        converted.timeout(),
+        Some(std::time::Duration::from_millis(50))
+    );
+}
+
+#[test]
 fn v2_search_result_encoding_uses_result_tree_and_relevance() {
     let result = SearchResult {
         hits: vec![Hit {

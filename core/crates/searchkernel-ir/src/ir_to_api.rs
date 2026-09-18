@@ -295,28 +295,26 @@ fn search_request_offset<'a>(
         .map(|value| sort_offset(builder, value))
         .collect::<Vec<_>>();
     let sort = builder.create_vector(&sorts);
-    let ranking = ranking_offset(builder, request.ranking);
+    let ranking = ranking_request_offset(builder, &request.ranking_request);
     let limit = api::OptionalUInt32::new(request.limit);
     let offset = api::OptionalUInt32::new(request.offset);
-    let projection = projection_offset(builder, &request.projection);
-    let highlighting = match &request.highlighting {
-        ir::HighlightingIr::Disabled => None,
-        ir::HighlightingIr::Requested { fields } => Some(highlighting_offset(builder, fields)),
-    };
-    let presentation = api::PresentationRequest::create(
-        builder,
-        &api::PresentationRequestArgs {
-            summary: None,
-            fields: Some(projection),
-            highlighting,
-            format: None,
-            bolding: None,
-            timing: None,
-        },
-    );
+    let presentation =
+        presentation_offset(builder, request).expect("presentation is explicit in normalized IR");
     let timeout = request
         .timeout
         .map(|value| api::OptionalUInt64::new(value.as_millis() as u64));
+    let inputs = query_inputs_offset(builder, &request.inputs);
+    let query_model = query_model_offset(builder, &request.query_model);
+    let properties = request_value_entries_offset(builder, &request.properties);
+    let query_profile = request
+        .query_profile
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let search_chain = request
+        .search_chain
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let grouping = grouping_offsets(builder, &request.grouping);
 
     api::SearchRequest::create(
         builder,
@@ -329,13 +327,13 @@ fn search_request_offset<'a>(
             limit: Some(&limit),
             offset: Some(&offset),
             timeout_ms: timeout.as_ref(),
-            grouping: None,
-            inputs: None,
-            query_model: None,
+            grouping,
+            inputs,
+            query_model,
             presentation: Some(presentation),
-            properties: None,
-            query_profile: None,
-            search_chain: None,
+            properties,
+            query_profile,
+            search_chain,
         },
     )
 }
@@ -356,12 +354,25 @@ fn resolved_request_offset<'a>(
         .map(|value| resolved_sort_offset(builder, value))
         .collect::<Vec<_>>();
     let sort = builder.create_vector(&sorts);
-    let ranking = ranking_offset(builder, request.ranking);
+    let ranking = ranking_request_offset(builder, &request.ranking_request);
     let limit = api::OptionalUInt32::new(request.limit);
     let offset = api::OptionalUInt32::new(request.offset);
     let timeout = request
         .timeout
         .map(|value| api::OptionalUInt64::new(value.as_millis() as u64));
+    let inputs = query_inputs_offset(builder, &request.inputs);
+    let query_model = query_model_offset(builder, &request.query_model);
+    let presentation = presentation_offset(builder, request);
+    let properties = request_value_entries_offset(builder, &request.properties);
+    let query_profile = request
+        .query_profile
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let search_chain = request
+        .search_chain
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let grouping = resolved_grouping_offsets(builder, &request.grouping);
     api::ResolvedSearchRequest::create(
         builder,
         &api::ResolvedSearchRequestArgs {
@@ -369,17 +380,17 @@ fn resolved_request_offset<'a>(
             search_fields: Some(search_fields),
             filters,
             sort: Some(sort),
-            grouping: None,
+            grouping,
             ranking: Some(ranking),
-            inputs: None,
+            inputs,
             limit: limit.value(),
             offset: offset.value(),
             timeout_ms: timeout.as_ref(),
-            query_model: None,
-            presentation: None,
-            properties: None,
-            query_profile: None,
-            search_chain: None,
+            query_model,
+            presentation,
+            properties,
+            query_profile,
+            search_chain,
         },
     )
 }
@@ -407,6 +418,1299 @@ fn search_fields_as_vector<'a>(
     builder.create_vector(&offsets)
 }
 
+fn ranking_request_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    ranking: &ir::RankingRequestIr,
+) -> flatbuffers::WIPOffset<api::RankingRequest<'a>> {
+    let properties = (!ranking.properties.is_empty()).then(|| {
+        let entries = ranking
+            .properties
+            .iter()
+            .map(|(key, value)| {
+                let key = builder.create_string(key);
+                let value = builder.create_string(value);
+                api::StringEntry::create(
+                    builder,
+                    &api::StringEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&entries)
+    });
+    let profile = builder.create_string(&ranking.profile);
+    api::RankingRequest::create(
+        builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            properties,
+        },
+    )
+}
+
+fn request_value_entries_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &std::collections::BTreeMap<String, ir::RequestValueIr>,
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::ValueEntry<'a>>>,
+    >,
+> {
+    (!values.is_empty()).then(|| {
+        let entries = values
+            .iter()
+            .map(|(key, value)| {
+                let key = builder.create_string(key);
+                let value = request_value_offset(builder, value);
+                api::ValueEntry::create(
+                    builder,
+                    &api::ValueEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&entries)
+    })
+}
+
+fn request_value_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::RequestValueIr,
+) -> flatbuffers::WIPOffset<api::Value<'a>> {
+    let (kind_type, kind) = match value {
+        ir::RequestValueIr::Null => (
+            api::ValueKind::NullValueValue,
+            api::NullValueValue::create(
+                builder,
+                &api::NullValueValueArgs {
+                    value: api::NullValue::Null,
+                },
+            )
+            .as_union_value(),
+        ),
+        ir::RequestValueIr::Bool(value) => (
+            api::ValueKind::BoolValue,
+            api::BoolValue::create(builder, &api::BoolValueArgs { value: *value }).as_union_value(),
+        ),
+        ir::RequestValueIr::Int64(value) => (
+            api::ValueKind::Int64Value,
+            api::Int64Value::create(builder, &api::Int64ValueArgs { value: *value })
+                .as_union_value(),
+        ),
+        ir::RequestValueIr::UInt64(value) => (
+            api::ValueKind::UInt64Value,
+            api::UInt64Value::create(builder, &api::UInt64ValueArgs { value: *value })
+                .as_union_value(),
+        ),
+        ir::RequestValueIr::Float64(value) => (
+            api::ValueKind::Float64Value,
+            api::Float64Value::create(builder, &api::Float64ValueArgs { value: *value })
+                .as_union_value(),
+        ),
+        ir::RequestValueIr::NonFiniteFloat(value) => {
+            let kind = match value {
+                ir::RequestNonFiniteFloatIr::NaN => api::NonFiniteFloatKind::NaN,
+                ir::RequestNonFiniteFloatIr::PositiveInfinity => {
+                    api::NonFiniteFloatKind::PositiveInfinity
+                }
+                ir::RequestNonFiniteFloatIr::NegativeInfinity => {
+                    api::NonFiniteFloatKind::NegativeInfinity
+                }
+            };
+            (
+                api::ValueKind::NonFiniteFloatValue,
+                api::NonFiniteFloatValue::create(builder, &api::NonFiniteFloatValueArgs { kind })
+                    .as_union_value(),
+            )
+        }
+        ir::RequestValueIr::String(value) => {
+            let value = builder.create_string(value);
+            (
+                api::ValueKind::StringValue,
+                api::StringValue::create(builder, &api::StringValueArgs { value: Some(value) })
+                    .as_union_value(),
+            )
+        }
+        ir::RequestValueIr::Bytes(value) => {
+            let value = builder.create_vector(value);
+            (
+                api::ValueKind::BytesValue,
+                api::BytesValue::create(builder, &api::BytesValueArgs { value: Some(value) })
+                    .as_union_value(),
+            )
+        }
+        ir::RequestValueIr::List(values) => {
+            let values = values
+                .iter()
+                .map(|value| request_value_offset(builder, value))
+                .collect::<Vec<_>>();
+            let values = builder.create_vector(&values);
+            (
+                api::ValueKind::ValueList,
+                api::ValueList::create(
+                    builder,
+                    &api::ValueListArgs {
+                        values: Some(values),
+                    },
+                )
+                .as_union_value(),
+            )
+        }
+        ir::RequestValueIr::Object(values) => {
+            let entries = values
+                .iter()
+                .map(|(key, value)| {
+                    let key = builder.create_string(key);
+                    let value = request_value_offset(builder, value);
+                    api::ValueEntry::create(
+                        builder,
+                        &api::ValueEntryArgs {
+                            key: Some(key),
+                            value: Some(value),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let values = builder.create_vector(&entries);
+            (
+                api::ValueKind::ValueObject,
+                api::ValueObject::create(
+                    builder,
+                    &api::ValueObjectArgs {
+                        fields: Some(values),
+                    },
+                )
+                .as_union_value(),
+            )
+        }
+        ir::RequestValueIr::Tensor(value) => (
+            api::ValueKind::TensorValue,
+            request_tensor_offset(builder, value).as_union_value(),
+        ),
+    };
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type,
+            kind: Some(kind),
+        },
+    )
+}
+
+fn tensor_address_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    address: &std::collections::BTreeMap<String, String>,
+) -> flatbuffers::WIPOffset<
+    flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'a>>>,
+> {
+    let values = address
+        .iter()
+        .map(|(dimension, label)| {
+            let dimension = builder.create_string(dimension);
+            let label = builder.create_string(label);
+            api::TensorAddressEntry::create(
+                builder,
+                &api::TensorAddressEntryArgs {
+                    dimension: Some(dimension),
+                    label: Some(label),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    builder.create_vector(&values)
+}
+
+fn request_tensor_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    tensor: &ir::RequestTensorIr,
+) -> flatbuffers::WIPOffset<api::TensorValue<'a>> {
+    let type_spec = builder.create_string(&tensor.type_spec);
+    let (payload_type, payload) = match &tensor.payload {
+        ir::RequestTensorPayloadIr::Dense(values) => {
+            let values = builder.create_vector(values);
+            let value = api::DenseTensorValues::create(
+                builder,
+                &api::DenseTensorValuesArgs {
+                    values: Some(values),
+                },
+            );
+            (
+                api::TensorPayloadKind::DenseTensorValues,
+                value.as_union_value(),
+            )
+        }
+        ir::RequestTensorPayloadIr::Sparse(cells) => {
+            let cells = cells
+                .iter()
+                .map(|cell| {
+                    let address = tensor_address_offset(builder, &cell.address);
+                    api::TensorCell::create(
+                        builder,
+                        &api::TensorCellArgs {
+                            address: Some(address),
+                            value: cell.value,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let cells = builder.create_vector(&cells);
+            let value = api::SparseTensorCells::create(
+                builder,
+                &api::SparseTensorCellsArgs { cells: Some(cells) },
+            );
+            (
+                api::TensorPayloadKind::SparseTensorCells,
+                value.as_union_value(),
+            )
+        }
+        ir::RequestTensorPayloadIr::Mixed(blocks) => {
+            let blocks = blocks
+                .iter()
+                .map(|block| {
+                    let address = tensor_address_offset(builder, &block.address);
+                    let values = builder.create_vector(&block.values);
+                    api::TensorBlock::create(
+                        builder,
+                        &api::TensorBlockArgs {
+                            address: Some(address),
+                            values: Some(values),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let blocks = builder.create_vector(&blocks);
+            let value = api::MixedTensorBlocks::create(
+                builder,
+                &api::MixedTensorBlocksArgs {
+                    blocks: Some(blocks),
+                },
+            );
+            (
+                api::TensorPayloadKind::MixedTensorBlocks,
+                value.as_union_value(),
+            )
+        }
+    };
+    api::TensorValue::create(
+        builder,
+        &api::TensorValueArgs {
+            type_spec: Some(type_spec),
+            payload_type,
+            payload: Some(payload),
+        },
+    )
+}
+
+fn query_inputs_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    inputs: &std::collections::BTreeMap<String, ir::QueryInputIr>,
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::QueryInput<'a>>>,
+    >,
+> {
+    (!inputs.is_empty()).then(|| {
+        let values = inputs
+            .iter()
+            .map(|(name, input)| {
+                let name = builder.create_string(name);
+                let (input_type, input) = match input {
+                    ir::QueryInputIr::Literal(value) => {
+                        let value = request_value_offset(builder, value);
+                        let value = api::LiteralQueryInput::create(
+                            builder,
+                            &api::LiteralQueryInputArgs { value: Some(value) },
+                        );
+                        (
+                            api::QueryInputKind::LiteralQueryInput,
+                            value.as_union_value(),
+                        )
+                    }
+                    ir::QueryInputIr::Expression(value) => {
+                        let value = builder.create_string(value);
+                        let value = api::ExpressionQueryInput::create(
+                            builder,
+                            &api::ExpressionQueryInputArgs {
+                                expression: Some(value),
+                            },
+                        );
+                        (
+                            api::QueryInputKind::ExpressionQueryInput,
+                            value.as_union_value(),
+                        )
+                    }
+                };
+                api::QueryInput::create(
+                    builder,
+                    &api::QueryInputArgs {
+                        name: Some(name),
+                        input_type,
+                        input: Some(input),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    })
+}
+
+fn query_model_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    model: &ir::QueryModelIr,
+) -> Option<flatbuffers::WIPOffset<api::QueryModel<'a>>> {
+    let populated = model.query_string.is_some()
+        || model.default_index.is_some()
+        || model.encoding.is_some()
+        || model.filter.is_some()
+        || model.language.is_some()
+        || model.locale.is_some()
+        || model.query_type.is_some()
+        || !model.sources.is_empty()
+        || !model.restrict.is_empty()
+        || model.search_path.is_some()
+        || model.search_group.is_some();
+    populated.then(|| {
+        let query_string = model
+            .query_string
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let default_index = model
+            .default_index
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let encoding = model
+            .encoding
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let filter = model
+            .filter
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let language = model
+            .language
+            .as_ref()
+            .map(|value| builder.create_string(value.as_str()));
+        let locale = model
+            .locale
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let source_offsets = model
+            .sources
+            .iter()
+            .map(|value| builder.create_string(value))
+            .collect::<Vec<_>>();
+        let sources = (!source_offsets.is_empty()).then(|| builder.create_vector(&source_offsets));
+        let restrict_offsets = model
+            .restrict
+            .iter()
+            .map(|value| builder.create_string(value))
+            .collect::<Vec<_>>();
+        let restrict =
+            (!restrict_offsets.is_empty()).then(|| builder.create_vector(&restrict_offsets));
+        let search_path = model
+            .search_path
+            .as_ref()
+            .map(|value| builder.create_string(value));
+        let query_type = model.query_type.as_ref().map(|value| {
+            let composite = value
+                .composite
+                .as_ref()
+                .map(|value| builder.create_string(value));
+            let tokenization = value
+                .tokenization
+                .as_ref()
+                .map(|value| builder.create_string(value));
+            let syntax = value
+                .syntax
+                .as_ref()
+                .map(|value| builder.create_string(value));
+            let profile = value
+                .profile
+                .as_ref()
+                .map(|value| builder.create_string(value));
+            let is_yql_default = value.is_yql_default.map(api::OptionalBool::new);
+            api::QueryModelType::create(
+                builder,
+                &api::QueryModelTypeArgs {
+                    composite,
+                    tokenization,
+                    syntax,
+                    profile,
+                    is_yql_default: is_yql_default.as_ref(),
+                },
+            )
+        });
+        let group = model.search_group.map(api::OptionalUInt32::new);
+        api::QueryModel::create(
+            builder,
+            &api::QueryModelArgs {
+                query_string,
+                default_index,
+                encoding,
+                filter,
+                language,
+                locale,
+                type_: query_type,
+                sources,
+                restrict,
+                search_path,
+                search_group: group.as_ref(),
+            },
+        )
+    })
+}
+
+fn presentation_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    request: &ir::SearchRequestIr,
+) -> Option<flatbuffers::WIPOffset<api::PresentationRequest<'a>>> {
+    let projection = projection_offset(builder, &request.projection);
+    let highlighting = match &request.highlighting {
+        ir::HighlightingIr::Disabled => None,
+        ir::HighlightingIr::Requested { fields } => Some(highlighting_offset(builder, fields)),
+    };
+    let summary = request
+        .presentation
+        .summary
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let format = request
+        .presentation
+        .format
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    let bolding = request.presentation.bolding.map(api::OptionalBool::new);
+    let timing = request.presentation.timing.map(api::OptionalBool::new);
+    Some(api::PresentationRequest::create(
+        builder,
+        &api::PresentationRequestArgs {
+            summary,
+            fields: Some(projection),
+            highlighting,
+            format,
+            bolding: bolding.as_ref(),
+            timing: timing.as_ref(),
+        },
+    ))
+}
+
+fn grouping_offsets<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    grouping: &[ir::GroupingRequestIr],
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingRequest<'a>>>,
+    >,
+> {
+    (!grouping.is_empty()).then(|| {
+        let values = grouping
+            .iter()
+            .map(|value| grouping_request_offset(builder, value))
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    })
+}
+
+fn resolved_grouping_offsets<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    grouping: &[ir::GroupingRequestIr],
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::ResolvedGroupingRequest<'a>>>,
+    >,
+> {
+    (!grouping.is_empty()).then(|| {
+        let values = grouping
+            .iter()
+            .map(|value| {
+                let root = grouping_all_offset(builder, &value.root);
+                let continuations = (!value.continuations.is_empty()).then(|| {
+                    let values = value
+                        .continuations
+                        .iter()
+                        .map(|value| builder.create_string(value))
+                        .collect::<Vec<_>>();
+                    builder.create_vector(&values)
+                });
+                api::ResolvedGroupingRequest::create(
+                    builder,
+                    &api::ResolvedGroupingRequestArgs {
+                        root: Some(root),
+                        continuations,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    })
+}
+
+fn grouping_request_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingRequestIr,
+) -> flatbuffers::WIPOffset<api::GroupingRequest<'a>> {
+    let root = grouping_all_offset(builder, &value.root);
+    let source = api::StructuredGroupingSource::create(
+        builder,
+        &api::StructuredGroupingSourceArgs { root: Some(root) },
+    );
+    let continuations = (!value.continuations.is_empty()).then(|| {
+        let values = value
+            .continuations
+            .iter()
+            .map(|value| builder.create_string(value))
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    });
+    api::GroupingRequest::create(
+        builder,
+        &api::GroupingRequestArgs {
+            source_type: api::GroupingSourceKind::StructuredGroupingSource,
+            source: Some(source.as_union_value()),
+            continuations,
+        },
+    )
+}
+
+fn grouping_all_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingAllIr,
+) -> flatbuffers::WIPOffset<api::GroupingAllOperation<'a>> {
+    let operations = value
+        .operations
+        .iter()
+        .map(|value| grouping_operation_offset(builder, value))
+        .collect::<Vec<_>>();
+    let operations = (!operations.is_empty()).then(|| builder.create_vector(&operations));
+    let label = value
+        .label
+        .as_ref()
+        .map(|value| builder.create_string(value));
+    api::GroupingAllOperation::create(
+        builder,
+        &api::GroupingAllOperationArgs { operations, label },
+    )
+}
+
+fn grouping_operation_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingOperationIr,
+) -> flatbuffers::WIPOffset<api::GroupingOperation<'a>> {
+    let (operation_type, operation) = match value {
+        ir::GroupingOperationIr::All(value) => {
+            let value = grouping_all_offset(builder, value);
+            (
+                api::GroupingOperationKind::GroupingAllOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Each(value) => {
+            let operations = value
+                .operations
+                .iter()
+                .map(|value| grouping_operation_offset(builder, value))
+                .collect::<Vec<_>>();
+            let operations = (!operations.is_empty()).then(|| builder.create_vector(&operations));
+            let label = value
+                .label
+                .as_ref()
+                .map(|value| builder.create_string(value));
+            let value = api::GroupingEachOperation::create(
+                builder,
+                &api::GroupingEachOperationArgs { operations, label },
+            );
+            (
+                api::GroupingOperationKind::GroupingEachOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Group(value) => {
+            let expression = grouping_expression_offset(builder, value);
+            let value = api::GroupingGroupOperation::create(
+                builder,
+                &api::GroupingGroupOperationArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingGroupOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Output(values) => {
+            let values = values
+                .iter()
+                .map(|value| {
+                    let label = value
+                        .label
+                        .as_ref()
+                        .map(|value| builder.create_string(value));
+                    let expression = grouping_expression_offset(builder, &value.expression);
+                    api::GroupingOutput::create(
+                        builder,
+                        &api::GroupingOutputArgs {
+                            label,
+                            expression: Some(expression),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let outputs = (!values.is_empty()).then(|| builder.create_vector(&values));
+            let value = api::GroupingOutputOperation::create(
+                builder,
+                &api::GroupingOutputOperationArgs { outputs },
+            );
+            (
+                api::GroupingOperationKind::GroupingOutputOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Max(value) => {
+            let (value_type, value) = match value {
+                Some(value) => {
+                    let value = api::FiniteGroupingMax::create(
+                        builder,
+                        &api::FiniteGroupingMaxArgs { value: *value },
+                    );
+                    (
+                        api::GroupingMaxKind::FiniteGroupingMax,
+                        value.as_union_value(),
+                    )
+                }
+                None => {
+                    let value =
+                        api::InfiniteGroupingMax::create(builder, &api::InfiniteGroupingMaxArgs {});
+                    (
+                        api::GroupingMaxKind::InfiniteGroupingMax,
+                        value.as_union_value(),
+                    )
+                }
+            };
+            let value = api::GroupingMaxOperation::create(
+                builder,
+                &api::GroupingMaxOperationArgs {
+                    value_type,
+                    value: Some(value),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingMaxOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Precision(number) => {
+            let value = api::GroupingPrecisionOperation::create(
+                builder,
+                &api::GroupingPrecisionOperationArgs { value: *number },
+            );
+            (
+                api::GroupingOperationKind::GroupingPrecisionOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Order(values) => {
+            let values = values
+                .iter()
+                .map(|value| {
+                    let expression = grouping_expression_offset(builder, value);
+                    api::GroupingOrderExpr::create(
+                        builder,
+                        &api::GroupingOrderExprArgs {
+                            expression: Some(expression),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let expressions = (!values.is_empty()).then(|| builder.create_vector(&values));
+            let value = api::GroupingOrderOperation::create(
+                builder,
+                &api::GroupingOrderOperationArgs { expressions },
+            );
+            (
+                api::GroupingOperationKind::GroupingOrderOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Alias { name, expression } => {
+            let name = builder.create_string(name);
+            let expression = grouping_expression_offset(builder, expression);
+            let value = api::GroupingAliasOperation::create(
+                builder,
+                &api::GroupingAliasOperationArgs {
+                    name: Some(name),
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingAliasOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Filter(value) => {
+            let filter = grouping_filter_offset(builder, value);
+            let value = api::GroupingFilterOperation::create(
+                builder,
+                &api::GroupingFilterOperationArgs {
+                    filter: Some(filter),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingFilterOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Keep(value) => {
+            let filter = grouping_filter_offset(builder, value);
+            let value = api::GroupingKeepOperation::create(
+                builder,
+                &api::GroupingKeepOperationArgs {
+                    filter: Some(filter),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingKeepOperation,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingOperationIr::Where(value) => {
+            let expression = grouping_expression_offset(builder, value);
+            let value = api::GroupingWhereOperation::create(
+                builder,
+                &api::GroupingWhereOperationArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingWhereOperation,
+                value.as_union_value(),
+            )
+        }
+    };
+    api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type,
+            operation: Some(operation),
+        },
+    )
+}
+
+fn grouping_expression_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingExpressionIr,
+) -> flatbuffers::WIPOffset<api::GroupingExpression<'a>> {
+    let (expr_type, expr) = match value {
+        ir::GroupingExpressionIr::Attribute(value) => {
+            let field = builder.create_string(value);
+            let value = api::GroupingAttributeExpression::create(
+                builder,
+                &api::GroupingAttributeExpressionArgs { field: Some(field) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAttributeExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Literal(value) => {
+            let value = request_value_offset(builder, value);
+            let value = api::GroupingLiteralExpression::create(
+                builder,
+                &api::GroupingLiteralExpressionArgs { value: Some(value) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingLiteralExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Function { name, arguments } => {
+            let name = builder.create_string(name);
+            let arguments = arguments
+                .iter()
+                .map(|value| grouping_expression_offset(builder, value))
+                .collect::<Vec<_>>();
+            let arguments = (!arguments.is_empty()).then(|| builder.create_vector(&arguments));
+            let value = api::GroupingFunctionExpression::create(
+                builder,
+                &api::GroupingFunctionExpressionArgs {
+                    name: Some(name),
+                    arguments,
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingFunctionExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Positive(value) => {
+            let expression = grouping_expression_offset(builder, value);
+            let value = api::GroupingUnaryExpression::create(
+                builder,
+                &api::GroupingUnaryExpressionArgs {
+                    op: api::GroupingUnaryOperator::Positive,
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingUnaryExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Negative(value) => {
+            let expression = grouping_expression_offset(builder, value);
+            let value = api::GroupingUnaryExpression::create(
+                builder,
+                &api::GroupingUnaryExpressionArgs {
+                    op: api::GroupingUnaryOperator::Negative,
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingUnaryExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Aggregation(value) => match value.as_ref() {
+            ir::GroupingAggregationIr::Count => {
+                let aggregation =
+                    api::CountAggregation::create(builder, &api::CountAggregationArgs {});
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::CountAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Sum(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::SumAggregation::create(
+                    builder,
+                    &api::SumAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::SumAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Avg(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::AvgAggregation::create(
+                    builder,
+                    &api::AvgAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::AvgAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Min(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::MinAggregation::create(
+                    builder,
+                    &api::MinAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::MinAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Max(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::MaxAggregation::create(
+                    builder,
+                    &api::MaxAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::MaxAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Xor(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::XorAggregation::create(
+                    builder,
+                    &api::XorAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::XorAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::StdDev(expression) => {
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::StdDevAggregation::create(
+                    builder,
+                    &api::StdDevAggregationArgs {
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::StdDevAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Quantiles {
+                quantiles,
+                expression,
+            } => {
+                let quantiles = builder.create_vector(quantiles);
+                let expression = grouping_expression_offset(builder, expression);
+                let aggregation = api::QuantilesAggregation::create(
+                    builder,
+                    &api::QuantilesAggregationArgs {
+                        quantiles: Some(quantiles),
+                        expression: Some(expression),
+                    },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::QuantilesAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+            ir::GroupingAggregationIr::Summary(summary) => {
+                let summary = summary.as_ref().map(|value| builder.create_string(value));
+                let aggregation = api::SummaryAggregation::create(
+                    builder,
+                    &api::SummaryAggregationArgs { summary },
+                );
+                let value = api::GroupingAggregationExpression::create(
+                    builder,
+                    &api::GroupingAggregationExpressionArgs {
+                        aggregation_type: api::AggregationKind::SummaryAggregation,
+                        aggregation: Some(aggregation.as_union_value()),
+                    },
+                );
+                (
+                    api::GroupingExpressionKind::GroupingAggregationExpression,
+                    value.as_union_value(),
+                )
+            }
+        },
+        ir::GroupingExpressionIr::Binary {
+            operator,
+            left,
+            right,
+        } => {
+            let op = match operator {
+                ir::GroupingBinaryOperatorIr::Add => api::GroupingBinaryOperator::Add,
+                ir::GroupingBinaryOperatorIr::Subtract => api::GroupingBinaryOperator::Subtract,
+                ir::GroupingBinaryOperatorIr::Multiply => api::GroupingBinaryOperator::Multiply,
+                ir::GroupingBinaryOperatorIr::Divide => api::GroupingBinaryOperator::Divide,
+                ir::GroupingBinaryOperatorIr::Modulo => api::GroupingBinaryOperator::Modulo,
+            };
+            let left = grouping_expression_offset(builder, left);
+            let right = grouping_expression_offset(builder, right);
+            let value = api::GroupingBinaryExpression::create(
+                builder,
+                &api::GroupingBinaryExpressionArgs {
+                    op,
+                    left: Some(left),
+                    right: Some(right),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingBinaryExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Alias(name) => {
+            let name = builder.create_string(name);
+            let value = api::GroupingAliasReference::create(
+                builder,
+                &api::GroupingAliasReferenceArgs { name: Some(name) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAliasReference,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Member { base, member } => {
+            let base = grouping_expression_offset(builder, base);
+            let member = builder.create_string(member);
+            let value = api::GroupingMemberExpression::create(
+                builder,
+                &api::GroupingMemberExpressionArgs {
+                    base: Some(base),
+                    member: Some(member),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingMemberExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::MapLookup { base, key } => {
+            let base = grouping_expression_offset(builder, base);
+            let key = grouping_expression_offset(builder, key);
+            let value = api::GroupingMapLookupExpression::create(
+                builder,
+                &api::GroupingMapLookupExpressionArgs {
+                    base: Some(base),
+                    key: Some(key),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingMapLookupExpression,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingExpressionIr::Bucket(value) => {
+            let lower = grouping_range_bound_offset(builder, &value.lower);
+            let upper = grouping_range_bound_offset(builder, &value.upper);
+            let include_lower = api::OptionalBool::new(value.include_lower);
+            let include_upper = api::OptionalBool::new(value.include_upper);
+            let value = api::GroupingBucketExpression::create(
+                builder,
+                &api::GroupingBucketExpressionArgs {
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: Some(&include_lower),
+                    include_upper: Some(&include_upper),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingBucketExpression,
+                value.as_union_value(),
+            )
+        }
+    };
+    api::GroupingExpression::create(
+        builder,
+        &api::GroupingExpressionArgs {
+            expr_type,
+            expr: Some(expr),
+        },
+    )
+}
+
+fn grouping_filter_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingFilterIr,
+) -> flatbuffers::WIPOffset<api::GroupingFilterExpr<'a>> {
+    let (expr_type, expr) = match value {
+        ir::GroupingFilterIr::And(values) => {
+            let values = values
+                .iter()
+                .map(|value| grouping_filter_offset(builder, value))
+                .collect::<Vec<_>>();
+            let clauses = (!values.is_empty()).then(|| builder.create_vector(&values));
+            let value =
+                api::GroupingFilterAnd::create(builder, &api::GroupingFilterAndArgs { clauses });
+            (
+                api::GroupingFilterExprKind::GroupingFilterAnd,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingFilterIr::Or(values) => {
+            let values = values
+                .iter()
+                .map(|value| grouping_filter_offset(builder, value))
+                .collect::<Vec<_>>();
+            let clauses = (!values.is_empty()).then(|| builder.create_vector(&values));
+            let value =
+                api::GroupingFilterOr::create(builder, &api::GroupingFilterOrArgs { clauses });
+            (
+                api::GroupingFilterExprKind::GroupingFilterOr,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingFilterIr::Not(value) => {
+            let clause = grouping_filter_offset(builder, value);
+            let value = api::GroupingFilterNot::create(
+                builder,
+                &api::GroupingFilterNotArgs {
+                    clause: Some(clause),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterNot,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingFilterIr::Regex {
+            expression,
+            pattern,
+        } => {
+            let expression = grouping_expression_offset(builder, expression);
+            let pattern = builder.create_string(pattern);
+            let value = api::GroupingFilterRegex::create(
+                builder,
+                &api::GroupingFilterRegexArgs {
+                    expression: Some(expression),
+                    pattern: Some(pattern),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterRegex,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingFilterIr::Range {
+            expression,
+            lower,
+            upper,
+            include_lower,
+            include_upper,
+        } => {
+            let expression = grouping_expression_offset(builder, expression);
+            let lower = grouping_expression_offset(builder, lower);
+            let upper = grouping_expression_offset(builder, upper);
+            let include_lower = api::OptionalBool::new(*include_lower);
+            let include_upper = api::OptionalBool::new(*include_upper);
+            let value = api::GroupingFilterRange::create(
+                builder,
+                &api::GroupingFilterRangeArgs {
+                    expression: Some(expression),
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: Some(&include_lower),
+                    include_upper: Some(&include_upper),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterRange,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingFilterIr::IsTrue(expression) => {
+            let expression = grouping_expression_offset(builder, expression);
+            let value = api::GroupingFilterIsTrue::create(
+                builder,
+                &api::GroupingFilterIsTrueArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterIsTrue,
+                value.as_union_value(),
+            )
+        }
+    };
+    api::GroupingFilterExpr::create(
+        builder,
+        &api::GroupingFilterExprArgs {
+            expr_type,
+            expr: Some(expr),
+        },
+    )
+}
+
+fn grouping_range_bound_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    value: &ir::GroupingRangeBoundIr,
+) -> flatbuffers::WIPOffset<api::RangeBound<'a>> {
+    let (bound_type, bound) = match value {
+        ir::GroupingRangeBoundIr::Finite(value) => {
+            let value = request_value_offset(builder, value);
+            let value = api::FiniteRangeBound::create(
+                builder,
+                &api::FiniteRangeBoundArgs { value: Some(value) },
+            );
+            (
+                api::RangeBoundKind::FiniteRangeBound,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingRangeBoundIr::NegativeInfinity => {
+            let value =
+                api::NegativeInfinityBound::create(builder, &api::NegativeInfinityBoundArgs {});
+            (
+                api::RangeBoundKind::NegativeInfinityBound,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingRangeBoundIr::PositiveInfinity => {
+            let value =
+                api::PositiveInfinityBound::create(builder, &api::PositiveInfinityBoundArgs {});
+            (
+                api::RangeBoundKind::PositiveInfinityBound,
+                value.as_union_value(),
+            )
+        }
+        ir::GroupingRangeBoundIr::Unbounded => {
+            let value = api::UnboundedRangeBound::create(builder, &api::UnboundedRangeBoundArgs {});
+            (
+                api::RangeBoundKind::UnboundedRangeBound,
+                value.as_union_value(),
+            )
+        }
+    };
+    api::RangeBound::create(
+        builder,
+        &api::RangeBoundArgs {
+            bound_type,
+            bound: Some(bound),
+        },
+    )
+}
+
 fn query_source_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     query: &ir::QueryIr,
@@ -426,6 +1730,18 @@ fn query_source_offset<'a>(
         ir::QueryIr::MatchAll => {
             let value = api::MatchAllQuery::create(builder, &api::MatchAllQueryArgs {});
             (api::QuerySourceKind::MatchAllQuery, value.as_union_value())
+        }
+        ir::QueryIr::Yql { source, parameters } => {
+            let source = builder.create_string(source);
+            let parameters = request_value_entries_offset(builder, parameters);
+            let value = api::YqlQuery::create(
+                builder,
+                &api::YqlQueryArgs {
+                    source: Some(source),
+                    parameters,
+                },
+            );
+            (api::QuerySourceKind::YqlQuery, value.as_union_value())
         }
         _ => {
             let value = query_expr_offset(builder, query);
@@ -569,7 +1885,7 @@ fn query_expr_offset<'a>(
             );
             (api::QueryExprKind::QueryNot, value.as_union_value())
         }
-        ir::QueryIr::MatchAll | ir::QueryIr::Text(_) => unreachable!(),
+        ir::QueryIr::MatchAll | ir::QueryIr::Text(_) | ir::QueryIr::Yql { .. } => unreachable!(),
     };
     api::QueryExpr::create(
         builder,
@@ -862,23 +2178,6 @@ fn resolved_sort_offset<'a>(
     )
 }
 
-fn ranking_offset<'a>(
-    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ranking: ir::RankingPolicyIr,
-) -> flatbuffers::WIPOffset<api::RankingRequest<'a>> {
-    let profile = builder.create_string(match ranking {
-        ir::RankingPolicyIr::DefaultRelevanceV1 => "default",
-        ir::RankingPolicyIr::Bm25 => "bm25",
-    });
-    api::RankingRequest::create(
-        builder,
-        &api::RankingRequestArgs {
-            profile: Some(profile),
-            properties: None,
-        },
-    )
-}
-
 pub fn insert_result_to_api(result: &ir::InsertResult) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let root = insert_result_offset(&mut builder, result);
@@ -1157,6 +2456,141 @@ fn value_offset<'a>(
             kind: Some(kind),
         },
     )
+}
+
+#[cfg(test)]
+#[test]
+fn inspect_query_encoding_preserves_tensors_empty_objects_query_type_and_nested_grouping() {
+    use std::collections::BTreeMap;
+
+    let mut inputs = BTreeMap::new();
+    inputs.insert(
+        "dense".to_owned(),
+        ir::QueryInputIr::Literal(ir::RequestValueIr::Tensor(ir::RequestTensorIr {
+            type_spec: "tensor(x[2])".to_owned(),
+            payload: ir::RequestTensorPayloadIr::Dense(vec![1.0, 2.0]),
+        })),
+    );
+    inputs.insert(
+        "sparse".to_owned(),
+        ir::QueryInputIr::Literal(ir::RequestValueIr::Tensor(ir::RequestTensorIr {
+            type_spec: "tensor(label{})".to_owned(),
+            payload: ir::RequestTensorPayloadIr::Sparse(vec![ir::RequestTensorCellIr {
+                address: BTreeMap::from([("label".to_owned(), "a".to_owned())]),
+                value: 3.0,
+            }]),
+        })),
+    );
+    inputs.insert(
+        "mixed".to_owned(),
+        ir::QueryInputIr::Literal(ir::RequestValueIr::Tensor(ir::RequestTensorIr {
+            type_spec: "tensor(label{},x[2])".to_owned(),
+            payload: ir::RequestTensorPayloadIr::Mixed(vec![ir::RequestTensorBlockIr {
+                address: BTreeMap::from([("label".to_owned(), "a".to_owned())]),
+                values: vec![4.0, 5.0],
+            }]),
+        })),
+    );
+    let request = ir::SearchRequestIr {
+        query: ir::QueryIr::MatchAll,
+        search_fields: Vec::new(),
+        filter: None,
+        sort: Vec::new(),
+        grouping: vec![ir::GroupingRequestIr {
+            root: ir::GroupingAllIr {
+                operations: vec![ir::GroupingOperationIr::All(ir::GroupingAllIr {
+                    operations: vec![ir::GroupingOperationIr::Group(
+                        ir::GroupingExpressionIr::Attribute("brand".to_owned()),
+                    )],
+                    label: Some("nested".to_owned()),
+                })],
+                label: None,
+            },
+            continuations: Vec::new(),
+        }],
+        ranking: ir::RankingPolicyIr::DefaultRelevanceV1,
+        ranking_request: ir::RankingRequestIr {
+            profile: "default".to_owned(),
+            properties: BTreeMap::new(),
+        },
+        inputs,
+        limit: 20,
+        offset: 0,
+        projection: ir::ProjectionIr::new(Vec::new()),
+        highlighting: ir::HighlightingIr::Disabled,
+        language: None,
+        query_model: ir::QueryModelIr {
+            query_type: Some(ir::QueryModelTypeIr {
+                composite: Some("rank".to_owned()),
+                tokenization: Some("word".to_owned()),
+                syntax: Some("advanced".to_owned()),
+                profile: Some("default".to_owned()),
+                is_yql_default: Some(false),
+            }),
+            ..Default::default()
+        },
+        presentation: ir::PresentationIr::default(),
+        properties: BTreeMap::from([(
+            "empty".to_owned(),
+            ir::RequestValueIr::Object(BTreeMap::new()),
+        )]),
+        query_profile: None,
+        search_chain: None,
+        timeout: None,
+        prefix_policy: ir::PrefixPolicy::Disabled,
+        typo_policy: ir::TypoPolicy::Disabled,
+    };
+
+    let bytes = inspect_query_result_to_api(&request);
+    let result =
+        flatbuffers::root::<api::InspectQueryResult>(&bytes).expect("valid inspect query result");
+    let resolved = result.resolved_request().expect("resolved request");
+    let inputs = resolved.inputs().expect("query inputs");
+    assert_eq!(inputs.len(), 3);
+    assert_eq!(
+        inputs
+            .get(0)
+            .input_as_literal_query_input()
+            .unwrap()
+            .value()
+            .unwrap()
+            .kind_type(),
+        api::ValueKind::TensorValue
+    );
+    for (index, expected) in [
+        api::TensorPayloadKind::DenseTensorValues,
+        api::TensorPayloadKind::MixedTensorBlocks,
+        api::TensorPayloadKind::SparseTensorCells,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            inputs
+                .get(index)
+                .input_as_literal_query_input()
+                .unwrap()
+                .value()
+                .unwrap()
+                .kind_as_tensor_value()
+                .unwrap()
+                .payload_type(),
+            expected
+        );
+    }
+    let properties = resolved.properties().expect("properties");
+    let empty = properties
+        .get(0)
+        .value()
+        .unwrap()
+        .kind_as_value_object()
+        .unwrap();
+    assert_eq!(empty.fields().map(|fields| fields.len()), Some(0));
+    let query_type = resolved.query_model().unwrap().type_().unwrap();
+    assert_eq!(query_type.composite(), Some("rank"));
+    let grouping = resolved.grouping().expect("grouping");
+    let nested = grouping.get(0).root().unwrap().operations().unwrap().get(0);
+    assert!(nested.operation_as_grouping_all_operation().is_some());
 }
 
 fn document_offset<'a>(

@@ -2,9 +2,9 @@
 
 use searchkernel_ir::{
     analyzer_to_ir, api, error_to_api, field_to_ir, index_definition_to_ir, AnalyzeRequestIr,
-    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FacetIr, FacetSort,
-    FieldCardinality, FieldIr, FieldKind, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr,
-    IndexContext, IndexDefinitionIr, IndexName, InsertRequestIr, LanguageHint, MissingPlacement,
+    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldCardinality,
+    FieldIr, FieldKind, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext,
+    IndexDefinitionIr, IndexName, InsertRequestIr, LanguageHint, MissingPlacement,
     PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryIr, RangeIr,
     RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
     UpsertRequestIr, WriteRequestIr, WriteRequestRef,
@@ -841,7 +841,7 @@ fn inspect_json(value: &SearchRequestIr) -> JsonValue {
             json!({"fields":fields.iter().map(|field|field.as_str()).collect::<Vec<_>>()})
         }
     };
-    json!({"resolved_request":{"query":query,"search_fields":{"fields":value.search_fields().iter().map(|field|json!({"field":field.field().as_str(),"weight":field.weight().get()})).collect::<Vec<_>>()},"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.facets().iter().map(facet_json).collect::<Vec<_>>(),"ranking":ranking,"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting,"language":value.language().map(LanguageHint::as_str)}})
+    json!({"resolved_request":{"query":query,"search_fields":{"fields":value.search_fields().iter().map(|field|json!({"field":field.field().as_str(),"weight":field.weight().get()})).collect::<Vec<_>>()},"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.grouping().iter().filter_map(facet_json).collect::<Vec<_>>(),"ranking":ranking,"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting,"language":value.language().map(LanguageHint::as_str)}})
 }
 fn document_json(value: &DocumentIr) -> JsonValue {
     let fields: Map<String, JsonValue> = value
@@ -921,13 +921,49 @@ fn query_json(value: &QueryIr) -> JsonValue {
         QueryIr::And(v) => json!({"and":v.iter().map(query_json).collect::<Vec<_>>() }),
         QueryIr::Or(v) => json!({"or":v.iter().map(query_json).collect::<Vec<_>>() }),
         QueryIr::Not(v) => json!({"not":query_json(v)}),
+        QueryIr::Yql { source, parameters } => {
+            json!({"yql":{"source":source,"parameter_count":parameters.len()}})
+        }
     }
 }
 fn sort_json(value: &SortIr) -> JsonValue {
     json!({"field":value.field().as_str(),"direction":match value.direction() {SortDirection::Asc=>"asc",SortDirection::Desc=>"desc"},"missing":match value.missing() {MissingPlacement::First=>"first",MissingPlacement::Last=>"last"}})
 }
-fn facet_json(value: &FacetIr) -> JsonValue {
-    json!({"field":value.field().as_str(),"limit":value.limit(),"sort":match value.sort() {FacetSort::CountDesc=>"count_desc",FacetSort::CountAsc=>"count_asc",FacetSort::ValueAsc=>"value_asc",FacetSort::ValueDesc=>"value_desc"}})
+fn facet_json(value: &searchkernel_ir::GroupingRequestIr) -> Option<JsonValue> {
+    use searchkernel_ir::GroupingOperationIr as Operation;
+    use searchkernel_ir::{GroupingAggregationIr as Aggregation, GroupingExpressionIr as Expr};
+
+    let [Operation::Group(Expr::Attribute(field)), Operation::Each(each)] =
+        value.root.operations.as_slice()
+    else {
+        return None;
+    };
+    let limit = each
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Operation::Max(Some(limit)) => Some(*limit),
+            _ => None,
+        })?;
+    let order = each
+        .operations
+        .iter()
+        .find_map(|operation| match operation {
+            Operation::Order(values) => values.first(),
+            _ => None,
+        })?;
+    let sort = match order {
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count)) => {
+            "count_desc"
+        }
+        Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count) => "count_asc",
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Attribute(value) if value == field) => {
+            "value_desc"
+        }
+        Expr::Attribute(value) if value == field => "value_asc",
+        _ => return None,
+    };
+    Some(json!({"field":field,"limit":limit,"sort":sort}))
 }
 
 fn facet_from_json(
@@ -993,7 +1029,7 @@ fn analyze_json(value: &AnalyzeRequestIr) -> JsonValue {
     json!({"analyzer":analyzer_name(Some(value.analyzer())),"text":value.text(),"language":value.language().map(LanguageHint::as_str)})
 }
 fn search_json(value: &SearchRequestIr) -> JsonValue {
-    json!({"query":query_json(value.query()),"search_fields":search_fields_json(value.search_fields()),"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.facets().iter().map(facet_json).collect::<Vec<_>>(),"ranking":ranking_name(value.ranking()),"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting_json(value.highlighting()),"language":value.language().map(LanguageHint::as_str),"prefix_policy":"disabled","typo_policy":"disabled"})
+    json!({"query":query_json(value.query()),"search_fields":search_fields_json(value.search_fields()),"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.grouping().iter().filter_map(facet_json).collect::<Vec<_>>(),"ranking":ranking_name(value.ranking()),"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting_json(value.highlighting()),"language":value.language().map(LanguageHint::as_str),"prefix_policy":"disabled","typo_policy":"disabled"})
 }
 
 struct WireBuilder {

@@ -5,10 +5,15 @@ use crate::filter_expression::{bind_filter_expression_with_references, FilterPar
 use crate::model::{
     AnalyzeRequestIr, AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentId,
     DocumentIr, FieldCapabilities, FieldCardinality, FieldIr, FieldKind, FieldName, FieldValueIr,
-    FilterIr, GetRequestIr, HighlightingIr, IndexDefinitionIr, IndexName, InsertRequestIr,
-    LanguageHint, MissingPlacement, PatchOperationIr, PatchRequestIr, PrefixPolicy, ProjectionIr,
-    QueryIr, RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
-    SearchRequestIr, SortDirection, SortIr, TypoPolicy, UpsertRequestIr, Value, WriteRequestIr,
+    FilterIr, GetRequestIr, GroupingAggregationIr, GroupingAllIr, GroupingBinaryOperatorIr,
+    GroupingBucketIr, GroupingExpressionIr, GroupingFilterIr, GroupingOperationIr,
+    GroupingOutputIr, GroupingRangeBoundIr, GroupingRequestIr, HighlightingIr, IndexDefinitionIr,
+    IndexName, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr, PatchRequestIr,
+    PrefixPolicy, PresentationIr, ProjectionIr, QueryInputIr, QueryIr, QueryModelIr,
+    QueryModelTypeIr, RangeIr, RankingPolicyIr, RankingRequestIr, RequestNonFiniteFloatIr,
+    RequestTensorBlockIr, RequestTensorCellIr, RequestTensorIr, RequestTensorPayloadIr,
+    RequestValueIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight, SearchRequestIr,
+    SortDirection, SortIr, TypoPolicy, UpsertRequestIr, Value, WriteRequestIr,
 };
 use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
@@ -175,12 +180,12 @@ impl IndexContext {
         })
     }
     pub fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
-        reject_nonempty_v2_search_fields(request)?;
         let query = self.query_source_to_ir(request.query())?;
         let search_fields_wrapper = request.search_fields();
-        let search_fields = match search_fields_wrapper {
-            None => self.definition.default_search_fields.clone(),
-            Some(s) => self.search_fields_to_ir(s)?,
+        validate_search_request_combinations(request, &query)?;
+        let search_fields = match (&query, search_fields_wrapper) {
+            (_, None) => self.definition.default_search_fields.clone(),
+            (_, Some(s)) => self.search_fields_to_ir(s)?,
         };
         if matches!(query, QueryIr::Text(_)) && search_fields.is_empty() {
             return Err(PortableError::failed_precondition(
@@ -191,13 +196,11 @@ impl IndexContext {
         }
         let filter = self.filters_to_ir(request.filters())?;
         let sort = self.sorts_to_ir(request.sort())?;
-        let facets = Vec::new();
+        let grouping = grouping_to_ir(request.grouping())?;
         let ranking = ranking_to_ir(request.ranking())?;
-        let language = request
-            .query_model()
-            .and_then(|model| model.language())
-            .map(|v| parse_language(v, "query_model.language"))
-            .transpose()?;
+        let query_model = query_model_to_ir(request.query_model())?;
+        let language = query_model.language.clone();
+        let presentation = presentation_to_ir(request.presentation())?;
         let timeout = request
             .timeout_ms()
             .map(|value| Duration::from_millis(value.value()));
@@ -206,14 +209,21 @@ impl IndexContext {
             search_fields,
             filter,
             sort,
-            facets,
+            grouping,
             ranking,
+            ranking_request: ranking_request_to_ir(request.ranking())?,
+            inputs: query_inputs_to_ir(request.inputs())?,
             limit: request.limit().map_or(20, |v| v.value()),
             offset: request.offset().map_or(0, |v| v.value()),
             projection: self.projection_to_ir(request.presentation().and_then(|p| p.fields()))?,
             highlighting: self
                 .highlighting_to_ir(request.presentation().and_then(|p| p.highlighting()))?,
             language,
+            query_model,
+            presentation,
+            properties: request_values_to_map(request.properties(), "properties")?,
+            query_profile: normalized_optional_string(request.query_profile()),
+            search_chain: normalized_optional_string(request.search_chain()),
             timeout,
             prefix_policy: PrefixPolicy::Disabled,
             typo_policy: TypoPolicy::Disabled,
@@ -341,11 +351,22 @@ impl IndexContext {
                 self.query_expr_to_ir(query, "query")
             }
             api::QuerySourceKind::MatchAllQuery => Ok(QueryIr::MatchAll),
-            api::QuerySourceKind::YqlQuery => Err(PortableError::unsupported(
-                "unsupported_query_source",
-                Some("query"),
-                "YQL query sources are not supported by the embedded IR",
-            )),
+            api::QuerySourceKind::YqlQuery => {
+                let yql = source.source_as_yql_query().ok_or_else(|| {
+                    invalid("invalid_query", Some("query"), "YQL query is missing")
+                })?;
+                let source = yql.source().ok_or_else(|| {
+                    invalid(
+                        "invalid_query",
+                        Some("query.source"),
+                        "YQL source is required",
+                    )
+                })?;
+                Ok(QueryIr::Yql {
+                    source: source.to_owned(),
+                    parameters: request_values_to_map(yql.parameters(), "query.parameters")?,
+                })
+            }
             _ => Err(invalid(
                 "invalid_query",
                 Some("query"),
@@ -1111,63 +1132,6 @@ impl IndexContext {
         }
         Ok(out)
     }
-    /*
-    fn facet_to_ir_at(&self, f: api::FacetRequest<'_>, path: &str) -> Result<FacetIr> {
-        let field = self.field(f.field().unwrap_or_default(), format!("{path}.field"))?;
-        if !field.capabilities.facetable {
-            return Err(invalid(
-                "field_not_facetable",
-                        Some(format!("{path}.target.field")),
-                "facet requires a facetable field",
-            ));
-        }
-        let limit = f.limit().map_or(10, |v| v.value());
-        let sort = match f.sort() {
-            None => FacetSort::CountDesc,
-            Some(v) => match v.value().0 {
-                1 => FacetSort::CountDesc,
-                2 => FacetSort::CountAsc,
-                3 => FacetSort::ValueAsc,
-                4 => FacetSort::ValueDesc,
-                _ => {
-                    return Err(invalid(
-                        "invalid_facet",
-                        Some(format!("{path}.sort")),
-                        "facet sort is unknown",
-                    ))
-                }
-            },
-        };
-        Ok(FacetIr {
-            field: field.name.clone(),
-            limit,
-            sort,
-        })
-    }
-    */
-    /* fn facets_to_ir(
-        &self,
-        facets: Option<
-            flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FacetRequest<'_>>>,
-        >,
-    ) -> Result<Vec<FacetIr>> {
-        let mut seen = BTreeSet::new();
-        let mut out = Vec::new();
-        if let Some(facets) = facets {
-            for (i, f) in facets.iter().enumerate() {
-                let v = self.facet_to_ir_at(f, &format!("facets[{i}]"))?;
-                if !seen.insert(v.field.clone()) {
-                    return Err(invalid(
-                        "duplicate_facet_field",
-                        Some(format!("facets[{i}].field")),
-                        "facet fields must be unique",
-                    ));
-                }
-                out.push(v)
-            }
-        }
-        Ok(out)
-    } */
     fn projection_to_ir_at(&self, p: Option<api::FieldProjection<'_>>) -> Result<ProjectionIr> {
         let mut out = Vec::new();
         match p {
@@ -1244,92 +1208,1389 @@ impl IndexContext {
     }
 }
 
-fn reject_nonempty_v2_search_fields(request: api::SearchRequest<'_>) -> Result<()> {
-    let unsupported = |path: &str, message: &str| {
-        PortableError::unsupported("v2_search_field_not_supported", Some(path), message)
+fn validate_search_request_combinations(
+    request: api::SearchRequest<'_>,
+    query: &QueryIr,
+) -> Result<()> {
+    if matches!(query, QueryIr::Yql { .. }) {
+        if request.filters().is_some() {
+            return Err(invalid(
+                "yql_conflict",
+                Some("filters"),
+                "YQL cannot be combined with high-level filters",
+            ));
+        }
+        if request.sort().is_some_and(|sort| !sort.is_empty()) {
+            return Err(invalid(
+                "yql_conflict",
+                Some("sort"),
+                "YQL cannot be combined with high-level sort",
+            ));
+        }
+        if let Some(presentation) = request.presentation() {
+            if presentation.fields().is_some() || presentation.highlighting().is_some() {
+                return Err(invalid(
+                    "yql_conflict",
+                    Some("presentation"),
+                    "YQL owns projection and highlighting",
+                ));
+            }
+        }
+    }
+    validate_property_overlaps(request)
+}
+
+fn validate_property_overlaps(request: api::SearchRequest<'_>) -> Result<()> {
+    let Some(properties) = request.properties() else {
+        return Ok(());
     };
-    if request.grouping().is_some_and(|values| !values.is_empty()) {
-        return Err(unsupported(
-            "grouping",
-            "V2 grouping is not yet lowered by the current IR adapter",
-        ));
+    let mut owned = BTreeSet::new();
+    if request.ranking().is_some() {
+        owned.insert("ranking.profile");
     }
-    if request.inputs().is_some_and(|values| !values.is_empty()) {
-        return Err(unsupported(
-            "inputs",
-            "V2 query inputs are not yet lowered by the current IR adapter",
-        ));
+    if request.limit().is_some() {
+        owned.insert("hits");
     }
-    if request
-        .properties()
-        .is_some_and(|values| !values.is_empty())
-    {
-        return Err(unsupported(
-            "properties",
-            "V2 generic query properties are not yet lowered by the current IR adapter",
-        ));
+    if request.offset().is_some() {
+        owned.insert("offset");
+    }
+    if request.timeout_ms().is_some() {
+        owned.insert("timeout");
+    }
+    if request.query_model().is_some() {
+        owned.insert("model");
+    }
+    if request.presentation().is_some() {
+        owned.insert("presentation");
     }
     if request
         .query_profile()
         .is_some_and(|value| !value.is_empty())
     {
-        return Err(unsupported(
-            "query_profile",
-            "V2 query profiles require a container-aware execution path",
-        ));
+        owned.insert("queryProfile");
     }
     if request
         .search_chain()
         .is_some_and(|value| !value.is_empty())
     {
-        return Err(unsupported(
-            "search_chain",
-            "V2 search chains require a container-aware execution path",
-        ));
+        owned.insert("searchChain");
     }
-    if request
-        .ranking()
-        .and_then(|ranking| ranking.properties())
-        .is_some_and(|values| !values.is_empty())
-    {
-        return Err(unsupported(
-            "ranking.properties",
-            "V2 ranking properties are not yet lowered by the current IR adapter",
-        ));
-    }
-    if let Some(model) = request.query_model() {
-        let has_unsupported = model.query_string().is_some_and(|value| !value.is_empty())
-            || model.default_index().is_some_and(|value| !value.is_empty())
-            || model.encoding().is_some_and(|value| !value.is_empty())
-            || model.filter().is_some_and(|value| !value.is_empty())
-            || model.locale().is_some_and(|value| !value.is_empty())
-            || model.type_().is_some()
-            || model.sources().is_some_and(|values| !values.is_empty())
-            || model.restrict().is_some_and(|values| !values.is_empty())
-            || model.search_path().is_some_and(|value| !value.is_empty())
-            || model.search_group().is_some();
-        if has_unsupported {
-            return Err(unsupported(
-                "query_model",
-                "only query_model.language is currently supported by the embedded execution path",
-            ));
-        }
-    }
-    if let Some(presentation) = request.presentation() {
-        if presentation
-            .summary()
-            .is_some_and(|value| !value.is_empty())
-            || presentation.format().is_some_and(|value| !value.is_empty())
-            || presentation.bolding().is_some()
-            || presentation.timing().is_some()
+    for (index, property) in properties.iter().enumerate() {
+        let key = property.key();
+        if owned
+            .iter()
+            .any(|prefix| key == *prefix || key.starts_with(&format!("{prefix}.")))
         {
-            return Err(unsupported(
-                "presentation",
-                "only V2 presentation fields and highlighting are currently supported",
+            return Err(invalid(
+                "property_overlaps_typed_field",
+                Some(format!("properties[{index}].key")),
+                format!("property `{key}` overlaps a populated typed request field"),
             ));
         }
     }
     Ok(())
+}
+
+fn grouping_to_ir(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::GroupingRequest<'_>>>>,
+) -> Result<Vec<GroupingRequestIr>> {
+    let mut output = Vec::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let structured = match value.source_type() {
+                api::GroupingSourceKind::StructuredGroupingSource => value.source_as_structured_grouping_source().ok_or_else(|| invalid("invalid_grouping", Some(format!("grouping[{index}].source")), "structured grouping source is missing"))?,
+                api::GroupingSourceKind::RawGroupingSource => return Err(PortableError::unsupported("raw_grouping_not_supported", Some(format!("grouping[{index}].source")), "raw grouping text requires a grouping parser before it can enter canonical IR")),
+                _ => return Err(invalid("invalid_grouping", Some(format!("grouping[{index}].source")), "grouping request must select a source")),
+            };
+            let root = structured.root().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(format!("grouping[{index}].source.root")),
+                    "structured grouping requires an all() root",
+                )
+            })?;
+            output.push(GroupingRequestIr {
+                root: grouping_all_to_ir(root, &format!("grouping[{index}].source.root"))?,
+                continuations: value
+                    .continuations()
+                    .map(|values| values.iter().map(ToOwned::to_owned).collect())
+                    .unwrap_or_default(),
+            });
+        }
+    }
+    Ok(output)
+}
+
+fn grouping_all_to_ir(value: api::GroupingAllOperation<'_>, path: &str) -> Result<GroupingAllIr> {
+    let operations = value
+        .operations()
+        .map(|values| {
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    grouping_operation_to_ir(value, &format!("{path}.operations[{index}]"))
+                })
+                .collect()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(GroupingAllIr {
+        operations,
+        label: normalized_optional_string(value.label()),
+    })
+}
+
+fn grouping_operation_to_ir(
+    value: api::GroupingOperation<'_>,
+    path: &str,
+) -> Result<GroupingOperationIr> {
+    match value.operation_type() {
+        api::GroupingOperationKind::GroupingAllOperation => value
+            .operation_as_grouping_all_operation()
+            .ok_or_else(|| invalid("invalid_grouping", Some(path), "all operation is missing"))
+            .and_then(|value| grouping_all_to_ir(value, path))
+            .map(GroupingOperationIr::All),
+        api::GroupingOperationKind::GroupingEachOperation => {
+            let value = value
+                .operation_as_grouping_each_operation()
+                .ok_or_else(|| {
+                    invalid("invalid_grouping", Some(path), "each operation is missing")
+                })?;
+            let operations = value
+                .operations()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            grouping_operation_to_ir(value, &format!("{path}.operations[{index}]"))
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(GroupingOperationIr::Each(GroupingAllIr {
+                operations,
+                label: normalized_optional_string(value.label()),
+            }))
+        }
+        api::GroupingOperationKind::GroupingGroupOperation => value
+            .operation_as_grouping_group_operation()
+            .and_then(|value| value.expression())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "group operation requires an expression",
+                )
+            })
+            .and_then(|value| grouping_expression_to_ir(value, path))
+            .map(GroupingOperationIr::Group),
+        api::GroupingOperationKind::GroupingOutputOperation => {
+            let value = value
+                .operation_as_grouping_output_operation()
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "output operation is missing",
+                    )
+                })?;
+            let outputs = value
+                .outputs()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, output)| {
+                            Ok(GroupingOutputIr {
+                                label: normalized_optional_string(output.label()),
+                                expression: grouping_expression_to_ir(
+                                    output.expression().ok_or_else(|| {
+                                        invalid(
+                                            "invalid_grouping",
+                                            Some(format!("{path}.outputs[{index}].expression")),
+                                            "output requires an expression",
+                                        )
+                                    })?,
+                                    &format!("{path}.outputs[{index}].expression"),
+                                )?,
+                            })
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(GroupingOperationIr::Output(outputs))
+        }
+        api::GroupingOperationKind::GroupingMaxOperation => {
+            let value = value.operation_as_grouping_max_operation().ok_or_else(|| {
+                invalid("invalid_grouping", Some(path), "max operation is missing")
+            })?;
+            let max = match value.value_type() {
+                api::GroupingMaxKind::FiniteGroupingMax => Some(
+                    value
+                        .value_as_finite_grouping_max()
+                        .ok_or_else(|| {
+                            invalid("invalid_grouping", Some(path), "finite max is missing")
+                        })?
+                        .value(),
+                ),
+                api::GroupingMaxKind::InfiniteGroupingMax => None,
+                _ => {
+                    return Err(invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "max requires a value",
+                    ))
+                }
+            };
+            Ok(GroupingOperationIr::Max(max))
+        }
+        api::GroupingOperationKind::GroupingPrecisionOperation => value
+            .operation_as_grouping_precision_operation()
+            .map(|value| GroupingOperationIr::Precision(value.value()))
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "precision operation is missing",
+                )
+            }),
+        api::GroupingOperationKind::GroupingOrderOperation => {
+            let value = value
+                .operation_as_grouping_order_operation()
+                .ok_or_else(|| {
+                    invalid("invalid_grouping", Some(path), "order operation is missing")
+                })?;
+            let expressions = value
+                .expressions()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            grouping_expression_to_ir(
+                                value.expression().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_grouping",
+                                        Some(format!("{path}.expressions[{index}].expression")),
+                                        "order expression is missing",
+                                    )
+                                })?,
+                                &format!("{path}.expressions[{index}]"),
+                            )
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(GroupingOperationIr::Order(expressions))
+        }
+        api::GroupingOperationKind::GroupingAliasOperation => {
+            let value = value
+                .operation_as_grouping_alias_operation()
+                .ok_or_else(|| {
+                    invalid("invalid_grouping", Some(path), "alias operation is missing")
+                })?;
+            Ok(GroupingOperationIr::Alias {
+                name: value
+                    .name()
+                    .ok_or_else(|| {
+                        invalid("invalid_grouping", Some(path), "alias requires a name")
+                    })?
+                    .to_owned(),
+                expression: grouping_expression_to_ir(
+                    value.expression().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "alias requires an expression",
+                        )
+                    })?,
+                    path,
+                )?,
+            })
+        }
+        api::GroupingOperationKind::GroupingFilterOperation => value
+            .operation_as_grouping_filter_operation()
+            .and_then(|value| value.filter())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "filter operation requires a filter",
+                )
+            })
+            .and_then(|value| grouping_filter_to_ir(value, path))
+            .map(GroupingOperationIr::Filter),
+        api::GroupingOperationKind::GroupingKeepOperation => value
+            .operation_as_grouping_keep_operation()
+            .and_then(|value| value.filter())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "keep operation requires a filter",
+                )
+            })
+            .and_then(|value| grouping_filter_to_ir(value, path))
+            .map(GroupingOperationIr::Keep),
+        api::GroupingOperationKind::GroupingWhereOperation => value
+            .operation_as_grouping_where_operation()
+            .and_then(|value| value.expression())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "where operation requires an expression",
+                )
+            })
+            .and_then(|value| grouping_expression_to_ir(value, path))
+            .map(GroupingOperationIr::Where),
+        _ => Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            "grouping operation must select a kind",
+        )),
+    }
+}
+
+fn grouping_expression_to_ir(
+    value: api::GroupingExpression<'_>,
+    path: &str,
+) -> Result<GroupingExpressionIr> {
+    match value.expr_type() {
+        api::GroupingExpressionKind::GroupingAttributeExpression => value
+            .expr_as_grouping_attribute_expression()
+            .and_then(|value| value.field())
+            .map(|value| GroupingExpressionIr::Attribute(value.to_owned()))
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "attribute expression requires a field",
+                )
+            }),
+        api::GroupingExpressionKind::GroupingLiteralExpression => value
+            .expr_as_grouping_literal_expression()
+            .and_then(|value| value.value())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "literal expression requires a value",
+                )
+            })
+            .and_then(|value| RequestValueIr::from_api(value, path.to_owned()))
+            .map(GroupingExpressionIr::Literal),
+        api::GroupingExpressionKind::GroupingFunctionExpression => {
+            let value = value
+                .expr_as_grouping_function_expression()
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "function expression is missing",
+                    )
+                })?;
+            let arguments = value
+                .arguments()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            grouping_expression_to_ir(value, &format!("{path}.arguments[{index}]"))
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let name = value.name().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "function expression requires a name",
+                )
+            })?;
+            if !supported_grouping_function(name) {
+                return Err(PortableError::unsupported(
+                    "unsupported_grouping_function",
+                    Some(format!("{path}.name")),
+                    format!(
+                        "grouping function `{name}` is not supported by the pinned Vespa grammar"
+                    ),
+                ));
+            }
+            Ok(GroupingExpressionIr::Function {
+                name: name.to_owned(),
+                arguments,
+            })
+        }
+        api::GroupingExpressionKind::GroupingUnaryExpression => {
+            let value = value.expr_as_grouping_unary_expression().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "unary expression is missing",
+                )
+            })?;
+            let expression = Box::new(grouping_expression_to_ir(
+                value.expression().ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "unary expression requires an operand",
+                    )
+                })?,
+                path,
+            )?);
+            match value.op() {
+                api::GroupingUnaryOperator::Positive => {
+                    Ok(GroupingExpressionIr::Positive(expression))
+                }
+                api::GroupingUnaryOperator::Negative => {
+                    Ok(GroupingExpressionIr::Negative(expression))
+                }
+                _ => Err(invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "unary expression requires an operator",
+                )),
+            }
+        }
+        api::GroupingExpressionKind::GroupingBinaryExpression => {
+            let value = value.expr_as_grouping_binary_expression().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "binary expression is missing",
+                )
+            })?;
+            let operator = match value.op() {
+                api::GroupingBinaryOperator::Add => GroupingBinaryOperatorIr::Add,
+                api::GroupingBinaryOperator::Subtract => GroupingBinaryOperatorIr::Subtract,
+                api::GroupingBinaryOperator::Multiply => GroupingBinaryOperatorIr::Multiply,
+                api::GroupingBinaryOperator::Divide => GroupingBinaryOperatorIr::Divide,
+                api::GroupingBinaryOperator::Modulo => GroupingBinaryOperatorIr::Modulo,
+                _ => {
+                    return Err(invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "binary expression requires an operator",
+                    ))
+                }
+            };
+            Ok(GroupingExpressionIr::Binary {
+                operator,
+                left: Box::new(grouping_expression_to_ir(
+                    value.left().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "binary expression requires a left operand",
+                        )
+                    })?,
+                    path,
+                )?),
+                right: Box::new(grouping_expression_to_ir(
+                    value.right().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "binary expression requires a right operand",
+                        )
+                    })?,
+                    path,
+                )?),
+            })
+        }
+        api::GroupingExpressionKind::GroupingAliasReference => value
+            .expr_as_grouping_alias_reference()
+            .and_then(|value| value.name())
+            .map(|value| GroupingExpressionIr::Alias(value.to_owned()))
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "alias reference requires a name",
+                )
+            }),
+        api::GroupingExpressionKind::GroupingMemberExpression => {
+            let value = value.expr_as_grouping_member_expression().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "member expression is missing",
+                )
+            })?;
+            Ok(GroupingExpressionIr::Member {
+                base: Box::new(grouping_expression_to_ir(
+                    value.base().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "member expression requires a base",
+                        )
+                    })?,
+                    path,
+                )?),
+                member: value
+                    .member()
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "member expression requires a member",
+                        )
+                    })?
+                    .to_owned(),
+            })
+        }
+        api::GroupingExpressionKind::GroupingMapLookupExpression => {
+            let value = value
+                .expr_as_grouping_map_lookup_expression()
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "map lookup expression is missing",
+                    )
+                })?;
+            Ok(GroupingExpressionIr::MapLookup {
+                base: Box::new(grouping_expression_to_ir(
+                    value.base().ok_or_else(|| {
+                        invalid("invalid_grouping", Some(path), "map lookup requires a base")
+                    })?,
+                    path,
+                )?),
+                key: Box::new(grouping_expression_to_ir(
+                    value.key().ok_or_else(|| {
+                        invalid("invalid_grouping", Some(path), "map lookup requires a key")
+                    })?,
+                    path,
+                )?),
+            })
+        }
+        api::GroupingExpressionKind::GroupingBucketExpression => {
+            let value = value.expr_as_grouping_bucket_expression().ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "bucket expression is missing",
+                )
+            })?;
+            Ok(GroupingExpressionIr::Bucket(GroupingBucketIr {
+                lower: grouping_range_bound_to_ir(value.lower(), &format!("{path}.lower"))?,
+                upper: grouping_range_bound_to_ir(value.upper(), &format!("{path}.upper"))?,
+                include_lower: value.include_lower().is_none_or(|value| value.value()),
+                include_upper: value.include_upper().is_some_and(|value| value.value()),
+            }))
+        }
+        api::GroupingExpressionKind::GroupingAggregationExpression => value
+            .expr_as_grouping_aggregation_expression()
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "aggregation expression is missing",
+                )
+            })
+            .and_then(|value| grouping_aggregation_to_ir(value, path))
+            .map(|value| GroupingExpressionIr::Aggregation(Box::new(value))),
+        _ => Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            "grouping expression must select a kind",
+        )),
+    }
+}
+
+fn grouping_range_bound_to_ir(
+    value: Option<api::RangeBound<'_>>,
+    path: &str,
+) -> Result<GroupingRangeBoundIr> {
+    let value =
+        value.ok_or_else(|| invalid("invalid_grouping", Some(path), "bucket bound is required"))?;
+    match value.bound_type() {
+        api::RangeBoundKind::FiniteRangeBound => value
+            .bound_as_finite_range_bound()
+            .and_then(|value| value.value())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "finite bucket bound requires a value",
+                )
+            })
+            .and_then(|value| RequestValueIr::from_api(value, path.to_owned()))
+            .map(GroupingRangeBoundIr::Finite),
+        api::RangeBoundKind::NegativeInfinityBound => Ok(GroupingRangeBoundIr::NegativeInfinity),
+        api::RangeBoundKind::PositiveInfinityBound => Ok(GroupingRangeBoundIr::PositiveInfinity),
+        api::RangeBoundKind::UnboundedRangeBound => Ok(GroupingRangeBoundIr::Unbounded),
+        _ => Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            "unknown bucket bound",
+        )),
+    }
+}
+
+fn supported_grouping_function(name: &str) -> bool {
+    matches!(
+        name,
+        "cat"
+            | "md5"
+            | "xor"
+            | "fixedwidth"
+            | "predefined"
+            | "interpolatedlookup"
+            | "reverse"
+            | "normalize"
+            | "strlen"
+            | "lowercase"
+            | "uppercase"
+            | "now"
+            | "relevance"
+            | "array.at"
+            | "map.at"
+            | "math.sqrt"
+            | "math.log"
+            | "math.exp"
+            | "math.floor"
+            | "math.ceil"
+            | "time.year"
+            | "time.month"
+            | "time.dayofmonth"
+            | "time.dayofweek"
+            | "time.hour"
+            | "time.minute"
+            | "time.second"
+    )
+}
+
+fn grouping_aggregation_to_ir(
+    value: api::GroupingAggregationExpression<'_>,
+    path: &str,
+) -> Result<GroupingAggregationIr> {
+    let expression = |value: Option<api::GroupingExpression<'_>>| {
+        value
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "aggregation requires an expression",
+                )
+            })
+            .and_then(|value| grouping_expression_to_ir(value, path))
+    };
+    match value.aggregation_type() {
+        api::AggregationKind::CountAggregation => value
+            .aggregation_as_count_aggregation()
+            .map(|_| GroupingAggregationIr::Count)
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "count aggregation is missing",
+                )
+            }),
+        api::AggregationKind::SumAggregation => expression(
+            value
+                .aggregation_as_sum_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::Sum),
+        api::AggregationKind::AvgAggregation => expression(
+            value
+                .aggregation_as_avg_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::Avg),
+        api::AggregationKind::MinAggregation => expression(
+            value
+                .aggregation_as_min_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::Min),
+        api::AggregationKind::MaxAggregation => expression(
+            value
+                .aggregation_as_max_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::Max),
+        api::AggregationKind::XorAggregation => expression(
+            value
+                .aggregation_as_xor_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::Xor),
+        api::AggregationKind::StdDevAggregation => expression(
+            value
+                .aggregation_as_std_dev_aggregation()
+                .and_then(|value| value.expression()),
+        )
+        .map(GroupingAggregationIr::StdDev),
+        api::AggregationKind::QuantilesAggregation => {
+            let value = value
+                .aggregation_as_quantiles_aggregation()
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "quantiles aggregation is missing",
+                    )
+                })?;
+            let quantiles: Vec<f64> = value
+                .quantiles()
+                .map(|values| values.iter().collect())
+                .unwrap_or_default();
+            if quantiles
+                .iter()
+                .any(|value: &f64| !value.is_finite() || !(0.0..=1.0).contains(value))
+            {
+                return Err(invalid(
+                    "invalid_quantile",
+                    Some(format!("{path}.quantiles")),
+                    "quantiles must be finite values in the inclusive range [0, 1]",
+                ));
+            }
+            Ok(GroupingAggregationIr::Quantiles {
+                quantiles,
+                expression: expression(value.expression())?,
+            })
+        }
+        api::AggregationKind::SummaryAggregation => Ok(GroupingAggregationIr::Summary(
+            value
+                .aggregation_as_summary_aggregation()
+                .map(|value| normalized_optional_string(value.summary()))
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_grouping",
+                        Some(path),
+                        "summary aggregation is missing",
+                    )
+                })?,
+        )),
+        _ => Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            "aggregation must select a kind",
+        )),
+    }
+}
+
+fn grouping_filter_to_ir(
+    value: api::GroupingFilterExpr<'_>,
+    path: &str,
+) -> Result<GroupingFilterIr> {
+    match value.expr_type() {
+        api::GroupingFilterExprKind::GroupingFilterAnd => value
+            .expr_as_grouping_filter_and()
+            .map(|value| {
+                value
+                    .clauses()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .map(|value| grouping_filter_to_ir(value, path))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| Ok(Vec::new()))
+            })
+            .ok_or_else(|| invalid("invalid_grouping", Some(path), "filter-and is missing"))?
+            .map(GroupingFilterIr::And),
+        api::GroupingFilterExprKind::GroupingFilterOr => value
+            .expr_as_grouping_filter_or()
+            .map(|value| {
+                value
+                    .clauses()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .map(|value| grouping_filter_to_ir(value, path))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| Ok(Vec::new()))
+            })
+            .ok_or_else(|| invalid("invalid_grouping", Some(path), "filter-or is missing"))?
+            .map(GroupingFilterIr::Or),
+        api::GroupingFilterExprKind::GroupingFilterNot => value
+            .expr_as_grouping_filter_not()
+            .and_then(|value| value.clause())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "filter-not requires a clause",
+                )
+            })
+            .and_then(|value| grouping_filter_to_ir(value, path))
+            .map(|value| GroupingFilterIr::Not(Box::new(value))),
+        api::GroupingFilterExprKind::GroupingFilterRegex => {
+            let value = value.expr_as_grouping_filter_regex().ok_or_else(|| {
+                invalid("invalid_grouping", Some(path), "regex filter is missing")
+            })?;
+            Ok(GroupingFilterIr::Regex {
+                expression: Box::new(grouping_expression_to_ir(
+                    value.expression().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "regex filter requires an expression",
+                        )
+                    })?,
+                    path,
+                )?),
+                pattern: value
+                    .pattern()
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "regex filter requires a pattern",
+                        )
+                    })?
+                    .to_owned(),
+            })
+        }
+        api::GroupingFilterExprKind::GroupingFilterRange => {
+            let value = value.expr_as_grouping_filter_range().ok_or_else(|| {
+                invalid("invalid_grouping", Some(path), "range filter is missing")
+            })?;
+            Ok(GroupingFilterIr::Range {
+                expression: Box::new(grouping_expression_to_ir(
+                    value.expression().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "range filter requires an expression",
+                        )
+                    })?,
+                    path,
+                )?),
+                lower: Box::new(grouping_expression_to_ir(
+                    value.lower().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "range filter requires a lower bound",
+                        )
+                    })?,
+                    path,
+                )?),
+                upper: Box::new(grouping_expression_to_ir(
+                    value.upper().ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(path),
+                            "range filter requires an upper bound",
+                        )
+                    })?,
+                    path,
+                )?),
+                include_lower: value.include_lower().is_none_or(|value| value.value()),
+                include_upper: value.include_upper().is_some_and(|value| value.value()),
+            })
+        }
+        api::GroupingFilterExprKind::GroupingFilterIsTrue => value
+            .expr_as_grouping_filter_is_true()
+            .and_then(|value| value.expression())
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_grouping",
+                    Some(path),
+                    "is-true filter requires an expression",
+                )
+            })
+            .and_then(|value| grouping_expression_to_ir(value, path))
+            .map(|value| GroupingFilterIr::IsTrue(Box::new(value))),
+        _ => Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            "grouping filter must select a kind",
+        )),
+    }
+}
+
+impl RequestValueIr {
+    fn from_api(value: api::Value<'_>, path: String) -> Result<Self> {
+        match value.kind_type() {
+            api::ValueKind::NullValueValue => Ok(Self::Null),
+            api::ValueKind::BoolValue => value
+                .kind_as_bool_value()
+                .map(|value| Self::Bool(value.value()))
+                .ok_or_else(|| invalid("missing_value", Some(path), "boolean value is missing")),
+            api::ValueKind::Int64Value => value
+                .kind_as_int_64_value()
+                .map(|value| Self::Int64(value.value()))
+                .ok_or_else(|| invalid("missing_value", Some(path), "integer value is missing")),
+            api::ValueKind::UInt64Value => value
+                .kind_as_uint_64_value()
+                .map(|value| Self::UInt64(value.value()))
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path),
+                        "unsigned integer value is missing",
+                    )
+                }),
+            api::ValueKind::Float64Value => value
+                .kind_as_float_64_value()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path.clone()),
+                        "float value is missing",
+                    )
+                })
+                .and_then(|value| {
+                    value
+                        .value()
+                        .is_finite()
+                        .then_some(Self::Float64(value.value()))
+                        .ok_or_else(|| {
+                            invalid(
+                                "non_finite_number",
+                                Some(path),
+                                "Float64Value must be finite",
+                            )
+                        })
+                }),
+            api::ValueKind::NonFiniteFloatValue => value
+                .kind_as_non_finite_float_value()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path.clone()),
+                        "non-finite float value is missing",
+                    )
+                })
+                .and_then(|value| match value.kind() {
+                    api::NonFiniteFloatKind::NaN => {
+                        Ok(Self::NonFiniteFloat(RequestNonFiniteFloatIr::NaN))
+                    }
+                    api::NonFiniteFloatKind::PositiveInfinity => Ok(Self::NonFiniteFloat(
+                        RequestNonFiniteFloatIr::PositiveInfinity,
+                    )),
+                    api::NonFiniteFloatKind::NegativeInfinity => Ok(Self::NonFiniteFloat(
+                        RequestNonFiniteFloatIr::NegativeInfinity,
+                    )),
+                    _ => Err(invalid(
+                        "invalid_value",
+                        Some(path),
+                        "non-finite float kind is required",
+                    )),
+                }),
+            api::ValueKind::StringValue => value
+                .kind_as_string_value()
+                .and_then(|value| value.value())
+                .map(|value| Self::String(value.to_owned()))
+                .ok_or_else(|| invalid("missing_value", Some(path), "string value is missing")),
+            api::ValueKind::BytesValue => value
+                .kind_as_bytes_value()
+                .and_then(|value| value.value())
+                .map(|value| Self::Bytes(value.iter().collect()))
+                .ok_or_else(|| invalid("missing_value", Some(path), "bytes value is missing")),
+            api::ValueKind::ValueList => {
+                let values = value
+                    .kind_as_value_list()
+                    .ok_or_else(|| {
+                        invalid("missing_value", Some(path.clone()), "value list is missing")
+                    })?
+                    .values()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| {
+                                Self::from_api(value, format!("{path}.values[{index}]"))
+                            })
+                            .collect()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok(Self::List(values))
+            }
+            api::ValueKind::ValueObject => {
+                let values = value
+                    .kind_as_value_object()
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(path.clone()),
+                            "value object is missing",
+                        )
+                    })?
+                    .fields()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .map(|(index, entry)| {
+                                let key = entry.key().to_owned();
+                                let value = entry.value().ok_or_else(|| {
+                                    invalid(
+                                        "missing_value",
+                                        Some(format!("{path}.fields[{index}].value")),
+                                        "object value is required",
+                                    )
+                                })?;
+                                Ok((
+                                    key,
+                                    Self::from_api(value, format!("{path}.fields[{index}].value"))?,
+                                ))
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                let mut object = BTreeMap::new();
+                for (key, value) in values {
+                    if object.insert(key.clone(), value).is_some() {
+                        return Err(invalid(
+                            "duplicate_property",
+                            Some(path),
+                            format!("object field `{key}` occurs more than once"),
+                        ));
+                    }
+                }
+                Ok(Self::Object(object))
+            }
+            api::ValueKind::TensorValue => request_tensor_to_ir(
+                value.kind_as_tensor_value().ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(path.clone()),
+                        "tensor value is missing",
+                    )
+                })?,
+                path,
+            )
+            .map(Self::Tensor),
+            _ => Err(invalid(
+                "missing_value",
+                Some(path),
+                "value must select a kind",
+            )),
+        }
+    }
+}
+
+fn tensor_address_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'_>>>,
+    >,
+    path: &str,
+) -> Result<BTreeMap<String, String>> {
+    let mut address = BTreeMap::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let dimension = value.dimension().to_owned();
+            let label = value
+                .label()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}[{index}].label")),
+                        "tensor address label is required",
+                    )
+                })?
+                .to_owned();
+            if address.insert(dimension.clone(), label).is_some() {
+                return Err(invalid(
+                    "duplicate_tensor_dimension",
+                    Some(format!("{path}[{index}].dimension")),
+                    format!("tensor dimension `{dimension}` occurs more than once"),
+                ));
+            }
+        }
+    }
+    Ok(address)
+}
+
+fn request_tensor_to_ir(value: api::TensorValue<'_>, path: String) -> Result<RequestTensorIr> {
+    let type_spec = value
+        .type_spec()
+        .ok_or_else(|| {
+            invalid(
+                "missing_value",
+                Some(format!("{path}.type_spec")),
+                "tensor type is required",
+            )
+        })?
+        .to_owned();
+    let payload = match value.payload_type() {
+        api::TensorPayloadKind::DenseTensorValues => RequestTensorPayloadIr::Dense(
+            value
+                .payload_as_dense_tensor_values()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}.payload")),
+                        "dense tensor payload is missing",
+                    )
+                })?
+                .values()
+                .map(|values| values.iter().collect())
+                .unwrap_or_default(),
+        ),
+        api::TensorPayloadKind::SparseTensorCells => RequestTensorPayloadIr::Sparse(
+            value
+                .payload_as_sparse_tensor_cells()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}.payload")),
+                        "sparse tensor payload is missing",
+                    )
+                })?
+                .cells()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            Ok(RequestTensorCellIr {
+                                address: tensor_address_to_ir(
+                                    value.address(),
+                                    &format!("{path}.payload.cells[{index}].address"),
+                                )?,
+                                value: value.value(),
+                            })
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+        ),
+        api::TensorPayloadKind::MixedTensorBlocks => RequestTensorPayloadIr::Mixed(
+            value
+                .payload_as_mixed_tensor_blocks()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}.payload")),
+                        "mixed tensor payload is missing",
+                    )
+                })?
+                .blocks()
+                .map(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            Ok(RequestTensorBlockIr {
+                                address: tensor_address_to_ir(
+                                    value.address(),
+                                    &format!("{path}.payload.blocks[{index}].address"),
+                                )?,
+                                values: value
+                                    .values()
+                                    .map(|values| values.iter().collect())
+                                    .unwrap_or_default(),
+                            })
+                        })
+                        .collect()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+        ),
+        _ => {
+            return Err(invalid(
+                "missing_value",
+                Some(format!("{path}.payload")),
+                "tensor payload is required",
+            ))
+        }
+    };
+    let finite = match &payload {
+        RequestTensorPayloadIr::Dense(values) => values.iter().all(|value| value.is_finite()),
+        RequestTensorPayloadIr::Sparse(cells) => cells.iter().all(|cell| cell.value.is_finite()),
+        RequestTensorPayloadIr::Mixed(blocks) => blocks
+            .iter()
+            .all(|block| block.values.iter().all(|value| value.is_finite())),
+    };
+    if !finite {
+        return Err(invalid(
+            "non_finite_tensor_cell",
+            Some(format!("{path}.payload")),
+            "tensor cell values must be finite",
+        ));
+    }
+    Ok(RequestTensorIr { type_spec, payload })
+}
+
+fn normalized_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn ranking_request_to_ir(value: Option<api::RankingRequest<'_>>) -> Result<RankingRequestIr> {
+    let Some(value) = value else {
+        return Ok(RankingRequestIr {
+            profile: "default".to_owned(),
+            properties: BTreeMap::new(),
+        });
+    };
+    let mut properties = BTreeMap::new();
+    if let Some(entries) = value.properties() {
+        for (index, entry) in entries.iter().enumerate() {
+            let key = entry.key().to_owned();
+            if properties
+                .insert(key.clone(), entry.value().unwrap_or_default().to_owned())
+                .is_some()
+            {
+                return Err(invalid(
+                    "duplicate_ranking_property",
+                    Some(format!("ranking.properties[{index}]")),
+                    format!("ranking property `{key}` occurs more than once"),
+                ));
+            }
+        }
+    }
+    Ok(RankingRequestIr {
+        profile: value.profile().unwrap_or_default().to_owned(),
+        properties,
+    })
+}
+
+fn query_inputs_to_ir(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryInput<'_>>>>,
+) -> Result<BTreeMap<String, QueryInputIr>> {
+    let mut inputs = BTreeMap::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let name = value.name().to_owned();
+            let input = match value.input_type() {
+                api::QueryInputKind::LiteralQueryInput => RequestValueIr::from_api(
+                    value
+                        .input_as_literal_query_input()
+                        .and_then(|input| input.value())
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("inputs[{index}].input.value")),
+                                "literal query input requires a value",
+                            )
+                        })?,
+                    format!("inputs[{index}].input.value"),
+                )
+                .map(QueryInputIr::Literal)?,
+                api::QueryInputKind::ExpressionQueryInput => QueryInputIr::Expression(
+                    value
+                        .input_as_expression_query_input()
+                        .and_then(|input| input.expression())
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("inputs[{index}].input.expression")),
+                                "expression query input requires an expression",
+                            )
+                        })?
+                        .to_owned(),
+                ),
+                _ => {
+                    return Err(invalid(
+                        "invalid_query_input",
+                        Some(format!("inputs[{index}].input")),
+                        "query input must select a literal or expression",
+                    ))
+                }
+            };
+            if inputs.insert(name.clone(), input).is_some() {
+                return Err(invalid(
+                    "duplicate_query_input",
+                    Some(format!("inputs[{index}].name")),
+                    format!("query input `{name}` occurs more than once"),
+                ));
+            }
+        }
+    }
+    Ok(inputs)
+}
+
+fn request_values_to_map(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
+    path: &str,
+) -> Result<BTreeMap<String, RequestValueIr>> {
+    let mut output = BTreeMap::new();
+    if let Some(values) = values {
+        for (index, entry) in values.iter().enumerate() {
+            let key = entry.key().to_owned();
+            let value = entry.value().ok_or_else(|| {
+                invalid(
+                    "missing_value",
+                    Some(format!("{path}[{index}].value")),
+                    "value is required",
+                )
+            })?;
+            if output
+                .insert(
+                    key.clone(),
+                    RequestValueIr::from_api(value, format!("{path}[{index}].value"))?,
+                )
+                .is_some()
+            {
+                return Err(invalid(
+                    "duplicate_property",
+                    Some(format!("{path}[{index}].key")),
+                    format!("property `{key}` occurs more than once"),
+                ));
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn query_model_to_ir(value: Option<api::QueryModel<'_>>) -> Result<QueryModelIr> {
+    let Some(value) = value else {
+        return Ok(QueryModelIr::default());
+    };
+    let query_type = value.type_().map(|value| QueryModelTypeIr {
+        composite: normalized_optional_string(value.composite()),
+        tokenization: normalized_optional_string(value.tokenization()),
+        syntax: normalized_optional_string(value.syntax()),
+        profile: normalized_optional_string(value.profile()),
+        is_yql_default: value.is_yql_default().map(|value| value.value()),
+    });
+    Ok(QueryModelIr {
+        query_string: normalized_optional_string(value.query_string()),
+        default_index: normalized_optional_string(value.default_index()),
+        encoding: normalized_optional_string(value.encoding()),
+        filter: normalized_optional_string(value.filter()),
+        language: value
+            .language()
+            .map(|value| parse_language(value, "query_model.language"))
+            .transpose()?,
+        locale: normalized_optional_string(value.locale()),
+        query_type,
+        sources: value
+            .sources()
+            .map(|values| values.iter().map(ToOwned::to_owned).collect())
+            .unwrap_or_default(),
+        restrict: value
+            .restrict()
+            .map(|values| values.iter().map(ToOwned::to_owned).collect())
+            .unwrap_or_default(),
+        search_path: normalized_optional_string(value.search_path()),
+        search_group: value.search_group().map(|value| value.value()),
+    })
+}
+
+fn presentation_to_ir(value: Option<api::PresentationRequest<'_>>) -> Result<PresentationIr> {
+    let Some(value) = value else {
+        return Ok(PresentationIr::default());
+    };
+    Ok(PresentationIr {
+        summary: normalized_optional_string(value.summary()),
+        format: normalized_optional_string(value.format()),
+        bolding: value.bolding().map(|value| value.value()),
+        timing: value.timing().map(|value| value.value()),
+    })
 }
 
 fn condition_to_ir(value: Option<&str>) -> Option<String> {
@@ -1629,11 +2890,10 @@ fn ranking_to_ir(r: Option<api::RankingRequest<'_>>) -> Result<RankingPolicyIr> 
     match profile {
         "" | "default" | "default-relevance" => Ok(RankingPolicyIr::DefaultRelevanceV1),
         "bm25" => Ok(RankingPolicyIr::Bm25),
-        _ => Err(PortableError::unsupported(
-            "unsupported_ranking",
-            Some("ranking.profile"),
-            "the embedded IR supports only the default and bm25 ranking profiles",
-        )),
+        // The concrete profile remains losslessly represented in
+        // `RankingRequestIr`; this compatibility classification is used only
+        // by the older native lowering path.
+        _ => Ok(RankingPolicyIr::DefaultRelevanceV1),
     }
 }
 

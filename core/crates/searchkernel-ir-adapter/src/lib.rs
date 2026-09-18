@@ -281,19 +281,14 @@ impl Backend for VespaBackend {
         validate_search_request(&request)?;
         let language = analysis_options(request.language())?;
         let query = lower_search_query(&request, language)?;
-        let mut m_request = lower_search_options(&request, query.clone(), language)?;
-        for facet in request.facets() {
-            m_request = m_request.facet(FacetRequest::new(
-                facet.field().as_str(),
-                facet.limit(),
-                lower_facet_order(facet),
-            ));
-        }
+        let m_request = lower_search_options(&request, query.clone(), language)?;
+        let facets = lower_facet_groupings(request.grouping())?;
+        let m_request = lower_facets_into_request(m_request, &facets);
         let result = self
             .engine
             .search(m_request)
             .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        let facets = lower_facets(&result.facets, request.facets())?;
+        let facets = lower_facets(&result.facets, &facets)?;
         Ok(SearchResult {
             hits: result
                 .hits
@@ -528,34 +523,176 @@ fn lower_sort(sort: &searchkernel_ir::SortIr) -> SortField {
     }
 }
 
-fn lower_facet_order(facet: &searchkernel_ir::FacetIr) -> searchkernel_vespa_engine::GroupingOrder {
-    match facet.sort() {
-        searchkernel_ir::FacetSort::CountAsc => {
-            searchkernel_vespa_engine::GroupingOrder::CountAscending
-        }
-        searchkernel_ir::FacetSort::CountDesc => {
-            searchkernel_vespa_engine::GroupingOrder::CountDescending
-        }
-        searchkernel_ir::FacetSort::ValueAsc => {
-            searchkernel_vespa_engine::GroupingOrder::ValueAscending
-        }
-        searchkernel_ir::FacetSort::ValueDesc => {
-            searchkernel_vespa_engine::GroupingOrder::ValueDescending
-        }
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FacetLowering {
+    field: String,
+    limit: u32,
+    order: searchkernel_vespa_engine::GroupingOrder,
 }
 
-#[cfg(test)]
-fn lower_facet_grouping(
-    query: Query,
-    facet: &searchkernel_ir::FacetIr,
-) -> searchkernel_vespa_engine::GroupingRequest {
-    searchkernel_vespa_engine::GroupingRequest::new(query, facet.field().as_str())
-        .max_groups(facet.limit())
-        .order(lower_facet_order(facet))
+fn lower_facets_into_request(request: SearchRequest, facets: &[FacetLowering]) -> SearchRequest {
+    facets.iter().fold(request, |request, facet| {
+        request.facet(FacetRequest::new(&facet.field, facet.limit, facet.order))
+    })
+}
+
+/// Recognize the exact structured grouping emitted by the Rust facet facade:
+/// `all(group(attribute(field)), each(max(limit), order(...), output(count)))`.
+/// Other valid V2 grouping programs remain unsupported until they have a
+/// faithful native lowering.
+fn lower_facet_groupings(
+    grouping: &[searchkernel_ir::GroupingRequestIr],
+) -> Result<Vec<FacetLowering>> {
+    grouping
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            facet_lowering(value).ok_or_else(|| {
+                PortableError::unsupported(
+                    "grouping_not_supported",
+                    Some(format!("grouping[{index}]")),
+                    "the current native adapter supports only the structured grouping emitted by the facet convenience API",
+                )
+            })
+        })
+        .collect()
+}
+
+fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Option<FacetLowering> {
+    use searchkernel_ir::GroupingOperationIr as Operation;
+    use searchkernel_ir::{GroupingAggregationIr as Aggregation, GroupingExpressionIr as Expr};
+
+    if !value.continuations.is_empty() || value.root.label.is_some() {
+        return None;
+    }
+    let [Operation::Group(Expr::Attribute(field)), Operation::Each(each)] =
+        value.root.operations.as_slice()
+    else {
+        return None;
+    };
+    if each.label.is_some() {
+        return None;
+    }
+    let [Operation::Max(Some(limit)), Operation::Order(order), Operation::Output(output)] =
+        each.operations.as_slice()
+    else {
+        return None;
+    };
+    let [order] = order.as_slice() else {
+        return None;
+    };
+    let [output] = output.as_slice() else {
+        return None;
+    };
+    if output.label.is_some()
+        || !matches!(output.expression, Expr::Aggregation(ref value) if matches!(value.as_ref(), Aggregation::Count))
+    {
+        return None;
+    }
+    let order = match order {
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count)) => {
+            searchkernel_vespa_engine::GroupingOrder::CountDescending
+        }
+        Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count) => {
+            searchkernel_vespa_engine::GroupingOrder::CountAscending
+        }
+        Expr::Negative(value) if matches!(value.as_ref(), Expr::Attribute(value) if value == field) => {
+            searchkernel_vespa_engine::GroupingOrder::ValueDescending
+        }
+        Expr::Attribute(value) if value == field => {
+            searchkernel_vespa_engine::GroupingOrder::ValueAscending
+        }
+        _ => return None,
+    };
+    Some(FacetLowering {
+        field: field.clone(),
+        limit: *limit,
+        order,
+    })
 }
 
 fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
+    lower_facet_groupings(request.grouping())?;
+    if !request.inputs().is_empty() {
+        return Err(PortableError::unsupported(
+            "query_inputs_not_supported",
+            Some("inputs"),
+            "the current native adapter does not expose Vespa query inputs",
+        ));
+    }
+    if !request.ranking_request().properties.is_empty() {
+        return Err(PortableError::unsupported(
+            "ranking_properties_not_supported",
+            Some("ranking.properties"),
+            "the current native adapter does not expose Vespa rank properties",
+        ));
+    }
+    if !matches!(
+        request.ranking_request().profile.as_str(),
+        "" | "default" | "default-relevance" | "bm25"
+    ) {
+        return Err(PortableError::unsupported(
+            "ranking_profile_not_supported",
+            Some("ranking.profile"),
+            "the current native adapter supports only the default and bm25 rank profiles",
+        ));
+    }
+    if !request.properties().is_empty() {
+        return Err(PortableError::unsupported(
+            "query_properties_not_supported",
+            Some("properties"),
+            "the current native adapter does not expose generic Vespa query properties",
+        ));
+    }
+    if request.query_profile().is_some() {
+        return Err(PortableError::unsupported(
+            "query_profile_not_supported",
+            Some("query_profile"),
+            "query profiles require a container-aware Vespa execution path",
+        ));
+    }
+    if request.search_chain().is_some() {
+        return Err(PortableError::unsupported(
+            "search_chain_not_supported",
+            Some("search_chain"),
+            "search chains require a container-aware Vespa execution path",
+        ));
+    }
+    if request.query_model().query_string.is_some()
+        || request.query_model().default_index.is_some()
+        || request.query_model().encoding.is_some()
+        || request.query_model().filter.is_some()
+        || request.query_model().locale.is_some()
+        || request.query_model().query_type.is_some()
+        || !request.query_model().sources.is_empty()
+        || !request.query_model().restrict.is_empty()
+        || request.query_model().search_path.is_some()
+        || request.query_model().search_group.is_some()
+    {
+        return Err(PortableError::unsupported(
+            "query_model_not_supported",
+            Some("query_model"),
+            "the current native adapter supports only query_model.language",
+        ));
+    }
+    if request.presentation().summary.is_some()
+        || request.presentation().format.is_some()
+        || request.presentation().bolding.is_some()
+        || request.presentation().timing.is_some()
+    {
+        return Err(PortableError::unsupported(
+            "presentation_not_supported",
+            Some("presentation"),
+            "the current native adapter supports only fields and highlighting presentation controls",
+        ));
+    }
+    if matches!(request.query(), QueryIr::Yql { .. }) {
+        return Err(PortableError::unsupported(
+            "yql_not_supported",
+            Some("query"),
+            "the current native adapter does not expose a YQL execution path",
+        ));
+    }
     if !matches!(
         request.highlighting(),
         searchkernel_ir::HighlightingIr::Disabled
@@ -651,6 +788,11 @@ fn lower_query_with_language(
         QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query_with_language(
             child, fields, language,
         )?))),
+        QueryIr::Yql { .. } => Err(PortableError::unsupported(
+            "yql_not_supported",
+            Some("query"),
+            "the current native adapter does not expose a YQL execution path",
+        )),
     }
 }
 
@@ -823,7 +965,7 @@ fn native_search_error(
     if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
         let detail_code = error.detail_code().unwrap_or(unsupported_code);
         let path = match detail_code {
-            "facet_key_type_not_supported" => Some("facets"),
+            "facet_key_type_not_supported" => Some("grouping"),
             _ => Some("sort"),
         };
         return PortableError::unsupported(detail_code, path, error.to_string());
@@ -833,7 +975,7 @@ fn native_search_error(
 
 fn lower_facets(
     grouped: &[GroupingResult],
-    facets: &[searchkernel_ir::FacetIr],
+    facets: &[FacetLowering],
 ) -> Result<Vec<searchkernel_ir::FacetResult>> {
     if grouped.len() != facets.len() {
         return Err(internal("native search returned an unexpected facet count"));
@@ -852,7 +994,7 @@ fn lower_facets(
                         VespaValue::Boolean(value) => ScalarValue::Boolean(*value),
                         _ => return Err(PortableError::unsupported(
                             "facet_key_type_not_supported",
-                            Some("facets"),
+                            Some("grouping"),
                             "native grouping returned a key kind not representable by the portable facet contract",
                         )),
                     })),
@@ -860,7 +1002,7 @@ fn lower_facets(
                 }))
                 .collect::<Result<Vec<_>>>()?;
             Ok(searchkernel_ir::FacetResult {
-                field: facet.field().to_string(),
+                field: facet.field.clone(),
                 values,
             })
         })
@@ -895,10 +1037,12 @@ fn unsupported(message: impl Into<String>) -> PortableError {
 mod tests {
     use super::*;
     use searchkernel_ir::{
-        AnalyzerIdentity, ComparisonIr, ComparisonOp, FacetIr, FieldCapabilities, FieldCardinality,
-        FieldIr, FieldKind, FieldName, FieldValueIr, HighlightingIr, IndexDefinitionIr,
-        LanguageHint, MissingPlacement, PrefixPolicy, QueryIr, RangeIr, RankingPolicyIr,
-        ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection, SortIr, TypoPolicy,
+        AnalyzerIdentity, ComparisonIr, ComparisonOp, FieldCapabilities, FieldCardinality, FieldIr,
+        FieldKind, FieldName, FieldValueIr, GroupingAggregationIr, GroupingAllIr,
+        GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
+        HighlightingIr, IndexDefinitionIr, LanguageHint, MissingPlacement, PrefixPolicy, QueryIr,
+        RangeIr, RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight, SortDirection,
+        SortIr, TypoPolicy,
     };
 
     fn field(name: &str) -> FieldName {
@@ -915,7 +1059,6 @@ mod tests {
             search_fields,
             None,
             sort,
-            Vec::new(),
             RankingPolicyIr::DefaultRelevanceV1,
             20,
             0,
@@ -925,6 +1068,48 @@ mod tests {
             PrefixPolicy::Disabled,
             TypoPolicy::Disabled,
         )
+    }
+
+    fn facet_grouping(
+        field: &str,
+        limit: u32,
+        order: searchkernel_vespa_engine::GroupingOrder,
+    ) -> GroupingRequestIr {
+        let attribute = || GroupingExpressionIr::Attribute(field.to_owned());
+        let count = || GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count));
+        let order = match order {
+            searchkernel_vespa_engine::GroupingOrder::CountDescending => {
+                GroupingExpressionIr::Negative(Box::new(count()))
+            }
+            searchkernel_vespa_engine::GroupingOrder::CountAscending => count(),
+            searchkernel_vespa_engine::GroupingOrder::ValueDescending => {
+                GroupingExpressionIr::Negative(Box::new(attribute()))
+            }
+            searchkernel_vespa_engine::GroupingOrder::ValueAscending => attribute(),
+            searchkernel_vespa_engine::GroupingOrder::None => {
+                panic!("facet grouping requires an explicit order")
+            }
+        };
+        GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![
+                    GroupingOperationIr::Group(attribute()),
+                    GroupingOperationIr::Each(GroupingAllIr {
+                        operations: vec![
+                            GroupingOperationIr::Max(Some(limit)),
+                            GroupingOperationIr::Order(vec![order]),
+                            GroupingOperationIr::Output(vec![GroupingOutputIr {
+                                label: None,
+                                expression: count(),
+                            }]),
+                        ],
+                        label: None,
+                    }),
+                ],
+                label: None,
+            },
+            continuations: Vec::new(),
+        }
     }
 
     #[test]
@@ -991,6 +1176,21 @@ mod tests {
         );
         let error = validate_search_request(&french).unwrap_err();
         assert_eq!(error.details[0].code, "language_not_supported");
+    }
+
+    #[test]
+    fn unsupported_structured_grouping_is_explicitly_rejected() {
+        let request =
+            request(Vec::new(), Vec::new(), None).with_grouping(vec![GroupingRequestIr {
+                root: GroupingAllIr {
+                    operations: Vec::new(),
+                    label: None,
+                },
+                continuations: Vec::new(),
+            }]);
+        let error = validate_search_request(&request).expect_err("grouping must not be dropped");
+        assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+        assert_eq!(error.details[0].code, "grouping_not_supported");
     }
 
     #[test]
@@ -1365,7 +1565,7 @@ mod tests {
     }
 
     #[test]
-    fn search_validation_supports_facets_and_rejects_highlighting_precisely() {
+    fn search_validation_supports_facet_shaped_grouping_and_rejects_highlighting_precisely() {
         let title = field("title");
         let search_fields = vec![SearchFieldIr::new(
             title.clone(),
@@ -1376,11 +1576,6 @@ mod tests {
             search_fields.clone(),
             None,
             Vec::new(),
-            vec![FacetIr::new(
-                title.clone(),
-                10,
-                searchkernel_ir::FacetSort::CountDesc,
-            )],
             RankingPolicyIr::DefaultRelevanceV1,
             10,
             0,
@@ -1389,14 +1584,18 @@ mod tests {
             None,
             PrefixPolicy::Disabled,
             TypoPolicy::Disabled,
-        );
+        )
+        .with_grouping(vec![facet_grouping(
+            title.as_str(),
+            10,
+            searchkernel_vespa_engine::GroupingOrder::CountDescending,
+        )]);
         assert!(validate_search_request(&facets).is_ok());
 
         let highlighting = SearchRequestIr::new(
             QueryIr::Text("fox".into()),
             search_fields,
             None,
-            Vec::new(),
             Vec::new(),
             RankingPolicyIr::DefaultRelevanceV1,
             10,
@@ -1532,14 +1731,26 @@ mod tests {
             SortIr::new(price.clone(), SortDirection::Asc, MissingPlacement::First),
             SortIr::new(brand.clone(), SortDirection::Desc, MissingPlacement::Last),
         ];
-        let facets = [
-            FacetIr::new(brand.clone(), 7, searchkernel_ir::FacetSort::CountDesc),
-            FacetIr::new(price.clone(), 6, searchkernel_ir::FacetSort::CountAsc),
-            FacetIr::new(title.clone(), 5, searchkernel_ir::FacetSort::ValueAsc),
-            FacetIr::new(
-                description.clone(),
+        let grouping = [
+            facet_grouping(
+                brand.as_str(),
+                7,
+                searchkernel_vespa_engine::GroupingOrder::CountDescending,
+            ),
+            facet_grouping(
+                price.as_str(),
+                6,
+                searchkernel_vespa_engine::GroupingOrder::CountAscending,
+            ),
+            facet_grouping(
+                title.as_str(),
+                5,
+                searchkernel_vespa_engine::GroupingOrder::ValueAscending,
+            ),
+            facet_grouping(
+                description.as_str(),
                 4,
-                searchkernel_ir::FacetSort::ValueDesc,
+                searchkernel_vespa_engine::GroupingOrder::ValueDescending,
             ),
         ];
         let request = SearchRequestIr::new(
@@ -1551,7 +1762,6 @@ mod tests {
                 ScalarValueIr::Int64(10),
             ))),
             sorts,
-            facets.to_vec(),
             RankingPolicyIr::DefaultRelevanceV1,
             3,
             2,
@@ -1561,6 +1771,7 @@ mod tests {
             PrefixPolicy::Disabled,
             TypoPolicy::Disabled,
         )
+        .with_grouping(grouping.to_vec())
         .with_timeout(Some(std::time::Duration::from_millis(123)));
 
         validate_search_request(&request).unwrap();
@@ -1594,13 +1805,18 @@ mod tests {
             searchkernel_vespa_engine::GroupingOrder::ValueAscending,
             searchkernel_vespa_engine::GroupingOrder::ValueDescending,
         ];
+        let facets = lower_facet_groupings(request.grouping()).unwrap();
         for (facet, expected_order) in facets.iter().zip(expected_orders) {
-            let grouping = lower_facet_grouping(query.clone(), facet);
-            assert_eq!(grouping.query, query);
-            assert_eq!(grouping.group_by, facet.field().as_str());
-            assert_eq!(grouping.max_groups, Some(facet.limit()));
-            assert_eq!(grouping.order, expected_order);
-            assert!(grouping.aggregations.is_empty());
+            assert_eq!(facet.order, expected_order);
+        }
+        let lowered = lower_facets_into_request(lowered, &facets);
+        assert_eq!(lowered.facets.len(), 4);
+        for ((facet, native), expected_order) in
+            facets.iter().zip(&lowered.facets).zip(expected_orders)
+        {
+            assert_eq!(native.field, facet.field);
+            assert_eq!(native.max_groups, facet.limit);
+            assert_eq!(native.order, expected_order);
         }
     }
 

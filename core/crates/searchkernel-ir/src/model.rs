@@ -600,40 +600,6 @@ impl SortIr {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FacetSort {
-    CountDesc,
-    CountAsc,
-    ValueAsc,
-    ValueDesc,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FacetIr {
-    pub(crate) field: FieldName,
-    pub(crate) limit: u32,
-    pub(crate) sort: FacetSort,
-}
-
-impl FacetIr {
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn new(field: FieldName, limit: u32, sort: FacetSort) -> Self {
-        Self { field, limit, sort }
-    }
-
-    pub fn field(&self) -> &FieldName {
-        &self.field
-    }
-
-    pub fn limit(&self) -> u32 {
-        self.limit
-    }
-
-    pub fn sort(&self) -> FacetSort {
-        self.sort
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RankingPolicyIr {
     DefaultRelevanceV1,
     Bm25,
@@ -660,6 +626,232 @@ pub enum QueryIr {
     And(Vec<QueryIr>),
     Or(Vec<QueryIr>),
     Not(Box<QueryIr>),
+    /// A YQL source is intentionally kept separate from the portable typed
+    /// query tree.  Its syntax belongs to Vespa, but its request-level
+    /// parameters are still portable request semantics.
+    Yql {
+        source: String,
+        parameters: std::collections::BTreeMap<String, RequestValueIr>,
+    },
+}
+
+/// The complete V2 value domain used by request controls.  Document values
+/// remain deliberately narrower while the native document ABI has that limit;
+/// request properties and query inputs must not lose valid V2 values for that
+/// reason.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RequestValueIr {
+    Null,
+    Bool(bool),
+    Int64(i64),
+    UInt64(u64),
+    Float64(f64),
+    NonFiniteFloat(RequestNonFiniteFloatIr),
+    String(String),
+    Bytes(Vec<u8>),
+    List(Vec<RequestValueIr>),
+    Object(std::collections::BTreeMap<String, RequestValueIr>),
+    Tensor(RequestTensorIr),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestNonFiniteFloatIr {
+    NaN,
+    PositiveInfinity,
+    NegativeInfinity,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RequestTensorIr {
+    pub type_spec: String,
+    pub payload: RequestTensorPayloadIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RequestTensorPayloadIr {
+    Dense(Vec<f64>),
+    Sparse(Vec<RequestTensorCellIr>),
+    Mixed(Vec<RequestTensorBlockIr>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RequestTensorCellIr {
+    pub address: std::collections::BTreeMap<String, String>,
+    pub value: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RequestTensorBlockIr {
+    pub address: std::collections::BTreeMap<String, String>,
+    pub values: Vec<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum QueryInputIr {
+    Literal(RequestValueIr),
+    Expression(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RankingRequestIr {
+    pub profile: String,
+    pub properties: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct QueryModelIr {
+    pub query_string: Option<String>,
+    pub default_index: Option<String>,
+    pub encoding: Option<String>,
+    pub filter: Option<String>,
+    pub language: Option<LanguageHint>,
+    pub locale: Option<String>,
+    pub query_type: Option<QueryModelTypeIr>,
+    pub sources: Vec<String>,
+    pub restrict: Vec<String>,
+    pub search_path: Option<String>,
+    pub search_group: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct QueryModelTypeIr {
+    pub composite: Option<String>,
+    pub tokenization: Option<String>,
+    pub syntax: Option<String>,
+    pub profile: Option<String>,
+    pub is_yql_default: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PresentationIr {
+    pub summary: Option<String>,
+    pub format: Option<String>,
+    pub bolding: Option<bool>,
+    pub timing: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingRequestIr {
+    pub root: GroupingAllIr,
+    pub continuations: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingAllIr {
+    pub operations: Vec<GroupingOperationIr>,
+    pub label: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingOperationIr {
+    All(GroupingAllIr),
+    Each(GroupingAllIr),
+    Group(GroupingExpressionIr),
+    Output(Vec<GroupingOutputIr>),
+    Max(Option<u32>),
+    Precision(u32),
+    Order(Vec<GroupingExpressionIr>),
+    Alias {
+        name: String,
+        expression: GroupingExpressionIr,
+    },
+    Filter(GroupingFilterIr),
+    Keep(GroupingFilterIr),
+    Where(GroupingExpressionIr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingOutputIr {
+    pub label: Option<String>,
+    pub expression: GroupingExpressionIr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingExpressionIr {
+    Attribute(String),
+    Literal(RequestValueIr),
+    Function {
+        name: String,
+        arguments: Vec<GroupingExpressionIr>,
+    },
+    Positive(Box<GroupingExpressionIr>),
+    Negative(Box<GroupingExpressionIr>),
+    Binary {
+        operator: GroupingBinaryOperatorIr,
+        left: Box<GroupingExpressionIr>,
+        right: Box<GroupingExpressionIr>,
+    },
+    Alias(String),
+    Member {
+        base: Box<GroupingExpressionIr>,
+        member: String,
+    },
+    MapLookup {
+        base: Box<GroupingExpressionIr>,
+        key: Box<GroupingExpressionIr>,
+    },
+    Bucket(GroupingBucketIr),
+    Aggregation(Box<GroupingAggregationIr>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupingBinaryOperatorIr {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingBucketIr {
+    pub lower: GroupingRangeBoundIr,
+    pub upper: GroupingRangeBoundIr,
+    pub include_lower: bool,
+    pub include_upper: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingRangeBoundIr {
+    Finite(RequestValueIr),
+    NegativeInfinity,
+    PositiveInfinity,
+    Unbounded,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingAggregationIr {
+    Count,
+    Sum(GroupingExpressionIr),
+    Avg(GroupingExpressionIr),
+    Min(GroupingExpressionIr),
+    Max(GroupingExpressionIr),
+    Xor(GroupingExpressionIr),
+    StdDev(GroupingExpressionIr),
+    Quantiles {
+        quantiles: Vec<f64>,
+        expression: GroupingExpressionIr,
+    },
+    Summary(Option<String>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingFilterIr {
+    And(Vec<GroupingFilterIr>),
+    Or(Vec<GroupingFilterIr>),
+    Not(Box<GroupingFilterIr>),
+    Regex {
+        expression: Box<GroupingExpressionIr>,
+        pattern: String,
+    },
+    Range {
+        expression: Box<GroupingExpressionIr>,
+        lower: Box<GroupingExpressionIr>,
+        upper: Box<GroupingExpressionIr>,
+        include_lower: bool,
+        include_upper: bool,
+    },
+    IsTrue(Box<GroupingExpressionIr>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -736,13 +928,21 @@ pub struct SearchRequestIr {
     pub(crate) search_fields: Vec<SearchFieldIr>,
     pub(crate) filter: Option<FilterIr>,
     pub(crate) sort: Vec<SortIr>,
-    pub(crate) facets: Vec<FacetIr>,
+    /// V2's canonical aggregation mechanism.
+    pub(crate) grouping: Vec<GroupingRequestIr>,
     pub(crate) ranking: RankingPolicyIr,
+    pub(crate) ranking_request: RankingRequestIr,
+    pub(crate) inputs: std::collections::BTreeMap<String, QueryInputIr>,
     pub(crate) limit: u32,
     pub(crate) offset: u32,
     pub(crate) projection: ProjectionIr,
     pub(crate) highlighting: HighlightingIr,
     pub(crate) language: Option<LanguageHint>,
+    pub(crate) query_model: QueryModelIr,
+    pub(crate) presentation: PresentationIr,
+    pub(crate) properties: std::collections::BTreeMap<String, RequestValueIr>,
+    pub(crate) query_profile: Option<String>,
+    pub(crate) search_chain: Option<String>,
     pub(crate) timeout: Option<Duration>,
     pub(crate) prefix_policy: PrefixPolicy,
     pub(crate) typo_policy: TypoPolicy,
@@ -756,7 +956,6 @@ impl SearchRequestIr {
         search_fields: Vec<SearchFieldIr>,
         filter: Option<FilterIr>,
         sort: Vec<SortIr>,
-        facets: Vec<FacetIr>,
         ranking: RankingPolicyIr,
         limit: u32,
         offset: u32,
@@ -771,13 +970,23 @@ impl SearchRequestIr {
             search_fields,
             filter,
             sort,
-            facets,
+            grouping: Vec::new(),
             ranking,
+            ranking_request: RankingRequestIr {
+                profile: "default".to_owned(),
+                properties: std::collections::BTreeMap::new(),
+            },
+            inputs: std::collections::BTreeMap::new(),
             limit,
             offset,
             projection,
             highlighting,
             language,
+            query_model: QueryModelIr::default(),
+            presentation: PresentationIr::default(),
+            properties: std::collections::BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
             timeout: None,
             prefix_policy,
             typo_policy,
@@ -800,12 +1009,20 @@ impl SearchRequestIr {
         &self.sort
     }
 
-    pub fn facets(&self) -> &[FacetIr] {
-        &self.facets
+    pub fn grouping(&self) -> &[GroupingRequestIr] {
+        &self.grouping
     }
 
     pub fn ranking(&self) -> RankingPolicyIr {
         self.ranking
+    }
+
+    pub fn ranking_request(&self) -> &RankingRequestIr {
+        &self.ranking_request
+    }
+
+    pub fn inputs(&self) -> &std::collections::BTreeMap<String, QueryInputIr> {
+        &self.inputs
     }
 
     pub fn limit(&self) -> u32 {
@@ -828,8 +1045,34 @@ impl SearchRequestIr {
         self.language.as_ref()
     }
 
+    pub fn query_model(&self) -> &QueryModelIr {
+        &self.query_model
+    }
+
+    pub fn presentation(&self) -> &PresentationIr {
+        &self.presentation
+    }
+
+    pub fn properties(&self) -> &std::collections::BTreeMap<String, RequestValueIr> {
+        &self.properties
+    }
+
+    pub fn query_profile(&self) -> Option<&str> {
+        self.query_profile.as_deref()
+    }
+
+    pub fn search_chain(&self) -> Option<&str> {
+        self.search_chain.as_deref()
+    }
+
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_grouping(mut self, grouping: Vec<GroupingRequestIr>) -> Self {
+        self.grouping = grouping;
+        self
     }
 
     #[cfg(any(test, feature = "test-support"))]

@@ -4,7 +4,9 @@ use crate::analyze::{AnalyzeBuilder, AnalyzeTarget};
 use crate::filter::{pending_value, ComparisonOp, Filter, FilterNode};
 use crate::patch::{Patch, PatchOperation};
 use crate::schema::{Analyzer, Field, FieldKind, IndexDefinition, SearchField};
-use crate::search::{MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection};
+use crate::search::{
+    Facet, FacetSort, MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection,
+};
 use crate::{Error, Result};
 use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
@@ -206,6 +208,12 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
         .map(timeout_millis)
         .transpose()?
         .map(api::OptionalUInt64::new);
+    let grouping = request
+        .facets
+        .iter()
+        .map(|facet| facet_grouping(&mut builder, facet))
+        .collect::<Vec<_>>();
+    let grouping = (!grouping.is_empty()).then(|| builder.create_vector(&grouping));
     let query_model = request.language.as_deref().map(|language| {
         let language = builder.create_string(language);
         api::QueryModel::create(
@@ -241,7 +249,7 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
             limit: limit.as_ref(),
             offset: offset.as_ref(),
             timeout_ms: timeout.as_ref(),
-            grouping: None,
+            grouping,
             inputs: None,
             query_model,
             presentation,
@@ -252,6 +260,175 @@ pub(crate) fn search(request: &SearchBuilder) -> Result<Vec<u8>> {
     );
     builder.finish(root, None);
     Ok(builder.finished_data().to_vec())
+}
+
+/// The product's legacy facet builder is a convenience over V2 grouping, not
+/// a second aggregation request format.  Its normalized shape is:
+/// `all(group(attribute(field)), each(max(limit), order(...), output(count)))`.
+fn facet_grouping<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    facet: &Facet,
+) -> flatbuffers::WIPOffset<api::GroupingRequest<'a>> {
+    let field = builder.create_string(&facet.field);
+    let attribute = api::GroupingAttributeExpression::create(
+        builder,
+        &api::GroupingAttributeExpressionArgs { field: Some(field) },
+    );
+    let attribute = api::GroupingExpression::create(
+        builder,
+        &api::GroupingExpressionArgs {
+            expr_type: api::GroupingExpressionKind::GroupingAttributeExpression,
+            expr: Some(attribute.as_union_value()),
+        },
+    );
+    let group = api::GroupingGroupOperation::create(
+        builder,
+        &api::GroupingGroupOperationArgs {
+            expression: Some(attribute),
+        },
+    );
+    let group = api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingGroupOperation,
+            operation: Some(group.as_union_value()),
+        },
+    );
+    let count = api::CountAggregation::create(builder, &api::CountAggregationArgs {});
+    let count = api::GroupingAggregationExpression::create(
+        builder,
+        &api::GroupingAggregationExpressionArgs {
+            aggregation_type: api::AggregationKind::CountAggregation,
+            aggregation: Some(count.as_union_value()),
+        },
+    );
+    let count = api::GroupingExpression::create(
+        builder,
+        &api::GroupingExpressionArgs {
+            expr_type: api::GroupingExpressionKind::GroupingAggregationExpression,
+            expr: Some(count.as_union_value()),
+        },
+    );
+    let output = api::GroupingOutput::create(
+        builder,
+        &api::GroupingOutputArgs {
+            label: None,
+            expression: Some(count),
+        },
+    );
+    let outputs = builder.create_vector(&[output]);
+    let output = api::GroupingOutputOperation::create(
+        builder,
+        &api::GroupingOutputOperationArgs {
+            outputs: Some(outputs),
+        },
+    );
+    let output = api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingOutputOperation,
+            operation: Some(output.as_union_value()),
+        },
+    );
+    let max = api::FiniteGroupingMax::create(
+        builder,
+        &api::FiniteGroupingMaxArgs {
+            value: facet.limit.unwrap_or(10),
+        },
+    );
+    let max = api::GroupingMaxOperation::create(
+        builder,
+        &api::GroupingMaxOperationArgs {
+            value_type: api::GroupingMaxKind::FiniteGroupingMax,
+            value: Some(max.as_union_value()),
+        },
+    );
+    let max = api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingMaxOperation,
+            operation: Some(max.as_union_value()),
+        },
+    );
+    // The explicit order operation makes all four facade sort modes canonical.
+    let order_expression = match facet.sort.unwrap_or(FacetSort::CountDesc) {
+        FacetSort::CountDesc | FacetSort::CountAsc => count,
+        FacetSort::ValueAsc | FacetSort::ValueDesc => attribute,
+    };
+    let order_expression = match facet.sort.unwrap_or(FacetSort::CountDesc) {
+        FacetSort::CountDesc | FacetSort::ValueDesc => {
+            let negative = api::GroupingUnaryExpression::create(
+                builder,
+                &api::GroupingUnaryExpressionArgs {
+                    op: api::GroupingUnaryOperator::Negative,
+                    expression: Some(order_expression),
+                },
+            );
+            api::GroupingExpression::create(
+                builder,
+                &api::GroupingExpressionArgs {
+                    expr_type: api::GroupingExpressionKind::GroupingUnaryExpression,
+                    expr: Some(negative.as_union_value()),
+                },
+            )
+        }
+        FacetSort::CountAsc | FacetSort::ValueAsc => order_expression,
+    };
+    let order_expression = api::GroupingOrderExpr::create(
+        builder,
+        &api::GroupingOrderExprArgs {
+            expression: Some(order_expression),
+        },
+    );
+    let order_expressions = builder.create_vector(&[order_expression]);
+    let order = api::GroupingOrderOperation::create(
+        builder,
+        &api::GroupingOrderOperationArgs {
+            expressions: Some(order_expressions),
+        },
+    );
+    let order = api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingOrderOperation,
+            operation: Some(order.as_union_value()),
+        },
+    );
+    let each_operations = builder.create_vector(&[max, order, output]);
+    let each = api::GroupingEachOperation::create(
+        builder,
+        &api::GroupingEachOperationArgs {
+            operations: Some(each_operations),
+            label: None,
+        },
+    );
+    let each = api::GroupingOperation::create(
+        builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingEachOperation,
+            operation: Some(each.as_union_value()),
+        },
+    );
+    let operations = builder.create_vector(&[group, each]);
+    let root = api::GroupingAllOperation::create(
+        builder,
+        &api::GroupingAllOperationArgs {
+            operations: Some(operations),
+            label: None,
+        },
+    );
+    let structured = api::StructuredGroupingSource::create(
+        builder,
+        &api::StructuredGroupingSourceArgs { root: Some(root) },
+    );
+    api::GroupingRequest::create(
+        builder,
+        &api::GroupingRequestArgs {
+            source_type: api::GroupingSourceKind::StructuredGroupingSource,
+            source: Some(structured.as_union_value()),
+            continuations: None,
+        },
+    )
 }
 
 fn timeout_millis(timeout: Duration) -> Result<u64> {
