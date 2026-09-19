@@ -18,6 +18,7 @@ fn config() -> Result<Config, Box<dyn Error>> {
     let mut index_path = None;
     let mut definition_path = None;
     let mut listen = None;
+    let mut execution_limit = None;
 
     while let Some(argument) = args.next() {
         match argument.to_string_lossy().as_ref() {
@@ -34,6 +35,14 @@ fn config() -> Result<Config, Box<dyn Error>> {
                         .ok_or("--definition requires a path")
                         .map(PathBuf::from)?,
                 )
+            }
+            "--execution-limit" => {
+                execution_limit = Some(
+                    args.next()
+                        .ok_or("--execution-limit requires a positive integer")?
+                        .to_string_lossy()
+                        .parse::<usize>()?,
+                );
             }
             "--listen" => {
                 listen = Some(args.next().ok_or("--listen requires an address")?);
@@ -55,11 +64,19 @@ fn config() -> Result<Config, Box<dyn Error>> {
             Err(error) => return Err(ServerError::Environment(error).into()),
         },
     };
+    let execution_limit = match execution_limit {
+        Some(value) => value,
+        None => match env::var("SEARCHKERNEL_EXECUTION_LIMIT") {
+            Ok(value) => value.parse::<usize>()?,
+            Err(env::VarError::NotPresent) => server.execution_limit,
+            Err(error) => return Err(error.into()),
+        },
+    };
 
     Ok(Config {
         index_path,
         definition_path,
-        server,
+        server: server.with_execution_limit(execution_limit),
     })
 }
 
@@ -159,6 +176,13 @@ mod tests {
         );
         assert_eq!(config_from_address(None).unwrap(), ServerConfig::default());
         assert!(config_from_address(Some("not-an-address")).is_err());
+    }
+
+    #[test]
+    fn execution_limit_can_be_configured() {
+        let config =
+            ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 50051))).with_execution_limit(3);
+        assert_eq!(config.execution_limit, 3);
     }
 
     #[cfg(unix)]

@@ -16,7 +16,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
-    sync::oneshot,
+    sync::{oneshot, Semaphore},
     task::JoinHandle,
 };
 #[cfg(unix)]
@@ -40,6 +40,9 @@ use rpc::{
 /// legitimate documents and tensor payloads.
 pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
 
+/// Default maximum number of native dispatches that may execute concurrently.
+pub const DEFAULT_EXECUTION_LIMIT: usize = 16;
+
 /// The address type used by the gRPC transport server.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ListenAddress {
@@ -62,6 +65,11 @@ pub struct ServerConfig {
     /// Address on which the gRPC listener is bound. A TCP port of zero requests
     /// an ephemeral port and is useful for tests.
     pub listen_addr: ListenAddress,
+    /// Maximum number of blocking dispatcher calls that may execute at once.
+    ///
+    /// Requests above this limit wait asynchronously for admission instead of
+    /// creating additional blocking-pool jobs.
+    pub execution_limit: usize,
 }
 
 impl ServerConfig {
@@ -69,6 +77,7 @@ impl ServerConfig {
     pub const fn new(listen_addr: SocketAddr) -> Self {
         Self {
             listen_addr: ListenAddress::Tcp(listen_addr),
+            execution_limit: DEFAULT_EXECUTION_LIMIT,
         }
     }
 
@@ -77,6 +86,7 @@ impl ServerConfig {
     pub fn unix(path: impl Into<PathBuf>) -> Self {
         Self {
             listen_addr: ListenAddress::Unix(path.into()),
+            execution_limit: DEFAULT_EXECUTION_LIMIT,
         }
     }
 
@@ -84,6 +94,13 @@ impl ServerConfig {
     #[cfg(unix)]
     pub fn new_unix(path: impl Into<PathBuf>) -> Self {
         Self::unix(path)
+    }
+
+    /// Sets the maximum number of native dispatcher calls that may execute
+    /// concurrently. A value of zero is rejected by [`start`].
+    pub const fn with_execution_limit(mut self, execution_limit: usize) -> Self {
+        self.execution_limit = execution_limit;
+        self
     }
 }
 
@@ -97,12 +114,16 @@ impl Default for ServerConfig {
 #[derive(Clone)]
 pub struct SearchKernelTransport {
     dispatcher: Arc<Dispatcher>,
+    execution_limit: Arc<Semaphore>,
 }
 
 impl SearchKernelTransport {
     /// Creates a service with the supplied canonical dispatcher.
-    fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        Self { dispatcher }
+    fn new(dispatcher: Arc<Dispatcher>, execution_limit: Arc<Semaphore>) -> Self {
+        Self {
+            dispatcher,
+            execution_limit,
+        }
     }
 
     fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
@@ -110,6 +131,28 @@ impl SearchKernelTransport {
             .dispatch(payload)
             .map_err(|error| Box::new(dispatch_error_status(error)))
     }
+}
+
+async fn run_blocking<T, F>(execution_limit: Arc<Semaphore>, operation: F) -> Result<T, Box<Status>>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let permit = execution_limit.acquire_owned().await.map_err(|error| {
+        Box::new(Status::internal(format!(
+            "execution limit is unavailable: {error}"
+        )))
+    })?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        operation()
+    })
+    .await
+    .map_err(|error| {
+        Box::new(Status::internal(format!(
+            "blocking dispatch task failed: {error}"
+        )))
+    })
 }
 
 #[tonic::async_trait]
@@ -120,10 +163,12 @@ impl SearchKernel for SearchKernelTransport {
     ) -> Result<Response<FlatBufferFrame>, Status> {
         let payload = request.into_inner().payload;
         let transport = self.clone();
-        let payload = tokio::task::spawn_blocking(move || transport.dispatch(&payload))
-            .await
-            .map_err(|error| Status::internal(format!("blocking dispatch task failed: {error}")))?
-            .map_err(|status| *status)?;
+        let payload = run_blocking(self.execution_limit.clone(), move || {
+            transport.dispatch(&payload)
+        })
+        .await
+        .map_err(|status| *status)?
+        .map_err(|status| *status)?;
         Ok(Response::new(FlatBufferFrame { payload }))
     }
 }
@@ -164,6 +209,8 @@ pub enum ServerError {
     InvalidUnixSocketPath,
     /// Reading the daemon environment failed.
     Environment(std::env::VarError),
+    /// The configured execution limit must admit at least one request.
+    InvalidExecutionLimit,
 }
 
 impl fmt::Display for ServerError {
@@ -180,6 +227,9 @@ impl fmt::Display for ServerError {
             }
             Self::InvalidUnixSocketPath => write!(formatter, "gRPC Unix socket path is empty"),
             Self::Environment(error) => write!(formatter, "read daemon environment: {error}"),
+            Self::InvalidExecutionLimit => {
+                write!(formatter, "execution limit must be greater than zero")
+            }
         }
     }
 }
@@ -284,7 +334,14 @@ pub async fn start(
     config: ServerConfig,
     dispatcher: Arc<Dispatcher>,
 ) -> Result<RunningServer, ServerError> {
-    start_with_service(config, SearchKernelTransport::new(dispatcher)).await
+    let execution_limit = (config.execution_limit > 0)
+        .then(|| Arc::new(Semaphore::new(config.execution_limit)))
+        .ok_or(ServerError::InvalidExecutionLimit)?;
+    start_with_service(
+        config,
+        SearchKernelTransport::new(dispatcher, execution_limit),
+    )
+    .await
 }
 
 async fn start_with_service(
@@ -369,4 +426,48 @@ async fn bind_unix_listener(path: &Path) -> Result<UnixListener, ServerError> {
     }
 
     UnixListener::bind(path).map_err(ServerError::Bind)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    use tokio::sync::Semaphore;
+
+    use super::{run_blocking, DEFAULT_EXECUTION_LIMIT};
+
+    #[tokio::test]
+    async fn blocking_work_waits_for_an_execution_permit() {
+        let execution_limit = Arc::new(Semaphore::new(1));
+        let held_permit = execution_limit
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("test execution permit");
+        let started = Arc::new(AtomicBool::new(false));
+        let task_started = started.clone();
+
+        let task = tokio::spawn(run_blocking(execution_limit, move || {
+            task_started.store(true, Ordering::Release);
+            42
+        }));
+
+        tokio::task::yield_now().await;
+        assert!(!started.load(Ordering::Acquire));
+
+        drop(held_permit);
+        assert_eq!(
+            task.await.expect("blocking task join").expect("dispatch"),
+            42
+        );
+        assert!(started.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn default_execution_limit_is_bounded() {
+        assert!(DEFAULT_EXECUTION_LIMIT > 0);
+    }
 }
