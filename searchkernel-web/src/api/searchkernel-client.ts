@@ -24,8 +24,6 @@ export type Document = {
   fields: Record<string, FieldValue>
 }
 
-export type DisplayFormat = 'text' | 'number' | 'boolean' | 'date' | 'json'
-export type FieldDisplay = { label: string; visible: boolean; order: number; format: DisplayFormat }
 export type Field = {
   name: string
   type: string
@@ -33,22 +31,20 @@ export type Field = {
   attribute: boolean
   stored: boolean
   analyzer: string
-  display: FieldDisplay
 }
 
 export type Index = {
   id: string
-  documentCount: string
-  size: string
-  fieldCount: string
-  latency: string
-  documents: Document[]
   profiles: string[]
   summaries: string[]
+  searchDefaults: SearchRequestDefaults
   fields: Field[]
 }
 
 export type ClientSearchRequest = { query: string; ranking: string; limit: number; summary: string }
+export type SearchRequestDefaults = Pick<ClientSearchRequest, 'ranking' | 'limit' | 'summary'>
+export type BrowseDocumentsRequest = { query?: string; cursor?: string; limit?: number; sort?: string }
+export type BrowseDocumentsResponse = { documents: Document[]; nextCursor?: string; total?: number }
 export type SearchHit = { document: Document; score: string; rank: number }
 export type ClientSearchResponse = {
   request: ClientSearchRequest
@@ -99,16 +95,10 @@ export interface SearchKernelClient {
   capabilities(): Promise<Capabilities>
   listIndexes(): Promise<Index[]>
   getIndex(indexId: string): Promise<Index | undefined>
-  getDocument(indexId: string, documentId: string): Promise<Document | undefined>
+  getDocument(indexId: string, documentId: string, options?: RequestOptions): Promise<Document | undefined>
+  browseDocuments(indexId: string, request: BrowseDocumentsRequest, options?: RequestOptions): Promise<BrowseDocumentsResponse>
   search(indexId: string, request: ClientSearchRequest, options?: RequestOptions): Promise<ClientSearchResponse>
   analyze(indexId: string, text: string, options?: AnalysisOptions): Promise<AnalysisToken[]>
-}
-
-export const initialSearchRequest: ClientSearchRequest = {
-  query: 'wireless headphones',
-  ranking: 'product-search',
-  limit: 20,
-  summary: 'search-result',
 }
 
 export const unsupportedCapabilityMessage = 'Unavailable because this capability is not exposed by the server.'

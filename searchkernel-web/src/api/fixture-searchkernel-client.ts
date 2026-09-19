@@ -28,8 +28,7 @@ const capabilities: Capabilities = {
   admin: { overview: true, health: true, diagnostics: true },
 }
 
-const display = (label: string, order: number, format: Field['display']['format'] = 'text'): Field['display'] => ({ label, visible: true, order, format })
-const field = (name: string, type: string, order: number, options: Partial<Pick<Field, 'searchable' | 'attribute' | 'stored'>> & { format?: Field['display']['format'] } = {}): Field => ({ name, type, searchable: options.searchable ?? false, attribute: options.attribute ?? false, stored: options.stored ?? true, analyzer: options.searchable ? 'standard-v1' : '—', display: display(name, order, options.format ?? (type === 'integer' || type === 'float' ? 'number' : 'text')) })
+const field = (name: string, type: string, options: Partial<Pick<Field, 'searchable' | 'attribute' | 'stored'>> = {}): Field => ({ name, type, searchable: options.searchable ?? false, attribute: options.attribute ?? false, stored: options.stored ?? true, analyzer: options.searchable ? 'standard-v1' : '—' })
 
 const products: FixtureRecord[] = [
   { id: 'sku-42', score: '12.418', fields: { title: 'Wireless Headphones', brand: 'Sony', price: 149, stock: 17, category: 'Electronics' } },
@@ -46,9 +45,9 @@ const users: FixtureRecord[] = [
   { id: 'user-18', score: '4.901', fields: { display_name: 'Alex Rivera', role: 'member', active: true } },
 ]
 
-const productFields = [field('title', 'text', 0, { searchable: true }), field('brand', 'string', 1, { searchable: true, attribute: true }), field('price', 'float', 2, { attribute: true, format: 'number' }), field('stock', 'integer', 3, { attribute: true, format: 'number' }), field('category', 'string', 4, { searchable: true })]
-const articleFields = [field('headline', 'text', 0, { searchable: true }), field('section', 'string', 1, { searchable: true, attribute: true }), field('published_at', 'date', 2, { attribute: true, format: 'date' })]
-const userFields = [field('display_name', 'text', 0, { searchable: true }), field('role', 'string', 1, { searchable: true, attribute: true }), field('active', 'boolean', 2, { attribute: true, format: 'boolean' })]
+const productFields = [field('title', 'text', { searchable: true }), field('brand', 'string', { searchable: true, attribute: true }), field('price', 'float', { attribute: true }), field('stock', 'integer', { attribute: true }), field('category', 'string', { searchable: true })]
+const articleFields = [field('headline', 'text', { searchable: true }), field('section', 'string', { searchable: true, attribute: true }), field('published_at', 'date', { attribute: true })]
+const userFields = [field('display_name', 'text', { searchable: true }), field('role', 'string', { searchable: true, attribute: true }), field('active', 'boolean', { attribute: true })]
 
 const toDocument = (record: FixtureRecord): Document => ({ id: record.id, fields: record.fields })
 const toHit = (record: FixtureRecord, rank: number): SearchHit => ({ document: toDocument(record), score: record.score, rank })
@@ -59,7 +58,7 @@ const definitions: FixtureIndexDefinition[] = [
   { id: 'articles', documentCount: '81,402', size: '440 MB', latency: '2.9 ms', profiles: ['default', 'editorial'], summaries: ['search-result', 'compact'], fields: articleFields, records: articles },
   { id: 'users', documentCount: '12,832', size: '91 MB', latency: '1.8 ms', profiles: ['default', 'person-search'], summaries: ['search-result'], fields: userFields, records: users },
 ]
-const indexes: Index[] = definitions.map(definition => ({ id: definition.id, documentCount: definition.documentCount, size: definition.size, fieldCount: String(definition.fields.length), latency: definition.latency, documents: definition.records.map(toDocument), profiles: definition.profiles, summaries: definition.summaries, fields: definition.fields }))
+const indexes: Index[] = definitions.map(definition => ({ id: definition.id, profiles: definition.profiles, summaries: definition.summaries, searchDefaults: { ranking: definition.profiles[0]!, limit: 20, summary: definition.summaries[0]! }, fields: definition.fields }))
 const searchKeys: Record<string, Record<string, FixtureRecord[]>> = { products: { '': products, 'wireless headphones': products, headphones: products, sony: [products[0]!, products[3]!], bose: [products[1]!, products[2]!] }, articles: { '': articles, headphones: articles, guides: articles, 'choosing the right headphones': [articles[0]!] }, users: { '': users, 'maya chen': [users[0]!], member: users } }
 const analyses: Record<string, Record<string, AnalysisToken[]>> = { products: { 'Running with the foxes': [{ position: 0, original: 'Running', normalized: 'running', term: 'run' }, { position: 1, original: 'with', normalized: 'with', term: 'with' }, { position: 2, original: 'the', normalized: 'the', term: 'the' }, { position: 3, original: 'foxes', normalized: 'foxes', term: 'fox' }] }, articles: { 'Running with the foxes': [{ position: 0, original: 'Running', normalized: 'running', term: 'running' }, { position: 1, original: 'with', normalized: 'with', term: 'with' }, { position: 2, original: 'the', normalized: 'the', term: 'the' }, { position: 3, original: 'foxes', normalized: 'foxes', term: 'foxes' }] }, users: { 'Running with the foxes': [{ position: 0, original: 'Running', normalized: 'running', term: 'running' }, { position: 1, original: 'with', normalized: 'with', term: 'with' }, { position: 2, original: 'the', normalized: 'the', term: 'the' }, { position: 3, original: 'foxes', normalized: 'foxes', term: 'foxes' }] } }
 
@@ -72,9 +71,22 @@ export function createFixtureSearchKernelClient(): SearchKernelClient {
     capabilities: async () => capabilities,
     listIndexes: async () => indexes,
     getIndex: async indexId => indexes.find(index => index.id === indexId),
-    getDocument: async (indexId, documentId) => {
-      const record = definitions.find(index => index.id === indexId)?.records.find(candidate => candidate.id === documentId)
-      return record ? toDocument(record) : undefined
+    getDocument: async (indexId, documentId, options: RequestOptions = {}) => {
+      try {
+        await delay(options.signal)
+        const record = definitions.find(index => index.id === indexId)?.records.find(candidate => candidate.id === documentId)
+        return record ? toDocument(record) : undefined
+      } catch (error) { throw normalizeClientError(error) }
+    },
+    browseDocuments: async (indexId, request, options: RequestOptions = {}) => {
+      try {
+        await delay(options.signal)
+        const definition = definitions.find(item => item.id === indexId)
+        if (!definition) throw new Error(`Unknown index: ${indexId}`)
+        const query = request.query?.trim().toLowerCase() ?? ''
+        const records = (searchKeys[indexId]?.[query] ?? []).slice(0, request.limit ?? 20)
+        return { documents: records.map(toDocument), total: records.length }
+      } catch (error) { throw normalizeClientError(error) }
     },
     async analyze(indexId, text, options: AnalysisOptions = {}) { try { await delay(options.signal); return analyses[indexId]?.[text] ?? [] } catch (error) { throw normalizeClientError(error) } },
     async search(indexId, request, options: RequestOptions = {}): Promise<ClientSearchResponse> {

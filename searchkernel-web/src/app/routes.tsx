@@ -3,7 +3,7 @@ import { DashboardRoute } from './DashboardRoute'
 import { About, NotFound, UnavailableFeature } from './fallback-pages'
 
 function IndexDefault({section}:{section?: 'data'|'search'|'configuration'|'operations'}) {
-  const { indexId = 'products' } = useParams()
+  const { indexId } = useParams()
   const suffix = section === 'data' ? 'data/documents' : section === 'search' ? 'search/lab' : section === 'configuration' ? 'configuration/schema/fields' : section === 'operations' ? 'operations/health' : 'overview'
   return <Navigate replace to={`/indexes/${indexId}/${suffix}`}/>
 }
@@ -23,7 +23,7 @@ export function AppRoutes() { return <Routes>
   <Route path="/indexes/:indexId/data/documents/:documentId" element={<DashboardRoute page="documents"/>}/>
   <Route path="/indexes/:indexId/search/lab" element={<DashboardRoute page="search"/>}/>
   <Route path="/indexes/:indexId/search/analyze" element={<DashboardRoute page="analyze"/>}/>
-  <Route path="/indexes/:indexId/search/inspect" element={<UnavailableFeature title="Query Inspector"/>}/>
+  <Route path="/indexes/:indexId/search/inspect" element={<DashboardRoute page="inspect"/>}/>
   <Route path="/indexes/:indexId/configuration/schema" element={<Navigate replace to="fields"/>}/>
   <Route path="/indexes/:indexId/configuration/schema/fields" element={<DashboardRoute page="schema"/>}/>
   <Route path="/indexes/:indexId/configuration/schema/indexing" element={<UnavailableFeature title="Indexing"/>}/>

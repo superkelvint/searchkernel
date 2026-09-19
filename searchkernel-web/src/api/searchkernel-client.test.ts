@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createFixtureSearchKernelClient } from './fixture-searchkernel-client'
-import { initialSearchRequest, normalizeClientError, SearchKernelClientError } from './searchkernel-client'
+import { normalizeClientError, SearchKernelClientError } from './searchkernel-client'
 
 describe('SearchKernelClient boundary', () => {
   const client = createFixtureSearchKernelClient()
@@ -12,11 +12,16 @@ describe('SearchKernelClient boundary', () => {
   })
 
   it('echoes the request that drove a search response', async () => {
-    const request = { ...initialSearchRequest, query: 'headphones', ranking: 'semantic', limit: 10 }
+    const request = { query: 'headphones', ranking: 'semantic', limit: 10, summary: 'search-result' }
     const response = await client.search('products', request)
     expect(response.request).toEqual(request)
     expect(response.hits.length).toBeGreaterThan(0)
     expect(response.resolved).toContain('semantic')
+  })
+
+  it('browses documents without requiring search ranking semantics', async () => {
+    const response = await client.browseDocuments('products', { query: 'sony', limit: 10 })
+    expect(response.documents.map(document => document.id)).toEqual(['sku-42', 'sku-91'])
   })
 
   it('exposes capabilities and only explicit analysis responses', async () => {
