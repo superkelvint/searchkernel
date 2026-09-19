@@ -1141,41 +1141,8 @@ impl IndexContext {
             }
             api::QueryExprKind::QueryTrue => QueryExprKindIr::True,
             api::QueryExprKind::QueryFalse => QueryExprKindIr::False,
-            api::QueryExprKind::QueryComparison => {
-                let query = expression.expr_as_query_comparison().ok_or_else(|| {
-                    invalid("invalid_query", Some(path), "comparison query is missing")
-                })?;
-                QueryExprKindIr::Comparison {
-                    field: self.query_field_ref_to_ir(
-                        query.field(),
-                        &format!("{path}.comparison.field"),
-                    )?,
-                    op: query_comparison_op(query.op().0, &format!("{path}.comparison.op"))?,
-                    value: RequestValueIr::from_api(
-                        query.value().ok_or_else(|| {
-                            invalid(
-                                "missing_value",
-                                Some(format!("{path}.comparison.value")),
-                                "comparison requires a value",
-                            )
-                        })?,
-                        format!("{path}.comparison.value"),
-                    )?,
-                }
-            }
-            api::QueryExprKind::QueryRange => {
-                let query = expression.expr_as_query_range().ok_or_else(|| {
-                    invalid("invalid_query", Some(path), "range query is missing")
-                })?;
-                QueryExprKindIr::Range {
-                    field: self
-                        .query_field_ref_to_ir(query.field(), &format!("{path}.range.field"))?,
-                    lower: query_range_bound_to_ir(query.lower(), &format!("{path}.range.lower"))?,
-                    upper: query_range_bound_to_ir(query.upper(), &format!("{path}.range.upper"))?,
-                    include_lower: query.include_lower().map(|value| value.value()),
-                    include_upper: query.include_upper().map(|value| value.value()),
-                }
-            }
+            api::QueryExprKind::QueryComparison => self.comparison_query_to_ir(expression, path)?,
+            api::QueryExprKind::QueryRange => self.range_query_to_ir(expression, path)?,
             api::QueryExprKind::QueryIn => {
                 let query = expression
                     .expr_as_query_in()
@@ -1247,42 +1214,7 @@ impl IndexContext {
                 )?,
             ),
             api::QueryExprKind::QueryAlternatives => {
-                let values = expression
-                    .expr_as_query_alternatives()
-                    .and_then(|value| value.alternatives())
-                    .map(|values| {
-                        values
-                            .iter()
-                            .enumerate()
-                            .map(|(index, value)| {
-                                let query = value.query().ok_or_else(|| {
-                                    invalid(
-                                        "missing_query",
-                                        Some(format!("{path}.alternatives[{index}].query")),
-                                        "alternative requires a query",
-                                    )
-                                })?;
-                                let exactness = value.exactness().map(|value| value.value());
-                                if exactness.is_some_and(|value| !value.is_finite()) {
-                                    return Err(invalid(
-                                        "non_finite_number",
-                                        Some(format!("{path}.alternatives[{index}].exactness")),
-                                        "alternative exactness must be finite",
-                                    ));
-                                }
-                                Ok(QueryAlternativeIr {
-                                    query: self.typed_query_expr_to_ir(
-                                        query,
-                                        &format!("{path}.alternatives[{index}].query"),
-                                    )?,
-                                    exactness,
-                                })
-                            })
-                            .collect::<Result<Vec<_>>>()
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                QueryExprKindIr::Alternatives(values)
+                self.alternatives_query_to_ir(expression, path)?
             }
             api::QueryExprKind::QueryFuzzy => {
                 let value = expression
@@ -1347,39 +1279,7 @@ impl IndexContext {
             api::QueryExprKind::QueryUserQuery => QueryExprKindIr::UserQuery,
             api::QueryExprKind::QueryDotProduct
             | api::QueryExprKind::QueryWeightedSet
-            | api::QueryExprKind::QueryWand => {
-                let (field, items) = match expression.expr_type() {
-                    api::QueryExprKind::QueryDotProduct => {
-                        let query = expression.expr_as_query_dot_product().ok_or_else(|| {
-                            invalid("invalid_query", Some(path), "dot product query is missing")
-                        })?;
-                        (query.field(), query.items())
-                    }
-                    api::QueryExprKind::QueryWeightedSet => {
-                        let query = expression.expr_as_query_weighted_set().ok_or_else(|| {
-                            invalid("invalid_query", Some(path), "weighted set query is missing")
-                        })?;
-                        (query.field(), query.items())
-                    }
-                    _ => {
-                        let query = expression.expr_as_query_wand().ok_or_else(|| {
-                            invalid("invalid_query", Some(path), "wand query is missing")
-                        })?;
-                        (query.field(), query.items())
-                    }
-                };
-                let items = weighted_query_items_to_ir(items, path)?;
-                let field = self.query_field_ref_to_ir(field, &format!("{path}.field"))?;
-                match expression.expr_type() {
-                    api::QueryExprKind::QueryDotProduct => {
-                        QueryExprKindIr::DotProduct { field, items }
-                    }
-                    api::QueryExprKind::QueryWeightedSet => {
-                        QueryExprKindIr::WeightedSet { field, items }
-                    }
-                    _ => QueryExprKindIr::Wand { field, items },
-                }
-            }
+            | api::QueryExprKind::QueryWand => self.weighted_query_to_ir(expression, path)?,
             api::QueryExprKind::QueryWeakAnd => QueryExprKindIr::WeakAnd(
                 self.typed_query_children(
                     expression
@@ -1449,6 +1349,163 @@ impl IndexContext {
                     &format!("{path}.non_empty.query"),
                 )?))
             }
+            api::QueryExprKind::QueryGeoLocation | api::QueryExprKind::QueryGeoBoundingBox => {
+                self.geo_query_to_ir(expression, path)?
+            }
+            api::QueryExprKind::QueryNearestNeighbor => {
+                self.nearest_neighbor_to_ir(expression, path)?
+            }
+            api::QueryExprKind::QueryPredicate => self.predicate_query_to_ir(expression, path)?,
+            _ => {
+                return Err(invalid(
+                    "invalid_query",
+                    Some(path),
+                    "query expression must select an operation",
+                ))
+            }
+        };
+        Ok(QueryExprIr { kind, annotations })
+    }
+
+    fn comparison_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let query = expression
+            .expr_as_query_comparison()
+            .ok_or_else(|| invalid("invalid_query", Some(path), "comparison query is missing"))?;
+        Ok(QueryExprKindIr::Comparison {
+            field: self
+                .query_field_ref_to_ir(query.field(), &format!("{path}.comparison.field"))?,
+            op: query_comparison_op(query.op().0, &format!("{path}.comparison.op"))?,
+            value: RequestValueIr::from_api(
+                query.value().ok_or_else(|| {
+                    invalid(
+                        "missing_value",
+                        Some(format!("{path}.comparison.value")),
+                        "comparison requires a value",
+                    )
+                })?,
+                format!("{path}.comparison.value"),
+            )?,
+        })
+    }
+
+    fn range_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let query = expression
+            .expr_as_query_range()
+            .ok_or_else(|| invalid("invalid_query", Some(path), "range query is missing"))?;
+        Ok(QueryExprKindIr::Range {
+            field: self.query_field_ref_to_ir(query.field(), &format!("{path}.range.field"))?,
+            lower: query_range_bound_to_ir(query.lower(), &format!("{path}.range.lower"))?,
+            upper: query_range_bound_to_ir(query.upper(), &format!("{path}.range.upper"))?,
+            include_lower: query.include_lower().map(|value| value.value()),
+            include_upper: query.include_upper().map(|value| value.value()),
+        })
+    }
+
+    fn alternatives_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let values = expression
+            .expr_as_query_alternatives()
+            .and_then(|value| value.alternatives())
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        let query = value.query().ok_or_else(|| {
+                            invalid(
+                                "missing_query",
+                                Some(format!("{path}.alternatives[{index}].query")),
+                                "alternative requires a query",
+                            )
+                        })?;
+                        let exactness = value.exactness().map(|value| value.value());
+                        if exactness.is_some_and(|value| !value.is_finite()) {
+                            return Err(invalid(
+                                "non_finite_number",
+                                Some(format!("{path}.alternatives[{index}].exactness")),
+                                "alternative exactness must be finite",
+                            ));
+                        }
+                        Ok(QueryAlternativeIr {
+                            query: self.typed_query_expr_to_ir(
+                                query,
+                                &format!("{path}.alternatives[{index}].query"),
+                            )?,
+                            exactness,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok(QueryExprKindIr::Alternatives(values))
+    }
+
+    fn weighted_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let (field, items) = match expression.expr_type() {
+            api::QueryExprKind::QueryDotProduct => {
+                let query = expression.expr_as_query_dot_product().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "dot product query is missing")
+                })?;
+                (query.field(), query.items())
+            }
+            api::QueryExprKind::QueryWeightedSet => {
+                let query = expression.expr_as_query_weighted_set().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "weighted set query is missing")
+                })?;
+                (query.field(), query.items())
+            }
+            api::QueryExprKind::QueryWand => {
+                let query = expression
+                    .expr_as_query_wand()
+                    .ok_or_else(|| invalid("invalid_query", Some(path), "wand query is missing"))?;
+                (query.field(), query.items())
+            }
+            _ => {
+                return Err(invalid(
+                    "invalid_query",
+                    Some(path),
+                    "weighted query must select an operation",
+                ));
+            }
+        };
+        let items = weighted_query_items_to_ir(items, path)?;
+        let field = self.query_field_ref_to_ir(field, &format!("{path}.field"))?;
+        Ok(match expression.expr_type() {
+            api::QueryExprKind::QueryDotProduct => QueryExprKindIr::DotProduct { field, items },
+            api::QueryExprKind::QueryWeightedSet => QueryExprKindIr::WeightedSet { field, items },
+            api::QueryExprKind::QueryWand => QueryExprKindIr::Wand { field, items },
+            _ => {
+                return Err(invalid(
+                    "invalid_query",
+                    Some(path),
+                    "weighted query must select an operation",
+                ));
+            }
+        })
+    }
+
+    fn geo_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        match expression.expr_type() {
             api::QueryExprKind::QueryGeoLocation => {
                 let query = expression.expr_as_query_geo_location().ok_or_else(|| {
                     invalid("invalid_query", Some(path), "geo location query is missing")
@@ -1461,7 +1518,7 @@ impl IndexContext {
                         "geo coordinates must be finite",
                     ));
                 }
-                QueryExprKindIr::GeoLocation {
+                Ok(QueryExprKindIr::GeoLocation {
                     field: self.query_field_ref_to_ir(
                         query.field(),
                         &format!("{path}.geo_location.field"),
@@ -1478,7 +1535,7 @@ impl IndexContext {
                             )
                         })?
                         .to_owned(),
-                }
+                })
             }
             api::QueryExprKind::QueryGeoBoundingBox => {
                 let query = expression.expr_as_query_geo_bounding_box().ok_or_else(|| {
@@ -1496,7 +1553,7 @@ impl IndexContext {
                         "geo coordinates must be finite",
                     ));
                 }
-                QueryExprKindIr::GeoBoundingBox {
+                Ok(QueryExprKindIr::GeoBoundingBox {
                     field: self.query_field_ref_to_ir(
                         query.field(),
                         &format!("{path}.geo_bounding_box.field"),
@@ -1505,59 +1562,65 @@ impl IndexContext {
                     west: query.west(),
                     north: query.north(),
                     east: query.east(),
-                }
+                })
             }
-            api::QueryExprKind::QueryNearestNeighbor => {
-                let query = expression.expr_as_query_nearest_neighbor().ok_or_else(|| {
+            _ => Err(invalid(
+                "invalid_query",
+                Some(path),
+                "geo query must select an operation",
+            )),
+        }
+    }
+
+    fn nearest_neighbor_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let query = expression.expr_as_query_nearest_neighbor().ok_or_else(|| {
+            invalid(
+                "invalid_query",
+                Some(path),
+                "nearest neighbor query is missing",
+            )
+        })?;
+        Ok(QueryExprKindIr::NearestNeighbor {
+            document_field: self.query_field_ref_to_ir(
+                query.document_field(),
+                &format!("{path}.nearest_neighbor.document_field"),
+            )?,
+            query_tensor: query
+                .query_tensor()
+                .ok_or_else(|| {
                     invalid(
-                        "invalid_query",
-                        Some(path),
-                        "nearest neighbor query is missing",
+                        "missing_value",
+                        Some(format!("{path}.nearest_neighbor.query_tensor")),
+                        "nearest-neighbor query requires a query tensor name",
                     )
-                })?;
-                QueryExprKindIr::NearestNeighbor {
-                    document_field: self.query_field_ref_to_ir(
-                        query.document_field(),
-                        &format!("{path}.nearest_neighbor.document_field"),
-                    )?,
-                    query_tensor: query
-                        .query_tensor()
-                        .ok_or_else(|| {
-                            invalid(
-                                "missing_value",
-                                Some(format!("{path}.nearest_neighbor.query_tensor")),
-                                "nearest-neighbor query requires a query tensor name",
-                            )
-                        })?
-                        .to_owned(),
-                }
-            }
-            api::QueryExprKind::QueryPredicate => {
-                let query = expression.expr_as_query_predicate().ok_or_else(|| {
-                    invalid("invalid_query", Some(path), "predicate query is missing")
-                })?;
-                QueryExprKindIr::Predicate {
-                    field: self
-                        .query_field_ref_to_ir(query.field(), &format!("{path}.predicate.field"))?,
-                    features: query_value_object_to_ir(
-                        query.features(),
-                        &format!("{path}.predicate.features"),
-                    )?,
-                    range_features: query_value_object_to_ir(
-                        query.range_features(),
-                        &format!("{path}.predicate.range_features"),
-                    )?,
-                }
-            }
-            _ => {
-                return Err(invalid(
-                    "invalid_query",
-                    Some(path),
-                    "query expression must select an operation",
-                ))
-            }
-        };
-        Ok(QueryExprIr { kind, annotations })
+                })?
+                .to_owned(),
+        })
+    }
+
+    fn predicate_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprKindIr> {
+        let query = expression
+            .expr_as_query_predicate()
+            .ok_or_else(|| invalid("invalid_query", Some(path), "predicate query is missing"))?;
+        Ok(QueryExprKindIr::Predicate {
+            field: self.query_field_ref_to_ir(query.field(), &format!("{path}.predicate.field"))?,
+            features: query_value_object_to_ir(
+                query.features(),
+                &format!("{path}.predicate.features"),
+            )?,
+            range_features: query_value_object_to_ir(
+                query.range_features(),
+                &format!("{path}.predicate.range_features"),
+            )?,
+        })
     }
 
     fn query_field_ref_to_ir(
