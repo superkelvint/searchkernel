@@ -2,6 +2,7 @@ use super::*;
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use super::filter::MAX_FILTER_BINDINGS;
 
@@ -93,6 +94,182 @@ fn bool_value(
             kind: Some(value.as_union_value()),
         },
     )
+}
+
+fn string_value(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    value: &str,
+) -> crate::__flatbuffers::WIPOffset<api::Value<'static>> {
+    let value = builder.create_string(value);
+    let value = api::StringValue::create(builder, &api::StringValueArgs { value: Some(value) });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::StringValue,
+            kind: Some(value.as_union_value()),
+        },
+    )
+}
+
+fn request_value(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    value: &RequestValueIr,
+) -> crate::__flatbuffers::WIPOffset<api::Value<'static>> {
+    match value {
+        RequestValueIr::Bool(value) => bool_value(builder, *value),
+        RequestValueIr::Int64(value) => int_value(builder, *value),
+        RequestValueIr::String(value) => string_value(builder, value),
+        RequestValueIr::List(values) => {
+            let values = values
+                .iter()
+                .map(|value| request_value(builder, value))
+                .collect::<Vec<_>>();
+            let values = builder.create_vector(&values);
+            let value = api::ValueList::create(
+                builder,
+                &api::ValueListArgs {
+                    values: Some(values),
+                },
+            );
+            api::Value::create(
+                builder,
+                &api::ValueArgs {
+                    kind_type: api::ValueKind::ValueList,
+                    kind: Some(value.as_union_value()),
+                },
+            )
+        }
+        other => panic!("parity fixture does not encode {other:?}"),
+    }
+}
+
+fn value_entry(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    key: &str,
+    value: &RequestValueIr,
+) -> crate::__flatbuffers::WIPOffset<api::ValueEntry<'static>> {
+    let key = builder.create_string(key);
+    let value = request_value(builder, value);
+    api::ValueEntry::create(
+        builder,
+        &api::ValueEntryArgs {
+            key: Some(key),
+            value: Some(value),
+        },
+    )
+}
+
+fn parity_document(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+) -> crate::__flatbuffers::WIPOffset<api::Document<'static>> {
+    let fields = [
+        ("brand", RequestValueIr::String("acme".to_owned())),
+        ("price", RequestValueIr::Int64(42)),
+        (
+            "tags",
+            RequestValueIr::List(vec![
+                RequestValueIr::String("featured".to_owned()),
+                RequestValueIr::String("sale".to_owned()),
+            ]),
+        ),
+        ("title", RequestValueIr::String("Coffee grinder".to_owned())),
+    ];
+    let fields = fields
+        .iter()
+        .map(|(key, value)| value_entry(builder, key, value))
+        .collect::<Vec<_>>();
+    let fields = builder.create_vector(&fields);
+    let id = builder.create_string("doc-7");
+    api::Document::create(
+        builder,
+        &api::DocumentArgs {
+            id: Some(id),
+            fields: Some(fields),
+        },
+    )
+}
+
+fn parity_schema() -> RustIndexDefinitionInput {
+    let analyzer = || RustAnalyzerInput {
+        name: "standard".to_owned(),
+        version: 1,
+        options: BTreeMap::new(),
+    };
+    let field = |name: &str, kind: RustFieldKind| RustFieldInput {
+        name: name.to_owned(),
+        kind,
+        multi: false,
+        stored: Some(true),
+        searchable: None,
+        filterable: None,
+        sortable: None,
+        facetable: None,
+        analyzer: None,
+    };
+    RustIndexDefinitionInput {
+        name: Some("catalog".to_owned()),
+        fields: vec![
+            RustFieldInput {
+                searchable: Some(true),
+                analyzer: Some(analyzer()),
+                ..field("title", RustFieldKind::Text)
+            },
+            RustFieldInput {
+                filterable: Some(true),
+                sortable: Some(true),
+                facetable: Some(true),
+                ..field("brand", RustFieldKind::Keyword)
+            },
+            RustFieldInput {
+                filterable: Some(true),
+                sortable: Some(true),
+                ..field("price", RustFieldKind::Int64)
+            },
+            RustFieldInput {
+                filterable: Some(true),
+                sortable: Some(true),
+                ..field("rating", RustFieldKind::Float64)
+            },
+            RustFieldInput {
+                filterable: Some(true),
+                ..field("in_stock", RustFieldKind::Bool)
+            },
+            RustFieldInput {
+                multi: true,
+                filterable: Some(true),
+                facetable: Some(true),
+                ..field("tags", RustFieldKind::Keyword)
+            },
+        ],
+        default_search_fields: Some(vec![RustSearchFieldInput {
+            field: "title".to_owned(),
+            weight: Some(2.5),
+        }]),
+    }
+}
+
+fn parity_document_input() -> DocumentInput {
+    DocumentInput {
+        id: "doc-7".to_owned(),
+        fields: BTreeMap::from([
+            (
+                "brand".to_owned(),
+                RequestValueIr::String("acme".to_owned()),
+            ),
+            ("price".to_owned(), RequestValueIr::Int64(42)),
+            (
+                "tags".to_owned(),
+                RequestValueIr::List(vec![
+                    RequestValueIr::String("featured".to_owned()),
+                    RequestValueIr::String("sale".to_owned()),
+                ]),
+            ),
+            (
+                "title".to_owned(),
+                RequestValueIr::String("Coffee grinder".to_owned()),
+            ),
+        ]),
+    }
 }
 
 fn structured_comparison(
@@ -337,6 +514,191 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
         )
         .unwrap(),
         context().analyze_to_ir(analyze).unwrap()
+    );
+
+    // Schema parity is the foundation for every subsequent resolver: the
+    // Rust facade and the portable schema adapter must produce the same
+    // capabilities, matching configuration, and default search fields.
+    let schema = parity_schema();
+    let rust_definition = resolve_rust_index_definition(schema).unwrap();
+    let schema_bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let schema = crate::__flatbuffers::root::<api::IndexDefinition>(&schema_bytes)
+        .expect("valid index definition");
+    assert_eq!(
+        rust_definition,
+        index_definition_to_ir(schema).expect("schema resolves through FlatBuffers")
+    );
+    let flat_context = IndexContext::from_api(schema).expect("schema context resolves");
+    let rust_context = IndexContext::from_definition_ir(rust_definition);
+
+    // Document values are deliberately mixed: scalar values exercise the
+    // field-kind checks while the list exercises document cardinality through
+    // the portable Value/ValueList path.
+    let document_input = parity_document_input();
+    let rust_insert = resolve_insert(&rust_context, document_input.clone()).unwrap();
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let document = parity_document(&mut builder);
+    let insert = api::InsertRequest::create(
+        &mut builder,
+        &api::InsertRequestArgs {
+            document: Some(document),
+        },
+    );
+    builder.finish(insert, None);
+    let insert = crate::__flatbuffers::root::<api::InsertRequest>(builder.finished_data())
+        .expect("valid insert request");
+    assert_eq!(
+        rust_insert,
+        flat_context
+            .insert_to_ir(insert)
+            .expect("insert resolves through FlatBuffers")
+    );
+
+    let rust_upsert = resolve_upsert(
+        &rust_context,
+        document_input.clone(),
+        Some("tenant = 'acme'"),
+    )
+    .unwrap();
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let document = parity_document(&mut builder);
+    let condition = builder.create_string("tenant = 'acme'");
+    let upsert = api::UpsertRequest::create(
+        &mut builder,
+        &api::UpsertRequestArgs {
+            document: Some(document),
+            condition: Some(condition),
+        },
+    );
+    builder.finish(upsert, None);
+    let upsert = crate::__flatbuffers::root::<api::UpsertRequest>(builder.finished_data())
+        .expect("valid upsert request");
+    assert_eq!(
+        rust_upsert,
+        flat_context
+            .upsert_to_ir(upsert)
+            .expect("upsert resolves through FlatBuffers")
+    );
+
+    let patch_operations = vec![
+        PatchOperationInput::Set {
+            field: "price".to_owned(),
+            value: RequestValueIr::Int64(99),
+        },
+        PatchOperationInput::Unset {
+            field: "tags".to_owned(),
+        },
+    ];
+    let rust_patch = resolve_patch(&rust_context, "doc-7", &patch_operations).unwrap();
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let set_field = builder.create_string("price");
+    let set_value = int_value(&mut builder, 99);
+    let set_field = api::SetField::create(
+        &mut builder,
+        &api::SetFieldArgs {
+            field: Some(set_field),
+            value: Some(set_value),
+        },
+    );
+    let set_operation = api::PatchOperation::create(
+        &mut builder,
+        &api::PatchOperationArgs {
+            operation_type: api::PatchOperationKind::SetField,
+            operation: Some(set_field.as_union_value()),
+        },
+    );
+    let unset_field = builder.create_string("tags");
+    let unset_field = api::UnsetField::create(
+        &mut builder,
+        &api::UnsetFieldArgs {
+            field: Some(unset_field),
+        },
+    );
+    let unset_operation = api::PatchOperation::create(
+        &mut builder,
+        &api::PatchOperationArgs {
+            operation_type: api::PatchOperationKind::UnsetField,
+            operation: Some(unset_field.as_union_value()),
+        },
+    );
+    let operations = builder.create_vector(&[set_operation, unset_operation]);
+    let id = builder.create_string("doc-7");
+    let patch = api::PatchRequest::create(
+        &mut builder,
+        &api::PatchRequestArgs {
+            id: Some(id),
+            operations: Some(operations),
+        },
+    );
+    builder.finish(patch, None);
+    let patch = crate::__flatbuffers::root::<api::PatchRequest>(builder.finished_data())
+        .expect("valid patch request");
+    assert_eq!(
+        rust_patch,
+        flat_context
+            .patch_to_ir(patch)
+            .expect("patch resolves through FlatBuffers")
+    );
+
+    // Exercise the complete high-level search surface in one request. The
+    // canonical IR encoder supplies the equivalent portable request, which is
+    // then resolved by the same FlatBuffer adapter used by transport callers.
+    let rust_search = resolve_search(
+        &rust_context,
+        SearchIntent {
+            query: "coffee".to_owned(),
+            search_fields: Some(vec![SearchFieldInput {
+                field: "title".to_owned(),
+                weight: Some(2.5),
+            }]),
+            filters: vec![
+                FilterInput::Comparison {
+                    field: "price".to_owned(),
+                    op: ComparisonOp::Gte,
+                    value: RequestValueIr::Int64(10),
+                },
+                FilterInput::Range {
+                    field: "rating".to_owned(),
+                    lower: FilterBoundInput::Finite(RequestValueIr::Float64(2.0)),
+                    upper: FilterBoundInput::Finite(RequestValueIr::Float64(5.0)),
+                    include_lower: Some(false),
+                    include_upper: Some(true),
+                },
+            ],
+            sorts: vec![SortInput {
+                field: "price".to_owned(),
+                direction: SortDirection::Desc,
+                missing: Some(MissingPlacement::First),
+            }],
+            facets: vec![FacetInput {
+                field: "brand".to_owned(),
+                limit: Some(7),
+                sort: Some(FacetSortInput::ValueAsc),
+            }],
+            ranking: Some(RankingInput::Bm25),
+            query_inputs: BTreeMap::new(),
+            rank_properties: BTreeMap::new(),
+            projection: Some(vec![
+                "title".to_owned(),
+                "brand".to_owned(),
+                "price".to_owned(),
+            ]),
+            highlighting: Some(vec!["title".to_owned()]),
+            language: Some("en-US".to_owned()),
+            timeout: Some(Duration::from_millis(250)),
+            limit: Some(7),
+            offset: Some(3),
+        },
+    )
+    .unwrap();
+    let search_bytes = crate::search_request_ir_to_api(&rust_search);
+    let search = crate::__flatbuffers::root::<api::SearchRequest>(&search_bytes)
+        .expect("valid search request");
+    assert_eq!(
+        rust_search,
+        flat_context
+            .search_to_ir(search)
+            .expect("search resolves through FlatBuffers")
     );
 }
 
