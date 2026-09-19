@@ -4,11 +4,22 @@
 //! semantic work is delegated to the canonical transport-independent
 //! dispatcher.
 
+#[cfg(unix)]
+use std::path::{Path, PathBuf};
 use std::{fmt, net::SocketAddr, sync::Arc};
 
 use searchkernel_dispatch::{DispatchError, Dispatcher};
-use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
-use tokio_stream::wrappers::TcpListenerStream;
+#[cfg(unix)]
+use tokio::net::UnixListener;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpListener,
+    sync::oneshot,
+    task::JoinHandle,
+};
+#[cfg(unix)]
+use tokio_stream::wrappers::UnixListenerStream;
+use tokio_stream::{wrappers::TcpListenerStream, Stream};
 use tonic::{Request, Response, Status};
 
 /// Rust bindings generated from the public Search Kernel gRPC protocol.
@@ -22,18 +33,50 @@ use rpc::{
     FlatBufferFrame,
 };
 
+/// The address type used by the gRPC transport server.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ListenAddress {
+    /// A TCP socket address.
+    Tcp(SocketAddr),
+    /// A Unix-domain socket path.
+    #[cfg(unix)]
+    Unix(PathBuf),
+}
+
+impl From<SocketAddr> for ListenAddress {
+    fn from(address: SocketAddr) -> Self {
+        Self::Tcp(address)
+    }
+}
+
 /// Configuration for a gRPC transport server.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServerConfig {
-    /// Address on which the gRPC listener is bound. Port zero requests an
-    /// ephemeral port and is useful for tests.
-    pub listen_addr: SocketAddr,
+    /// Address on which the gRPC listener is bound. A TCP port of zero requests
+    /// an ephemeral port and is useful for tests.
+    pub listen_addr: ListenAddress,
 }
 
 impl ServerConfig {
     /// Creates a configuration for the supplied listener address.
     pub const fn new(listen_addr: SocketAddr) -> Self {
-        Self { listen_addr }
+        Self {
+            listen_addr: ListenAddress::Tcp(listen_addr),
+        }
+    }
+
+    /// Creates a configuration for a Unix-domain socket.
+    #[cfg(unix)]
+    pub fn unix(path: impl Into<PathBuf>) -> Self {
+        Self {
+            listen_addr: ListenAddress::Unix(path.into()),
+        }
+    }
+
+    /// Alias for [`Self::unix`] that makes the transport explicit at call sites.
+    #[cfg(unix)]
+    pub fn new_unix(path: impl Into<PathBuf>) -> Self {
+        Self::unix(path)
     }
 }
 
@@ -106,12 +149,16 @@ pub enum ServerError {
     Serve(tonic::transport::Error),
     /// The serving task could not be joined.
     Join(tokio::task::JoinError),
+    /// The Unix-domain socket could not be removed after serving stopped.
+    Cleanup(std::io::Error),
     /// The serving task exited without a shutdown request.
     UnexpectedExit,
     /// The process signal handler could not be installed or awaited.
     Signal(std::io::Error),
     /// The configured listen address was invalid.
     InvalidListenAddress(std::net::AddrParseError),
+    /// The configured Unix-domain socket path was empty.
+    InvalidUnixSocketPath,
     /// Reading the daemon environment failed.
     Environment(std::env::VarError),
 }
@@ -122,11 +169,13 @@ impl fmt::Display for ServerError {
             Self::Bind(error) => write!(formatter, "bind gRPC listener: {error}"),
             Self::Serve(error) => write!(formatter, "serve gRPC listener: {error}"),
             Self::Join(error) => write!(formatter, "join gRPC serving task: {error}"),
+            Self::Cleanup(error) => write!(formatter, "remove gRPC Unix socket: {error}"),
             Self::UnexpectedExit => write!(formatter, "gRPC serving task exited unexpectedly"),
             Self::Signal(error) => write!(formatter, "wait for shutdown signal: {error}"),
             Self::InvalidListenAddress(error) => {
                 write!(formatter, "parse gRPC listen address: {error}")
             }
+            Self::InvalidUnixSocketPath => write!(formatter, "gRPC Unix socket path is empty"),
             Self::Environment(error) => write!(formatter, "read daemon environment: {error}"),
         }
     }
@@ -136,7 +185,7 @@ impl std::error::Error for ServerError {}
 
 /// A running gRPC server and its controlled shutdown handle.
 pub struct RunningServer {
-    local_addr: SocketAddr,
+    local_addr: ListenAddress,
     shutdown: Option<oneshot::Sender<()>>,
     task: JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -153,9 +202,28 @@ impl fmt::Debug for RunningServer {
 }
 
 impl RunningServer {
-    /// Returns the address selected by the operating system.
-    pub const fn local_addr(&self) -> SocketAddr {
-        self.local_addr
+    /// Returns the address selected by the operating system or configured for
+    /// the Unix-domain socket.
+    pub fn local_addr(&self) -> &ListenAddress {
+        &self.local_addr
+    }
+
+    /// Returns the bound TCP address, if this server uses TCP.
+    pub fn tcp_addr(&self) -> Option<SocketAddr> {
+        match self.local_addr {
+            ListenAddress::Tcp(address) => Some(address),
+            #[cfg(unix)]
+            ListenAddress::Unix(_) => None,
+        }
+    }
+
+    /// Returns the configured Unix-domain socket path, if this server uses UDS.
+    #[cfg(unix)]
+    pub fn unix_path(&self) -> Option<&Path> {
+        match &self.local_addr {
+            ListenAddress::Tcp(_) => None,
+            ListenAddress::Unix(path) => Some(path),
+        }
     }
 
     /// Waits for the serving task to finish without requesting shutdown.
@@ -163,10 +231,12 @@ impl RunningServer {
     /// This is useful to let a daemon react immediately if its serving task
     /// exits before an external shutdown signal arrives.
     pub async fn wait(&mut self) -> Result<(), ServerError> {
-        (&mut self.task)
+        let result = (&mut self.task)
             .await
             .map_err(ServerError::Join)?
-            .map_err(ServerError::Serve)
+            .map_err(ServerError::Serve);
+        self.cleanup_socket()?;
+        result
     }
 
     /// Requests graceful shutdown and waits for the serving task to finish.
@@ -175,10 +245,34 @@ impl RunningServer {
             let _ = shutdown.send(());
         }
 
-        self.task
+        let result = (&mut self.task)
             .await
             .map_err(ServerError::Join)?
-            .map_err(ServerError::Serve)
+            .map_err(ServerError::Serve);
+        self.cleanup_socket()?;
+        result
+    }
+
+    fn cleanup_socket(&self) -> Result<(), ServerError> {
+        #[cfg(unix)]
+        if let ListenAddress::Unix(path) = &self.local_addr {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(ServerError::Cleanup(error)),
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for RunningServer {
+    fn drop(&mut self) {
+        self.task.abort();
+        #[cfg(unix)]
+        if let ListenAddress::Unix(path) = &self.local_addr {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -199,25 +293,50 @@ async fn start_with_service(
     config: ServerConfig,
     service: SearchKernelTransport,
 ) -> Result<RunningServer, ServerError> {
-    let listener = TcpListener::bind(config.listen_addr)
-        .await
-        .map_err(ServerError::Bind)?;
-    let local_addr = listener.local_addr().map_err(ServerError::Bind)?;
-    let incoming = TcpListenerStream::new(listener);
     let (shutdown, shutdown_requested) = oneshot::channel();
 
-    let task = tokio::spawn(async move {
+    let (local_addr, task) = match config.listen_addr {
+        ListenAddress::Tcp(listen_addr) => {
+            let listener = TcpListener::bind(listen_addr)
+                .await
+                .map_err(ServerError::Bind)?;
+            let local_addr = listener.local_addr().map_err(ServerError::Bind)?;
+            let incoming = TcpListenerStream::new(listener);
+            let task = serve(incoming, service, shutdown_requested);
+            (ListenAddress::Tcp(local_addr), task)
+        }
+        #[cfg(unix)]
+        ListenAddress::Unix(path) => {
+            let listener = UnixListener::bind(&path).map_err(ServerError::Bind)?;
+            let incoming = UnixListenerStream::new(listener);
+            let task = serve(incoming, service, shutdown_requested);
+            (ListenAddress::Unix(path), task)
+        }
+    };
+
+    Ok(RunningServer {
+        local_addr,
+        shutdown: Some(shutdown),
+        task,
+    })
+}
+
+fn serve<I, IO>(
+    incoming: I,
+    service: SearchKernelTransport,
+    shutdown_requested: oneshot::Receiver<()>,
+) -> JoinHandle<Result<(), tonic::transport::Error>>
+where
+    I: Stream<Item = Result<IO, std::io::Error>> + Send + 'static,
+    IO: AsyncRead + AsyncWrite + tonic::transport::server::Connected + Unpin + Send + 'static,
+    IO::ConnectInfo: Clone + Send + Sync + 'static,
+{
+    tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(SearchKernelServer::new(service))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_requested.await;
             })
             .await
-    });
-
-    Ok(RunningServer {
-        local_addr,
-        shutdown: Some(shutdown),
-        task,
     })
 }

@@ -18,6 +18,8 @@ tonic-build = "0.12"
 
 [dev-dependencies]
 flatbuffers = "=25.12.19"
+hyper-util = { version = "0.1", features = ["tokio"] }
 searchkernel = { path = "../core/crates/searchkernel", features = ["native", "internal-api"] }
 searchkernel-protocol = { path = "../core/crates/searchkernel-protocol" }
 searchkernel-testkit = { path = "../core/crates/searchkernel-testkit" }
+tower = "0.5"

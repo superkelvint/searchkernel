@@ -9,6 +9,19 @@ fn config_from_environment() -> Result<ServerConfig, ServerError> {
 }
 
 fn config_from_address(value: Option<&str>) -> Result<ServerConfig, ServerError> {
+    #[cfg(unix)]
+    if let Some(path) = value.and_then(|value| {
+        value
+            .strip_prefix("unix://")
+            .or_else(|| value.strip_prefix("unix:"))
+    }) {
+        return if path.is_empty() {
+            Err(ServerError::InvalidUnixSocketPath)
+        } else {
+            Ok(ServerConfig::unix(path))
+        };
+    }
+
     value
         .map(str::parse)
         .transpose()
@@ -48,5 +61,15 @@ mod tests {
         );
         assert_eq!(config_from_address(None).unwrap(), ServerConfig::default());
         assert!(config_from_address(Some("not-an-address")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn configured_unix_socket_is_parsed() {
+        assert_eq!(
+            config_from_address(Some("unix:///tmp/searchkerneld.sock")).unwrap(),
+            ServerConfig::unix("/tmp/searchkerneld.sock")
+        );
+        assert!(config_from_address(Some("unix://")).is_err());
     }
 }

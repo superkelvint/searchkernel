@@ -1,11 +1,15 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use flatbuffers::root;
+#[cfg(unix)]
+use hyper_util::rt::TokioIo;
 use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_protocol::protocol::v2 as wire;
 use searchkernel_testkit::RecordingBackend;
 use searchkerneld::{rpc, start, start_with_dispatcher, ServerConfig};
+#[cfg(unix)]
+use tokio::net::UnixStream;
 use tonic::{Code, Request};
 
 fn describe_request(version: u32) -> Vec<u8> {
@@ -55,6 +59,22 @@ async fn connect_client(
         .expect("connect generated gRPC client")
 }
 
+#[cfg(unix)]
+async fn connect_uds(
+    path: &Path,
+) -> rpc::search_kernel_client::SearchKernelClient<tonic::transport::Channel> {
+    let path = path.to_owned();
+    let channel = tonic::transport::Endpoint::try_from("http://[::]:50051")
+        .expect("valid placeholder endpoint")
+        .connect_with_connector(tower::service_fn(move |_| {
+            let path = path.clone();
+            async move { UnixStream::connect(path).await.map(TokioIo::new) }
+        }))
+        .await
+        .expect("connect generated gRPC client over UDS");
+    rpc::search_kernel_client::SearchKernelClient::new(channel)
+}
+
 #[tokio::test]
 async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
     let backend = Arc::new(RecordingBackend::new());
@@ -68,7 +88,7 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
     )
     .await
     .expect("start gRPC server");
-    let mut client = connect_client(server.local_addr()).await;
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
     let remote = client
         .execute(Request::new(rpc::FlatBufferFrame {
             payload: describe_request(PROTOCOL_VERSION),
@@ -110,7 +130,7 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
     )
     .await
     .expect("start gRPC server");
-    let mut client = connect_client(server.local_addr()).await;
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
     let remote = client
         .execute(Request::new(rpc::FlatBufferFrame {
             payload: search_request(),
@@ -147,7 +167,7 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
     let server = start(ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))))
         .await
         .expect("start missing-target server");
-    let mut client = connect_client(server.local_addr()).await;
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
     let error = client
         .execute(Request::new(rpc::FlatBufferFrame {
             payload: b"malformed".to_vec(),
@@ -168,7 +188,7 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
     )
     .await
     .expect("start dispatcher server");
-    let mut client = connect_client(server.local_addr()).await;
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
     let error = client
         .execute(Request::new(rpc::FlatBufferFrame {
             payload: b"malformed".to_vec(),
@@ -201,10 +221,42 @@ async fn shutdown_closes_the_real_socket() {
     let server = start(ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))))
         .await
         .expect("start server");
-    let address = server.local_addr();
+    let address = server.tcp_addr().expect("TCP server address");
     server.shutdown().await.expect("shutdown server");
     let error = rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{address}"))
         .await
         .expect_err("shutdown server must close its listener");
     assert!(error.to_string().contains("error") || error.to_string().contains("connect"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn execute_works_over_a_unix_domain_socket() {
+    let path = std::env::temp_dir().join(format!("searchkerneld-uds-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let direct = dispatcher
+        .dispatch(&describe_request(PROTOCOL_VERSION))
+        .expect("direct dispatch");
+    let server = start_with_dispatcher(ServerConfig::unix(&path), dispatcher)
+        .await
+        .expect("start UDS server");
+    assert_eq!(server.unix_path(), Some(path.as_path()));
+    assert!(path.exists());
+
+    let mut client = connect_uds(&path).await;
+    let remote = client
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: describe_request(PROTOCOL_VERSION),
+        }))
+        .await
+        .expect("gRPC Execute over UDS")
+        .into_inner()
+        .payload;
+    assert_eq!(direct, remote, "UDS must preserve the canonical response");
+
+    server.shutdown().await.expect("shutdown UDS server");
+    assert!(!path.exists(), "shutdown must remove the UDS path");
+    index.close().expect("close test index");
 }
