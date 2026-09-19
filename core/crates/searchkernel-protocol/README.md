@@ -16,3 +16,5 @@ FlatBuffers schemas in `api/`.
 - Their lifetimes are tied to the FlatBuffers byte buffer they borrow.
 - Generated files are reproducible outputs. Change the schema and generation
   tooling, never an individual generated file.
+- `json` is only the generic standard FlatBuffers JSON ↔ BFBS boundary; it does
+  not define a Search Kernel JSON dialect or semantic mapping layer.

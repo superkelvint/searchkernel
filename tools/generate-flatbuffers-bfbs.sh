@@ -12,7 +12,7 @@ fi
 [[ -x "${flatc_bin:-}" ]] || { echo "FlatBuffers 25.12.19 flatc is required" >&2; exit 1; }
 [[ "$($flatc_bin --version)" == "flatc version 25.12.19" ]] || { echo "wrong flatc version" >&2; exit 1; }
 
-output="$root/core/crates/searchkernel-json/bfbs"
+output="$root/core/crates/searchkernel-protocol/bfbs"
 mkdir -p "$output"
 "$flatc_bin" --binary --schema -I "$root/api" -o "$output" "$root/api/searchkernel_request.fbs"
 "$flatc_bin" --binary --schema -I "$root/api" -o "$output" "$root/api/searchkernel_response.fbs"

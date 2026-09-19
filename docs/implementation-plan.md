@@ -407,7 +407,8 @@ The preserved direct C++ embedded fixture.
 
 ## Verify
 
-Compare canonical JSON produced by Rust against the frozen expected output.
+Compare standard FlatBuffers JSON produced through the schema-aware boundary
+against the frozen expected output.
 
 Verify native mutation/search symbols are actually referenced.
 
@@ -470,7 +471,6 @@ searchkernel2/
 │   │   ├── searchkernel/
 │   │   ├── searchkernel-testkit/
 │   │   ├── searchkernel-rpc/
-│   │   ├── searchkernel-json/        # generic standard FlatBuffers JSON edge
 │   │   ├── searchkernel-vespa-engine/
 │   │   ├── searchkernel-vespa-bindings/
 │   │   └── searchkernel-ir-adapter/
@@ -1218,7 +1218,7 @@ Do not delete or weaken `searchkernel-vespa-bindings`; that is the separate requ
 
 Use official FlatBuffers tooling for schema generation and JSON parsing/printing.
 There is no Search-Kernel-specific schema emitter. The checked-in BFBS files are
-generated from `api/*.fbs`, and `searchkernel-json` consumes them generically.
+generated from `api/*.fbs`, and `searchkernel-protocol::json` consumes them generically.
 
 ### Stop owning
 

@@ -18,7 +18,7 @@ fn flatbuffers_root() -> PathBuf {
     let build_dir = out_dir
         .parent()
         .and_then(Path::parent)
-        .expect("searchkernel-json OUT_DIR has the standard Cargo layout");
+        .expect("searchkernel-protocol OUT_DIR has the standard Cargo layout");
     let candidate = fs::read_dir(build_dir)
         .expect("read Cargo build directory")
         .filter_map(Result::ok)

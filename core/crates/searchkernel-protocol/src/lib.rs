@@ -8,6 +8,9 @@ mod generated {
 /// The negotiated version of the canonical portable V2 contract.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// Generic standard FlatBuffers JSON conversion at the protocol boundary.
+pub mod json;
+
 /// Versioned Search Kernel messages and enums.
 pub use generated::search_kernel::v2;
 pub mod protocol;

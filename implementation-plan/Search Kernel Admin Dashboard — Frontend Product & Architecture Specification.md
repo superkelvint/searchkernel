@@ -69,7 +69,7 @@ HTTP/JSON transport
     ↓
 searchkerneld
     ↓
-generated JSON codec
+    schema-aware FlatBuffers JSON boundary
     ↓
 canonical FlatBuffers
     ↓
@@ -3390,7 +3390,7 @@ This should become the product's defining UX principle.
                             ▼
                       searchkerneld
                             │
-                generated JSON codec
+                schema-aware FlatBuffers JSON boundary
                             │
                             ▼
                 canonical FlatBuffers

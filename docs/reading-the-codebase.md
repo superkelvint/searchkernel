@@ -57,7 +57,7 @@ core/crates/searchkernel-protocol/
 core/crates/searchkernel-dispatch/
   Canonical V2 envelope validation, routing, and response construction
 
-core/crates/searchkernel-json/
+core/crates/searchkernel-protocol/src/json.rs
   Generic standard FlatBuffers JSON ↔ BFBS boundary
 
 core/crates/searchkernel-testkit/

@@ -1435,7 +1435,6 @@ version = "0.1.0"
 dependencies = [
  "flatbuffers",
  "searchkernel-ir",
- "searchkernel-json",
  "searchkernel-protocol",
  "searchkernel-testkit",
 ]
@@ -1467,19 +1466,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkernel-json"
-version = "0.1.0"
-dependencies = [
- "cc",
- "flatbuffers-build",
- "serde_json",
-]
-
-[[package]]
 name = "searchkernel-protocol"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "flatbuffers",
+ "flatbuffers-build",
+ "serde_json",
 ]
 
 [[package]]

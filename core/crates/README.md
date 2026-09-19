@@ -7,7 +7,7 @@ The Rust workspace is split by responsibility. The crates currently live here:
 - `searchkernel-ir` — validation, defaults, and the owned intermediate
   representation.
 - `searchkernel-ir-adapter` — the integration boundary between IR and Vespa.
-- `searchkernel-json` — FlatBuffers JSON conversion and generated JSON support.
+- `searchkernel-protocol::json` — generic standard FlatBuffers JSON conversion.
 - `searchkernel-protocol` — generated FlatBuffers Rust types.
 - `searchkernel-testkit` — backend-free recording, scripting, and conformance
   support.

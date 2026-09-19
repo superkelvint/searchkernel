@@ -1,4 +1,4 @@
-use searchkernel_json::{
+use searchkernel_protocol::json::{
     request_flatbuffer_to_json, request_json_to_flatbuffer, response_flatbuffer_to_json,
     response_json_to_flatbuffer,
 };

@@ -384,7 +384,7 @@ fn rejects_malformed_unknown_and_closed_requests() {
     );
     let valid_insert = fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../searchkernel-json/tests/fixtures/requests/write.insert.skrq"),
+            .join("tests/fixtures/portable/requests/write.insert.skrq"),
     )
     .unwrap();
     // FlatBuffers permits trailing padding, so exclude the final padding
@@ -436,8 +436,8 @@ fn semantic_errors_are_portable_error_responses() {
 
 #[test]
 fn routes_every_operation_and_encodes_its_canonical_response() {
-    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../searchkernel-json/tests/fixtures/requests");
+    let fixture_root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/portable/requests");
     let backend_cases = [
         (
             "write.insert.skrq",
@@ -988,7 +988,7 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
 
 #[test]
 fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
-    let request = searchkernel_json::request_json_to_flatbuffer(
+    let request = searchkernel_protocol::json::request_json_to_flatbuffer(
         br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_DescribeRequest","payload":{}}"#,
     )
     .expect("standard JSON request");

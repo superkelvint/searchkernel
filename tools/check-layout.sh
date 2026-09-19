@@ -7,7 +7,6 @@ required=(
     core/crates/searchkernel
     core/crates/searchkernel-protocol
     core/crates/searchkernel-ir
-    core/crates/searchkernel-json
     core/crates/searchkernel-dispatch
     core/crates/searchkernel-testkit
     core/crates/searchkernel-ir-adapter
