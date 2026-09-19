@@ -5,8 +5,9 @@ use searchkernel::{
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
     GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
-    OperationIr, ProjectionIr, QueryIr, RankingPolicyIr, SearchFieldIr, SearchFieldWeight,
-    SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation, Value,
+    OperationIr, ProjectionIr, QueryInputIr, QueryIr, RankingPolicyIr, RequestValueIr,
+    SearchFieldIr, SearchFieldWeight, SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation,
+    Value,
 };
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde::{Deserialize, Serialize};
@@ -152,6 +153,33 @@ fn fluent_requests_cross_the_core_boundary() {
             searchkernel_ir::GroupingOperationIr::Each(_)
         ] if field == "brand"
     ));
+}
+
+#[test]
+fn ranking_controls_cross_the_core_boundary() {
+    let backend = Arc::new(RecordingBackend::new());
+    let index = index_with(backend.clone());
+
+    assert!(index
+        .search("fox")
+        .ranking(Ranking::named("product_search"))
+        .query_input("boost", 2.0)
+        .rank_property("source", "catalog")
+        .execute::<Product>()
+        .is_err());
+
+    let OperationIr::Search(request) = backend.last_call().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(request.ranking_request().profile, "product_search");
+    assert_eq!(
+        request.inputs().get("boost"),
+        Some(&QueryInputIr::Literal(RequestValueIr::Float64(2.0)))
+    );
+    assert_eq!(
+        request.ranking_request().properties.get("source"),
+        Some(&"catalog".to_owned())
+    );
 }
 
 #[test]
