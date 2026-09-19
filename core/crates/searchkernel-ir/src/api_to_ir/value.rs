@@ -3,6 +3,42 @@ use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
+/// Convert the JSON value produced by the Rust facade into the same owned
+/// request-value domain used by portable request resolution.
+#[doc(hidden)]
+pub fn request_value_from_json(value: &serde_json::Value, path: String) -> Result<RequestValueIr> {
+    match value {
+        serde_json::Value::Null => Ok(RequestValueIr::Null),
+        serde_json::Value::Bool(value) => Ok(RequestValueIr::Bool(*value)),
+        serde_json::Value::Number(value) if value.as_i64().is_some() => {
+            Ok(RequestValueIr::Int64(value.as_i64().unwrap_or_default()))
+        }
+        serde_json::Value::Number(value) if value.as_u64().is_some() => {
+            Ok(RequestValueIr::UInt64(value.as_u64().unwrap_or_default()))
+        }
+        serde_json::Value::Number(value) => value
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .map(RequestValueIr::Float64)
+            .ok_or_else(|| invalid("non_finite_number", Some(path), "number must be finite")),
+        serde_json::Value::String(value) => Ok(RequestValueIr::String(value.clone())),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| request_value_from_json(value, format!("{path}.values[{index}]")))
+            .collect::<Result<Vec<_>>>()
+            .map(RequestValueIr::List),
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(name, value)| {
+                request_value_from_json(value, format!("{path}.fields.{name}"))
+                    .map(|value| (name.clone(), value))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
+            .map(RequestValueIr::Object),
+    }
+}
+
 impl IndexContext {
     pub(crate) fn value_to_ir_at(
         &self,

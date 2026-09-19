@@ -78,9 +78,17 @@ impl IndexContext {
         let target = match request.target_type() {
             api::AnalyzeTarget::Analyzer => request
                 .target_as_analyzer()
-                .map(|a| analyzer_to_ir_at(Some(a), FieldKind::Text, "target.analyzer"))
-                .transpose()?
-                .flatten(),
+                .map(|analyzer| {
+                    Ok(AnalyzeTargetInput::Analyzer(AnalyzerInput {
+                        name: analyzer.name().unwrap_or_default().to_owned(),
+                        version: analyzer.version(),
+                        options: request_values_to_map(
+                            analyzer.options(),
+                            "target.analyzer.options",
+                        )?,
+                    }))
+                })
+                .transpose()?,
             api::AnalyzeTarget::AnalyzeFieldTarget => {
                 let target = request.target_as_analyze_field_target().ok_or_else(|| {
                     invalid(
@@ -89,25 +97,9 @@ impl IndexContext {
                         "analyze request must select an analyzer or field",
                     )
                 })?;
-                let field = self.query_field(
-                    target.field().unwrap_or_default(),
-                    "target.field".to_owned(),
-                )?;
-                if field.kind() != FieldKind::Text {
-                    return Err(invalid(
-                        "invalid_analyzer",
-                        Some("target.field"),
-                        "analysis requires a text field",
-                    ));
-                }
-                let analyzer = field.analyzer().ok_or_else(|| {
-                    invalid(
-                        "invalid_analyzer",
-                        Some("target.field"),
-                        "field has no analyzer",
-                    )
-                })?;
-                Some(analyzer_identity(analyzer, "target.field")?)
+                Some(AnalyzeTargetInput::Field(
+                    target.field().unwrap_or_default().to_owned(),
+                ))
             }
             _ => {
                 return Err(invalid(
@@ -116,22 +108,15 @@ impl IndexContext {
                     "analyze request must select an analyzer or field",
                 ))
             }
-        }
-        .ok_or_else(|| {
-            invalid(
-                "invalid_analyzer",
-                Some("target"),
-                "analyze request must select an analyzer or field",
-            )
-        })?;
-        Ok(AnalyzeRequestIr {
-            analyzer: target,
-            text: request.text().unwrap_or_default().to_owned(),
-            language: request
-                .language()
-                .map(|v| parse_language(v, "language"))
-                .transpose()?,
-        })
+        };
+        resolve_analyze(
+            self,
+            AnalyzeInput {
+                target,
+                text: request.text().unwrap_or_default().to_owned(),
+                language: request.language().map(ToOwned::to_owned),
+            },
+        )
     }
     pub fn search_fields_to_ir(
         &self,

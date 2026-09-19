@@ -55,12 +55,21 @@ searchkernel2/
 ├── reference/
 │   ├── api-conformance/    # Portable API semantic corpus
 │   ├── clients/            # client contracts and scenarios
-│   ├── json-conformance/   # JSON/BFBS generation contract and verifier
 │   └── vespa/              # Vespa lifecycle contracts and verifiers
 ├── tools/
 ├── docs/
 └── AGENTS.md
 ```
+
+Portable-client rules:
+
+* FlatBuffers is the sole canonical portable data contract.
+* Non-Rust RPC uses generated gRPC carrying canonical FlatBuffer bytes.
+* Standard schema-aware FlatBuffers JSON is the only JSON representation.
+* Language SDKs use flatc-generated models and must not add full-schema DTOs or
+  handwritten field-by-field FlatBuffer codecs.
+* JSON is converted to FlatBuffer bytes before dispatch; it never implements a
+  separate JSON-to-IR semantic path.
 
 ### `upstream/vespa/` is read-only
 

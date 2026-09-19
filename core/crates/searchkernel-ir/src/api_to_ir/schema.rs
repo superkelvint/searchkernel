@@ -3,6 +3,302 @@ use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The deliberately small schema intent accepted by the ergonomic Rust
+/// facade. It is not a second representation of the portable schema.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustFieldKind {
+    Text,
+    Keyword,
+    Int64,
+    Float64,
+    Bool,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RustAnalyzerInput {
+    pub name: String,
+    pub version: u32,
+    pub options: SchemaPropertiesIr,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RustFieldInput {
+    pub name: String,
+    pub kind: RustFieldKind,
+    pub multi: bool,
+    pub stored: Option<bool>,
+    pub searchable: Option<bool>,
+    pub filterable: Option<bool>,
+    pub sortable: Option<bool>,
+    pub facetable: Option<bool>,
+    pub analyzer: Option<RustAnalyzerInput>,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RustSearchFieldInput {
+    pub field: String,
+    pub weight: Option<f64>,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RustIndexDefinitionInput {
+    pub name: Option<String>,
+    pub fields: Vec<RustFieldInput>,
+    pub default_search_fields: Option<Vec<RustSearchFieldInput>>,
+}
+
+/// Resolve the Rust facade's concrete schema into the same owned definition
+/// used by the portable FlatBuffers path.
+#[doc(hidden)]
+pub fn resolve_rust_index_definition(input: RustIndexDefinitionInput) -> Result<IndexDefinitionIr> {
+    if input.fields.is_empty() {
+        return Err(invalid(
+            "invalid_schema",
+            Some("fields"),
+            "an index must define at least one field",
+        ));
+    }
+    let name = input
+        .name
+        .map(|value| {
+            IndexName::parse(value).map_err(|_| {
+                invalid(
+                    "invalid_index_name",
+                    Some("name"),
+                    "index name must not be empty",
+                )
+            })
+        })
+        .transpose()?;
+    let mut fields = Vec::with_capacity(input.fields.len());
+    let mut names = BTreeSet::new();
+    for (index, field) in input.fields.into_iter().enumerate() {
+        let path = format!("fields[{index}]");
+        let field_name = FieldName::parse(field.name.clone()).map_err(|_| {
+            invalid(
+                "invalid_field_name",
+                Some(format!("{path}.name")),
+                "field name must match [A-Za-z][A-Za-z0-9_]*",
+            )
+        })?;
+        if !names.insert(field_name.as_str().to_owned()) {
+            return Err(invalid(
+                "duplicate_field",
+                Some(format!("{path}.name")),
+                "field names must be unique",
+            ));
+        }
+        fields.push(rust_field_to_ir(field, field_name, &path)?);
+    }
+    let default_search_fields = match input.default_search_fields {
+        Some(fields_input) => fields_input
+            .into_iter()
+            .enumerate()
+            .map(|(index, field)| {
+                let path = format!("default_search_fields[{index}]");
+                let field_name = FieldName::parse(field.field.clone()).map_err(|_| {
+                    invalid(
+                        "invalid_field_name",
+                        Some(format!("{path}.field")),
+                        "field name must match [A-Za-z][A-Za-z0-9_]*",
+                    )
+                })?;
+                let weight = SearchFieldWeight::new(field.weight.unwrap_or(1.0)).map_err(|_| {
+                    invalid(
+                        "invalid_search_weight",
+                        Some(format!("{path}.weight")),
+                        "search-field weight must be finite and non-negative",
+                    )
+                })?;
+                let Some(resolved) = fields
+                    .iter()
+                    .find(|value| value.name.as_str() == field_name.as_str())
+                else {
+                    return Err(invalid(
+                        "unknown_field",
+                        Some(format!("{path}.field")),
+                        "field is not defined",
+                    ));
+                };
+                if !resolved.capabilities.searchable {
+                    return Err(invalid(
+                        "field_not_searchable",
+                        Some(format!("{path}.field")),
+                        "default search fields must be searchable",
+                    ));
+                }
+                Ok(SearchFieldIr {
+                    field: field_name,
+                    weight,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        None => fields
+            .iter()
+            .filter(|field| field.capabilities.searchable)
+            .map(|field| SearchFieldIr {
+                field: field.name.clone(),
+                weight: SearchFieldWeight::new(1.0).expect("constant is valid"),
+            })
+            .collect(),
+    };
+    Ok(IndexDefinitionIr {
+        name,
+        fields,
+        default_search_fields,
+        default_ranking: RankingPolicyIr::DefaultRelevanceV1,
+        default_prefix_policy: PrefixPolicy::Disabled,
+        default_typo_policy: TypoPolicy::Disabled,
+        properties: SchemaPropertiesIr::new(),
+        document_type: None,
+        schema_inherits: Vec::new(),
+        document_inherits: Vec::new(),
+        structs: Vec::new(),
+        fieldsets: Vec::new(),
+        schema_fields: Vec::new(),
+        imported_fields: Vec::new(),
+        document_summaries: Vec::new(),
+        rank_profiles: Vec::new(),
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+    })
+}
+
+fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Result<FieldIr> {
+    let (
+        data_type,
+        string_type,
+        keyword,
+        default_searchable,
+        default_filterable,
+        default_sortable,
+        default_groupable,
+    ) = match field.kind {
+        RustFieldKind::Text => (
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            true,
+            false,
+            true,
+            false,
+            false,
+            false,
+        ),
+        RustFieldKind::Keyword => (
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            true,
+            true,
+            false,
+            true,
+            !field.multi,
+            true,
+        ),
+        RustFieldKind::Int64 => (
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+            false,
+            false,
+            false,
+            true,
+            !field.multi,
+            false,
+        ),
+        RustFieldKind::Float64 => (
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+            false,
+            false,
+            false,
+            true,
+            !field.multi,
+            false,
+        ),
+        RustFieldKind::Bool => (
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
+            false,
+            false,
+            false,
+            true,
+            !field.multi,
+            true,
+        ),
+    };
+    let data_type = if field.multi {
+        DataTypeIr::Array(Box::new(data_type))
+    } else {
+        data_type
+    };
+    if keyword && field.searchable == Some(true) {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.searchable")),
+            "keyword fields cannot opt into full-text search",
+        ));
+    }
+    if !keyword && string_type && field.filterable == Some(true) {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.filterable")),
+            "text fields cannot opt into filtering",
+        ));
+    }
+    let analyzer = if string_type && !keyword {
+        let analyzer = field.analyzer.unwrap_or(RustAnalyzerInput {
+            name: "standard".to_owned(),
+            version: 1,
+            options: SchemaPropertiesIr::new(),
+        });
+        let analyzer_ir = AnalyzerIr {
+            name: analyzer.name,
+            version: analyzer.version,
+            options: analyzer.options,
+        };
+        analyzer_identity(&analyzer_ir, &format!("{path}.analyzer"))?;
+        Some(analyzer_ir)
+    } else {
+        if field.analyzer.is_some() {
+            return Err(invalid(
+                "invalid_analyzer",
+                Some(format!("{path}.analyzer")),
+                "only text fields may specify an analyzer",
+            ));
+        }
+        None
+    };
+    Ok(FieldIr {
+        name,
+        data_type,
+        analyzer,
+        capabilities: FieldCapabilities {
+            stored: field.stored.unwrap_or(true),
+            searchable: field.searchable.unwrap_or(default_searchable),
+            filterable: field.filterable.unwrap_or(default_filterable),
+            sortable: field.sortable.unwrap_or(default_sortable),
+            groupable: field.facetable.unwrap_or(default_groupable),
+        },
+        matching: if string_type {
+            Some(MatchingConfigIr {
+                mode: if keyword {
+                    MatchingModeIr::Exact
+                } else {
+                    MatchingModeIr::Text
+                },
+                options: SchemaPropertiesIr::new(),
+            })
+        } else {
+            None
+        },
+        index: None,
+        attribute: None,
+        summary: None,
+        indexing_script: None,
+        properties: SchemaPropertiesIr::new(),
+        struct_fields: Vec::new(),
+    })
+}
+
 pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<IndexDefinitionIr> {
     let field_views = definition.fields();
     let field_count = field_views.map_or(0, |v| v.len());
@@ -114,6 +410,14 @@ pub fn analyzer_to_ir(
 impl IndexContext {
     pub fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
         let definition = index_definition_to_ir(definition)?;
+        Ok(Self::from_definition_ir(definition))
+    }
+
+    /// Construct a context from a definition that has already gone through
+    /// semantic resolution.  The Rust facade uses this path so it does not
+    /// encode a definition to FlatBuffers merely to reconstruct the context.
+    #[doc(hidden)]
+    pub fn from_definition_ir(definition: IndexDefinitionIr) -> Self {
         let document_fields = definition
             .fields
             .iter()
@@ -133,11 +437,11 @@ impl IndexContext {
                 .enumerate()
                 .map(|(i, f)| (f.name.as_str().to_owned(), QueryFieldRef::Schema(i))),
         );
-        Ok(Self {
+        Self {
             definition,
             document_fields,
             query_fields,
-        })
+        }
     }
 
     pub fn definition(&self) -> &IndexDefinitionIr {
@@ -153,6 +457,10 @@ impl IndexContext {
             .ok_or_else(|| invalid("unknown_field", Some(path), "field is not defined"))
     }
 
+    pub(crate) fn field_for_resolver(&self, name: &str, path: String) -> Result<&FieldIr> {
+        self.field(name, path)
+    }
+
     pub(crate) fn query_field(&self, name: &str, path: String) -> Result<&FieldIr> {
         match self.query_fields.get(name).copied() {
             Some(QueryFieldRef::Document(index)) => Ok(&self.definition.fields[index]),
@@ -164,6 +472,10 @@ impl IndexContext {
             )),
             None => Err(invalid("unknown_field", Some(path), "field is not defined")),
         }
+    }
+
+    pub(crate) fn query_field_for_resolver(&self, name: &str, path: String) -> Result<&FieldIr> {
+        self.query_field(name, path)
     }
 }
 

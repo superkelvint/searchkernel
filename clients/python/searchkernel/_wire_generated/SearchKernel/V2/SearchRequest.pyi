@@ -4,18 +4,18 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.FilterRequest import FilterRequest
-from SearchKernel.V2.GroupingRequest import GroupingRequest
-from SearchKernel.V2.OptionalUInt32 import OptionalUInt32
-from SearchKernel.V2.OptionalUInt64 import OptionalUInt64
-from SearchKernel.V2.PresentationRequest import PresentationRequest
-from SearchKernel.V2.QueryInput import QueryInput
-from SearchKernel.V2.QueryModel import QueryModel
-from SearchKernel.V2.QuerySource import QuerySource
-from SearchKernel.V2.RankingRequest import RankingRequest
-from SearchKernel.V2.SearchFieldSelection import SearchFieldSelection
-from SearchKernel.V2.SortExpr import SortExpr
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.FilterRequest import FilterRequest, FilterRequestT
+from SearchKernel.V2.GroupingRequest import GroupingRequest, GroupingRequestT
+from SearchKernel.V2.OptionalUInt32 import OptionalUInt32, OptionalUInt32T
+from SearchKernel.V2.OptionalUInt64 import OptionalUInt64, OptionalUInt64T
+from SearchKernel.V2.PresentationRequest import PresentationRequest, PresentationRequestT
+from SearchKernel.V2.QueryInput import QueryInput, QueryInputT
+from SearchKernel.V2.QueryModel import QueryModel, QueryModelT
+from SearchKernel.V2.QuerySource import QuerySource, QuerySourceT
+from SearchKernel.V2.RankingRequest import RankingRequest, RankingRequestT
+from SearchKernel.V2.SearchFieldSelection import SearchFieldSelection, SearchFieldSelectionT
+from SearchKernel.V2.SortExpr import SortExpr, SortExprT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -24,8 +24,6 @@ class SearchRequest(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> SearchRequest: ...
   @classmethod
   def GetRootAsSearchRequest(cls, buf: bytes, offset: int) -> SearchRequest: ...
-  @classmethod
-  def SearchRequestBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Query(self) -> QuerySource | None: ...
   def SearchFields(self) -> SearchFieldSelection | None: ...
@@ -50,6 +48,48 @@ class SearchRequest(object):
   def PropertiesIsNone(self) -> bool: ...
   def QueryProfile(self) -> str | None: ...
   def SearchChain(self) -> str | None: ...
+class SearchRequestT(object):
+  query: QuerySourceT | None
+  searchFields: SearchFieldSelectionT | None
+  filters: FilterRequestT | None
+  sort: typing.List[SortExprT]
+  grouping: typing.List[GroupingRequestT]
+  ranking: RankingRequestT | None
+  inputs: typing.List[QueryInputT]
+  limit: OptionalUInt32T | None
+  offset: OptionalUInt32T | None
+  timeoutMs: OptionalUInt64T | None
+  queryModel: QueryModelT | None
+  presentation: PresentationRequestT | None
+  properties: typing.List[ValueEntryT]
+  queryProfile: str | None
+  searchChain: str | None
+  def __init__(
+    self,
+    query: 'QuerySourceT' | None = ...,
+    searchFields: 'SearchFieldSelectionT' | None = ...,
+    filters: 'FilterRequestT' | None = ...,
+    sort: typing.List['SortExprT'] | None = ...,
+    grouping: typing.List['GroupingRequestT'] | None = ...,
+    ranking: 'RankingRequestT' | None = ...,
+    inputs: typing.List['QueryInputT'] | None = ...,
+    limit: 'OptionalUInt32T' | None = ...,
+    offset: 'OptionalUInt32T' | None = ...,
+    timeoutMs: 'OptionalUInt64T' | None = ...,
+    queryModel: 'QueryModelT' | None = ...,
+    presentation: 'PresentationRequestT' | None = ...,
+    properties: typing.List['ValueEntryT'] | None = ...,
+    queryProfile: str | None = ...,
+    searchChain: str | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> SearchRequestT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> SearchRequestT: ...
+  @classmethod
+  def InitFromObj(cls, searchRequest: SearchRequest) -> SearchRequestT: ...
+  def _UnPack(self, searchRequest: SearchRequest) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def SearchRequestStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def SearchRequestAddQuery(builder: flatbuffers.Builder, query: uoffset) -> None: ...

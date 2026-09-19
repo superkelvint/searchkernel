@@ -4,6 +4,18 @@ import flatbuffers
 import numpy as np
 
 import typing
+from SearchKernel.V2.BoolValue import BoolValue
+from SearchKernel.V2.BytesValue import BytesValue
+from SearchKernel.V2.Float64Value import Float64Value
+from SearchKernel.V2.Int64Value import Int64Value
+from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValue
+from SearchKernel.V2.NullValueValue import NullValueValue
+from SearchKernel.V2.StringValue import StringValue
+from SearchKernel.V2.TensorValue import TensorValue
+from SearchKernel.V2.UInt64Value import UInt64Value
+from SearchKernel.V2.ValueList import ValueList
+from SearchKernel.V2.ValueObject import ValueObject
+from flatbuffers import table
 from typing import cast
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
@@ -21,4 +33,5 @@ class ValueKind(object):
   ValueList = cast(int, ...)
   ValueObject = cast(int, ...)
   TensorValue = cast(int, ...)
+def ValueKindCreator(union_type: typing.Literal[ValueKind.NONE, ValueKind.NullValueValue, ValueKind.BoolValue, ValueKind.Int64Value, ValueKind.UInt64Value, ValueKind.Float64Value, ValueKind.NonFiniteFloatValue, ValueKind.StringValue, ValueKind.BytesValue, ValueKind.ValueList, ValueKind.ValueObject, ValueKind.TensorValue], table: table.Table) -> typing.Union[None, NullValueValue, BoolValue, Int64Value, UInt64Value, Float64Value, NonFiniteFloatValue, StringValue, BytesValue, ValueList, ValueObject, TensorValue]: ...
 

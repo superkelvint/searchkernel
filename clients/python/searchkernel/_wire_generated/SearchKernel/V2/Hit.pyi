@@ -4,10 +4,10 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.HighlightResult import HighlightResult
-from SearchKernel.V2.Relevance import Relevance
-from SearchKernel.V2.Value import Value
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.HighlightResult import HighlightResult, HighlightResultT
+from SearchKernel.V2.Relevance import Relevance, RelevanceT
+from SearchKernel.V2.Value import Value, ValueT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -16,8 +16,6 @@ class Hit(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> Hit: ...
   @classmethod
   def GetRootAsHit(cls, buf: bytes, offset: int) -> Hit: ...
-  @classmethod
-  def HitBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Id(self) -> str | None: ...
   def Relevance(self) -> Relevance | None: ...
@@ -43,6 +41,38 @@ class Hit(object):
   def SortValues(self, i: int) -> Value | None: ...
   def SortValuesLength(self) -> int: ...
   def SortValuesIsNone(self) -> bool: ...
+class HitT(object):
+  id: str | None
+  relevance: RelevanceT | None
+  fields: typing.List[ValueEntryT]
+  highlights: typing.List[HighlightResultT]
+  source: str | None
+  types: typing.List[str]
+  matchFeatures: typing.List[ValueEntryT]
+  summaryFeatures: typing.List[ValueEntryT]
+  rankFeatures: typing.List[ValueEntryT]
+  sortValues: typing.List[ValueT]
+  def __init__(
+    self,
+    id: str | None = ...,
+    relevance: 'RelevanceT' | None = ...,
+    fields: typing.List['ValueEntryT'] | None = ...,
+    highlights: typing.List['HighlightResultT'] | None = ...,
+    source: str | None = ...,
+    types: typing.List[str] | None = ...,
+    matchFeatures: typing.List['ValueEntryT'] | None = ...,
+    summaryFeatures: typing.List['ValueEntryT'] | None = ...,
+    rankFeatures: typing.List['ValueEntryT'] | None = ...,
+    sortValues: typing.List['ValueT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> HitT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> HitT: ...
+  @classmethod
+  def InitFromObj(cls, hit: Hit) -> HitT: ...
+  def _UnPack(self, hit: Hit) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def HitStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def HitAddId(builder: flatbuffers.Builder, id: uoffset) -> None: ...

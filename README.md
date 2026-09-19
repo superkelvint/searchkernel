@@ -62,16 +62,21 @@ Search Kernel links against Vespa's native libraries at build time. None of the 
 
 ### Development prerequisites
 
-Building and testing the workspace requires the official FlatBuffers C++ release
-`25.12.19`: the matching headers and library are needed by `searchkernel-json`,
-and the matching `flatc` executable is needed by the schema checks. The default
+Building and testing the workspace uses the official FlatBuffers C++ release
+`25.12.19` for the schema-aware JSON boundary and the matching `flatc`
+executable for generated language bindings and BFBS checks. The default
 installation locations are `/usr/local/include`, `/usr/local/lib`, and
 `/usr/local/bin`.
 
-For a non-standard installation, set `FLATBUFFERS_ROOT`, or set
-`FLATBUFFERS_INCLUDE_DIR` and `FLATBUFFERS_LIB_DIR` for Cargo. Set
-`FLATC_PATH` for the schema-check scripts. All installed components must be
-version `25.12.19`.
+For a non-standard installation, set `FLATBUFFERS_CPP_ROOT` for Cargo and
+`FLATC_PATH` for schema and Python-generation checks. All installed components
+must be version `25.12.19`.
+
+FlatBuffers is the sole portable data contract. Non-Rust RPC carries canonical
+FlatBuffer bytes over generated gRPC. Standard FlatBuffers JSON is the only
+supported JSON representation; it is parsed to FlatBuffers before dispatch and
+printed from FlatBuffers for responses. Language SDKs use flatc-generated
+models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 ## Language bindings
 

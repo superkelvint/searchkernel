@@ -1,8 +1,17 @@
-"""Search Kernel's generated domain models and synchronous gRPC client."""
+"""Search Kernel's Python façade and canonical generated V2 client."""
 
-from .generated.models import *  # noqa: F401,F403
-from .generated.models import __all__ as _model_all
-from .client import Client, ClientError, Index, value
+from .client import Client, ClientError, Index, SearchKernelError, value
 from .grpc_transport import GrpcTransport, GrpcTransportError
+from .ergonomic import (
+    Boolean, Float, Group, Hit, Integer, Keyword, PatchBuilder, ResultGroup,
+    SearchBuilder, SearchResults, Text, UpdateBuilder, YqlBuilder, agg, asc,
+    desc, g, gf, q,
+)
 
-__all__ = [*_model_all, "Client", "ClientError", "Index", "GrpcTransport", "GrpcTransportError", "value"]
+__all__ = [
+    "Client", "ClientError", "SearchKernelError", "Index", "GrpcTransport",
+    "GrpcTransportError", "Boolean", "Float", "Group", "Hit", "Integer",
+    "Keyword", "PatchBuilder", "ResultGroup", "SearchBuilder", "SearchResults",
+    "Text", "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf",
+    "q", "value",
+]

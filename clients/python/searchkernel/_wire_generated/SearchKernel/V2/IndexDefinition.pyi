@@ -4,17 +4,17 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.ConstantDefinition import ConstantDefinition
-from SearchKernel.V2.DocumentSummaryDefinition import DocumentSummaryDefinition
-from SearchKernel.V2.FieldDefinition import FieldDefinition
-from SearchKernel.V2.FieldSetDefinition import FieldSetDefinition
-from SearchKernel.V2.ImportedFieldDefinition import ImportedFieldDefinition
-from SearchKernel.V2.NamedStructDefinition import NamedStructDefinition
-from SearchKernel.V2.OnnxModelDefinition import OnnxModelDefinition
-from SearchKernel.V2.RankProfileDefinition import RankProfileDefinition
-from SearchKernel.V2.SearchFieldSelection import SearchFieldSelection
-from SearchKernel.V2.SearchOnlyFieldDefinition import SearchOnlyFieldDefinition
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.ConstantDefinition import ConstantDefinition, ConstantDefinitionT
+from SearchKernel.V2.DocumentSummaryDefinition import DocumentSummaryDefinition, DocumentSummaryDefinitionT
+from SearchKernel.V2.FieldDefinition import FieldDefinition, FieldDefinitionT
+from SearchKernel.V2.FieldSetDefinition import FieldSetDefinition, FieldSetDefinitionT
+from SearchKernel.V2.ImportedFieldDefinition import ImportedFieldDefinition, ImportedFieldDefinitionT
+from SearchKernel.V2.NamedStructDefinition import NamedStructDefinition, NamedStructDefinitionT
+from SearchKernel.V2.OnnxModelDefinition import OnnxModelDefinition, OnnxModelDefinitionT
+from SearchKernel.V2.RankProfileDefinition import RankProfileDefinition, RankProfileDefinitionT
+from SearchKernel.V2.SearchFieldSelection import SearchFieldSelection, SearchFieldSelectionT
+from SearchKernel.V2.SearchOnlyFieldDefinition import SearchOnlyFieldDefinition, SearchOnlyFieldDefinitionT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -23,8 +23,6 @@ class IndexDefinition(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> IndexDefinition: ...
   @classmethod
   def GetRootAsIndexDefinition(cls, buf: bytes, offset: int) -> IndexDefinition: ...
-  @classmethod
-  def IndexDefinitionBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Name(self) -> str | None: ...
   def Fields(self, i: int) -> FieldDefinition | None: ...
@@ -65,6 +63,48 @@ class IndexDefinition(object):
   def OnnxModels(self, i: int) -> OnnxModelDefinition | None: ...
   def OnnxModelsLength(self) -> int: ...
   def OnnxModelsIsNone(self) -> bool: ...
+class IndexDefinitionT(object):
+  name: str | None
+  fields: typing.List[FieldDefinitionT]
+  defaultSearchFields: SearchFieldSelectionT | None
+  properties: typing.List[ValueEntryT]
+  documentType: str | None
+  schemaInherits: typing.List[str]
+  documentInherits: typing.List[str]
+  structs: typing.List[NamedStructDefinitionT]
+  fieldsets: typing.List[FieldSetDefinitionT]
+  schemaFields: typing.List[SearchOnlyFieldDefinitionT]
+  importedFields: typing.List[ImportedFieldDefinitionT]
+  documentSummaries: typing.List[DocumentSummaryDefinitionT]
+  rankProfiles: typing.List[RankProfileDefinitionT]
+  constants: typing.List[ConstantDefinitionT]
+  onnxModels: typing.List[OnnxModelDefinitionT]
+  def __init__(
+    self,
+    name: str | None = ...,
+    fields: typing.List['FieldDefinitionT'] | None = ...,
+    defaultSearchFields: 'SearchFieldSelectionT' | None = ...,
+    properties: typing.List['ValueEntryT'] | None = ...,
+    documentType: str | None = ...,
+    schemaInherits: typing.List[str] | None = ...,
+    documentInherits: typing.List[str] | None = ...,
+    structs: typing.List['NamedStructDefinitionT'] | None = ...,
+    fieldsets: typing.List['FieldSetDefinitionT'] | None = ...,
+    schemaFields: typing.List['SearchOnlyFieldDefinitionT'] | None = ...,
+    importedFields: typing.List['ImportedFieldDefinitionT'] | None = ...,
+    documentSummaries: typing.List['DocumentSummaryDefinitionT'] | None = ...,
+    rankProfiles: typing.List['RankProfileDefinitionT'] | None = ...,
+    constants: typing.List['ConstantDefinitionT'] | None = ...,
+    onnxModels: typing.List['OnnxModelDefinitionT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> IndexDefinitionT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> IndexDefinitionT: ...
+  @classmethod
+  def InitFromObj(cls, indexDefinition: IndexDefinition) -> IndexDefinitionT: ...
+  def _UnPack(self, indexDefinition: IndexDefinition) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def IndexDefinitionStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def IndexDefinitionAddName(builder: flatbuffers.Builder, name: uoffset) -> None: ...

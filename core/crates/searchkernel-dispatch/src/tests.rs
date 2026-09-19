@@ -985,3 +985,21 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
         );
     }
 }
+
+#[test]
+fn standard_flatbuffers_json_enters_the_canonical_dispatch_path() {
+    let request = searchkernel_json::request_json_to_flatbuffer(
+        br#"{"protocol_version":2,"payload_type":"SearchKernel_V2_DescribeRequest","payload":{}}"#,
+    )
+    .expect("standard JSON request");
+    let dispatcher = Dispatcher::from_backend(context(), Arc::new(RecordingBackend::new()));
+    let response = dispatcher
+        .dispatch(&request)
+        .expect("dispatch standard JSON bytes");
+    assert_eq!(
+        root::<wire::ResponseEnvelope<'_>>(&response)
+            .unwrap()
+            .payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_DescribeResult
+    );
+}

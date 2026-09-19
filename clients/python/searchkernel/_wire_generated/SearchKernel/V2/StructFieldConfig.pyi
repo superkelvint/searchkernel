@@ -4,11 +4,11 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.AttributeConfig import AttributeConfig
-from SearchKernel.V2.IndexConfig import IndexConfig
-from SearchKernel.V2.MatchingConfig import MatchingConfig
-from SearchKernel.V2.SummaryConfig import SummaryConfig
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.AttributeConfig import AttributeConfig, AttributeConfigT
+from SearchKernel.V2.IndexConfig import IndexConfig, IndexConfigT
+from SearchKernel.V2.MatchingConfig import MatchingConfig, MatchingConfigT
+from SearchKernel.V2.SummaryConfig import SummaryConfig, SummaryConfigT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -17,8 +17,6 @@ class StructFieldConfig(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> StructFieldConfig: ...
   @classmethod
   def GetRootAsStructFieldConfig(cls, buf: bytes, offset: int) -> StructFieldConfig: ...
-  @classmethod
-  def StructFieldConfigBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Path(self) -> str | None: ...
   def IndexingScript(self) -> str | None: ...
@@ -33,6 +31,36 @@ class StructFieldConfig(object):
   def Properties(self, i: int) -> ValueEntry | None: ...
   def PropertiesLength(self) -> int: ...
   def PropertiesIsNone(self) -> bool: ...
+class StructFieldConfigT(object):
+  path: str | None
+  indexingScript: str | None
+  matching: MatchingConfigT | None
+  index: IndexConfigT | None
+  attribute: AttributeConfigT | None
+  summary: SummaryConfigT | None
+  rank: str | None
+  queryCommands: typing.List[str]
+  properties: typing.List[ValueEntryT]
+  def __init__(
+    self,
+    path: str | None = ...,
+    indexingScript: str | None = ...,
+    matching: 'MatchingConfigT' | None = ...,
+    index: 'IndexConfigT' | None = ...,
+    attribute: 'AttributeConfigT' | None = ...,
+    summary: 'SummaryConfigT' | None = ...,
+    rank: str | None = ...,
+    queryCommands: typing.List[str] | None = ...,
+    properties: typing.List['ValueEntryT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> StructFieldConfigT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> StructFieldConfigT: ...
+  @classmethod
+  def InitFromObj(cls, structFieldConfig: StructFieldConfig) -> StructFieldConfigT: ...
+  def _UnPack(self, structFieldConfig: StructFieldConfig) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def StructFieldConfigStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def StructFieldConfigAddPath(builder: flatbuffers.Builder, path: uoffset) -> None: ...

@@ -1,4 +1,5 @@
 use crate::document::{pending, PendingValue};
+use crate::error::{Error, Result as KernelResult};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -47,6 +48,32 @@ impl Default for Patch {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub(crate) fn to_resolver_operations(
+    patch: &Patch,
+) -> KernelResult<Vec<searchkernel_ir::PatchOperationInput>> {
+    patch
+        .operations
+        .iter()
+        .map(|operation| match operation {
+            PatchOperation::Set { field, value } => {
+                let value = crate::filter::pending_value(value).map_err(Error::Serialization)?;
+                let value = searchkernel_ir::request_value_from_json(
+                    value,
+                    format!("operations[{field}].value"),
+                )
+                .map_err(Error::from_ir)?;
+                Ok(searchkernel_ir::PatchOperationInput::Set {
+                    field: field.clone(),
+                    value,
+                })
+            }
+            PatchOperation::Unset { field } => Ok(searchkernel_ir::PatchOperationInput::Unset {
+                field: field.clone(),
+            }),
+        })
+        .collect()
 }
 
 #[cfg(test)]

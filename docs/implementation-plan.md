@@ -470,7 +470,7 @@ searchkernel2/
 │   │   ├── searchkernel/
 │   │   ├── searchkernel-testkit/
 │   │   ├── searchkernel-rpc/
-│   │   ├── searchkernel-json/        # optional edge/debug codec
+│   │   ├── searchkernel-json/        # generic standard FlatBuffers JSON edge
 │   │   ├── searchkernel-vespa-engine/
 │   │   ├── searchkernel-vespa-bindings/
 │   │   └── searchkernel-ir-adapter/
@@ -488,10 +488,9 @@ searchkernel2/
 │   ├── api-conformance/
 │   ├── clients/
 │   ├── rpc-conformance/
-│   ├── json-conformance/            # only while JSON remains supported
 │   └── vespa/
 ├── tools/
-│   └── searchkernel-bindgen/
+│   └── generate-python-flatbuffers.sh
 ├── docs/
 ├── AGENTS.md
 └── README.md
@@ -1217,25 +1216,9 @@ Do not delete or weaken `searchkernel-vespa-bindings`; that is the separate requ
 
 ### Goal
 
-Retain only Search Kernel-specific BFBS tooling that remains valuable after standard generators take over client plumbing.
-
-### Tool
-
-```text
-tools/searchkernel-bindgen
-```
-
-### Keep
-
-```text
-owned BFBS normalization
-reference/union validation
-presence/default metadata
-map/keyed-vector metadata where required
-root and operation inventory
-contract diagnostics
-conformance/documentation metadata
-```
+Use official FlatBuffers tooling for schema generation and JSON parsing/printing.
+There is no Search-Kernel-specific schema emitter. The checked-in BFBS files are
+generated from `api/*.fbs`, and `searchkernel-json` consumes them generically.
 
 ### Stop owning
 
@@ -1881,7 +1864,7 @@ Execute in this order:
    - obsolete generated client/transport machinery
    - native-client packaging/plans
 
-7. Re-audit searchkernel-bindgen and keep only the BFBS responsibilities still justified.
+7. Keep schema generation and JSON conversion on the official FlatBuffers path.
 
 8. Add further language facades only when product demand requires them.
 ```

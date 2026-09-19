@@ -5,6 +5,15 @@ import numpy as np
 
 import typing
 from SearchKernel.Protocol.V2.RequestPayload import RequestPayload
+from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT
+from SearchKernel.V2.DeleteRequest import DeleteRequestT
+from SearchKernel.V2.DescribeRequest import DescribeRequestT
+from SearchKernel.V2.GetRequest import GetRequestT
+from SearchKernel.V2.InsertRequest import InsertRequestT
+from SearchKernel.V2.InspectQueryRequest import InspectQueryRequestT
+from SearchKernel.V2.PatchRequest import PatchRequestT
+from SearchKernel.V2.SearchRequest import SearchRequestT
+from SearchKernel.V2.UpsertRequest import UpsertRequestT
 from flatbuffers import table
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
@@ -20,6 +29,24 @@ class RequestEnvelope(object):
   def ProtocolVersion(self) -> int: ...
   def PayloadType(self) -> typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest]: ...
   def Payload(self) -> table.Table | None: ...
+class RequestEnvelopeT(object):
+  protocolVersion: int
+  payloadType: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest]
+  payload: typing.Union[None, InsertRequestT, UpsertRequestT, PatchRequestT, DeleteRequestT, GetRequestT, SearchRequestT, AnalyzeRequestT, DescribeRequestT, InspectQueryRequestT]
+  def __init__(
+    self,
+    protocolVersion: int = ...,
+    payloadType: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest] = ...,
+    payload: typing.Union[None, InsertRequestT, UpsertRequestT, PatchRequestT, DeleteRequestT, GetRequestT, SearchRequestT, AnalyzeRequestT, DescribeRequestT, InspectQueryRequestT] = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> RequestEnvelopeT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> RequestEnvelopeT: ...
+  @classmethod
+  def InitFromObj(cls, requestEnvelope: RequestEnvelope) -> RequestEnvelopeT: ...
+  def _UnPack(self, requestEnvelope: RequestEnvelope) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def RequestEnvelopeStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def RequestEnvelopeAddProtocolVersion(builder: flatbuffers.Builder, protocolVersion: int) -> None: ...

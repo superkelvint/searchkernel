@@ -10,4 +10,5 @@ searchkernel-ir = { path = "../searchkernel-ir" }
 searchkernel-protocol = { path = "../searchkernel-protocol" }
 
 [dev-dependencies]
+searchkernel-json = { path = "../searchkernel-json" }
 searchkernel-testkit = { path = "../searchkernel-testkit" }

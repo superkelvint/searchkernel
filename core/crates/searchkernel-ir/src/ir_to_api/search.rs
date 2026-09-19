@@ -57,6 +57,7 @@ pub(super) fn search_request_offset<'a>(
                 structured: Some(expressions),
                 sources: None,
                 parameters: None,
+                textual: None,
             },
         )
     });

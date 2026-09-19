@@ -1,6 +1,6 @@
 use super::*;
 use crate::{field, Analyzer, Filter, Ranking, SearchBuilder, Sort};
-use searchkernel_ir::{api, IndexContext, OperationIr};
+use searchkernel_ir::{IndexContext, OperationIr};
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -34,34 +34,36 @@ fn expected_get(
     id: &str,
     projection: Option<&[String]>,
 ) -> searchkernel_ir::GetRequestIr {
-    let bytes = wire::get(id, projection);
-    let request = searchkernel_ir::__flatbuffers::root::<api::GetRequest>(&bytes)
-        .expect("valid generated get request");
-    context.get_to_ir(request).expect("valid get request IR")
+    searchkernel_ir::resolve_get(
+        context,
+        searchkernel_ir::GetInput {
+            id: id.to_owned(),
+            projection: projection.map(ToOwned::to_owned),
+        },
+    )
+    .expect("valid get request IR")
 }
 
 fn expected_search(
     context: &IndexContext,
     request: &SearchBuilder,
 ) -> searchkernel_ir::SearchRequestIr {
-    let bytes = wire::search(request).expect("valid generated search request");
-    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
-        .expect("valid generated search request");
-    context
-        .search_to_ir(request)
-        .expect("valid search request IR")
+    searchkernel_ir::resolve_search(
+        context,
+        crate::search::to_resolver_input(request).expect("valid search intent"),
+    )
+    .expect("valid search request IR")
 }
 
 fn expected_analyze(
     context: &IndexContext,
     request: &AnalyzeBuilder,
 ) -> searchkernel_ir::AnalyzeRequestIr {
-    let bytes = wire::analyze(request).expect("valid generated analyze request");
-    let request = searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&bytes)
-        .expect("valid generated analyze request");
-    context
-        .analyze_to_ir(request)
-        .expect("valid analyze request IR")
+    searchkernel_ir::resolve_analyze(
+        context,
+        crate::analyze::to_resolver_input(request).expect("valid analyze intent"),
+    )
+    .expect("valid analyze request IR")
 }
 
 fn scripted_definition() -> IndexDefinition {

@@ -1,3 +1,4 @@
+use crate::error::Result;
 use crate::filter::Filter;
 use crate::index::Index;
 use crate::result::SearchResult;
@@ -296,6 +297,70 @@ impl SearchBuilder {
     pub fn inspect(self) -> crate::Result<InspectedQuery> {
         self.index.inspect_search(&self)
     }
+}
+
+pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_ir::SearchIntent> {
+    let search_fields = request.search_fields.as_ref().map(|fields| {
+        fields
+            .iter()
+            .map(|field| searchkernel_ir::SearchFieldInput {
+                field: field.field.clone(),
+                weight: field.weight,
+            })
+            .collect()
+    });
+    let filters = request
+        .filters
+        .iter()
+        .map(crate::filter::to_resolver_input)
+        .collect::<Result<Vec<_>>>()?;
+    let sorts = request
+        .sorts
+        .iter()
+        .map(|sort| searchkernel_ir::SortInput {
+            field: sort.field.clone(),
+            direction: match sort.direction {
+                SortDirection::Asc => searchkernel_ir::SortDirection::Asc,
+                SortDirection::Desc => searchkernel_ir::SortDirection::Desc,
+            },
+            missing: sort.missing.map(|missing| match missing {
+                MissingPlacement::First => searchkernel_ir::MissingPlacement::First,
+                MissingPlacement::Last => searchkernel_ir::MissingPlacement::Last,
+            }),
+        })
+        .collect();
+    let facets = request
+        .facets
+        .iter()
+        .map(|facet| searchkernel_ir::FacetInput {
+            field: facet.field.clone(),
+            limit: facet.limit,
+            sort: facet.sort.map(|sort| match sort {
+                FacetSort::CountDesc => searchkernel_ir::FacetSortInput::CountDesc,
+                FacetSort::CountAsc => searchkernel_ir::FacetSortInput::CountAsc,
+                FacetSort::ValueAsc => searchkernel_ir::FacetSortInput::ValueAsc,
+                FacetSort::ValueDesc => searchkernel_ir::FacetSortInput::ValueDesc,
+            }),
+        })
+        .collect();
+    let ranking = request.ranking.as_ref().map(|ranking| match ranking.kind {
+        RankingKind::DefaultRelevanceV1 => searchkernel_ir::RankingInput::DefaultRelevanceV1,
+        RankingKind::Bm25 => searchkernel_ir::RankingInput::Bm25,
+    });
+    Ok(searchkernel_ir::SearchIntent {
+        query: request.query.clone(),
+        search_fields,
+        filters,
+        sorts,
+        facets,
+        ranking,
+        projection: request.projection.clone(),
+        highlighting: request.highlighting.clone(),
+        language: request.language.clone(),
+        timeout: request.timeout,
+        limit: request.limit,
+        offset: request.offset,
+    })
 }
 
 impl std::fmt::Debug for SearchBuilder {

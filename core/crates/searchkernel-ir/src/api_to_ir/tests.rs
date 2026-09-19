@@ -32,6 +32,7 @@ fn context() -> IndexContext {
         vec![
             field("brand", FieldKind::Keyword),
             field("price", FieldKind::Int64),
+            field("rating", FieldKind::Float64),
         ],
         Vec::new(),
         RankingPolicyIr::DefaultRelevanceV1,
@@ -61,6 +62,91 @@ fn context() -> IndexContext {
         document_fields,
         query_fields,
     }
+}
+
+#[test]
+fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let id = builder.create_string("doc-7");
+    let condition = builder.create_string("tenant = 'acme'");
+    let delete = api::DeleteRequest::create(
+        &mut builder,
+        &api::DeleteRequestArgs {
+            id: Some(id),
+            condition: Some(condition),
+        },
+    );
+    builder.finish(delete, None);
+    let delete = crate::__flatbuffers::root::<api::DeleteRequest>(builder.finished_data())
+        .expect("valid delete request");
+    assert_eq!(
+        resolve_delete("doc-7", Some("tenant = 'acme'")).unwrap(),
+        context().delete_to_ir(delete).unwrap()
+    );
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let id = builder.create_string("doc-7");
+    let get = api::GetRequest::create(
+        &mut builder,
+        &api::GetRequestArgs {
+            id: Some(id),
+            projection: None,
+        },
+    );
+    builder.finish(get, None);
+    let get = crate::__flatbuffers::root::<api::GetRequest>(builder.finished_data())
+        .expect("valid get request");
+    assert_eq!(
+        resolve_get(
+            &context(),
+            GetInput {
+                id: "doc-7".to_owned(),
+                projection: None,
+            },
+        )
+        .unwrap(),
+        context().get_to_ir(get).unwrap()
+    );
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let name = builder.create_string("standard");
+    let analyzer = api::Analyzer::create(
+        &mut builder,
+        &api::AnalyzerArgs {
+            name: Some(name),
+            version: 1,
+            options: None,
+        },
+    );
+    let text = builder.create_string("The quick brown fox");
+    let analyze = api::AnalyzeRequest::create(
+        &mut builder,
+        &api::AnalyzeRequestArgs {
+            target_type: api::AnalyzeTarget::Analyzer,
+            target: Some(analyzer.as_union_value()),
+            text: Some(text),
+            language: None,
+        },
+    );
+    builder.finish(analyze, None);
+    let analyze = crate::__flatbuffers::root::<api::AnalyzeRequest>(builder.finished_data())
+        .expect("valid analyze request");
+    assert_eq!(
+        resolve_analyze(
+            &context(),
+            AnalyzeInput {
+                target: Some(AnalyzeTargetInput::Analyzer(AnalyzerInput {
+                    name: "standard".to_owned(),
+                    version: 1,
+                    options: BTreeMap::new(),
+                })),
+                text: "The quick brown fox".to_owned(),
+                language: None,
+            },
+        )
+        .unwrap(),
+        context().analyze_to_ir(analyze).unwrap()
+    );
 }
 
 #[test]
@@ -204,11 +290,25 @@ fn repeated_source_errors_identify_clause_and_local_offsets() {
     let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
     let first = builder.create_string("brand = 'Acme'");
     let second = builder.create_string("price <= ");
-    let sources = builder.create_vector(&[first, second]);
+    let first = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(first),
+            ..Default::default()
+        },
+    );
+    let second = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(second),
+            ..Default::default()
+        },
+    );
+    let textual = builder.create_vector(&[first, second]);
     let request = api::FilterRequest::create(
         &mut builder,
         &api::FilterRequestArgs {
-            sources: Some(sources),
+            textual: Some(textual),
             ..Default::default()
         },
     );
@@ -224,6 +324,217 @@ fn repeated_source_errors_identify_clause_and_local_offsets() {
     assert!(detail.metadata.contains_key("end_offset"));
     assert!(!detail.metadata.contains_key("span_start"));
     assert!(!detail.metadata.contains_key("span_end"));
+}
+
+#[test]
+fn textual_bindings_are_local_to_each_clause() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+
+    let price_key = builder.create_string("value");
+    let price_value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 120 });
+    let price_value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(price_value.as_union_value()),
+        },
+    );
+    let price_binding = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(price_key),
+            value: Some(price_value),
+        },
+    );
+    let price_bindings = builder.create_vector(&[price_binding]);
+    let price_source = builder.create_string("price <= :value");
+    let price_clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(price_source),
+            bindings: Some(price_bindings),
+        },
+    );
+
+    let rating_key = builder.create_string("value");
+    let rating_value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 4 });
+    let rating_value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(rating_value.as_union_value()),
+        },
+    );
+    let rating_binding = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(rating_key),
+            value: Some(rating_value),
+        },
+    );
+    let rating_bindings = builder.create_vector(&[rating_binding]);
+    let rating_source = builder.create_string("rating >= :value");
+    let rating_clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(rating_source),
+            bindings: Some(rating_bindings),
+        },
+    );
+
+    let textual = builder.create_vector(&[price_clause, rating_clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    let filter = context()
+        .filters_to_ir(Some(request))
+        .expect("clause-local bindings resolve independently")
+        .expect("textual filters produce a filter");
+    assert!(matches!(filter, FilterIr::And(clauses) if clauses.len() == 2));
+}
+
+#[test]
+fn binding_from_one_clause_cannot_satisfy_another_clause() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let key = builder.create_string("value");
+    let value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 120 });
+    let value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(value.as_union_value()),
+        },
+    );
+    let binding = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key),
+            value: Some(value),
+        },
+    );
+    let bindings = builder.create_vector(&[binding]);
+    let first_source = builder.create_string("price <= :value");
+    let first = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(first_source),
+            bindings: Some(bindings),
+        },
+    );
+    let second_source = builder.create_string("rating >= :value");
+    let second = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(second_source),
+            ..Default::default()
+        },
+    );
+    let textual = builder.create_vector(&[first, second]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    let error = context().filters_to_ir(Some(request)).unwrap_err();
+    assert_eq!(error.details[0].code, "unknown_parameter");
+    assert_eq!(
+        error.details[0].metadata.get("clause_index"),
+        Some(&"1".to_owned())
+    );
+}
+
+#[test]
+fn duplicate_bindings_in_one_clause_are_rejected() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let key_a = builder.create_string("value");
+    let key_b = builder.create_string("value");
+    let value_a = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 120 });
+    let value_b = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 121 });
+    let value_a = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(value_a.as_union_value()),
+        },
+    );
+    let value_b = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(value_b.as_union_value()),
+        },
+    );
+    let binding_a = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key_a),
+            value: Some(value_a),
+        },
+    );
+    let binding_b = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key_b),
+            value: Some(value_b),
+        },
+    );
+    let bindings = builder.create_vector(&[binding_a, binding_b]);
+    let source = builder.create_string("price <= :value");
+    let clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            source: Some(source),
+            bindings: Some(bindings),
+        },
+    );
+    let textual = builder.create_vector(&[clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    let error = context().filters_to_ir(Some(request)).unwrap_err();
+    assert_eq!(error.details[0].code, "duplicate_parameter");
+}
+
+#[test]
+fn legacy_global_textual_filter_fields_are_rejected() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let source = builder.create_string("price <= :value");
+    let sources = builder.create_vector(&[source]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            sources: Some(sources),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid legacy filter request");
+
+    let error = context().filters_to_ir(Some(request)).unwrap_err();
+    assert_eq!(error.details[0].code, "invalid_filter");
 }
 
 #[test]

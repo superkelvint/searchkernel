@@ -4,13 +4,13 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.Coverage import Coverage
-from SearchKernel.V2.ResultNode import ResultNode
-from SearchKernel.V2.SearchResultError import SearchResultError
-from SearchKernel.V2.SearchTiming import SearchTiming
-from SearchKernel.V2.TotalHits import TotalHits
-from SearchKernel.V2.Value import Value
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.Coverage import Coverage, CoverageT
+from SearchKernel.V2.ResultNode import ResultNode, ResultNodeT
+from SearchKernel.V2.SearchResultError import SearchResultError, SearchResultErrorT
+from SearchKernel.V2.SearchTiming import SearchTiming, SearchTimingT
+from SearchKernel.V2.TotalHits import TotalHits, TotalHitsT
+from SearchKernel.V2.Value import Value, ValueT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -19,8 +19,6 @@ class SearchResult(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> SearchResult: ...
   @classmethod
   def GetRootAsSearchResult(cls, buf: bytes, offset: int) -> SearchResult: ...
-  @classmethod
-  def SearchResultBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Root(self) -> ResultNode | None: ...
   def TotalHits(self) -> TotalHits | None: ...
@@ -33,6 +31,32 @@ class SearchResult(object):
   def Metadata(self, i: int) -> ValueEntry | None: ...
   def MetadataLength(self) -> int: ...
   def MetadataIsNone(self) -> bool: ...
+class SearchResultT(object):
+  root: ResultNodeT | None
+  totalHits: TotalHitsT | None
+  coverage: CoverageT | None
+  timing: SearchTimingT | None
+  errors: typing.List[SearchResultErrorT]
+  trace: ValueT | None
+  metadata: typing.List[ValueEntryT]
+  def __init__(
+    self,
+    root: 'ResultNodeT' | None = ...,
+    totalHits: 'TotalHitsT' | None = ...,
+    coverage: 'CoverageT' | None = ...,
+    timing: 'SearchTimingT' | None = ...,
+    errors: typing.List['SearchResultErrorT'] | None = ...,
+    trace: 'ValueT' | None = ...,
+    metadata: typing.List['ValueEntryT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> SearchResultT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> SearchResultT: ...
+  @classmethod
+  def InitFromObj(cls, searchResult: SearchResult) -> SearchResultT: ...
+  def _UnPack(self, searchResult: SearchResult) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def SearchResultStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def SearchResultAddRoot(builder: flatbuffers.Builder, root: uoffset) -> None: ...

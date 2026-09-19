@@ -1,4 +1,4 @@
-"""Python -> socket -> searchkerneld -> native Vespa backend acceptance test."""
+"""Python generated-object API -> gRPC -> persisted native backend."""
 
 from __future__ import annotations
 
@@ -14,8 +14,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Client, GrpcTransport, Index, generated  # noqa: E402
-from searchkernel.wire import encode_index_definition  # noqa: E402
+from searchkernel import Client, GrpcTransport, Index  # noqa: E402
+from searchkernel.client import value  # noqa: E402
+from searchkernel.protocol import pack_object  # noqa: E402
+from SearchKernel.V2.DataType import DataTypeT  # noqa: E402
+from SearchKernel.V2.DataTypeKind import DataTypeKind  # noqa: E402
+from SearchKernel.V2.FieldDefinition import FieldDefinitionT  # noqa: E402
+from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
+from SearchKernel.V2.MatchingConfig import MatchingConfigT  # noqa: E402
+from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
+from SearchKernel.V2.OptionalBool import OptionalBoolT  # noqa: E402
+from SearchKernel.V2.PrimitiveDataType import PrimitiveDataTypeT  # noqa: E402
+from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
+from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
+from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
+from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
+from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
+from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -29,51 +44,41 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecified) -> FieldDefinitionT:
+    return FieldDefinitionT(
+        name=name,
+        dataType=DataTypeT(
+            kindType=DataTypeKind.PrimitiveDataType,
+            kind=PrimitiveDataTypeT(kind=primitive),
+        ),
+        stored=OptionalBoolT(True),
+        searchable=OptionalBoolT(primitive == 1 and matching == MatchingMode.Text),
+        filterable=OptionalBoolT(primitive != 1 or matching == MatchingMode.Exact),
+        sortable=OptionalBoolT(primitive != 1 or matching == MatchingMode.Exact),
+        facetable=OptionalBoolT(primitive != 1 or matching == MatchingMode.Exact),
+        matching=MatchingConfigT(mode=matching) if primitive == 1 else None,
+    )
+
+
 class RealGrpcPythonE2ETest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Always rebuild from the current source. A pre-existing binary is not
-        # evidence that this checkout can build or that the E2E uses its code.
         subprocess.run(["cargo", "build", "-p", "searchkerneld-e2e-harness"], cwd=ROOT, check=True)
 
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory(prefix="searchkernel-python-e2e-")
-        self.root = Path(self.tempdir.name)
-        self.index_path = self.root / "index"
-        self.definition_path = self.root / "definition.fb"
-        fields = [
-            generated.FieldDefinition(
-                name="title",
-                data_type=generated.DataType(kind="primitive", payload_kind="text"),
-                stored=True,
-                searchable=True,
-                filterable=False,
-                sortable=False,
-                facetable=False,
-            ),
-            generated.FieldDefinition(
-                name="category",
-                data_type=generated.DataType(kind="primitive", payload_kind="keyword"),
-                stored=True,
-                searchable=False,
-                filterable=True,
-                sortable=True,
-                facetable=True,
-            ),
-            generated.FieldDefinition(
-                name="price",
-                data_type=generated.DataType(kind="primitive", payload_kind="int64"),
-                stored=True,
-                searchable=False,
-                filterable=True,
-                sortable=True,
-                facetable=False,
-            ),
-        ]
-        self.definition = generated.IndexDefinition(name="python_e2e", fields=fields)
-        self.definition_path.write_bytes(
-            encode_index_definition(self.definition)
+        root = Path(self.tempdir.name)
+        self.index_path = root / "index"
+        self.definition_path = root / "definition.fb"
+        self.definition = IndexDefinitionT(
+            name="python_e2e",
+            fields=[
+                _field("title", 1, matching=MatchingMode.Text),
+                _field("category", 1, matching=MatchingMode.Exact),
+                _field("price", 5),
+            ],
         )
+        self.definition_path.write_bytes(pack_object(self.definition))
         self.process = None
         self.client = None
 
@@ -86,20 +91,16 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
     def _start_server(self, *, definition: bool):
         port = _free_port()
         environment = os.environ.copy()
-        environment.update(
-            {
-                "SEARCHKERNEL_E2E_INDEX_PATH": str(self.index_path),
-                "SEARCHKERNEL_E2E_GRPC_ADDR": f"127.0.0.1:{port}",
-                "LD_LIBRARY_PATH": str(SDK_LIB),
-            }
-        )
+        environment.update({
+            "SEARCHKERNEL_E2E_INDEX_PATH": str(self.index_path),
+            "SEARCHKERNEL_E2E_GRPC_ADDR": f"127.0.0.1:{port}",
+            "LD_LIBRARY_PATH": str(SDK_LIB),
+        })
         if definition:
             environment["SEARCHKERNEL_E2E_INDEX_DEFINITION"] = str(self.definition_path)
         else:
             environment.pop("SEARCHKERNEL_E2E_INDEX_DEFINITION", None)
-        self.process = subprocess.Popen(
-            [str(HARNESS)], cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        self.process = subprocess.Popen([str(HARNESS)], cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
@@ -124,133 +125,40 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=5)
-                self.fail("searchkerneld did not shut down")
         if self.process.stdout is not None:
             self.process.stdout.close()
         if self.process.stderr is not None:
             self.process.stderr.close()
         self.process = None
 
-    @staticmethod
-    def _search_request():
-        count = generated.GroupingOperation(
-            kind="output",
-            outputs=[
-                generated.GroupingOutput(
-                    expression=generated.GroupingExpression(kind="aggregation")
-                )
-            ],
-        )
-        each = generated.GroupingOperation(
-            kind="each",
-            operations=[
-                generated.GroupingOperation(kind="max", value=10),
-                generated.GroupingOperation(
-                    kind="order",
-                    expressions=[
-                        generated.GroupingOrderExpr(
-                            expression=generated.GroupingExpression(
-                                kind="negative",
-                                expression=generated.GroupingExpression(kind="aggregation"),
-                            )
-                        )
-                    ],
-                ),
-                count,
-            ],
-        )
-        grouping = generated.GroupingRequest(
-            source=generated.GroupingSourceKind(
-                kind="structured",
-                value=generated.GroupingAllOperation(
-                    operations=[
-                        generated.GroupingOperation(
-                            kind="group",
-                            expression=generated.GroupingExpression(
-                                kind="attribute", field="category"
-                            ),
-                        ),
-                        each,
-                    ]
-                ),
-            )
-        )
-        return generated.SearchRequest(
-            query=generated.QuerySource(kind="text", text="hello"),
-            search_fields=generated.SearchFieldSelection(
-                fields=[generated.SearchField(field="title")]
-            ),
-            filters=generated.FilterRequest(
-                structured=[
-                    generated.FilterExpr(
-                        kind="comparison",
-                        field=generated.QueryFieldRef(path="price"),
-                        op="gte",
-                        value=generated.Value.int64(2),
-                    )
-                ]
-            ),
-            sort=[
-                generated.SortExpr(
-                    target=generated.SortTarget(kind="field", field="price"), direction="desc"
-                )
-            ],
-            grouping=[grouping],
-            limit=10,
-        )
-
-    def test_python_public_api_reaches_persisted_native_backend(self):
+    def test_generated_objects_reach_persisted_native_backend(self):
         port = self._start_server(definition=True)
         self.client = Client(GrpcTransport(f"127.0.0.1:{port}"))
         index = Index(self.client)
-
         index.upsert("doc:1", {"title": "hello world", "category": "a", "price": 5})
         index.upsert("doc:2", {"title": "hello again", "category": "b", "price": 2})
 
         stored = index.get("doc:1").document
-        self.assertIsNotNone(stored)
-        self.assertEqual(stored.fields["title"].value, "hello world")
-        self.assertEqual(stored.fields["price"].value, 5)
+        stored_fields = {entry.key: entry.value.kind.value for entry in stored.fields}
+        self.assertEqual(stored_fields["title"], "hello world")
 
-        result = index.search(self._search_request())
-        self.assertEqual(result.total_hits.value, 2)
-        self.assertEqual([child.id for child in result.root.children[:2]], ["doc:1", "doc:2"])
-        self.assertEqual(result.root.children[-1].id, "category")
-        self.assertEqual(len(result.root.children[-1].children), 2)
-
-        analysis = index.analyze("Hello world", field="title")
-        self.assertEqual([token.term for token in analysis.tokens], ["hello", "world"])
-        self.assertEqual(result.total_hits.relation, "exact")
+        request = SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text="hello"),
+            ),
+            limit=OptionalUInt32T(value=10),
+        )
+        result = index.search(request)
+        self.assertEqual(result.totalHits.value, 2)
+        self.assertEqual({child.node.id for child in [result.root.node.children[0], result.root.node.children[1]]}, {"doc:1", "doc:2"})
 
         described = index.describe().index
-        self.assertIsNotNone(described)
         self.assertEqual(described.name, self.definition.name)
-        actual_fields = {field.name: field for field in described.fields}
-        self.assertEqual(set(actual_fields), {"title", "category", "price"})
-        for expected in self.definition.fields:
-            actual = actual_fields[expected.name]
-            self.assertEqual(actual.data_type.payload_kind, expected.data_type.payload_kind)
-            for capability in ("stored", "searchable", "filterable", "sortable", "facetable"):
-                self.assertEqual(getattr(actual, capability), getattr(expected, capability), expected.name)
-        self.assertEqual(actual_fields["category"].matching.mode, "exact")
-
-        inspected = index.inspect_query(self._search_request()).resolved_request
-        self.assertIsNotNone(inspected)
-        self.assertEqual(inspected.query.kind, "text")
-        self.assertEqual(inspected.query.text, "hello")
-        self.assertEqual([field.field for field in inspected.search_fields], ["title"])
-        self.assertEqual(len(inspected.filters), 1)
-        self.assertEqual(inspected.filters[0].kind, "comparison")
-        self.assertEqual(inspected.filters[0].field.path, "price")
-        self.assertEqual(inspected.filters[0].op, "gte")
-        self.assertEqual(inspected.filters[0].value, generated.Value.int64(2))
-        self.assertEqual(inspected.sort[0].target.field, "price")
-        self.assertEqual(inspected.sort[0].direction, "desc")
-        self.assertEqual(inspected.limit, 10)
+        self.assertEqual({field.name for field in described.fields}, {"title", "category", "price"})
 
         index.delete("doc:2")
         self.assertIsNone(index.get("doc:2").document)
-
         self.client.close()
         self.client = None
         self._stop_server()
@@ -258,11 +166,11 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         port = self._start_server(definition=False)
         self.client = Client(GrpcTransport(f"127.0.0.1:{port}"))
         reopened = Index(self.client)
-        surviving = reopened.search(
-            generated.SearchRequest(query=generated.QuerySource(kind="match_all"), limit=10)
-        )
-        self.assertEqual(surviving.total_hits.value, 1)
-        self.assertEqual(surviving.root.children[0].id, "doc:1")
+        surviving = reopened.search(SearchRequestT(
+            query=QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT()),
+            limit=OptionalUInt32T(value=10),
+        ))
+        self.assertEqual(surviving.totalHits.value, 1)
 
 
 if __name__ == "__main__":

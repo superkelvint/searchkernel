@@ -4,12 +4,12 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.Relevance import Relevance
-from SearchKernel.V2.ResultLimits import ResultLimits
-from SearchKernel.V2.ResultNode import ResultNode
-from SearchKernel.V2.StringEntry import StringEntry
-from SearchKernel.V2.Value import Value
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.Relevance import Relevance, RelevanceT
+from SearchKernel.V2.ResultLimits import ResultLimits, ResultLimitsT
+from SearchKernel.V2.ResultNode import ResultNode, ResultNodeT
+from SearchKernel.V2.StringEntry import StringEntry, StringEntryT
+from SearchKernel.V2.Value import Value, ValueT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -18,8 +18,6 @@ class ResultGroup(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> ResultGroup: ...
   @classmethod
   def GetRootAsResultGroup(cls, buf: bytes, offset: int) -> ResultGroup: ...
-  @classmethod
-  def ResultGroupBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Id(self) -> str | None: ...
   def Label(self) -> str | None: ...
@@ -42,6 +40,40 @@ class ResultGroup(object):
   def Metadata(self, i: int) -> ValueEntry | None: ...
   def MetadataLength(self) -> int: ...
   def MetadataIsNone(self) -> bool: ...
+class ResultGroupT(object):
+  id: str | None
+  label: str | None
+  value: ValueT | None
+  fields: typing.List[ValueEntryT]
+  children: typing.List[ResultNodeT]
+  continuations: typing.List[StringEntryT]
+  source: str | None
+  types: typing.List[str]
+  relevance: RelevanceT | None
+  limits: ResultLimitsT | None
+  metadata: typing.List[ValueEntryT]
+  def __init__(
+    self,
+    id: str | None = ...,
+    label: str | None = ...,
+    value: 'ValueT' | None = ...,
+    fields: typing.List['ValueEntryT'] | None = ...,
+    children: typing.List['ResultNodeT'] | None = ...,
+    continuations: typing.List['StringEntryT'] | None = ...,
+    source: str | None = ...,
+    types: typing.List[str] | None = ...,
+    relevance: 'RelevanceT' | None = ...,
+    limits: 'ResultLimitsT' | None = ...,
+    metadata: typing.List['ValueEntryT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> ResultGroupT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> ResultGroupT: ...
+  @classmethod
+  def InitFromObj(cls, resultGroup: ResultGroup) -> ResultGroupT: ...
+  def _UnPack(self, resultGroup: ResultGroup) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def ResultGroupStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def ResultGroupAddId(builder: flatbuffers.Builder, id: uoffset) -> None: ...

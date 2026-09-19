@@ -566,7 +566,6 @@ searchkernel-testkit              standalone semantic verification
 searchkernel-rpc / searchkerneld  transport host
 flatc                             language FlatBuffers model generation
 standard gRPC generators          RPC stub generation
-searchkernel-bindgen              Search-Kernel-specific BFBS metadata/invariants only
 language packages                 thin ergonomic facades
 ```
 
@@ -843,18 +842,6 @@ Historical C5 verifier artifacts may remain in repository history, but must not 
 ## C6 — BFBS tooling — narrowed final scope
 
 C6 established BFBS normalization and generation infrastructure. The final architecture keeps the parts that are Search Kernel-specific and removes the obligation to become a universal SDK compiler.
-
-Keep `searchkernel-bindgen` for capabilities such as:
-
-```text
-BFBS normalization
-schema/reference validation
-union/map/presence metadata
-operation and root inventory
-contract invariants
-conformance metadata
-documentation/schema metadata where useful
-```
 
 Standard tooling owns standard code generation:
 

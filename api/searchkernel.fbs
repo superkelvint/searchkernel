@@ -75,7 +75,7 @@ table UInt64Value {
 }
 
 // Finite IEEE-754 double. NaN and infinities use NonFiniteFloatValue so
-// canonical JSON can represent them without non-portable JSON numbers.
+// standard FlatBuffers JSON can represent them without non-portable JSON numbers.
 table Float64Value {
   value:double;
 }
@@ -171,7 +171,7 @@ union TensorPayloadKind {
 
 table TensorValue {
   // All cell values in every portable tensor encoding MUST be finite. This is
-  // a V2 semantic invariant enforced by C1/C2 and by canonical JSON decoding.
+// a V2 semantic invariant enforced by C1/C2 and by standard JSON decoding.
   type_spec:string;
   payload:TensorPayloadKind;
 }
@@ -192,7 +192,7 @@ union ValueKind {
 
 table Value {
   // Float64Value is finite-only at the portable semantic layer. NaN and
-  // +/-Infinity MUST use NonFiniteFloatValue so binary and canonical JSON
+// +/-Infinity MUST use NonFiniteFloatValue so binary and standard JSON
   // transports preserve the same value.
   kind:ValueKind;
 }
@@ -862,11 +862,23 @@ table FilterExpr {
 
 // Search Kernel filter-language clauses stay as separate source units so spans
 // and diagnostics are preserved. C2 parses/binds them and ANDs them with the
-// structured clauses. parameters is a semantic map: duplicate keys are invalid.
+// structured clauses.
+table FilterClause {
+  source:string;
+  bindings:[ValueEntry];
+}
+
 table FilterRequest {
   structured:[FilterExpr];
+
+  // These fields occupy released V2 slots and cannot be removed or reused.
+  // They are deprecated: API -> IR rejects them and never resolves them.
   sources:[string];
   parameters:[ValueEntry];
+
+  // The active textual-filter representation. This field is appended so the
+  // incompatible legacy slots above are not reused.
+  textual:[FilterClause];
 }
 
 enum SortDirection:ubyte {
@@ -1732,7 +1744,7 @@ table HighlightResult {
   fragments:[HighlightFragment];
 }
 
-// Relevance is explicit because canonical JSON rejects non-finite JSON numbers,
+// Relevance is explicit because standard JSON rejects non-finite JSON numbers,
 // while Vespa results may legitimately carry +/-Infinity relevance.
 table FiniteRelevance {
   value:double;

@@ -18,6 +18,7 @@ api/*.fbs
     -> searchkernel-vespa-bindings
 ```
 
-The portable JSON and client crates (`searchkernel-json` and
-`searchkernel-dispatch`) also live under `core/crates/`. Native adapter sources
-and the generated SDK are under `core/native/`.
+`searchkernel-json` is a small generic boundary around the official
+schema-aware FlatBuffers JSON parser/printer; it contains no Search Kernel
+field mappings. `searchkernel-dispatch` is the canonical bytes-to-IR routing
+path. Native adapter sources and the generated SDK are under `core/native/`.

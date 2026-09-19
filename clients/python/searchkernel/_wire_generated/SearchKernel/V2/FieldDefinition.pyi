@@ -4,15 +4,15 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.Analyzer import Analyzer
-from SearchKernel.V2.AttributeConfig import AttributeConfig
-from SearchKernel.V2.DataType import DataType
-from SearchKernel.V2.IndexConfig import IndexConfig
-from SearchKernel.V2.MatchingConfig import MatchingConfig
-from SearchKernel.V2.OptionalBool import OptionalBool
-from SearchKernel.V2.StructFieldConfig import StructFieldConfig
-from SearchKernel.V2.SummaryConfig import SummaryConfig
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.Analyzer import Analyzer, AnalyzerT
+from SearchKernel.V2.AttributeConfig import AttributeConfig, AttributeConfigT
+from SearchKernel.V2.DataType import DataType, DataTypeT
+from SearchKernel.V2.IndexConfig import IndexConfig, IndexConfigT
+from SearchKernel.V2.MatchingConfig import MatchingConfig, MatchingConfigT
+from SearchKernel.V2.OptionalBool import OptionalBool, OptionalBoolT
+from SearchKernel.V2.StructFieldConfig import StructFieldConfig, StructFieldConfigT
+from SearchKernel.V2.SummaryConfig import SummaryConfig, SummaryConfigT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -21,8 +21,6 @@ class FieldDefinition(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> FieldDefinition: ...
   @classmethod
   def GetRootAsFieldDefinition(cls, buf: bytes, offset: int) -> FieldDefinition: ...
-  @classmethod
-  def FieldDefinitionBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Name(self) -> str | None: ...
   def DataType(self) -> DataType | None: ...
@@ -43,6 +41,48 @@ class FieldDefinition(object):
   def StructFields(self, i: int) -> StructFieldConfig | None: ...
   def StructFieldsLength(self) -> int: ...
   def StructFieldsIsNone(self) -> bool: ...
+class FieldDefinitionT(object):
+  name: str | None
+  dataType: DataTypeT | None
+  stored: OptionalBoolT | None
+  searchable: OptionalBoolT | None
+  filterable: OptionalBoolT | None
+  sortable: OptionalBoolT | None
+  facetable: OptionalBoolT | None
+  analyzer: AnalyzerT | None
+  matching: MatchingConfigT | None
+  index: IndexConfigT | None
+  attribute: AttributeConfigT | None
+  summary: SummaryConfigT | None
+  indexingScript: str | None
+  properties: typing.List[ValueEntryT]
+  structFields: typing.List[StructFieldConfigT]
+  def __init__(
+    self,
+    name: str | None = ...,
+    dataType: 'DataTypeT' | None = ...,
+    stored: 'OptionalBoolT' | None = ...,
+    searchable: 'OptionalBoolT' | None = ...,
+    filterable: 'OptionalBoolT' | None = ...,
+    sortable: 'OptionalBoolT' | None = ...,
+    facetable: 'OptionalBoolT' | None = ...,
+    analyzer: 'AnalyzerT' | None = ...,
+    matching: 'MatchingConfigT' | None = ...,
+    index: 'IndexConfigT' | None = ...,
+    attribute: 'AttributeConfigT' | None = ...,
+    summary: 'SummaryConfigT' | None = ...,
+    indexingScript: str | None = ...,
+    properties: typing.List['ValueEntryT'] | None = ...,
+    structFields: typing.List['StructFieldConfigT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> FieldDefinitionT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> FieldDefinitionT: ...
+  @classmethod
+  def InitFromObj(cls, fieldDefinition: FieldDefinition) -> FieldDefinitionT: ...
+  def _UnPack(self, fieldDefinition: FieldDefinition) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def FieldDefinitionStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def FieldDefinitionAddName(builder: flatbuffers.Builder, name: uoffset) -> None: ...

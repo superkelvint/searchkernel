@@ -4,12 +4,12 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.CoverageDegraded import CoverageDegraded
-from SearchKernel.V2.OptionalBool import OptionalBool
-from SearchKernel.V2.OptionalDouble import OptionalDouble
-from SearchKernel.V2.OptionalUInt32 import OptionalUInt32
-from SearchKernel.V2.OptionalUInt64 import OptionalUInt64
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.CoverageDegraded import CoverageDegraded, CoverageDegradedT
+from SearchKernel.V2.OptionalBool import OptionalBool, OptionalBoolT
+from SearchKernel.V2.OptionalDouble import OptionalDouble, OptionalDoubleT
+from SearchKernel.V2.OptionalUInt32 import OptionalUInt32, OptionalUInt32T
+from SearchKernel.V2.OptionalUInt64 import OptionalUInt64, OptionalUInt64T
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -18,8 +18,6 @@ class Coverage(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> Coverage: ...
   @classmethod
   def GetRootAsCoverage(cls, buf: bytes, offset: int) -> Coverage: ...
-  @classmethod
-  def CoverageBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def CoveragePercent(self) -> OptionalDouble | None: ...
   def Documents(self) -> OptionalUInt64 | None: ...
@@ -31,6 +29,34 @@ class Coverage(object):
   def Metadata(self, i: int) -> ValueEntry | None: ...
   def MetadataLength(self) -> int: ...
   def MetadataIsNone(self) -> bool: ...
+class CoverageT(object):
+  coveragePercent: OptionalDoubleT | None
+  documents: OptionalUInt64T | None
+  full: OptionalBoolT | None
+  nodes: OptionalUInt32T | None
+  results: OptionalUInt64T | None
+  resultsFull: OptionalUInt64T | None
+  degraded: CoverageDegradedT | None
+  metadata: typing.List[ValueEntryT]
+  def __init__(
+    self,
+    coveragePercent: 'OptionalDoubleT' | None = ...,
+    documents: 'OptionalUInt64T' | None = ...,
+    full: 'OptionalBoolT' | None = ...,
+    nodes: 'OptionalUInt32T' | None = ...,
+    results: 'OptionalUInt64T' | None = ...,
+    resultsFull: 'OptionalUInt64T' | None = ...,
+    degraded: 'CoverageDegradedT' | None = ...,
+    metadata: typing.List['ValueEntryT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> CoverageT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> CoverageT: ...
+  @classmethod
+  def InitFromObj(cls, coverage: Coverage) -> CoverageT: ...
+  def _UnPack(self, coverage: Coverage) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def CoverageStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def CoverageAddCoveragePercent(builder: flatbuffers.Builder, coveragePercent: uoffset) -> None: ...

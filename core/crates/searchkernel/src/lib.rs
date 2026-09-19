@@ -6,11 +6,10 @@ mod error;
 mod filter;
 mod index;
 mod patch;
+mod portable_definition;
 mod result;
 mod schema;
 mod search;
-mod wire;
-
 pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};

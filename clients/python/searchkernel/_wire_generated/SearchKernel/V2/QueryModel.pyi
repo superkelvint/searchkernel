@@ -4,8 +4,8 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.OptionalUInt32 import OptionalUInt32
-from SearchKernel.V2.QueryModelType import QueryModelType
+from SearchKernel.V2.OptionalUInt32 import OptionalUInt32, OptionalUInt32T
+from SearchKernel.V2.QueryModelType import QueryModelType, QueryModelTypeT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -14,8 +14,6 @@ class QueryModel(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> QueryModel: ...
   @classmethod
   def GetRootAsQueryModel(cls, buf: bytes, offset: int) -> QueryModel: ...
-  @classmethod
-  def QueryModelBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def QueryString(self) -> str | None: ...
   def DefaultIndex(self) -> str | None: ...
@@ -32,6 +30,40 @@ class QueryModel(object):
   def RestrictIsNone(self) -> bool: ...
   def SearchPath(self) -> str | None: ...
   def SearchGroup(self) -> OptionalUInt32 | None: ...
+class QueryModelT(object):
+  queryString: str | None
+  defaultIndex: str | None
+  encoding: str | None
+  filter: str | None
+  language: str | None
+  locale: str | None
+  type: QueryModelTypeT | None
+  sources: typing.List[str]
+  restrict: typing.List[str]
+  searchPath: str | None
+  searchGroup: OptionalUInt32T | None
+  def __init__(
+    self,
+    queryString: str | None = ...,
+    defaultIndex: str | None = ...,
+    encoding: str | None = ...,
+    filter: str | None = ...,
+    language: str | None = ...,
+    locale: str | None = ...,
+    type: 'QueryModelTypeT' | None = ...,
+    sources: typing.List[str] | None = ...,
+    restrict: typing.List[str] | None = ...,
+    searchPath: str | None = ...,
+    searchGroup: 'OptionalUInt32T' | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> QueryModelT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> QueryModelT: ...
+  @classmethod
+  def InitFromObj(cls, queryModel: QueryModel) -> QueryModelT: ...
+  def _UnPack(self, queryModel: QueryModel) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def QueryModelStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def QueryModelAddQueryString(builder: flatbuffers.Builder, queryString: uoffset) -> None: ...

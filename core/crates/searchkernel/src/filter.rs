@@ -1,4 +1,5 @@
 use crate::document::{pending, PendingValue};
+use crate::error::{Error, Result as KernelResult};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -169,6 +170,64 @@ impl std::ops::Not for Filter {
 
 pub(crate) fn pending_value(value: &PendingValue) -> Result<&Value, String> {
     value.as_ref().map_err(|error| error.clone())
+}
+
+pub(crate) fn to_resolver_input(filter: &Filter) -> KernelResult<searchkernel_ir::FilterInput> {
+    match &filter.0 {
+        FilterNode::All(filters) => filters
+            .iter()
+            .map(to_resolver_input)
+            .collect::<KernelResult<Vec<_>>>()
+            .map(searchkernel_ir::FilterInput::All),
+        FilterNode::Any(filters) => filters
+            .iter()
+            .map(to_resolver_input)
+            .collect::<KernelResult<Vec<_>>>()
+            .map(searchkernel_ir::FilterInput::Any),
+        FilterNode::Not(filter) => Ok(searchkernel_ir::FilterInput::Not(Box::new(
+            to_resolver_input(filter)?,
+        ))),
+        FilterNode::Comparison { field, op, value } => {
+            Ok(searchkernel_ir::FilterInput::Comparison {
+                field: field.clone(),
+                op: match op {
+                    ComparisonOp::Eq => searchkernel_ir::ComparisonOp::Eq,
+                    ComparisonOp::Ne => searchkernel_ir::ComparisonOp::Ne,
+                    ComparisonOp::Lt => searchkernel_ir::ComparisonOp::Lt,
+                    ComparisonOp::Lte => searchkernel_ir::ComparisonOp::Lte,
+                    ComparisonOp::Gt => searchkernel_ir::ComparisonOp::Gt,
+                    ComparisonOp::Gte => searchkernel_ir::ComparisonOp::Gte,
+                },
+                value: request_value(value, format!("filter.{field}.value"))?,
+            })
+        }
+        FilterNode::Range { field, bounds } => Ok(searchkernel_ir::FilterInput::Range {
+            field: field.clone(),
+            lower: bounds
+                .lower
+                .as_ref()
+                .map(|value| request_value(value, format!("filter.{field}.lower")))
+                .transpose()?,
+            upper: bounds
+                .upper
+                .as_ref()
+                .map(|value| request_value(value, format!("filter.{field}.upper")))
+                .transpose()?,
+            include_lower: bounds.include_lower,
+            include_upper: bounds.include_upper,
+        }),
+        FilterNode::Exists { field } => Ok(searchkernel_ir::FilterInput::Exists {
+            field: field.clone(),
+        }),
+    }
+}
+
+fn request_value(
+    value: &PendingValue,
+    path: String,
+) -> KernelResult<searchkernel_ir::RequestValueIr> {
+    let value = pending_value(value).map_err(Error::Serialization)?;
+    searchkernel_ir::request_value_from_json(value, path).map_err(Error::from_ir)
 }
 
 #[cfg(test)]

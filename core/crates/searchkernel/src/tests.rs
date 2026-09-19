@@ -144,8 +144,12 @@ fn manifest_round_trips_definition_and_config_identity() {
     let definition = manifest_definition();
 
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
-    let manifest =
-        IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config).unwrap();
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved,
+        &config,
+    )
+    .unwrap();
     manifest.write(&root).unwrap();
     let loaded = IndexManifest::read(&root).unwrap();
     loaded.validate_config(&config).unwrap();
@@ -195,7 +199,8 @@ fn manifest_separates_portable_intent_from_resolved_definition() {
     let portable_definition = IndexDefinition::new().field(Field::text("title"));
     let resolved_ir = definition_to_ir(&portable_definition).unwrap();
     let resolved_definition = definition_from_ir(&resolved_ir);
-    let portable_bytes = wire::definition(&portable_definition);
+    let portable_bytes =
+        crate::portable_definition::encode_portable_definition(&portable_definition);
     let manifest =
         IndexManifest::for_definitions(&portable_bytes, &resolved_definition, &config).unwrap();
 
@@ -246,7 +251,7 @@ fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
         definition_from_ir(&definition_to_ir(&manifest_definition()).unwrap());
     let portable_definition = IndexDefinition::new().field(Field::text("different"));
     let manifest = IndexManifest::for_definitions(
-        &wire::definition(&portable_definition),
+        &crate::portable_definition::encode_portable_definition(&portable_definition),
         &resolved_definition,
         &config,
     )
@@ -266,7 +271,7 @@ fn semantically_invalid_portable_provenance_does_not_block_reopen() {
     let resolved_definition =
         definition_from_ir(&definition_to_ir(&manifest_definition()).unwrap());
     let manifest = IndexManifest::for_definitions(
-        &wire::definition(&manifest_definition()),
+        &crate::portable_definition::encode_portable_definition(&manifest_definition()),
         &resolved_definition,
         &config,
     )
@@ -424,8 +429,12 @@ fn canonical_definition_corruption_is_rejected() {
     write_config(&config);
     let definition = manifest_definition();
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
-    let manifest =
-        IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config).unwrap();
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved,
+        &config,
+    )
+    .unwrap();
     manifest.write(&root).unwrap();
     std::fs::write(root.join("manifest/index-definition.bfbs"), b"invalid").unwrap();
 
@@ -446,8 +455,12 @@ fn portable_definition_corruption_is_rejected() {
     write_config(&config);
     let definition = manifest_definition();
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
-    let manifest =
-        IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config).unwrap();
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved,
+        &config,
+    )
+    .unwrap();
     manifest.write(&root).unwrap();
     std::fs::write(
         root.join("manifest/portable-index-definition.bfbs"),
@@ -472,8 +485,12 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     write_config(&config);
     let definition = manifest_definition();
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
-    let manifest =
-        IndexManifest::for_definitions(&wire::definition(&definition), &resolved, &config).unwrap();
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved,
+        &config,
+    )
+    .unwrap();
 
     let mut provenance = manifest.clone();
     provenance.value["provenance"]["created_by_searchkernel_version"] = serde_json::json!("0.0.0");

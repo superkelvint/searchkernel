@@ -58,7 +58,7 @@ core/crates/searchkernel-dispatch/
   Canonical V2 envelope validation, routing, and response construction
 
 core/crates/searchkernel-json/
-  FlatBuffers JSON conversion and generated JSON support
+  Generic standard FlatBuffers JSON ↔ BFBS boundary
 
 core/crates/searchkernel-testkit/
   Recording backends, scripted backends, and semantic conformance tools
@@ -126,8 +126,9 @@ Read:
 
 ### 2. Portable FlatBuffers values
 
-`core/crates/searchkernel/src/wire.rs` converts public Rust values into the tables
-defined in `api/searchkernel.fbs`.
+`core/crates/searchkernel/src/portable_definition.rs` contains the one narrow
+encoder retained for manifest provenance. Runtime Rust requests go directly to
+the semantic resolvers in `core/crates/searchkernel-ir`.
 
 FlatBuffers values are messages stored in bytes. The generated Rust types are
 borrowed views into those bytes. They are useful at the boundary, but they are
@@ -136,7 +137,7 @@ not the long-lived internal model.
 Read:
 
 - `api/searchkernel.fbs`
-- `core/crates/searchkernel/src/wire.rs`
+- `core/crates/searchkernel/src/portable_definition.rs`
 - `core/crates/searchkernel-protocol/src/generated/`
 
 ### 3. Owned Search Kernel IR
@@ -200,18 +201,18 @@ is available.
 
 `SearchBuilder::execute` calls back into `Index::execute_search`.
 
-`execute_search` calls `wire::search`, which uses FlatBuffers builders to make
-an owned byte buffer. The public Rust values have now become the portable
-`SearchRequest` table.
+`execute_search` constructs a resolver intent and calls the shared semantic
+search resolver directly. Portable clients still enter through the
+FlatBuffers adapter and converge at the same `SearchRequestIr`.
 
 This extra representation may seem indirect. It is deliberate: the same
 portable contract can be used by Rust, C, Python, JavaScript, and other
 bindings.
 
-### Step 3: the message becomes owned IR
+### Step 3: the request becomes owned IR
 
-`Index::execute_search` parses the bytes as a generated
-`api::SearchRequest` and calls `IndexContext::search_to_ir`.
+The Rust path calls `resolve_search`; portable clients parse their
+`api::SearchRequest` and call `IndexContext::search_to_ir`.
 
 `search_to_ir` coordinates the semantic conversion. It delegates to helpers
 for:
@@ -278,9 +279,7 @@ For `index.upsert("sku-1", &product)`:
 ```text
 Index::upsert
   -> serde serialization
-  -> wire::upsert
-  -> generated api::UpsertRequest
-  -> IndexContext::upsert_to_ir
+  -> resolve_upsert
   -> UpsertRequestIr
   -> Backend::upsert
 ```

@@ -1,14 +1,20 @@
-use crate::analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
+use crate::analyze::{to_resolver_input, AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
-use crate::patch::Patch;
+use crate::patch::{to_resolver_operations, Patch};
+#[cfg(feature = "native")]
+use crate::portable_definition::encode_portable_definition;
 use crate::result;
 use crate::schema::{Analyzer, Field, IndexDefinition, SearchField};
-use crate::search::{Facet, FacetSort, Ranking, SearchBuilder, Sort};
-use crate::wire;
-use searchkernel_ir::{api, Backend, BackendSession, IndexContext};
+use crate::search::{
+    to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
+};
+#[cfg(feature = "internal-api")]
+use searchkernel_ir::api;
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -241,7 +247,7 @@ impl Index {
     #[cfg(feature = "native")]
     pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
         let root = path.as_ref();
-        let portable_definition_bytes = wire::definition(&definition);
+        let portable_definition_bytes = encode_portable_definition(&definition);
         let resolved_ir = definition_to_ir(&definition)?;
         searchkernel_ir_adapter::validate_index_definition(&resolved_ir).map_err(Error::from_ir)?;
         let resolved_definition = definition_from_ir(&resolved_ir);
@@ -389,11 +395,8 @@ impl Index {
         session: Arc<BackendSession>,
         lifecycle_lock: Option<LifecycleLock>,
     ) -> Result<Self> {
-        let bytes = wire::definition(&definition);
-        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
-            |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
-        )?;
-        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+        let resolved = definition_to_ir(&definition)?;
+        let context = IndexContext::from_definition_ir(resolved);
         let effective_definition = definition_from_ir(context.definition());
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);
@@ -412,11 +415,8 @@ impl Index {
         definition: IndexDefinition,
         session: Arc<BackendSession>,
     ) -> Result<Self> {
-        let bytes = wire::definition(&definition);
-        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(
-            |error| Error::infrastructure(format!("invalid generated index definition: {error}")),
-        )?;
-        let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
+        let resolved = definition_to_ir(&definition)?;
+        let context = IndexContext::from_definition_ir(resolved);
         let effective_definition = definition_from_ir(context.definition());
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);
@@ -477,12 +477,8 @@ impl Index {
             let document_id = id.into();
             let document_value =
                 serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-            let request_bytes = wire::insert(document_id.as_str(), &document_value)?;
-            let request = self.root_insert(&request_bytes)?;
-            let ir_request = self
-                .inner
-                .context
-                .insert_to_ir(request)
+            let input = document_input(document_id.as_str(), &document_value)?;
+            let ir_request = searchkernel_ir::resolve_insert(&self.inner.context, input)
                 .map_err(Error::from_ir)?;
             backend.insert(ir_request).map_err(Error::from_ir)?;
             Ok(())
@@ -495,12 +491,8 @@ impl Index {
             let document_id = id.into();
             let document_value =
                 serialize(document).map_err(|error| Error::Serialization(error.to_string()))?;
-            let request_bytes = wire::upsert(document_id.as_str(), &document_value)?;
-            let request = self.root_upsert(&request_bytes)?;
-            let ir_request = self
-                .inner
-                .context
-                .upsert_to_ir(request)
+            let input = document_input(document_id.as_str(), &document_value)?;
+            let ir_request = searchkernel_ir::resolve_upsert(&self.inner.context, input, None)
                 .map_err(Error::from_ir)?;
             backend.upsert(ir_request).map_err(Error::from_ir)?;
             Ok(())
@@ -511,13 +503,13 @@ impl Index {
     pub fn patch(&self, id: impl Into<DocumentId>, patch: Patch) -> Result<()> {
         self.with_backend(|backend| {
             let document_id = id.into();
-            let request_bytes = wire::patch(document_id.as_str(), &patch)?;
-            let request = self.root_patch(&request_bytes)?;
-            let ir_request = self
-                .inner
-                .context
-                .patch_to_ir(request)
-                .map_err(Error::from_ir)?;
+            let operations = to_resolver_operations(&patch)?;
+            let ir_request = searchkernel_ir::resolve_patch(
+                &self.inner.context,
+                document_id.as_str(),
+                &operations,
+            )
+            .map_err(Error::from_ir)?;
             backend.patch(ir_request).map_err(Error::from_ir)?;
             Ok(())
         })
@@ -527,12 +519,7 @@ impl Index {
     pub fn delete(&self, id: impl Into<DocumentId>) -> Result<bool> {
         self.with_backend(|backend| {
             let document_id = id.into();
-            let request_bytes = wire::delete(document_id.as_str());
-            let request = self.root_delete(&request_bytes)?;
-            let ir_request = self
-                .inner
-                .context
-                .delete_to_ir(request)
+            let ir_request = searchkernel_ir::resolve_delete(document_id.as_str(), None)
                 .map_err(Error::from_ir)?;
             let delete_result = backend.delete(ir_request).map_err(Error::from_ir)?;
             Ok(delete_result.deleted)
@@ -563,16 +550,15 @@ impl Index {
         projection: Option<Vec<String>>,
     ) -> Result<Option<T>> {
         self.with_backend(|backend| {
-            let request_bytes = wire::get(document_id.as_str(), projection.as_deref());
-            let request = self.root_get(&request_bytes)?;
-            let get_result = backend
-                .get(
-                    self.inner
-                        .context
-                        .get_to_ir(request)
-                        .map_err(Error::from_ir)?,
-                )
-                .map_err(Error::from_ir)?;
+            let ir_request = searchkernel_ir::resolve_get(
+                &self.inner.context,
+                searchkernel_ir::GetInput {
+                    id: document_id.to_string(),
+                    projection,
+                },
+            )
+            .map_err(Error::from_ir)?;
+            let get_result = backend.get(ir_request).map_err(Error::from_ir)?;
             get_result
                 .document
                 .map(result::document)
@@ -603,17 +589,9 @@ impl Index {
 
     pub(crate) fn execute_analyze(&self, request: &AnalyzeBuilder) -> Result<AnalyzeResult> {
         self.with_backend(|backend| {
-            let request_bytes = wire::analyze(request)?;
-            let wire_request =
-                searchkernel_ir::__flatbuffers::root::<api::AnalyzeRequest>(&request_bytes)
-                    .map_err(|error| {
-                        Error::infrastructure(format!("invalid generated analyze request: {error}"))
-                    })?;
-            let ir_request = self
-                .inner
-                .context
-                .analyze_to_ir(wire_request)
-                .map_err(Error::from_ir)?;
+            let ir_request =
+                searchkernel_ir::resolve_analyze(&self.inner.context, to_resolver_input(request)?)
+                    .map_err(Error::from_ir)?;
             let result = backend.analyze(ir_request).map_err(Error::from_ir)?;
             Ok(AnalyzeResult {
                 tokens: result
@@ -636,16 +614,10 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<crate::search::InspectedQuery> {
         self.with_backend(|_| {
-            let request_bytes = wire::search(request)?;
-            let wire_request =
-                searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
-                    .map_err(|error| {
-                        Error::infrastructure(format!("invalid generated search request: {error}"))
-                    })?;
-            let normalized = self
-                .inner
-                .context
-                .inspect_query(wire_request)
+            let normalized = searchkernel_ir::resolve_search(
+                &self.inner.context,
+                search_to_resolver_input(request)?,
+            )
                 .map_err(Error::from_ir)?;
             let query = match normalized.query() {
                 searchkernel_ir::QueryIr::MatchAll => String::new(),
@@ -748,17 +720,11 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<result::SearchResult<T>> {
         self.with_backend(|backend| {
-            let request_bytes = wire::search(request)?;
-            let wire_request =
-                searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
-                    .map_err(|error| {
-                        Error::infrastructure(format!("invalid generated search request: {error}"))
-                    })?;
-            let ir_request = self
-                .inner
-                .context
-                .search_to_ir(wire_request)
-                .map_err(Error::from_ir)?;
+            let ir_request = searchkernel_ir::resolve_search(
+                &self.inner.context,
+                search_to_resolver_input(request)?,
+            )
+            .map_err(Error::from_ir)?;
             let backend_result = backend.search(ir_request).map_err(Error::from_ir)?;
             let requested_facets = request
                 .facets
@@ -768,36 +734,26 @@ impl Index {
             result::search_result(backend_result, &requested_facets)
         })
     }
+}
 
-    fn root_insert<'a>(&self, bytes: &'a [u8]) -> Result<api::InsertRequest<'a>> {
-        searchkernel_ir::__flatbuffers::root::<api::InsertRequest>(bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated insert request: {error}"))
+fn document_input(id: &str, value: &serde_json::Value) -> Result<searchkernel_ir::DocumentInput> {
+    let serde_json::Value::Object(fields) = value else {
+        return Err(Error::Serialization(
+            "document must serialize as an object".to_owned(),
+        ));
+    };
+    let fields = fields
+        .iter()
+        .map(|(name, value)| {
+            searchkernel_ir::request_value_from_json(value, format!("document.fields.{name}"))
+                .map(|value| (name.clone(), value))
+                .map_err(Error::from_ir)
         })
-    }
-
-    fn root_upsert<'a>(&self, bytes: &'a [u8]) -> Result<api::UpsertRequest<'a>> {
-        searchkernel_ir::__flatbuffers::root::<api::UpsertRequest>(bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated upsert request: {error}"))
-        })
-    }
-
-    fn root_patch<'a>(&self, bytes: &'a [u8]) -> Result<api::PatchRequest<'a>> {
-        searchkernel_ir::__flatbuffers::root::<api::PatchRequest>(bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated patch request: {error}"))
-        })
-    }
-
-    fn root_delete<'a>(&self, bytes: &'a [u8]) -> Result<api::DeleteRequest<'a>> {
-        searchkernel_ir::__flatbuffers::root::<api::DeleteRequest>(bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated delete request: {error}"))
-        })
-    }
-
-    fn root_get<'a>(&self, bytes: &'a [u8]) -> Result<api::GetRequest<'a>> {
-        searchkernel_ir::__flatbuffers::root::<api::GetRequest>(bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated get request: {error}"))
-        })
-    }
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    Ok(searchkernel_ir::DocumentInput {
+        id: id.to_owned(),
+        fields,
+    })
 }
 
 fn facet_from_grouping(grouping: &searchkernel_ir::GroupingRequestIr) -> Option<Facet> {
@@ -984,7 +940,9 @@ impl IndexManifest {
                 "resolved_engine_config_identity": config_identity(config)?,
             }),
             portable_definition_bytes: portable_definition_bytes.to_vec(),
-            resolved_definition_bytes: wire::definition(resolved_definition),
+            resolved_definition_bytes: searchkernel_ir::index_definition_ir_to_api(
+                &definition_to_ir(resolved_definition)?,
+            ),
         })
     }
 
@@ -1222,14 +1180,68 @@ impl IndexManifest {
     }
 }
 
-#[cfg(feature = "native")]
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
-    let bytes = wire::definition(definition);
-    let root =
-        searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes).map_err(|error| {
-            Error::infrastructure(format!("invalid generated index definition: {error}"))
-        })?;
-    searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)
+    let fields = definition
+        .fields
+        .iter()
+        .map(|field| {
+            let analyzer = field
+                .analyzer
+                .as_ref()
+                .map(|analyzer| {
+                    analyzer
+                        .options
+                        .iter()
+                        .map(|(key, value)| {
+                            searchkernel_ir::request_value_from_json(
+                                value,
+                                format!("fields.{}.analyzer.options.{key}", field.name),
+                            )
+                            .map(|value| (key.clone(), value))
+                            .map_err(Error::from_ir)
+                        })
+                        .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
+                        .map(|options| searchkernel_ir::RustAnalyzerInput {
+                            name: analyzer.name.clone(),
+                            version: analyzer.version,
+                            options,
+                        })
+                })
+                .transpose()?;
+            Ok(searchkernel_ir::RustFieldInput {
+                name: field.name.clone(),
+                kind: match field.kind {
+                    crate::schema::FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
+                    crate::schema::FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
+                    crate::schema::FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
+                    crate::schema::FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
+                    crate::schema::FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
+                },
+                multi: field.multi,
+                stored: field.stored,
+                searchable: field.searchable,
+                filterable: field.filterable,
+                sortable: field.sortable,
+                facetable: field.facetable,
+                analyzer,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let default_search_fields = definition.default_search_fields.as_ref().map(|fields| {
+        fields
+            .iter()
+            .map(|field| searchkernel_ir::RustSearchFieldInput {
+                field: field.field.clone(),
+                weight: field.weight,
+            })
+            .collect()
+    });
+    searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
+        name: definition.name.clone(),
+        fields,
+        default_search_fields,
+    })
+    .map_err(Error::from_ir)
 }
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {

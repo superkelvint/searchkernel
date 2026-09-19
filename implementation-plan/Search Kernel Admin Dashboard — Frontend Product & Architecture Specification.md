@@ -997,7 +997,8 @@ Builder | JSON
 
 The JSON view represents the public Search Kernel HTTP/JSON request.
 
-It must use the generated canonical JSON representation defined by the C-series contract rather than a dashboard-specific request syntax.
+It must use standard schema-aware FlatBuffers JSON at the HTTP edge rather than
+a dashboard-specific request syntax.
 
 Provide:
 

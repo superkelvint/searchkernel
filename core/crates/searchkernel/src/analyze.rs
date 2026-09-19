@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use crate::index::Index;
 use crate::schema::Analyzer;
 
@@ -51,6 +52,46 @@ impl AnalyzeBuilder {
     pub fn execute(self) -> crate::Result<AnalyzeResult> {
         self.index.execute_analyze(&self)
     }
+}
+
+pub(crate) fn to_resolver_input(request: &AnalyzeBuilder) -> Result<searchkernel_ir::AnalyzeInput> {
+    let target = match request.target.as_ref() {
+        Some(AnalyzeTarget::Analyzer(analyzer)) => {
+            let options = analyzer
+                .options
+                .iter()
+                .map(|(name, value)| {
+                    searchkernel_ir::request_value_from_json(
+                        value,
+                        format!("target.analyzer.options.{name}"),
+                    )
+                    .map(|value| (name.clone(), value))
+                    .map_err(Error::from_ir)
+                })
+                .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+            Some(searchkernel_ir::AnalyzeTargetInput::Analyzer(
+                searchkernel_ir::AnalyzerInput {
+                    name: analyzer.name.clone(),
+                    version: analyzer.version,
+                    options,
+                },
+            ))
+        }
+        Some(AnalyzeTarget::Field) => Some(searchkernel_ir::AnalyzeTargetInput::Field(
+            request.field_name.clone().ok_or_else(|| {
+                Error::search(
+                    crate::ErrorCode::InvalidArgument,
+                    "analyze field target is missing a field name",
+                )
+            })?,
+        )),
+        None => None,
+    };
+    Ok(searchkernel_ir::AnalyzeInput {
+        target,
+        text: request.text.clone(),
+        language: request.language.clone(),
+    })
 }
 
 /// One token produced by linguistic analysis.

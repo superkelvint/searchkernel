@@ -344,8 +344,6 @@ A newly represented FlatBuffers feature may be available through the low-level g
 
 ## Client generation
 
-`searchkernel-bindgen` is not a universal multi-language SDK compiler.
-
 Standard tools should own standard work:
 
 ```text
@@ -353,26 +351,15 @@ flatc             language FlatBuffers model generation
 gRPC toolchain    RPC client/server stub generation
 ```
 
-Search Kernel bindgen should exist only where Search Kernel-specific BFBS understanding is valuable, such as:
-
-```text
-BFBS normalization and invariants
-operation/schema inventory
-contract metadata
-documentation metadata
-conformance fixture support
-optional JSON/schema metadata
-```
-
-Do not add a new custom language emitter merely because a new client language is introduced.
+There is no Search-Kernel-specific language emitter. Do not add one merely
+because a new client language or schema field is introduced.
 
 ---
 
 ## JSON and browser access
 
-JSON is not the primary cross-language client transport.
-
-A canonical JSON representation may remain useful for:
+JSON is not a separate Search Kernel API. Standard FlatBuffers JSON may remain
+useful for:
 
 ```text
 debugging
@@ -383,12 +370,12 @@ browser-facing gateways
 JSON Schema/OpenAPI-style documentation
 ```
 
-If retained, JSON must still converge on the canonical FlatBuffers model before semantic processing:
+The boundary is always:
 
 ```text
 JSON
     ↓
-canonical JSON ↔ FlatBuffers codec
+    official schema-aware FlatBuffers JSON parser/printer
     ↓
 FlatBuffers
     ↓

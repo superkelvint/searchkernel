@@ -4,14 +4,14 @@ import flatbuffers
 import numpy as np
 
 import typing
-from SearchKernel.V2.ConstantDefinition import ConstantDefinition
-from SearchKernel.V2.OnnxModelDefinition import OnnxModelDefinition
-from SearchKernel.V2.OptionalBool import OptionalBool
-from SearchKernel.V2.RankFunctionDefinition import RankFunctionDefinition
-from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinition
-from SearchKernel.V2.RankProfileInput import RankProfileInput
-from SearchKernel.V2.StringEntry import StringEntry
-from SearchKernel.V2.ValueEntry import ValueEntry
+from SearchKernel.V2.ConstantDefinition import ConstantDefinition, ConstantDefinitionT
+from SearchKernel.V2.OnnxModelDefinition import OnnxModelDefinition, OnnxModelDefinitionT
+from SearchKernel.V2.OptionalBool import OptionalBool, OptionalBoolT
+from SearchKernel.V2.RankFunctionDefinition import RankFunctionDefinition, RankFunctionDefinitionT
+from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinition, RankPhaseDefinitionT
+from SearchKernel.V2.RankProfileInput import RankProfileInput, RankProfileInputT
+from SearchKernel.V2.StringEntry import StringEntry, StringEntryT
+from SearchKernel.V2.ValueEntry import ValueEntry, ValueEntryT
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
 
@@ -20,8 +20,6 @@ class RankProfileDefinition(object):
   def GetRootAs(cls, buf: bytes, offset: int) -> RankProfileDefinition: ...
   @classmethod
   def GetRootAsRankProfileDefinition(cls, buf: bytes, offset: int) -> RankProfileDefinition: ...
-  @classmethod
-  def RankProfileDefinitionBufferHasIdentifier(cls, buf: bytes, offset: int, size_prefixed: bool) -> bool: ...
   def Init(self, buf: bytes, pos: int) -> None: ...
   def Name(self) -> str | None: ...
   def Inherits(self, i: int) -> str: ...
@@ -61,6 +59,50 @@ class RankProfileDefinition(object):
   def Properties(self, i: int) -> ValueEntry | None: ...
   def PropertiesLength(self) -> int: ...
   def PropertiesIsNone(self) -> bool: ...
+class RankProfileDefinitionT(object):
+  name: str | None
+  inherits: typing.List[str]
+  inputs: typing.List[RankProfileInputT]
+  functions: typing.List[RankFunctionDefinitionT]
+  firstPhase: RankPhaseDefinitionT | None
+  secondPhase: RankPhaseDefinitionT | None
+  globalPhase: RankPhaseDefinitionT | None
+  rankFeatures: typing.List[str]
+  matchFeatures: typing.List[str]
+  summaryFeatures: typing.List[str]
+  sortFeatures: typing.List[str]
+  constants: typing.List[ConstantDefinitionT]
+  onnxModels: typing.List[OnnxModelDefinitionT]
+  rankProperties: typing.List[StringEntryT]
+  strict: OptionalBoolT | None
+  properties: typing.List[ValueEntryT]
+  def __init__(
+    self,
+    name: str | None = ...,
+    inherits: typing.List[str] | None = ...,
+    inputs: typing.List['RankProfileInputT'] | None = ...,
+    functions: typing.List['RankFunctionDefinitionT'] | None = ...,
+    firstPhase: 'RankPhaseDefinitionT' | None = ...,
+    secondPhase: 'RankPhaseDefinitionT' | None = ...,
+    globalPhase: 'RankPhaseDefinitionT' | None = ...,
+    rankFeatures: typing.List[str] | None = ...,
+    matchFeatures: typing.List[str] | None = ...,
+    summaryFeatures: typing.List[str] | None = ...,
+    sortFeatures: typing.List[str] | None = ...,
+    constants: typing.List['ConstantDefinitionT'] | None = ...,
+    onnxModels: typing.List['OnnxModelDefinitionT'] | None = ...,
+    rankProperties: typing.List['StringEntryT'] | None = ...,
+    strict: 'OptionalBoolT' | None = ...,
+    properties: typing.List['ValueEntryT'] | None = ...,
+  ) -> None: ...
+  @classmethod
+  def InitFromBuf(cls, buf: bytes, pos: int) -> RankProfileDefinitionT: ...
+  @classmethod
+  def InitFromPackedBuf(cls, buf: bytes, pos: int = 0) -> RankProfileDefinitionT: ...
+  @classmethod
+  def InitFromObj(cls, rankProfileDefinition: RankProfileDefinition) -> RankProfileDefinitionT: ...
+  def _UnPack(self, rankProfileDefinition: RankProfileDefinition) -> None: ...
+  def Pack(self, builder: flatbuffers.Builder) -> None: ...
 def RankProfileDefinitionStart(builder: flatbuffers.Builder) -> None: ...
 def Start(builder: flatbuffers.Builder) -> None: ...
 def RankProfileDefinitionAddName(builder: flatbuffers.Builder, name: uoffset) -> None: ...

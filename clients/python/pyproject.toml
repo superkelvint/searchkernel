@@ -20,3 +20,6 @@ py-modules = []
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["searchkernel*"]
+
+[tool.setuptools.package-data]
+searchkernel = ["_wire_generated/**/*.py", "_wire_generated/**/*.pyi"]

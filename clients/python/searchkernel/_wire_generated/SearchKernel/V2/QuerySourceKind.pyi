@@ -4,6 +4,11 @@ import flatbuffers
 import numpy as np
 
 import typing
+from SearchKernel.V2.MatchAllQuery import MatchAllQuery
+from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQuery
+from SearchKernel.V2.TypedQuery import TypedQuery
+from SearchKernel.V2.YqlQuery import YqlQuery
+from flatbuffers import table
 from typing import cast
 
 uoffset: typing.TypeAlias = flatbuffers.number_types.UOffsetTFlags.py_type
@@ -14,4 +19,5 @@ class QuerySourceKind(object):
   TypedQuery = cast(int, ...)
   YqlQuery = cast(int, ...)
   MatchAllQuery = cast(int, ...)
+def QuerySourceKindCreator(union_type: typing.Literal[QuerySourceKind.NONE, QuerySourceKind.SearchKernelTextQuery, QuerySourceKind.TypedQuery, QuerySourceKind.YqlQuery, QuerySourceKind.MatchAllQuery], table: table.Table) -> typing.Union[None, SearchKernelTextQuery, TypedQuery, YqlQuery, MatchAllQuery]: ...
 

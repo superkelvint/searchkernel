@@ -5,6 +5,7 @@ mod filter;
 mod grouping;
 mod query;
 mod ranking;
+mod resolve;
 mod schema;
 mod search;
 mod value;
@@ -14,9 +15,19 @@ mod tests;
 
 pub(crate) use grouping::grouping_to_ir;
 pub(crate) use ranking::{ranking_request_to_ir, ranking_to_ir};
-pub(crate) use schema::{analyzer_identity, analyzer_to_ir_at};
-pub use schema::{analyzer_to_ir, field_to_ir, index_definition_to_ir};
+pub use resolve::{
+    resolve_analyze, resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
+    resolve_projection, resolve_search, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
+    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterInput, GetInput,
+    PatchOperationInput, RankingInput, SearchFieldInput, SearchIntent, SortInput,
+};
+pub use schema::{
+    analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_rust_index_definition,
+    RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
+    RustSearchFieldInput,
+};
 pub(crate) use search::search_fields_to_ir_at;
+pub use value::request_value_from_json;
 pub(crate) use value::{request_values_to_map, scalar_to_ir, value_from_api};
 
 use crate::error::{PortableError, Result};
