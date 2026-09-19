@@ -56,16 +56,25 @@ fn standard_json_round_trips_envelopes_unions_scalars_bytes_lists_and_tensors() 
     let printed = request_flatbuffer_to_json(&bytes).expect("request JSON printer");
     let value: serde_json::Value = serde_json::from_slice(&printed).expect("valid JSON");
     assert_eq!(value["payload_type"], "SearchKernel_V2_InsertRequest");
+    let fields = value["payload"]["document"]["fields"]
+        .as_array()
+        .expect("document fields array");
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|field| field["key"] == name)
+            .unwrap_or_else(|| panic!("missing field {name}"))
+    };
     assert_eq!(
-        value["payload"]["document"]["fields"][0]["value"]["kind"]["value"],
+        field("count")["value"]["kind"]["value"],
         9223372036854775807i64
     );
     assert_eq!(
-        value["payload"]["document"]["fields"][2]["value"]["kind"]["value"],
+        field("raw")["value"]["kind"]["value"],
         serde_json::json!([1, 2, 3])
     );
     assert_eq!(
-        value["payload"]["document"]["fields"][3]["value"]["kind"]["payload_type"],
+        field("tensor")["value"]["kind"]["payload_type"],
         "DenseTensorValues"
     );
 
