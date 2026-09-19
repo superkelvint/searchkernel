@@ -20,12 +20,13 @@ pub(crate) use backend::MutationProbe;
 pub use backend::VespaBackend;
 pub use schema::{compile_index_definition, validate_index_definition};
 #[cfg(test)]
+pub(crate) use search::filter::{lower_comparison, lower_filter};
+#[cfg(test)]
 pub(crate) use search::lower_query;
 #[cfg(test)]
 pub(crate) use search::{
-    lower_comparison, lower_facet_groupings, lower_facets_into_request, lower_filter,
-    lower_search_options, lower_search_query, query_feature_value, ranking_profile,
-    validate_search_request,
+    lower_facet_groupings, lower_facets_into_request, lower_search_options, lower_search_query,
+    query_feature_value, ranking_profile, validate_search_request,
 };
 
 fn lower_document(document: &DocumentIr) -> Result<Document> {

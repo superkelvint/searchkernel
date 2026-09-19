@@ -1,0 +1,360 @@
+//! Search request orchestration and adapter-wide validation.
+
+pub(crate) mod filter;
+mod grouping;
+mod typed_query;
+
+use crate::analysis_options;
+use searchkernel_ir::{
+    PortableError, QueryInputIr, QueryIr, RequestTensorPayloadIr, RequestValueIr, Result,
+    SearchRequestIr,
+};
+use searchkernel_vespa_engine::{
+    Query, SearchRequest, SortField, SortOrder, SummaryRequest, TensorValue,
+};
+
+use typed_query::lower_query_with_context;
+
+pub(crate) fn lower_search_query(
+    request: &SearchRequestIr,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<Query> {
+    let mut clauses = vec![lower_query_with_context(
+        request.query(),
+        request.search_fields(),
+        language,
+        request.query_model().default_index.as_deref(),
+        request.query_model().query_string.as_deref(),
+        &request.ranking_request().properties,
+    )?];
+    if let Some(filter) = request.filter() {
+        clauses.push(filter::lower_filter(filter)?);
+    }
+    if clauses.len() == 1 {
+        Ok(clauses.pop().expect("one clause was inserted"))
+    } else {
+        Ok(Query::And(clauses))
+    }
+}
+
+pub(crate) fn lower_search_options(
+    request: &SearchRequestIr,
+    query: Query,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<SearchRequest> {
+    let mut m_request = SearchRequest::new(query)
+        .limit(request.limit())
+        .offset(request.offset())
+        .rank_profile(request.ranking_request().profile.clone())
+        .language(language);
+    for (name, input) in request.inputs() {
+        match input {
+            QueryInputIr::Literal(RequestValueIr::Tensor(tensor)) => {
+                m_request = m_request.query_tensor(name, lower_query_tensor(name, tensor)?);
+            }
+            _ => {
+                m_request = m_request.query_feature(name, query_feature_value(name, input)?);
+            }
+        }
+    }
+    for (name, value) in &request.ranking_request().properties {
+        m_request = m_request.rank_property(name, value);
+    }
+    if let Some(timeout) = request.timeout() {
+        m_request = m_request.timeout(timeout);
+    }
+    for sort in request.sort() {
+        m_request = m_request.sort(lower_sort(sort)?);
+    }
+
+    // C2 has already resolved the projection. An empty list means that no
+    // summary fields should be fetched; the native API rejects an explicit
+    // empty field list, so use its no-summary mode instead.
+    let fields = request.projection().fields();
+    if fields.is_empty() {
+        m_request = m_request.summary(SummaryRequest::None);
+    } else {
+        m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
+    }
+    Ok(m_request)
+}
+
+pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
+    if !sort.annotations().is_empty() {
+        return Err(PortableError::unsupported(
+            "sort_annotations_not_supported",
+            Some("sort.annotations"),
+            "the current native adapter cannot execute annotated sort expressions",
+        ));
+    }
+    let field = match sort.target() {
+        searchkernel_ir::SortTargetIr::Field(field) => field,
+        searchkernel_ir::SortTargetIr::Relevance => {
+            return Err(PortableError::unsupported(
+                "relevance_sort_not_supported",
+                Some("sort.target"),
+                "the current native adapter cannot execute relevance sort targets",
+            ));
+        }
+        searchkernel_ir::SortTargetIr::RankFeature(_) => {
+            return Err(PortableError::unsupported(
+                "rank_feature_sort_not_supported",
+                Some("sort.target"),
+                "the current native adapter cannot execute rank-feature sort targets",
+            ));
+        }
+    };
+    let sort_field = match sort.direction() {
+        searchkernel_ir::SortDirection::Asc => SortField::new(field.as_str(), SortOrder::Ascending),
+        searchkernel_ir::SortDirection::Desc => {
+            SortField::new(field.as_str(), SortOrder::Descending)
+        }
+    };
+    Ok(match sort.missing() {
+        searchkernel_ir::MissingPlacement::First => sort_field.missing_first(),
+        searchkernel_ir::MissingPlacement::Last => sort_field.missing_last(),
+        searchkernel_ir::MissingPlacement::As(_) => {
+            return Err(PortableError::unsupported(
+                "sort_missing_as_not_supported",
+                Some("sort.missing"),
+                "the current native adapter cannot execute missing-as sort policies",
+            ));
+        }
+    })
+}
+
+pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
+    grouping::lower_facet_groupings(request.grouping())?;
+    validate_ranking_inputs(request)?;
+    if !request.properties().is_empty() {
+        return Err(PortableError::unsupported(
+            "query_properties_not_supported",
+            Some("properties"),
+            "the current native adapter does not expose generic Vespa query properties",
+        ));
+    }
+    if request.query_profile().is_some() {
+        return Err(PortableError::unsupported(
+            "query_profile_not_supported",
+            Some("query_profile"),
+            "query profiles require a container-aware Vespa execution path",
+        ));
+    }
+    if request.search_chain().is_some() {
+        return Err(PortableError::unsupported(
+            "search_chain_not_supported",
+            Some("search_chain"),
+            "search chains require a container-aware Vespa execution path",
+        ));
+    }
+    if request.query_model().encoding.is_some()
+        || request.query_model().filter.is_some()
+        || request.query_model().locale.is_some()
+        || request.query_model().query_type.is_some()
+        || !request.query_model().sources.is_empty()
+        || !request.query_model().restrict.is_empty()
+        || request.query_model().search_path.is_some()
+        || request.query_model().search_group.is_some()
+    {
+        return Err(PortableError::unsupported(
+            "query_model_not_supported",
+            Some("query_model"),
+            "the current native adapter supports query_model.language, query_string, and default_index only",
+        ));
+    }
+    if request.presentation().summary.is_some()
+        || request.presentation().format.is_some()
+        || request.presentation().bolding.is_some()
+        || request.presentation().timing.is_some()
+    {
+        return Err(PortableError::unsupported(
+            "presentation_not_supported",
+            Some("presentation"),
+            "the current native adapter supports only fields and highlighting presentation controls",
+        ));
+    }
+    if matches!(request.query(), QueryIr::Yql { .. }) {
+        return Err(PortableError::unsupported(
+            "yql_not_supported",
+            Some("query"),
+            "the current native adapter does not expose a YQL execution path",
+        ));
+    }
+    if !matches!(
+        request.highlighting(),
+        searchkernel_ir::HighlightingIr::Disabled
+    ) {
+        return Err(PortableError::unsupported(
+            "highlighting_native_result_unavailable",
+            Some("highlighting"),
+            "native Vespa result path does not expose generated highlight fragments and spans",
+        ));
+    }
+    if request
+        .search_fields()
+        .iter()
+        .any(|field| field.weight().get() != 1.0)
+    {
+        return Err(PortableError::unsupported(
+            "ranking_weights_not_supported",
+            Some("search_fields"),
+            "non-default search-field weights require the M10/I7 ranking integration surface",
+        ));
+    }
+    analysis_options(request.language())?;
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn ranking_profile(ranking: searchkernel_ir::RankingPolicyIr) -> Result<&'static str> {
+    match ranking {
+        searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => Ok("default"),
+        searchkernel_ir::RankingPolicyIr::Bm25 => Ok("bm25"),
+    }
+}
+
+const RESERVED_RANK_PROPERTY: &str = "vespa.matching.numthreadspersearch";
+const MAX_RANK_INPUT_NAME_BYTES: usize = 256;
+
+fn validate_ranking_inputs(request: &SearchRequestIr) -> Result<()> {
+    for (name, input) in request.inputs() {
+        if let QueryInputIr::Literal(RequestValueIr::Tensor(tensor)) = input {
+            if !matches!(tensor.payload, RequestTensorPayloadIr::Dense(_)) {
+                return Err(PortableError::unsupported(
+                    "query_input_tensor_not_supported",
+                    Some(format!("inputs.{name}")),
+                    "only dense tensor query inputs are executable by the current native request interface",
+                ));
+            }
+            if tensor.type_spec.trim().is_empty() {
+                return Err(PortableError::invalid(
+                    "invalid_query_input",
+                    Some(format!("inputs.{name}")),
+                    "tensor query input type spec must not be empty",
+                ));
+            }
+        } else {
+            query_feature_value(name, input)?;
+        }
+        if name.is_empty() || name.len() > MAX_RANK_INPUT_NAME_BYTES {
+            return Err(PortableError::invalid(
+                "invalid_query_feature",
+                Some(format!("inputs.{name}")),
+                "query feature name must be non-empty and at most 256 bytes",
+            ));
+        }
+        if name == RESERVED_RANK_PROPERTY {
+            return Err(PortableError::invalid(
+                "invalid_query_feature",
+                Some(format!("inputs.{name}")),
+                "the Search Kernel-owned rank property is not caller-configurable",
+            ));
+        }
+    }
+    for (name, value) in &request.ranking_request().properties {
+        if name.is_empty() || name.len() > MAX_RANK_INPUT_NAME_BYTES || value.is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_rank_property",
+                Some(format!("ranking.properties.{name}")),
+                "rank property names must be non-empty and at most 256 bytes, and values must be non-empty",
+            ));
+        }
+        if name == RESERVED_RANK_PROPERTY {
+            return Err(PortableError::invalid(
+                "invalid_rank_property",
+                Some(format!("ranking.properties.{name}")),
+                "the Search Kernel-owned rank property is not caller-configurable",
+            ));
+        }
+        if request.inputs().contains_key(name) {
+            return Err(PortableError::invalid(
+                "rank_property_collision",
+                Some(format!("ranking.properties.{name}")),
+                format!("rank property `{name}` collides with a query feature"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn lower_query_tensor(
+    name: &str,
+    tensor: &searchkernel_ir::RequestTensorIr,
+) -> Result<TensorValue> {
+    let RequestTensorPayloadIr::Dense(values) = &tensor.payload else {
+        return Err(PortableError::unsupported(
+            "query_input_tensor_not_supported",
+            Some(format!("inputs.{name}")),
+            "only dense tensor query inputs are executable by the current native request interface",
+        ));
+    };
+    if tensor.type_spec.trim().is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return Err(PortableError::invalid(
+            "invalid_query_input",
+            Some(format!("inputs.{name}")),
+            "dense tensor query inputs require a non-empty type spec and finite values",
+        ));
+    }
+    Ok(TensorValue::dense(tensor.type_spec.clone(), values.clone()))
+}
+
+pub(crate) fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
+    let QueryInputIr::Literal(value) = input else {
+        return Err(PortableError::unsupported(
+            "query_input_expression_not_supported",
+            Some(format!("inputs.{name}")),
+            "expression query inputs require a container-aware Vespa execution path",
+        ));
+    };
+    match value {
+        RequestValueIr::Float64(value) if value.is_finite() => Ok(*value),
+        RequestValueIr::Int64(value) => {
+            let converted = *value as f64;
+            // Rust's float-to-int cast saturates at the integer boundary.
+            // Check the half-open f64 domain explicitly before round-tripping
+            // so i64::MAX cannot masquerade as the exact value 2^63.
+            if converted >= i64::MIN as f64
+                && converted < 2_f64.powi(63)
+                && converted as i64 == *value
+            {
+                Ok(converted)
+            } else {
+                Err(PortableError::unsupported(
+                    "query_input_precision_loss",
+                    Some(format!("inputs.{name}")),
+                    "the integer query input cannot be represented losslessly as native f64",
+                ))
+            }
+        }
+        RequestValueIr::UInt64(value) => {
+            let converted = *value as f64;
+            // The upper bound is exclusive because 2^64 is outside u64 and
+            // Rust saturates that cast to u64::MAX.
+            if converted >= 0.0 && converted < 2_f64.powi(64) && converted as u64 == *value {
+                Ok(converted)
+            } else {
+                Err(PortableError::unsupported(
+                    "query_input_precision_loss",
+                    Some(format!("inputs.{name}")),
+                    "the integer query input cannot be represented losslessly as native f64",
+                ))
+            }
+        }
+        RequestValueIr::Float64(_) | RequestValueIr::NonFiniteFloat(_) => {
+            Err(PortableError::invalid(
+                "invalid_query_input",
+                Some(format!("inputs.{name}")),
+                "query feature values must be finite",
+            ))
+        }
+        _ => Err(PortableError::unsupported(
+            "query_input_value_not_supported",
+            Some(format!("inputs.{name}")),
+            "only finite scalar numeric query inputs are executable by the native f64 feature interface",
+        )),
+    }
+}
+
+pub(crate) use grouping::{lower_facet_groupings, lower_facets_into_request};
+#[cfg(test)]
+pub(crate) use typed_query::lower_query;
