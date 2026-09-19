@@ -144,6 +144,64 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(request.inputs[0].name, "freshness")
         self.assertEqual(request.inputs[0].input.value.kind.value, 0.8)
 
+    def test_ergonomic_rank_properties_use_default_profile(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, "wireless") \
+            .rank_property("source", "catalog") \
+            .execute()
+
+        self.assertEqual(index.client.request.ranking.profile, "default")
+
+    def test_ergonomic_ranking_properties_and_inputs_are_canonical_order(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, "wireless") \
+            .ranking("product_search") \
+            .rank_property("zeta", "last") \
+            .rank_property("alpha", "first") \
+            .input("zeta_input", 0.8) \
+            .input("alpha_input", 0.2) \
+            .execute()
+
+        ranking = index.client.request.ranking
+        self.assertEqual(ranking.profile, "product_search")
+        self.assertEqual([entry.key for entry in ranking.properties], ["alpha", "zeta"])
+        self.assertEqual(
+            [entry.name for entry in index.client.request.inputs],
+            ["alpha_input", "zeta_input"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
