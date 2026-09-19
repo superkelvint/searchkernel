@@ -25,6 +25,9 @@ from SearchKernel.V2.MatchingConfig import MatchingConfigT  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.OptionalBool import OptionalBoolT  # noqa: E402
 from SearchKernel.V2.PrimitiveDataType import PrimitiveDataTypeT  # noqa: E402
+from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT  # noqa: E402
+from SearchKernel.V2.QueryInput import QueryInputT  # noqa: E402
+from SearchKernel.V2.QueryInputKind import QueryInputKind  # noqa: E402
 from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinitionT  # noqa: E402
 from SearchKernel.V2.RankProfileDefinition import RankProfileDefinitionT  # noqa: E402
 from SearchKernel.V2.RankingRequest import RankingRequestT  # noqa: E402
@@ -209,7 +212,28 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         index.upsert("d1", {"title": "fox", "popularity": 10})
         index.upsert("d2", {"title": "fox fox", "popularity": 5})
 
-        def search(boost):
+        def search_with_input(boost):
+            return index.search(
+                SearchRequestT(
+                    query=QuerySourceT(
+                        sourceType=QuerySourceKind.SearchKernelTextQuery,
+                        source=SearchKernelTextQueryT(text="fox"),
+                    ),
+                    ranking=RankingRequestT(
+                        profile="product_search",
+                    ),
+                    inputs=[
+                        QueryInputT(
+                            name="boost",
+                            inputType=QueryInputKind.LiteralQueryInput,
+                            input=LiteralQueryInputT(value=value(boost)),
+                        )
+                    ],
+                    limit=OptionalUInt32T(value=10),
+                )
+            )
+
+        def search_with_property(boost):
             return index.search(
                 SearchRequestT(
                     query=QuerySourceT(
@@ -224,10 +248,20 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 )
             )
 
-        positive = search(2.0)
-        negative = search(-1.0)
+        positive = search_with_input(2.0)
+        negative = search_with_input(-1.0)
+        raw_property = search_with_property(2.0)
         self.assertEqual(positive.root.node.children[0].node.id, "d1")
         self.assertEqual(negative.root.node.children[0].node.id, "d2")
+        self.assertEqual(raw_property.root.node.children[0].node.id, "d1")
+        self.assertEqual(
+            [child.node.id for child in positive.root.node.children],
+            [child.node.id for child in raw_property.root.node.children],
+        )
+        self.assertEqual(
+            [child.node.relevance.value.value for child in positive.root.node.children],
+            [child.node.relevance.value.value for child in raw_property.root.node.children],
+        )
         self.assertEqual(
             {entry.key for entry in positive.root.node.children[0].node.matchFeatures},
             {"bm25(title)", "query(boost)", "attribute(popularity)"},
