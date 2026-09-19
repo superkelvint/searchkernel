@@ -143,20 +143,14 @@ class ClientError(RuntimeError):
 SearchKernelError = ClientError
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def _host_binary() -> Path:
     configured = os.environ.get("SEARCHKERNEL_LOCAL_HOST")
     if configured:
         return Path(configured)
-    package_binary = Path(__file__).resolve().parent / "bin" / "searchkerneld-e2e-harness"
+    package_binary = Path(__file__).resolve().parent / "bin" / "searchkerneld"
     if package_binary.is_file():
         return package_binary
-    return Path(__file__).resolve().parents[3] / "target" / "debug" / "searchkerneld-e2e-harness"
+    return Path(__file__).resolve().parents[3] / "target" / "debug" / "searchkerneld"
 
 
 class _ManagedLocalHost:
@@ -164,11 +158,14 @@ class _ManagedLocalHost:
         self.path = path
         self.definition_path: Path | None = None
         self.process: subprocess.Popen[bytes] | None = None
-        self.port = _free_port()
+        self.socket_dir = tempfile.TemporaryDirectory(prefix="searchkernel-socket-")
+        self.socket_path = Path(self.socket_dir.name) / "searchkerneld.sock"
+        self.endpoint = f"unix://{self.socket_path}"
         binary = _host_binary()
         if not binary.is_file():
+            self.socket_dir.cleanup()
             raise ClientError(
-                f"managed local host binary not found at {binary}; build searchkerneld-e2e-harness first"
+                f"managed local host binary not found at {binary}; build searchkerneld first"
             )
         if definition is not None:
             temporary = tempfile.NamedTemporaryFile(
@@ -197,10 +194,10 @@ class _ManagedLocalHost:
             environment["LD_LIBRARY_PATH"] = f"{sdk_lib}:{previous}" if previous else sdk_lib
         command = [
             str(binary),
-            "--index-path",
+            "--index",
             str(path),
-            "--grpc-addr",
-            f"127.0.0.1:{self.port}",
+            "--listen",
+            self.endpoint,
         ]
         if self.definition_path is not None:
             command.extend(["--definition", str(self.definition_path)])
@@ -224,10 +221,10 @@ class _ManagedLocalHost:
             if self.process.poll() is not None:
                 stderr = self.process.stderr.read().decode(errors="replace") if self.process.stderr else ""
                 raise ClientError(f"managed local host exited during startup: {stderr}")
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.settimeout(0.1)
                 try:
-                    sock.connect(("127.0.0.1", self.port))
+                    sock.connect(str(self.socket_path))
                     return
                 except OSError:
                     time.sleep(0.05)
@@ -253,6 +250,7 @@ class _ManagedLocalHost:
         if self.definition_path is not None:
             self.definition_path.unlink(missing_ok=True)
             self.definition_path = None
+        self.socket_dir.cleanup()
 
 
 class Client:
@@ -336,12 +334,12 @@ class Index:
         fields: Mapping[str, Any] | IndexDefinitionT,
     ) -> "Index":
         owner = _ManagedLocalHost(Path(path), pack_object(_index_definition(fields)))
-        return cls(Client(GrpcTransport(f"127.0.0.1:{owner.port}")), owner, ergonomic=True)
+        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
 
     @classmethod
     def open(cls, path: str | os.PathLike[str]) -> "Index":
         owner = _ManagedLocalHost(Path(path), None)
-        return cls(Client(GrpcTransport(f"127.0.0.1:{owner.port}")), owner, ergonomic=True)
+        return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
 
     def insert(self, identifier: str | Mapping[str, Any], fields: Mapping[str, Any] | None = None) -> Any:
         if self._ergonomic and isinstance(identifier, Mapping):

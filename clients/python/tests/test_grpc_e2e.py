@@ -34,14 +34,8 @@ from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
-HARNESS = ROOT / "target" / "debug" / "searchkerneld-e2e-harness"
+DAEMON = ROOT / "target" / "debug" / "searchkerneld"
 SDK_LIB = ROOT / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecified) -> FieldDefinitionT:
@@ -63,7 +57,7 @@ def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecifie
 class RealGrpcPythonE2ETest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        subprocess.run(["cargo", "build", "-p", "searchkerneld-e2e-harness"], cwd=ROOT, check=True)
+        subprocess.run(["cargo", "build", "-p", "searchkerneld"], cwd=ROOT, check=True)
 
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory(prefix="searchkernel-python-e2e-")
@@ -89,28 +83,31 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def _start_server(self, *, definition: bool):
-        port = _free_port()
+        socket_path = Path(self.tempdir.name) / "searchkerneld.sock"
         environment = os.environ.copy()
         environment.update({
-            "SEARCHKERNEL_E2E_INDEX_PATH": str(self.index_path),
-            "SEARCHKERNEL_E2E_GRPC_ADDR": f"127.0.0.1:{port}",
             "LD_LIBRARY_PATH": str(SDK_LIB),
         })
+        command = [
+            str(DAEMON),
+            "--index",
+            str(self.index_path),
+            "--listen",
+            f"unix://{socket_path}",
+        ]
         if definition:
-            environment["SEARCHKERNEL_E2E_INDEX_DEFINITION"] = str(self.definition_path)
-        else:
-            environment.pop("SEARCHKERNEL_E2E_INDEX_DEFINITION", None)
-        self.process = subprocess.Popen([str(HARNESS)], cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            command.extend(["--definition", str(self.definition_path)])
+        self.process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 output = self.process.stderr.read().decode(errors="replace")
                 self.fail(f"searchkerneld exited during startup: {output}")
-            with socket.socket() as sock:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.settimeout(0.1)
                 try:
-                    sock.connect(("127.0.0.1", port))
-                    return port
+                    sock.connect(str(socket_path))
+                    return f"unix://{socket_path}"
                 except OSError:
                     time.sleep(0.05)
         self.fail("searchkerneld did not open its gRPC socket")
@@ -132,8 +129,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.process = None
 
     def test_generated_objects_reach_persisted_native_backend(self):
-        port = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(f"127.0.0.1:{port}"))
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
         index = Index(self.client)
         index.upsert("doc:1", {"title": "hello world", "category": "a", "price": 5})
         index.upsert("doc:2", {"title": "hello again", "category": "b", "price": 2})
@@ -163,14 +160,22 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.client = None
         self._stop_server()
 
-        port = self._start_server(definition=False)
-        self.client = Client(GrpcTransport(f"127.0.0.1:{port}"))
+        endpoint = self._start_server(definition=False)
+        self.client = Client(GrpcTransport(endpoint))
         reopened = Index(self.client)
         surviving = reopened.search(SearchRequestT(
             query=QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT()),
             limit=OptionalUInt32T(value=10),
         ))
         self.assertEqual(surviving.totalHits.value, 1)
+
+    def test_managed_local_mode_uses_production_daemon_over_uds(self):
+        index = Index.create(self.index_path, fields=self.definition)
+        try:
+            index.upsert("doc:1", {"title": "hello", "category": "a", "price": 5})
+            self.assertEqual(index.get("doc:1")["_id"], "doc:1")
+        finally:
+            index.close()
 
 
 if __name__ == "__main__":

@@ -18,7 +18,8 @@ class GrpcTransport:
 
     def __init__(self, target: str, *, channel: Optional[grpc.Channel] = None):
         self._owned_channel = channel is None
-        self._channel = channel or grpc.insecure_channel(target)
+        options = (("grpc.default_authority", "localhost"),) if target.startswith("unix:") else ()
+        self._channel = channel or grpc.insecure_channel(target, options=options)
         self._stub = searchkernel_pb2_grpc.SearchKernelStub(self._channel)
         self._closed = False
 

@@ -2,6 +2,16 @@
 
 `searchkerneld` is the Search Kernel daemon and transport host.
 
+Run it against an existing index with:
+
+```text
+searchkerneld --index /path/to/index --listen unix:///tmp/searchkerneld.sock
+```
+
+For a new index, pass its canonical FlatBuffers definition with
+`--definition`; that option is only used during creation. On Unix, omitting
+`--listen` uses `/tmp/searchkerneld.sock`.
+
 Its responsibilities are HTTP routing, standard FlatBuffers JSON/FlatBuffers
 content negotiation, connection and lifecycle management, capability
 reporting, and process-local diagnostics. JSON is converted to canonical

@@ -1522,16 +1522,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "searchkerneld-e2e-harness"
-version = "0.1.0"
-dependencies = [
- "searchkernel",
- "searchkernel-dispatch",
- "searchkerneld",
- "tokio",
-]
-
-[[package]]
 name = "security-framework"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

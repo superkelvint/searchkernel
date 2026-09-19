@@ -7,6 +7,7 @@ build = "build.rs"
 
 [dependencies]
 prost = "0.13"
+searchkernel = { path = "../core/crates/searchkernel", features = ["native", "internal-api"] }
 searchkernel-dispatch = { path = "../core/crates/searchkernel-dispatch" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
 tokio-stream = { version = "0.1", features = ["net"] }
