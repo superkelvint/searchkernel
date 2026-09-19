@@ -13,3 +13,4 @@
 /lib64/
 try_searchkernel_builder_api.py
 /clients/python/build/
+**/node_modules/*
