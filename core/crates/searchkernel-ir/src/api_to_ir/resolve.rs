@@ -2,15 +2,15 @@ use super::*;
 use crate::api_to_ir::document::condition_to_ir;
 use crate::api_to_ir::filter::{flatten_and, flatten_or};
 use crate::api_to_ir::schema::analyzer_identity;
-use crate::api_to_ir::search::parse_language;
 use crate::model::{
     AnalyzeRequestIr, AnalyzerIr, DeleteRequestIr, DocumentId, DocumentIr, FieldCardinality,
     FieldKind, FieldName, FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr,
     GroupingAllIr, GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
-    HighlightingIr, InsertRequestIr, MissingPlacement, PatchOperationIr, PatchRequestIr,
-    PrefixPolicy, PresentationIr, ProjectionIr, QueryIr, QueryModelIr, RankingPolicyIr,
-    RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr, SearchFieldWeight,
-    SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy, UpsertRequestIr,
+    HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr,
+    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryInputIr, QueryIr,
+    QueryModelIr, RankingPolicyIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
+    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy,
+    UpsertRequestIr,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -83,6 +83,15 @@ pub struct AnalyzeInput {
 
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
+pub enum FilterBoundInput {
+    Finite(RequestValueIr),
+    NegativeInfinity,
+    PositiveInfinity,
+    Unbounded,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilterInput {
     All(Vec<FilterInput>),
     Any(Vec<FilterInput>),
@@ -94,10 +103,14 @@ pub enum FilterInput {
     },
     Range {
         field: String,
-        lower: Option<RequestValueIr>,
-        upper: Option<RequestValueIr>,
+        lower: FilterBoundInput,
+        upper: FilterBoundInput,
         include_lower: Option<bool>,
         include_upper: Option<bool>,
+    },
+    In {
+        field: String,
+        values: Vec<RequestValueIr>,
     },
     Exists {
         field: String,
@@ -137,10 +150,11 @@ pub struct FacetInput {
 }
 
 #[doc(hidden)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RankingInput {
     DefaultRelevanceV1,
     Bm25,
+    Named(String),
 }
 
 #[doc(hidden)]
@@ -152,6 +166,8 @@ pub struct SearchIntent {
     pub sorts: Vec<SortInput>,
     pub facets: Vec<FacetInput>,
     pub ranking: Option<RankingInput>,
+    pub query_inputs: BTreeMap<String, RequestValueIr>,
+    pub rank_properties: BTreeMap<String, String>,
     pub projection: Option<Vec<String>>,
     pub highlighting: Option<Vec<String>>,
     pub language: Option<String>,
@@ -218,7 +234,7 @@ pub fn resolve_analyze(context: &IndexContext, input: AnalyzeInput) -> Result<An
     let language = input
         .language
         .as_deref()
-        .map(|value| parse_language(value, "language"))
+        .map(|value| resolve_language(value, "language"))
         .transpose()?;
     Ok(AnalyzeRequestIr {
         analyzer,
@@ -262,22 +278,28 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
         .iter()
         .map(resolve_facet)
         .collect::<Result<Vec<_>>>()?;
-    let ranking = match input.ranking.unwrap_or(RankingInput::DefaultRelevanceV1) {
-        RankingInput::DefaultRelevanceV1 => RankingPolicyIr::DefaultRelevanceV1,
-        RankingInput::Bm25 => RankingPolicyIr::Bm25,
+    let profile = match input.ranking.unwrap_or(RankingInput::DefaultRelevanceV1) {
+        RankingInput::DefaultRelevanceV1 => "default".to_owned(),
+        RankingInput::Bm25 => "bm25".to_owned(),
+        RankingInput::Named(profile) if !profile.is_empty() => profile,
+        RankingInput::Named(_) => {
+            return Err(invalid(
+                "invalid_ranking",
+                Some("ranking"),
+                "named ranking profile must not be empty",
+            ));
+        }
     };
-    let profile = match ranking {
-        RankingPolicyIr::DefaultRelevanceV1 => "default",
-        RankingPolicyIr::Bm25 => "bm25",
-    };
+    let ranking = resolve_basic_ranking(Some(profile.as_str()));
     let language = input
         .language
         .as_deref()
-        .map(|value| parse_language(value, "language"))
+        .map(|value| resolve_language(value, "language"))
         .transpose()?;
     let projection = resolve_projection(context, input.projection.as_deref())?;
     let highlighting = resolve_highlighting(context, input.highlighting.as_deref())?;
     let timeout = input.timeout.map(resolve_timeout).transpose()?;
+    let (limit, offset) = resolve_pagination(input.limit, input.offset);
     Ok(SearchRequestIr {
         query,
         search_fields,
@@ -286,12 +308,16 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
         grouping,
         ranking,
         ranking_request: RankingRequestIr {
-            profile: profile.to_owned(),
-            properties: std::collections::BTreeMap::new(),
+            profile,
+            properties: input.rank_properties,
         },
-        inputs: std::collections::BTreeMap::new(),
-        limit: input.limit.unwrap_or(20),
-        offset: input.offset.unwrap_or(0),
+        inputs: input
+            .query_inputs
+            .into_iter()
+            .map(|(name, value)| (name, QueryInputIr::Literal(value)))
+            .collect(),
+        limit,
+        offset,
         projection,
         highlighting,
         language: language.clone(),
@@ -309,33 +335,41 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
     })
 }
 
-fn resolve_search_fields(
+pub(crate) fn resolve_search_fields(
     context: &IndexContext,
     fields: &[SearchFieldInput],
+) -> Result<Vec<SearchFieldIr>> {
+    resolve_search_fields_at(context, fields, "search_fields")
+}
+
+pub(crate) fn resolve_search_fields_at(
+    context: &IndexContext,
+    fields: &[SearchFieldInput],
+    path: &str,
 ) -> Result<Vec<SearchFieldIr>> {
     let mut output = Vec::new();
     let mut seen = BTreeSet::new();
     for (index, input) in fields.iter().enumerate() {
-        let path = format!("search_fields.fields[{index}].field");
-        let field = context.query_field_for_resolver(&input.field, path.clone())?;
+        let field_path = format!("{path}.fields[{index}].field");
+        let field = context.query_field_for_resolver(&input.field, field_path.clone())?;
         if !field.capabilities().searchable() {
             return Err(invalid(
                 "field_not_searchable",
-                Some(path),
+                Some(field_path),
                 "search field must be searchable",
             ));
         }
         if !seen.insert(field.name().clone()) {
             return Err(invalid(
                 "duplicate_search_field",
-                Some(format!("search_fields.fields[{index}].field")),
+                Some(format!("{path}.fields[{index}].field")),
                 "search fields must be unique",
             ));
         }
         let weight = SearchFieldWeight::new(input.weight.unwrap_or(1.0)).map_err(|_| {
             invalid(
                 "invalid_search_weight",
-                Some(format!("search_fields.fields[{index}].weight")),
+                Some(format!("{path}.fields[{index}].weight")),
                 "search-field weight must be finite and non-negative",
             )
         })?;
@@ -347,7 +381,11 @@ fn resolve_search_fields(
     Ok(output)
 }
 
-fn resolve_filter(context: &IndexContext, input: &FilterInput, path: &str) -> Result<FilterIr> {
+pub(crate) fn resolve_filter(
+    context: &IndexContext,
+    input: &FilterInput,
+    path: &str,
+) -> Result<FilterIr> {
     match input {
         FilterInput::All(filters) => {
             if filters.is_empty() {
@@ -432,6 +470,45 @@ fn resolve_filter(context: &IndexContext, input: &FilterInput, path: &str) -> Re
                 value: resolve_scalar(value.clone(), schema_field.kind(), format!("{path}.value"))?,
             }))
         }
+        FilterInput::In { field, values } => {
+            let schema_field = context.query_field_for_resolver(field, format!("{path}.field"))?;
+            if !schema_field.capabilities().filterable() {
+                return Err(invalid(
+                    "field_not_filterable",
+                    Some(format!("{path}.field")),
+                    "IN requires a filterable field",
+                ));
+            }
+            if !matches!(schema_field.kind(), FieldKind::Keyword | FieldKind::Int64) {
+                return Err(invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "IN requires a Keyword or Int64 field",
+                ));
+            }
+            let values = values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    resolve_scalar(
+                        value.clone(),
+                        schema_field.kind(),
+                        format!("{path}.values[{index}]"),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if values.is_empty() {
+                return Err(invalid(
+                    "empty_in",
+                    Some(path),
+                    "IN requires at least one value",
+                ));
+            }
+            Ok(FilterIr::In {
+                field: schema_field.name().clone(),
+                values,
+            })
+        }
         FilterInput::Range {
             field,
             lower,
@@ -467,6 +544,20 @@ fn resolve_filter(context: &IndexContext, input: &FilterInput, path: &str) -> Re
             }
             let include_lower = include_lower.unwrap_or(true);
             let include_upper = include_upper.unwrap_or(true);
+            if matches!(lower, crate::model::FilterRangeBoundIr::Unbounded) && include_lower {
+                return Err(invalid(
+                    "invalid_range",
+                    Some(format!("{path}.include_lower")),
+                    "lower inclusion requires a lower bound",
+                ));
+            }
+            if matches!(upper, crate::model::FilterRangeBoundIr::Unbounded) && include_upper {
+                return Err(invalid(
+                    "invalid_range",
+                    Some(format!("{path}.include_upper")),
+                    "upper inclusion requires an upper bound",
+                ));
+            }
             if crate::api_to_ir::filter::filter_bound_greater(&lower, &upper) {
                 return Err(invalid(
                     "invalid_range",
@@ -519,60 +610,71 @@ fn resolve_scalar(value: RequestValueIr, kind: FieldKind, path: String) -> Resul
 }
 
 fn resolve_range_bound(
-    value: &Option<RequestValueIr>,
+    value: &FilterBoundInput,
     kind: FieldKind,
     path: &str,
 ) -> Result<crate::model::FilterRangeBoundIr> {
-    value
-        .as_ref()
-        .map(|value| {
-            resolve_scalar(value.clone(), kind, path.to_owned())
-                .map(crate::model::FilterRangeBoundIr::Finite)
-        })
-        .transpose()
-        .map(|value| value.unwrap_or(crate::model::FilterRangeBoundIr::Unbounded))
+    match value {
+        FilterBoundInput::Finite(value) => resolve_scalar(value.clone(), kind, path.to_owned())
+            .map(crate::model::FilterRangeBoundIr::Finite),
+        FilterBoundInput::NegativeInfinity => {
+            Ok(crate::model::FilterRangeBoundIr::NegativeInfinity)
+        }
+        FilterBoundInput::PositiveInfinity => {
+            Ok(crate::model::FilterRangeBoundIr::PositiveInfinity)
+        }
+        FilterBoundInput::Unbounded => Ok(crate::model::FilterRangeBoundIr::Unbounded),
+    }
 }
 
-fn resolve_sorts(context: &IndexContext, sorts: &[SortInput]) -> Result<Vec<SortIr>> {
+pub(crate) fn resolve_sort(
+    context: &IndexContext,
+    input: &SortInput,
+    path: &str,
+) -> Result<SortIr> {
+    let field = context.query_field_for_resolver(&input.field, format!("{path}.field"))?;
+    if !field.capabilities().sortable() {
+        return Err(invalid(
+            "field_not_sortable",
+            Some(format!("{path}.field")),
+            "sort requires a sortable field",
+        ));
+    }
+    if field.cardinality() != FieldCardinality::Single {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.field")),
+            "multi-valued fields cannot be sortable",
+        ));
+    }
+    Ok(SortIr {
+        target: SortTargetIr::Field(field.name().clone()),
+        direction: input.direction,
+        missing: input.missing.clone().unwrap_or(MissingPlacement::Last),
+        annotations: BTreeMap::new(),
+    })
+}
+
+pub(crate) fn resolve_sorts(context: &IndexContext, sorts: &[SortInput]) -> Result<Vec<SortIr>> {
     let mut seen = BTreeSet::new();
     sorts
         .iter()
         .enumerate()
         .map(|(index, input)| {
-            let field_path = format!("sort[{index}].field");
-            let field = context.query_field_for_resolver(&input.field, field_path.clone())?;
-            if !field.capabilities().sortable() {
-                return Err(invalid(
-                    "field_not_sortable",
-                    Some(field_path),
-                    "sort requires a sortable field",
-                ));
-            }
-            if field.cardinality() != FieldCardinality::Single {
-                return Err(invalid(
-                    "invalid_capability",
-                    Some(field_path),
-                    "multi-valued fields cannot be sortable",
-                ));
-            }
-            if !seen.insert(field.name().clone()) {
+            let value = resolve_sort(context, input, &format!("sort[{index}]"))?;
+            if !seen.insert(value.field().cloned()) {
                 return Err(invalid(
                     "duplicate_sort_field",
                     Some(format!("sort[{index}].field")),
                     "sort fields must be unique",
                 ));
             }
-            Ok(SortIr {
-                target: SortTargetIr::Field(field.name().clone()),
-                direction: input.direction,
-                missing: input.missing.clone().unwrap_or(MissingPlacement::Last),
-                annotations: BTreeMap::new(),
-            })
+            Ok(value)
         })
         .collect()
 }
 
-fn resolve_highlighting(
+pub(crate) fn resolve_highlighting(
     context: &IndexContext,
     fields: Option<&[String]>,
 ) -> Result<HighlightingIr> {
@@ -647,7 +749,29 @@ fn resolve_facet(input: &FacetInput) -> Result<GroupingRequestIr> {
     })
 }
 
-fn resolve_timeout(timeout: Duration) -> Result<Duration> {
+pub(crate) fn resolve_language(value: &str, path: &str) -> Result<LanguageHint> {
+    LanguageHint::parse(value.to_owned()).map_err(|_| {
+        invalid(
+            "invalid_language",
+            Some(path),
+            "language must be a basic BCP-47-style ASCII tag",
+        )
+    })
+}
+
+pub(crate) fn resolve_basic_ranking(profile: Option<&str>) -> RankingPolicyIr {
+    match profile.unwrap_or("default") {
+        "bm25" => RankingPolicyIr::Bm25,
+        "" | "default" | "default-relevance" => RankingPolicyIr::DefaultRelevanceV1,
+        _ => RankingPolicyIr::DefaultRelevanceV1,
+    }
+}
+
+pub(crate) fn resolve_pagination(limit: Option<u32>, offset: Option<u32>) -> (u32, u32) {
+    (limit.unwrap_or(20), offset.unwrap_or(0))
+}
+
+pub(crate) fn resolve_timeout(timeout: Duration) -> Result<Duration> {
     let millis = u64::try_from(timeout.as_millis()).map_err(|_| {
         invalid(
             "invalid_argument",

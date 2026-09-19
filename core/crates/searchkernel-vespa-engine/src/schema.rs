@@ -27,7 +27,7 @@ const RESERVED_FIELD_NAMES: &[&str] = &[
     "summaryfeatures",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// A field type supported by the embedded Vespa configuration compiler.
 pub enum FieldType {
     Text,
@@ -35,6 +35,7 @@ pub enum FieldType {
     Integer,
     Float,
     Boolean,
+    Tensor(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +101,7 @@ pub struct RankProfile {
     name: String,
     first_phase: String,
     match_features: Vec<String>,
+    query_inputs: Vec<(String, String)>,
 }
 
 impl RankProfile {
@@ -108,6 +110,7 @@ impl RankProfile {
             name: name.into(),
             first_phase: String::new(),
             match_features: Vec::new(),
+            query_inputs: Vec::new(),
         }
     }
 
@@ -118,6 +121,12 @@ impl RankProfile {
 
     pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
         self.match_features.push(expression.into());
+        self
+    }
+
+    /// Declare the tensor type of a query input used by this rank profile.
+    pub fn query_input(mut self, name: impl Into<String>, type_spec: impl Into<String>) -> Self {
+        self.query_inputs.push((name.into(), type_spec.into()));
         self
     }
 }
@@ -203,14 +212,24 @@ impl<'a> DerivedConfig<'a> {
             if index != 0 {
                 output.push(',');
             }
-            output.push_str(&format!(
-                "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
-                quoted(&field.name),
-                quoted(field.field_type.manifest_name()),
-                field.indexed,
-                field.attribute,
-                field.summary,
-            ));
+            match &field.field_type {
+                FieldType::Tensor(type_spec) => output.push_str(&format!(
+                    "{{\"name\":{},\"type\":\"tensor\",\"tensor_type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
+                    quoted(&field.name),
+                    quoted(type_spec),
+                    field.indexed,
+                    field.attribute,
+                    field.summary,
+                )),
+                _ => output.push_str(&format!(
+                    "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
+                    quoted(&field.name),
+                    quoted(field.field_type.manifest_name()),
+                    field.indexed,
+                    field.attribute,
+                    field.summary,
+                )),
+            }
         }
         output.push_str("]}\n");
         output
@@ -241,6 +260,12 @@ impl<'a> DerivedConfig<'a> {
                 quoted(&field.name),
                 field.field_type.attribute_type()
             ));
+            if let FieldType::Tensor(type_spec) = &field.field_type {
+                output.push_str(&format!(
+                    "attribute[{index}].tensortype {}\n",
+                    quoted(type_spec)
+                ));
+            }
             if field.fast_search {
                 output.push_str(&format!("attribute[{index}].fastsearch true\n"));
             }
@@ -326,31 +351,34 @@ impl SummaryField {
 }
 
 impl FieldType {
-    fn manifest_name(self) -> &'static str {
+    fn manifest_name(&self) -> &'static str {
         match self {
             Self::Text => "text",
             Self::String => "string",
             Self::Integer => "integer",
             Self::Float => "float",
             Self::Boolean => "boolean",
+            Self::Tensor(_) => "tensor",
         }
     }
 
-    fn attribute_type(self) -> &'static str {
+    fn attribute_type(&self) -> &'static str {
         match self {
             Self::Text | Self::String => "STRING",
             Self::Integer => "INT64",
             Self::Float => "DOUBLE",
             Self::Boolean => "BOOL",
+            Self::Tensor(_) => "TENSOR",
         }
     }
 
-    fn summary_type(self) -> &'static str {
+    fn summary_type(&self) -> &'static str {
         match self {
             Self::Text | Self::String => "longstring",
             Self::Integer => "integer",
             Self::Float => "double",
             Self::Boolean => "bool",
+            Self::Tensor(_) => "tensor",
         }
     }
 }
@@ -377,7 +405,7 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             )));
         }
 
-        match field.field_type {
+        match &field.field_type {
             FieldType::Text if !field.indexed => {
                 return Err(Error::message(format!(
                     "text field '{}' must be indexed",
@@ -388,6 +416,24 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             _ if field.indexed => {
                 return Err(Error::message(format!(
                     "non-text field '{}' may not be indexed",
+                    field.name
+                )));
+            }
+            FieldType::Tensor(_) if !field.attribute => {
+                return Err(Error::message(format!(
+                    "tensor field '{}' must be an attribute",
+                    field.name
+                )));
+            }
+            FieldType::Tensor(type_spec) if type_spec.trim().is_empty() => {
+                return Err(Error::message(format!(
+                    "tensor field '{}' must have a type spec",
+                    field.name
+                )));
+            }
+            FieldType::Tensor(_) if field.summary => {
+                return Err(Error::message(format!(
+                    "tensor field '{}' may not be a summary field",
                     field.name
                 )));
             }
@@ -417,6 +463,22 @@ fn validate_schema(schema: &Schema) -> Result<()> {
         }
         profile_names.push(&profile.name);
         validate_rank_expression(&profile.first_phase, "first-phase ranking expression")?;
+        let mut query_inputs: Vec<&String> = Vec::with_capacity(profile.query_inputs.len());
+        for (name, type_spec) in &profile.query_inputs {
+            validate_name(name, "query input")?;
+            if type_spec.trim().is_empty() {
+                return Err(Error::message(format!(
+                    "query input '{name}' must have a type spec"
+                )));
+            }
+            if query_inputs
+                .iter()
+                .any(|input| input.as_str() == name.as_str())
+            {
+                return Err(Error::message(format!("duplicate query input '{name}'")));
+            }
+            query_inputs.push(name);
+        }
         let mut match_features: Vec<&String> = Vec::with_capacity(profile.match_features.len());
         for expression in &profile.match_features {
             validate_rank_expression(expression, "match feature expression")?;
@@ -493,7 +555,7 @@ fn rank_profiles(schema: &Schema) -> String {
         );
         for (index, profile) in schema.rank_profiles.iter().enumerate() {
             let index = index + 1;
-            let property_count = 2 + profile.match_features.len();
+            let property_count = 2 + profile.match_features.len() + profile.query_inputs.len();
             output.push_str(&format!(
                 "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
                 quoted(&profile.name)
@@ -508,6 +570,14 @@ fn rank_profiles(schema: &Schema) -> String {
                     feature_index + 1,
                     feature_index + 1,
                     quoted(feature)
+                ));
+            }
+            for (query_index, (name, type_spec)) in profile.query_inputs.iter().enumerate() {
+                let property_index = profile.match_features.len() + 1 + query_index;
+                output.push_str(&format!(
+                    "rankprofile[{index}].fef.property[{property_index}].name \"vespa.type.query.{}\"\nrankprofile[{index}].fef.property[{property_index}].value {}\n",
+                    name,
+                    quoted(type_spec)
                 ));
             }
             let script_index = property_count - 1;

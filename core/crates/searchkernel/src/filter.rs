@@ -207,12 +207,20 @@ pub(crate) fn to_resolver_input(filter: &Filter) -> KernelResult<searchkernel_ir
                 .lower
                 .as_ref()
                 .map(|value| request_value(value, format!("filter.{field}.lower")))
-                .transpose()?,
+                .transpose()?
+                .map_or(
+                    searchkernel_ir::FilterBoundInput::Unbounded,
+                    searchkernel_ir::FilterBoundInput::Finite,
+                ),
             upper: bounds
                 .upper
                 .as_ref()
                 .map(|value| request_value(value, format!("filter.{field}.upper")))
-                .transpose()?,
+                .transpose()?
+                .map_or(
+                    searchkernel_ir::FilterBoundInput::Unbounded,
+                    searchkernel_ir::FilterBoundInput::Finite,
+                ),
             include_lower: bounds.include_lower,
             include_upper: bounds.include_upper,
         }),

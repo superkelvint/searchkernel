@@ -21,6 +21,8 @@
 #include <vespa/document/fieldvalue/boolfieldvalue.h>
 #include <vespa/document/fieldvalue/doublefieldvalue.h>
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
+#include <vespa/document/fieldvalue/tensorfieldvalue.h>
+#include <vespa/document/datatype/tensor_data_type.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
 #include <vespa/document/repo/newconfigbuilder.h>
@@ -93,6 +95,9 @@
 #include <vespa/vespalib/util/host_name.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
+#include <vespa/eval/eval/fast_value.h>
+#include <vespa/eval/eval/tensor_spec.h>
+#include <vespa/eval/eval/value_codec.h>
 #include <vespa/vespalib/util/shared_operation_throttler.h>
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
 
@@ -920,6 +925,7 @@ struct TextResult {
 struct OwnedValue {
     uint32_t kind = 0;
     std::string string;
+    std::string tensor_type;
     int64_t integer = 0;
     double floating = 0.0;
     bool boolean = false;
@@ -1005,9 +1011,39 @@ struct LocalSearchRequestState {
     std::vector<Sort> sort;
     std::vector<std::string> summary_fields;
     std::vector<std::pair<std::string, double>> query_features;
+    std::vector<std::pair<std::string, std::string>> query_tensors;
     std::vector<std::pair<std::string, std::string>> rank_properties;
     std::vector<LocalGroupingRequestState> groupings;
 };
+
+std::string encode_dense_tensor(const char *type_spec, const double *values,
+                                uint32_t value_count) {
+    if (!type_spec || !values) {
+        throw std::invalid_argument("dense tensor arguments must not be null");
+    }
+    validate_string_size(type_spec, MAX_RANK_PROFILE_BYTES, "tensor type spec");
+    const auto type = vespalib::eval::ValueType::from_spec(type_spec);
+    if (type.is_error() || type.count_indexed_dimensions() != 1 || type.count_mapped_dimensions() != 0) {
+        throw std::invalid_argument("nearest-neighbor tensors must have exactly one indexed dimension");
+    }
+    if (type.dense_subspace_size() != value_count) {
+        throw std::invalid_argument("dense tensor cell count does not match its type spec");
+    }
+    vespalib::eval::TensorSpec spec(type_spec);
+    const auto &dimension = type.dimensions().front();
+    for (uint32_t index = 0; index < value_count; ++index) {
+        if (!std::isfinite(values[index])) {
+            throw std::invalid_argument("tensor cell values must be finite");
+        }
+        spec.add({{dimension.name, vespalib::eval::TensorSpec::Label(index)}}, values[index]);
+    }
+    auto tensor = vespalib::eval::value_from_spec(
+        spec, vespalib::eval::FastValueBuilderFactory::get());
+    if (!tensor) throw std::runtime_error("could not construct dense tensor");
+    vespalib::nbostream stream;
+    vespalib::eval::encode_value(*tensor, stream);
+    return std::string(stream.data(), stream.size());
+}
 
 std::chrono::milliseconds remaining_search_timeout(
     std::chrono::milliseconds budget,
@@ -1092,6 +1128,7 @@ class EmbeddedEngine {
     struct ManifestField {
         std::string name;
         std::string type;
+        std::string tensor_type;
         bool index = false;
         bool attribute = false;
         bool summary = false;
@@ -1419,6 +1456,21 @@ class EmbeddedEngine {
             }
             return std::make_unique<document::BoolFieldValue>(value.boolean);
         }
+        if (field.type == "tensor") {
+            if (value.kind != SK_VALUE_TENSOR || value.tensor_type != field.tensor_type) {
+                throw std::invalid_argument("wrong tensor value type for field: " + field_name);
+            }
+            vespalib::nbostream stream(value.string.data(), value.string.size());
+            auto tensor = vespalib::eval::decode_value(
+                stream, vespalib::eval::FastValueBuilderFactory::get());
+            auto data_type = _doc_type->getField(field_name).getDataType().cast_tensor();
+            if (!data_type || !data_type->isAssignableType(tensor->type())) {
+                throw std::invalid_argument("tensor value does not match field type: " + field_name);
+            }
+            auto result = std::make_unique<document::TensorFieldValue>(*data_type);
+            *result = std::move(tensor);
+            return result;
+        }
         throw std::invalid_argument("unsupported document field type: " + field_name);
     }
 
@@ -1509,6 +1561,17 @@ class EmbeddedEngine {
             owned.kind = SK_VALUE_BOOLEAN;
             owned.boolean = value.getAsLong() != 0;
             break;
+        case document::FieldValue::Type::TENSOR: {
+            const auto *tensor_value = dynamic_cast<const document::TensorFieldValue *>(&value);
+            const auto *tensor = tensor_value ? tensor_value->getAsTensorPtr() : nullptr;
+            if (!tensor) throw std::invalid_argument("tensor field has no value: " + field_name);
+            owned.kind = SK_VALUE_TENSOR;
+            owned.tensor_type = tensor->type().to_spec();
+            vespalib::nbostream stream;
+            vespalib::eval::encode_value(*tensor, stream);
+            owned.string.assign(stream.data(), stream.size());
+            break;
+        }
         default:
             throw std::invalid_argument("unsupported retrieved document field type: " + field_name);
         }
@@ -1527,6 +1590,14 @@ class EmbeddedEngine {
             return actual.type() == document::FieldValue::Type::DOUBLE && actual.getAsDouble() == expected.floating;
         case SK_VALUE_BOOLEAN:
             return actual.type() == document::FieldValue::Type::BOOL && (actual.getAsLong() != 0) == expected.boolean;
+        case SK_VALUE_TENSOR: {
+            const auto *tensor_value = dynamic_cast<const document::TensorFieldValue *>(&actual);
+            const auto *tensor = tensor_value ? tensor_value->getAsTensorPtr() : nullptr;
+            if (!tensor || tensor->type().to_spec() != expected.tensor_type) return false;
+            vespalib::nbostream stream;
+            vespalib::eval::encode_value(*tensor, stream);
+            return std::string_view(stream.data(), stream.size()) == expected.string;
+        }
         default:
             return false;
         }
@@ -1944,6 +2015,7 @@ class EmbeddedEngine {
         if (type == "integer") return "INT64";
         if (type == "float") return "DOUBLE";
         if (type == "boolean") return "BOOL";
+        if (type == "tensor") return "TENSOR";
         throw std::invalid_argument("inconsistent generated configuration");
     }
 
@@ -1960,6 +2032,7 @@ class EmbeddedEngine {
         if (type == "integer") return "integer";
         if (type == "float") return "double";
         if (type == "boolean") return "bool";
+        if (type == "tensor") return "tensor";
         throw std::invalid_argument("inconsistent generated configuration");
     }
 
@@ -2011,6 +2084,9 @@ class EmbeddedEngine {
             require_config_value(values, prefix + "name", field.name);
             if (!attribute_type_matches(field.type, config_value(values, prefix + "datatype"))) {
                 throw std::invalid_argument("inconsistent generated configuration");
+            }
+            if (field.type == "tensor") {
+                require_config_value(values, prefix + "tensortype", field.tensor_type);
             }
             require_config_value(values, prefix + "collectiontype", "SINGLE");
             ++index;
@@ -2142,13 +2218,19 @@ class EmbeddedEngine {
                 throw std::invalid_argument("rank profile first-phase expression is empty");
             }
             for (size_t property = 1; property + 1 < property_count; ++property) {
-                require_config_value(values,
-                                     prefix + "fef.property[" + std::to_string(property) + "].name",
-                                     "vespa.match.feature");
-                if (config_value(values,
-                                 prefix + "fef.property[" + std::to_string(property) + "].value")
-                        .empty()) {
-                    throw std::invalid_argument("rank profile match feature expression is empty");
+                const auto property_prefix =
+                    prefix + "fef.property[" + std::to_string(property) + "].";
+                const auto property_name = config_value(values, property_prefix + "name");
+                if (property_name.rfind("vespa.type.query.", 0) == 0) {
+                    if (config_value(values, property_prefix + "value").empty()) {
+                        throw std::invalid_argument("rank profile query input type is empty");
+                    }
+                } else if (property_name == "vespa.match.feature") {
+                    if (config_value(values, property_prefix + "value").empty()) {
+                        throw std::invalid_argument("rank profile match feature expression is empty");
+                    }
+                } else {
+                    throw std::invalid_argument("unsupported rank profile property: " + property_name);
                 }
             }
             const auto script_index = property_count - 1;
@@ -2332,17 +2414,22 @@ class EmbeddedEngine {
             field_names.push_back(name);
             auto type = field["type"].asString().make_string();
             if (type != "text" && type != "string" && type != "integer" &&
-                type != "float" && type != "boolean") {
+                type != "float" && type != "boolean" && type != "tensor") {
                 throw std::invalid_argument("unsupported generated schema field type: " + type);
             }
             const bool indexed = field["index"].asBool();
             const bool attribute = field["attribute"].asBool();
             const bool summary = field["summary"].asBool();
-            if ((type == "text" && !indexed) ||
+            const auto tensor_type = is_slime_type(field["tensor_type"], vespalib::slime::STRING::ID)
+                                         ? field["tensor_type"].asString().make_string()
+                                         : std::string();
+            if ((type == "tensor" && (tensor_type.empty() || !attribute)) ||
+                (type == "text" && !indexed) ||
                 (type != "text" && (indexed || !attribute))) {
                 throw std::invalid_argument("generated schema field capabilities are invalid");
             }
-            manifest.fields.push_back({std::move(name), std::move(type), indexed, attribute, summary});
+            manifest.fields.push_back({std::move(name), std::move(type), std::move(tensor_type),
+                                       indexed, attribute, summary});
         }
         validate_generated_configuration(manifest, config_dir);
         return manifest;
@@ -2364,6 +2451,8 @@ class EmbeddedEngine {
                 document_type.addField(field.name, builder.doubleTypeRef());
             } else if (field.type == "boolean") {
                 document_type.addField(field.name, builder.boolTypeRef());
+            } else if (field.type == "tensor") {
+                document_type.addTensorField(field.name, field.tensor_type);
             } else {
                 throw std::invalid_argument("unsupported generated schema field type: " + field.type);
             }
@@ -2376,6 +2465,9 @@ class EmbeddedEngine {
         if (type == "integer") return legacy ? document::DataType::INT : document::DataType::LONG;
         if (type == "float") return document::DataType::DOUBLE;
         if (type == "boolean") return document::DataType::BOOL;
+        if (type == "tensor") {
+            throw std::invalid_argument("tensor fields are not supported in legacy state");
+        }
         throw std::invalid_argument("unsupported generated schema field type: " + type);
     }
 
@@ -3242,6 +3334,9 @@ public:
             encoded << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
             rank_properties.add(name, encoded.str());
         }
+        for (const auto &[name, value] : options.query_tensors) {
+            rank_properties.add("query(" + name + ")", value);
+        }
         for (const auto &[name, value] : options.rank_properties) {
             rank_properties.add(name, value);
         }
@@ -3644,6 +3739,12 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
     case SK_QUERY_FIELD_ATTRIBUTE:
         if (!metadata->attribute || metadata->type == "text") {
             throw std::invalid_argument("attribute operation requires an attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_TENSOR:
+        if (!metadata->attribute || metadata->type != "tensor") {
+            throw std::invalid_argument(
+                "nearest-neighbor operation requires a tensor attribute field: " + std::string(field));
         }
         break;
     default:
@@ -4083,6 +4184,23 @@ extern "C" SK_API int32_t sk_document_add_boolean(sk_document *document, const c
                                              uint32_t error_capacity) SK_NOEXCEPT {
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result; result.kind = SK_VALUE_BOOLEAN; result.boolean = value != 0; return result;
+    });
+}
+
+extern "C" SK_API int32_t sk_document_add_tensor_dense(
+    sk_document *document, const char *field, const char *type_spec,
+    const double *values, uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!type_spec || !values) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "document tensor arguments are invalid");
+    }
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_TENSOR;
+        result.tensor_type = type_spec;
+        result.string = encode_dense_tensor(type_spec, values, value_count);
+        return result;
     });
 }
 
@@ -4970,6 +5088,37 @@ extern "C" int32_t sk_generic_search_request_add_query_feature(
                   [&] { add_query_feature(*request, name, value); });
 }
 
+extern "C" int32_t sk_generic_search_request_add_query_tensor_dense(
+    sk_generic_search_request *request, const char *name, const char *type_spec,
+    const double *values, uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name || !type_spec || !values) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "query tensor arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_string_size(name, MAX_SCHEMA_IDENTIFIER_BYTES, "query tensor name");
+        if (*name == '\0') throw std::invalid_argument("query tensor name must not be empty");
+        if (std::find_if(request->query_tensors.begin(), request->query_tensors.end(),
+                         [name](const auto &entry) { return entry.first == name; }) !=
+            request->query_tensors.end()) {
+            throw std::invalid_argument("duplicate query tensor");
+        }
+        if (std::find_if(request->query_features.begin(), request->query_features.end(),
+                         [name](const auto &entry) { return entry.first == name; }) !=
+            request->query_features.end()) {
+            throw std::invalid_argument("query tensor collides with query feature");
+        }
+        if (std::find_if(request->rank_properties.begin(), request->rank_properties.end(),
+                         [name](const auto &entry) { return entry.first == name; }) !=
+            request->rank_properties.end()) {
+            throw std::invalid_argument("query tensor collides with rank property");
+        }
+        auto encoded = encode_dense_tensor(type_spec, values, value_count);
+        request->query_tensors.emplace_back(name, std::move(encoded));
+    });
+}
+
 extern "C" int32_t sk_generic_search_request_add_rank_property(
     sk_generic_search_request *request, const char *name, const char *value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -5688,6 +5837,25 @@ extern "C" int32_t sk_query_add_range(sk_query *query, const char *field,
         auto range = search::query::Range(make_query_range(
             lower_kind, lower_value, upper_kind, upper_value));
         query->builder.addRangeTerm(range, field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_nearest_neighbor(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !document_field || !query_tensor) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "nearest-neighbor arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(query_tensor);
+        if (*query_tensor == '\0') throw std::invalid_argument("query tensor must not be empty");
+        if (target_num_hits == 0) throw std::invalid_argument("nearest-neighbor target hits must be positive");
+        validate_query_field(*query, SK_QUERY_FIELD_TENSOR, document_field);
+        query->builder.add_nearest_neighbor_term(
+            query_tensor, document_field, query->allocate_term_id(), Weight(1),
+            target_num_hits, allow_approximate != 0);
     });
 }
 

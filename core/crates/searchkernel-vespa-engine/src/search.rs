@@ -1,0 +1,379 @@
+use crate::document::FieldValue;
+use crate::linguistics::LinguisticsOptions;
+use crate::query::{self, Query, Value};
+use crate::tensor::TensorValue;
+use crate::{Error, Result};
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingPlacement {
+    Default,
+    First,
+    Last,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortField {
+    pub field: String,
+    pub order: SortOrder,
+    pub missing: MissingPlacement,
+}
+
+impl SortField {
+    pub fn new(field: impl Into<String>, order: SortOrder) -> Self {
+        Self {
+            field: field.into(),
+            order,
+            missing: MissingPlacement::Default,
+        }
+    }
+
+    pub fn ascending(field: impl Into<String>) -> Self {
+        Self::new(field, SortOrder::Ascending)
+    }
+
+    pub fn descending(field: impl Into<String>) -> Self {
+        Self::new(field, SortOrder::Descending)
+    }
+
+    pub fn missing_first(mut self) -> Self {
+        self.missing = MissingPlacement::First;
+        self
+    }
+
+    pub fn missing_last(mut self) -> Self {
+        self.missing = MissingPlacement::Last;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SummaryRequest {
+    None,
+    Default,
+    Fields(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// The document source selected by a search request.
+pub enum Source {
+    /// Search all document sources configured by the engine.
+    All,
+    /// Search one configured document source by name.
+    Named(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TotalHitsRelation {
+    Exact,
+    LowerBound,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hit {
+    pub document_id: String,
+    pub score: f64,
+    pub fields: BTreeMap<String, FieldValue>,
+    pub match_features: BTreeMap<String, f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchResult {
+    pub total_hits: u64,
+    pub total_hits_relation: TotalHitsRelation,
+    pub hits: Vec<Hit>,
+    pub facets: Vec<GroupingResult>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchRequest {
+    pub query: Query,
+    pub source: Source,
+    pub rank_profile: String,
+    pub query_features: Vec<(String, f64)>,
+    pub query_inputs: Vec<(String, QueryInput)>,
+    pub rank_properties: Vec<(String, String)>,
+    pub limit: u32,
+    pub offset: u32,
+    pub sort: Vec<SortField>,
+    pub summary: SummaryRequest,
+    pub language: LinguisticsOptions,
+    pub facets: Vec<FacetRequest>,
+    pub timeout: Duration,
+}
+
+impl SearchRequest {
+    pub fn new(query: Query) -> Self {
+        Self {
+            query,
+            source: Source::All,
+            rank_profile: "default".to_owned(),
+            query_features: Vec::new(),
+            query_inputs: Vec::new(),
+            rank_properties: Vec::new(),
+            limit: 10,
+            offset: 0,
+            sort: Vec::new(),
+            summary: SummaryRequest::None,
+            language: LinguisticsOptions::default(),
+            facets: Vec::new(),
+            timeout: Duration::from_secs(60),
+        }
+    }
+
+    /// Parse YQL while retaining its document-source selection.
+    pub fn from_yql(yql: &str) -> Result<Self, Error> {
+        let parsed = query::parse_yql(yql)?;
+        query::validate_query(&parsed.query)?;
+        let source = if parsed.source == "*" {
+            Source::All
+        } else {
+            Source::Named(parsed.source)
+        };
+        Ok(Self::new(parsed.query).source(source))
+    }
+
+    pub fn source(mut self, source: Source) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// Limit the time the native engine may spend executing this search.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn rank_profile(mut self, rank_profile: impl Into<String>) -> Self {
+        self.rank_profile = rank_profile.into();
+        self
+    }
+
+    pub fn query_feature(mut self, name: impl Into<String>, value: f64) -> Self {
+        self.query_features.push((name.into(), value));
+        self
+    }
+
+    pub fn input(mut self, name: impl Into<String>, input: QueryInput) -> Self {
+        self.query_inputs.push((name.into(), input));
+        self
+    }
+
+    pub fn query_tensor(mut self, name: impl Into<String>, tensor: TensorValue) -> Self {
+        self.query_inputs
+            .push((name.into(), QueryInput::Literal(tensor)));
+        self
+    }
+
+    pub fn rank_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.rank_properties.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn limit(mut self, limit: u32) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    pub fn offset(mut self, offset: u32) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn sort(mut self, sort: SortField) -> Self {
+        self.sort.push(sort);
+        self
+    }
+
+    pub fn fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.summary = SummaryRequest::Fields(fields.into_iter().map(Into::into).collect());
+        self
+    }
+
+    pub fn summary(mut self, summary: SummaryRequest) -> Self {
+        self.summary = summary;
+        self
+    }
+
+    pub fn facet(mut self, facet: FacetRequest) -> Self {
+        self.facets.push(facet);
+        self
+    }
+
+    pub fn language(mut self, language: LinguisticsOptions) -> Self {
+        self.language = language;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueryInput {
+    Literal(TensorValue),
+    Expression(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FacetRequest {
+    pub field: String,
+    pub max_groups: u32,
+    pub order: GroupingOrder,
+}
+
+impl FacetRequest {
+    pub fn new(field: impl Into<String>, max_groups: u32, order: GroupingOrder) -> Self {
+        Self {
+            field: field.into(),
+            max_groups,
+            order,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Aggregation {
+    Sum(String),
+    Min(String),
+    Max(String),
+    Average(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupingOrder {
+    None,
+    CountAscending,
+    CountDescending,
+    ValueAscending,
+    ValueDescending,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupingRequest {
+    pub query: Query,
+    pub group_by: String,
+    pub aggregations: Vec<Aggregation>,
+    pub max_groups: Option<u32>,
+    pub order: GroupingOrder,
+}
+
+impl GroupingRequest {
+    pub fn new(query: Query, group_by: impl Into<String>) -> Self {
+        Self {
+            query,
+            group_by: group_by.into(),
+            aggregations: Vec::new(),
+            max_groups: None,
+            order: GroupingOrder::None,
+        }
+    }
+
+    pub fn aggregation(mut self, aggregation: Aggregation) -> Self {
+        self.aggregations.push(aggregation);
+        self
+    }
+
+    pub fn max_groups(mut self, max_groups: u32) -> Self {
+        self.max_groups = Some(max_groups);
+        self
+    }
+
+    pub fn order(mut self, order: GroupingOrder) -> Self {
+        self.order = order;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AggregateValue {
+    Integer(i64),
+    Float(f64),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
+    pub key: Value,
+    pub count: u64,
+    pub aggregations: Vec<AggregateValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupingResult {
+    pub groups: Vec<Group>,
+}
+
+const RESERVED_RANK_PROPERTIES: &[&str] = &["vespa.matching.numthreadspersearch"];
+
+pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<()> {
+    let mut query_feature_names = BTreeSet::new();
+    for (name, value) in &request.query_features {
+        if name.is_empty() {
+            return Err(Error::message("query feature name must not be empty"));
+        }
+        if name.len() > 256 {
+            return Err(Error::message("query feature name is too long"));
+        }
+        if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
+            return Err(Error::message(format!(
+                "query feature '{name}' is reserved by Search Kernel"
+            )));
+        }
+        if !value.is_finite() {
+            return Err(Error::message("query feature value must be finite"));
+        }
+        if !query_feature_names.insert(name) {
+            return Err(Error::message(format!("duplicate query feature '{name}'")));
+        }
+    }
+    let mut query_input_names = BTreeSet::new();
+    for (name, input) in &request.query_inputs {
+        if name.is_empty() {
+            return Err(Error::message("query input name must not be empty"));
+        }
+        if !query_input_names.insert(name) {
+            return Err(Error::message("duplicate query input"));
+        }
+        match input {
+            QueryInput::Literal(tensor) => tensor.validate().map_err(Error::message)?,
+            QueryInput::Expression(expression) if expression.trim().is_empty() => {
+                return Err(Error::message("query input expression must not be empty"));
+            }
+            QueryInput::Expression(_) => {}
+        }
+    }
+
+    let mut rank_property_names = BTreeSet::new();
+    for (name, value) in &request.rank_properties {
+        if name.is_empty() || name.len() > 256 {
+            return Err(Error::message(
+                "rank property name must not be empty or too long",
+            ));
+        }
+        if RESERVED_RANK_PROPERTIES.contains(&name.as_str()) {
+            return Err(Error::message(format!(
+                "rank property '{name}' is reserved by Search Kernel"
+            )));
+        }
+        if value.is_empty() {
+            return Err(Error::message("rank property value must not be empty"));
+        }
+        if !rank_property_names.insert(name) {
+            return Err(Error::message(format!("duplicate rank property '{name}'")));
+        }
+        if query_feature_names.contains(name) {
+            return Err(Error::message(format!(
+                "rank property collision for key '{name}'"
+            )));
+        }
+    }
+    Ok(())
+}

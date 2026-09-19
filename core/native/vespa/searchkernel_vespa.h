@@ -45,11 +45,13 @@ extern "C" {
 #define SK_QUERY_FIELD_FLOAT 4U
 #define SK_QUERY_FIELD_BOOLEAN 5U
 #define SK_QUERY_FIELD_ATTRIBUTE 6U
+#define SK_QUERY_FIELD_TENSOR 7U
 
 #define SK_VALUE_STRING 1U
 #define SK_VALUE_INTEGER 2U
 #define SK_VALUE_FLOAT 3U
 #define SK_VALUE_BOOLEAN 4U
+#define SK_VALUE_TENSOR 5U
 
 #define SK_SORT_ASCENDING 1U
 #define SK_SORT_DESCENDING 2U
@@ -110,8 +112,8 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* This ABI revision reflects removal of all public aggregate structs. */
-#define SK_NATIVE_ABI_VERSION 5U
+/* This ABI revision adds tensor values and nearest-neighbor query support. */
+#define SK_NATIVE_ABI_VERSION 6U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -146,6 +148,10 @@ SK_API int32_t sk_document_add_float(sk_document *document, const char *field,
 SK_API int32_t sk_document_add_boolean(sk_document *document, const char *field,
                                        uint8_t value, uint8_t *out_error,
                                        uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_tensor_dense(
+    sk_document *document, const char *field, const char *type_spec,
+    const double *values, uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_annotate_text(
     sk_document *document, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
@@ -341,6 +347,10 @@ SK_API int32_t sk_query_add_range(sk_query *query, const char *field,
                                   uint32_t upper_kind, int64_t upper_value,
                                   uint8_t *out_error,
                                   uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_nearest_neighbor(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_query_destroy(sk_query *query) SK_NOEXCEPT;
 SK_API int32_t sk_engine_search_query(const sk_engine *engine,
                                       const sk_query *query,
@@ -422,6 +432,10 @@ SK_API int32_t sk_generic_search_request_add_summary_field(
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_query_feature(
     sk_generic_search_request *request, const char *name, double value,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_request_add_query_tensor_dense(
+    sk_generic_search_request *request, const char *name,
+    const char *type_spec, const double *values, uint32_t value_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_rank_property(
     sk_generic_search_request *request, const char *name, const char *value,

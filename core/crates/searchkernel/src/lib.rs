@@ -6,6 +6,7 @@ mod error;
 mod filter;
 mod index;
 mod patch;
+#[cfg(feature = "native")]
 mod portable_definition;
 mod result;
 mod schema;
@@ -22,7 +23,8 @@ pub use result::{
 };
 pub use schema::{Analyzer, Field, IndexDefinition, SearchField};
 pub use search::{
-    Facet, FacetSort, InspectedQuery, MissingPlacement, Ranking, SearchBuilder, Sort, SortDirection,
+    Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,
+    Sort, SortDirection,
 };
 
 /// Internal constructor namespace used by backend-injected tests.

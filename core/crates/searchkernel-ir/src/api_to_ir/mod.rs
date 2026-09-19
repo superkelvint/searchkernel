@@ -18,8 +18,9 @@ pub(crate) use ranking::{ranking_request_to_ir, ranking_to_ir};
 pub use resolve::{
     resolve_analyze, resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
     resolve_projection, resolve_search, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
-    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterInput, GetInput,
-    PatchOperationInput, RankingInput, SearchFieldInput, SearchIntent, SortInput,
+    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
+    FilterInput, GetInput, PatchOperationInput, RankingInput, SearchFieldInput, SearchIntent,
+    SortInput,
 };
 pub use schema::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_rust_index_definition,

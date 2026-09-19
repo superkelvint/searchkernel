@@ -335,11 +335,10 @@ impl Index {
                     .iter()
                     .filter_map(facet_from_grouping)
                     .collect(),
-                ranking: match normalized.ranking() {
-                    searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => {
-                        Ranking::default_relevance_v1()
-                    }
-                    searchkernel_ir::RankingPolicyIr::Bm25 => Ranking::bm25(),
+                ranking: match normalized.ranking_request().profile.as_str() {
+                    "default" => Ranking::default_relevance_v1(),
+                    "bm25" => Ranking::bm25(),
+                    profile => Ranking::named(profile),
                 },
                 limit: normalized.limit(),
                 offset: normalized.offset(),

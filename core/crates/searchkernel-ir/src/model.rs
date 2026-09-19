@@ -1474,6 +1474,11 @@ impl IndexDefinitionIr {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn set_rank_profiles(&mut self, profiles: Vec<RankProfileDefinitionIr>) {
+        self.rank_profiles = profiles;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
         self.imported_fields = fields;
     }
@@ -1710,6 +1715,25 @@ impl SearchRequestIr {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ranking_request(
+        mut self,
+        profile: impl Into<String>,
+        properties: std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        self.ranking_request = RankingRequestIr {
+            profile: profile.into(),
+            properties,
+        };
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_inputs(mut self, inputs: std::collections::BTreeMap<String, QueryInputIr>) -> Self {
+        self.inputs = inputs;
         self
     }
 

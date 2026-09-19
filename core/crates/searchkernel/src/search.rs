@@ -117,10 +117,11 @@ pub struct Ranking {
     pub(crate) kind: RankingKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum RankingKind {
     DefaultRelevanceV1,
     Bm25,
+    Named(String),
 }
 
 impl Ranking {
@@ -136,6 +137,56 @@ impl Ranking {
         Self {
             kind: RankingKind::Bm25,
         }
+    }
+
+    /// Select a configured Vespa rank profile by name.
+    pub fn named(profile: impl Into<String>) -> Self {
+        Self {
+            kind: RankingKind::Named(profile.into()),
+        }
+    }
+
+    /// Alias for [`Ranking::named`].
+    pub fn profile(profile: impl Into<String>) -> Self {
+        Self::named(profile)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+/// A scalar value supplied to a native Vespa query feature.
+pub enum QueryInputValue {
+    Int64(i64),
+    UInt64(u64),
+    Float64(f64),
+}
+
+impl From<i64> for QueryInputValue {
+    fn from(value: i64) -> Self {
+        Self::Int64(value)
+    }
+}
+
+impl From<u64> for QueryInputValue {
+    fn from(value: u64) -> Self {
+        Self::UInt64(value)
+    }
+}
+
+impl From<f64> for QueryInputValue {
+    fn from(value: f64) -> Self {
+        Self::Float64(value)
+    }
+}
+
+impl From<i32> for QueryInputValue {
+    fn from(value: i32) -> Self {
+        Self::Int64(i64::from(value))
+    }
+}
+
+impl From<u32> for QueryInputValue {
+    fn from(value: u32) -> Self {
+        Self::UInt64(u64::from(value))
     }
 }
 
@@ -171,6 +222,8 @@ pub struct SearchBuilder {
     pub(crate) sorts: Vec<Sort>,
     pub(crate) facets: Vec<Facet>,
     pub(crate) ranking: Option<Ranking>,
+    pub(crate) query_inputs: std::collections::BTreeMap<String, QueryInputValue>,
+    pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
     pub(crate) projection: Option<Vec<String>>,
     pub(crate) highlighting: Option<Vec<String>>,
     pub(crate) language: Option<String>,
@@ -189,6 +242,8 @@ impl SearchBuilder {
             sorts: Vec::new(),
             facets: Vec::new(),
             ranking: None,
+            query_inputs: std::collections::BTreeMap::new(),
+            rank_properties: std::collections::BTreeMap::new(),
             projection: None,
             highlighting: None,
             language: None,
@@ -239,6 +294,22 @@ impl SearchBuilder {
     /// Select the ranking policy for the search.
     pub fn ranking(mut self, ranking: Ranking) -> Self {
         self.ranking = Some(ranking);
+        self
+    }
+
+    /// Supply a finite scalar query feature to the selected rank profile.
+    pub fn query_input(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<QueryInputValue>,
+    ) -> Self {
+        self.query_inputs.insert(name.into(), value.into());
+        self
+    }
+
+    /// Supply a request rank property to the selected rank profile.
+    pub fn rank_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.rank_properties.insert(name.into(), value.into());
         self
     }
 
@@ -343,10 +414,23 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
             }),
         })
         .collect();
-    let ranking = request.ranking.as_ref().map(|ranking| match ranking.kind {
+    let ranking = request.ranking.as_ref().map(|ranking| match &ranking.kind {
         RankingKind::DefaultRelevanceV1 => searchkernel_ir::RankingInput::DefaultRelevanceV1,
         RankingKind::Bm25 => searchkernel_ir::RankingInput::Bm25,
+        RankingKind::Named(profile) => searchkernel_ir::RankingInput::Named(profile.clone()),
     });
+    let query_inputs = request
+        .query_inputs
+        .iter()
+        .map(|(name, value)| {
+            let value = match value {
+                QueryInputValue::Int64(value) => searchkernel_ir::RequestValueIr::Int64(*value),
+                QueryInputValue::UInt64(value) => searchkernel_ir::RequestValueIr::UInt64(*value),
+                QueryInputValue::Float64(value) => searchkernel_ir::RequestValueIr::Float64(*value),
+            };
+            (name.clone(), value)
+        })
+        .collect();
     Ok(searchkernel_ir::SearchIntent {
         query: request.query.clone(),
         search_fields,
@@ -354,6 +438,8 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         sorts,
         facets,
         ranking,
+        query_inputs,
+        rank_properties: request.rank_properties.clone(),
         projection: request.projection.clone(),
         highlighting: request.highlighting.clone(),
         language: request.language.clone(),

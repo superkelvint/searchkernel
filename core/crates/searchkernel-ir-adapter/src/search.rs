@@ -2,7 +2,8 @@
 
 use crate::{analysis_options, unsupported};
 use searchkernel_ir::{
-    FilterIr, PortableError, QueryIr, RangeIr, Result, ScalarValueIr, SearchRequestIr,
+    FilterIr, PortableError, QueryInputIr, QueryIr, RangeIr, RequestValueIr, Result, ScalarValueIr,
+    SearchRequestIr,
 };
 use searchkernel_vespa_engine::{
     FacetRequest, Query, SearchRequest, SortField, SortOrder, SummaryRequest, Value as VespaValue,
@@ -35,8 +36,14 @@ pub(crate) fn lower_search_options(
     let mut m_request = SearchRequest::new(query)
         .limit(request.limit())
         .offset(request.offset())
-        .rank_profile(ranking_profile(request.ranking())?)
+        .rank_profile(request.ranking_request().profile.clone())
         .language(language);
+    for (name, input) in request.inputs() {
+        m_request = m_request.query_feature(name, query_feature_value(name, input)?);
+    }
+    for (name, value) in &request.ranking_request().properties {
+        m_request = m_request.rank_property(name, value);
+    }
     if let Some(timeout) = request.timeout() {
         m_request = m_request.timeout(timeout);
     }
@@ -193,30 +200,7 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
 
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     lower_facet_groupings(request.grouping())?;
-    if !request.inputs().is_empty() {
-        return Err(PortableError::unsupported(
-            "query_inputs_not_supported",
-            Some("inputs"),
-            "the current native adapter does not expose Vespa query inputs",
-        ));
-    }
-    if !request.ranking_request().properties.is_empty() {
-        return Err(PortableError::unsupported(
-            "ranking_properties_not_supported",
-            Some("ranking.properties"),
-            "the current native adapter does not expose Vespa rank properties",
-        ));
-    }
-    if !matches!(
-        request.ranking_request().profile.as_str(),
-        "" | "default" | "default-relevance" | "bm25"
-    ) {
-        return Err(PortableError::unsupported(
-            "ranking_profile_not_supported",
-            Some("ranking.profile"),
-            "the current native adapter supports only the default and bm25 rank profiles",
-        ));
-    }
+    validate_ranking_inputs(request)?;
     if !request.properties().is_empty() {
         return Err(PortableError::unsupported(
             "query_properties_not_supported",
@@ -298,13 +282,106 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn ranking_profile(ranking: searchkernel_ir::RankingPolicyIr) -> Result<&'static str> {
     match ranking {
         searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1 => Ok("default"),
-        searchkernel_ir::RankingPolicyIr::Bm25 => Err(PortableError::unsupported(
-            "bm25_ranking_not_supported",
-            Some("ranking"),
-            "BM25 ranking requires the M10/I7 ranking integration surface",
+        searchkernel_ir::RankingPolicyIr::Bm25 => Ok("bm25"),
+    }
+}
+
+const RESERVED_RANK_PROPERTY: &str = "vespa.matching.numthreadspersearch";
+const MAX_RANK_INPUT_NAME_BYTES: usize = 256;
+
+fn validate_ranking_inputs(request: &SearchRequestIr) -> Result<()> {
+    for (name, input) in request.inputs() {
+        query_feature_value(name, input)?;
+        if name.is_empty() || name.len() > MAX_RANK_INPUT_NAME_BYTES {
+            return Err(PortableError::invalid(
+                "invalid_query_feature",
+                Some(format!("inputs.{name}")),
+                "query feature name must be non-empty and at most 256 bytes",
+            ));
+        }
+        if name == RESERVED_RANK_PROPERTY {
+            return Err(PortableError::invalid(
+                "invalid_query_feature",
+                Some(format!("inputs.{name}")),
+                "the Search Kernel-owned rank property is not caller-configurable",
+            ));
+        }
+    }
+    for (name, value) in &request.ranking_request().properties {
+        if name.is_empty() || name.len() > MAX_RANK_INPUT_NAME_BYTES || value.is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_rank_property",
+                Some(format!("ranking.properties.{name}")),
+                "rank property names must be non-empty and at most 256 bytes, and values must be non-empty",
+            ));
+        }
+        if name == RESERVED_RANK_PROPERTY {
+            return Err(PortableError::invalid(
+                "invalid_rank_property",
+                Some(format!("ranking.properties.{name}")),
+                "the Search Kernel-owned rank property is not caller-configurable",
+            ));
+        }
+        if request.inputs().contains_key(name) {
+            return Err(PortableError::invalid(
+                "rank_property_collision",
+                Some(format!("ranking.properties.{name}")),
+                format!("rank property `{name}` collides with a query feature"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
+    let QueryInputIr::Literal(value) = input else {
+        return Err(PortableError::unsupported(
+            "query_input_expression_not_supported",
+            Some(format!("inputs.{name}")),
+            "expression query inputs require a container-aware Vespa execution path",
+        ));
+    };
+    match value {
+        RequestValueIr::Float64(value) if value.is_finite() => Ok(*value),
+        RequestValueIr::Int64(value) => {
+            let converted = *value as f64;
+            if converted as i64 == *value {
+                Ok(converted)
+            } else {
+                Err(PortableError::unsupported(
+                    "query_input_precision_loss",
+                    Some(format!("inputs.{name}")),
+                    "the integer query input cannot be represented losslessly as native f64",
+                ))
+            }
+        }
+        RequestValueIr::UInt64(value) => {
+            let converted = *value as f64;
+            if converted as u64 == *value {
+                Ok(converted)
+            } else {
+                Err(PortableError::unsupported(
+                    "query_input_precision_loss",
+                    Some(format!("inputs.{name}")),
+                    "the integer query input cannot be represented losslessly as native f64",
+                ))
+            }
+        }
+        RequestValueIr::Float64(_) | RequestValueIr::NonFiniteFloat(_) => {
+            Err(PortableError::invalid(
+                "invalid_query_input",
+                Some(format!("inputs.{name}")),
+                "query feature values must be finite",
+            ))
+        }
+        _ => Err(PortableError::unsupported(
+            "query_input_value_not_supported",
+            Some(format!("inputs.{name}")),
+            "only finite scalar numeric query inputs are executable by the native f64 feature interface",
         )),
     }
 }

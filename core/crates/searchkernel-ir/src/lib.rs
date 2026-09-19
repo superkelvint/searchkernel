@@ -20,8 +20,8 @@ pub use api_to_ir::{
     resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
     resolve_projection, resolve_rust_index_definition, resolve_search, resolve_upsert,
     AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput, FacetInput,
-    FacetSortInput, FilterInput, GetInput, IndexContext, PatchOperationInput, RankingInput,
-    RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
+    FacetSortInput, FilterBoundInput, FilterInput, GetInput, IndexContext, PatchOperationInput,
+    RankingInput, RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
     RustSearchFieldInput, SearchFieldInput, SearchIntent, SortInput, WriteRequestRef,
 };
 pub use backend::Backend;

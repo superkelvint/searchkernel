@@ -1,4 +1,5 @@
 use super::*;
+use crate::api_to_ir::resolve::resolve_filter;
 use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable, FilterBindings};
 use crate::model::*;
 use searchkernel_filter::parse_filter;
@@ -167,20 +168,14 @@ impl IndexContext {
                         "filter expression must select an operation",
                     )
                 })?;
-                let f = self.query_field(
-                    n.field().and_then(|field| field.path()).unwrap_or_default(),
-                    format!("{path}.exists.field"),
-                )?;
-                if !f.capabilities.filterable {
-                    return Err(invalid(
-                        "field_not_filterable",
-                        Some(format!("{path}.exists.field")),
-                        "exists requires a filterable field",
-                    ));
-                }
-                Ok(FilterIr::Exists {
-                    field: f.name.clone(),
-                })
+                let input = FilterInput::Exists {
+                    field: n
+                        .field()
+                        .and_then(|field| field.path())
+                        .unwrap_or_default()
+                        .to_owned(),
+                };
+                resolve_filter(self, &input, &format!("{path}.exists"))
             }
             api::FilterExprKind::FilterIn => self
                 .in_to_ir_at(
@@ -206,17 +201,6 @@ impl IndexContext {
         c: api::FilterComparison<'_>,
         path: &str,
     ) -> Result<ComparisonIr> {
-        let f = self.query_field(
-            c.field().and_then(|field| field.path()).unwrap_or_default(),
-            format!("{path}.field"),
-        )?;
-        if !f.capabilities.filterable {
-            return Err(invalid(
-                "field_not_filterable",
-                Some(format!("{path}.field")),
-                "comparison requires a filterable field",
-            ));
-        }
         let op = match c.op().0 {
             1 => ComparisonOp::Eq,
             2 => ComparisonOp::Ne,
@@ -232,17 +216,6 @@ impl IndexContext {
                 ))
             }
         };
-        if matches!(
-            op,
-            ComparisonOp::Lt | ComparisonOp::Lte | ComparisonOp::Gt | ComparisonOp::Gte
-        ) && !matches!(f.kind(), FieldKind::Int64 | FieldKind::Float64)
-        {
-            return Err(invalid(
-                "invalid_filter",
-                Some(format!("{path}.op")),
-                "ordered comparison requires a numeric field",
-            ));
-        }
         let v = c.value().ok_or_else(|| {
             invalid(
                 "missing_value",
@@ -250,38 +223,25 @@ impl IndexContext {
                 "comparison requires a value",
             )
         })?;
-        Ok(ComparisonIr {
-            field: f.name.clone(),
+        let input = FilterInput::Comparison {
+            field: c
+                .field()
+                .and_then(|field| field.path())
+                .unwrap_or_default()
+                .to_owned(),
             op,
-            value: scalar_to_ir(v, f.kind(), format!("{path}.value"))?,
-        })
+            value: RequestValueIr::from_api(v, format!("{path}.value"))?,
+        };
+        match resolve_filter(self, &input, path)? {
+            FilterIr::Comparison(value) => Ok(value),
+            _ => unreachable!("comparison resolver returned a non-comparison filter"),
+        }
     }
     pub(crate) fn in_to_ir_at(
         &self,
         input: api::FilterIn<'_>,
         path: &str,
     ) -> Result<(FieldName, Vec<ScalarValueIr>)> {
-        let f = self.query_field(
-            input
-                .field()
-                .and_then(|field| field.path())
-                .unwrap_or_default(),
-            format!("{path}.field"),
-        )?;
-        if !f.capabilities.filterable {
-            return Err(invalid(
-                "field_not_filterable",
-                Some(format!("{path}.field")),
-                "IN requires a filterable field",
-            ));
-        }
-        if !matches!(f.kind(), FieldKind::Keyword | FieldKind::Int64) {
-            return Err(invalid(
-                "invalid_filter",
-                Some(path),
-                "IN requires a Keyword or Int64 field",
-            ));
-        }
         let values = input
             .values()
             .map(|values| {
@@ -289,83 +249,63 @@ impl IndexContext {
                     .iter()
                     .enumerate()
                     .map(|(index, value)| {
-                        scalar_to_ir(value, f.kind(), format!("{path}.values[{index}]"))
+                        RequestValueIr::from_api(value, format!("{path}.values[{index}]"))
                     })
                     .collect::<Result<Vec<_>>>()
             })
             .transpose()?
             .unwrap_or_default();
-        if values.is_empty() {
-            return Err(invalid(
-                "empty_in",
-                Some(path),
-                "IN requires at least one value",
-            ));
+        let normalized = FilterInput::In {
+            field: input
+                .field()
+                .and_then(|field| field.path())
+                .unwrap_or_default()
+                .to_owned(),
+            values,
+        };
+        match resolve_filter(self, &normalized, path)? {
+            FilterIr::In { field, values } => Ok((field, values)),
+            _ => unreachable!("IN resolver returned a non-IN filter"),
         }
-        Ok((f.name.clone(), values))
     }
     pub(crate) fn range_to_ir_at(&self, r: api::FilterRange<'_>, path: &str) -> Result<RangeIr> {
-        let f = self.query_field(
-            r.field().and_then(|field| field.path()).unwrap_or_default(),
-            format!("{path}.field"),
-        )?;
-        if !f.capabilities.filterable {
-            return Err(invalid(
-                "field_not_filterable",
-                Some(format!("{path}.field")),
-                "range requires a filterable field",
-            ));
+        let input = FilterInput::Range {
+            field: r
+                .field()
+                .and_then(|field| field.path())
+                .unwrap_or_default()
+                .to_owned(),
+            lower: filter_range_bound_to_input(r.lower(), &format!("{path}.lower"))?,
+            upper: filter_range_bound_to_input(r.upper(), &format!("{path}.upper"))?,
+            include_lower: r.include_lower().map(|value| value.value()),
+            include_upper: r.include_upper().map(|value| value.value()),
+        };
+        match resolve_filter(self, &input, path)? {
+            FilterIr::Range(value) => Ok(value),
+            _ => unreachable!("range resolver returned a non-range filter"),
         }
-        if !matches!(f.kind(), FieldKind::Int64 | FieldKind::Float64) {
-            return Err(invalid(
-                "invalid_filter",
-                Some(path),
-                "range requires an Int64 or Float64 field",
-            ));
-        }
-        let lower = filter_range_bound_to_ir(r.lower(), f.kind(), &format!("{path}.lower"))?;
-        let upper = filter_range_bound_to_ir(r.upper(), f.kind(), &format!("{path}.upper"))?;
-        if matches!(lower, FilterRangeBoundIr::Unbounded)
-            && matches!(upper, FilterRangeBoundIr::Unbounded)
-        {
-            return Err(invalid(
-                "invalid_range",
-                Some(path),
-                "range requires at least one bound",
-            ));
-        }
-        if matches!(lower, FilterRangeBoundIr::Unbounded)
-            && r.include_lower().is_some_and(|v| v.value())
-        {
-            return Err(invalid(
-                "invalid_range",
-                Some(format!("{path}.include_lower")),
-                "lower inclusion requires a lower bound",
-            ));
-        }
-        if matches!(upper, FilterRangeBoundIr::Unbounded)
-            && r.include_upper().is_some_and(|v| v.value())
-        {
-            return Err(invalid(
-                "invalid_range",
-                Some(format!("{path}.include_upper")),
-                "upper inclusion requires an upper bound",
-            ));
-        }
-        if filter_bound_greater(&lower, &upper) {
-            return Err(invalid(
-                "invalid_range",
-                Some(path),
-                "range lower bound must not exceed upper bound",
-            ));
-        }
-        Ok(RangeIr {
-            field: f.name.clone(),
-            lower,
-            upper,
-            include_lower: r.include_lower().is_none_or(|v| v.value()),
-            include_upper: r.include_upper().is_none_or(|v| v.value()),
-        })
+    }
+}
+
+fn filter_range_bound_to_input(
+    bound: Option<api::RangeBound<'_>>,
+    path: &str,
+) -> Result<FilterBoundInput> {
+    let Some(bound) = bound else {
+        return Ok(FilterBoundInput::Unbounded);
+    };
+    match bound.bound_type() {
+        api::RangeBoundKind::FiniteRangeBound => bound
+            .bound_as_finite_range_bound()
+            .and_then(|value| value.value())
+            .ok_or_else(|| invalid("invalid_range", Some(path), "finite range bound is missing"))
+            .and_then(|value| {
+                RequestValueIr::from_api(value, path.to_owned()).map(FilterBoundInput::Finite)
+            }),
+        api::RangeBoundKind::NegativeInfinityBound => Ok(FilterBoundInput::NegativeInfinity),
+        api::RangeBoundKind::PositiveInfinityBound => Ok(FilterBoundInput::PositiveInfinity),
+        api::RangeBoundKind::UnboundedRangeBound => Ok(FilterBoundInput::Unbounded),
+        _ => Err(invalid("invalid_range", Some(path), "unknown range bound")),
     }
 }
 
@@ -398,63 +338,6 @@ pub(crate) fn decorate_filter_clause_error(
         }
     }
     error
-}
-
-pub(crate) fn filter_range_bound_to_ir<'a>(
-    bound: Option<api::RangeBound<'a>>,
-    kind: FieldKind,
-    path: &str,
-) -> Result<FilterRangeBoundIr> {
-    let Some(bound) = bound else {
-        return Ok(FilterRangeBoundIr::Unbounded);
-    };
-    match bound.bound_type() {
-        api::RangeBoundKind::FiniteRangeBound => bound
-            .bound_as_finite_range_bound()
-            .and_then(|value| value.value())
-            .ok_or_else(|| invalid("invalid_range", Some(path), "finite range bound is missing"))
-            .and_then(|value| {
-                RequestValueIr::from_api(value, path.to_owned())
-                    .and_then(|value| scalar_request_value_to_ir(value, kind, path))
-                    .map(FilterRangeBoundIr::Finite)
-            }),
-        api::RangeBoundKind::NegativeInfinityBound => Ok(FilterRangeBoundIr::NegativeInfinity),
-        api::RangeBoundKind::PositiveInfinityBound => Ok(FilterRangeBoundIr::PositiveInfinity),
-        api::RangeBoundKind::UnboundedRangeBound => Ok(FilterRangeBoundIr::Unbounded),
-        _ => Err(invalid("invalid_range", Some(path), "unknown range bound")),
-    }
-}
-
-pub(crate) fn scalar_request_value_to_ir(
-    value: RequestValueIr,
-    kind: FieldKind,
-    path: &str,
-) -> Result<ScalarValueIr> {
-    let scalar = match value {
-        RequestValueIr::Bool(value) => ScalarValueIr::Bool(value),
-        RequestValueIr::Int64(value) => ScalarValueIr::Int64(value),
-        RequestValueIr::Float64(value) if value.is_finite() => ScalarValueIr::Float64(value),
-        RequestValueIr::String(value) => ScalarValueIr::String(value),
-        _ => {
-            return Err(invalid(
-                "type_mismatch",
-                Some(path),
-                "range bound must be a scalar value",
-            ))
-        }
-    };
-    if !matches!(
-        (&scalar, kind),
-        (ScalarValueIr::Int64(_), FieldKind::Int64)
-            | (ScalarValueIr::Float64(_), FieldKind::Float64)
-    ) {
-        return Err(invalid(
-            "type_mismatch",
-            Some(path),
-            "range bound type does not match field kind",
-        ));
-    }
-    Ok(scalar)
 }
 
 pub(crate) fn filter_bound_greater(lower: &FilterRangeBoundIr, upper: &FilterRangeBoundIr) -> bool {

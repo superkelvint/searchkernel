@@ -1,4 +1,8 @@
 use super::*;
+use crate::api_to_ir::resolve::{
+    resolve_highlighting, resolve_language, resolve_pagination, resolve_search_fields_at,
+    resolve_sort, resolve_timeout,
+};
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
@@ -46,9 +50,14 @@ impl IndexContext {
         let presentation = presentation_to_ir(request.presentation())?;
         let timeout = request
             .timeout_ms()
-            .map(|value| Duration::from_millis(value.value()));
+            .map(|value| resolve_timeout(Duration::from_millis(value.value())))
+            .transpose()?;
         let inputs = query_inputs_to_ir(request.inputs())?;
         validate_query_input_references(&query, &inputs, "query")?;
+        let (limit, offset) = resolve_pagination(
+            request.limit().map(|value| value.value()),
+            request.offset().map(|value| value.value()),
+        );
         Ok(SearchRequestIr {
             query,
             search_fields,
@@ -58,8 +67,8 @@ impl IndexContext {
             ranking,
             ranking_request: ranking_request_to_ir(request.ranking())?,
             inputs,
-            limit: request.limit().map_or(20, |v| v.value()),
-            offset: request.offset().map_or(0, |v| v.value()),
+            limit,
+            offset,
             projection: self.projection_to_ir(request.presentation().and_then(|p| p.fields()))?,
             highlighting: self
                 .highlighting_to_ir(request.presentation().and_then(|p| p.highlighting()))?,
@@ -122,22 +131,19 @@ impl IndexContext {
         &self,
         selection: api::SearchFieldSelection<'_>,
     ) -> Result<Vec<SearchFieldIr>> {
-        if let Some(fields) = selection.fields() {
-            for (index, field) in fields.iter().enumerate() {
-                if self
-                    .definition
-                    .imported_alias(field.field().unwrap_or_default())
-                {
-                    return Err(PortableError::unsupported(
-                        "imported_field_query_not_supported",
-                        Some(format!("search_fields.fields[{index}].field")),
-                        "imported field aliases are preserved in the schema but have no local type for query binding",
-                    ));
-                }
-            }
-        }
-        let fields = self.definition.query_fields().collect::<Vec<_>>();
-        search_fields_to_ir_at(selection, &fields, "search_fields")
+        let fields = selection
+            .fields()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| SearchFieldInput {
+                        field: field.field().unwrap_or_default().to_owned(),
+                        weight: field.weight().map(|value| value.value()),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        resolve_search_fields_at(self, &fields, "search_fields")
     }
     pub fn query_to_ir(
         &self,
@@ -220,84 +226,27 @@ impl IndexContext {
         &self,
         projection: Option<api::FieldProjection<'_>>,
     ) -> Result<ProjectionIr> {
-        self.projection_to_ir_at(projection)
+        let fields = projection.map(|projection| {
+            projection
+                .fields()
+                .map(|fields| fields.iter().map(ToOwned::to_owned).collect::<Vec<_>>())
+                .unwrap_or_default()
+        });
+        resolve_projection(self, fields.as_deref())
     }
     pub fn highlighting_to_ir(
         &self,
         highlighting: Option<api::HighlightRequest<'_>>,
     ) -> Result<HighlightingIr> {
-        self.highlighting_to_ir_at(highlighting)
+        let fields = highlighting.map(|highlighting| {
+            highlighting
+                .fields()
+                .map(|fields| fields.iter().map(ToOwned::to_owned).collect::<Vec<_>>())
+                .unwrap_or_default()
+        });
+        resolve_highlighting(self, fields.as_deref())
     }
     pub(crate) fn sort_to_ir_at(&self, s: api::SortExpr<'_>, path: &str) -> Result<SortIr> {
-        let target = s.target().ok_or_else(|| {
-            invalid(
-                "invalid_sort",
-                Some(path),
-                "sort expression requires a target",
-            )
-        })?;
-        let target = match target.target_type() {
-            api::SortTargetKind::FieldSortTarget => {
-                let field_path = format!("{path}.target.field");
-                let f = self.query_field(
-                    target
-                        .target_as_field_sort_target()
-                        .and_then(|target| target.field())
-                        .unwrap_or_default(),
-                    field_path.clone(),
-                )?;
-                if !f.capabilities.sortable {
-                    return Err(invalid(
-                        "field_not_sortable",
-                        Some(field_path.clone()),
-                        "sort requires a sortable field",
-                    ));
-                }
-                if f.cardinality() != FieldCardinality::Single {
-                    return Err(invalid(
-                        "invalid_capability",
-                        Some(field_path),
-                        "multi-valued fields cannot be sortable",
-                    ));
-                }
-                SortTargetIr::Field(f.name.clone())
-            }
-            api::SortTargetKind::RelevanceSortTarget => SortTargetIr::Relevance,
-            api::SortTargetKind::RankFeatureSortTarget => {
-                let feature = target
-                    .target_as_rank_feature_sort_target()
-                    .and_then(|target| target.feature())
-                    .ok_or_else(|| {
-                        invalid(
-                            "invalid_sort",
-                            Some(format!("{path}.target.feature")),
-                            "rank-feature sort requires a feature name",
-                        )
-                    })?;
-                if feature.is_empty() {
-                    return Err(invalid(
-                        "invalid_sort",
-                        Some(format!("{path}.target.feature")),
-                        "rank-feature sort requires a non-empty feature name",
-                    ));
-                }
-                SortTargetIr::RankFeature(feature.to_owned())
-            }
-            api::SortTargetKind::RawSortTarget => {
-                return Err(PortableError::unsupported(
-                    "raw_sort_not_supported",
-                    Some(format!("{path}.target")),
-                    "raw sort expressions must be normalized before entering resolved IR",
-                ));
-            }
-            _ => {
-                return Err(invalid(
-                    "invalid_sort",
-                    Some(format!("{path}.target")),
-                    "sort target must select a known variant",
-                ));
-            }
-        };
         let direction = match s.direction().0 {
             0 | 1 => SortDirection::Asc,
             2 => SortDirection::Desc,
@@ -343,11 +292,74 @@ impl IndexContext {
                 }
             },
         };
+        let annotations = request_values_to_map(s.annotations(), &format!("{path}.annotations"))?;
+        let target = s.target().ok_or_else(|| {
+            invalid(
+                "invalid_sort",
+                Some(path),
+                "sort expression requires a target",
+            )
+        })?;
+        let target = match target.target_type() {
+            api::SortTargetKind::FieldSortTarget => {
+                let field = target
+                    .target_as_field_sort_target()
+                    .and_then(|target| target.field())
+                    .unwrap_or_default()
+                    .to_owned();
+                let mut sort = resolve_sort(
+                    self,
+                    &SortInput {
+                        field,
+                        direction,
+                        missing: Some(missing),
+                    },
+                    &format!("{path}.target"),
+                )?;
+                sort.annotations = annotations;
+                return Ok(sort);
+            }
+            api::SortTargetKind::RelevanceSortTarget => SortTargetIr::Relevance,
+            api::SortTargetKind::RankFeatureSortTarget => {
+                let feature = target
+                    .target_as_rank_feature_sort_target()
+                    .and_then(|target| target.feature())
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_sort",
+                            Some(format!("{path}.target.feature")),
+                            "rank-feature sort requires a feature name",
+                        )
+                    })?;
+                if feature.is_empty() {
+                    return Err(invalid(
+                        "invalid_sort",
+                        Some(format!("{path}.target.feature")),
+                        "rank-feature sort requires a non-empty feature name",
+                    ));
+                }
+                SortTargetIr::RankFeature(feature.to_owned())
+            }
+            api::SortTargetKind::RawSortTarget => {
+                return Err(PortableError::unsupported(
+                    "raw_sort_not_supported",
+                    Some(format!("{path}.target")),
+                    "raw sort expressions must be normalized before entering resolved IR",
+                ));
+            }
+            _ => {
+                return Err(invalid(
+                    "invalid_sort",
+                    Some(format!("{path}.target")),
+                    "sort target must select a known variant",
+                ));
+            }
+        };
         Ok(SortIr {
             target,
             direction,
             missing,
-            annotations: request_values_to_map(s.annotations(), &format!("{path}.annotations"))?,
+            annotations,
         })
     }
     pub(crate) fn sorts_to_ir(
@@ -372,82 +384,6 @@ impl IndexContext {
             }
         }
         Ok(out)
-    }
-    pub(crate) fn projection_to_ir_at(
-        &self,
-        p: Option<api::FieldProjection<'_>>,
-    ) -> Result<ProjectionIr> {
-        let mut out = Vec::new();
-        match p {
-            None => out.extend(
-                self.definition
-                    .query_fields()
-                    .filter(|f| f.capabilities.stored)
-                    .map(|f| f.name.clone()),
-            ),
-            Some(p) => {
-                if let Some(fs) = p.fields() {
-                    let mut seen = BTreeSet::new();
-                    for (i, n) in fs.iter().enumerate() {
-                        let f = self.query_field(n, format!("projection.fields[{i}]"))?;
-                        if !f.capabilities.stored {
-                            return Err(invalid(
-                                "field_not_stored",
-                                Some(format!("projection.fields[{i}]")),
-                                "projection requires a stored field",
-                            ));
-                        }
-                        if !seen.insert(f.name.clone()) {
-                            return Err(invalid(
-                                "duplicate_projection_field",
-                                Some(format!("projection.fields[{i}]")),
-                                "projection fields must be unique",
-                            ));
-                        }
-                        out.push(f.name.clone())
-                    }
-                }
-            }
-        }
-        Ok(ProjectionIr { fields: out })
-    }
-    pub(crate) fn highlighting_to_ir_at(
-        &self,
-        h: Option<api::HighlightRequest<'_>>,
-    ) -> Result<HighlightingIr> {
-        let Some(h) = h else {
-            return Ok(HighlightingIr::Disabled);
-        };
-        let mut out = Vec::new();
-        let mut seen = BTreeSet::new();
-        if let Some(fs) = h.fields() {
-            for (i, n) in fs.iter().enumerate() {
-                let f = self.query_field(n, format!("highlighting.fields[{i}]"))?;
-                if f.kind() != FieldKind::Text || !f.capabilities.searchable {
-                    return Err(invalid(
-                        "invalid_highlight",
-                        Some(format!("highlighting.fields[{i}]")),
-                        "highlighting requires a searchable text field",
-                    ));
-                }
-                if !f.capabilities.stored {
-                    return Err(invalid(
-                        "field_not_stored",
-                        Some(format!("highlighting.fields[{i}]")),
-                        "highlighting requires a stored field",
-                    ));
-                }
-                if !seen.insert(f.name.clone()) {
-                    return Err(invalid(
-                        "duplicate_highlight_field",
-                        Some(format!("highlighting.fields[{i}]")),
-                        "highlight fields must be unique",
-                    ));
-                }
-                out.push(f.name.clone())
-            }
-        }
-        Ok(HighlightingIr::Requested { fields: out })
     }
 }
 
@@ -664,7 +600,7 @@ pub(crate) fn query_model_to_ir(value: Option<api::QueryModel<'_>>) -> Result<Qu
         filter: normalized_optional_string(value.filter()),
         language: value
             .language()
-            .map(|value| parse_language(value, "query_model.language"))
+            .map(|value| resolve_language(value, "query_model.language"))
             .transpose()?,
         locale: normalized_optional_string(value.locale()),
         query_type,
@@ -694,65 +630,64 @@ pub(crate) fn presentation_to_ir(
         timing: value.timing().map(|value| value.value()),
     })
 }
+
 pub(crate) fn search_fields_to_ir_at(
     selection: api::SearchFieldSelection<'_>,
     fields: &[&FieldIr],
     path: &str,
 ) -> Result<Vec<SearchFieldIr>> {
-    let mut search_fields = Vec::new();
-    let mut seen_fields = BTreeSet::new();
-    if let Some(fields_selection) = selection.fields() {
-        for (index, search_field) in fields_selection.iter().enumerate() {
-            let field_path = format!("{path}.fields[{index}].field");
-            let f = fields
+    let inputs = selection
+        .fields()
+        .map(|fields| {
+            fields
                 .iter()
-                .find(|field| field.name.as_str() == search_field.field().unwrap_or_default())
-                .copied()
-                .ok_or_else(|| {
-                    invalid(
-                        "unknown_field",
-                        Some(field_path.clone()),
-                        "field is not defined",
-                    )
-                })?;
-            if !f.capabilities.searchable {
-                return Err(invalid(
-                    "field_not_searchable",
-                    Some(field_path),
-                    "search field must be searchable",
-                ));
-            }
-            if !seen_fields.insert(f.name.clone()) {
-                return Err(invalid(
-                    "duplicate_search_field",
-                    Some(format!("{path}.fields[{index}].field")),
-                    "search fields must be unique",
-                ));
-            }
-            let weight =
-                SearchFieldWeight::new(search_field.weight().map_or(1.0, |value| value.value()))
-                    .map_err(|_| {
-                        invalid(
-                            "invalid_search_weight",
-                            Some(format!("{path}.fields[{index}].weight")),
-                            "search-field weight must be finite and non-negative",
-                        )
-                    })?;
-            search_fields.push(SearchFieldIr {
-                field: f.name.clone(),
-                weight,
-            });
+                .map(|field| SearchFieldInput {
+                    field: field.field().unwrap_or_default().to_owned(),
+                    weight: field.weight().map(|value| value.value()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut output = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, input) in inputs.iter().enumerate() {
+        let field_path = format!("{path}.fields[{index}].field");
+        let field = fields
+            .iter()
+            .find(|field| field.name.as_str() == input.field)
+            .copied()
+            .ok_or_else(|| {
+                invalid(
+                    "unknown_field",
+                    Some(field_path.clone()),
+                    "field is not defined",
+                )
+            })?;
+        if !field.capabilities.searchable {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(field_path),
+                "search field must be searchable",
+            ));
         }
+        if !seen.insert(field.name.clone()) {
+            return Err(invalid(
+                "duplicate_search_field",
+                Some(format!("{path}.fields[{index}].field")),
+                "search fields must be unique",
+            ));
+        }
+        let weight = SearchFieldWeight::new(input.weight.unwrap_or(1.0)).map_err(|_| {
+            invalid(
+                "invalid_search_weight",
+                Some(format!("{path}.fields[{index}].weight")),
+                "search-field weight must be finite and non-negative",
+            )
+        })?;
+        output.push(SearchFieldIr {
+            field: field.name.clone(),
+            weight,
+        });
     }
-    Ok(search_fields)
-}
-
-pub(crate) fn parse_language(v: &str, path: &str) -> Result<LanguageHint> {
-    LanguageHint::parse(v.to_owned()).map_err(|_| {
-        invalid(
-            "invalid_language",
-            Some(path),
-            "language must be a basic BCP-47-style ASCII tag",
-        )
-    })
+    Ok(output)
 }

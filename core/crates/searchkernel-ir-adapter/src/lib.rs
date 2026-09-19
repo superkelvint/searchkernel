@@ -166,6 +166,10 @@ fn value_to_ir(value: &FieldValue) -> Value {
         FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Booleans(values)) => {
             Value::List(values.iter().copied().map(Value::Bool).collect())
         }
+        // The current native document ABI rejects tensor writes, so a tensor
+        // cannot reach result conversion. Keep this arm explicit as the
+        // engine's value enum evolves without adding a portable tensor path.
+        FieldValue::Tensor(_) => Value::Null,
     }
 }
 

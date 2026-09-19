@@ -1,7 +1,7 @@
 use searchkernel_vespa_engine::{
     Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
-    FieldValue, GroupingOrder, GroupingRequest, LinguisticsOptions, Query, ScalarValue, Schema,
-    SearchRequest, SortField, SummaryRequest, Value,
+    FieldValue, GroupingOrder, GroupingRequest, LinguisticsOptions, Query, QueryInput, RankProfile,
+    ScalarValue, Schema, SearchRequest, SortField, SummaryRequest, TensorValue, Value,
 };
 use std::collections::BTreeSet;
 use std::fs;
@@ -105,6 +105,61 @@ fn native_document_crud_round_trip_exercises_lifecycle_and_value_conversion() {
         .is_none());
 
     engine.close().expect("close native CRUD engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_nearest_neighbor_uses_a_tensor_query_input_and_rank_profile() {
+    let config = temporary_path("nearest-config");
+    let data = temporary_path("nearest-data");
+    let schema = Schema::new("typea")
+        .field(
+            Field::new(
+                "embedding",
+                FieldType::Tensor("tensor<float>(x[2])".to_owned()),
+            )
+            .attribute(),
+        )
+        .rank_profile(
+            RankProfile::new("semantic")
+                .query_input("query_embedding", "tensor<float>(x[2])")
+                .first_phase("closeness(embedding)"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile nearest-neighbor config");
+
+    let engine = Engine::open(&data, &config).expect("open nearest-neighbor engine");
+    engine
+        .put(Document::new("near").field(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[2])", [1.0, 0.0]),
+        ))
+        .expect("put nearest document");
+    engine
+        .put(Document::new("far").field(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[2])", [0.0, 1.0]),
+        ))
+        .expect("put far document");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::nearest_neighbor("embedding", "query_embedding"))
+                .rank_profile("semantic")
+                .input(
+                    "query_embedding",
+                    QueryInput::Literal(TensorValue::dense("tensor<float>(x[2])", [0.9, 0.1])),
+                )
+                .limit(2),
+        )
+        .expect("execute nearest-neighbor search");
+    assert_eq!(result.total_hits, 2);
+    assert_eq!(result.hits[0].document_id, "near");
+    assert!(result.hits[0].score > result.hits[1].score);
+
+    engine.close().expect("close nearest-neighbor engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

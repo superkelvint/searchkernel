@@ -2,7 +2,7 @@
 
 use crate::native_error;
 use searchkernel_ir::{PortableError, Result};
-use searchkernel_vespa_engine::{ConfigCompiler, Field, FieldType, Schema};
+use searchkernel_vespa_engine::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 
 /// Compile the resolved portable definition into the M-layer configuration.
 ///
@@ -21,6 +21,9 @@ pub fn compile_index_definition(
             .or_else(|| definition.name().map(searchkernel_ir::IndexName::as_str))
             .unwrap_or("searchkernel"),
     );
+    for profile in definition.rank_profiles().iter().map(lower_rank_profile) {
+        schema = schema.rank_profile(profile?);
+    }
     for field in definition.fields() {
         if matches!(
             field.cardinality(),
@@ -87,7 +90,6 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         || !definition.schema_fields().is_empty()
         || !definition.imported_fields().is_empty()
         || !definition.document_summaries().is_empty()
-        || !definition.rank_profiles().is_empty()
         || !definition.constants().is_empty()
         || !definition.onnx_models().is_empty()
     {
@@ -96,6 +98,9 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
             Some("schema"),
             "the current native adapter cannot lower rich schema-level configuration",
         ));
+    }
+    for profile in definition.rank_profiles() {
+        lower_rank_profile(profile)?;
     }
     for (index, field) in definition.fields().iter().enumerate() {
         if matches!(
@@ -279,4 +284,119 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
     }
     Ok(())
+}
+
+/// Lower the deliberately small portable rank-profile subset understood by
+/// the current native configuration compiler.  Ranking expressions remain
+/// opaque Vespa expressions; this function only wires their declared shape
+/// into M's existing `RankProfile` model.
+fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Result<RankProfile> {
+    let unsupported = |path: &str, message: &str| {
+        Err(PortableError::unsupported(
+            "rank_profile_feature_not_supported",
+            Some(format!("rank_profiles.{}.{}", profile.name, path)),
+            message,
+        ))
+    };
+
+    if !profile.inherits.is_empty() {
+        return unsupported(
+            "inherits",
+            "rank-profile inheritance is not representable by the native schema model",
+        );
+    }
+    if !profile.inputs.is_empty() {
+        return unsupported(
+            "inputs",
+            "declared rank-profile inputs are not representable by the native schema model",
+        );
+    }
+    if !profile.functions.is_empty() {
+        return unsupported(
+            "functions",
+            "rank-profile functions are not representable by the native schema model",
+        );
+    }
+    if profile.second_phase.is_some() {
+        return unsupported(
+            "second_phase",
+            "second-phase ranking is outside the supported native schema subset",
+        );
+    }
+    if profile.global_phase.is_some() {
+        return unsupported(
+            "global_phase",
+            "global-phase ranking is outside the supported native schema subset",
+        );
+    }
+    if !profile.rank_features.is_empty() {
+        return unsupported(
+            "rank_features",
+            "declared rank features are not representable by the native schema model",
+        );
+    }
+    if !profile.summary_features.is_empty() {
+        return unsupported(
+            "summary_features",
+            "declared summary features are not representable by the native schema model",
+        );
+    }
+    if !profile.sort_features.is_empty() {
+        return unsupported(
+            "sort_features",
+            "declared sort features are not representable by the native schema model",
+        );
+    }
+    if !profile.constants.is_empty() {
+        return unsupported(
+            "constants",
+            "ranking constants are outside the supported native schema subset",
+        );
+    }
+    if !profile.onnx_models.is_empty() {
+        return unsupported(
+            "onnx_models",
+            "ranking models are outside the supported native schema subset",
+        );
+    }
+    if !profile.rank_properties.is_empty() {
+        return unsupported(
+            "rank_properties",
+            "profile-default rank properties are not representable by the native schema model",
+        );
+    }
+    if profile.strict.is_some() || !profile.properties.is_empty() {
+        return unsupported(
+            "properties",
+            "rank-profile policy properties are not representable by the native schema model",
+        );
+    }
+
+    let first_phase = profile.first_phase.as_ref().ok_or_else(|| {
+        PortableError::invalid(
+            "missing_rank_profile_first_phase",
+            Some(format!("rank_profiles.{}.first_phase", profile.name)),
+            "a supported rank profile requires a first-phase ranking expression",
+        )
+    })?;
+    if first_phase.expression.is_none()
+        || first_phase.rerank_count.is_some()
+        || first_phase.rank_score_drop_limit.is_some()
+        || first_phase.total_rerank_count.is_some()
+        || first_phase.keep_rank_count.is_some()
+        || first_phase.total_keep_rank_count.is_some()
+        || !first_phase.properties.is_empty()
+    {
+        return unsupported(
+            "first_phase",
+            "only an opaque first-phase expression and match features are supported",
+        );
+    }
+
+    let mut native = RankProfile::new(profile.name.clone())
+        .first_phase(first_phase.expression.as_deref().unwrap_or_default());
+    for feature in &profile.match_features {
+        native = native.match_feature(feature);
+    }
+    Ok(native)
 }

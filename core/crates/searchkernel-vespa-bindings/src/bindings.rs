@@ -22,10 +22,12 @@ pub const SK_QUERY_FIELD_STRING: u32 = 3;
 pub const SK_QUERY_FIELD_FLOAT: u32 = 4;
 pub const SK_QUERY_FIELD_BOOLEAN: u32 = 5;
 pub const SK_QUERY_FIELD_ATTRIBUTE: u32 = 6;
+pub const SK_QUERY_FIELD_TENSOR: u32 = 7;
 pub const SK_VALUE_STRING: u32 = 1;
 pub const SK_VALUE_INTEGER: u32 = 2;
 pub const SK_VALUE_FLOAT: u32 = 3;
 pub const SK_VALUE_BOOLEAN: u32 = 4;
+pub const SK_VALUE_TENSOR: u32 = 5;
 pub const SK_SORT_ASCENDING: u32 = 1;
 pub const SK_SORT_DESCENDING: u32 = 2;
 pub const SK_SORT_MISSING_DEFAULT: u32 = 0;
@@ -45,7 +47,7 @@ pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
 pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 5;
+pub const SK_NATIVE_ABI_VERSION: u32 = 6;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -213,6 +215,17 @@ unsafe extern "C" {
         document: *mut sk_document,
         field: *const ::std::os::raw::c_char,
         value: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_add_tensor_dense(
+        document: *mut sk_document,
+        field: *const ::std::os::raw::c_char,
+        type_spec: *const ::std::os::raw::c_char,
+        values: *const f64,
+        value_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -594,6 +607,17 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_query_add_nearest_neighbor(
+        query: *mut sk_query,
+        document_field: *const ::std::os::raw::c_char,
+        query_tensor: *const ::std::os::raw::c_char,
+        target_num_hits: u32,
+        allow_approximate: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_query_destroy(query: *mut sk_query);
 }
 unsafe extern "C" {
@@ -784,6 +808,17 @@ unsafe extern "C" {
         request: *mut sk_generic_search_request,
         name: *const ::std::os::raw::c_char,
         value: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_query_tensor_dense(
+        request: *mut sk_generic_search_request,
+        name: *const ::std::os::raw::c_char,
+        type_spec: *const ::std::os::raw::c_char,
+        values: *const f64,
+        value_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

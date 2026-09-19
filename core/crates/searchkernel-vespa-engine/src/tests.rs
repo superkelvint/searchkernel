@@ -1,9 +1,14 @@
-use super::{
-    check, cstring, length_u32, native_error, path_cstring, require_ptr, text_occurrences,
-    text_query_terms, validate_term_query, Document, DocumentAnalysis, DocumentTerm, Duration,
-    Error, ErrorKind, NativeError, Query, QueryAnalysis, QueryTerm, SearchRequest, SortField,
-    SortOrder, Source, SummaryRequest,
+#[cfg(test)]
+use super::error::{check, cstring, native_error, path_cstring};
+use super::native::{
+    length_u32, require_ptr, text_occurrences, text_query_terms, validate_term_query, NativeError,
 };
+use super::search::validate_search_ranking_inputs;
+use super::{
+    Document, DocumentAnalysis, DocumentTerm, Error, ErrorKind, Query, QueryAnalysis, QueryTerm,
+    SearchRequest, SortField, SortOrder, Source, SummaryRequest,
+};
+use std::time::Duration;
 
 #[test]
 fn boundary_helpers_preserve_native_error_information() {
@@ -137,27 +142,27 @@ fn fluent_requests_and_attribute_builders_preserve_configuration() {
 #[test]
 fn ranking_request_inputs_are_validated_before_native_calls() {
     let query_feature = SearchRequest::new(Query::True).query_feature("boost", 2.0);
-    super::validate_search_ranking_inputs(&query_feature).expect("finite query feature");
+    validate_search_ranking_inputs(&query_feature).expect("finite query feature");
 
     let rank_property = SearchRequest::new(Query::True).rank_property("model", "v1");
-    super::validate_search_ranking_inputs(&rank_property).expect("non-empty rank property");
+    validate_search_ranking_inputs(&rank_property).expect("non-empty rank property");
 
     let collision = SearchRequest::new(Query::True)
         .query_feature("boost", 2.0)
         .rank_property("boost", "3");
-    let error = super::validate_search_ranking_inputs(&collision)
+    let error = validate_search_ranking_inputs(&collision)
         .expect_err("query-feature/rank-property collisions must be rejected");
     assert!(error.to_string().contains("collision"));
 
     let reserved =
         SearchRequest::new(Query::True).rank_property("vespa.matching.numthreadspersearch", "2");
-    let error = super::validate_search_ranking_inputs(&reserved)
+    let error = validate_search_ranking_inputs(&reserved)
         .expect_err("Search Kernel-owned rank properties must be rejected");
     assert!(error.to_string().contains("reserved"));
 
     let reserved =
         SearchRequest::new(Query::True).query_feature("vespa.matching.numthreadspersearch", 2.0);
-    let error = super::validate_search_ranking_inputs(&reserved)
+    let error = validate_search_ranking_inputs(&reserved)
         .expect_err("Search Kernel-owned query features must be rejected");
     assert!(error.to_string().contains("reserved"));
 }

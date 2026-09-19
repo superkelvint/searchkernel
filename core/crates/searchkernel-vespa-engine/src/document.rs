@@ -1,6 +1,7 @@
 //! Idiomatic, Vespa-facing document and mutation values.
 
 use crate::linguistics::DocumentAnalysis;
+use crate::tensor::TensorValue;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -120,6 +121,7 @@ impl From<Vec<bool>> for FieldValue {
 pub enum FieldValue {
     Scalar(ScalarValue),
     Array(ArrayValue),
+    Tensor(TensorValue),
 }
 
 pub trait IntoScalarValue {
@@ -175,6 +177,12 @@ pub trait IntoFieldValue {
 impl IntoFieldValue for FieldValue {
     fn into_field_value(self) -> FieldValue {
         self
+    }
+}
+
+impl IntoFieldValue for TensorValue {
+    fn into_field_value(self) -> FieldValue {
+        FieldValue::Tensor(self)
     }
 }
 

@@ -39,6 +39,7 @@ SEARCHKERNEL_2 {
         sk_query_add_text;
         sk_query_add_equals;
         sk_query_add_range;
+        sk_query_add_nearest_neighbor;
         sk_query_destroy;
         sk_engine_search_query;
         sk_document_create_empty;
@@ -46,6 +47,7 @@ SEARCHKERNEL_2 {
         sk_document_add_integer;
         sk_document_add_float;
         sk_document_add_boolean;
+        sk_document_add_tensor_dense;
         sk_document_field_count;
         sk_document_field;
         sk_document_update_create_empty;
@@ -79,6 +81,7 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_sort;
         sk_generic_search_request_add_summary_field;
         sk_generic_search_request_add_query_feature;
+        sk_generic_search_request_add_query_tensor_dense;
         sk_generic_search_request_add_rank_property;
         sk_generic_search_request_add_grouping;
         sk_generic_search_request_destroy;

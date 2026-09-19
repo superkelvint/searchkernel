@@ -115,6 +115,35 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             ["a", "z"],
         )
 
+    def test_ergonomic_ranking_inputs_use_generated_objects(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, "wireless") \
+            .ranking("product_search") \
+            .input("freshness", 0.8) \
+            .rank_property("source", "catalog") \
+            .execute()
+        request = index.client.request
+        self.assertEqual(request.ranking.profile, "product_search")
+        self.assertEqual(request.ranking.properties[0].value, "catalog")
+        self.assertEqual(request.inputs[0].name, "freshness")
+        self.assertEqual(request.inputs[0].input.value.kind.value, 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()
