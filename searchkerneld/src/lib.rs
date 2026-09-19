@@ -5,12 +5,14 @@
 //! dispatcher.
 
 #[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::{fmt, net::SocketAddr, sync::Arc};
 
 use searchkernel_dispatch::{DispatchError, Dispatcher};
 #[cfg(unix)]
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, UnixStream};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
@@ -303,7 +305,7 @@ async fn start_with_service(
         }
         #[cfg(unix)]
         ListenAddress::Unix(path) => {
-            let listener = UnixListener::bind(&path).map_err(ServerError::Bind)?;
+            let listener = bind_unix_listener(&path).await?;
             let incoming = UnixListenerStream::new(listener);
             let task = serve(incoming, service, shutdown_requested);
             (ListenAddress::Unix(path), task)
@@ -339,4 +341,32 @@ where
             })
             .await
     })
+}
+
+#[cfg(unix)]
+async fn bind_unix_listener(path: &Path) -> Result<UnixListener, ServerError> {
+    // Probe an existing socket before removing it. Non-socket paths are left
+    // untouched so a bind error cannot destroy an unrelated file.
+    let stale_socket = match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_socket() => match UnixStream::connect(path).await {
+            Ok(_) => {
+                return Err(ServerError::Bind(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    format!("Unix socket {path:?} is already in use by a live server"),
+                )))
+            }
+            Err(_) => true,
+        },
+        Ok(_) | Err(_) => false,
+    };
+
+    if stale_socket {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ServerError::Bind(error)),
+        }
+    }
+
+    UnixListener::bind(path).map_err(ServerError::Bind)
 }

@@ -7,9 +7,11 @@ use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_protocol::protocol::v2 as wire;
 use searchkernel_testkit::RecordingBackend;
+#[cfg(unix)]
+use searchkerneld::ServerError;
 use searchkerneld::{rpc, start, ServerConfig};
 #[cfg(unix)]
-use tokio::net::UnixStream;
+use tokio::net::{UnixListener, UnixStream};
 use tonic::{Code, Request};
 
 fn describe_request(version: u32) -> Vec<u8> {
@@ -306,4 +308,93 @@ async fn execute_works_over_a_unix_domain_socket() {
     server.shutdown().await.expect("shutdown UDS server");
     assert!(!path.exists(), "shutdown must remove the UDS path");
     index.close().expect("close test index");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stale_unix_socket_is_removed_before_binding() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkerneld-stale-uds-{}.sock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let stale_listener = UnixListener::bind(&path)
+        .await
+        .expect("create stale UDS listener");
+    drop(stale_listener);
+    assert!(path.exists());
+
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let server = start(ServerConfig::unix(&path), dispatcher)
+        .await
+        .expect("start over a stale UDS path");
+    assert!(path.exists());
+
+    server.shutdown().await.expect("shutdown UDS server");
+    index.close().expect("close test index");
+    assert!(!path.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_unix_socket_is_not_removed_or_rebound() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkerneld-live-uds-{}.sock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let server = start(ServerConfig::unix(&path), dispatcher.clone())
+        .await
+        .expect("start UDS server");
+
+    let error = match start(ServerConfig::unix(&path), dispatcher).await {
+        Ok(second_server) => {
+            second_server
+                .shutdown()
+                .await
+                .expect("shutdown unexpectedly rebound server");
+            panic!("a live UDS server must prevent rebinding")
+        }
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        ServerError::Bind(error)
+            if error.kind() == std::io::ErrorKind::AddrInUse
+                && error.to_string().contains("live server")
+    ));
+    assert!(path.exists(), "live server socket must remain in place");
+    UnixStream::connect(&path)
+        .await
+        .expect("original UDS server must remain reachable");
+
+    server.shutdown().await.expect("shutdown UDS server");
+    index.close().expect("close test index");
+    assert!(!path.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn non_socket_path_is_not_removed_before_binding() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkerneld-not-a-uds-{}.path",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, b"keep me").expect("create non-socket path");
+
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let result = start(ServerConfig::unix(&path), dispatcher).await;
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved path"),
+        b"keep me"
+    );
+
+    index.close().expect("close test index");
+    std::fs::remove_file(path).expect("remove test path");
 }
