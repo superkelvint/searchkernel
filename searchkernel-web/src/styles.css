@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+
+@theme { --font-sans: Inter, ui-sans-serif, system-ui, sans-serif; --font-mono: "SFMono-Regular", Consolas, monospace; }
+@layer base {
+  html { background: #f8fafc; }
+  body { margin: 0; min-width: 320px; color: #172033; background: #f8fafc; font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
+}
+@layer components {
+  .surface { @apply rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-950/[0.025]; }
+  .muted { @apply text-[13px] text-slate-500; }
+  .kicker { @apply text-[11px] font-semibold tracking-[0.09em] text-slate-500 uppercase; }
+  .nav-item { @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950; }
+  .nav-item-active { @apply bg-indigo-50 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700; }
+  .index-tab { @apply border-b-2 border-transparent px-1 py-3 text-sm font-medium text-slate-500 transition hover:text-slate-950; }
+  .index-tab-active { @apply border-indigo-600 text-indigo-700; }
+  .section-link { @apply flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-950; }
+  .section-link-active { @apply bg-white font-semibold text-indigo-700 shadow-sm ring-1 ring-slate-200; }
+  .metric { @apply rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm shadow-slate-950/[0.025]; }
+  .metric-value { @apply mt-1 text-2xl font-semibold tracking-tight text-slate-950; }
+  .soft-button { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm shadow-slate-950/[0.025] transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600; }
+  .primary-button { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-700/20 transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600; }
+  .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-3 focus:ring-indigo-500/15; }
+  .tiny-badge { @apply inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-600; }
+}
