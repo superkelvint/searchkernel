@@ -552,11 +552,17 @@ pub(crate) fn validate_query_input_references_in_expr(
         QueryExprKindIr::And(values)
         | QueryExprKindIr::Or(values)
         | QueryExprKindIr::Phrase(values)
-        | QueryExprKindIr::Near(values)
-        | QueryExprKindIr::ONear(values)
+        | QueryExprKindIr::Near {
+            children: values, ..
+        }
+        | QueryExprKindIr::ONear {
+            children: values, ..
+        }
         | QueryExprKindIr::SameElement(values)
         | QueryExprKindIr::Equiv(values)
-        | QueryExprKindIr::WeakAnd(values) => {
+        | QueryExprKindIr::WeakAnd {
+            children: values, ..
+        } => {
             children.extend(values.iter().map(|value| (value, path.to_owned())));
         }
         QueryExprKindIr::Alternatives(values) => {

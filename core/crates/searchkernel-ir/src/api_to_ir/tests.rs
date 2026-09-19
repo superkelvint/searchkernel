@@ -1591,13 +1591,25 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
             },
         ),
         ("QueryPhrase", QueryExprKindIr::Phrase(vec![term()])),
-        ("QueryNear", QueryExprKindIr::Near(vec![term()])),
-        ("QueryONear", QueryExprKindIr::ONear(vec![term()])),
+        (
+            "QueryNear",
+            QueryExprKindIr::Near {
+                children: vec![term()],
+                distance: 2,
+            },
+        ),
+        (
+            "QueryONear",
+            QueryExprKindIr::ONear {
+                children: vec![term()],
+                distance: 2,
+            },
+        ),
         (
             "QuerySameElement",
             QueryExprKindIr::SameElement(vec![term()]),
         ),
-        ("QueryEquiv", QueryExprKindIr::Equiv(vec![term()])),
+        ("QueryEquiv", QueryExprKindIr::Equiv(vec![term(), term()])),
         (
             "QueryAlternatives",
             QueryExprKindIr::Alternatives(vec![QueryAlternativeIr {
@@ -1609,6 +1621,9 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
             "QueryFuzzy",
             QueryExprKindIr::Fuzzy {
                 value: RequestValueIr::String("acm".to_owned()),
+                max_edit_distance: 2,
+                prefix_length: 0,
+                prefix: false,
             },
         ),
         (
@@ -1628,9 +1643,17 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
             "QueryUserInput",
             QueryExprKindIr::UserInput {
                 value: "query".to_owned(),
+                default_index: None,
+                target_hits: 100,
             },
         ),
-        ("QueryUserQuery", QueryExprKindIr::UserQuery),
+        (
+            "QueryUserQuery",
+            QueryExprKindIr::UserQuery {
+                default_index: None,
+                target_hits: 100,
+            },
+        ),
         (
             "QueryDotProduct",
             QueryExprKindIr::DotProduct {
@@ -1661,7 +1684,13 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
                 }],
             },
         ),
-        ("QueryWeakAnd", QueryExprKindIr::WeakAnd(vec![term()])),
+        (
+            "QueryWeakAnd",
+            QueryExprKindIr::WeakAnd {
+                children: vec![term()],
+                target_hits: 100,
+            },
+        ),
         (
             "QueryRank",
             QueryExprKindIr::Rank {
@@ -1861,6 +1890,85 @@ fn query_user_input_accepts_annotation_or_query_model_default_index() {
 }
 
 #[test]
+fn typed_matching_annotations_are_resolved_into_ir_parameters() {
+    fn request(query: QueryIr) -> SearchRequestIr {
+        SearchRequestIr::new(
+            query,
+            Vec::new(),
+            None,
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    }
+    fn term(value: &str) -> QueryExprIr {
+        QueryExprIr {
+            kind: QueryExprKindIr::Term {
+                value: RequestValueIr::String(value.to_owned()),
+            },
+            annotations: BTreeMap::new(),
+        }
+    }
+    fn contains(item: QueryExprKindIr) -> QueryExprKindIr {
+        QueryExprKindIr::Contains {
+            field: QueryFieldRefIr {
+                path: FieldName::parse("brand").unwrap(),
+                element_index: None,
+            },
+            item: Box::new(QueryExprIr {
+                kind: item,
+                annotations: BTreeMap::new(),
+            }),
+        }
+    }
+
+    let cases = [
+        (
+            "near",
+            contains(QueryExprKindIr::Near {
+                children: vec![term("one"), term("two")],
+                distance: 7,
+            }),
+        ),
+        (
+            "weak_and",
+            contains(QueryExprKindIr::WeakAnd {
+                children: vec![term("one"), term("two")],
+                target_hits: 11,
+            }),
+        ),
+        (
+            "fuzzy",
+            contains(QueryExprKindIr::Fuzzy {
+                value: RequestValueIr::String("fone".to_owned()),
+                max_edit_distance: 4,
+                prefix_length: 3,
+                prefix: true,
+            }),
+        ),
+    ];
+
+    let mut query_context = context();
+    query_context.definition.fields[0].capabilities.searchable = true;
+    for (name, kind) in cases {
+        let expected = QueryIr::Typed(Box::new(QueryExprIr {
+            kind,
+            annotations: BTreeMap::new(),
+        }));
+        let bytes = crate::search_request_ir_to_api(&request(expected.clone()));
+        let api_request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let actual = query_context.search_to_ir(api_request).unwrap();
+        assert_eq!(actual.query(), &expected, "{name} was not resolved in IR");
+    }
+}
+
+#[test]
 fn sort_missing_as_is_not_rejected_or_dropped() {
     let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
     let field = builder.create_string("price");
@@ -2033,5 +2141,134 @@ fn positive_infinity_filter_lower_bound_is_not_treated_as_unbounded() {
     assert!(
         context().filter_to_ir(expression).is_err(),
         "a lower +infinity bound must not collapse into an absent lower bound"
+    );
+}
+
+#[test]
+fn typed_query_validation_enforces_field_capabilities_and_types() {
+    fn field(name: &str) -> QueryFieldRefIr {
+        QueryFieldRefIr {
+            path: FieldName::parse(name).unwrap(),
+            element_index: None,
+        }
+    }
+
+    fn expression(kind: QueryExprKindIr) -> QueryExprIr {
+        QueryExprIr {
+            kind,
+            annotations: BTreeMap::new(),
+        }
+    }
+
+    fn error_code(context: &IndexContext, query: QueryExprIr) -> String {
+        context
+            .validate_typed_query(&query, None, None, "query")
+            .unwrap_err()
+            .details[0]
+            .code
+            .clone()
+    }
+
+    let phrase = expression(QueryExprKindIr::Phrase(vec![expression(
+        QueryExprKindIr::Term {
+            value: RequestValueIr::String("Acme".to_owned()),
+        },
+    )]));
+    assert_eq!(
+        error_code(
+            &context(),
+            expression(QueryExprKindIr::Contains {
+                field: field("brand"),
+                item: Box::new(phrase),
+            }),
+        ),
+        "field_not_searchable",
+        "complex text queries must enforce the same searchable-field rule as terms"
+    );
+
+    assert_eq!(
+        error_code(
+            &context(),
+            expression(QueryExprKindIr::Comparison {
+                field: field("brand"),
+                op: ComparisonOp::Gt,
+                value: RequestValueIr::String("Acme".to_owned()),
+            }),
+        ),
+        "invalid_filter",
+        "ordered comparisons must require numeric fields"
+    );
+    assert_eq!(
+        error_code(
+            &context(),
+            expression(QueryExprKindIr::Range {
+                field: field("brand"),
+                lower: QueryRangeBoundIr::Finite(RequestValueIr::String("A".to_owned())),
+                upper: QueryRangeBoundIr::Unbounded,
+                include_lower: Some(true),
+                include_upper: None,
+            }),
+        ),
+        "invalid_filter",
+        "ranges must require numeric fields"
+    );
+
+    let mut non_filterable = context();
+    non_filterable.definition.fields[1].capabilities.filterable = false;
+    assert_eq!(
+        error_code(
+            &non_filterable,
+            expression(QueryExprKindIr::Comparison {
+                field: field("price"),
+                op: ComparisonOp::Eq,
+                value: RequestValueIr::Int64(10),
+            }),
+        ),
+        "field_not_filterable"
+    );
+
+    assert_eq!(
+        error_code(
+            &context(),
+            expression(QueryExprKindIr::In {
+                field: field("brand"),
+                values: vec![RequestValueIr::Int64(1)],
+            }),
+        ),
+        "type_mismatch",
+        "membership values must match the field type"
+    );
+    assert_eq!(
+        error_code(
+            &context(),
+            expression(QueryExprKindIr::Comparison {
+                field: field("price"),
+                op: ComparisonOp::Eq,
+                value: RequestValueIr::String("10".to_owned()),
+            }),
+        ),
+        "type_mismatch",
+        "comparison values must match the field type"
+    );
+
+    let mut searchable = context();
+    searchable.definition.fields[0].capabilities.searchable = true;
+    let query_field = field("brand");
+    assert_eq!(
+        searchable
+            .validate_typed_query(
+                &expression(QueryExprKindIr::Equiv(vec![expression(
+                    QueryExprKindIr::Term {
+                        value: RequestValueIr::String("Acme".to_owned()),
+                    },
+                )])),
+                Some(&query_field),
+                None,
+                "query",
+            )
+            .unwrap_err()
+            .details[0]
+            .code,
+        "invalid_query_children"
     );
 }

@@ -492,7 +492,8 @@ fn lower_typed_query(
             longitude,
             radius,
         } => Ok(Query::GeoLocation {
-            field: typed_query_field(Some(field), &format!("{path}.geo_location.field"))?.to_owned(),
+            field: typed_query_field(Some(field), &format!("{path}.geo_location.field"))?
+                .to_owned(),
             latitude: *latitude,
             longitude: *longitude,
             radius: radius.clone(),
@@ -781,13 +782,7 @@ fn lower_predicate_features(
 ) -> Result<Vec<PredicateFeature>> {
     let mut lowered = Vec::new();
     for (key, value) in values {
-        lower_predicate_feature_value(
-            key,
-            value,
-            ALL_PREDICATE_SUB_QUERIES,
-            &mut lowered,
-            path,
-        )?;
+        lower_predicate_feature_value(key, value, ALL_PREDICATE_SUB_QUERIES, &mut lowered, path)?;
     }
     Ok(lowered)
 }
@@ -846,13 +841,7 @@ fn lower_predicate_range_features(
 ) -> Result<Vec<PredicateRangeFeature>> {
     let mut lowered = Vec::new();
     for (key, value) in values {
-        lower_predicate_range_value(
-            key,
-            value,
-            ALL_PREDICATE_SUB_QUERIES,
-            &mut lowered,
-            path,
-        )?;
+        lower_predicate_range_value(key, value, ALL_PREDICATE_SUB_QUERIES, &mut lowered, path)?;
     }
     Ok(lowered)
 }

@@ -3,6 +3,121 @@ use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
+const DEFAULT_PROXIMITY_DISTANCE: u32 = 2;
+const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
+const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
+const DEFAULT_FUZZY_PREFIX_LENGTH: u32 = 0;
+const DEFAULT_FUZZY_PREFIX: bool = false;
+
+fn resolve_typed_query_annotations(
+    kind: &mut QueryExprKindIr,
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<()> {
+    match kind {
+        QueryExprKindIr::Near { distance, .. } | QueryExprKindIr::ONear { distance, .. } => {
+            *distance = annotation_u32(annotations, "distance", path, 1)?
+                .unwrap_or(DEFAULT_PROXIMITY_DISTANCE);
+        }
+        QueryExprKindIr::WeakAnd { target_hits, .. } => {
+            *target_hits = annotation_u32(annotations, "totalTargetHits", path, 1)?
+                .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
+        }
+        QueryExprKindIr::Fuzzy {
+            max_edit_distance,
+            prefix_length,
+            prefix,
+            ..
+        } => {
+            *max_edit_distance = annotation_u32(annotations, "maxEditDistance", path, 0)?
+                .unwrap_or(DEFAULT_FUZZY_MAX_EDIT_DISTANCE);
+            *prefix_length = annotation_u32(annotations, "prefixLength", path, 0)?
+                .unwrap_or(DEFAULT_FUZZY_PREFIX_LENGTH);
+            *prefix = annotation_bool(annotations, "prefix", path)?.unwrap_or(DEFAULT_FUZZY_PREFIX);
+        }
+        QueryExprKindIr::UserInput {
+            default_index,
+            target_hits,
+            ..
+        }
+        | QueryExprKindIr::UserQuery {
+            default_index,
+            target_hits,
+        } => {
+            *default_index = annotation_string(annotations, "defaultIndex", path)?;
+            *target_hits = DEFAULT_WEAK_AND_TARGET_HITS;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn annotation_u32(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+    minimum: u32,
+) -> Result<Option<u32>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
+    };
+    let value = match value {
+        RequestValueIr::Int64(value) if value >= i64::from(minimum) => u32::try_from(value).ok(),
+        RequestValueIr::UInt64(value) if value >= u64::from(minimum) => u32::try_from(value).ok(),
+        _ => None,
+    };
+    value
+        .ok_or_else(|| {
+            invalid(
+                "invalid_typed_query_annotation",
+                Some(format!("{path}.annotations.{name}")),
+                format!("{name} must be an integer in the supported range"),
+            )
+        })
+        .map(Some)
+}
+
+fn annotation_bool(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<bool>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
+    };
+    match value {
+        RequestValueIr::Bool(value) => Ok(Some(value)),
+        _ => Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a boolean"),
+        )),
+    }
+}
+
+fn annotation_string(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<String>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
+    };
+    match value {
+        RequestValueIr::String(value) if !value.is_empty() => Ok(Some(value)),
+        RequestValueIr::String(_) => Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must not be empty"),
+        )),
+        _ => Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a string"),
+        )),
+    }
+}
+
 impl IndexContext {
     pub(crate) fn query_expr_to_ir(
         &self,
@@ -218,8 +333,8 @@ impl IndexContext {
                     QueryExprKindIr::Term { .. }
                         | QueryExprKindIr::Contains { .. }
                         | QueryExprKindIr::Phrase(_)
-                        | QueryExprKindIr::Near(_)
-                        | QueryExprKindIr::ONear(_)
+                        | QueryExprKindIr::Near { .. }
+                        | QueryExprKindIr::ONear { .. }
                         | QueryExprKindIr::SameElement(_)
                         | QueryExprKindIr::Equiv(_)
                         | QueryExprKindIr::Alternatives(_)
@@ -227,7 +342,7 @@ impl IndexContext {
                         | QueryExprKindIr::Matches { .. }
                         | QueryExprKindIr::Text { .. }
                         | QueryExprKindIr::UserInput { .. }
-                        | QueryExprKindIr::UserQuery
+                        | QueryExprKindIr::UserQuery { .. }
                 ) {
                     return Err(invalid(
                         "invalid_query_child",
@@ -248,10 +363,22 @@ impl IndexContext {
         match &query.kind {
             QueryExprKindIr::Term { .. }
             | QueryExprKindIr::Fuzzy { .. }
-            | QueryExprKindIr::Text { .. } => require_field_context("term-like"),
-            QueryExprKindIr::UserInput { .. } => {
+            | QueryExprKindIr::Text { .. } => {
+                let field = field_context.ok_or_else(|| {
+                    invalid(
+                        "missing_field_context",
+                        Some(path.to_owned()),
+                        "term-like query requires a containing field context",
+                    )
+                })?;
+                self.validate_searchable_query_field(field, path)
+            }
+            QueryExprKindIr::UserInput {
+                default_index: query_default_index,
+                ..
+            } => {
                 if field_context.is_some()
-                    || query.annotations.contains_key("defaultIndex")
+                    || query_default_index.is_some()
                     || default_index.is_some()
                 {
                     Ok(())
@@ -259,15 +386,18 @@ impl IndexContext {
                     require_field_context("user input")
                 }
             }
-            QueryExprKindIr::Contains { field, item } => self.validate_typed_query(
-                item,
-                Some(field),
-                default_index,
-                &child_path("contains.item"),
-            ),
+            QueryExprKindIr::Contains { field, item } => {
+                self.validate_searchable_query_field(field, &child_path("contains.field"))?;
+                self.validate_typed_query(
+                    item,
+                    Some(field),
+                    default_index,
+                    &child_path("contains.item"),
+                )
+            }
             QueryExprKindIr::And(children)
             | QueryExprKindIr::Or(children)
-            | QueryExprKindIr::WeakAnd(children) => validate_children(
+            | QueryExprKindIr::WeakAnd { children, .. } => validate_children(
                 children,
                 match &query.kind {
                     QueryExprKindIr::And(_) => "and",
@@ -278,33 +408,143 @@ impl IndexContext {
             QueryExprKindIr::Not(child) | QueryExprKindIr::NonEmpty(child) => {
                 self.validate_typed_query(child, field_context, default_index, &child_path("child"))
             }
-            QueryExprKindIr::True | QueryExprKindIr::False | QueryExprKindIr::UserQuery => Ok(()),
-            QueryExprKindIr::Comparison { .. }
-            | QueryExprKindIr::Range { .. }
-            | QueryExprKindIr::In { .. }
-            | QueryExprKindIr::Matches { .. }
-            | QueryExprKindIr::DotProduct { .. }
+            QueryExprKindIr::True | QueryExprKindIr::False | QueryExprKindIr::UserQuery { .. } => {
+                Ok(())
+            }
+            QueryExprKindIr::Comparison { field, op, value } => {
+                let schema_field = self.validate_filter_query_field(
+                    field,
+                    &child_path("comparison.field"),
+                    "comparison",
+                )?;
+                if matches!(
+                    op,
+                    ComparisonOp::Lt | ComparisonOp::Lte | ComparisonOp::Gt | ComparisonOp::Gte
+                ) && !matches!(schema_field.kind(), FieldKind::Int64 | FieldKind::Float64)
+                {
+                    return Err(invalid(
+                        "invalid_filter",
+                        Some(child_path("comparison.op")),
+                        "ordered comparison requires a numeric field",
+                    ));
+                }
+                self.validate_typed_query_scalar(
+                    value,
+                    schema_field.kind(),
+                    &child_path("comparison.value"),
+                )
+            }
+            QueryExprKindIr::Range {
+                field,
+                lower,
+                upper,
+                include_lower,
+                include_upper,
+            } => {
+                let schema_field =
+                    self.validate_filter_query_field(field, &child_path("range.field"), "range")?;
+                if !matches!(schema_field.kind(), FieldKind::Int64 | FieldKind::Float64) {
+                    return Err(invalid(
+                        "invalid_filter",
+                        Some(path.to_owned()),
+                        "range requires an Int64 or Float64 field",
+                    ));
+                }
+                self.validate_typed_query_range_bound(
+                    lower,
+                    schema_field.kind(),
+                    &child_path("range.lower"),
+                )?;
+                self.validate_typed_query_range_bound(
+                    upper,
+                    schema_field.kind(),
+                    &child_path("range.upper"),
+                )?;
+                if matches!(lower, QueryRangeBoundIr::Unbounded)
+                    && matches!(upper, QueryRangeBoundIr::Unbounded)
+                {
+                    return Err(invalid(
+                        "invalid_range",
+                        Some(path.to_owned()),
+                        "range requires at least one bound",
+                    ));
+                }
+                if matches!(lower, QueryRangeBoundIr::Unbounded) && *include_lower == Some(true) {
+                    return Err(invalid(
+                        "invalid_range",
+                        Some(child_path("range.include_lower")),
+                        "lower inclusion requires a lower bound",
+                    ));
+                }
+                if matches!(upper, QueryRangeBoundIr::Unbounded) && *include_upper == Some(true) {
+                    return Err(invalid(
+                        "invalid_range",
+                        Some(child_path("range.include_upper")),
+                        "upper inclusion requires an upper bound",
+                    ));
+                }
+                Ok(())
+            }
+            QueryExprKindIr::In { field, values } => {
+                let schema_field =
+                    self.validate_filter_query_field(field, &child_path("in.field"), "IN")?;
+                if !matches!(schema_field.kind(), FieldKind::Keyword | FieldKind::Int64) {
+                    return Err(invalid(
+                        "invalid_filter",
+                        Some(path.to_owned()),
+                        "IN requires a Keyword or Int64 field",
+                    ));
+                }
+                if values.is_empty() {
+                    return Err(invalid(
+                        "empty_in",
+                        Some(path.to_owned()),
+                        "IN requires at least one value",
+                    ));
+                }
+                for (index, value) in values.iter().enumerate() {
+                    self.validate_typed_query_scalar(
+                        value,
+                        schema_field.kind(),
+                        &format!("{path}.in.values[{index}]"),
+                    )?;
+                }
+                Ok(())
+            }
+            QueryExprKindIr::Matches { field, .. } => {
+                self.validate_searchable_query_field(field, &child_path("matches.field"))
+            }
+            QueryExprKindIr::DotProduct { .. }
             | QueryExprKindIr::WeightedSet { .. }
             | QueryExprKindIr::Wand { .. }
             | QueryExprKindIr::GeoLocation { .. }
             | QueryExprKindIr::GeoBoundingBox { .. }
             | QueryExprKindIr::NearestNeighbor { .. } => Ok(()),
             QueryExprKindIr::Phrase(children)
-            | QueryExprKindIr::Near(children)
-            | QueryExprKindIr::ONear(children)
-            | QueryExprKindIr::SameElement(children)
-            | QueryExprKindIr::Equiv(children) => {
+            | QueryExprKindIr::Near { children, .. }
+            | QueryExprKindIr::ONear { children, .. }
+            | QueryExprKindIr::SameElement(children) => {
                 require_field_context("phrase/proximity")?;
                 validate_proximity_children(
                     children,
                     match &query.kind {
                         QueryExprKindIr::Phrase(_) => "phrase",
-                        QueryExprKindIr::Near(_) => "near",
-                        QueryExprKindIr::ONear(_) => "onear",
-                        QueryExprKindIr::SameElement(_) => "same_element",
-                        _ => "equiv",
+                        QueryExprKindIr::Near { .. } => "near",
+                        QueryExprKindIr::ONear { .. } => "onear",
+                        _ => "same_element",
                     },
                 )
+            }
+            QueryExprKindIr::Equiv(children) => {
+                require_field_context("phrase/proximity")?;
+                if children.len() < 2 {
+                    return Err(invalid(
+                        "invalid_query_children",
+                        Some(child_path("equiv")),
+                        "equiv requires at least two children",
+                    ));
+                }
+                validate_proximity_children(children, "equiv")
             }
             QueryExprKindIr::Alternatives(values) => {
                 require_field_context("alternatives")?;
@@ -369,12 +609,76 @@ impl IndexContext {
             }
         }
     }
+
+    fn validate_searchable_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
+        let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
+        if !schema_field.capabilities().searchable() {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(path.to_owned()),
+                "query term requires a searchable field",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_filter_query_field<'a>(
+        &'a self,
+        field: &QueryFieldRefIr,
+        path: &str,
+        operation: &str,
+    ) -> Result<&'a FieldIr> {
+        let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
+        if !schema_field.capabilities().filterable() {
+            return Err(invalid(
+                "field_not_filterable",
+                Some(path.to_owned()),
+                format!("{operation} requires a filterable field"),
+            ));
+        }
+        Ok(schema_field)
+    }
+
+    fn validate_typed_query_scalar(
+        &self,
+        value: &RequestValueIr,
+        kind: FieldKind,
+        path: &str,
+    ) -> Result<()> {
+        let valid = match (value, kind) {
+            (RequestValueIr::String(_), FieldKind::Text | FieldKind::Keyword)
+            | (RequestValueIr::Int64(_), FieldKind::Int64)
+            | (RequestValueIr::Bool(_), FieldKind::Bool) => true,
+            (RequestValueIr::Float64(value), FieldKind::Float64) => value.is_finite(),
+            _ => false,
+        };
+        if !valid {
+            return Err(invalid(
+                "type_mismatch",
+                Some(path.to_owned()),
+                "query value type does not match field kind",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_typed_query_range_bound(
+        &self,
+        bound: &QueryRangeBoundIr,
+        kind: FieldKind,
+        path: &str,
+    ) -> Result<()> {
+        if let QueryRangeBoundIr::Finite(value) = bound {
+            self.validate_typed_query_scalar(value, kind, path)?;
+        }
+        Ok(())
+    }
     pub(crate) fn typed_query_expr_to_ir(
         &self,
         expression: api::QueryExpr<'_>,
         path: &str,
     ) -> Result<QueryExprIr> {
-        let annotations =
+        let mut annotations =
             request_values_to_map(expression.annotations(), &format!("{path}.annotations"))?;
         let kind = match expression.expr_type() {
             api::QueryExprKind::TermQuery => {
@@ -483,24 +787,26 @@ impl IndexContext {
                     "phrase",
                 )?,
             ),
-            api::QueryExprKind::QueryNear => QueryExprKindIr::Near(
-                self.typed_query_children(
+            api::QueryExprKind::QueryNear => QueryExprKindIr::Near {
+                children: self.typed_query_children(
                     expression
                         .expr_as_query_near()
                         .and_then(|value| value.terms()),
                     path,
                     "near",
                 )?,
-            ),
-            api::QueryExprKind::QueryONear => QueryExprKindIr::ONear(
-                self.typed_query_children(
+                distance: DEFAULT_PROXIMITY_DISTANCE,
+            },
+            api::QueryExprKind::QueryONear => QueryExprKindIr::ONear {
+                children: self.typed_query_children(
                     expression
                         .expr_as_query_onear()
                         .and_then(|value| value.terms()),
                     path,
                     "onear",
                 )?,
-            ),
+                distance: DEFAULT_PROXIMITY_DISTANCE,
+            },
             api::QueryExprKind::QuerySameElement => QueryExprKindIr::SameElement(
                 self.typed_query_children(
                     expression
@@ -535,6 +841,9 @@ impl IndexContext {
                     })?;
                 QueryExprKindIr::Fuzzy {
                     value: RequestValueIr::from_api(value, format!("{path}.fuzzy.value"))?,
+                    max_edit_distance: DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                    prefix_length: DEFAULT_FUZZY_PREFIX_LENGTH,
+                    prefix: DEFAULT_FUZZY_PREFIX,
                 }
             }
             api::QueryExprKind::QueryMatches => {
@@ -581,20 +890,26 @@ impl IndexContext {
                         )
                     })?
                     .to_owned(),
+                default_index: None,
+                target_hits: DEFAULT_WEAK_AND_TARGET_HITS,
             },
-            api::QueryExprKind::QueryUserQuery => QueryExprKindIr::UserQuery,
+            api::QueryExprKind::QueryUserQuery => QueryExprKindIr::UserQuery {
+                default_index: None,
+                target_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+            },
             api::QueryExprKind::QueryDotProduct
             | api::QueryExprKind::QueryWeightedSet
             | api::QueryExprKind::QueryWand => self.weighted_query_to_ir(expression, path)?,
-            api::QueryExprKind::QueryWeakAnd => QueryExprKindIr::WeakAnd(
-                self.typed_query_children(
+            api::QueryExprKind::QueryWeakAnd => QueryExprKindIr::WeakAnd {
+                children: self.typed_query_children(
                     expression
                         .expr_as_query_weak_and()
                         .and_then(|value| value.clauses()),
                     path,
                     "weak_and",
                 )?,
-            ),
+                target_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+            },
             api::QueryExprKind::QueryRank => {
                 let query = expression
                     .expr_as_query_rank()
@@ -670,6 +985,8 @@ impl IndexContext {
                 ))
             }
         };
+        let mut kind = kind;
+        resolve_typed_query_annotations(&mut kind, &mut annotations, path)?;
         Ok(QueryExprIr { kind, annotations })
     }
 

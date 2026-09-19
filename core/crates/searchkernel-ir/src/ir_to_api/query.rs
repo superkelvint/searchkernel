@@ -425,11 +425,11 @@ pub(super) fn query_expr_ir_offset<'a>(
         ir::QueryExprKindIr::Phrase(values) => {
             query_children_union(builder, values, api::QueryExprKind::QueryPhrase)
         }
-        ir::QueryExprKindIr::Near(values) => {
-            query_children_union(builder, values, api::QueryExprKind::QueryNear)
+        ir::QueryExprKindIr::Near { children, .. } => {
+            query_children_union(builder, children, api::QueryExprKind::QueryNear)
         }
-        ir::QueryExprKindIr::ONear(values) => {
-            query_children_union(builder, values, api::QueryExprKind::QueryONear)
+        ir::QueryExprKindIr::ONear { children, .. } => {
+            query_children_union(builder, children, api::QueryExprKind::QueryONear)
         }
         ir::QueryExprKindIr::SameElement(values) => {
             query_children_union(builder, values, api::QueryExprKind::QuerySameElement)
@@ -437,11 +437,13 @@ pub(super) fn query_expr_ir_offset<'a>(
         ir::QueryExprKindIr::Equiv(values) => {
             query_children_union(builder, values, api::QueryExprKind::QueryEquiv)
         }
-        ir::QueryExprKindIr::WeakAnd(values) => {
-            query_children_union(builder, values, api::QueryExprKind::QueryWeakAnd)
+        ir::QueryExprKindIr::WeakAnd { children, .. } => {
+            query_children_union(builder, children, api::QueryExprKind::QueryWeakAnd)
         }
         ir::QueryExprKindIr::Alternatives(values) => query_alternatives_union(builder, values),
-        ir::QueryExprKindIr::Fuzzy { value: query_value } => {
+        ir::QueryExprKindIr::Fuzzy {
+            value: query_value, ..
+        } => {
             let query_value = request_value_offset(builder, query_value);
             let value = api::QueryFuzzy::create(
                 builder,
@@ -468,7 +470,7 @@ pub(super) fn query_expr_ir_offset<'a>(
             let value = api::QueryText::create(builder, &api::QueryTextArgs { text: Some(text) });
             (api::QueryExprKind::QueryText, value.as_union_value())
         }
-        ir::QueryExprKindIr::UserInput { value: input } => {
+        ir::QueryExprKindIr::UserInput { value: input, .. } => {
             let input = builder.create_string(input);
             let value = api::QueryUserInput::create(
                 builder,
@@ -476,7 +478,7 @@ pub(super) fn query_expr_ir_offset<'a>(
             );
             (api::QueryExprKind::QueryUserInput, value.as_union_value())
         }
-        ir::QueryExprKindIr::UserQuery => {
+        ir::QueryExprKindIr::UserQuery { .. } => {
             let value = api::QueryUserQuery::create(builder, &api::QueryUserQueryArgs {});
             (api::QueryExprKind::QueryUserQuery, value.as_union_value())
         }
@@ -551,7 +553,8 @@ pub(super) fn query_expr_ir_offset<'a>(
             (api::QueryExprKind::QueryPredicate, value.as_union_value())
         }
     };
-    let annotations = request_value_entries_offset(builder, &query.annotations);
+    let annotations = resolved_query_annotations(query);
+    let annotations = request_value_entries_offset(builder, &annotations);
     api::QueryExpr::create(
         builder,
         &api::QueryExprArgs {
@@ -560,6 +563,58 @@ pub(super) fn query_expr_ir_offset<'a>(
             annotations,
         },
     )
+}
+
+fn resolved_query_annotations(
+    query: &ir::QueryExprIr,
+) -> std::collections::BTreeMap<String, ir::RequestValueIr> {
+    let mut annotations = query.annotations.clone();
+    match &query.kind {
+        ir::QueryExprKindIr::Near { distance, .. }
+        | ir::QueryExprKindIr::ONear { distance, .. } => {
+            annotations.insert(
+                "distance".to_owned(),
+                ir::RequestValueIr::Int64(i64::from(*distance)),
+            );
+        }
+        ir::QueryExprKindIr::WeakAnd { target_hits, .. } => {
+            annotations.insert(
+                "totalTargetHits".to_owned(),
+                ir::RequestValueIr::Int64(i64::from(*target_hits)),
+            );
+        }
+        ir::QueryExprKindIr::Fuzzy {
+            max_edit_distance,
+            prefix_length,
+            prefix,
+            ..
+        } => {
+            annotations.insert(
+                "maxEditDistance".to_owned(),
+                ir::RequestValueIr::Int64(i64::from(*max_edit_distance)),
+            );
+            annotations.insert(
+                "prefixLength".to_owned(),
+                ir::RequestValueIr::Int64(i64::from(*prefix_length)),
+            );
+            annotations.insert("prefix".to_owned(), ir::RequestValueIr::Bool(*prefix));
+        }
+        ir::QueryExprKindIr::UserInput {
+            default_index: Some(default_index),
+            ..
+        }
+        | ir::QueryExprKindIr::UserQuery {
+            default_index: Some(default_index),
+            ..
+        } => {
+            annotations.insert(
+                "defaultIndex".to_owned(),
+                ir::RequestValueIr::String(default_index.clone()),
+            );
+        }
+        _ => {}
+    }
+    annotations
 }
 
 pub(super) fn query_expr_ir_vector<'a>(

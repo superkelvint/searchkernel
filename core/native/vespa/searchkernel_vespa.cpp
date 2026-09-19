@@ -79,6 +79,9 @@
 #include <vespa/searchlib/common/serialized_query_tree.h>
 #include <vespa/searchlib/query/numeric_range_spec.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
+#include <vespa/searchlib/query/tree/location.h>
+#include <vespa/searchlib/query/tree/point.h>
+#include <vespa/searchlib/query/tree/rectangle.h>
 #include <vespa/searchlib/query/tree/range.h>
 #include <vespa/searchlib/query/tree/string_range.h>
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
@@ -3749,6 +3752,24 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
                 "nearest-neighbor operation requires a tensor attribute field: " + std::string(field));
         }
         break;
+    case SK_QUERY_FIELD_ARRAY_STRING:
+        if (!metadata->attribute || metadata->type != "array<string>") {
+            throw std::invalid_argument(
+                "same-element operation requires an array<string> attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_POSITION:
+        if (!metadata->attribute || metadata->type != "position") {
+            throw std::invalid_argument(
+                "geo operation requires a position attribute field: " + std::string(field));
+        }
+        break;
+    case SK_QUERY_FIELD_PREDICATE:
+        if (!metadata->attribute || metadata->type != "predicate") {
+            throw std::invalid_argument(
+                "predicate operation requires a predicate attribute field: " + std::string(field));
+        }
+        break;
     default:
         throw std::invalid_argument("unsupported query field kind");
     }
@@ -5964,7 +5985,10 @@ extern "C" int32_t sk_query_add_equiv(
                          "equiv query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        if (child_count < 2) {
+            throw std::invalid_argument("equiv query requires at least two children");
+        }
+        if (child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("equiv query child count is invalid");
         }
         query->builder.addEquiv(static_cast<int>(child_count), query->allocate_term_id(), Weight(100));
@@ -5980,14 +6004,15 @@ extern "C" int32_t sk_query_add_weak_and(
                          "weak-and query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        validate_fuzzy_query_field(*query, field);
         if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("weak-and query child count is invalid");
         }
         if (target_num_hits == 0) {
             throw std::invalid_argument("weak-and target hits must be positive");
         }
-        query->builder.addWeakAnd(static_cast<int>(child_count), target_num_hits, field);
+        // Keep the legacy ABI field argument for compatibility. WeakAnd is a
+        // boolean-like operator; its children carry their own field views.
+        query->builder.addWeakAnd(static_cast<int>(child_count), target_num_hits, "");
     });
 }
 
@@ -6230,6 +6255,162 @@ extern "C" int32_t sk_query_add_nearest_neighbor(
         query->builder.add_nearest_neighbor_term(
             query_tensor, document_field, query->allocate_term_id(), Weight(1),
             target_num_hits, allow_approximate != 0);
+    });
+}
+
+extern "C" int32_t sk_query_add_same_element(
+    sk_query *query, const char *field, uint32_t child_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "same-element arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (child_count < 2 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("same-element query child count is invalid");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_ARRAY_STRING, field);
+        query->builder.addSameElement(static_cast<int>(child_count), field,
+                                      query->allocate_term_id(), Weight(100));
+    });
+}
+
+uint32_t parse_geo_radius_microdegrees(const char *radius) {
+    if (!radius || *radius == '\0') throw std::invalid_argument("geo radius must not be empty");
+    std::string value(radius);
+    size_t first = value.find_first_not_of(" \t\r\n");
+    size_t last = value.find_last_not_of(" \t\r\n");
+    if (first == std::string::npos) throw std::invalid_argument("geo radius must not be empty");
+    value = value.substr(first, last - first + 1);
+    double multiplier = 1.0;
+    std::string_view number = value;
+    if (value.ends_with("km")) {
+        multiplier = 1.0 / 111.1950802335329;
+        number = std::string_view(value).substr(0, value.size() - 2);
+    } else if (value.ends_with("m")) {
+        multiplier = 1.0 / 111195.0802335329;
+        number = std::string_view(value).substr(0, value.size() - 1);
+    }
+    char *end = nullptr;
+    const double amount = std::strtod(std::string(number).c_str(), &end);
+    if (!std::isfinite(amount) || amount <= 0.0 || !end || *end != '\0') {
+        throw std::invalid_argument("geo radius must be a positive number with optional m or km suffix");
+    }
+    const double microdegrees = amount * multiplier * 1'000'000.0;
+    if (!std::isfinite(microdegrees) || microdegrees > std::numeric_limits<uint32_t>::max()) {
+        throw std::invalid_argument("geo radius is outside the supported range");
+    }
+    return static_cast<uint32_t>(std::llround(microdegrees));
+}
+
+int32_t geo_microdegrees(double value, const char *name) {
+    if (!std::isfinite(value)) throw std::invalid_argument(std::string("geo ") + name + " must be finite");
+    const double result = value * 1'000'000.0;
+    if (result < std::numeric_limits<int32_t>::min() || result > std::numeric_limits<int32_t>::max()) {
+        throw std::invalid_argument(std::string("geo ") + name + " is outside the supported range");
+    }
+    return static_cast<int32_t>(std::llround(result));
+}
+
+extern "C" int32_t sk_query_add_geo_location(
+    sk_query *query, const char *field, double latitude, double longitude,
+    const char *radius, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field || !radius) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "geo-location arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
+            throw std::invalid_argument("geo coordinates are outside their valid ranges");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_POSITION, field);
+        const auto point = search::query::Point{geo_microdegrees(longitude, "longitude"),
+                                                  geo_microdegrees(latitude, "latitude")};
+        const auto radius_microdegrees = parse_geo_radius_microdegrees(radius);
+        const auto aspect = static_cast<uint32_t>(std::llround(
+            std::max(0.0, std::cos(latitude * M_PI / 180.0)) * 1'000'000.0));
+        query->builder.addLocationTerm(
+            search::query::Location(point, radius_microdegrees, aspect), field,
+            query->allocate_term_id(), Weight(100));
+    });
+}
+
+extern "C" int32_t sk_query_add_geo_bounding_box(
+    sk_query *query, const char *field, double south, double west,
+    double north, double east, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "geo bounding-box arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (south < -90.0 || north > 90.0 || south > north || west < -180.0 || east > 180.0 || west > east) {
+            throw std::invalid_argument("geo bounding-box coordinates are invalid");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_POSITION, field);
+        const auto rectangle = search::query::Rectangle(
+            geo_microdegrees(west, "west"), geo_microdegrees(north, "north"),
+            geo_microdegrees(east, "east"), geo_microdegrees(south, "south"));
+        query->builder.addLocationTerm(search::query::Location(rectangle), field,
+                                       query->allocate_term_id(), Weight(100));
+    });
+}
+
+extern "C" int32_t sk_query_add_predicate(
+    sk_query *query, const char *field,
+    const uint8_t *feature_key_bytes, const uint32_t *feature_key_lengths,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    const uint64_t *feature_masks, uint32_t feature_count,
+    const uint8_t *range_key_bytes, const uint32_t *range_key_lengths,
+    const uint64_t *range_values, const uint64_t *range_masks,
+    uint32_t range_count, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "predicate arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_PREDICATE, field);
+        if (feature_count == 0 && range_count == 0) {
+            throw std::invalid_argument("predicate query requires at least one feature");
+        }
+        if ((feature_count && (!feature_key_bytes || !feature_key_lengths || !feature_value_bytes ||
+                               !feature_value_lengths || !feature_masks)) ||
+            (range_count && (!range_key_bytes || !range_key_lengths || !range_values || !range_masks))) {
+            throw std::invalid_argument("predicate feature arrays are invalid");
+        }
+        auto term = std::make_unique<search::query::PredicateQueryTerm>();
+        size_t key_offset = 0;
+        size_t value_offset = 0;
+        for (uint32_t index = 0; index < feature_count; ++index) {
+            const auto key_length = feature_key_lengths[index];
+            const auto value_length = feature_value_lengths[index];
+            if (key_length == 0 || value_length == 0 || key_offset > MAX_TEXT_BYTES - key_length ||
+                value_offset > MAX_TEXT_BYTES - value_length) {
+                throw std::invalid_argument("predicate feature key or value is invalid");
+            }
+            term->addFeature(
+                std::string(reinterpret_cast<const char *>(feature_key_bytes + key_offset), key_length),
+                std::string(reinterpret_cast<const char *>(feature_value_bytes + value_offset), value_length),
+                feature_masks[index]);
+            key_offset += key_length;
+            value_offset += value_length;
+        }
+        if (key_offset > MAX_TEXT_BYTES || value_offset > MAX_TEXT_BYTES) {
+            throw std::invalid_argument("predicate feature data is too large");
+        }
+        key_offset = 0;
+        for (uint32_t index = 0; index < range_count; ++index) {
+            const auto key_length = range_key_lengths[index];
+            if (key_length == 0 || key_offset > MAX_TEXT_BYTES - key_length) {
+                throw std::invalid_argument("predicate range feature key is invalid");
+            }
+            term->addRangeFeature(
+                std::string(reinterpret_cast<const char *>(range_key_bytes + key_offset), key_length),
+                range_values[index], range_masks[index]);
+            key_offset += key_length;
+        }
+        query->builder.addPredicateQuery(std::move(term), field,
+                                         query->allocate_term_id(), Weight(100));
     });
 }
 

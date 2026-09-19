@@ -970,13 +970,22 @@ pub enum QueryExprKindIr {
         values: Vec<RequestValueIr>,
     },
     Phrase(Vec<QueryExprIr>),
-    Near(Vec<QueryExprIr>),
-    ONear(Vec<QueryExprIr>),
+    Near {
+        children: Vec<QueryExprIr>,
+        distance: u32,
+    },
+    ONear {
+        children: Vec<QueryExprIr>,
+        distance: u32,
+    },
     SameElement(Vec<QueryExprIr>),
     Equiv(Vec<QueryExprIr>),
     Alternatives(Vec<QueryAlternativeIr>),
     Fuzzy {
         value: RequestValueIr,
+        max_edit_distance: u32,
+        prefix_length: u32,
+        prefix: bool,
     },
     Matches {
         field: QueryFieldRefIr,
@@ -987,8 +996,13 @@ pub enum QueryExprKindIr {
     },
     UserInput {
         value: String,
+        default_index: Option<String>,
+        target_hits: u32,
     },
-    UserQuery,
+    UserQuery {
+        default_index: Option<String>,
+        target_hits: u32,
+    },
     DotProduct {
         field: QueryFieldRefIr,
         items: Vec<WeightedQueryItemIr>,
@@ -1001,7 +1015,10 @@ pub enum QueryExprKindIr {
         field: QueryFieldRefIr,
         items: Vec<WeightedQueryItemIr>,
     },
-    WeakAnd(Vec<QueryExprIr>),
+    WeakAnd {
+        children: Vec<QueryExprIr>,
+        target_hits: u32,
+    },
     Rank {
         matching: Box<QueryExprIr>,
         ranking: Vec<QueryExprIr>,

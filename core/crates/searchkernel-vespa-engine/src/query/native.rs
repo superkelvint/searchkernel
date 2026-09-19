@@ -1,8 +1,8 @@
 //! Native query lowering and field validation.
 
 use super::{
-    invalid_query, AttributeBound, PredicateFeature, PredicateRangeFeature, Query, QueryAlternative,
-    RangeBound, Value, WeightedQueryItem,
+    invalid_query, AttributeBound, PredicateFeature, PredicateRangeFeature, Query,
+    QueryAlternative, RangeBound, Value, WeightedQueryItem,
 };
 use crate::error::{check, cstring};
 use crate::linguistics::{Linguistics, LinguisticsOptions};

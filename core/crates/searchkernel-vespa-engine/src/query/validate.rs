@@ -235,7 +235,10 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
             if field.is_empty() {
                 return Err(invalid_query("geo bounding-box field must not be empty"));
             }
-            if [south, west, north, east].iter().any(|value| !value.is_finite()) {
+            if [south, west, north, east]
+                .iter()
+                .any(|value| !value.is_finite())
+            {
                 return Err(invalid_query("geo bounding-box coordinates must be finite"));
             }
         }
@@ -248,12 +251,12 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 return Err(invalid_query("predicate query field must not be empty"));
             }
             if features.is_empty() && range_features.is_empty() {
-                return Err(invalid_query("predicate query requires at least one feature"));
+                return Err(invalid_query(
+                    "predicate query requires at least one feature",
+                ));
             }
             if features.iter().any(|feature| feature.key.is_empty())
-                || range_features
-                    .iter()
-                    .any(|feature| feature.key.is_empty())
+                || range_features.iter().any(|feature| feature.key.is_empty())
             {
                 return Err(invalid_query("predicate feature keys must not be empty"));
             }
