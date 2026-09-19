@@ -10,6 +10,7 @@ members = [
     "core/crates/searchkernel-json",
     "core/crates/searchkernel-dispatch",
     "core/crates/searchkernel-ir-adapter",
+    "searchkerneld",
     "tools/searchkernel-bindgen",
 ]
 resolver = "2"
