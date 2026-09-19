@@ -794,6 +794,30 @@ fn stale_v1_request_envelope_is_rejected() {
 }
 
 #[test]
+fn nested_union_payloads_reject_unknown_fields() {
+    let invalid: &[&[u8]] = &[
+        br#"{"protocol_version":2,"request":{"search":{"query_expr":{"query_contains":{"field":"title","item":{"term_query":{"value":{"string":"rust"}}},"this_should_not_exist":123}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"filter":{"filter_and":{"clauses":[],"this_should_not_exist":123}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"filter":{"filter_range":{"field":"price","lower":{"positive_infinity":{"this_should_not_exist":123}}}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query_expr":{"query_weighted_set":{"field":"tags","items":[{"key":{"string":"rust"},"weight":"1","this_should_not_exist":123}]}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"inputs":{"term":{"literal":{"value":{"string":"rust"},"this_should_not_exist":123}}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"sort":[{"field":"price","missing":{"as":{"value":{"int64":"0"},"this_should_not_exist":123}}}]}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query_expr":{"query_true":{"this_should_not_exist":123}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"filter":{"none":{"this_should_not_exist":123}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"ranking":{"default":{"this_should_not_exist":123}}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"patch":{"id":"doc:1","operations":[{"none":{"this_should_not_exist":123}}]}}}}"#,
+        br#"{"protocol_version":2,"request":{"search":{"query_expr":{"query_alternatives":{"alternatives":[{"query":{"query_true":{}},"this_should_not_exist":123}]}}}}}"#,
+    ];
+    for input in invalid {
+        assert!(
+            request_json_to_flatbuffer(input).is_err(),
+            "nested unknown field was accepted: {}",
+            String::from_utf8_lossy(input)
+        );
+    }
+}
+
+#[test]
 fn canonical_request_corpus_round_trips_without_wire_discriminators() {
     let fixtures = request_fixtures();
     assert_eq!(fixtures.len(), 77);

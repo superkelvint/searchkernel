@@ -5477,6 +5477,22 @@ fn check_keys(
     Ok(())
 }
 
+fn check_empty_object<'a>(
+    value: &'a Value,
+    path: &str,
+) -> Result<&'a Map<String, Value>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_empty_map(object, path)?;
+    Ok(object)
+}
+
+fn check_empty_map(object: &Map<String, Value>, path: &str) -> Result<(), JsonCodecError> {
+    if let Some(key) = object.keys().next() {
+        return Err(contract(format!("unknown field `{path}.{key}`")));
+    }
+    Ok(())
+}
+
 fn check_envelope_keys(
     object: &Map<String, Value>,
     payload_name: &str,
@@ -6281,16 +6297,22 @@ fn relevance_from_json<'a>(
                     .as_union_value(),
             )
         }
-        "negative_infinity_relevance" => (
-            api::RelevanceKind::NegativeInfinityRelevance,
-            api::NegativeInfinityRelevance::create(b, &api::NegativeInfinityRelevanceArgs {})
-                .as_union_value(),
-        ),
-        "positive_infinity_relevance" => (
-            api::RelevanceKind::PositiveInfinityRelevance,
-            api::PositiveInfinityRelevance::create(b, &api::PositiveInfinityRelevanceArgs {})
-                .as_union_value(),
-        ),
+        "negative_infinity_relevance" => {
+            check_empty_object(payload, &format!("{path}.negative_infinity_relevance"))?;
+            (
+                api::RelevanceKind::NegativeInfinityRelevance,
+                api::NegativeInfinityRelevance::create(b, &api::NegativeInfinityRelevanceArgs {})
+                    .as_union_value(),
+            )
+        }
+        "positive_infinity_relevance" => {
+            check_empty_object(payload, &format!("{path}.positive_infinity_relevance"))?;
+            (
+                api::RelevanceKind::PositiveInfinityRelevance,
+                api::PositiveInfinityRelevance::create(b, &api::PositiveInfinityRelevanceArgs {})
+                    .as_union_value(),
+            )
+        }
         _ => {
             return Err(contract(format!(
                 "unknown relevance variant `{kind}` at {path}"
@@ -6801,7 +6823,9 @@ fn missing_policy<'a>(
         if kind != "as" {
             return Err(contract(format!("unknown missing policy `{path}.{kind}`")));
         }
-        let payload = object(payload, &format!("{path}.as"))?;
+        let payload_path = format!("{path}.as");
+        let payload = object(payload, &payload_path)?;
+        check_keys(payload, "SearchKernel_V2_MissingAs", &payload_path)?;
         let value = value_from_json(b, required(payload, "value", &format!("{path}.as"))?)?;
         let policy = api::MissingAs::create(b, &api::MissingAsArgs { value: Some(value) });
         return Ok(api::MissingPolicy::create(
@@ -6942,6 +6966,9 @@ fn resolved_query_source_from_json<'a>(
     }
     let object = object(value, path)?;
     if let Some(query) = field(object, "query_expr") {
+        if let Some(key) = object.keys().find(|key| key.as_str() != "query_expr") {
+            return Err(contract(format!("unknown field `{path}.{key}`")));
+        }
         return query_expr(b, query, &format!("{path}.query_expr"))
             .map(|query| typed_query_source(b, query));
     }
@@ -6977,9 +7004,11 @@ fn resolved_sort<'a>(
     check_keys(object_value, "SearchKernel_V2_ResolvedSortExpr", path)?;
     let target = if let Some(value) = field(object_value, "target") {
         let (kind, payload) = one_key(value, &format!("{path}.target"))?;
-        let payload = crate::generated::object(payload, &format!("{path}.target.{kind}"))?;
+        let target_path = format!("{path}.target.{kind}");
+        let payload = crate::generated::object(payload, &target_path)?;
         let (target_type, target) = match kind {
             "field" | "field_sort_target" => {
+                check_keys(payload, "SearchKernel_V2_FieldSortTarget", &target_path)?;
                 let field = b.create_string(&string(
                     required(payload, "field", &format!("{path}.target.{kind}"))?,
                     &format!("{path}.target.{kind}.field"),
@@ -6994,6 +7023,8 @@ fn resolved_sort<'a>(
                 )
             }
             "relevance" | "relevance_sort_target" => {
+                check_empty_map(payload, &target_path)?;
+                check_keys(payload, "SearchKernel_V2_RelevanceSortTarget", &target_path)?;
                 let target =
                     api::RelevanceSortTarget::create(b, &api::RelevanceSortTargetArgs {});
                 (
@@ -7002,6 +7033,7 @@ fn resolved_sort<'a>(
                 )
             }
             "rank_feature" | "rank_feature_sort_target" => {
+                check_keys(payload, "SearchKernel_V2_RankFeatureSortTarget", &target_path)?;
                 let feature = b.create_string(&string(
                     required(payload, "feature", &format!("{path}.target.{kind}"))?,
                     &format!("{path}.target.{kind}.feature"),
@@ -10632,9 +10664,7 @@ fn patch_operation<'a>(
     let (kind, payload) = one_key(value, path)?;
     let (operation_type, operation) = match kind {
         "none" => {
-            if !payload.is_object() {
-                return Err(contract(format!("`{path}.none` must be an object")));
-            }
+            check_empty_object(payload, &format!("{path}.none"))?;
             (api::PatchOperationKind::NONE, None)
         }
         "set_field" => (
@@ -10833,9 +10863,7 @@ fn tensor_payload_from_json<'a>(
     let (kind, payload) = one_key(value, path)?;
     match kind {
         "none" => {
-            if !payload.is_object() {
-                return Err(contract("tensor payload none must be an object"));
-            }
+            check_empty_object(payload, &format!("{path}.none"))?;
             Ok((api::TensorPayloadKind::NONE, None))
         }
         "dense" => {
@@ -10930,9 +10958,7 @@ fn value_from_json<'a>(
 ) -> Result<WIPOffset<api::Value<'a>>, JsonCodecError> {
     let (kind, payload) = one_key(input, "value")?;
     if kind == "none" {
-        if !payload.is_object() {
-            return Err(contract("value.none must be an object"));
-        }
+        check_empty_object(payload, "value.none")?;
         return Ok(api::Value::create(
             b,
             &api::ValueArgs {
@@ -10992,9 +11018,7 @@ fn value_from_json<'a>(
         }
         "non_finite" => {
             let (kind, payload) = one_key(payload, "value.non_finite")?;
-            if !payload.is_object() {
-                return Err(contract("value.non_finite payload must be an object"));
-            }
+            check_empty_object(payload, &format!("value.non_finite.{kind}"))?;
             let kind = match kind {
                 "nan" => api::NonFiniteFloatKind::NaN,
                 "positive_infinity" => api::NonFiniteFloatKind::PositiveInfinity,
@@ -11430,9 +11454,7 @@ fn filter<'a>(
 ) -> Result<WIPOffset<api::FilterExpr<'a>>, JsonCodecError> {
     let (kind, payload) = one_key(value, path)?;
     if kind == "none" {
-        if !payload.is_object() {
-            return Err(contract(format!("`{path}.none` must be an object")));
-        }
+        check_empty_object(payload, &format!("{path}.none"))?;
         return Ok(api::FilterExpr::create(
             b,
             &api::FilterExprArgs {
@@ -11444,6 +11466,7 @@ fn filter<'a>(
     let (expr_type, expr) = match kind {
         "filter_and" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_FilterAnd", &format!("{path}.filter_and"))?;
             let clauses = field(object, "clauses");
             let items = match clauses {
                 None => None,
@@ -11463,6 +11486,7 @@ fn filter<'a>(
         }
         "filter_or" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_FilterOr", &format!("{path}.filter_or"))?;
             let clauses = field(object, "clauses");
             let items = match clauses {
                 None => None,
@@ -11482,6 +11506,7 @@ fn filter<'a>(
         }
         "filter_not" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_FilterNot", &format!("{path}.filter_not"))?;
             let clause = field(object, "clause")
                 .map(|value| filter(b, value, &format!("{path}.clause")))
                 .transpose()?;
@@ -11591,25 +11616,34 @@ fn range_bound<'a>(
         let (kind, payload) = one_key(raw, path)?;
         let (bound_type, bound) = match kind {
             "negative_infinity" => (api::RangeBoundKind::NegativeInfinityBound, {
-                if !payload.is_object() {
-                    return Err(contract(format!("`{path}.{kind}` must be an object")));
-                }
+                let object = check_empty_object(payload, &format!("{path}.{kind}"))?;
+                check_keys(
+                    object,
+                    "SearchKernel_V2_NegativeInfinityBound",
+                    &format!("{path}.{kind}"),
+                )?;
                 let value =
                     api::NegativeInfinityBound::create(b, &api::NegativeInfinityBoundArgs {});
                 Some(value.as_union_value())
             }),
             "positive_infinity" => (api::RangeBoundKind::PositiveInfinityBound, {
-                if !payload.is_object() {
-                    return Err(contract(format!("`{path}.{kind}` must be an object")));
-                }
+                let object = check_empty_object(payload, &format!("{path}.{kind}"))?;
+                check_keys(
+                    object,
+                    "SearchKernel_V2_PositiveInfinityBound",
+                    &format!("{path}.{kind}"),
+                )?;
                 let value =
                     api::PositiveInfinityBound::create(b, &api::PositiveInfinityBoundArgs {});
                 Some(value.as_union_value())
             }),
             "unbounded" => (api::RangeBoundKind::UnboundedRangeBound, {
-                if !payload.is_object() {
-                    return Err(contract(format!("`{path}.{kind}` must be an object")));
-                }
+                let object = check_empty_object(payload, &format!("{path}.{kind}"))?;
+                check_keys(
+                    object,
+                    "SearchKernel_V2_UnboundedRangeBound",
+                    &format!("{path}.{kind}"),
+                )?;
                 let value = api::UnboundedRangeBound::create(b, &api::UnboundedRangeBoundArgs {});
                 Some(value.as_union_value())
             }),
@@ -11696,6 +11730,11 @@ fn sort<'a>(
         let payload = object(payload, &format!("{path}.target.{kind}"))?;
         let (target_type, target) = match kind {
             "field" | "field_sort_target" => {
+                check_keys(
+                    payload,
+                    "SearchKernel_V2_FieldSortTarget",
+                    &format!("{path}.target.{kind}"),
+                )?;
                 let field = b.create_string(&string(
                     required(payload, "field", path)?,
                     &format!("{path}.target.field"),
@@ -11710,6 +11749,12 @@ fn sort<'a>(
                 )
             }
             "relevance" | "relevance_sort_target" => {
+                check_empty_map(payload, &format!("{path}.target.{kind}"))?;
+                check_keys(
+                    payload,
+                    "SearchKernel_V2_RelevanceSortTarget",
+                    &format!("{path}.target.{kind}"),
+                )?;
                 let target = api::RelevanceSortTarget::create(b, &api::RelevanceSortTargetArgs {});
                 (
                     api::SortTargetKind::RelevanceSortTarget,
@@ -11717,6 +11762,11 @@ fn sort<'a>(
                 )
             }
             "rank_feature" | "rank_feature_sort_target" => {
+                check_keys(
+                    payload,
+                    "SearchKernel_V2_RankFeatureSortTarget",
+                    &format!("{path}.target.{kind}"),
+                )?;
                 let feature = b.create_string(&string(
                     required(payload, "feature", path)?,
                     &format!("{path}.target.rank_feature.feature"),
@@ -11733,6 +11783,11 @@ fn sort<'a>(
                 )
             }
             "raw" | "raw_sort_target" => {
+                check_keys(
+                    payload,
+                    "SearchKernel_V2_RawSortTarget",
+                    &format!("{path}.target.{kind}"),
+                )?;
                 let expression = b.create_string(&string(
                     required(payload, "expression", path)?,
                     &format!("{path}.target.raw.expression"),
@@ -11814,13 +11869,17 @@ fn ranking<'a>(
                 (profile, properties)
             } else {
                 let (kind, payload) = one_key(value, path)?;
-                if !payload.is_object() {
-                    return Err(contract(format!("`{path}.{kind}` must be an object")));
-                }
+                let payload_path = format!("{path}.{kind}");
+                let payload = check_empty_object(payload, &payload_path)?;
                 (
                     match kind {
-                        "default_relevance_v1" | "default" => "default".to_owned(),
-                        "bm25_ranking" | "bm25" => "bm25".to_owned(),
+                        "default_relevance_v1" | "default" => {
+                            check_keys(payload, "SearchKernel_V2_DefaultRelevanceV1", &payload_path)?;
+                            "default".to_owned()
+                        }
+                        "bm25_ranking" | "bm25" => {
+                            "bm25".to_owned()
+                        }
                         other => {
                             return Err(contract(format!(
                                 "unknown ranking variant `{path}.{other}`"
@@ -11884,9 +11943,11 @@ fn query_inputs<'a>(
         .iter()
         .map(|(name, value)| {
             let (kind, payload) = one_key(value, &format!("{path}.{name}"))?;
-            let payload = crate::generated::object(payload, &format!("{path}.{name}.{kind}"))?;
+            let payload_path = format!("{path}.{name}.{kind}");
+            let payload = crate::generated::object(payload, &payload_path)?;
             let (input_type, input) = match kind {
                 "literal" => {
+                    check_keys(payload, "SearchKernel_V2_LiteralQueryInput", &payload_path)?;
                     let value = value_from_json(
                         b,
                         required(payload, "value", &format!("{path}.{name}.literal"))?,
@@ -11901,6 +11962,7 @@ fn query_inputs<'a>(
                     )
                 }
                 "expression" => {
+                    check_keys(payload, "SearchKernel_V2_ExpressionQueryInput", &payload_path)?;
                     let expression = b.create_string(&string(
                         required(payload, "expression", &format!("{path}.{name}.expression"))?,
                         &format!("{path}.{name}.expression"),
@@ -13004,6 +13066,55 @@ fn grouping_filter<'a>(
     ))
 }
 
+fn check_query_expr_payload(
+    value: &Value,
+    kind: &str,
+    path: &str,
+) -> Result<(), JsonCodecError> {
+    let payload_path = format!("{path}.{kind}");
+    let object = if matches!(kind, "query_true" | "query_false" | "query_user_query") {
+        check_empty_object(value, &payload_path)?
+    } else {
+        object(value, &payload_path)?
+    };
+    let schema = match kind {
+        "term_query" => "SearchKernel_V2_TermQuery",
+        "query_contains" => "SearchKernel_V2_QueryContains",
+        "query_and" => "SearchKernel_V2_QueryAnd",
+        "query_or" => "SearchKernel_V2_QueryOr",
+        "query_not" => "SearchKernel_V2_QueryNot",
+        "query_true" => "SearchKernel_V2_QueryTrue",
+        "query_false" => "SearchKernel_V2_QueryFalse",
+        "query_comparison" => "SearchKernel_V2_QueryComparison",
+        "query_range" => "SearchKernel_V2_QueryRange",
+        "query_in" => "SearchKernel_V2_QueryIn",
+        "query_phrase" => "SearchKernel_V2_QueryPhrase",
+        "query_near" => "SearchKernel_V2_QueryNear",
+        "query_onear" => "SearchKernel_V2_QueryONear",
+        "query_same_element" => "SearchKernel_V2_QuerySameElement",
+        "query_equiv" => "SearchKernel_V2_QueryEquiv",
+        "query_alternatives" => "SearchKernel_V2_QueryAlternatives",
+        "query_fuzzy" => "SearchKernel_V2_QueryFuzzy",
+        "query_matches" => "SearchKernel_V2_QueryMatches",
+        "query_text" => "SearchKernel_V2_QueryText",
+        "query_user_input" => "SearchKernel_V2_QueryUserInput",
+        "query_user_query" => "SearchKernel_V2_QueryUserQuery",
+        "query_dot_product" => "SearchKernel_V2_QueryDotProduct",
+        "query_weighted_set" => "SearchKernel_V2_QueryWeightedSet",
+        "query_wand" => "SearchKernel_V2_QueryWand",
+        "query_weak_and" => "SearchKernel_V2_QueryWeakAnd",
+        "query_rank" => "SearchKernel_V2_QueryRank",
+        "query_labeled" => "SearchKernel_V2_QueryLabeled",
+        "query_non_empty" => "SearchKernel_V2_QueryNonEmpty",
+        "query_geo_location" => "SearchKernel_V2_QueryGeoLocation",
+        "query_geo_bounding_box" => "SearchKernel_V2_QueryGeoBoundingBox",
+        "query_nearest_neighbor" => "SearchKernel_V2_QueryNearestNeighbor",
+        "query_predicate" => "SearchKernel_V2_QueryPredicate",
+        _ => return Err(contract(format!("unknown query variant `{path}.{kind}`"))),
+    };
+    check_keys(object, schema, &payload_path)
+}
+
 fn query_expr<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
@@ -13030,9 +13141,7 @@ fn query_expr<'a>(
     let (kind, payload) =
         variant.ok_or_else(|| contract(format!("`{path}` must contain a query variant")))?;
     if kind == "none" {
-        if !payload.is_object() {
-            return Err(contract(format!("`{path}.none` must be an object")));
-        }
+        check_empty_object(payload, &format!("{path}.none"))?;
         return Ok(api::QueryExpr::create(
             b,
             &api::QueryExprArgs {
@@ -13042,6 +13151,7 @@ fn query_expr<'a>(
             },
         ));
     }
+    check_query_expr_payload(payload, kind, path)?;
     let (expr_type, expr) = match kind {
         "term_query" => (
             api::QueryExprKind::TermQuery,
@@ -13053,6 +13163,7 @@ fn query_expr<'a>(
         ),
         "query_contains" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryContains", path)?;
             let field_offset = query_field_ref_value(
                 b,
                 required(object, "field", path)?,
@@ -13072,6 +13183,7 @@ fn query_expr<'a>(
         }
         "query_and" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryAnd", path)?;
             let clauses = field(object, "clauses");
             let values = match clauses {
                 None => None,
@@ -13091,6 +13203,7 @@ fn query_expr<'a>(
         }
         "query_or" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryOr", path)?;
             let clauses = field(object, "clauses");
             let values = match clauses {
                 None => None,
@@ -13110,20 +13223,29 @@ fn query_expr<'a>(
         }
         "query_not" => {
             let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryNot", path)?;
             let clause = field(object, "clause")
                 .map(|value| query_expr(b, value, &format!("{path}.clause")))
                 .transpose()?;
             let node = api::QueryNot::create(b, &api::QueryNotArgs { clause });
             (api::QueryExprKind::QueryNot, offset(node))
         }
-        "query_true" => (
-            api::QueryExprKind::QueryTrue,
-            offset(api::QueryTrue::create(b, &api::QueryTrueArgs {})),
-        ),
-        "query_false" => (
-            api::QueryExprKind::QueryFalse,
-            offset(api::QueryFalse::create(b, &api::QueryFalseArgs {})),
-        ),
+        "query_true" => {
+            let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryTrue", path)?;
+            (
+                api::QueryExprKind::QueryTrue,
+                offset(api::QueryTrue::create(b, &api::QueryTrueArgs {})),
+            )
+        }
+        "query_false" => {
+            let object = object(payload, path)?;
+            check_keys(object, "SearchKernel_V2_QueryFalse", path)?;
+            (
+                api::QueryExprKind::QueryFalse,
+                offset(api::QueryFalse::create(b, &api::QueryFalseArgs {})),
+            )
+        }
         "query_comparison" => {
             let object = object(payload, path)?;
             let field_ref = query_field_ref_value(
@@ -13266,11 +13388,13 @@ fn query_expr<'a>(
             .iter()
             .enumerate()
             .map(|(index, value)| {
-                let item = object(value, &format!("{path}.alternatives[{index}]"))?;
+                let item_path = format!("{path}.alternatives[{index}]");
+                let item = object(value, &item_path)?;
+                check_keys(item, "SearchKernel_V2_QueryAlternative", &item_path)?;
                 let query = query_expr(
                     b,
-                    required(item, "query", &format!("{path}.alternatives[{index}]"))?,
-                    &format!("{path}.alternatives[{index}].query"),
+                    required(item, "query", &item_path)?,
+                    &format!("{item_path}.query"),
                 )?;
                 let exactness = field(item, "exactness")
                     .map(|value| {
@@ -13615,6 +13739,11 @@ fn weighted_query_items<'a>(
         .enumerate()
         .map(|(index, value)| {
             let object = object(value, &format!("{path}[{index}]"))?;
+            check_keys(
+                object,
+                "SearchKernel_V2_WeightedQueryItem",
+                &format!("{path}[{index}]"),
+            )?;
             let key = value_from_json(b, required(object, "key", &format!("{path}[{index}]"))?)?;
             let weight = decimal::<i64>(
                 required(object, "weight", &format!("{path}[{index}]"))?,
@@ -13670,7 +13799,10 @@ fn analyze<'a>(
         Some(value) => {
             let (kind, payload) = one_key(value, "analyze.target")?;
             match kind {
-                "none" => (api::AnalyzeTarget::NONE, None),
+                "none" => {
+                    check_empty_object(payload, "analyze.target.none")?;
+                    (api::AnalyzeTarget::NONE, None)
+                }
                 "analyzer" => {
                     let analyzer = analyzer(b, object(payload, "analyze.target.analyzer")?)?;
                     (api::AnalyzeTarget::Analyzer, Some(offset(analyzer)))
