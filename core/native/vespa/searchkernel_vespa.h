@@ -36,6 +36,11 @@ extern "C" {
 #define SK_QUERY_NODE_TRUE 4U
 #define SK_QUERY_TEXT_TERM 5U
 #define SK_QUERY_TEXT_PHRASE 6U
+#define SK_QUERY_NODE_NEAR 7U
+#define SK_QUERY_NODE_ONEAR 8U
+#define SK_QUERY_NODE_EQUIV 9U
+#define SK_QUERY_NODE_WEAK_AND 10U
+#define SK_QUERY_NODE_RANK 11U
 #define SK_QUERY_BOUND_UNBOUNDED 0U
 #define SK_QUERY_BOUND_INCLUDED 1U
 #define SK_QUERY_BOUND_EXCLUDED 2U
@@ -112,8 +117,9 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* This ABI revision adds tensor values and nearest-neighbor query support. */
-#define SK_NATIVE_ABI_VERSION 6U
+/* This ABI revision adds Typed Query B nodes on top of tensor values and
+   nearest-neighbor query support from the previous revision. */
+#define SK_NATIVE_ABI_VERSION 7U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -339,6 +345,43 @@ SK_API int32_t sk_query_add_text(sk_query *query, uint32_t kind,
                                  const uint32_t *term_lengths,
                                  uint32_t term_count, uint8_t *out_error,
                                  uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_proximity(
+    sk_query *query, uint8_t ordered, const char *field, uint32_t child_count,
+    uint32_t distance, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_equiv(
+    sk_query *query, uint32_t child_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_weak_and(
+    sk_query *query, const char *field, uint32_t child_count,
+    uint32_t target_num_hits, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_rank(
+    sk_query *query, uint32_t child_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_fuzzy(
+    sk_query *query, const char *field, const char *term,
+    uint32_t max_edit_distance, uint32_t prefix_lock_length,
+    uint8_t prefix_match, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_weighted_set_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_weighted_set_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_wand_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_wand_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_equals(sk_query *query, const char *field,
                                    int64_t value, uint8_t *out_error,
                                    uint32_t out_error_capacity) SK_NOEXCEPT;

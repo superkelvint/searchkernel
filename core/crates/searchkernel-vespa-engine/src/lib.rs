@@ -24,7 +24,7 @@ pub use linguistics::{
     DocumentAnalysis, DocumentTerm, Language, Linguistics, LinguisticsOptions, QueryAnalysis,
     QueryTerm, StemMode,
 };
-pub use query::{AttributeBound, Query, RangeBound, Value};
+pub use query::{AttributeBound, Query, RangeBound, Value, WeightedQueryItem};
 pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 pub use search::{
     AggregateValue, Aggregation, FacetRequest, Group, GroupingOrder, GroupingRequest,

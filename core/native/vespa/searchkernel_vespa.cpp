@@ -82,6 +82,8 @@
 #include <vespa/searchlib/query/tree/range.h>
 #include <vespa/searchlib/query/tree/string_range.h>
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
+#include <vespa/searchlib/query/tree/weighted_integer_term_vector.h>
+#include <vespa/searchlib/query/tree/weighted_string_term_vector.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
@@ -3838,6 +3840,136 @@ void add_query_text(NativeQueryState &query, uint32_t kind, const char *field,
     }
 }
 
+void validate_query_multi_field(const NativeQueryState &query, const char *field) {
+    if (!field) {
+        throw std::invalid_argument("query field must not be null");
+    }
+    validate_field_name(field);
+    if (*field == '\0') {
+        throw std::invalid_argument("query field must not be empty");
+    }
+    const auto metadata = std::find_if(
+        query.fields.begin(), query.fields.end(),
+        [field](const auto &candidate) { return candidate.name == field; });
+    if (metadata == query.fields.end()) {
+        throw std::invalid_argument("unknown generated schema field: " + std::string(field));
+    }
+    if ((!metadata->index && !metadata->attribute) ||
+        (metadata->type == "text" && !metadata->index)) {
+        throw std::invalid_argument(
+            "weighted query requires an indexed or attribute field: " + std::string(field));
+    }
+}
+
+void validate_fuzzy_query_field(const NativeQueryState &query, const char *field) {
+    if (!field) {
+        throw std::invalid_argument("query field must not be null");
+    }
+    validate_field_name(field);
+    if (*field == '\0') {
+        throw std::invalid_argument("query field must not be empty");
+    }
+    const auto metadata = std::find_if(
+        query.fields.begin(), query.fields.end(),
+        [field](const auto &candidate) { return candidate.name == field; });
+    if (metadata == query.fields.end()) {
+        throw std::invalid_argument("unknown generated schema field: " + std::string(field));
+    }
+    if ((metadata->type == "text" && metadata->index) ||
+        (metadata->type == "string" && metadata->attribute)) {
+        return;
+    }
+    throw std::invalid_argument(
+        "fuzzy query requires an indexed text or string attribute field: " + std::string(field));
+}
+
+search::query::Weight query_item_weight(int64_t value) {
+    if (value < std::numeric_limits<int32_t>::min() ||
+        value > std::numeric_limits<int32_t>::max()) {
+        throw std::invalid_argument("weighted query item weight is outside Vespa's int32 range");
+    }
+    return Weight(static_cast<int32_t>(value));
+}
+
+void validate_weighted_query_inputs(const uint8_t *key_bytes, uint32_t key_bytes_length,
+                                    const uint32_t *key_lengths, const int64_t *weights,
+                                    uint32_t item_count) {
+    if (item_count == 0) {
+        throw std::invalid_argument("weighted query requires at least one item");
+    }
+    if (!key_lengths || !weights) {
+        throw std::invalid_argument("weighted query arrays must not be null");
+    }
+    if (!key_bytes && key_bytes_length != 0) {
+        throw std::invalid_argument("weighted query key bytes must not be null");
+    }
+    if (item_count > MAX_TEXT_TERMS) {
+        throw std::invalid_argument("weighted query item count is too large");
+    }
+    size_t total_bytes = 0;
+    for (uint32_t index = 0; index < item_count; ++index) {
+        const auto length = key_lengths[index];
+        if (length == 0 || length > MAX_TEXT_TERM_BYTES ||
+            length > MAX_TOTAL_TEXT_TERM_BYTES - total_bytes) {
+            throw std::invalid_argument("weighted query key is too large or empty");
+        }
+        total_bytes += length;
+        (void)query_item_weight(weights[index]);
+    }
+    if (total_bytes != key_bytes_length) {
+        throw std::invalid_argument("weighted query key lengths do not match key bytes");
+    }
+}
+
+void add_weighted_query_strings(NativeQueryState &query, bool wand, const char *field,
+                                const uint8_t *key_bytes, uint32_t key_bytes_length,
+                                const uint32_t *key_lengths, const int64_t *weights,
+                                uint32_t item_count) {
+    validate_query_multi_field(query, field);
+    validate_weighted_query_inputs(key_bytes, key_bytes_length, key_lengths, weights, item_count);
+    auto terms = std::make_unique<search::query::WeightedStringTermVector>(item_count);
+    size_t offset = 0;
+    for (uint32_t index = 0; index < item_count; ++index) {
+        const auto length = key_lengths[index];
+        terms->addTerm(std::string_view(reinterpret_cast<const char *>(key_bytes + offset), length),
+                       query_item_weight(weights[index]));
+        offset += length;
+    }
+    const auto type = search::query::MultiTerm::Type::WEIGHTED_STRING;
+    if (wand) {
+        query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
+                                  100, 0, 1.0);
+    } else {
+        query.builder.addWeightedSetTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
+    }
+}
+
+void add_weighted_query_integers(NativeQueryState &query, bool wand, const char *field,
+                                 const int64_t *keys, const int64_t *weights,
+                                 uint32_t item_count) {
+    validate_query_multi_field(query, field);
+    if (item_count == 0) {
+        throw std::invalid_argument("weighted query requires at least one item");
+    }
+    if (!keys || !weights) {
+        throw std::invalid_argument("weighted query arrays must not be null");
+    }
+    if (item_count > MAX_TEXT_TERMS) {
+        throw std::invalid_argument("weighted query item count is too large");
+    }
+    auto terms = std::make_unique<search::query::WeightedIntegerTermVector>(item_count);
+    for (uint32_t index = 0; index < item_count; ++index) {
+        terms->addTerm(keys[index], query_item_weight(weights[index]));
+    }
+    const auto type = search::query::MultiTerm::Type::WEIGHTED_INTEGER;
+    if (wand) {
+        query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
+                                  100, 0, 1.0);
+    } else {
+        query.builder.addWeightedSetTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
+    }
+}
+
 std::unique_ptr<search::NumericRangeSpec> make_query_range(
     uint32_t lower_kind, int64_t lower_value,
     uint32_t upper_kind, int64_t upper_value) {
@@ -5791,6 +5923,158 @@ extern "C" int32_t sk_query_add_text(sk_query *query, uint32_t kind,
     return invoke(error, error_capacity, [&] {
         add_query_text(*query, kind, field, term_bytes, term_bytes_length,
                        term_lengths, term_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_proximity(
+    sk_query *query, uint8_t ordered, const char *field, uint32_t child_count,
+    uint32_t distance, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "proximity query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_TEXT, field);
+        if (child_count < 2) {
+            throw std::invalid_argument("proximity query requires at least two children");
+        }
+        if (distance == 0) {
+            throw std::invalid_argument("proximity query distance must be positive");
+        }
+        if (child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("query child count cannot be represented by Vespa");
+        }
+        if (ordered) {
+            query->builder.addONear(static_cast<int>(child_count), distance, 0, 0);
+        } else {
+            query->builder.addNear(static_cast<int>(child_count), distance, 0, 0);
+        }
+    });
+}
+
+extern "C" int32_t sk_query_add_equiv(
+    sk_query *query, uint32_t child_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "equiv query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("equiv query child count is invalid");
+        }
+        query->builder.addEquiv(static_cast<int>(child_count), query->allocate_term_id(), Weight(100));
+    });
+}
+
+extern "C" int32_t sk_query_add_weak_and(
+    sk_query *query, const char *field, uint32_t child_count,
+    uint32_t target_num_hits, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "weak-and query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_fuzzy_query_field(*query, field);
+        if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("weak-and query child count is invalid");
+        }
+        if (target_num_hits == 0) {
+            throw std::invalid_argument("weak-and target hits must be positive");
+        }
+        query->builder.addWeakAnd(static_cast<int>(child_count), target_num_hits, field);
+    });
+}
+
+extern "C" int32_t sk_query_add_rank(
+    sk_query *query, uint32_t child_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "rank query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (child_count < 1 || child_count > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("rank query child count is invalid");
+        }
+        query->builder.addRank(static_cast<int>(child_count));
+    });
+}
+
+extern "C" int32_t sk_query_add_fuzzy(
+    sk_query *query, const char *field, const char *term,
+    uint32_t max_edit_distance, uint32_t prefix_lock_length,
+    uint8_t prefix_match, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field || !term) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "fuzzy query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_fuzzy_query_field(*query, field);
+        validate_string_size(term, MAX_TEXT_TERM_BYTES, "fuzzy query term");
+        if (*term == '\0') {
+            throw std::invalid_argument("fuzzy query term must not be empty");
+        }
+        query->builder.addFuzzyTerm(term, field, query->allocate_term_id(), Weight(100),
+                                    max_edit_distance, prefix_lock_length, prefix_match != 0);
+    });
+}
+
+extern "C" int32_t sk_query_add_weighted_set_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "weighted-set query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_strings(*query, false, field, key_bytes, key_bytes_length,
+                                   key_lengths, weights, item_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_weighted_set_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "weighted-set query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_integers(*query, false, field, keys, weights, item_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_wand_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "wand query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_strings(*query, true, field, key_bytes, key_bytes_length,
+                                   key_lengths, weights, item_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_wand_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "wand query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_integers(*query, true, field, keys, weights, item_count);
     });
 }
 

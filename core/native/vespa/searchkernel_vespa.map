@@ -37,6 +37,15 @@ SEARCHKERNEL_2 {
         sk_query_validate_field;
         sk_query_add_true;
         sk_query_add_text;
+        sk_query_add_proximity;
+        sk_query_add_equiv;
+        sk_query_add_weak_and;
+        sk_query_add_rank;
+        sk_query_add_fuzzy;
+        sk_query_add_weighted_set_strings;
+        sk_query_add_weighted_set_integers;
+        sk_query_add_wand_strings;
+        sk_query_add_wand_integers;
         sk_query_add_equals;
         sk_query_add_range;
         sk_query_add_nearest_neighbor;

@@ -2,12 +2,17 @@
 
 use crate::{analysis_options, unsupported};
 use searchkernel_ir::{
-    FilterIr, PortableError, QueryInputIr, QueryIr, RangeIr, RequestValueIr, Result, ScalarValueIr,
-    SearchRequestIr,
+    FilterIr, PortableError, QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryInputIr, QueryIr,
+    QueryRangeBoundIr, RangeIr, RequestValueIr, Result, ScalarValueIr, SearchRequestIr,
 };
 use searchkernel_vespa_engine::{
     FacetRequest, Query, SearchRequest, SortField, SortOrder, SummaryRequest, Value as VespaValue,
+    WeightedQueryItem,
 };
+
+const DEFAULT_PROXIMITY_DISTANCE: u32 = 3;
+const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
+const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
 
 pub(crate) fn lower_search_query(
     request: &SearchRequestIr,
@@ -461,12 +466,577 @@ pub(crate) fn lower_query_with_language(
             Some("query"),
             "the current native adapter does not expose a YQL execution path",
         )),
-        QueryIr::Typed(_) => Err(PortableError::unsupported(
-            "typed_query_not_supported",
-            Some("query"),
-            "the current native adapter does not expose execution for typed V2 query expressions",
+        QueryIr::Typed(expression) => lower_typed_query(expression, None, language, "query"),
+    }
+}
+
+fn lower_typed_query(
+    expression: &QueryExprIr,
+    field_context: Option<&QueryFieldRefIr>,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+    path: &str,
+) -> Result<Query> {
+    if !expression.annotations.is_empty() {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations")),
+            "typed query annotations are outside the Typed Query A execution subset",
+        ));
+    }
+
+    match &expression.kind {
+        QueryExprKindIr::Term { value } => {
+            let field = typed_query_field(field_context, path)?;
+            Ok(Query::term(field, typed_term_text(value, path)?))
+        }
+        QueryExprKindIr::Contains { field, item } => {
+            typed_query_field(Some(field), &format!("{path}.contains.field"))?;
+            lower_typed_query(
+                item,
+                Some(field),
+                language,
+                &format!("{path}.contains.item"),
+            )
+        }
+        QueryExprKindIr::And(children) => Ok(Query::And(
+            children
+                .iter()
+                .enumerate()
+                .map(|(index, child)| {
+                    lower_typed_query(
+                        child,
+                        field_context,
+                        language,
+                        &format!("{path}.and[{index}]"),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?,
+        )),
+        QueryExprKindIr::Or(children) => Ok(Query::Or(
+            children
+                .iter()
+                .enumerate()
+                .map(|(index, child)| {
+                    lower_typed_query(
+                        child,
+                        field_context,
+                        language,
+                        &format!("{path}.or[{index}]"),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?,
+        )),
+        QueryExprKindIr::Not(child) => Ok(Query::Not(Box::new(lower_typed_query(
+            child,
+            field_context,
+            language,
+            &format!("{path}.not.child"),
+        )?))),
+        QueryExprKindIr::True => Ok(Query::True),
+        // The native ABI has no standalone false node. NOT(TRUE) is the
+        // existing native boolean representation of a query matching nothing.
+        QueryExprKindIr::False => Ok(Query::Not(Box::new(Query::True))),
+        QueryExprKindIr::Comparison {
+            field, op, value, ..
+        } => lower_typed_comparison(field, *op, value, path),
+        QueryExprKindIr::Range {
+            field,
+            lower,
+            upper,
+            include_lower,
+            include_upper,
+        } => lower_typed_range(
+            field,
+            lower,
+            upper,
+            include_lower.unwrap_or(true),
+            include_upper.unwrap_or(true),
+            path,
+        ),
+        QueryExprKindIr::In { field, values } => {
+            if values.is_empty() {
+                return Err(PortableError::invalid(
+                    "empty_typed_query",
+                    Some(format!("{path}.in.values")),
+                    "in query requires at least one value",
+                ));
+            }
+            let field = typed_query_field(Some(field), &format!("{path}.in.field"))?;
+            Ok(Query::Or(
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        Ok(Query::AttributeEquals {
+                            field: field.to_owned(),
+                            value: lower_attribute_value(&typed_scalar(
+                                value,
+                                &format!("{path}.in.values[{index}]"),
+                            )?)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ))
+        }
+        QueryExprKindIr::Phrase(children) => {
+            lower_typed_phrase(children, field_context, language, path)
+        }
+        QueryExprKindIr::Text { text } => {
+            let field = typed_query_field(field_context, path)?;
+            let terms = searchkernel_vespa_engine::Linguistics
+                .analyze_query(text, language)
+                .terms
+                .len();
+            if terms > 1 {
+                Ok(Query::phrase(field, text))
+            } else {
+                Ok(Query::term(field, text))
+            }
+        }
+        QueryExprKindIr::Near(children) | QueryExprKindIr::ONear(children) => {
+            let field = typed_query_field(field_context, path)?;
+            let children = lower_typed_children(
+                children,
+                field_context,
+                language,
+                path,
+                if matches!(&expression.kind, QueryExprKindIr::Near(_)) {
+                    "near"
+                } else {
+                    "onear"
+                },
+            )?;
+            if children.len() < 2 {
+                return Err(PortableError::invalid(
+                    "empty_typed_query",
+                    Some(path),
+                    "proximity query requires at least two children",
+                ));
+            }
+            let query = if matches!(&expression.kind, QueryExprKindIr::Near(_)) {
+                Query::Near {
+                    field: field.to_owned(),
+                    children,
+                    distance: DEFAULT_PROXIMITY_DISTANCE,
+                }
+            } else {
+                Query::ONear {
+                    field: field.to_owned(),
+                    children,
+                    distance: DEFAULT_PROXIMITY_DISTANCE,
+                }
+            };
+            Ok(query)
+        }
+        QueryExprKindIr::Equiv(children) => {
+            typed_query_field(field_context, path)?;
+            Ok(Query::Equiv(lower_typed_children(
+                children,
+                field_context,
+                language,
+                path,
+                "equiv",
+            )?))
+        }
+        QueryExprKindIr::Fuzzy { value } => {
+            let field = typed_query_field(field_context, path)?;
+            Ok(Query::Fuzzy {
+                field: field.to_owned(),
+                text: typed_term_text(value, &format!("{path}.fuzzy.value"))?,
+                max_edit_distance: DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                prefix_lock_length: 0,
+                prefix_match: false,
+            })
+        }
+        QueryExprKindIr::WeakAnd(children) => {
+            let field = typed_query_field(field_context, path)?;
+            Ok(Query::WeakAnd {
+                field: field.to_owned(),
+                children: lower_typed_children(
+                    children,
+                    field_context,
+                    language,
+                    path,
+                    "weak_and",
+                )?,
+                target_num_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+            })
+        }
+        QueryExprKindIr::Rank { matching, ranking } => Ok(Query::Rank {
+            matching: Box::new(lower_typed_query(
+                matching,
+                field_context,
+                language,
+                &format!("{path}.rank.match"),
+            )?),
+            ranking: lower_typed_children(ranking, field_context, language, path, "rank")?,
+        }),
+        QueryExprKindIr::WeightedSet { field, items } => Ok(Query::WeightedSet {
+            field: typed_query_field(Some(field), &format!("{path}.weighted_set.field"))?
+                .to_owned(),
+            items: lower_weighted_items(items, &format!("{path}.weighted_set.items"))?,
+        }),
+        QueryExprKindIr::Wand { field, items } => Ok(Query::Wand {
+            field: typed_query_field(Some(field), &format!("{path}.wand.field"))?.to_owned(),
+            items: lower_weighted_items(items, &format!("{path}.wand.items"))?,
+        }),
+        _ => Err(PortableError::unsupported(
+            "typed_query_operator_not_supported",
+            Some(path),
+            "this typed query operator is outside the Typed Query A execution subset",
         )),
     }
+}
+
+fn lower_typed_children(
+    children: &[QueryExprIr],
+    field_context: Option<&QueryFieldRefIr>,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+    path: &str,
+    operator: &str,
+) -> Result<Vec<Query>> {
+    children
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            lower_typed_query(
+                child,
+                field_context,
+                language,
+                &format!("{path}.{operator}[{index}]"),
+            )
+        })
+        .collect()
+}
+
+fn lower_weighted_items(
+    items: &[searchkernel_ir::WeightedQueryItemIr],
+    path: &str,
+) -> Result<Vec<WeightedQueryItem>> {
+    if items.is_empty() {
+        return Err(PortableError::invalid(
+            "empty_typed_query",
+            Some(path),
+            "weighted query requires at least one item",
+        ));
+    }
+    let mut lowered = Vec::with_capacity(items.len());
+    let mut string_keys = None;
+    for (index, item) in items.iter().enumerate() {
+        let item_path = format!("{path}[{index}]");
+        let (is_string, lowered_item) = match &item.key {
+            RequestValueIr::String(key) if !key.is_empty() => (
+                true,
+                WeightedQueryItem::String {
+                    key: key.clone(),
+                    weight: item.weight,
+                },
+            ),
+            RequestValueIr::Int64(key) => (
+                false,
+                WeightedQueryItem::Integer {
+                    key: integer_query_value(*key)?,
+                    weight: item.weight,
+                },
+            ),
+            RequestValueIr::UInt64(key) => {
+                let key = i64::try_from(*key).map_err(|_| {
+                    PortableError::unsupported(
+                        "typed_query_weighted_key_not_supported",
+                        Some(format!("{item_path}.key")),
+                        "unsigned weighted query keys above INT64_MAX are not representable by Vespa",
+                    )
+                })?;
+                (
+                    false,
+                    WeightedQueryItem::Integer {
+                        key: integer_query_value(key)?,
+                        weight: item.weight,
+                    },
+                )
+            }
+            RequestValueIr::String(_) => {
+                return Err(PortableError::invalid(
+                    "invalid_typed_query",
+                    Some(format!("{item_path}.key")),
+                    "weighted query string keys must not be empty",
+                ));
+            }
+            _ => {
+                return Err(PortableError::unsupported(
+                    "typed_query_weighted_key_not_supported",
+                    Some(format!("{item_path}.key")),
+                    "weighted query keys must be strings or signed integer values",
+                ));
+            }
+        };
+        if string_keys.is_some_and(|previous| previous != is_string) {
+            return Err(PortableError::unsupported(
+                "typed_query_weighted_key_not_supported",
+                Some(format!("{item_path}.key")),
+                "weighted query cannot mix string and integer keys",
+            ));
+        }
+        string_keys = Some(is_string);
+        lowered.push(lowered_item);
+    }
+    Ok(lowered)
+}
+
+fn typed_query_field<'a>(field: Option<&'a QueryFieldRefIr>, path: &str) -> Result<&'a str> {
+    let Some(field) = field else {
+        return Err(PortableError::invalid(
+            "missing_field_context",
+            Some(path),
+            "term-like typed query requires a containing field",
+        ));
+    };
+    if field.element_index.is_some() {
+        return Err(PortableError::unsupported(
+            "typed_query_field_element_not_supported",
+            Some(path),
+            "collection element query paths are outside the Typed Query A execution subset",
+        ));
+    }
+    Ok(field.path.as_str())
+}
+
+fn typed_term_text(value: &RequestValueIr, path: &str) -> Result<String> {
+    match value {
+        RequestValueIr::String(value) if !value.is_empty() => Ok(value.clone()),
+        _ => Err(PortableError::unsupported(
+            "typed_query_value_not_supported",
+            Some(format!("{path}.term.value")),
+            "typed term values must be non-empty strings",
+        )),
+    }
+}
+
+fn typed_scalar(value: &RequestValueIr, path: &str) -> Result<ScalarValueIr> {
+    match value {
+        RequestValueIr::Bool(value) => Ok(ScalarValueIr::Bool(*value)),
+        RequestValueIr::Int64(value) => Ok(ScalarValueIr::Int64(*value)),
+        RequestValueIr::Float64(value) if value.is_finite() => Ok(ScalarValueIr::Float64(*value)),
+        RequestValueIr::String(value) => Ok(ScalarValueIr::String(value.clone())),
+        RequestValueIr::UInt64(value) => i64::try_from(*value)
+            .map(ScalarValueIr::Int64)
+            .map_err(|_| {
+                PortableError::unsupported(
+                    "typed_query_value_not_supported",
+                    Some(path),
+                    "unsigned query values above INT64_MAX are not representable by the native query model",
+                )
+            }),
+        RequestValueIr::Float64(_) | RequestValueIr::NonFiniteFloat(_) => {
+            Err(PortableError::invalid(
+                "invalid_query_value",
+                Some(path),
+                "typed query numeric values must be finite",
+            ))
+        }
+        _ => Err(PortableError::unsupported(
+            "typed_query_value_not_supported",
+            Some(path),
+            "this typed query value is not representable by the native query model",
+        )),
+    }
+}
+
+fn lower_typed_comparison(
+    field: &QueryFieldRefIr,
+    op: searchkernel_ir::ComparisonOp,
+    value: &RequestValueIr,
+    path: &str,
+) -> Result<Query> {
+    let field = typed_query_field(Some(field), &format!("{path}.comparison.field"))?;
+    let value = lower_attribute_value(&typed_scalar(value, &format!("{path}.comparison.value"))?)?;
+    match op {
+        searchkernel_ir::ComparisonOp::Eq => Ok(Query::AttributeEquals {
+            field: field.to_owned(),
+            value,
+        }),
+        searchkernel_ir::ComparisonOp::Ne => Ok(Query::Not(Box::new(Query::AttributeEquals {
+            field: field.to_owned(),
+            value,
+        }))),
+        searchkernel_ir::ComparisonOp::Lt
+        | searchkernel_ir::ComparisonOp::Lte
+        | searchkernel_ir::ComparisonOp::Gt
+        | searchkernel_ir::ComparisonOp::Gte => {
+            let is_lower = matches!(
+                op,
+                searchkernel_ir::ComparisonOp::Gt | searchkernel_ir::ComparisonOp::Gte
+            );
+            let included = matches!(
+                op,
+                searchkernel_ir::ComparisonOp::Lte | searchkernel_ir::ComparisonOp::Gte
+            );
+            if !matches!(value, VespaValue::Integer(_) | VespaValue::Float(_)) {
+                return Err(PortableError::unsupported(
+                    "typed_query_ordered_value_not_supported",
+                    Some(format!("{path}.comparison.value")),
+                    "ordered typed comparisons require numeric values",
+                ));
+            }
+            let bound = if included {
+                searchkernel_vespa_engine::AttributeBound::Included(value)
+            } else {
+                searchkernel_vespa_engine::AttributeBound::Excluded(value)
+            };
+            let (lower, upper) = if is_lower {
+                (bound, searchkernel_vespa_engine::AttributeBound::Unbounded)
+            } else {
+                (searchkernel_vespa_engine::AttributeBound::Unbounded, bound)
+            };
+            Ok(Query::AttributeRange {
+                field: field.to_owned(),
+                lower,
+                upper,
+            })
+        }
+    }
+}
+
+fn lower_typed_range(
+    field: &QueryFieldRefIr,
+    lower: &QueryRangeBoundIr,
+    upper: &QueryRangeBoundIr,
+    include_lower: bool,
+    include_upper: bool,
+    path: &str,
+) -> Result<Query> {
+    let field = typed_query_field(Some(field), &format!("{path}.range.field"))?;
+    let lower = typed_range_bound(lower, true, include_lower, &format!("{path}.range.lower"))?;
+    let upper = typed_range_bound(upper, false, include_upper, &format!("{path}.range.upper"))?;
+    Ok(Query::AttributeRange {
+        field: field.to_owned(),
+        lower,
+        upper,
+    })
+}
+
+fn typed_range_bound(
+    bound: &QueryRangeBoundIr,
+    lower: bool,
+    included: bool,
+    path: &str,
+) -> Result<searchkernel_vespa_engine::AttributeBound> {
+    match bound {
+        QueryRangeBoundIr::Unbounded => Ok(searchkernel_vespa_engine::AttributeBound::Unbounded),
+        QueryRangeBoundIr::NegativeInfinity if lower => {
+            Ok(searchkernel_vespa_engine::AttributeBound::Unbounded)
+        }
+        QueryRangeBoundIr::PositiveInfinity if !lower => {
+            Ok(searchkernel_vespa_engine::AttributeBound::Unbounded)
+        }
+        QueryRangeBoundIr::NegativeInfinity | QueryRangeBoundIr::PositiveInfinity => {
+            Err(PortableError::unsupported(
+                "typed_query_range_bound_not_supported",
+                Some(path),
+                "an infinity bound must be on the corresponding outer side of a range",
+            ))
+        }
+        QueryRangeBoundIr::Finite(value) => {
+            let value = lower_attribute_value(&typed_scalar(value, path)?)?;
+            if !matches!(value, VespaValue::Integer(_) | VespaValue::Float(_)) {
+                return Err(PortableError::unsupported(
+                    "typed_query_range_value_not_supported",
+                    Some(path),
+                    "typed ranges currently require numeric values",
+                ));
+            }
+            Ok(if included {
+                searchkernel_vespa_engine::AttributeBound::Included(value)
+            } else {
+                searchkernel_vespa_engine::AttributeBound::Excluded(value)
+            })
+        }
+    }
+}
+
+fn lower_typed_phrase(
+    children: &[QueryExprIr],
+    field_context: Option<&QueryFieldRefIr>,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+    path: &str,
+) -> Result<Query> {
+    let field = typed_query_field(field_context, path)?;
+    let mut terms = Vec::new();
+    for (index, child) in children.iter().enumerate() {
+        collect_typed_phrase_terms(
+            child,
+            field_context,
+            &mut terms,
+            &format!("{path}.phrase[{index}]"),
+        )?;
+    }
+    if terms.is_empty() {
+        return Err(PortableError::invalid(
+            "empty_typed_query",
+            Some(format!("{path}.phrase")),
+            "phrase query requires at least one term",
+        ));
+    }
+    let text = terms.join(" ");
+    let analyzed = searchkernel_vespa_engine::Linguistics
+        .analyze_query(&text, language)
+        .terms
+        .len();
+    if analyzed == 0 {
+        return Err(PortableError::invalid(
+            "empty_typed_query",
+            Some(format!("{path}.phrase")),
+            "phrase query must analyze to at least one term",
+        ));
+    }
+    Ok(Query::phrase(field, text))
+}
+
+fn collect_typed_phrase_terms(
+    expression: &QueryExprIr,
+    field_context: Option<&QueryFieldRefIr>,
+    terms: &mut Vec<String>,
+    path: &str,
+) -> Result<()> {
+    if !expression.annotations.is_empty() {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations")),
+            "typed query annotations are outside the Typed Query A execution subset",
+        ));
+    }
+    match &expression.kind {
+        QueryExprKindIr::Term { value } => terms.push(typed_term_text(value, path)?),
+        QueryExprKindIr::Contains { field, item } => {
+            typed_query_field(Some(field), &format!("{path}.contains.field"))?;
+            if field_context.is_some_and(|context| context.path != field.path) {
+                return Err(PortableError::unsupported(
+                    "typed_query_phrase_field_mismatch",
+                    Some(path),
+                    "all phrase terms must target the same field",
+                ));
+            }
+            collect_typed_phrase_terms(item, Some(field), terms, &format!("{path}.contains.item"))?;
+        }
+        QueryExprKindIr::Phrase(children) => {
+            for (index, child) in children.iter().enumerate() {
+                collect_typed_phrase_terms(
+                    child,
+                    field_context,
+                    terms,
+                    &format!("{path}.phrase[{index}]"),
+                )?;
+            }
+        }
+        _ => {
+            return Err(PortableError::unsupported(
+                "typed_query_phrase_child_not_supported",
+                Some(path),
+                "phrase children must be term, contains, or phrase nodes",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn lower_filter(filter: &FilterIr) -> Result<Query> {

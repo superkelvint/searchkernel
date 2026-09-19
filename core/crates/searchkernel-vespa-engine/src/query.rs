@@ -30,6 +30,13 @@ pub enum AttributeBound {
     Excluded(Value),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A key/value pair used by Vespa weighted-set and WAND query nodes.
+pub enum WeightedQueryItem {
+    String { key: String, weight: i64 },
+    Integer { key: i64, weight: i64 },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 /// A low-level query which is lowered directly to Vespa query nodes.
 pub enum Query {
@@ -45,6 +52,41 @@ pub enum Query {
     And(Vec<Query>),
     Or(Vec<Query>),
     Not(Box<Query>),
+    Near {
+        field: String,
+        children: Vec<Query>,
+        distance: u32,
+    },
+    ONear {
+        field: String,
+        children: Vec<Query>,
+        distance: u32,
+    },
+    Equiv(Vec<Query>),
+    WeakAnd {
+        field: String,
+        children: Vec<Query>,
+        target_num_hits: u32,
+    },
+    Rank {
+        matching: Box<Query>,
+        ranking: Vec<Query>,
+    },
+    Fuzzy {
+        field: String,
+        text: String,
+        max_edit_distance: u32,
+        prefix_lock_length: u32,
+        prefix_match: bool,
+    },
+    WeightedSet {
+        field: String,
+        items: Vec<WeightedQueryItem>,
+    },
+    Wand {
+        field: String,
+        items: Vec<WeightedQueryItem>,
+    },
     Equals {
         field: String,
         value: i64,
@@ -170,7 +212,10 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 return Err(invalid_query("text query field and text must not be empty"));
             }
         }
-        Query::And(children) | Query::Or(children) => {
+        Query::And(children)
+        | Query::Or(children)
+        | Query::WeakAnd { children, .. }
+        | Query::Equiv(children) => {
             if children.is_empty() {
                 return Err(invalid_query(
                     "boolean query must contain at least one child",
@@ -185,7 +230,73 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 validate_query_at(child, depth + 1, nodes)?;
             }
         }
+        Query::Near {
+            field,
+            children,
+            distance,
+        }
+        | Query::ONear {
+            field,
+            children,
+            distance,
+        } => {
+            if field.is_empty() {
+                return Err(invalid_query("proximity query field must not be empty"));
+            }
+            if *distance == 0 {
+                return Err(invalid_query("proximity query distance must be positive"));
+            }
+            if children.len() < 2 {
+                return Err(invalid_query(
+                    "proximity query requires at least two children",
+                ));
+            }
+            for child in children {
+                validate_query_at(child, depth + 1, nodes)?;
+            }
+        }
         Query::Not(child) => validate_query_at(child, depth + 1, nodes)?,
+        Query::Rank { matching, ranking } => {
+            validate_query_at(matching, depth + 1, nodes)?;
+            for child in ranking {
+                validate_query_at(child, depth + 1, nodes)?;
+            }
+        }
+        Query::Fuzzy {
+            field,
+            text,
+            max_edit_distance,
+            prefix_lock_length,
+            ..
+        } => {
+            if field.is_empty() || text.is_empty() {
+                return Err(invalid_query(
+                    "fuzzy query field and text must not be empty",
+                ));
+            }
+            if *max_edit_distance == 0 && *prefix_lock_length > 0 {
+                return Err(invalid_query(
+                    "fuzzy prefix lock length requires a positive edit distance",
+                ));
+            }
+        }
+        Query::WeightedSet { field, items } | Query::Wand { field, items } => {
+            if field.is_empty() {
+                return Err(invalid_query("weighted query field must not be empty"));
+            }
+            if items.is_empty() {
+                return Err(invalid_query("weighted query requires at least one item"));
+            }
+            let first_kind = matches!(items.first(), Some(WeightedQueryItem::String { .. }));
+            if items
+                .iter()
+                .any(|item| matches!(item, WeightedQueryItem::String { .. }) != first_kind)
+            {
+                return Err(invalid_query(
+                    "weighted query cannot mix string and integer keys",
+                ));
+            }
+        }
         Query::Equals { field, .. } | Query::Exists { field } => {
             if field.is_empty() {
                 return Err(invalid_query("numeric query field must not be empty"));
@@ -1239,6 +1350,70 @@ pub(crate) fn lower_query(
             add_native_operator(native, sys::SK_QUERY_NODE_NOT, 1)?;
             lower_query(native, child, language)
         }
+        Query::Near {
+            field,
+            children,
+            distance,
+        } => {
+            add_native_proximity(native, false, field, children.len(), *distance)?;
+            for child in children {
+                lower_query(native, child, language)?;
+            }
+            Ok(())
+        }
+        Query::ONear {
+            field,
+            children,
+            distance,
+        } => {
+            add_native_proximity(native, true, field, children.len(), *distance)?;
+            for child in children {
+                lower_query(native, child, language)?;
+            }
+            Ok(())
+        }
+        Query::Equiv(children) => {
+            add_native_equiv(native, children.len())?;
+            for child in children {
+                lower_query(native, child, language)?;
+            }
+            Ok(())
+        }
+        Query::WeakAnd {
+            field,
+            children,
+            target_num_hits,
+        } => {
+            add_native_weak_and(native, field, children.len(), *target_num_hits)?;
+            for child in children {
+                lower_query(native, child, language)?;
+            }
+            Ok(())
+        }
+        Query::Rank { matching, ranking } => {
+            add_native_rank(native, 1usize.saturating_add(ranking.len()))?;
+            lower_query(native, matching, language)?;
+            for child in ranking {
+                lower_query(native, child, language)?;
+            }
+            Ok(())
+        }
+        Query::Fuzzy {
+            field,
+            text,
+            max_edit_distance,
+            prefix_lock_length,
+            prefix_match,
+        } => add_native_fuzzy(
+            native,
+            field,
+            text,
+            *max_edit_distance,
+            *prefix_lock_length,
+            *prefix_match,
+        ),
+        Query::WeightedSet { field, items } => add_native_weighted(native, false, field, items),
+        Query::Wand { field, items } => add_native_weighted(native, true, field, items),
         Query::Equals { field, value } => {
             let field = cstring(field)?;
             let mut error = NativeError::new();
@@ -1397,6 +1572,48 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
             Ok(())
         }
         Query::Not(child) => validate_query_fields(native, child),
+        Query::Near {
+            field, children, ..
+        }
+        | Query::ONear {
+            field, children, ..
+        } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)?;
+            for child in children {
+                validate_query_fields(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Equiv(children) => {
+            for child in children {
+                validate_query_fields(native, child)?;
+            }
+            Ok(())
+        }
+        Query::WeakAnd {
+            field, children, ..
+        } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)?;
+            for child in children {
+                validate_query_fields(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Rank { matching, ranking } => {
+            validate_query_fields(native, matching)?;
+            for child in ranking {
+                validate_query_fields(native, child)?;
+            }
+            Ok(())
+        }
+        Query::Fuzzy { field, .. } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+                .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field))
+        }
+        Query::WeightedSet { field, .. } | Query::Wand { field, .. } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
+                .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field))
+        }
         Query::Equals { field, .. } | Query::Range { field, .. } | Query::Exists { field } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field)
         }
@@ -1568,6 +1785,200 @@ fn add_native_operator(native: &NativeQuery, kind: u32, count: usize) -> Result<
             error.as_mut_ptr(),
             error.capacity(),
         )
+    };
+    check(status, &error)
+}
+
+fn add_native_proximity(
+    native: &NativeQuery,
+    ordered: bool,
+    field: &str,
+    child_count: usize,
+    distance: u32,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let child_count = length_u32(child_count, "proximity child")?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_proximity(
+            native.0.as_ptr(),
+            u8::from(ordered),
+            field.as_ptr(),
+            child_count,
+            distance,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_equiv(native: &NativeQuery, child_count: usize) -> Result<(), Error> {
+    let child_count = length_u32(child_count, "equiv child")?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_equiv(
+            native.0.as_ptr(),
+            child_count,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_weak_and(
+    native: &NativeQuery,
+    field: &str,
+    child_count: usize,
+    target_num_hits: u32,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let child_count = length_u32(child_count, "weak-and child")?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_weak_and(
+            native.0.as_ptr(),
+            field.as_ptr(),
+            child_count,
+            target_num_hits,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_rank(native: &NativeQuery, child_count: usize) -> Result<(), Error> {
+    let child_count = length_u32(child_count, "rank child")?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_rank(
+            native.0.as_ptr(),
+            child_count,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_fuzzy(
+    native: &NativeQuery,
+    field: &str,
+    text: &str,
+    max_edit_distance: u32,
+    prefix_lock_length: u32,
+    prefix_match: bool,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let text = cstring(text)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_fuzzy(
+            native.0.as_ptr(),
+            field.as_ptr(),
+            text.as_ptr(),
+            max_edit_distance,
+            prefix_lock_length,
+            u8::from(prefix_match),
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_weighted(
+    native: &NativeQuery,
+    wand: bool,
+    field: &str,
+    items: &[WeightedQueryItem],
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = match items.first() {
+        Some(WeightedQueryItem::String { .. }) => {
+            let mut key_bytes = Vec::new();
+            let mut key_lengths = Vec::with_capacity(items.len());
+            let mut weights = Vec::with_capacity(items.len());
+            for item in items {
+                let WeightedQueryItem::String { key, weight } = item else {
+                    return Err(invalid_query(
+                        "weighted query cannot mix string and integer keys",
+                    ));
+                };
+                key_lengths.push(length_u32(key.len(), "weighted query key")?);
+                key_bytes.extend_from_slice(key.as_bytes());
+                weights.push(*weight);
+            }
+            let item_count = length_u32(items.len(), "weighted query item")?;
+            unsafe {
+                if wand {
+                    sys::sk_query_add_wand_strings(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        key_bytes.as_ptr(),
+                        length_u32(key_bytes.len(), "weighted query key bytes")?,
+                        key_lengths.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                } else {
+                    sys::sk_query_add_weighted_set_strings(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        key_bytes.as_ptr(),
+                        length_u32(key_bytes.len(), "weighted query key bytes")?,
+                        key_lengths.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                }
+            }
+        }
+        Some(WeightedQueryItem::Integer { .. }) => {
+            let mut keys = Vec::with_capacity(items.len());
+            let mut weights = Vec::with_capacity(items.len());
+            for item in items {
+                let WeightedQueryItem::Integer { key, weight } = item else {
+                    return Err(invalid_query(
+                        "weighted query cannot mix string and integer keys",
+                    ));
+                };
+                keys.push(*key);
+                weights.push(*weight);
+            }
+            let item_count = length_u32(items.len(), "weighted query item")?;
+            unsafe {
+                if wand {
+                    sys::sk_query_add_wand_integers(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        keys.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                } else {
+                    sys::sk_query_add_weighted_set_integers(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        keys.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                }
+            }
+        }
+        None => return Err(invalid_query("weighted query requires at least one item")),
     };
     check(status, &error)
 }

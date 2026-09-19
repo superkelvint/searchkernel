@@ -88,6 +88,696 @@ fn analyzed_multi_term_text_lowers_to_a_phrase() {
     assert_eq!(query, Query::term("title", "headphones"));
 }
 
+fn typed_field(name: &str) -> QueryFieldRefIr {
+    QueryFieldRefIr {
+        path: field(name),
+        element_index: None,
+    }
+}
+
+fn typed_expression(kind: QueryExprKindIr) -> QueryIr {
+    QueryIr::Typed(Box::new(QueryExprIr {
+        kind,
+        annotations: std::collections::BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn typed_query_a_lowers_to_existing_native_query_nodes() {
+    let title = typed_field("title");
+    let term = typed_expression(QueryExprKindIr::Contains {
+        field: title.clone(),
+        item: Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Term {
+                value: RequestValueIr::String("wireless".to_owned()),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        }),
+    });
+    assert_eq!(
+        lower_query(
+            &term,
+            &[SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+        )
+        .unwrap(),
+        Query::term("title", "wireless")
+    );
+
+    let phrase = typed_expression(QueryExprKindIr::Contains {
+        field: title.clone(),
+        item: Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Phrase(vec![
+                QueryExprIr {
+                    kind: QueryExprKindIr::Term {
+                        value: RequestValueIr::String("wireless".to_owned()),
+                    },
+                    annotations: std::collections::BTreeMap::new(),
+                },
+                QueryExprIr {
+                    kind: QueryExprKindIr::Term {
+                        value: RequestValueIr::String("headphones".to_owned()),
+                    },
+                    annotations: std::collections::BTreeMap::new(),
+                },
+            ]),
+            annotations: std::collections::BTreeMap::new(),
+        }),
+    });
+    assert_eq!(
+        lower_query(
+            &phrase,
+            &[SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+        )
+        .unwrap(),
+        Query::phrase("title", "wireless headphones")
+    );
+
+    let text = typed_expression(QueryExprKindIr::Contains {
+        field: title,
+        item: Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Text {
+                text: "wireless headphones".to_owned(),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        }),
+    });
+    assert_eq!(
+        lower_query(
+            &text,
+            &[SearchFieldIr::new(
+                field("title"),
+                SearchFieldWeight::new(1.0).unwrap(),
+            )],
+        )
+        .unwrap(),
+        Query::phrase("title", "wireless headphones")
+    );
+
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::And(vec![
+                QueryExprIr {
+                    kind: QueryExprKindIr::True,
+                    annotations: std::collections::BTreeMap::new(),
+                },
+                QueryExprIr {
+                    kind: QueryExprKindIr::Not(Box::new(QueryExprIr {
+                        kind: QueryExprKindIr::False,
+                        annotations: std::collections::BTreeMap::new(),
+                    })),
+                    annotations: std::collections::BTreeMap::new(),
+                },
+            ])),
+            &[],
+        )
+        .unwrap(),
+        Query::And(vec![
+            Query::True,
+            Query::Not(Box::new(Query::Not(Box::new(Query::True)))),
+        ])
+    );
+
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::Range {
+                field: typed_field("price"),
+                lower: QueryRangeBoundIr::Finite(RequestValueIr::Int64(10)),
+                upper: QueryRangeBoundIr::PositiveInfinity,
+                include_lower: Some(true),
+                include_upper: None,
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::AttributeRange {
+            field: "price".to_owned(),
+            lower: searchkernel_vespa_engine::AttributeBound::Included(VespaValue::Integer(10)),
+            upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+        }
+    );
+
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::Comparison {
+                field: typed_field("price"),
+                op: ComparisonOp::Gte,
+                value: RequestValueIr::Int64(10),
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::AttributeRange {
+            field: "price".to_owned(),
+            lower: searchkernel_vespa_engine::AttributeBound::Included(VespaValue::Integer(10)),
+            upper: searchkernel_vespa_engine::AttributeBound::Unbounded,
+        }
+    );
+
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::In {
+                field: typed_field("brand"),
+                values: vec![
+                    RequestValueIr::String("a".to_owned()),
+                    RequestValueIr::String("b".to_owned()),
+                ],
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::Or(vec![
+            Query::AttributeEquals {
+                field: "brand".to_owned(),
+                value: VespaValue::String("a".to_owned()),
+            },
+            Query::AttributeEquals {
+                field: "brand".to_owned(),
+                value: VespaValue::String("b".to_owned()),
+            },
+        ])
+    );
+}
+
+#[test]
+fn typed_query_a_rejects_annotations_and_later_slices_explicitly() {
+    let annotated = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::True,
+        annotations: std::collections::BTreeMap::from([(
+            "ranked".to_owned(),
+            RequestValueIr::Bool(true),
+        )]),
+    }));
+    let error = lower_query(&annotated, &[]).unwrap_err();
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_annotations_not_supported"
+    );
+
+    let same_element = typed_expression(QueryExprKindIr::SameElement(vec![]));
+    let error = lower_query(&same_element, &[]).unwrap_err();
+    assert_eq!(error.details[0].code, "typed_query_operator_not_supported");
+
+    let nearest_neighbor = typed_expression(QueryExprKindIr::NearestNeighbor {
+        document_field: typed_field("embedding"),
+        query_tensor: "query_embedding".to_owned(),
+    });
+    let error = lower_query(&nearest_neighbor, &[]).unwrap_err();
+    assert_eq!(error.details[0].code, "typed_query_operator_not_supported");
+}
+
+fn typed_contains(field_name: &str, kind: QueryExprKindIr) -> QueryIr {
+    typed_expression(QueryExprKindIr::Contains {
+        field: typed_field(field_name),
+        item: Box::new(QueryExprIr {
+            kind,
+            annotations: std::collections::BTreeMap::new(),
+        }),
+    })
+}
+
+fn typed_term(value: &str) -> QueryExprIr {
+    QueryExprIr {
+        kind: QueryExprKindIr::Term {
+            value: RequestValueIr::String(value.to_owned()),
+        },
+        annotations: std::collections::BTreeMap::new(),
+    }
+}
+
+#[test]
+fn typed_query_b_lowers_to_vespa_query_nodes() {
+    let terms = vec![typed_term("wireless"), typed_term("headphones")];
+    assert_eq!(
+        lower_query(
+            &typed_contains("title", QueryExprKindIr::Near(terms.clone())),
+            &[]
+        )
+        .unwrap(),
+        Query::Near {
+            field: "title".to_owned(),
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphones")
+            ],
+            distance: 3,
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains("title", QueryExprKindIr::ONear(terms.clone())),
+            &[]
+        )
+        .unwrap(),
+        Query::ONear {
+            field: "title".to_owned(),
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphones")
+            ],
+            distance: 3,
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::Fuzzy {
+                    value: RequestValueIr::String("wireles".to_owned()),
+                },
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::Fuzzy {
+            field: "title".to_owned(),
+            text: "wireles".to_owned(),
+            max_edit_distance: 2,
+            prefix_lock_length: 0,
+            prefix_match: false,
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains("title", QueryExprKindIr::WeakAnd(terms.clone())),
+            &[],
+        )
+        .unwrap(),
+        Query::WeakAnd {
+            field: "title".to_owned(),
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphones")
+            ],
+            target_num_hits: 100,
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains("title", QueryExprKindIr::Equiv(terms.clone())),
+            &[]
+        )
+        .unwrap(),
+        Query::Equiv(vec![
+            Query::term("title", "wireless"),
+            Query::term("title", "headphones")
+        ])
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::Rank {
+                    matching: Box::new(terms[0].clone()),
+                    ranking: vec![terms[1].clone()],
+                },
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::Rank {
+            matching: Box::new(Query::term("title", "wireless")),
+            ranking: vec![Query::term("title", "headphones")],
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::WeightedSet {
+                field: typed_field("title"),
+                items: vec![
+                    WeightedQueryItemIr {
+                        key: RequestValueIr::String("wireless".to_owned()),
+                        weight: 100,
+                    },
+                    WeightedQueryItemIr {
+                        key: RequestValueIr::String("headphones".to_owned()),
+                        weight: 50,
+                    },
+                ],
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::WeightedSet {
+            field: "title".to_owned(),
+            items: vec![
+                searchkernel_vespa_engine::WeightedQueryItem::String {
+                    key: "wireless".to_owned(),
+                    weight: 100,
+                },
+                searchkernel_vespa_engine::WeightedQueryItem::String {
+                    key: "headphones".to_owned(),
+                    weight: 50,
+                },
+            ],
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::Wand {
+                field: typed_field("title"),
+                items: vec![WeightedQueryItemIr {
+                    key: RequestValueIr::Int64(7),
+                    weight: 100,
+                }],
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::Wand {
+            field: "title".to_owned(),
+            items: vec![searchkernel_vespa_engine::WeightedQueryItem::Integer {
+                key: 7,
+                weight: 100,
+            }],
+        }
+    );
+}
+
+#[test]
+fn typed_query_b_rejects_unsupported_weighted_values() {
+    let mixed = typed_expression(QueryExprKindIr::WeightedSet {
+        field: typed_field("title"),
+        items: vec![
+            WeightedQueryItemIr {
+                key: RequestValueIr::String("wireless".to_owned()),
+                weight: 100,
+            },
+            WeightedQueryItemIr {
+                key: RequestValueIr::Int64(1),
+                weight: 100,
+            },
+        ],
+    });
+    let error = lower_query(&mixed, &[]).unwrap_err();
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_weighted_key_not_supported"
+    );
+
+    let tensor = typed_expression(QueryExprKindIr::WeightedSet {
+        field: typed_field("title"),
+        items: vec![WeightedQueryItemIr {
+            key: RequestValueIr::Tensor(RequestTensorIr {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+                payload: RequestTensorPayloadIr::Dense(vec![1.0, 2.0]),
+            }),
+            weight: 100,
+        }],
+    });
+    let error = lower_query(&tensor, &[]).unwrap_err();
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_weighted_key_not_supported"
+    );
+}
+
+#[test]
+fn typed_query_a_reaches_real_vespa_through_the_adapter() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-typed-query-a-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("typed_query_a")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("price", FieldType::Integer)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile typed-query schema");
+    let backend = VespaBackend::open(&data, &config).expect("open Vespa backend");
+
+    for (id, title, price) in [
+        ("doc:wireless", "wireless headphones", 20),
+        ("doc:wired", "wired headphones", 5),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([
+                    (
+                        field("title"),
+                        FieldValueIr::Single(ScalarValueIr::String(title.to_owned())),
+                    ),
+                    (
+                        field("price"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(price)),
+                    ),
+                ]),
+            )))
+            .expect("insert document");
+    }
+
+    let contains = SearchRequestIr::new(
+        typed_expression(QueryExprKindIr::Contains {
+            field: typed_field("title"),
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::Term {
+                    value: RequestValueIr::String("wireless".to_owned()),
+                },
+                annotations: std::collections::BTreeMap::new(),
+            }),
+        }),
+        Vec::new(),
+        None,
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let result = backend.search(contains).expect("execute typed term");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    assert_eq!(
+        group
+            .children
+            .iter()
+            .map(|child| match child {
+                ResultNode::Hit(hit) => hit.id.as_str(),
+                ResultNode::Group(_) => panic!("unexpected nested group"),
+            })
+            .collect::<Vec<_>>(),
+        vec!["doc:wireless"]
+    );
+
+    let comparison = SearchRequestIr::new(
+        typed_expression(QueryExprKindIr::Comparison {
+            field: typed_field("price"),
+            op: ComparisonOp::Gte,
+            value: RequestValueIr::Int64(10),
+        }),
+        Vec::new(),
+        None,
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let result = backend
+        .search(comparison)
+        .expect("execute typed comparison");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    assert_eq!(group.children.len(), 1);
+    assert!(matches!(
+        &group.children[0],
+        ResultNode::Hit(hit) if hit.id == "doc:wireless"
+    ));
+
+    backend.engine.close().expect("close Vespa backend");
+    std::fs::remove_dir_all(root).expect("remove typed-query test data");
+}
+
+#[test]
+fn typed_query_b_reaches_real_vespa_query_nodes() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-typed-query-b-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("typed_query_b")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(Field::new("sku", FieldType::String).attribute().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile typed-query schema");
+    let backend = VespaBackend::open(&data, &config).expect("open Vespa backend");
+
+    for (id, title) in [
+        ("doc:ordered", "wireless headphones"),
+        ("doc:reversed", "headphones wireless"),
+        ("doc:other", "wireless speaker"),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([
+                    (
+                        field("title"),
+                        FieldValueIr::Single(ScalarValueIr::String(title.to_owned())),
+                    ),
+                    (
+                        field("sku"),
+                        FieldValueIr::Single(ScalarValueIr::String(
+                            (if id == "doc:other" {
+                                "speaker"
+                            } else {
+                                "wireless"
+                            })
+                            .to_owned(),
+                        )),
+                    ),
+                ]),
+            )))
+            .expect("insert document");
+    }
+
+    let request = |query: QueryIr| {
+        SearchRequestIr::new(
+            query,
+            Vec::new(),
+            None,
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        group
+            .children
+            .iter()
+            .map(|child| match child {
+                ResultNode::Hit(hit) => hit.id.as_str().to_owned(),
+                ResultNode::Group(_) => panic!("unexpected nested group"),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let near_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::Near(vec![typed_term("wireless"), typed_term("headphones")]),
+        )))
+        .expect("execute near query"));
+    assert!(near_ids.contains(&"doc:ordered".to_owned()));
+    assert!(near_ids.contains(&"doc:reversed".to_owned()));
+
+    let onear_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::ONear(vec![typed_term("wireless"), typed_term("headphones")]),
+        )))
+        .expect("execute onear query"));
+    assert_eq!(onear_ids, vec!["doc:ordered"]);
+
+    let fuzzy_ids = ids(backend
+        .search(request(typed_contains(
+            "sku",
+            QueryExprKindIr::Fuzzy {
+                value: RequestValueIr::String("wireles".to_owned()),
+            },
+        )))
+        .expect("execute fuzzy query"));
+    assert!(fuzzy_ids.contains(&"doc:ordered".to_owned()));
+    assert!(fuzzy_ids.contains(&"doc:reversed".to_owned()));
+
+    for (name, kind) in [
+        (
+            "weak-and",
+            QueryExprKindIr::WeakAnd(vec![typed_term("wireless"), typed_term("headphones")]),
+        ),
+        (
+            "equiv",
+            QueryExprKindIr::Equiv(vec![typed_term("wireless"), typed_term("headphones")]),
+        ),
+    ] {
+        let result = backend
+            .search(request(typed_contains("title", kind)))
+            .unwrap_or_else(|error| panic!("execute {name} query: {error}"));
+        assert!(!ids(result).is_empty(), "{name} query returned no hits");
+    }
+
+    let weighted_items = vec![
+        WeightedQueryItemIr {
+            key: RequestValueIr::String("wireless".to_owned()),
+            weight: 100,
+        },
+        WeightedQueryItemIr {
+            key: RequestValueIr::String("headphones".to_owned()),
+            weight: 50,
+        },
+    ];
+    let weighted_ids = ids(backend
+        .search(request(typed_expression(QueryExprKindIr::WeightedSet {
+            field: typed_field("title"),
+            items: weighted_items.clone(),
+        })))
+        .expect("execute weighted-set query"));
+    assert!(weighted_ids.contains(&"doc:ordered".to_owned()));
+
+    let wand_ids = ids(backend
+        .search(request(typed_expression(QueryExprKindIr::Wand {
+            field: typed_field("title"),
+            items: weighted_items,
+        })))
+        .expect("execute wand query"));
+    assert!(wand_ids.contains(&"doc:ordered".to_owned()));
+
+    let rank_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::Rank {
+                matching: Box::new(typed_term("wireless")),
+                ranking: vec![typed_term("headphones")],
+            },
+        )))
+        .expect("execute rank query"));
+    assert_eq!(rank_ids.first().map(String::as_str), Some("doc:ordered"));
+
+    backend.engine.close().expect("close Vespa backend");
+    std::fs::remove_dir_all(root).expect("remove typed-query test data");
+}
+
 #[test]
 fn unsupported_search_semantics_are_rejected_instead_of_dropped() {
     let weighted = request(
