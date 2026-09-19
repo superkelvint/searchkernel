@@ -92,6 +92,52 @@ fn lower_only_range_is_preserved() {
 }
 
 #[test]
+fn conditional_mutations_round_trip_without_field_loss() {
+    for json in [
+        br#"{
+            "protocol_version": 2,
+            "request": {"upsert": {
+                "document": {"id": "id:ns:type::1", "fields": {}},
+                "condition": "user.role == \"editor\""
+            }}
+        }"#
+        .as_slice(),
+        br#"{
+            "protocol_version": 2,
+            "request": {"delete": {
+                "id": "id:ns:type::1",
+                "condition": "user.role == \"editor\""
+            }}
+        }"#
+        .as_slice(),
+    ] {
+        let bytes = request_json_to_flatbuffer(json).expect("conditional mutation JSON");
+        let output = request_flatbuffer_to_json(&bytes).expect("conditional mutation output");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output).unwrap(),
+            serde_json::from_slice::<Value>(json).unwrap()
+        );
+    }
+}
+
+#[test]
+fn weighted_query_item_i64_round_trips_as_decimal_string() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {"query_expr": {"query_weighted_set": {
+            "field": "tags",
+            "items": [{"key": {"string": "rust"}, "weight": "9223372036854775807"}]
+        }}}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("weighted query JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("weighted query output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
 fn filter_in_round_trips_typed_values() {
     let json = br#"{
         "protocol_version": 2,
@@ -102,6 +148,217 @@ fn filter_in_round_trips_typed_values() {
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("filter_in JSON");
     let output = request_flatbuffer_to_json(&bytes).expect("filter_in JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn filter_fields_round_trip_element_qualified_refs() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {"filters": [
+            {"filter_comparison": {
+                "field": {"path": "tags", "element_index": 2},
+                "op": "eq",
+                "value": {"string": "rust"}
+            }},
+            {"filter_range": {
+                "field": {"path": "prices", "element_index": 1},
+                "lower": {"int64": "10"}
+            }},
+            {"filter_exists": {
+                "field": {"path": "labels", "element_index": 0}
+            }},
+            {"filter_in": {
+                "field": {"path": "brands", "element_index": 3},
+                "values": [{"string": "Sony"}]
+            }}
+        ]}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("element-qualified filter JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("element-qualified filter output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn v2_typed_query_sort_and_range_semantics_round_trip() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {
+            "query_expr": {"query_contains": {
+                "field": {"path": "tags", "element_index": 2},
+                "item": {"term_query": {"value": {"string": "rust"}}}
+            }, "annotations": {"label": {"string": "typed"}}},
+            "filter": {"filter_range": {
+                "field": "price",
+                "lower": {"negative_infinity": {}},
+                "upper": {"positive_infinity": {}},
+                "include_lower": false,
+                "include_upper": false
+            }},
+            "sort": [{
+                "target": {"relevance": {}},
+                "direction": "desc",
+                "missing": {"as": {"value": {"int64": "7"}}},
+                "annotations": {"locale": {"string": "en-US"}}
+            }]
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("V2 semantic JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("V2 JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn v2_search_request_context_round_trips_without_field_loss() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {
+            "query": "rust",
+            "search_fields": [{"field": "title", "weight": 2.5}],
+            "filter_sources": ["user", "tenant"],
+            "filter_parameters": {"tenant": {"string": "acme"}},
+            "filter": {"filter_exists": {"field": "title"}},
+            "ranking": {"profile": "bm25", "properties": {"rankproperty": "value"}},
+            "inputs": {
+                "query_tensor": {"literal": {"value": {"string": "tensor"}}},
+                "embedding": {"expression": {"expression": "embed(@query)"}}
+            },
+            "properties": {"trace.level": {"int64": "2"}},
+            "query_profile": "web",
+            "search_chain": "default",
+            "query_model": {
+                "query_string": "title:rush",
+                "default_index": "title",
+                "encoding": "utf-8",
+                "filter": "default",
+                "language": "en",
+                "locale": "en-US",
+                "type": {
+                    "composite": "and",
+                    "tokenization": "strict",
+                    "syntax": "yql",
+                    "profile": "default",
+                    "is_yql_default": true
+                },
+                "sources": ["news", "blogs"],
+                "restrict": ["public"],
+                "search_path": "/search",
+                "search_group": 3
+            },
+            "projection": ["title", "body"],
+            "highlighting": ["title"],
+            "summary": "bold",
+            "format": "json",
+            "bolding": true,
+            "timing": true,
+            "limit": 20,
+            "offset": 5,
+            "timeout": 250
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("complete request JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("complete request JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn multiple_structured_filters_round_trip_in_full_json_form() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {
+            "query": "rust",
+            "filters": [
+                {"filter_exists": {"field": "title"}},
+                {"filter_range": {
+                    "field": "price",
+                    "lower": {"float64": 10.0},
+                    "include_lower": true
+                }}
+            ],
+            "filter_sources": ["user", "tenant"],
+            "filter_parameters": {"tenant": {"string": "acme"}}
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("multiple structured filters");
+    let output = request_flatbuffer_to_json(&bytes).expect("multiple structured filters output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn filter_shorthand_remains_canonical_for_one_structured_filter() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {
+            "query": "rust",
+            "filters": [{"filter_exists": {"field": "title"}}]
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("single structured filter");
+    let output = request_flatbuffer_to_json(&bytes).expect("single structured filter output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::json!({
+            "protocol_version": 2,
+            "request": {"search": {
+                "query": "rust",
+                "filter": {"filter_exists": {"field": "title"}}
+            }}
+        })
+    );
+}
+
+#[test]
+fn structured_grouping_round_trips_all_decoder_shapes() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {
+            "grouping": [{
+                "source": {"structured": {
+                    "label": "root",
+                    "operations": [
+                        {"each": {"label": "branch", "operations": [
+                            {"group": {"expression": {"attribute": {"field": "brand"}}}},
+                            {"output": {"outputs": [
+                                {"label": "count", "expression": {"aggregation": {"count": {}}}},
+                                {"label": "price", "expression": {"aggregation": {"sum": {"expression": {"attribute": {"field": "price"}}}}}}
+                            ]}},
+                            {"max": {"finite": {"value": 10}}},
+                            {"max": {"infinite": {}}},
+                            {"precision": {"value": 100}},
+                            {"order": {"expressions": [{"unary": {"op": "negative", "expression": {"aggregation": {"count": {}}}}}]}},
+                            {"alias": {"name": "total", "expression": {"binary": {"op": "add", "left": {"literal": {"value": {"int64": "1"}}}, "right": {"literal": {"value": {"int64": "2"}}}}}}},
+                            {"filter": {"and": {"clauses": [
+                                {"regex": {"expression": {"attribute": {"field": "brand"}}, "pattern": "^A"}},
+                                {"range": {"expression": {"attribute": {"field": "price"}}, "lower": {"literal": {"value": {"int64": "1"}}}, "upper": {"literal": {"value": {"int64": "100"}}}, "include_lower": true, "include_upper": false}}
+                            ]}}},
+                            {"keep": {"not": {"clause": {"is_true": {"expression": {"attribute": {"field": "available"}}}}}}},
+                            {"where": {"expression": {"map_lookup": {"base": {"member": {"base": {"attribute": {"field": "metadata"}}, "member": "values"}}, "key": {"literal": {"value": {"string": "color"}}}}}}}
+                        ]}},
+                        {"output": {"outputs": [{"expression": {"aggregation": {"quantiles": {"quantiles": [0.5, 0.9], "expression": {"attribute": {"field": "price"}}}}}}]}},
+                        {"output": {"outputs": [{"expression": {"aggregation": {"summary": {"summary": "default"}}}}]}}
+                    ]
+                }},
+                "continuations": ["after-brand"]
+            }]
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("structured grouping JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("structured grouping JSON output");
     assert_eq!(
         serde_json::from_slice::<Value>(&output).unwrap(),
         serde_json::from_slice::<Value>(json).unwrap()

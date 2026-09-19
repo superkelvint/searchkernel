@@ -39,7 +39,7 @@ pub mod search_kernel {
                     RequestPayload::SearchKernel_V2_DescribeRequest,
                     RequestPayload::SearchKernel_V2_InspectQueryRequest,
                 ];
-                
+
                 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
                 #[repr(transparent)]
                 pub struct RequestPayload(pub u8);
@@ -55,7 +55,7 @@ pub mod search_kernel {
                     pub const SearchKernel_V2_AnalyzeRequest: Self = Self(7);
                     pub const SearchKernel_V2_DescribeRequest: Self = Self(8);
                     pub const SearchKernel_V2_InspectQueryRequest: Self = Self(9);
-                
+
                     pub const ENUM_MIN: u8 = 0;
                     pub const ENUM_MAX: u8 = 9;
                     pub const ENUM_VALUES: &'static [Self] = &[
@@ -74,14 +74,28 @@ pub mod search_kernel {
                     pub fn variant_name(self) -> Option<&'static str> {
                         match self {
                             Self::NONE => Some("NONE"),
-                            Self::SearchKernel_V2_InsertRequest => Some("SearchKernel_V2_InsertRequest"),
-                            Self::SearchKernel_V2_UpsertRequest => Some("SearchKernel_V2_UpsertRequest"),
-                            Self::SearchKernel_V2_PatchRequest => Some("SearchKernel_V2_PatchRequest"),
-                            Self::SearchKernel_V2_DeleteRequest => Some("SearchKernel_V2_DeleteRequest"),
+                            Self::SearchKernel_V2_InsertRequest => {
+                                Some("SearchKernel_V2_InsertRequest")
+                            }
+                            Self::SearchKernel_V2_UpsertRequest => {
+                                Some("SearchKernel_V2_UpsertRequest")
+                            }
+                            Self::SearchKernel_V2_PatchRequest => {
+                                Some("SearchKernel_V2_PatchRequest")
+                            }
+                            Self::SearchKernel_V2_DeleteRequest => {
+                                Some("SearchKernel_V2_DeleteRequest")
+                            }
                             Self::SearchKernel_V2_GetRequest => Some("SearchKernel_V2_GetRequest"),
-                            Self::SearchKernel_V2_SearchRequest => Some("SearchKernel_V2_SearchRequest"),
-                            Self::SearchKernel_V2_AnalyzeRequest => Some("SearchKernel_V2_AnalyzeRequest"),
-                            Self::SearchKernel_V2_DescribeRequest => Some("SearchKernel_V2_DescribeRequest"),
+                            Self::SearchKernel_V2_SearchRequest => {
+                                Some("SearchKernel_V2_SearchRequest")
+                            }
+                            Self::SearchKernel_V2_AnalyzeRequest => {
+                                Some("SearchKernel_V2_AnalyzeRequest")
+                            }
+                            Self::SearchKernel_V2_DescribeRequest => {
+                                Some("SearchKernel_V2_DescribeRequest")
+                            }
                             Self::SearchKernel_V2_InspectQueryRequest => {
                                 Some("SearchKernel_V2_InspectQueryRequest")
                             }
@@ -106,7 +120,7 @@ pub mod search_kernel {
                         Self(b)
                     }
                 }
-                
+
                 impl ::flatbuffers::Push for RequestPayload {
                     type Output = RequestPayload;
                     #[inline]
@@ -114,7 +128,7 @@ pub mod search_kernel {
                         unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
                     }
                 }
-                
+
                 impl ::flatbuffers::EndianScalar for RequestPayload {
                     type Scalar = u8;
                     #[inline]
@@ -128,7 +142,7 @@ pub mod search_kernel {
                         Self(b)
                     }
                 }
-                
+
                 impl<'a> ::flatbuffers::Verifiable for RequestPayload {
                     #[inline]
                     fn run_verifier(
@@ -138,7 +152,7 @@ pub mod search_kernel {
                         u8::run_verifier(v, pos)
                     }
                 }
-                
+
                 impl ::flatbuffers::SimpleToVerifyInSlice for RequestPayload {}
                 pub struct RequestPayloadUnionTableOffset {}
             }
@@ -150,11 +164,11 @@ pub mod search_kernel {
                 use super::*;
                 pub enum RequestEnvelopeOffset {}
                 #[derive(Copy, Clone, PartialEq)]
-                
+
                 pub struct RequestEnvelope<'a> {
                     pub _tab: ::flatbuffers::Table<'a>,
                 }
-                
+
                 impl<'a> ::flatbuffers::Follow<'a> for RequestEnvelope<'a> {
                     type Inner = RequestEnvelope<'a>;
                     #[inline]
@@ -164,12 +178,12 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 impl<'a> RequestEnvelope<'a> {
                     pub const VT_PROTOCOL_VERSION: ::flatbuffers::VOffsetT = 4;
                     pub const VT_PAYLOAD_TYPE: ::flatbuffers::VOffsetT = 6;
                     pub const VT_PAYLOAD: ::flatbuffers::VOffsetT = 8;
-                
+
                     #[inline]
                     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
                         RequestEnvelope { _tab: table }
@@ -192,7 +206,7 @@ pub mod search_kernel {
                         builder.add_payload_type(args.payload_type);
                         builder.finish()
                     }
-                
+
                     #[inline]
                     pub fn protocol_version(&self) -> u32 {
                         // Safety:
@@ -211,7 +225,10 @@ pub mod search_kernel {
                         // which contains a valid value in this slot
                         unsafe {
                             self._tab
-                                .get::<RequestPayload>(RequestEnvelope::VT_PAYLOAD_TYPE, Some(RequestPayload::NONE))
+                                .get::<RequestPayload>(
+                                    RequestEnvelope::VT_PAYLOAD_TYPE,
+                                    Some(RequestPayload::NONE),
+                                )
                                 .unwrap()
                         }
                     }
@@ -244,7 +261,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_upsert_request(
@@ -261,7 +278,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_patch_request(
@@ -278,7 +295,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_delete_request(
@@ -295,7 +312,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_get_request(
@@ -312,7 +329,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_search_request(
@@ -329,7 +346,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_analyze_request(
@@ -346,7 +363,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_describe_request(
@@ -363,13 +380,15 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_inspect_query_request(
                         &self,
                     ) -> Option<super::super::v2::InspectQueryRequest<'a>> {
-                        if self.payload_type() == RequestPayload::SearchKernel_V2_InspectQueryRequest {
+                        if self.payload_type()
+                            == RequestPayload::SearchKernel_V2_InspectQueryRequest
+                        {
                             self.payload().map(|t| {
                                 // Safety:
                                 // Created from a valid Table for this object
@@ -381,7 +400,7 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
                     #[inline]
                     fn run_verifier(
@@ -389,22 +408,86 @@ pub mod search_kernel {
                         pos: usize,
                     ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
                         v.visit_table(pos)?
-                     .visit_field::<u32>("protocol_version", Self::VT_PROTOCOL_VERSION, false)?
-                     .visit_union::<RequestPayload, _>("payload_type", Self::VT_PAYLOAD_TYPE, "payload", Self::VT_PAYLOAD, false, |key, v, pos| {
-                        match key {
-                          RequestPayload::SearchKernel_V2_InsertRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::InsertRequest>>("RequestPayload::SearchKernel_V2_InsertRequest", pos),
-                          RequestPayload::SearchKernel_V2_UpsertRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::UpsertRequest>>("RequestPayload::SearchKernel_V2_UpsertRequest", pos),
-                          RequestPayload::SearchKernel_V2_PatchRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::PatchRequest>>("RequestPayload::SearchKernel_V2_PatchRequest", pos),
-                          RequestPayload::SearchKernel_V2_DeleteRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::DeleteRequest>>("RequestPayload::SearchKernel_V2_DeleteRequest", pos),
-                          RequestPayload::SearchKernel_V2_GetRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::GetRequest>>("RequestPayload::SearchKernel_V2_GetRequest", pos),
-                          RequestPayload::SearchKernel_V2_SearchRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::SearchRequest>>("RequestPayload::SearchKernel_V2_SearchRequest", pos),
-                          RequestPayload::SearchKernel_V2_AnalyzeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::AnalyzeRequest>>("RequestPayload::SearchKernel_V2_AnalyzeRequest", pos),
-                          RequestPayload::SearchKernel_V2_DescribeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::DescribeRequest>>("RequestPayload::SearchKernel_V2_DescribeRequest", pos),
-                          RequestPayload::SearchKernel_V2_InspectQueryRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::InspectQueryRequest>>("RequestPayload::SearchKernel_V2_InspectQueryRequest", pos),
-                          _ => Ok(()),
-                        }
-                     })?
-                     .finish();
+                            .visit_field::<u32>(
+                                "protocol_version",
+                                Self::VT_PROTOCOL_VERSION,
+                                false,
+                            )?
+                            .visit_union::<RequestPayload, _>(
+                                "payload_type",
+                                Self::VT_PAYLOAD_TYPE,
+                                "payload",
+                                Self::VT_PAYLOAD,
+                                false,
+                                |key, v, pos| match key {
+                                    RequestPayload::SearchKernel_V2_InsertRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::InsertRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_InsertRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_UpsertRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::UpsertRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_UpsertRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_PatchRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::PatchRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_PatchRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_DeleteRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::DeleteRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_DeleteRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_GetRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::GetRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_GetRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_SearchRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::SearchRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_SearchRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_AnalyzeRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::AnalyzeRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_AnalyzeRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_DescribeRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::DescribeRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_DescribeRequest", pos
+                                        )
+                                    }
+                                    RequestPayload::SearchKernel_V2_InspectQueryRequest => {
+                                        v.verify_union_variant::<::flatbuffers::ForwardsUOffset<
+                                            super::super::v2::InspectQueryRequest,
+                                        >>(
+                                            "RequestPayload::SearchKernel_V2_InspectQueryRequest",
+                                            pos,
+                                        )
+                                    }
+                                    _ => Ok(()),
+                                },
+                            )?
+                            .finish();
                         Ok(())
                     }
                 }
@@ -423,7 +506,7 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 pub struct RequestEnvelopeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
                     fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
                     start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
@@ -431,8 +514,11 @@ pub mod search_kernel {
                 impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> RequestEnvelopeBuilder<'a, 'b, A> {
                     #[inline]
                     pub fn add_protocol_version(&mut self, protocol_version: u32) {
-                        self.fbb_
-                            .push_slot::<u32>(RequestEnvelope::VT_PROTOCOL_VERSION, protocol_version, 0);
+                        self.fbb_.push_slot::<u32>(
+                            RequestEnvelope::VT_PROTOCOL_VERSION,
+                            protocol_version,
+                            0,
+                        );
                     }
                     #[inline]
                     pub fn add_payload_type(&mut self, payload_type: RequestPayload) {
@@ -447,8 +533,10 @@ pub mod search_kernel {
                         &mut self,
                         payload: ::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>,
                     ) {
-                        self.fbb_
-                            .push_slot_always::<::flatbuffers::WIPOffset<_>>(RequestEnvelope::VT_PAYLOAD, payload);
+                        self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                            RequestEnvelope::VT_PAYLOAD,
+                            payload,
+                        );
                     }
                     #[inline]
                     pub fn new(
@@ -466,7 +554,7 @@ pub mod search_kernel {
                         ::flatbuffers::WIPOffset::new(o.value())
                     }
                 }
-                
+
                 impl ::core::fmt::Debug for RequestEnvelope<'_> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let mut ds = f.debug_struct("RequestEnvelope");
@@ -534,7 +622,8 @@ pub mod search_kernel {
                                 }
                             }
                             RequestPayload::SearchKernel_V2_AnalyzeRequest => {
-                                if let Some(x) = self.payload_as_search_kernel_v2_analyze_request() {
+                                if let Some(x) = self.payload_as_search_kernel_v2_analyze_request()
+                                {
                                     ds.field("payload", &x)
                                 } else {
                                     ds.field(
@@ -544,7 +633,8 @@ pub mod search_kernel {
                                 }
                             }
                             RequestPayload::SearchKernel_V2_DescribeRequest => {
-                                if let Some(x) = self.payload_as_search_kernel_v2_describe_request() {
+                                if let Some(x) = self.payload_as_search_kernel_v2_describe_request()
+                                {
                                     ds.field("payload", &x)
                                 } else {
                                     ds.field(
@@ -554,7 +644,9 @@ pub mod search_kernel {
                                 }
                             }
                             RequestPayload::SearchKernel_V2_InspectQueryRequest => {
-                                if let Some(x) = self.payload_as_search_kernel_v2_inspect_query_request() {
+                                if let Some(x) =
+                                    self.payload_as_search_kernel_v2_inspect_query_request()
+                                {
                                     ds.field("payload", &x)
                                 } else {
                                     ds.field(
@@ -625,28 +717,32 @@ pub mod search_kernel {
                 /// Assumes, without verification, that a buffer of bytes contains a RequestEnvelope and returns it.
                 /// # Safety
                 /// Callers must trust the given bytes do indeed contain a valid `RequestEnvelope`.
-                pub unsafe fn root_as_request_envelope_unchecked(buf: &[u8]) -> RequestEnvelope<'_> {
+                pub unsafe fn root_as_request_envelope_unchecked(
+                    buf: &[u8],
+                ) -> RequestEnvelope<'_> {
                     unsafe { ::flatbuffers::root_unchecked::<RequestEnvelope>(buf) }
                 }
                 #[inline]
                 /// Assumes, without verification, that a buffer of bytes contains a size prefixed RequestEnvelope and returns it.
                 /// # Safety
                 /// Callers must trust the given bytes do indeed contain a valid size prefixed `RequestEnvelope`.
-                pub unsafe fn size_prefixed_root_as_request_envelope_unchecked(buf: &[u8]) -> RequestEnvelope<'_> {
+                pub unsafe fn size_prefixed_root_as_request_envelope_unchecked(
+                    buf: &[u8],
+                ) -> RequestEnvelope<'_> {
                     unsafe { ::flatbuffers::size_prefixed_root_unchecked::<RequestEnvelope>(buf) }
                 }
                 pub const REQUEST_ENVELOPE_IDENTIFIER: &str = "SKRQ";
-                
+
                 #[inline]
                 pub fn request_envelope_buffer_has_identifier(buf: &[u8]) -> bool {
                     ::flatbuffers::buffer_has_identifier(buf, REQUEST_ENVELOPE_IDENTIFIER, false)
                 }
-                
+
                 #[inline]
                 pub fn request_envelope_size_prefixed_buffer_has_identifier(buf: &[u8]) -> bool {
                     ::flatbuffers::buffer_has_identifier(buf, REQUEST_ENVELOPE_IDENTIFIER, true)
                 }
-                
+
                 #[inline]
                 pub fn finish_request_envelope_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
                     fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
@@ -654,9 +750,13 @@ pub mod search_kernel {
                 ) {
                     fbb.finish(root, Some(REQUEST_ENVELOPE_IDENTIFIER));
                 }
-                
+
                 #[inline]
-                pub fn finish_size_prefixed_request_envelope_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
+                pub fn finish_size_prefixed_request_envelope_buffer<
+                    'a,
+                    'b,
+                    A: ::flatbuffers::Allocator + 'a,
+                >(
                     fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
                     root: ::flatbuffers::WIPOffset<RequestEnvelope<'a>>,
                 ) {
@@ -697,7 +797,7 @@ pub mod search_kernel {
                     ResponsePayload::SearchKernel_V2_DescribeResult,
                     ResponsePayload::SearchKernel_V2_InspectQueryResult,
                 ];
-                
+
                 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
                 #[repr(transparent)]
                 pub struct ResponsePayload(pub u8);
@@ -714,7 +814,7 @@ pub mod search_kernel {
                     pub const SearchKernel_V2_Error: Self = Self(8);
                     pub const SearchKernel_V2_DescribeResult: Self = Self(9);
                     pub const SearchKernel_V2_InspectQueryResult: Self = Self(10);
-                
+
                     pub const ENUM_MIN: u8 = 0;
                     pub const ENUM_MAX: u8 = 10;
                     pub const ENUM_VALUES: &'static [Self] = &[
@@ -734,16 +834,32 @@ pub mod search_kernel {
                     pub fn variant_name(self) -> Option<&'static str> {
                         match self {
                             Self::NONE => Some("NONE"),
-                            Self::SearchKernel_V2_InsertResult => Some("SearchKernel_V2_InsertResult"),
-                            Self::SearchKernel_V2_UpsertResult => Some("SearchKernel_V2_UpsertResult"),
-                            Self::SearchKernel_V2_PatchResult => Some("SearchKernel_V2_PatchResult"),
-                            Self::SearchKernel_V2_DeleteResult => Some("SearchKernel_V2_DeleteResult"),
+                            Self::SearchKernel_V2_InsertResult => {
+                                Some("SearchKernel_V2_InsertResult")
+                            }
+                            Self::SearchKernel_V2_UpsertResult => {
+                                Some("SearchKernel_V2_UpsertResult")
+                            }
+                            Self::SearchKernel_V2_PatchResult => {
+                                Some("SearchKernel_V2_PatchResult")
+                            }
+                            Self::SearchKernel_V2_DeleteResult => {
+                                Some("SearchKernel_V2_DeleteResult")
+                            }
                             Self::SearchKernel_V2_GetResult => Some("SearchKernel_V2_GetResult"),
-                            Self::SearchKernel_V2_SearchResult => Some("SearchKernel_V2_SearchResult"),
-                            Self::SearchKernel_V2_AnalyzeResult => Some("SearchKernel_V2_AnalyzeResult"),
+                            Self::SearchKernel_V2_SearchResult => {
+                                Some("SearchKernel_V2_SearchResult")
+                            }
+                            Self::SearchKernel_V2_AnalyzeResult => {
+                                Some("SearchKernel_V2_AnalyzeResult")
+                            }
                             Self::SearchKernel_V2_Error => Some("SearchKernel_V2_Error"),
-                            Self::SearchKernel_V2_DescribeResult => Some("SearchKernel_V2_DescribeResult"),
-                            Self::SearchKernel_V2_InspectQueryResult => Some("SearchKernel_V2_InspectQueryResult"),
+                            Self::SearchKernel_V2_DescribeResult => {
+                                Some("SearchKernel_V2_DescribeResult")
+                            }
+                            Self::SearchKernel_V2_InspectQueryResult => {
+                                Some("SearchKernel_V2_InspectQueryResult")
+                            }
                             _ => None,
                         }
                     }
@@ -765,7 +881,7 @@ pub mod search_kernel {
                         Self(b)
                     }
                 }
-                
+
                 impl ::flatbuffers::Push for ResponsePayload {
                     type Output = ResponsePayload;
                     #[inline]
@@ -773,7 +889,7 @@ pub mod search_kernel {
                         unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
                     }
                 }
-                
+
                 impl ::flatbuffers::EndianScalar for ResponsePayload {
                     type Scalar = u8;
                     #[inline]
@@ -787,7 +903,7 @@ pub mod search_kernel {
                         Self(b)
                     }
                 }
-                
+
                 impl<'a> ::flatbuffers::Verifiable for ResponsePayload {
                     #[inline]
                     fn run_verifier(
@@ -797,7 +913,7 @@ pub mod search_kernel {
                         u8::run_verifier(v, pos)
                     }
                 }
-                
+
                 impl ::flatbuffers::SimpleToVerifyInSlice for ResponsePayload {}
                 pub struct ResponsePayloadUnionTableOffset {}
             }
@@ -809,11 +925,11 @@ pub mod search_kernel {
                 use super::*;
                 pub enum ResponseEnvelopeOffset {}
                 #[derive(Copy, Clone, PartialEq)]
-                
+
                 pub struct ResponseEnvelope<'a> {
                     pub _tab: ::flatbuffers::Table<'a>,
                 }
-                
+
                 impl<'a> ::flatbuffers::Follow<'a> for ResponseEnvelope<'a> {
                     type Inner = ResponseEnvelope<'a>;
                     #[inline]
@@ -823,12 +939,12 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 impl<'a> ResponseEnvelope<'a> {
                     pub const VT_PROTOCOL_VERSION: ::flatbuffers::VOffsetT = 4;
                     pub const VT_PAYLOAD_TYPE: ::flatbuffers::VOffsetT = 6;
                     pub const VT_PAYLOAD: ::flatbuffers::VOffsetT = 8;
-                
+
                     #[inline]
                     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
                         ResponseEnvelope { _tab: table }
@@ -851,7 +967,7 @@ pub mod search_kernel {
                         builder.add_payload_type(args.payload_type);
                         builder.finish()
                     }
-                
+
                     #[inline]
                     pub fn protocol_version(&self) -> u32 {
                         // Safety:
@@ -906,7 +1022,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_upsert_result(
@@ -923,7 +1039,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_patch_result(
@@ -940,7 +1056,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_delete_result(
@@ -957,7 +1073,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_get_result(
@@ -974,7 +1090,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_search_result(
@@ -991,7 +1107,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_analyze_result(
@@ -1008,10 +1124,12 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
-                    pub fn payload_as_search_kernel_v2_error(&self) -> Option<super::super::v2::Error<'a>> {
+                    pub fn payload_as_search_kernel_v2_error(
+                        &self,
+                    ) -> Option<super::super::v2::Error<'a>> {
                         if self.payload_type() == ResponsePayload::SearchKernel_V2_Error {
                             self.payload().map(|t| {
                                 // Safety:
@@ -1023,7 +1141,7 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_describe_result(
@@ -1040,13 +1158,15 @@ pub mod search_kernel {
                             None
                         }
                     }
-                
+
                     #[inline]
                     #[allow(non_snake_case)]
                     pub fn payload_as_search_kernel_v2_inspect_query_result(
                         &self,
                     ) -> Option<super::super::v2::InspectQueryResult<'a>> {
-                        if self.payload_type() == ResponsePayload::SearchKernel_V2_InspectQueryResult {
+                        if self.payload_type()
+                            == ResponsePayload::SearchKernel_V2_InspectQueryResult
+                        {
                             self.payload().map(|t| {
                                 // Safety:
                                 // Created from a valid Table for this object
@@ -1058,7 +1178,7 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
                     #[inline]
                     fn run_verifier(
@@ -1101,7 +1221,7 @@ pub mod search_kernel {
                         }
                     }
                 }
-                
+
                 pub struct ResponseEnvelopeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
                     fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
                     start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
@@ -1109,8 +1229,11 @@ pub mod search_kernel {
                 impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ResponseEnvelopeBuilder<'a, 'b, A> {
                     #[inline]
                     pub fn add_protocol_version(&mut self, protocol_version: u32) {
-                        self.fbb_
-                            .push_slot::<u32>(ResponseEnvelope::VT_PROTOCOL_VERSION, protocol_version, 0);
+                        self.fbb_.push_slot::<u32>(
+                            ResponseEnvelope::VT_PROTOCOL_VERSION,
+                            protocol_version,
+                            0,
+                        );
                     }
                     #[inline]
                     pub fn add_payload_type(&mut self, payload_type: ResponsePayload) {
@@ -1125,8 +1248,10 @@ pub mod search_kernel {
                         &mut self,
                         payload: ::flatbuffers::WIPOffset<::flatbuffers::UnionWIPOffset>,
                     ) {
-                        self.fbb_
-                            .push_slot_always::<::flatbuffers::WIPOffset<_>>(ResponseEnvelope::VT_PAYLOAD, payload);
+                        self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                            ResponseEnvelope::VT_PAYLOAD,
+                            payload,
+                        );
                     }
                     #[inline]
                     pub fn new(
@@ -1144,7 +1269,7 @@ pub mod search_kernel {
                         ::flatbuffers::WIPOffset::new(o.value())
                     }
                 }
-                
+
                 impl ::core::fmt::Debug for ResponseEnvelope<'_> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let mut ds = f.debug_struct("ResponseEnvelope");
@@ -1232,7 +1357,8 @@ pub mod search_kernel {
                                 }
                             }
                             ResponsePayload::SearchKernel_V2_DescribeResult => {
-                                if let Some(x) = self.payload_as_search_kernel_v2_describe_result() {
+                                if let Some(x) = self.payload_as_search_kernel_v2_describe_result()
+                                {
                                     ds.field("payload", &x)
                                 } else {
                                     ds.field(
@@ -1242,7 +1368,9 @@ pub mod search_kernel {
                                 }
                             }
                             ResponsePayload::SearchKernel_V2_InspectQueryResult => {
-                                if let Some(x) = self.payload_as_search_kernel_v2_inspect_query_result() {
+                                if let Some(x) =
+                                    self.payload_as_search_kernel_v2_inspect_query_result()
+                                {
                                     ds.field("payload", &x)
                                 } else {
                                     ds.field(
@@ -1268,7 +1396,8 @@ pub mod search_kernel {
                 /// `root_as_response_envelope_unchecked`.
                 pub fn root_as_response_envelope(
                     buf: &[u8],
-                ) -> Result<ResponseEnvelope<'_>, ::flatbuffers::InvalidFlatbuffer> {
+                ) -> Result<ResponseEnvelope<'_>, ::flatbuffers::InvalidFlatbuffer>
+                {
                     ::flatbuffers::root::<ResponseEnvelope>(buf)
                 }
                 #[inline]
@@ -1280,7 +1409,8 @@ pub mod search_kernel {
                 /// `size_prefixed_root_as_response_envelope_unchecked`.
                 pub fn size_prefixed_root_as_response_envelope(
                     buf: &[u8],
-                ) -> Result<ResponseEnvelope<'_>, ::flatbuffers::InvalidFlatbuffer> {
+                ) -> Result<ResponseEnvelope<'_>, ::flatbuffers::InvalidFlatbuffer>
+                {
                     ::flatbuffers::size_prefixed_root::<ResponseEnvelope>(buf)
                 }
                 #[inline]
@@ -1293,7 +1423,8 @@ pub mod search_kernel {
                 pub fn root_as_response_envelope_with_opts<'b, 'o>(
                     opts: &'o ::flatbuffers::VerifierOptions,
                     buf: &'b [u8],
-                ) -> Result<ResponseEnvelope<'b>, ::flatbuffers::InvalidFlatbuffer> {
+                ) -> Result<ResponseEnvelope<'b>, ::flatbuffers::InvalidFlatbuffer>
+                {
                     ::flatbuffers::root_with_opts::<ResponseEnvelope<'b>>(opts, buf)
                 }
                 #[inline]
@@ -1306,14 +1437,17 @@ pub mod search_kernel {
                 pub fn size_prefixed_root_as_response_envelope_with_opts<'b, 'o>(
                     opts: &'o ::flatbuffers::VerifierOptions,
                     buf: &'b [u8],
-                ) -> Result<ResponseEnvelope<'b>, ::flatbuffers::InvalidFlatbuffer> {
+                ) -> Result<ResponseEnvelope<'b>, ::flatbuffers::InvalidFlatbuffer>
+                {
                     ::flatbuffers::size_prefixed_root_with_opts::<ResponseEnvelope<'b>>(opts, buf)
                 }
                 #[inline]
                 /// Assumes, without verification, that a buffer of bytes contains a ResponseEnvelope and returns it.
                 /// # Safety
                 /// Callers must trust the given bytes do indeed contain a valid `ResponseEnvelope`.
-                pub unsafe fn root_as_response_envelope_unchecked(buf: &[u8]) -> ResponseEnvelope<'_> {
+                pub unsafe fn root_as_response_envelope_unchecked(
+                    buf: &[u8],
+                ) -> ResponseEnvelope<'_> {
                     unsafe { ::flatbuffers::root_unchecked::<ResponseEnvelope>(buf) }
                 }
                 #[inline]
@@ -1326,17 +1460,17 @@ pub mod search_kernel {
                     unsafe { ::flatbuffers::size_prefixed_root_unchecked::<ResponseEnvelope>(buf) }
                 }
                 pub const RESPONSE_ENVELOPE_IDENTIFIER: &str = "SKRS";
-                
+
                 #[inline]
                 pub fn response_envelope_buffer_has_identifier(buf: &[u8]) -> bool {
                     ::flatbuffers::buffer_has_identifier(buf, RESPONSE_ENVELOPE_IDENTIFIER, false)
                 }
-                
+
                 #[inline]
                 pub fn response_envelope_size_prefixed_buffer_has_identifier(buf: &[u8]) -> bool {
                     ::flatbuffers::buffer_has_identifier(buf, RESPONSE_ENVELOPE_IDENTIFIER, true)
                 }
-                
+
                 #[inline]
                 pub fn finish_response_envelope_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
                     fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
@@ -1344,9 +1478,13 @@ pub mod search_kernel {
                 ) {
                     fbb.finish(root, Some(RESPONSE_ENVELOPE_IDENTIFIER));
                 }
-                
+
                 #[inline]
-                pub fn finish_size_prefixed_response_envelope_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
+                pub fn finish_size_prefixed_response_envelope_buffer<
+                    'a,
+                    'b,
+                    A: ::flatbuffers::Allocator + 'a,
+                >(
                     fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
                     root: ::flatbuffers::WIPOffset<ResponseEnvelope<'a>>,
                 ) {
@@ -1359,12 +1497,12 @@ pub mod search_kernel {
 }
 pub(crate) mod schema {
     // @generated by searchkernel-bindgen; do not modify
-    
+
     pub(crate) struct FieldMetadata {
         pub name: &'static str,
         pub schema: &'static str,
     }
-    
+
     pub(crate) fn metadata(name: &str) -> Option<&'static [FieldMetadata]> {
         match name {
             "SearchKernel_FFI_V1_RequestEnvelope" => Some(&[
@@ -1535,41 +1673,6 @@ pub(crate) mod schema {
                 FieldMetadata {
                     name: "path",
                     schema: "string",
-                },
-            ]),
-            "SearchKernel_V2_FacetRequest" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "limit",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32",
-                },
-                FieldMetadata {
-                    name: "sort",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalFacetSort",
-                },
-            ]),
-            "SearchKernel_V2_FacetResult" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "values",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_FacetValue",
-                },
-            ]),
-            "SearchKernel_V2_FacetSort" => Some(&[]),
-            "SearchKernel_V2_FacetValue" => Some(&[
-                FieldMetadata {
-                    name: "count",
-                    schema: "integer",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
                 },
             ]),
             "SearchKernel_V2_FieldCardinality" => Some(&[]),
@@ -1807,10 +1910,6 @@ pub(crate) mod schema {
                 name: "value",
                 schema: "number",
             }]),
-            "SearchKernel_V2_OptionalFacetSort" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "ref:#/definitions/SearchKernel_V2_FacetSort",
-            }]),
             "SearchKernel_V2_OptionalMissingPlacement" => Some(&[FieldMetadata {
                 name: "value",
                 schema: "ref:#/definitions/SearchKernel_V2_MissingPlacement",
@@ -1871,17 +1970,30 @@ pub(crate) mod schema {
                 name: "clauses",
                 schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr",
             }]),
-            "SearchKernel_V2_RankingPolicy" => Some(&[
-                FieldMetadata {
-                    name: "policy",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "policy_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_RankingPolicyKind",
-                },
+            "SearchKernel_V2_QueryModel" => Some(&[
+                FieldMetadata { name: "query_string", schema: "string" },
+                FieldMetadata { name: "default_index", schema: "string" },
+                FieldMetadata { name: "encoding", schema: "string" },
+                FieldMetadata { name: "filter", schema: "string" },
+                FieldMetadata { name: "language", schema: "string" },
+                FieldMetadata { name: "locale", schema: "string" },
+                FieldMetadata { name: "type", schema: "object" },
+                FieldMetadata { name: "sources", schema: "array:string" },
+                FieldMetadata { name: "restrict", schema: "array:string" },
+                FieldMetadata { name: "search_path", schema: "string" },
+                FieldMetadata { name: "search_group", schema: "integer" },
             ]),
-            "SearchKernel_V2_RankingPolicyKind" => Some(&[]),
+            "SearchKernel_V2_QueryModelType" => Some(&[
+                FieldMetadata { name: "composite", schema: "string" },
+                FieldMetadata { name: "tokenization", schema: "string" },
+                FieldMetadata { name: "syntax", schema: "string" },
+                FieldMetadata { name: "profile", schema: "string" },
+                FieldMetadata { name: "is_yql_default", schema: "boolean" },
+            ]),
+            "SearchKernel_V2_RankingRequest" => Some(&[
+                FieldMetadata { name: "profile", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+            ]),
             "SearchKernel_V2_SearchField" => Some(&[
                 FieldMetadata {
                     name: "field",
@@ -1896,18 +2008,42 @@ pub(crate) mod schema {
                 name: "fields",
                 schema: "array:ref:#/definitions/SearchKernel_V2_SearchField",
             }]),
+            "SearchKernel_V2_DenseTensorValues" => Some(&[FieldMetadata {
+                name: "values",
+                schema: "array:number",
+            }]),
+            "SearchKernel_V2_MixedTensorBlocks" => Some(&[FieldMetadata {
+                name: "blocks",
+                schema: "array:ref:#/definitions/SearchKernel_V2_TensorBlock",
+            }]),
             "SearchKernel_V2_SearchRequest" => Some(&[
                 FieldMetadata {
-                    name: "facets",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_FacetRequest",
+                    name: "grouping",
+                    schema: "array:ref:#/definitions/SearchKernel_V2_GroupingRequest",
                 },
                 FieldMetadata {
                     name: "filter",
                     schema: "ref:#/definitions/SearchKernel_V2_FilterExpr",
                 },
                 FieldMetadata {
+                    name: "filters",
+                    schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr",
+                },
+                FieldMetadata {
+                    name: "filter_parameters",
+                    schema: "object",
+                },
+                FieldMetadata {
+                    name: "filter_sources",
+                    schema: "array:string",
+                },
+                FieldMetadata {
                     name: "highlighting",
                     schema: "ref:#/definitions/SearchKernel_V2_HighlightRequest",
+                },
+                FieldMetadata {
+                    name: "inputs",
+                    schema: "object",
                 },
                 FieldMetadata {
                     name: "language",
@@ -1934,8 +2070,24 @@ pub(crate) mod schema {
                     schema: "ref:#/definitions/SearchKernel_V2_QueryExpr",
                 },
                 FieldMetadata {
+                    name: "query_model",
+                    schema: "object",
+                },
+                FieldMetadata {
+                    name: "query_profile",
+                    schema: "string",
+                },
+                FieldMetadata {
+                    name: "properties",
+                    schema: "object",
+                },
+                FieldMetadata {
                     name: "ranking",
-                    schema: "ref:#/definitions/SearchKernel_V2_RankingPolicy",
+                    schema: "ref:#/definitions/SearchKernel_V2_RankingRequest",
+                },
+                FieldMetadata {
+                    name: "search_chain",
+                    schema: "string",
                 },
                 FieldMetadata {
                     name: "search_fields",
@@ -1944,6 +2096,22 @@ pub(crate) mod schema {
                 FieldMetadata {
                     name: "sort",
                     schema: "array:ref:#/definitions/SearchKernel_V2_SortExpr",
+                },
+                FieldMetadata {
+                    name: "summary",
+                    schema: "string",
+                },
+                FieldMetadata {
+                    name: "format",
+                    schema: "string",
+                },
+                FieldMetadata {
+                    name: "bolding",
+                    schema: "boolean",
+                },
+                FieldMetadata {
+                    name: "timing",
+                    schema: "boolean",
                 },
                 FieldMetadata {
                     name: "timeout",
@@ -1977,6 +2145,10 @@ pub(crate) mod schema {
             "SearchKernel_V2_SortDirection" => Some(&[]),
             "SearchKernel_V2_SortExpr" => Some(&[
                 FieldMetadata {
+                    name: "annotations",
+                    schema: "object",
+                },
+                FieldMetadata {
                     name: "direction",
                     schema: "ref:#/definitions/SearchKernel_V2_SortDirection",
                 },
@@ -1987,6 +2159,10 @@ pub(crate) mod schema {
                 FieldMetadata {
                     name: "missing",
                     schema: "ref:#/definitions/SearchKernel_V2_OptionalMissingPlacement",
+                },
+                FieldMetadata {
+                    name: "target",
+                    schema: "object",
                 },
             ]),
             "SearchKernel_V2_StringEntry" => Some(&[
@@ -2003,6 +2179,50 @@ pub(crate) mod schema {
                 name: "value",
                 schema: "string",
             }]),
+            "SearchKernel_V2_SparseTensorCells" => Some(&[FieldMetadata {
+                name: "cells",
+                schema: "array:ref:#/definitions/SearchKernel_V2_TensorCell",
+            }]),
+            "SearchKernel_V2_TensorAddressEntry" => Some(&[
+                FieldMetadata {
+                    name: "dimension",
+                    schema: "string",
+                },
+                FieldMetadata {
+                    name: "label",
+                    schema: "string",
+                },
+            ]),
+            "SearchKernel_V2_TensorBlock" => Some(&[
+                FieldMetadata {
+                    name: "address",
+                    schema: "array:ref:#/definitions/SearchKernel_V2_TensorAddressEntry",
+                },
+                FieldMetadata {
+                    name: "values",
+                    schema: "array:number",
+                },
+            ]),
+            "SearchKernel_V2_TensorCell" => Some(&[
+                FieldMetadata {
+                    name: "address",
+                    schema: "array:ref:#/definitions/SearchKernel_V2_TensorAddressEntry",
+                },
+                FieldMetadata {
+                    name: "value",
+                    schema: "number",
+                },
+            ]),
+            "SearchKernel_V2_TensorValue" => Some(&[
+                FieldMetadata {
+                    name: "payload",
+                    schema: "union",
+                },
+                FieldMetadata {
+                    name: "type_spec",
+                    schema: "string",
+                },
+            ]),
             "SearchKernel_V2_TermQuery" => Some(&[
                 FieldMetadata {
                     name: "field",
@@ -2072,7 +2292,7 @@ pub(crate) mod schema {
             _ => None,
         }
     }
-    
+
     pub(crate) fn enum_values(name: &str) -> Option<&'static [&'static str]> {
         match name {
             "SearchKernel_FFI_V1_RequestPayload" => Some(&[
@@ -2100,20 +2320,10 @@ pub(crate) mod schema {
                 "SearchKernel_V2_DescribeResult",
                 "SearchKernel_V2_InspectQueryResult",
             ]),
-            "SearchKernel_V2_AnalyzeTarget" => Some(&[
-                "NONE",
-                "Analyzer",
-                "AnalyzeFieldTarget",
-            ]),
-            "SearchKernel_V2_ComparisonOp" => Some(&[
-                "Unspecified",
-                "Eq",
-                "Ne",
-                "Lt",
-                "Lte",
-                "Gt",
-                "Gte",
-            ]),
+            "SearchKernel_V2_AnalyzeTarget" => Some(&["NONE", "Analyzer", "AnalyzeFieldTarget"]),
+            "SearchKernel_V2_ComparisonOp" => {
+                Some(&["Unspecified", "Eq", "Ne", "Lt", "Lte", "Gt", "Gte"])
+            }
             "SearchKernel_V2_ErrorCode" => Some(&[
                 "Unspecified",
                 "InvalidArgument",
@@ -2134,19 +2344,10 @@ pub(crate) mod schema {
                 "ValueAsc",
                 "ValueDesc",
             ]),
-            "SearchKernel_V2_FieldCardinality" => Some(&[
-                "Unspecified",
-                "Single",
-                "Multi",
-            ]),
-            "SearchKernel_V2_FieldKind" => Some(&[
-                "Unspecified",
-                "Text",
-                "Keyword",
-                "Int64",
-                "Float64",
-                "Bool",
-            ]),
+            "SearchKernel_V2_FieldCardinality" => Some(&["Unspecified", "Single", "Multi"]),
+            "SearchKernel_V2_FieldKind" => {
+                Some(&["Unspecified", "Text", "Keyword", "Int64", "Float64", "Bool"])
+            }
             "SearchKernel_V2_FilterExprKind" => Some(&[
                 "NONE",
                 "FilterAnd",
@@ -2157,41 +2358,25 @@ pub(crate) mod schema {
                 "FilterExists",
                 "FilterIn",
             ]),
-            "SearchKernel_V2_MissingPlacement" => Some(&[
-                "Unspecified",
-                "First",
-                "Last",
-            ]),
-            "SearchKernel_V2_NullValue" => Some(&[
-                "Unspecified",
-                "Null",
-            ]),
-            "SearchKernel_V2_PatchOperationKind" => Some(&[
+            "SearchKernel_V2_MissingPlacement" => Some(&["Unspecified", "First", "Last"]),
+            "SearchKernel_V2_NullValue" => Some(&["Unspecified", "Null"]),
+            "SearchKernel_V2_PatchOperationKind" => Some(&["NONE", "SetField", "UnsetField"]),
+            "SearchKernel_V2_QueryExprKind" => {
+                Some(&["NONE", "TermQuery", "QueryAnd", "QueryOr", "QueryNot"])
+            }
+            "SearchKernel_V2_TensorPayloadKind" => Some(&[
                 "NONE",
-                "SetField",
-                "UnsetField",
+                "DenseTensorValues",
+                "SparseTensorCells",
+                "MixedTensorBlocks",
             ]),
-            "SearchKernel_V2_QueryExprKind" => Some(&[
-                "NONE",
-                "TermQuery",
-                "QueryAnd",
-                "QueryOr",
-                "QueryNot",
-            ]),
-            "SearchKernel_V2_RankingPolicyKind" => Some(&[
-                "NONE",
-                "DefaultRelevanceV1",
-                "Bm25Ranking",
-            ]),
-            "SearchKernel_V2_SortDirection" => Some(&[
-                "Unspecified",
-                "Asc",
-                "Desc",
-            ]),
+            "SearchKernel_V2_SortDirection" => Some(&["Unspecified", "Asc", "Desc"]),
             "SearchKernel_V2_TotalHitsRelation" => Some(&[
                 "Unspecified",
                 "Exact",
                 "LowerBound",
+                "Approximate",
+                "Unknown",
             ]),
             "SearchKernel_V2_ValueKind" => Some(&[
                 "NONE",
@@ -2200,10 +2385,12 @@ pub(crate) mod schema {
                 "Int64Value",
                 "UInt64Value",
                 "Float64Value",
+                "NonFiniteFloatValue",
                 "StringValue",
                 "BytesValue",
                 "ValueList",
                 "ValueObject",
+                "TensorValue",
             ]),
             _ => None,
         }
@@ -2220,7 +2407,9 @@ pub(crate) mod schema {
             }
             "SearchKernel_FFI_V1_ResponsePayload" => Some(&[]),
             "SearchKernel_V2_AnalyzeFieldTarget" => Some(&["field"]),
-            "SearchKernel_V2_AnalyzeRequest" => Some(&["language", "target", "target_type", "text"]),
+            "SearchKernel_V2_AnalyzeRequest" => {
+                Some(&["language", "target", "target_type", "text"])
+            }
             "SearchKernel_V2_AnalyzeResult" => Some(&["tokens"]),
             "SearchKernel_V2_AnalyzeTarget" => Some(&[]),
             "SearchKernel_V2_AnalyzedToken" => {
@@ -2232,7 +2421,7 @@ pub(crate) mod schema {
             "SearchKernel_V2_BytesValue" => Some(&["value"]),
             "SearchKernel_V2_ComparisonOp" => Some(&[]),
             "SearchKernel_V2_DefaultRelevanceV1" => Some(&[]),
-            "SearchKernel_V2_DeleteRequest" => Some(&["id"]),
+            "SearchKernel_V2_DeleteRequest" => Some(&["condition", "id"]),
             "SearchKernel_V2_DeleteResult" => Some(&["deleted", "id"]),
             "SearchKernel_V2_DescribeRequest" => Some(&[]),
             "SearchKernel_V2_DescribeResult" => Some(&["index"]),
@@ -2240,10 +2429,6 @@ pub(crate) mod schema {
             "SearchKernel_V2_Error" => Some(&["code", "details", "message", "retryable"]),
             "SearchKernel_V2_ErrorCode" => Some(&[]),
             "SearchKernel_V2_ErrorDetail" => Some(&["code", "message", "metadata", "path"]),
-            "SearchKernel_V2_FacetRequest" => Some(&["field", "limit", "sort"]),
-            "SearchKernel_V2_FacetResult" => Some(&["field", "values"]),
-            "SearchKernel_V2_FacetSort" => Some(&[]),
-            "SearchKernel_V2_FacetValue" => Some(&["count", "value"]),
             "SearchKernel_V2_FieldCardinality" => Some(&[]),
             "SearchKernel_V2_FieldDefinition" => Some(&[
                 "analyzer",
@@ -2276,7 +2461,18 @@ pub(crate) mod schema {
             "SearchKernel_V2_HighlightRequest" => Some(&["fields"]),
             "SearchKernel_V2_HighlightResult" => Some(&["field", "fragments"]),
             "SearchKernel_V2_HighlightSpan" => Some(&["end_byte", "start_byte"]),
-            "SearchKernel_V2_Hit" => Some(&["fields", "highlights", "id", "score"]),
+            "SearchKernel_V2_Hit" => Some(&[
+                "fields",
+                "highlights",
+                "id",
+                "match_features",
+                "rank_features",
+                "relevance",
+                "sort_values",
+                "source",
+                "summary_features",
+                "types",
+            ]),
             "SearchKernel_V2_IndexDefinition" => Some(&["default_search_fields", "fields", "name"]),
             "SearchKernel_V2_InsertRequest" => Some(&["document"]),
             "SearchKernel_V2_InsertResult" => Some(&["id"]),
@@ -2288,7 +2484,6 @@ pub(crate) mod schema {
             "SearchKernel_V2_NullValueValue" => Some(&["value"]),
             "SearchKernel_V2_OptionalBool" => Some(&["value"]),
             "SearchKernel_V2_OptionalDouble" => Some(&["value"]),
-            "SearchKernel_V2_OptionalFacetSort" => Some(&["value"]),
             "SearchKernel_V2_OptionalMissingPlacement" => Some(&["value"]),
             "SearchKernel_V2_OptionalUInt32" => Some(&["value"]),
             "SearchKernel_V2_OptionalUInt64" => Some(&["value"]),
@@ -2301,29 +2496,122 @@ pub(crate) mod schema {
             "SearchKernel_V2_QueryExprKind" => Some(&[]),
             "SearchKernel_V2_QueryNot" => Some(&["clause"]),
             "SearchKernel_V2_QueryOr" => Some(&["clauses"]),
-            "SearchKernel_V2_RankingPolicy" => Some(&["policy", "policy_type"]),
-            "SearchKernel_V2_RankingPolicyKind" => Some(&[]),
+            "SearchKernel_V2_QueryModel" => Some(&[
+                "query_string",
+                "default_index",
+                "encoding",
+                "filter",
+                "language",
+                "locale",
+                "type",
+                "sources",
+                "restrict",
+                "search_path",
+                "search_group",
+            ]),
+            "SearchKernel_V2_QueryModelType" => Some(&[
+                "composite",
+                "tokenization",
+                "syntax",
+                "profile",
+                "is_yql_default",
+            ]),
+            "SearchKernel_V2_RankingRequest" => Some(&["profile", "properties"]),
             "SearchKernel_V2_SearchField" => Some(&["field", "weight"]),
             "SearchKernel_V2_SearchFieldSelection" => Some(&["fields"]),
             "SearchKernel_V2_SearchRequest" => Some(&[
-                "facets",
+                "grouping",
                 "filter",
+                "filters",
+                "filter_parameters",
+                "filter_sources",
                 "highlighting",
+                "inputs",
                 "language",
                 "limit",
                 "offset",
                 "projection",
                 "query",
                 "query_expr",
+                "query_model",
+                "query_profile",
+                "properties",
                 "ranking",
+                "search_chain",
                 "search_fields",
                 "sort",
+                "summary",
+                "format",
+                "bolding",
+                "timing",
                 "timeout",
             ]),
-            "SearchKernel_V2_SearchResult" => Some(&["facets", "hits", "total_hits"]),
+            "SearchKernel_V2_Coverage" => Some(&[
+                "coverage_percent",
+                "degraded",
+                "documents",
+                "full",
+                "metadata",
+                "nodes",
+                "results",
+                "results_full",
+            ]),
+            "SearchKernel_V2_CoverageDegraded" => Some(&[
+                "adaptive_timeout",
+                "ann_timeout",
+                "match_phase",
+                "metadata",
+                "non_ideal_state",
+                "timeout",
+            ]),
+            "SearchKernel_V2_FiniteRelevance" => Some(&["value"]),
+            "SearchKernel_V2_NegativeInfinityRelevance" => Some(&[]),
+            "SearchKernel_V2_PositiveInfinityRelevance" => Some(&[]),
+            "SearchKernel_V2_Relevance" => Some(&["value", "value_type"]),
+            "SearchKernel_V2_ResultGroup" => Some(&[
+                "children",
+                "continuations",
+                "fields",
+                "id",
+                "label",
+                "limits",
+                "metadata",
+                "relevance",
+                "source",
+                "types",
+                "value",
+            ]),
+            "SearchKernel_V2_ResultLimits" => Some(&["from", "to"]),
+            "SearchKernel_V2_SearchResult" => Some(&[
+                "coverage",
+                "errors",
+                "metadata",
+                "root",
+                "timing",
+                "total_hits",
+                "trace",
+            ]),
+            "SearchKernel_V2_SearchResultError" => Some(&[
+                "code",
+                "message",
+                "metadata",
+                "source",
+                "stack_trace",
+                "summary",
+                "transient",
+            ]),
+            "SearchKernel_V2_SearchTiming" => Some(&[
+                "metadata",
+                "query_time_seconds",
+                "search_time_seconds",
+                "summary_fetch_time_seconds",
+            ]),
+            "SearchKernel_V2_ResultNode" => Some(&["node", "node_type"]),
             "SearchKernel_V2_SetField" => Some(&["field", "value"]),
             "SearchKernel_V2_SortDirection" => Some(&[]),
-            "SearchKernel_V2_SortExpr" => Some(&["direction", "field", "missing"]),
+            "SearchKernel_V2_SortExpr" => {
+                Some(&["annotations", "direction", "field", "missing", "target"])
+            }
             "SearchKernel_V2_StringEntry" => Some(&["key", "value"]),
             "SearchKernel_V2_StringValue" => Some(&["value"]),
             "SearchKernel_V2_TermQuery" => Some(&["field", "value"]),
@@ -2331,23 +2619,30 @@ pub(crate) mod schema {
             "SearchKernel_V2_TotalHitsRelation" => Some(&[]),
             "SearchKernel_V2_UInt64Value" => Some(&["value"]),
             "SearchKernel_V2_UnsetField" => Some(&["field"]),
-            "SearchKernel_V2_UpsertRequest" => Some(&["document"]),
+            "SearchKernel_V2_UpsertRequest" => Some(&["condition", "document"]),
             "SearchKernel_V2_UpsertResult" => Some(&["id"]),
             "SearchKernel_V2_Value" => Some(&["kind", "kind_type"]),
             "SearchKernel_V2_ValueEntry" => Some(&["key", "value"]),
             "SearchKernel_V2_ValueKind" => Some(&[]),
             "SearchKernel_V2_ValueList" => Some(&["values"]),
             "SearchKernel_V2_ValueObject" => Some(&["fields"]),
+            "SearchKernel_V2_DenseTensorValues" => Some(&["values"]),
+            "SearchKernel_V2_MixedTensorBlocks" => Some(&["blocks"]),
+            "SearchKernel_V2_SparseTensorCells" => Some(&["cells"]),
+            "SearchKernel_V2_TensorAddressEntry" => Some(&["dimension", "label"]),
+            "SearchKernel_V2_TensorBlock" => Some(&["address", "values"]),
+            "SearchKernel_V2_TensorCell" => Some(&["address", "value"]),
+            "SearchKernel_V2_TensorValue" => Some(&["payload", "type_spec"]),
             _ => None,
         }
     }
-    
+
     pub(crate) fn request_operation(tag: u8) -> Option<&'static str> {
         REQUEST_TAGS
             .iter()
             .find_map(|(name, value)| (*value == tag).then_some(*name))
     }
-    
+
     pub(crate) const REQUEST_TAGS: &[(&str, u8)] = &[
         ("insert", 1),
         ("upsert", 2),
@@ -2359,7 +2654,7 @@ pub(crate) mod schema {
         ("describe", 8),
         ("inspect_query", 9),
     ];
-    
+
     pub(crate) fn is_request_operation(name: &str) -> bool {
         matches!(
             name,
@@ -2374,13 +2669,13 @@ pub(crate) mod schema {
                 | "inspect_query"
         )
     }
-    
+
     pub(crate) fn response_operation(tag: u8) -> Option<&'static str> {
         RESPONSE_TAGS
             .iter()
             .find_map(|(name, value)| (*value == tag).then_some(*name))
     }
-    
+
     pub(crate) const RESPONSE_TAGS: &[(&str, u8)] = &[
         ("insert", 1),
         ("upsert", 2),
@@ -2393,7 +2688,7 @@ pub(crate) mod schema {
         ("describe", 9),
         ("inspect_query", 10),
     ];
-    
+
     pub(crate) fn is_response_operation(name: &str) -> bool {
         matches!(
             name,
@@ -2413,7 +2708,7 @@ pub(crate) mod schema {
 #[allow(dead_code)]
 pub(crate) mod json_types {
     // @generated by searchkernel-bindgen; do not modify
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonRequestEnvelope {
@@ -2421,7 +2716,7 @@ pub(crate) mod json_types {
         pub operation: String,
         pub request: serde_json::Value,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonResponseEnvelope {
@@ -2429,7 +2724,7 @@ pub(crate) mod json_types {
         pub operation: String,
         pub response: serde_json::Value,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelFFIV1RequestEnvelope {
         #[serde(rename = "payload", default, skip_serializing_if = "Option::is_none")]
@@ -2447,7 +2742,7 @@ pub(crate) mod json_types {
         )]
         pub protocol_version: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelFFIV1RequestPayload {
         #[serde(rename = "NONE")]
@@ -2471,7 +2766,7 @@ pub(crate) mod json_types {
         #[serde(rename = "SearchKernel_V2_InspectQueryRequest")]
         SearchkernelV1Inspectqueryrequest,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelFFIV1ResponseEnvelope {
         #[serde(rename = "payload", default, skip_serializing_if = "Option::is_none")]
@@ -2489,7 +2784,7 @@ pub(crate) mod json_types {
         )]
         pub protocol_version: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelFFIV1ResponsePayload {
         #[serde(rename = "NONE")]
@@ -2515,13 +2810,13 @@ pub(crate) mod json_types {
         #[serde(rename = "SearchKernel_V2_InspectQueryResult")]
         SearchkernelV1Inspectqueryresult,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2AnalyzeFieldTarget {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
         pub field: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2AnalyzeRequest {
         #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
@@ -2537,13 +2832,13 @@ pub(crate) mod json_types {
         #[serde(rename = "text", default, skip_serializing_if = "Option::is_none")]
         pub text: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2AnalyzeResult {
         #[serde(rename = "tokens", default, skip_serializing_if = "Option::is_none")]
         pub tokens: Option<Vec<Box<JsonSearchKernelV2AnalyzedToken>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2AnalyzeTarget {
         #[serde(rename = "NONE")]
@@ -2553,7 +2848,7 @@ pub(crate) mod json_types {
         #[serde(rename = "AnalyzeFieldTarget")]
         Analyzefieldtarget,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2AnalyzedToken {
         #[serde(rename = "end_byte", default, skip_serializing_if = "Option::is_none")]
@@ -2571,7 +2866,7 @@ pub(crate) mod json_types {
         #[serde(rename = "term", default, skip_serializing_if = "Option::is_none")]
         pub term: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Analyzer {
         #[serde(rename = "name", default, skip_serializing_if = "Option::is_none")]
@@ -2581,22 +2876,22 @@ pub(crate) mod json_types {
         #[serde(rename = "version", default, skip_serializing_if = "Option::is_none")]
         pub version: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Bm25Ranking {}
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2BoolValue {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2BytesValue {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<Vec<serde_json::Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2ComparisonOp {
         #[serde(rename = "Unspecified")]
@@ -2614,16 +2909,16 @@ pub(crate) mod json_types {
         #[serde(rename = "Gte")]
         Gte,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2DefaultRelevanceV1 {}
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2DeleteRequest {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2DeleteResult {
         #[serde(rename = "deleted", default, skip_serializing_if = "Option::is_none")]
@@ -2631,16 +2926,16 @@ pub(crate) mod json_types {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2DescribeRequest {}
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2DescribeResult {
         #[serde(rename = "index", default, skip_serializing_if = "Option::is_none")]
         pub index: Option<Box<JsonSearchKernelV2IndexDefinition>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Document {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
@@ -2648,7 +2943,7 @@ pub(crate) mod json_types {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Error {
         #[serde(rename = "code", default, skip_serializing_if = "Option::is_none")]
@@ -2660,7 +2955,7 @@ pub(crate) mod json_types {
         #[serde(rename = "retryable", default, skip_serializing_if = "Option::is_none")]
         pub retryable: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2ErrorCode {
         #[serde(rename = "Unspecified")]
@@ -2686,7 +2981,7 @@ pub(crate) mod json_types {
         #[serde(rename = "DeadlineExceeded")]
         DeadlineExceeded,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2ErrorDetail {
         #[serde(rename = "code", default, skip_serializing_if = "Option::is_none")]
@@ -2698,47 +2993,7 @@ pub(crate) mod json_types {
         #[serde(rename = "path", default, skip_serializing_if = "Option::is_none")]
         pub path: Option<String>,
     }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2FacetRequest {
-        #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
-        pub field: Option<String>,
-        #[serde(rename = "limit", default, skip_serializing_if = "Option::is_none")]
-        pub limit: Option<Box<JsonSearchKernelV2OptionalUInt32>>,
-        #[serde(rename = "sort", default, skip_serializing_if = "Option::is_none")]
-        pub sort: Option<Box<JsonSearchKernelV2OptionalFacetSort>>,
-    }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2FacetResult {
-        #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
-        pub field: Option<String>,
-        #[serde(rename = "values", default, skip_serializing_if = "Option::is_none")]
-        pub values: Option<Vec<Box<JsonSearchKernelV2FacetValue>>>,
-    }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) enum JsonSearchKernelV2FacetSort {
-        #[serde(rename = "Unspecified")]
-        Unspecified,
-        #[serde(rename = "CountDesc")]
-        CountDesc,
-        #[serde(rename = "CountAsc")]
-        CountAsc,
-        #[serde(rename = "ValueAsc")]
-        ValueAsc,
-        #[serde(rename = "ValueDesc")]
-        ValueDesc,
-    }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2FacetValue {
-        #[serde(rename = "count", default, skip_serializing_if = "Option::is_none")]
-        pub count: Option<serde_json::Value>,
-        #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
-        pub value: Option<Box<JsonSearchKernelV2Value>>,
-    }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2FieldCardinality {
         #[serde(rename = "Unspecified")]
@@ -2748,7 +3003,7 @@ pub(crate) mod json_types {
         #[serde(rename = "Multi")]
         Multi,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FieldDefinition {
         #[serde(rename = "analyzer", default, skip_serializing_if = "Option::is_none")]
@@ -2782,7 +3037,7 @@ pub(crate) mod json_types {
         #[serde(rename = "stored", default, skip_serializing_if = "Option::is_none")]
         pub stored: Option<Box<JsonSearchKernelV2OptionalBool>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2FieldKind {
         #[serde(rename = "Unspecified")]
@@ -2798,19 +3053,19 @@ pub(crate) mod json_types {
         #[serde(rename = "Bool")]
         Bool,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FieldProjection {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
         pub fields: Option<Vec<String>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterAnd {
         #[serde(rename = "clauses", default, skip_serializing_if = "Option::is_none")]
         pub clauses: Option<Vec<Box<JsonSearchKernelV2FilterExpr>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterComparison {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -2820,7 +3075,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<Box<JsonSearchKernelV2Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterExists {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -2834,7 +3089,7 @@ pub(crate) mod json_types {
         #[serde(rename = "values", default, skip_serializing_if = "Option::is_none")]
         pub values: Option<Vec<Box<JsonSearchKernelV2Value>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterExpr {
         #[serde(rename = "expr", default, skip_serializing_if = "Option::is_none")]
@@ -2842,7 +3097,7 @@ pub(crate) mod json_types {
         #[serde(rename = "expr_type", default, skip_serializing_if = "Option::is_none")]
         pub expr_type: Option<JsonSearchKernelV2FilterExprKind>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2FilterExprKind {
         #[serde(rename = "NONE")]
@@ -2862,19 +3117,19 @@ pub(crate) mod json_types {
         #[serde(rename = "FilterIn")]
         Filterin,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterNot {
         #[serde(rename = "clause", default, skip_serializing_if = "Option::is_none")]
         pub clause: Option<Box<JsonSearchKernelV2FilterExpr>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterOr {
         #[serde(rename = "clauses", default, skip_serializing_if = "Option::is_none")]
         pub clauses: Option<Vec<Box<JsonSearchKernelV2FilterExpr>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterRange {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -2896,13 +3151,13 @@ pub(crate) mod json_types {
         #[serde(rename = "upper", default, skip_serializing_if = "Option::is_none")]
         pub upper: Option<Box<JsonSearchKernelV2Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Float64Value {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<f64>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2GetRequest {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
@@ -2914,13 +3169,13 @@ pub(crate) mod json_types {
         )]
         pub projection: Option<Box<JsonSearchKernelV2FieldProjection>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2GetResult {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<Box<JsonSearchKernelV2Document>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2HighlightFragment {
         #[serde(rename = "matches", default, skip_serializing_if = "Option::is_none")]
@@ -2928,13 +3183,13 @@ pub(crate) mod json_types {
         #[serde(rename = "text", default, skip_serializing_if = "Option::is_none")]
         pub text: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2HighlightRequest {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
         pub fields: Option<Vec<String>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2HighlightResult {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -2942,7 +3197,7 @@ pub(crate) mod json_types {
         #[serde(rename = "fragments", default, skip_serializing_if = "Option::is_none")]
         pub fragments: Option<Vec<Box<JsonSearchKernelV2HighlightFragment>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2HighlightSpan {
         #[serde(rename = "end_byte", default, skip_serializing_if = "Option::is_none")]
@@ -2954,7 +3209,7 @@ pub(crate) mod json_types {
         )]
         pub start_byte: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Hit {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
@@ -2970,7 +3225,7 @@ pub(crate) mod json_types {
         #[serde(rename = "score", default, skip_serializing_if = "Option::is_none")]
         pub score: Option<Box<JsonSearchKernelV2OptionalDouble>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2IndexDefinition {
         #[serde(
@@ -2984,25 +3239,25 @@ pub(crate) mod json_types {
         #[serde(rename = "name", default, skip_serializing_if = "Option::is_none")]
         pub name: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2InsertRequest {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<Box<JsonSearchKernelV2Document>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2InsertResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2InspectQueryRequest {
         #[serde(rename = "request", default, skip_serializing_if = "Option::is_none")]
         pub request: Option<Box<JsonSearchKernelV2SearchRequest>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2InspectQueryResult {
         #[serde(
@@ -3012,13 +3267,13 @@ pub(crate) mod json_types {
         )]
         pub resolved_request: Option<Box<JsonSearchKernelV2SearchRequest>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Int64Value {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2MissingPlacement {
         #[serde(rename = "Unspecified")]
@@ -3028,7 +3283,7 @@ pub(crate) mod json_types {
         #[serde(rename = "Last")]
         Last,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2NullValue {
         #[serde(rename = "Unspecified")]
@@ -3036,37 +3291,31 @@ pub(crate) mod json_types {
         #[serde(rename = "Null")]
         Null,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2NullValueValue {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<JsonSearchKernelV2NullValue>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2OptionalBool {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2OptionalDouble {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<f64>,
     }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2OptionalFacetSort {
-        #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
-        pub value: Option<JsonSearchKernelV2FacetSort>,
-    }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2OptionalMissingPlacement {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<JsonSearchKernelV2MissingPlacement>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2OptionalUInt32 {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
@@ -3078,7 +3327,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2PatchOperation {
         #[serde(rename = "operation", default, skip_serializing_if = "Option::is_none")]
@@ -3090,7 +3339,7 @@ pub(crate) mod json_types {
         )]
         pub operation_type: Option<JsonSearchKernelV2PatchOperationKind>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2PatchOperationKind {
         #[serde(rename = "NONE")]
@@ -3100,7 +3349,7 @@ pub(crate) mod json_types {
         #[serde(rename = "UnsetField")]
         Unsetfield,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2PatchRequest {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
@@ -3112,19 +3361,19 @@ pub(crate) mod json_types {
         )]
         pub operations: Option<Vec<Box<JsonSearchKernelV2PatchOperation>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2PatchResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2QueryAnd {
         #[serde(rename = "clauses", default, skip_serializing_if = "Option::is_none")]
         pub clauses: Option<Vec<Box<JsonSearchKernelV2QueryExpr>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2QueryExpr {
         #[serde(rename = "expr", default, skip_serializing_if = "Option::is_none")]
@@ -3132,7 +3381,7 @@ pub(crate) mod json_types {
         #[serde(rename = "expr_type", default, skip_serializing_if = "Option::is_none")]
         pub expr_type: Option<JsonSearchKernelV2QueryExprKind>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2QueryExprKind {
         #[serde(rename = "NONE")]
@@ -3146,41 +3395,19 @@ pub(crate) mod json_types {
         #[serde(rename = "QueryNot")]
         Querynot,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2QueryNot {
         #[serde(rename = "clause", default, skip_serializing_if = "Option::is_none")]
         pub clause: Option<Box<JsonSearchKernelV2QueryExpr>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2QueryOr {
         #[serde(rename = "clauses", default, skip_serializing_if = "Option::is_none")]
         pub clauses: Option<Vec<Box<JsonSearchKernelV2QueryExpr>>>,
     }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2RankingPolicy {
-        #[serde(rename = "policy", default, skip_serializing_if = "Option::is_none")]
-        pub policy: Option<serde_json::Value>,
-        #[serde(
-            rename = "policy_type",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub policy_type: Option<JsonSearchKernelV2RankingPolicyKind>,
-    }
-    
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) enum JsonSearchKernelV2RankingPolicyKind {
-        #[serde(rename = "NONE")]
-        None,
-        #[serde(rename = "DefaultRelevanceV1")]
-        Defaultrelevancev1,
-        #[serde(rename = "Bm25Ranking")]
-        Bm25ranking,
-    }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SearchField {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -3188,25 +3415,31 @@ pub(crate) mod json_types {
         #[serde(rename = "weight", default, skip_serializing_if = "Option::is_none")]
         pub weight: Option<Box<JsonSearchKernelV2OptionalDouble>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SearchFieldSelection {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
         pub fields: Option<Vec<Box<JsonSearchKernelV2SearchField>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SearchRequest {
-        #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
-        pub facets: Option<Vec<Box<JsonSearchKernelV2FacetRequest>>>,
+        #[serde(rename = "grouping", default, skip_serializing_if = "Option::is_none")]
+        pub grouping: Option<serde_json::Value>,
         #[serde(rename = "filter", default, skip_serializing_if = "Option::is_none")]
-        pub filter: Option<Box<JsonSearchKernelV2FilterExpr>>,
+        pub filter: Option<serde_json::Value>,
+        #[serde(rename = "filter_sources", default, skip_serializing_if = "Option::is_none")]
+        pub filter_sources: Option<serde_json::Value>,
+        #[serde(rename = "filter_parameters", default, skip_serializing_if = "Option::is_none")]
+        pub filter_parameters: Option<serde_json::Value>,
         #[serde(
             rename = "highlighting",
             default,
             skip_serializing_if = "Option::is_none"
         )]
-        pub highlighting: Option<Box<JsonSearchKernelV2HighlightRequest>>,
+        pub highlighting: Option<serde_json::Value>,
+        #[serde(rename = "inputs", default, skip_serializing_if = "Option::is_none")]
+        pub inputs: Option<serde_json::Value>,
         #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
         pub language: Option<String>,
         #[serde(rename = "limit", default, skip_serializing_if = "Option::is_none")]
@@ -3218,7 +3451,7 @@ pub(crate) mod json_types {
             default,
             skip_serializing_if = "Option::is_none"
         )]
-        pub projection: Option<Box<JsonSearchKernelV2FieldProjection>>,
+        pub projection: Option<serde_json::Value>,
         #[serde(rename = "query", default, skip_serializing_if = "Option::is_none")]
         pub query: Option<String>,
         #[serde(
@@ -3226,35 +3459,59 @@ pub(crate) mod json_types {
             default,
             skip_serializing_if = "Option::is_none"
         )]
-        pub query_expr: Option<Box<JsonSearchKernelV2QueryExpr>>,
+        pub query_expr: Option<serde_json::Value>,
+        #[serde(rename = "query_model", default, skip_serializing_if = "Option::is_none")]
+        pub query_model: Option<serde_json::Value>,
+        #[serde(rename = "query_profile", default, skip_serializing_if = "Option::is_none")]
+        pub query_profile: Option<String>,
+        #[serde(rename = "properties", default, skip_serializing_if = "Option::is_none")]
+        pub properties: Option<serde_json::Value>,
         #[serde(rename = "timeout", default, skip_serializing_if = "Option::is_none")]
-        pub timeout: Option<Box<JsonSearchKernelV2OptionalUInt64>>,
+        pub timeout: Option<serde_json::Value>,
         #[serde(rename = "ranking", default, skip_serializing_if = "Option::is_none")]
-        pub ranking: Option<Box<JsonSearchKernelV2RankingPolicy>>,
+        pub ranking: Option<serde_json::Value>,
+        #[serde(rename = "search_chain", default, skip_serializing_if = "Option::is_none")]
+        pub search_chain: Option<String>,
         #[serde(
             rename = "search_fields",
             default,
             skip_serializing_if = "Option::is_none"
         )]
-        pub search_fields: Option<Box<JsonSearchKernelV2SearchFieldSelection>>,
+        pub search_fields: Option<serde_json::Value>,
         #[serde(rename = "sort", default, skip_serializing_if = "Option::is_none")]
-        pub sort: Option<Vec<Box<JsonSearchKernelV2SortExpr>>>,
+        pub sort: Option<serde_json::Value>,
+        #[serde(rename = "summary", default, skip_serializing_if = "Option::is_none")]
+        pub summary: Option<String>,
+        #[serde(rename = "format", default, skip_serializing_if = "Option::is_none")]
+        pub format: Option<String>,
+        #[serde(rename = "bolding", default, skip_serializing_if = "Option::is_none")]
+        pub bolding: Option<bool>,
+        #[serde(rename = "timing", default, skip_serializing_if = "Option::is_none")]
+        pub timing: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SearchResult {
-        #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
-        pub facets: Option<Vec<Box<JsonSearchKernelV2FacetResult>>>,
-        #[serde(rename = "hits", default, skip_serializing_if = "Option::is_none")]
-        pub hits: Option<Vec<Box<JsonSearchKernelV2Hit>>>,
+        #[serde(rename = "root", default, skip_serializing_if = "Option::is_none")]
+        pub root: Option<serde_json::Value>,
         #[serde(
             rename = "total_hits",
             default,
             skip_serializing_if = "Option::is_none"
         )]
         pub total_hits: Option<Box<JsonSearchKernelV2TotalHits>>,
+        #[serde(rename = "coverage", default, skip_serializing_if = "Option::is_none")]
+        pub coverage: Option<serde_json::Value>,
+        #[serde(rename = "timing", default, skip_serializing_if = "Option::is_none")]
+        pub timing: Option<serde_json::Value>,
+        #[serde(rename = "errors", default, skip_serializing_if = "Option::is_none")]
+        pub errors: Option<serde_json::Value>,
+        #[serde(rename = "trace", default, skip_serializing_if = "Option::is_none")]
+        pub trace: Option<serde_json::Value>,
+        #[serde(rename = "metadata", default, skip_serializing_if = "Option::is_none")]
+        pub metadata: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SetField {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -3262,7 +3519,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<Box<JsonSearchKernelV2Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2SortDirection {
         #[serde(rename = "Unspecified")]
@@ -3272,17 +3529,21 @@ pub(crate) mod json_types {
         #[serde(rename = "Desc")]
         Desc,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2SortExpr {
+        #[serde(rename = "target", default, skip_serializing_if = "Option::is_none")]
+        pub target: Option<serde_json::Value>,
         #[serde(rename = "direction", default, skip_serializing_if = "Option::is_none")]
-        pub direction: Option<JsonSearchKernelV2SortDirection>,
+        pub direction: Option<serde_json::Value>,
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
         pub field: Option<String>,
         #[serde(rename = "missing", default, skip_serializing_if = "Option::is_none")]
-        pub missing: Option<Box<JsonSearchKernelV2OptionalMissingPlacement>>,
+        pub missing: Option<serde_json::Value>,
+        #[serde(rename = "annotations", default, skip_serializing_if = "Option::is_none")]
+        pub annotations: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2StringEntry {
         #[serde(rename = "key", default, skip_serializing_if = "Option::is_none")]
@@ -3290,13 +3551,13 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2StringValue {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2TermQuery {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
@@ -3304,7 +3565,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<Box<JsonSearchKernelV2Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2TotalHits {
         #[serde(rename = "relation", default, skip_serializing_if = "Option::is_none")]
@@ -3312,7 +3573,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2TotalHitsRelation {
         #[serde(rename = "Unspecified")]
@@ -3321,32 +3582,36 @@ pub(crate) mod json_types {
         Exact,
         #[serde(rename = "LowerBound")]
         LowerBound,
+        #[serde(rename = "Approximate")]
+        Approximate,
+        #[serde(rename = "Unknown")]
+        Unknown,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2UInt64Value {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2UnsetField {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
         pub field: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2UpsertRequest {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<Box<JsonSearchKernelV2Document>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2UpsertResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2Value {
         #[serde(rename = "kind", default, skip_serializing_if = "Option::is_none")]
@@ -3354,7 +3619,7 @@ pub(crate) mod json_types {
         #[serde(rename = "kind_type", default, skip_serializing_if = "Option::is_none")]
         pub kind_type: Option<JsonSearchKernelV2ValueKind>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2ValueEntry {
         #[serde(rename = "key", default, skip_serializing_if = "Option::is_none")]
@@ -3362,7 +3627,7 @@ pub(crate) mod json_types {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<Box<JsonSearchKernelV2Value>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) enum JsonSearchKernelV2ValueKind {
         #[serde(rename = "NONE")]
@@ -3386,19 +3651,19 @@ pub(crate) mod json_types {
         #[serde(rename = "ValueObject")]
         Valueobject,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2ValueList {
         #[serde(rename = "values", default, skip_serializing_if = "Option::is_none")]
         pub values: Option<Vec<Box<JsonSearchKernelV2Value>>>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2ValueObject {
         #[serde(rename = "fields", default, skip_serializing_if = "Option::is_none")]
         pub fields: Option<Vec<Box<JsonSearchKernelV2ValueEntry>>>,
     }
-    
+
     // Natural payload DTOs are the generated JSON boundary model.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -3406,14 +3671,14 @@ pub(crate) mod json_types {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2UpsertRequest {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2PatchRequest {
@@ -3426,14 +3691,14 @@ pub(crate) mod json_types {
         )]
         pub operations: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2DeleteRequest {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2GetRequest {
@@ -3446,20 +3711,26 @@ pub(crate) mod json_types {
         )]
         pub projection: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2SearchRequest {
-        #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
-        pub facets: Option<serde_json::Value>,
+        #[serde(rename = "grouping", default, skip_serializing_if = "Option::is_none")]
+        pub grouping: Option<serde_json::Value>,
         #[serde(rename = "filter", default, skip_serializing_if = "Option::is_none")]
         pub filter: Option<serde_json::Value>,
+        #[serde(rename = "filter_sources", default, skip_serializing_if = "Option::is_none")]
+        pub filter_sources: Option<serde_json::Value>,
+        #[serde(rename = "filter_parameters", default, skip_serializing_if = "Option::is_none")]
+        pub filter_parameters: Option<serde_json::Value>,
         #[serde(
             rename = "highlighting",
             default,
             skip_serializing_if = "Option::is_none"
         )]
         pub highlighting: Option<serde_json::Value>,
+        #[serde(rename = "inputs", default, skip_serializing_if = "Option::is_none")]
+        pub inputs: Option<serde_json::Value>,
         #[serde(rename = "language", default, skip_serializing_if = "Option::is_none")]
         pub language: Option<String>,
         #[serde(rename = "limit", default, skip_serializing_if = "Option::is_none")]
@@ -3480,10 +3751,18 @@ pub(crate) mod json_types {
             skip_serializing_if = "Option::is_none"
         )]
         pub query_expr: Option<serde_json::Value>,
+        #[serde(rename = "query_model", default, skip_serializing_if = "Option::is_none")]
+        pub query_model: Option<serde_json::Value>,
+        #[serde(rename = "query_profile", default, skip_serializing_if = "Option::is_none")]
+        pub query_profile: Option<String>,
+        #[serde(rename = "properties", default, skip_serializing_if = "Option::is_none")]
+        pub properties: Option<serde_json::Value>,
         #[serde(rename = "timeout", default, skip_serializing_if = "Option::is_none")]
         pub timeout: Option<serde_json::Value>,
         #[serde(rename = "ranking", default, skip_serializing_if = "Option::is_none")]
         pub ranking: Option<serde_json::Value>,
+        #[serde(rename = "search_chain", default, skip_serializing_if = "Option::is_none")]
+        pub search_chain: Option<String>,
         #[serde(
             rename = "search_fields",
             default,
@@ -3492,8 +3771,16 @@ pub(crate) mod json_types {
         pub search_fields: Option<serde_json::Value>,
         #[serde(rename = "sort", default, skip_serializing_if = "Option::is_none")]
         pub sort: Option<serde_json::Value>,
+        #[serde(rename = "summary", default, skip_serializing_if = "Option::is_none")]
+        pub summary: Option<String>,
+        #[serde(rename = "format", default, skip_serializing_if = "Option::is_none")]
+        pub format: Option<String>,
+        #[serde(rename = "bolding", default, skip_serializing_if = "Option::is_none")]
+        pub bolding: Option<bool>,
+        #[serde(rename = "timing", default, skip_serializing_if = "Option::is_none")]
+        pub timing: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2AnalyzeRequest {
@@ -3504,39 +3791,39 @@ pub(crate) mod json_types {
         #[serde(rename = "text", default, skip_serializing_if = "Option::is_none")]
         pub text: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2DescribeRequest {}
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2InspectQueryRequest {
         #[serde(rename = "request", default, skip_serializing_if = "Option::is_none")]
         pub request: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2InsertResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2UpsertResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2PatchResult {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2DeleteResult {
@@ -3545,36 +3832,44 @@ pub(crate) mod json_types {
         #[serde(rename = "id", default, skip_serializing_if = "Option::is_none")]
         pub id: Option<String>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2GetResult {
         #[serde(rename = "document", default, skip_serializing_if = "Option::is_none")]
         pub document: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2SearchResult {
-        #[serde(rename = "facets", default, skip_serializing_if = "Option::is_none")]
-        pub facets: Option<serde_json::Value>,
-        #[serde(rename = "hits", default, skip_serializing_if = "Option::is_none")]
-        pub hits: Option<serde_json::Value>,
+        #[serde(rename = "root", default, skip_serializing_if = "Option::is_none")]
+        pub root: Option<serde_json::Value>,
         #[serde(
             rename = "total_hits",
             default,
             skip_serializing_if = "Option::is_none"
         )]
         pub total_hits: Option<serde_json::Value>,
+        #[serde(rename = "coverage", default, skip_serializing_if = "Option::is_none")]
+        pub coverage: Option<serde_json::Value>,
+        #[serde(rename = "timing", default, skip_serializing_if = "Option::is_none")]
+        pub timing: Option<serde_json::Value>,
+        #[serde(rename = "errors", default, skip_serializing_if = "Option::is_none")]
+        pub errors: Option<serde_json::Value>,
+        #[serde(rename = "trace", default, skip_serializing_if = "Option::is_none")]
+        pub trace: Option<serde_json::Value>,
+        #[serde(rename = "metadata", default, skip_serializing_if = "Option::is_none")]
+        pub metadata: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2AnalyzeResult {
         #[serde(rename = "tokens", default, skip_serializing_if = "Option::is_none")]
         pub tokens: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2Error {
@@ -3587,14 +3882,14 @@ pub(crate) mod json_types {
         #[serde(rename = "retryable", default, skip_serializing_if = "Option::is_none")]
         pub retryable: Option<bool>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2DescribeResult {
         #[serde(rename = "index", default, skip_serializing_if = "Option::is_none")]
         pub index: Option<serde_json::Value>,
     }
-    
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct JsonNaturalJsonSearchKernelV2InspectQueryResult {
@@ -3605,7 +3900,7 @@ pub(crate) mod json_types {
         )]
         pub resolved_request: Option<serde_json::Value>,
     }
-    
+
     pub(crate) fn validate_request_payload(
         operation: &str,
         value: serde_json::Value,
@@ -3629,12 +3924,16 @@ pub(crate) mod json_types {
             "search" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2SearchRequest>(value)
                 .map(|_| ())
                 .map_err(|error| error.to_string()),
-            "analyze" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2AnalyzeRequest>(value)
-                .map(|_| ())
-                .map_err(|error| error.to_string()),
-            "describe" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2DescribeRequest>(value)
-                .map(|_| ())
-                .map_err(|error| error.to_string()),
+            "analyze" => {
+                serde_json::from_value::<JsonNaturalJsonSearchKernelV2AnalyzeRequest>(value)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
+            "describe" => {
+                serde_json::from_value::<JsonNaturalJsonSearchKernelV2DescribeRequest>(value)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
             "inspect_query" => {
                 serde_json::from_value::<JsonNaturalJsonSearchKernelV2InspectQueryRequest>(value)
                     .map(|_| ())
@@ -3643,7 +3942,7 @@ pub(crate) mod json_types {
             _ => Err(format!("unknown request operation `{operation}`")),
         }
     }
-    
+
     pub(crate) fn validate_response_payload(
         operation: &str,
         value: serde_json::Value,
@@ -3667,15 +3966,19 @@ pub(crate) mod json_types {
             "search" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2SearchResult>(value)
                 .map(|_| ())
                 .map_err(|error| error.to_string()),
-            "analyze" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2AnalyzeResult>(value)
-                .map(|_| ())
-                .map_err(|error| error.to_string()),
+            "analyze" => {
+                serde_json::from_value::<JsonNaturalJsonSearchKernelV2AnalyzeResult>(value)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
             "error" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2Error>(value)
                 .map(|_| ())
                 .map_err(|error| error.to_string()),
-            "describe" => serde_json::from_value::<JsonNaturalJsonSearchKernelV2DescribeResult>(value)
-                .map(|_| ())
-                .map_err(|error| error.to_string()),
+            "describe" => {
+                serde_json::from_value::<JsonNaturalJsonSearchKernelV2DescribeResult>(value)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
             "inspect_query" => {
                 serde_json::from_value::<JsonNaturalJsonSearchKernelV2InspectQueryResult>(value)
                     .map(|_| ())
@@ -3857,7 +4160,8 @@ fn check_keys(
     message: &str,
     path: &str,
 ) -> Result<(), JsonCodecError> {
-    let allowed = crate::generated::schema::fields(message).ok_or_else(|| {
+    let generated = crate::generated::schema::fields(message);
+    let allowed = generated.ok_or_else(|| {
         JsonCodecError::FlatBuffer(format!("missing generated schema metadata for `{message}`"))
     })?;
     if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
@@ -3970,7 +4274,9 @@ fn decimal<T: std::str::FromStr>(
         && (digits.len() == 1 || digits[0] != b'0')
         && !(bytes.first() == Some(&b'-') && digits.iter().all(|digit| *digit == b'0'));
     if !canonical {
-        return Err(contract(format!("`{path}` must be a canonical decimal {type_name}")));
+        return Err(contract(format!(
+            "`{path}` must be a canonical decimal {type_name}"
+        )));
     }
     text.parse::<T>()
         .map_err(|_| contract(format!("`{path}` must be a decimal {type_name}")))
@@ -4125,6 +4431,9 @@ fn request_upsert(value: Option<api::UpsertRequest<'_>>) -> Result<Value, JsonCo
     if let Some(document) = value.document() {
         out.insert("document".to_owned(), document_json(document)?);
     }
+    if let Some(condition) = value.condition() {
+        out.insert("condition".to_owned(), Value::String(condition.to_owned()));
+    }
     Ok(Value::Object(out))
 }
 
@@ -4173,6 +4482,9 @@ fn request_delete(value: Option<api::DeleteRequest<'_>>) -> Result<Value, JsonCo
     let mut out = Map::new();
     if let Some(id) = value.id() {
         out.insert("id".to_owned(), Value::String(id.to_owned()));
+    }
+    if let Some(condition) = value.condition() {
+        out.insert("condition".to_owned(), Value::String(condition.to_owned()));
     }
     Ok(Value::Object(out))
 }
@@ -4452,50 +4764,394 @@ fn response_search_from_json<'a>(
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     let o = object(value, "response.search")?;
     check_keys(o, "SearchKernel_V2_SearchResult", "response.search")?;
+    let root = result_node_from_json(
+        b,
+        required(o, "root", "response.search")?,
+        "response.search.root",
+    )?;
     let total = total_hits_from_json(b, required(o, "total_hits", "response.search")?)?;
-    let hits = field(o, "hits")
+    let coverage = field(o, "coverage")
+        .map(|value| coverage_from_json(b, value, "response.search.coverage"))
+        .transpose()?;
+    let timing = field(o, "timing")
+        .map(|value| search_timing_from_json(b, value, "response.search.timing"))
+        .transpose()?;
+    let errors = field(o, "errors")
         .map(|value| {
-            let items = array(value, "response.search.hits")?;
-            let mut nodes = Vec::with_capacity(items.len());
-            for (i, item) in items.iter().enumerate() {
-                let hit = hit_from_json(
-                    b,
-                    item,
-                    &format!("response.search.hits[{i}]"),
-                )?;
-                nodes.push(api::ResultNode::create(
-                    b,
-                    &api::ResultNodeArgs {
-                        node_type: api::ResultNodeKind::Hit,
-                        node: Some(hit.as_union_value()),
-                    },
-                ));
-            }
-            Ok::<_, JsonCodecError>(b.create_vector(&nodes))
+            let items = array(value, "response.search.errors")?;
+            let errors = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    search_result_error_from_json(b, item, &format!("response.search.errors[{i}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, JsonCodecError>(b.create_vector(&errors))
         })
         .transpose()?;
-    let root_group = api::ResultGroup::create(
-        b,
-        &api::ResultGroupArgs {
-            children: hits,
-            ..Default::default()
-        },
-    );
-    let root = api::ResultNode::create(
-        b,
-        &api::ResultNodeArgs {
-            node_type: api::ResultNodeKind::ResultGroup,
-            node: Some(root_group.as_union_value()),
-        },
-    );
+    let trace = field(o, "trace")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
+    let metadata = field(o, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), "response.search.metadata")?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
     Ok(offset(api::SearchResult::create(
         b,
         &api::SearchResultArgs {
             root: Some(root),
             total_hits: Some(total),
-            ..Default::default()
+            coverage,
+            timing,
+            errors,
+            trace,
+            metadata,
         },
     )))
+}
+
+fn result_node_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    input: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResultNode<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(input, path)?;
+    let (node_type, node) = match kind {
+        "hit" => (
+            api::ResultNodeKind::Hit,
+            hit_from_json(b, payload, &format!("{path}.hit"))?.as_union_value(),
+        ),
+        "result_group" => (
+            api::ResultNodeKind::ResultGroup,
+            result_group_from_json(b, payload, &format!("{path}.result_group"))?.as_union_value(),
+        ),
+        _ => {
+            return Err(contract(format!(
+                "unknown result node variant `{kind}` at {path}"
+            )))
+        }
+    };
+    Ok(api::ResultNode::create(
+        b,
+        &api::ResultNodeArgs {
+            node_type,
+            node: Some(node),
+        },
+    ))
+}
+
+fn result_group_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResultGroup<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_ResultGroup", path)?;
+    let id = optional_string(o, "id", path)?.map(|value| b.create_string(&value));
+    let label = optional_string(o, "label", path)?.map(|value| b.create_string(&value));
+    let value_offset = field(o, "value")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
+    let fields = field(o, "fields")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.fields"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    let children = field(o, "children")
+        .map(|value| {
+            let items = array(value, &format!("{path}.children"))?;
+            let children = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| result_node_from_json(b, item, &format!("{path}.children[{i}]")))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, JsonCodecError>(b.create_vector(&children))
+        })
+        .transpose()?;
+    let continuations = field(o, "continuations")
+        .map(|value| string_entries_from_json(b, value, &format!("{path}.continuations")))
+        .transpose()?;
+    let source = optional_string(o, "source", path)?.map(|value| b.create_string(&value));
+    let types = string_vector_from_json(b, field(o, "types"), &format!("{path}.types"))?;
+    let relevance = field(o, "relevance")
+        .map(|value| relevance_from_json(b, value, &format!("{path}.relevance")))
+        .transpose()?;
+    let limits = field(o, "limits")
+        .map(|value| result_limits_from_json(b, value, &format!("{path}.limits")))
+        .transpose()?;
+    let metadata = field(o, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.metadata"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::ResultGroup::create(
+        b,
+        &api::ResultGroupArgs {
+            id,
+            label,
+            value: value_offset,
+            fields,
+            children,
+            continuations,
+            source,
+            types,
+            relevance,
+            limits,
+            metadata,
+        },
+    ))
+}
+
+fn string_vector_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<
+    Option<WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>>>,
+    JsonCodecError,
+> {
+    let Some(value) = value else { return Ok(None) };
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(i, value)| string(value, &format!("{path}[{i}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let values = values
+        .iter()
+        .map(|value| b.create_string(value))
+        .collect::<Vec<_>>();
+    Ok(Some(b.create_vector(&values)))
+}
+
+fn string_entries_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::StringEntry<'a>>>>,
+    JsonCodecError,
+> {
+    let object = object(value, path)?;
+    let entries = object
+        .iter()
+        .map(|(key, value)| {
+            let key_offset = b.create_string(key);
+            let value_offset = b.create_string(&string(value, &format!("{path}.{key}"))?);
+            Ok(api::StringEntry::create(
+                b,
+                &api::StringEntryArgs {
+                    key: Some(key_offset),
+                    value: Some(value_offset),
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(b.create_vector(&entries))
+}
+
+fn relevance_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::Relevance<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (value_type, value) = match kind {
+        "finite_relevance" => {
+            let object = object(payload, &format!("{path}.finite_relevance"))?;
+            check_keys(
+                object,
+                "SearchKernel_V2_FiniteRelevance",
+                &format!("{path}.finite_relevance"),
+            )?;
+            let value = f64_value(
+                required(object, "value", &format!("{path}.finite_relevance"))?,
+                &format!("{path}.finite_relevance.value"),
+            )?;
+            (
+                api::RelevanceKind::FiniteRelevance,
+                api::FiniteRelevance::create(b, &api::FiniteRelevanceArgs { value })
+                    .as_union_value(),
+            )
+        }
+        "negative_infinity_relevance" => (
+            api::RelevanceKind::NegativeInfinityRelevance,
+            api::NegativeInfinityRelevance::create(b, &api::NegativeInfinityRelevanceArgs {})
+                .as_union_value(),
+        ),
+        "positive_infinity_relevance" => (
+            api::RelevanceKind::PositiveInfinityRelevance,
+            api::PositiveInfinityRelevance::create(b, &api::PositiveInfinityRelevanceArgs {})
+                .as_union_value(),
+        ),
+        _ => {
+            return Err(contract(format!(
+                "unknown relevance variant `{kind}` at {path}"
+            )))
+        }
+    };
+    Ok(api::Relevance::create(
+        b,
+        &api::RelevanceArgs {
+            value_type,
+            value: Some(value),
+        },
+    ))
+}
+
+fn result_limits_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResultLimits<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_ResultLimits", path)?;
+    let from = field(object, "from")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
+    let to = field(object, "to")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
+    Ok(api::ResultLimits::create(
+        b,
+        &api::ResultLimitsArgs { from, to },
+    ))
+}
+
+fn coverage_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::Coverage<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_Coverage", path)?;
+    let coverage_percent = optional_f64(object, "coverage_percent", path)?;
+    let documents = optional_u64(object, "documents", path)?;
+    let full = optional_bool(object, "full", path)?;
+    let nodes = optional_u32(object, "nodes", path)?;
+    let results = optional_u64(object, "results", path)?;
+    let results_full = optional_u64(object, "results_full", path)?;
+    let degraded = field(object, "degraded")
+        .map(|value| coverage_degraded_from_json(b, value, &format!("{path}.degraded")))
+        .transpose()?;
+    let metadata = field(object, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.metadata"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::Coverage::create(
+        b,
+        &api::CoverageArgs {
+            coverage_percent: coverage_percent.as_ref(),
+            documents: documents.as_ref(),
+            full: full.as_ref(),
+            nodes: nodes.as_ref(),
+            results: results.as_ref(),
+            results_full: results_full.as_ref(),
+            degraded,
+            metadata,
+        },
+    ))
+}
+
+fn coverage_degraded_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::CoverageDegraded<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_CoverageDegraded", path)?;
+    let match_phase = optional_bool(object, "match_phase", path)?;
+    let timeout = optional_bool(object, "timeout", path)?;
+    let adaptive_timeout = optional_bool(object, "adaptive_timeout", path)?;
+    let ann_timeout = optional_bool(object, "ann_timeout", path)?;
+    let non_ideal_state = optional_bool(object, "non_ideal_state", path)?;
+    let metadata = field(object, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.metadata"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::CoverageDegraded::create(
+        b,
+        &api::CoverageDegradedArgs {
+            match_phase: match_phase.as_ref(),
+            timeout: timeout.as_ref(),
+            adaptive_timeout: adaptive_timeout.as_ref(),
+            ann_timeout: ann_timeout.as_ref(),
+            non_ideal_state: non_ideal_state.as_ref(),
+            metadata,
+        },
+    ))
+}
+
+fn search_timing_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::SearchTiming<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_SearchTiming", path)?;
+    let query_time_seconds = optional_f64(object, "query_time_seconds", path)?;
+    let search_time_seconds = optional_f64(object, "search_time_seconds", path)?;
+    let summary_fetch_time_seconds = optional_f64(object, "summary_fetch_time_seconds", path)?;
+    let metadata = field(object, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.metadata"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::SearchTiming::create(
+        b,
+        &api::SearchTimingArgs {
+            query_time_seconds: query_time_seconds.as_ref(),
+            search_time_seconds: search_time_seconds.as_ref(),
+            summary_fetch_time_seconds: summary_fetch_time_seconds.as_ref(),
+            metadata,
+        },
+    ))
+}
+
+fn search_result_error_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::SearchResultError<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_SearchResultError", path)?;
+    let code = decimal(
+        required(object, "code", path)?,
+        &format!("{path}.code"),
+        "signed 64-bit integer",
+    )?;
+    let summary = optional_string(object, "summary", path)?.map(|value| b.create_string(&value));
+    let message = optional_string(object, "message", path)?.map(|value| b.create_string(&value));
+    let source = optional_string(object, "source", path)?.map(|value| b.create_string(&value));
+    let stack_trace =
+        optional_string(object, "stack_trace", path)?.map(|value| b.create_string(&value));
+    let transient = optional_bool(object, "transient", path)?;
+    let metadata = field(object, "metadata")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.metadata"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::SearchResultError::create(
+        b,
+        &api::SearchResultErrorArgs {
+            code,
+            summary,
+            message,
+            source,
+            stack_trace,
+            transient: transient.as_ref(),
+            metadata,
+        },
+    ))
 }
 
 fn total_hits_from_json<'a>(
@@ -4530,8 +5186,8 @@ fn hit_from_json<'a>(
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V2_Hit", path)?;
     let id = b.create_string(&string(required(o, "id", path)?, &format!("{path}.id"))?);
-    let _score = field(o, "score")
-        .map(|value| f64_value(value, &format!("{path}.score")))
+    let relevance = field(o, "relevance")
+        .map(|raw| relevance_from_json(b, raw, &format!("{path}.relevance")))
         .transpose()?;
     let fields = field(o, "fields")
         .map(|value| {
@@ -4562,13 +5218,48 @@ fn hit_from_json<'a>(
         })
         .transpose()?
         .flatten();
+    let source = optional_string(o, "source", path)?.map(|value| b.create_string(&value));
+    let types = string_vector_from_json(b, field(o, "types"), &format!("{path}.types"))?;
+    let match_features = field(o, "match_features")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.match_features"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    let summary_features = field(o, "summary_features")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.summary_features"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    let rank_features = field(o, "rank_features")
+        .map(|value| {
+            let entries = map_entries(b, Some(value), &format!("{path}.rank_features"))?;
+            Ok::<_, JsonCodecError>(b.create_vector(&entries))
+        })
+        .transpose()?;
+    let sort_values = field(o, "sort_values")
+        .map(|value| {
+            let values = array(value, &format!("{path}.sort_values"))?
+                .iter()
+                .map(|raw| value_from_json(b, raw))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, JsonCodecError>(b.create_vector(&values))
+        })
+        .transpose()?;
     Ok(api::Hit::create(
         b,
         &api::HitArgs {
             id: Some(id),
+            relevance,
             fields,
             highlights,
-            ..Default::default()
+            source,
+            types,
+            match_features,
+            summary_features,
+            rank_features,
+            sort_values,
         },
     ))
 }
@@ -4801,28 +5492,92 @@ fn missing_policy<'a>(
     value: &Value,
     path: &str,
 ) -> Result<WIPOffset<api::MissingPolicy<'a>>, JsonCodecError> {
+    if let Value::Object(_) = value {
+        let (kind, payload) = one_key(value, path)?;
+        if kind != "as" {
+            return Err(contract(format!("unknown missing policy `{path}.{kind}`")));
+        }
+        let payload = object(payload, &format!("{path}.as"))?;
+        let value = value_from_json(b, required(payload, "value", &format!("{path}.as"))?)?;
+        let policy = api::MissingAs::create(b, &api::MissingAsArgs { value: Some(value) });
+        return Ok(api::MissingPolicy::create(
+            b,
+            &api::MissingPolicyArgs {
+                policy_type: api::MissingPolicyKind::MissingAs,
+                policy: Some(policy.as_union_value()),
+            },
+        ));
+    }
     match enum_name(value, path)?.as_str() {
         "first" => {
             let policy = api::MissingFirst::create(b, &api::MissingFirstArgs {});
-            Ok(api::MissingPolicy::create(b, &api::MissingPolicyArgs {
-                policy_type: api::MissingPolicyKind::MissingFirst,
-                policy: Some(policy.as_union_value()),
-            }))
+            Ok(api::MissingPolicy::create(
+                b,
+                &api::MissingPolicyArgs {
+                    policy_type: api::MissingPolicyKind::MissingFirst,
+                    policy: Some(policy.as_union_value()),
+                },
+            ))
         }
         "last" => {
             let policy = api::MissingLast::create(b, &api::MissingLastArgs {});
-            Ok(api::MissingPolicy::create(b, &api::MissingPolicyArgs {
-                policy_type: api::MissingPolicyKind::MissingLast,
-                policy: Some(policy.as_union_value()),
-            }))
+            Ok(api::MissingPolicy::create(
+                b,
+                &api::MissingPolicyArgs {
+                    policy_type: api::MissingPolicyKind::MissingLast,
+                    policy: Some(policy.as_union_value()),
+                },
+            ))
         }
         other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
     }
 }
 
-fn query_field_ref<'a>(b: &mut FlatBufferBuilder<'a>, path: &str) -> WIPOffset<api::QueryFieldRef<'a>> {
+fn query_field_ref<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    path: &str,
+) -> WIPOffset<api::QueryFieldRef<'a>> {
     let path = b.create_string(path);
-    api::QueryFieldRef::create(b, &api::QueryFieldRefArgs { path: Some(path), element_index: None })
+    api::QueryFieldRef::create(
+        b,
+        &api::QueryFieldRefArgs {
+            path: Some(path),
+            element_index: None,
+        },
+    )
+}
+
+fn query_field_ref_value<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::QueryFieldRef<'a>>, JsonCodecError> {
+    match value {
+        Value::String(value) => Ok(query_field_ref(b, value)),
+        Value::Object(object) => {
+            for key in object.keys() {
+                if key != "path" && key != "element_index" {
+                    return Err(contract(format!("unknown field `{path}.{key}`")));
+                }
+            }
+            let path_value = string(required(object, "path", path)?, &format!("{path}.path"))?;
+            let element_index = field(object, "element_index")
+                .map(|value| u32_value(value, &format!("{path}.element_index")))
+                .transpose()?
+                .map(api::OptionalUInt32::new);
+            let path_value = b.create_string(&path_value);
+            Ok(api::QueryFieldRef::create(
+                b,
+                &api::QueryFieldRefArgs {
+                    path: Some(path_value),
+                    element_index: element_index.as_ref(),
+                },
+            ))
+        }
+        _ => Err(contract(format!(
+            "`{path}` must be a string or field reference object"
+        ))),
+    }
 }
 
 fn parse_null_value(value: &Value, path: &str) -> Result<api::NullValue, JsonCodecError> {
@@ -4842,16 +5597,19 @@ fn parse_sort_direction(value: &Value, path: &str) -> Result<api::SortDirection,
     }
 }
 
-fn parse_total_hits_relation(value: &Value, path: &str) -> Result<api::TotalHitsRelation, JsonCodecError> {
+fn parse_total_hits_relation(
+    value: &Value,
+    path: &str,
+) -> Result<api::TotalHitsRelation, JsonCodecError> {
     match enum_name(value, path)?.as_str() {
         "unspecified" => Ok(api::TotalHitsRelation(0)),
         "exact" => Ok(api::TotalHitsRelation(1)),
         "lower_bound" => Ok(api::TotalHitsRelation(2)),
+        "approximate" => Ok(api::TotalHitsRelation(3)),
+        "unknown" => Ok(api::TotalHitsRelation(4)),
         other => Err(contract(format!("unknown enum `{path}` value `{other}`"))),
     }
 }
-
-
 
 fn response_describe_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
@@ -4883,10 +5641,8 @@ fn response_inspect_from_json<'a>(
     // The V2 schema requires an InspectQueryResult.resolved_request table.
     // An empty object is the canonical empty inspection result.
     let _ = field(o, "resolved_request");
-    let resolved_request = api::ResolvedSearchRequest::create(
-        b,
-        &api::ResolvedSearchRequestArgs::default(),
-    );
+    let resolved_request =
+        api::ResolvedSearchRequest::create(b, &api::ResolvedSearchRequestArgs::default());
     Ok(offset(api::InspectQueryResult::create(
         b,
         &api::InspectQueryResultArgs {
@@ -4953,7 +5709,7 @@ fn field_definition_from_json<'a>(
         .map(|value| data_type_from_json(b, value, &format!("{path}.data_type")))
         .transpose()?
         .or_else(|| {
-                field(o, "kind")
+            field(o, "kind")
                 .and_then(|kind| primitive_data_type_from_legacy(b, kind).ok().flatten())
         });
     let stored = optional_bool(o, "stored", path)?;
@@ -4992,10 +5748,8 @@ fn primitive_data_type_from_legacy<'a>(
         "bool" => api::PrimitiveDataTypeKind::Bool,
         _ => return Ok(None),
     };
-    let payload = api::PrimitiveDataType::create(
-        b,
-        &api::PrimitiveDataTypeArgs { kind: primitive },
-    );
+    let payload =
+        api::PrimitiveDataType::create(b, &api::PrimitiveDataTypeArgs { kind: primitive });
     Ok(Some(api::DataType::create(
         b,
         &api::DataTypeArgs {
@@ -5011,7 +5765,10 @@ fn data_type_from_json<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::DataType<'a>>, JsonCodecError> {
     let object = object(value, path)?;
-    let primitive = string(required(object, "primitive", path)?, &format!("{path}.primitive"))?;
+    let primitive = string(
+        required(object, "primitive", path)?,
+        &format!("{path}.primitive"),
+    )?;
     let kind = match primitive.as_str() {
         "string" => api::PrimitiveDataTypeKind::String,
         "bool" => api::PrimitiveDataTypeKind::Bool,
@@ -5021,7 +5778,11 @@ fn data_type_from_json<'a>(
         "float32" => api::PrimitiveDataTypeKind::Float32,
         "float64" => api::PrimitiveDataTypeKind::Float64,
         "raw" => api::PrimitiveDataTypeKind::Raw,
-        other => return Err(contract(format!("unknown data type `{path}.primitive`: {other}"))),
+        other => {
+            return Err(contract(format!(
+                "unknown data type `{path}.primitive`: {other}"
+            )))
+        }
     };
     let payload = api::PrimitiveDataType::create(b, &api::PrimitiveDataTypeArgs { kind });
     Ok(api::DataType::create(
@@ -5115,33 +5876,47 @@ fn response_inspect(value: Option<api::InspectQueryResult<'_>>) -> Result<Value,
 fn response_search(value: Option<api::SearchResult<'_>>) -> Result<Value, JsonCodecError> {
     let value = required_result(value, "search")?;
     let mut out = Map::new();
-    let mut hits = Vec::new();
-    if let Some(root) = value.root() {
-        collect_result_hits(root, &mut hits)?;
-        out.insert("hits".to_owned(), Value::Array(hits));
-    }
+    out.insert(
+        "root".to_owned(),
+        result_node_json(required_result(value.root(), "search.root")?)?,
+    );
     let total = required_result(value.total_hits(), "total_hits")?;
     out.insert(
         "total_hits".to_owned(),
         serde_json::json!({"value": total.value().to_string(), "relation": enum_json(total.relation().variant_name(), "total_hits.relation")?}),
     );
+    if let Some(coverage) = value.coverage() {
+        out.insert("coverage".to_owned(), coverage_json(coverage)?);
+    }
+    if let Some(timing) = value.timing() {
+        out.insert("timing".to_owned(), search_timing_json(timing)?);
+    }
+    if let Some(errors) = value.errors() {
+        let mut values = Vec::new();
+        for error in errors.iter() {
+            values.push(search_result_error_json(error)?);
+        }
+        out.insert("errors".to_owned(), Value::Array(values));
+    }
+    if let Some(trace) = value.trace() {
+        out.insert("trace".to_owned(), value_json(trace)?);
+    }
+    if let Some(metadata) = value.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(metadata))?);
+    }
     Ok(Value::Object(out))
 }
 
-fn collect_result_hits(
-    node: api::ResultNode<'_>,
-    hits: &mut Vec<Value>,
-) -> Result<(), JsonCodecError> {
+fn result_node_json(node: api::ResultNode<'_>) -> Result<Value, JsonCodecError> {
     if let Some(hit) = node.node_as_hit() {
-        hits.push(hit_json(hit)?);
+        Ok(serde_json::json!({"hit": hit_json(hit)?}))
     } else if let Some(group) = node.node_as_result_group() {
-        if let Some(children) = group.children() {
-            for child in children.iter() {
-                collect_result_hits(child, hits)?;
-            }
-        }
+        Ok(serde_json::json!({"result_group": result_group_json(group)?}))
+    } else {
+        Err(JsonCodecError::FlatBuffer(
+            "missing or unknown result node variant".to_owned(),
+        ))
     }
-    Ok(())
 }
 
 fn hit_json(hit: api::Hit<'_>) -> Result<Value, JsonCodecError> {
@@ -5151,9 +5926,7 @@ fn hit_json(hit: api::Hit<'_>) -> Result<Value, JsonCodecError> {
         Value::String(required_result(hit.id(), "hit.id")?.to_owned()),
     );
     if let Some(relevance) = hit.relevance() {
-        if let Some(score) = relevance.value_as_finite_relevance() {
-            out.insert("score".to_owned(), number(score.value(), "hit.score")?);
-        }
+        out.insert("relevance".to_owned(), relevance_json(relevance)?);
     }
     if let Some(fields) = hit.fields() {
         out.insert("fields".to_owned(), value_map_json(Some(fields))?);
@@ -5164,6 +5937,221 @@ fn hit_json(hit: api::Hit<'_>) -> Result<Value, JsonCodecError> {
             highlights.push(highlight_json(item)?);
         }
         out.insert("highlights".to_owned(), Value::Array(highlights));
+    }
+    if let Some(source) = hit.source() {
+        out.insert("source".to_owned(), Value::String(source.to_owned()));
+    }
+    if let Some(types) = hit.types() {
+        out.insert(
+            "types".to_owned(),
+            Value::Array(
+                types
+                    .iter()
+                    .map(|value| Value::String(value.to_owned()))
+                    .collect(),
+            ),
+        );
+    }
+    if let Some(features) = hit.match_features() {
+        out.insert("match_features".to_owned(), value_map_json(Some(features))?);
+    }
+    if let Some(features) = hit.summary_features() {
+        out.insert(
+            "summary_features".to_owned(),
+            value_map_json(Some(features))?,
+        );
+    }
+    if let Some(features) = hit.rank_features() {
+        out.insert("rank_features".to_owned(), value_map_json(Some(features))?);
+    }
+    if let Some(values) = hit.sort_values() {
+        let values = values
+            .iter()
+            .map(value_json)
+            .collect::<Result<Vec<_>, _>>()?;
+        out.insert("sort_values".to_owned(), Value::Array(values));
+    }
+    Ok(Value::Object(out))
+}
+
+fn result_group_json(group: api::ResultGroup<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(id) = group.id() {
+        out.insert("id".to_owned(), Value::String(id.to_owned()));
+    }
+    if let Some(label) = group.label() {
+        out.insert("label".to_owned(), Value::String(label.to_owned()));
+    }
+    if let Some(value) = group.value() {
+        out.insert("value".to_owned(), value_json(value)?);
+    }
+    if let Some(fields) = group.fields() {
+        out.insert("fields".to_owned(), value_map_json(Some(fields))?);
+    }
+    if let Some(children) = group.children() {
+        let children = children
+            .iter()
+            .map(result_node_json)
+            .collect::<Result<Vec<_>, _>>()?;
+        out.insert("children".to_owned(), Value::Array(children));
+    }
+    if let Some(continuations) = group.continuations() {
+        out.insert(
+            "continuations".to_owned(),
+            string_map_json(Some(continuations))?,
+        );
+    }
+    if let Some(source) = group.source() {
+        out.insert("source".to_owned(), Value::String(source.to_owned()));
+    }
+    if let Some(types) = group.types() {
+        out.insert(
+            "types".to_owned(),
+            Value::Array(
+                types
+                    .iter()
+                    .map(|value| Value::String(value.to_owned()))
+                    .collect(),
+            ),
+        );
+    }
+    if let Some(relevance) = group.relevance() {
+        out.insert("relevance".to_owned(), relevance_json(relevance)?);
+    }
+    if let Some(limits) = group.limits() {
+        let mut values = Map::new();
+        if let Some(from) = limits.from() {
+            values.insert("from".to_owned(), value_json(from)?);
+        }
+        if let Some(to) = limits.to() {
+            values.insert("to".to_owned(), value_json(to)?);
+        }
+        out.insert("limits".to_owned(), Value::Object(values));
+    }
+    if let Some(metadata) = group.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(metadata))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn relevance_json(relevance: api::Relevance<'_>) -> Result<Value, JsonCodecError> {
+    match relevance.value_type() {
+        api::RelevanceKind::FiniteRelevance => Ok(serde_json::json!({
+            "finite_relevance": {
+                "value": number(
+                    required_result(
+                        relevance.value_as_finite_relevance(),
+                        "relevance.finite_relevance",
+                    )?
+                    .value(),
+                    "relevance.finite_relevance.value",
+                )?
+            }
+        })),
+        api::RelevanceKind::NegativeInfinityRelevance => {
+            Ok(serde_json::json!({"negative_infinity_relevance": {}}))
+        }
+        api::RelevanceKind::PositiveInfinityRelevance => {
+            Ok(serde_json::json!({"positive_infinity_relevance": {}}))
+        }
+        _ => Err(JsonCodecError::FlatBuffer(
+            "missing or unknown relevance variant".to_owned(),
+        )),
+    }
+}
+
+fn coverage_json(coverage: api::Coverage<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = coverage.coverage_percent() {
+        out.insert(
+            "coverage_percent".to_owned(),
+            number(value.value(), "coverage_percent")?,
+        );
+    }
+    if let Some(value) = coverage.documents() {
+        out.insert("documents".to_owned(), Value::Number(value.value().into()));
+    }
+    if let Some(value) = coverage.full() {
+        out.insert("full".to_owned(), Value::Bool(value.value()));
+    }
+    if let Some(value) = coverage.nodes() {
+        out.insert("nodes".to_owned(), Value::Number(value.value().into()));
+    }
+    if let Some(value) = coverage.results() {
+        out.insert("results".to_owned(), Value::Number(value.value().into()));
+    }
+    if let Some(value) = coverage.results_full() {
+        out.insert(
+            "results_full".to_owned(),
+            Value::Number(value.value().into()),
+        );
+    }
+    if let Some(value) = coverage.degraded() {
+        out.insert("degraded".to_owned(), coverage_degraded_json(value)?);
+    }
+    if let Some(value) = coverage.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(value))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn coverage_degraded_json(value: api::CoverageDegraded<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    for (name, flag) in [
+        ("match_phase", value.match_phase()),
+        ("timeout", value.timeout()),
+        ("adaptive_timeout", value.adaptive_timeout()),
+        ("ann_timeout", value.ann_timeout()),
+        ("non_ideal_state", value.non_ideal_state()),
+    ] {
+        if let Some(flag) = flag {
+            out.insert(name.to_owned(), Value::Bool(flag.value()));
+        }
+    }
+    if let Some(metadata) = value.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(metadata))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn search_timing_json(value: api::SearchTiming<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    for (name, timing) in [
+        ("query_time_seconds", value.query_time_seconds()),
+        ("search_time_seconds", value.search_time_seconds()),
+        (
+            "summary_fetch_time_seconds",
+            value.summary_fetch_time_seconds(),
+        ),
+    ] {
+        if let Some(timing) = timing {
+            out.insert(name.to_owned(), number(timing.value(), name)?);
+        }
+    }
+    if let Some(metadata) = value.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(metadata))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn search_result_error_json(value: api::SearchResultError<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("code".to_owned(), Value::String(value.code().to_string()));
+    for (name, text) in [
+        ("summary", value.summary()),
+        ("message", value.message()),
+        ("source", value.source()),
+        ("stack_trace", value.stack_trace()),
+    ] {
+        if let Some(text) = text {
+            out.insert(name.to_owned(), Value::String(text.to_owned()));
+        }
+    }
+    if let Some(transient) = value.transient() {
+        out.insert("transient".to_owned(), Value::Bool(transient.value()));
+    }
+    if let Some(metadata) = value.metadata() {
+        out.insert("metadata".to_owned(), value_map_json(Some(metadata))?);
     }
     Ok(Value::Object(out))
 }
@@ -5256,6 +6244,21 @@ fn value_json(value: api::Value<'_>) -> Result<Value, JsonCodecError> {
                 .map(|v| number(v.value(), "value.float64"))
                 .transpose()?,
         ),
+        api::ValueKind::NonFiniteFloatValue => {
+            let value =
+                required_result(value.kind_as_non_finite_float_value(), "value.non_finite")?;
+            let name = match value.kind() {
+                api::NonFiniteFloatKind::NaN => "nan",
+                api::NonFiniteFloatKind::PositiveInfinity => "positive_infinity",
+                api::NonFiniteFloatKind::NegativeInfinity => "negative_infinity",
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown non-finite value".to_owned(),
+                    ))
+                }
+            };
+            ("non_finite", Some(serde_json::json!({name: {}})))
+        }
         api::ValueKind::StringValue => (
             "string",
             value
@@ -5295,6 +6298,12 @@ fn value_json(value: api::Value<'_>) -> Result<Value, JsonCodecError> {
             let object = required_result(value.kind_as_value_object(), "value.object")?;
             ("object", Some(value_map_json(object.fields())?))
         }
+        api::ValueKind::TensorValue => (
+            "tensor",
+            Some(tensor_value_json(
+                required_result(value.kind_as_tensor_value(), "value.tensor")?,
+            )?),
+        ),
         _ => {
             return Err(JsonCodecError::FlatBuffer(
                 "missing or unknown value variant".to_owned(),
@@ -5302,6 +6311,130 @@ fn value_json(value: api::Value<'_>) -> Result<Value, JsonCodecError> {
         }
     };
     Ok(serde_json::json!({name: required_result(payload, "value payload")?}))
+}
+
+fn tensor_address_json(
+    address: Option<
+        flatbuffers::Vector<
+            '_,
+            flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'_>>,
+        >,
+    >,
+) -> Value {
+    let Some(address) = address else {
+        return absent_vector_json();
+    };
+    Value::Array(
+        address
+            .iter()
+            .map(|entry| {
+                let mut out = Map::new();
+                out.insert(
+                    "dimension".to_owned(),
+                    Value::String(entry.dimension().to_owned()),
+                );
+                if let Some(label) = entry.label() {
+                    out.insert("label".to_owned(), Value::String(label.to_owned()));
+                }
+                Value::Object(out)
+            })
+            .collect(),
+    )
+}
+
+fn tensor_numbers_json(
+    values: Option<flatbuffers::Vector<'_, f64>>,
+    path: &str,
+) -> Result<Value, JsonCodecError> {
+    let Some(values) = values else {
+        return Ok(absent_vector_json());
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| number(value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Value::Array)
+}
+
+fn tensor_cell_json(value: api::TensorCell<'_>) -> Result<Value, JsonCodecError> {
+    Ok(serde_json::json!({
+        "address": tensor_address_json(value.address()),
+        "value": number(value.value(), "tensor.cell.value")?,
+    }))
+}
+
+fn tensor_block_json(value: api::TensorBlock<'_>) -> Result<Value, JsonCodecError> {
+    Ok(serde_json::json!({
+        "address": tensor_address_json(value.address()),
+        "values": tensor_numbers_json(value.values(), "tensor.block.values")?,
+    }))
+}
+
+fn tensor_value_json(value: api::TensorValue<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(type_spec) = value.type_spec() {
+        out.insert("type_spec".to_owned(), Value::String(type_spec.to_owned()));
+    }
+    let payload = match value.payload_type() {
+        api::TensorPayloadKind::NONE => None,
+        api::TensorPayloadKind::DenseTensorValues => {
+            let payload = required_result(
+                value.payload_as_dense_tensor_values(),
+                "tensor.payload.dense",
+            )?;
+            Some(serde_json::json!({
+                "dense": {
+                    "values": tensor_numbers_json(payload.values(), "tensor.dense.values")?
+                }
+            }))
+        }
+        api::TensorPayloadKind::SparseTensorCells => {
+            let payload = required_result(
+                value.payload_as_sparse_tensor_cells(),
+                "tensor.payload.sparse",
+            )?;
+            let cells = payload
+                .cells()
+                .map(|cells| {
+                    cells
+                        .iter()
+                        .map(tensor_cell_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .map(Value::Array)
+                .unwrap_or_else(absent_vector_json);
+            Some(serde_json::json!({"sparse": {"cells": cells}}))
+        }
+        api::TensorPayloadKind::MixedTensorBlocks => {
+            let payload = required_result(
+                value.payload_as_mixed_tensor_blocks(),
+                "tensor.payload.mixed",
+            )?;
+            let blocks = payload
+                .blocks()
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .map(tensor_block_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .map(Value::Array)
+                .unwrap_or_else(absent_vector_json);
+            Some(serde_json::json!({"mixed": {"blocks": blocks}}))
+        }
+        _ => {
+            return Err(JsonCodecError::FlatBuffer(
+                "unknown tensor payload discriminator".to_owned(),
+            ))
+        }
+    };
+    if let Some(payload) = payload {
+        out.insert("payload".to_owned(), payload);
+    }
+    Ok(Value::Object(out))
 }
 
 fn field_projection_json(value: api::FieldProjection<'_>) -> Result<Value, JsonCodecError> {
@@ -5399,6 +6532,21 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
             if let Some(text) = text.text() {
                 out.insert("query".to_owned(), Value::String(text.to_owned()));
             }
+        } else if let Some(typed) = v.source_as_typed_query() {
+            if let Some(query) = typed.query() {
+                out.insert("query_expr".to_owned(), query_json(query)?);
+            }
+        } else if v.source_as_match_all_query().is_some() {
+            out.insert("query_expr".to_owned(), serde_json::json!({"true": {}}));
+        } else if v.source_as_yql_query().is_some() {
+            return Err(JsonCodecError::Contract(
+                "YQL query JSON encoding is unsupported; preserve it as FlatBuffers or use the native API"
+                    .to_owned(),
+            ));
+        } else {
+            return Err(JsonCodecError::FlatBuffer(
+                "unknown query source discriminator".to_owned(),
+            ));
         }
     }
     if let Some(v) = value.search_fields() {
@@ -5406,19 +6554,63 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
     }
     if let Some(v) = value.filters() {
         if let Some(items) = v.structured() {
-            if let Some(item) = items.iter().next() {
-                out.insert("filter".to_owned(), filter_json(item)?);
+            match items.len() {
+                0 => {
+                    out.insert("filters".to_owned(), Value::Array(Vec::new()));
+                }
+                1 => {
+                    out.insert("filter".to_owned(), filter_json(items.get(0))?);
+                }
+                _ => {
+                    out.insert(
+                        "filters".to_owned(),
+                        Value::Array(
+                            items
+                                .iter()
+                                .map(filter_json)
+                                .collect::<Result<Vec<_>, _>>()?,
+                        ),
+                    );
+                }
             }
+        }
+        if let Some(sources) = v.sources() {
+            out.insert(
+                "filter_sources".to_owned(),
+                Value::Array(
+                    sources
+                        .iter()
+                        .map(|x| Value::String(x.to_owned()))
+                        .collect(),
+                ),
+            );
+        }
+        if let Some(parameters) = v.parameters() {
+            out.insert(
+                "filter_parameters".to_owned(),
+                value_map_json(Some(parameters))?,
+            );
         }
     }
     if let Some(items) = value.sort() {
         let mut a = Vec::new();
         for item in items.iter() {
             let mut o = Map::new();
-            o.insert(
-                "field".to_owned(),
-                Value::String(required_result(item.target().and_then(|target| target.target_as_field_sort_target()).and_then(|target| target.field()), "sort.field")?.to_owned()),
-            );
+            let target = required_result(item.target(), "sort.target")?;
+            if let Some(field) = target
+                .target_as_field_sort_target()
+                .and_then(|target| target.field())
+            {
+                o.insert("field".to_owned(), Value::String(field.to_owned()));
+            } else if target.target_as_relevance_sort_target().is_some() {
+                o.insert("target".to_owned(), serde_json::json!({"relevance": {}}));
+            } else if let Some(rank) = target.target_as_rank_feature_sort_target() {
+                o.insert("target".to_owned(), serde_json::json!({"rank_feature": {"feature": required_result(rank.feature(), "sort.target.rank_feature.feature")?}}));
+            } else if let Some(raw) = target.target_as_raw_sort_target() {
+                o.insert("target".to_owned(), serde_json::json!({"raw": {"expression": required_result(raw.expression(), "sort.target.raw.expression")?}}));
+            } else {
+                return Err(JsonCodecError::FlatBuffer("unknown sort target".to_owned()));
+            }
             o.insert(
                 "direction".to_owned(),
                 Value::String(enum_json(
@@ -5427,23 +6619,139 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
                 )?),
             );
             if let Some(v) = item.missing() {
-                o.insert(
-                    "missing".to_owned(),
-                    Value::String(match v.policy_type() {
-                        api::MissingPolicyKind::MissingFirst if v.policy_as_missing_first().is_some() => "first".to_owned(),
-                        api::MissingPolicyKind::MissingLast if v.policy_as_missing_last().is_some() => "last".to_owned(),
-                        _ => return Err(JsonCodecError::FlatBuffer("invalid sort missing policy".to_owned())),
-                    }),
-                );
+                let missing = match v.policy_type() {
+                    api::MissingPolicyKind::MissingFirst
+                        if v.policy_as_missing_first().is_some() =>
+                    {
+                        Value::String("first".to_owned())
+                    }
+                    api::MissingPolicyKind::MissingLast if v.policy_as_missing_last().is_some() => {
+                        Value::String("last".to_owned())
+                    }
+                    api::MissingPolicyKind::MissingAs => {
+                        let value = required_result(
+                            v.policy_as_missing_as().and_then(|x| x.value()),
+                            "sort.missing.as",
+                        )?;
+                        serde_json::json!({"as": {"value": value_json(value)?}})
+                    }
+                    _ => {
+                        return Err(JsonCodecError::FlatBuffer(
+                            "invalid sort missing policy".to_owned(),
+                        ))
+                    }
+                };
+                o.insert("missing".to_owned(), missing);
+            }
+            if let Some(annotations) = item.annotations() {
+                o.insert("annotations".to_owned(), value_map_json(Some(annotations))?);
             }
             a.push(Value::Object(o));
         }
         out.insert("sort".to_owned(), Value::Array(a));
     }
     if let Some(v) = value.ranking() {
-        if let Some(profile) = v.profile() {
-            out.insert("ranking".to_owned(), Value::String(profile.to_owned()));
+        let profile = v.profile().map(str::to_owned);
+        let properties = string_map_json(v.properties())?;
+        if v.properties().is_some() {
+            out.insert(
+                "ranking".to_owned(),
+                serde_json::json!({
+                    "profile": profile.unwrap_or_default(),
+                    "properties": properties
+                }),
+            );
+        } else if let Some(profile) = profile {
+            out.insert("ranking".to_owned(), Value::String(profile));
         }
+    }
+    if let Some(inputs) = value.inputs() {
+        let mut encoded = Map::new();
+        for input in inputs.iter() {
+            let payload = match input.input_type() {
+                api::QueryInputKind::LiteralQueryInput => {
+                    let input = required_result(
+                        input.input_as_literal_query_input(),
+                        "search.inputs.literal",
+                    )?;
+                    serde_json::json!({
+                        "literal": {"value": value_json(required_result(input.value(), "search.inputs.literal.value")?)?}
+                    })
+                }
+                api::QueryInputKind::ExpressionQueryInput => {
+                    let input = required_result(
+                        input.input_as_expression_query_input(),
+                        "search.inputs.expression",
+                    )?;
+                    serde_json::json!({
+                        "expression": {"expression": required_result(input.expression(), "search.inputs.expression.expression")?}
+                    })
+                }
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown query input discriminator".to_owned(),
+                    ))
+                }
+            };
+            encoded.insert(input.name().to_owned(), payload);
+        }
+        out.insert("inputs".to_owned(), Value::Object(encoded));
+    }
+    if let Some(properties) = value.properties() {
+        out.insert("properties".to_owned(), value_map_json(Some(properties))?);
+    }
+    if let Some(query_profile) = value.query_profile() {
+        out.insert(
+            "query_profile".to_owned(),
+            Value::String(query_profile.to_owned()),
+        );
+    }
+    if let Some(search_chain) = value.search_chain() {
+        out.insert(
+            "search_chain".to_owned(),
+            Value::String(search_chain.to_owned()),
+        );
+    }
+    if let Some(grouping) = value.grouping() {
+        let mut groups = Vec::new();
+        for item in grouping.iter() {
+            let source = match item.source_type() {
+                api::GroupingSourceKind::RawGroupingSource => {
+                    let raw = required_result(
+                        item.source_as_raw_grouping_source(),
+                        "grouping.source.raw",
+                    )?;
+                    serde_json::json!({"raw": {"expression": required_result(raw.expression(), "grouping.source.raw.expression")?}})
+                }
+                api::GroupingSourceKind::StructuredGroupingSource => {
+                    let structured = required_result(
+                        item.source_as_structured_grouping_source(),
+                        "grouping.source.structured",
+                    )?;
+                    serde_json::json!({"structured": grouping_all_json(required_result(structured.root(), "grouping.source.structured.root")?)?})
+                }
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown grouping source discriminator".to_owned(),
+                    ))
+                }
+            };
+            let mut group = Map::new();
+            group.insert("source".to_owned(), source);
+            if let Some(continuations) = item.continuations() {
+                group.insert(
+                    "continuations".to_owned(),
+                    Value::Array(
+                        continuations
+                            .iter()
+                            .map(|x| Value::String(x.to_owned()))
+                            .collect(),
+                    ),
+                );
+            }
+            groups.push(Value::Object(group));
+        }
+        out.insert("grouping".to_owned(), Value::Array(groups));
     }
     if let Some(v) = value.limit() {
         out.insert("limit".to_owned(), Value::Number(v.value().into()));
@@ -5452,24 +6760,577 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
         out.insert("offset".to_owned(), Value::Number(v.value().into()));
     }
     if let Some(v) = value.presentation() {
+        if let Some(summary) = v.summary() {
+            out.insert("summary".to_owned(), Value::String(summary.to_owned()));
+        }
         if let Some(fields) = v.fields() {
             out.insert("projection".to_owned(), field_projection_json(fields)?);
         }
         if let Some(highlighting) = v.highlighting() {
             if let Some(fields) = highlighting.fields() {
-                out.insert("highlighting".to_owned(), Value::Array(fields.iter().map(|x| Value::String(x.to_owned())).collect()));
+                out.insert(
+                    "highlighting".to_owned(),
+                    Value::Array(fields.iter().map(|x| Value::String(x.to_owned())).collect()),
+                );
             }
+        }
+        if let Some(format) = v.format() {
+            out.insert("format".to_owned(), Value::String(format.to_owned()));
+        }
+        if let Some(bolding) = v.bolding() {
+            out.insert("bolding".to_owned(), Value::Bool(bolding.value()));
+        }
+        if let Some(timing) = v.timing() {
+            out.insert("timing".to_owned(), Value::Bool(timing.value()));
         }
     }
     if let Some(v) = value.query_model() {
-        if let Some(language) = v.language() {
-            out.insert("language".to_owned(), Value::String(language.to_owned()));
+        let model = query_model_json(v)?;
+        if model
+            .as_object()
+            .is_some_and(|object| object.len() == 1 && object.contains_key("language"))
+        {
+            if let Some(language) = v.language() {
+                out.insert("language".to_owned(), Value::String(language.to_owned()));
+            }
+        } else {
+            out.insert("query_model".to_owned(), model);
         }
     }
     if let Some(v) = value.timeout_ms() {
         out.insert("timeout".to_owned(), Value::Number(v.value().into()));
     }
     Ok(Value::Object(out))
+}
+
+fn query_model_json(value: api::QueryModel<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    for (name, value) in [
+        ("query_string", value.query_string()),
+        ("default_index", value.default_index()),
+        ("encoding", value.encoding()),
+        ("filter", value.filter()),
+        ("language", value.language()),
+        ("locale", value.locale()),
+        ("search_path", value.search_path()),
+    ] {
+        if let Some(value) = value {
+            out.insert(name.to_owned(), Value::String(value.to_owned()));
+        }
+    }
+    if let Some(ty) = value.type_() {
+        let mut type_json = Map::new();
+        for (name, value) in [
+            ("composite", ty.composite()),
+            ("tokenization", ty.tokenization()),
+            ("syntax", ty.syntax()),
+            ("profile", ty.profile()),
+        ] {
+            if let Some(value) = value {
+                type_json.insert(name.to_owned(), Value::String(value.to_owned()));
+            }
+        }
+        if let Some(value) = ty.is_yql_default() {
+            type_json.insert("is_yql_default".to_owned(), Value::Bool(value.value()));
+        }
+        out.insert("type".to_owned(), Value::Object(type_json));
+    }
+    if let Some(values) = value.sources() {
+        out.insert(
+            "sources".to_owned(),
+            Value::Array(values.iter().map(|x| Value::String(x.to_owned())).collect()),
+        );
+    }
+    if let Some(values) = value.restrict() {
+        out.insert(
+            "restrict".to_owned(),
+            Value::Array(values.iter().map(|x| Value::String(x.to_owned())).collect()),
+        );
+    }
+    if let Some(value) = value.search_group() {
+        out.insert(
+            "search_group".to_owned(),
+            Value::Number(value.value().into()),
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+fn grouping_all_json(value: api::GroupingAllOperation<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(label) = value.label() {
+        out.insert("label".to_owned(), Value::String(label.to_owned()));
+    }
+    if let Some(operations) = value.operations() {
+        let mut encoded = Vec::new();
+        for operation in operations.iter() {
+            encoded.push(grouping_operation_json(operation)?);
+        }
+        out.insert("operations".to_owned(), Value::Array(encoded));
+    }
+    Ok(Value::Object(out))
+}
+
+fn grouping_operation_json(value: api::GroupingOperation<'_>) -> Result<Value, JsonCodecError> {
+    let (key, payload) = match value.operation_type() {
+        api::GroupingOperationKind::GroupingAllOperation => (
+            "all",
+            grouping_all_json(required_result(
+                value.operation_as_grouping_all_operation(),
+                "grouping.all",
+            )?)?,
+        ),
+        api::GroupingOperationKind::GroupingEachOperation => (
+            "each",
+            grouping_each_json(required_result(
+                value.operation_as_grouping_each_operation(),
+                "grouping.each",
+            )?)?,
+        ),
+        api::GroupingOperationKind::GroupingGroupOperation => {
+            let value = required_result(
+                value.operation_as_grouping_group_operation(),
+                "grouping.group",
+            )?;
+            (
+                "group",
+                serde_json::json!({"expression": grouping_expression_json(required_result(value.expression(), "grouping.group.expression")?)?}),
+            )
+        }
+        api::GroupingOperationKind::GroupingOutputOperation => {
+            let value = required_result(
+                value.operation_as_grouping_output_operation(),
+                "grouping.output",
+            )?;
+            let outputs = value
+                .outputs()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(grouping_output_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            ("output", serde_json::json!({"outputs": outputs}))
+        }
+        api::GroupingOperationKind::GroupingMaxOperation => {
+            let value =
+                required_result(value.operation_as_grouping_max_operation(), "grouping.max")?;
+            let payload = match value.value_type() {
+                api::GroupingMaxKind::FiniteGroupingMax => {
+                    serde_json::json!({"finite": {"value": required_result(value.value_as_finite_grouping_max(), "grouping.max.finite")?.value()}})
+                }
+                api::GroupingMaxKind::InfiniteGroupingMax => serde_json::json!({"infinite": {}}),
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown grouping max discriminator".to_owned(),
+                    ))
+                }
+            };
+            ("max", payload)
+        }
+        api::GroupingOperationKind::GroupingPrecisionOperation => (
+            "precision",
+            serde_json::json!({"value": required_result(value.operation_as_grouping_precision_operation(), "grouping.precision")?.value()}),
+        ),
+        api::GroupingOperationKind::GroupingOrderOperation => {
+            let value = required_result(
+                value.operation_as_grouping_order_operation(),
+                "grouping.order",
+            )?;
+            let expressions = value
+                .expressions()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(|item| {
+                            grouping_expression_json(required_result(
+                                item.expression(),
+                                "grouping.order.expression",
+                            )?)
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            ("order", serde_json::json!({"expressions": expressions}))
+        }
+        api::GroupingOperationKind::GroupingAliasOperation => {
+            let value = required_result(
+                value.operation_as_grouping_alias_operation(),
+                "grouping.alias",
+            )?;
+            (
+                "alias",
+                serde_json::json!({"name": required_result(value.name(), "grouping.alias.name")?, "expression": grouping_expression_json(required_result(value.expression(), "grouping.alias.expression")?)?}),
+            )
+        }
+        api::GroupingOperationKind::GroupingFilterOperation => {
+            let value = required_result(
+                value.operation_as_grouping_filter_operation(),
+                "grouping.filter",
+            )?;
+            (
+                "filter",
+                grouping_filter_json(required_result(value.filter(), "grouping.filter.filter")?)?,
+            )
+        }
+        api::GroupingOperationKind::GroupingKeepOperation => {
+            let value = required_result(
+                value.operation_as_grouping_keep_operation(),
+                "grouping.keep",
+            )?;
+            (
+                "keep",
+                grouping_filter_json(required_result(value.filter(), "grouping.keep.filter")?)?,
+            )
+        }
+        api::GroupingOperationKind::GroupingWhereOperation => {
+            let value = required_result(
+                value.operation_as_grouping_where_operation(),
+                "grouping.where",
+            )?;
+            (
+                "where",
+                serde_json::json!({"expression": grouping_expression_json(required_result(value.expression(), "grouping.where.expression")?)?}),
+            )
+        }
+        _ => {
+            return Err(JsonCodecError::FlatBuffer(
+                "unknown grouping operation discriminator".to_owned(),
+            ))
+        }
+    };
+    Ok(serde_json::json!({key: payload}))
+}
+
+fn grouping_output_json(value: api::GroupingOutput<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(label) = value.label() {
+        out.insert("label".to_owned(), Value::String(label.to_owned()));
+    }
+    if let Some(expression) = value.expression() {
+        out.insert(
+            "expression".to_owned(),
+            grouping_expression_json(expression)?,
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+fn grouping_each_json(value: api::GroupingEachOperation<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(label) = value.label() {
+        out.insert("label".to_owned(), Value::String(label.to_owned()));
+    }
+    if let Some(operations) = value.operations() {
+        out.insert(
+            "operations".to_owned(),
+            Value::Array(
+                operations
+                    .iter()
+                    .map(grouping_operation_json)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+fn grouping_expression_json(value: api::GroupingExpression<'_>) -> Result<Value, JsonCodecError> {
+    let (key, payload) = match value.expr_type() {
+        api::GroupingExpressionKind::GroupingAttributeExpression => (
+            "attribute",
+            serde_json::json!({"field": required_result(value.expr_as_grouping_attribute_expression(), "grouping.attribute")?.field().unwrap_or_default()}),
+        ),
+        api::GroupingExpressionKind::GroupingLiteralExpression => (
+            "literal",
+            serde_json::json!({"value": value_json(required_result(value.expr_as_grouping_literal_expression(), "grouping.literal")?.value().ok_or_else(|| JsonCodecError::FlatBuffer("missing grouping literal".to_owned()))?)?}),
+        ),
+        api::GroupingExpressionKind::GroupingFunctionExpression => {
+            let value = required_result(
+                value.expr_as_grouping_function_expression(),
+                "grouping.function",
+            )?;
+            let arguments = value
+                .arguments()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(grouping_expression_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            (
+                "function",
+                serde_json::json!({"name": value.name().unwrap_or_default(), "arguments": arguments}),
+            )
+        }
+        api::GroupingExpressionKind::GroupingUnaryExpression => {
+            let value =
+                required_result(value.expr_as_grouping_unary_expression(), "grouping.unary")?;
+            let op = match value.op() {
+                api::GroupingUnaryOperator::Positive => "positive",
+                api::GroupingUnaryOperator::Negative => "negative",
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown grouping unary operator".to_owned(),
+                    ))
+                }
+            };
+            (
+                "unary",
+                serde_json::json!({"op": op, "expression": grouping_expression_json(required_result(value.expression(), "grouping.unary.expression")?)?}),
+            )
+        }
+        api::GroupingExpressionKind::GroupingBinaryExpression => {
+            let value = required_result(
+                value.expr_as_grouping_binary_expression(),
+                "grouping.binary",
+            )?;
+            let op = match value.op() {
+                api::GroupingBinaryOperator::Add => "add",
+                api::GroupingBinaryOperator::Subtract => "subtract",
+                api::GroupingBinaryOperator::Multiply => "multiply",
+                api::GroupingBinaryOperator::Divide => "divide",
+                api::GroupingBinaryOperator::Modulo => "modulo",
+                _ => {
+                    return Err(JsonCodecError::FlatBuffer(
+                        "unknown grouping binary operator".to_owned(),
+                    ))
+                }
+            };
+            (
+                "binary",
+                serde_json::json!({
+                    "op": op,
+                    "left": grouping_expression_json(required_result(value.left(), "grouping.binary.left")?)?,
+                    "right": grouping_expression_json(required_result(value.right(), "grouping.binary.right")?)?,
+                }),
+            )
+        }
+        api::GroupingExpressionKind::GroupingAliasReference => (
+            "alias",
+            serde_json::json!({"name": required_result(value.expr_as_grouping_alias_reference(), "grouping.alias")?.name().unwrap_or_default()}),
+        ),
+        api::GroupingExpressionKind::GroupingMemberExpression => {
+            let value = required_result(
+                value.expr_as_grouping_member_expression(),
+                "grouping.member",
+            )?;
+            (
+                "member",
+                serde_json::json!({
+                    "base": grouping_expression_json(required_result(value.base(), "grouping.member.base")?)?,
+                    "member": required_result(value.member(), "grouping.member.member")?,
+                }),
+            )
+        }
+        api::GroupingExpressionKind::GroupingMapLookupExpression => {
+            let value = required_result(
+                value.expr_as_grouping_map_lookup_expression(),
+                "grouping.map_lookup",
+            )?;
+            (
+                "map_lookup",
+                serde_json::json!({
+                    "base": grouping_expression_json(required_result(value.base(), "grouping.map_lookup.base")?)?,
+                    "key": grouping_expression_json(required_result(value.key(), "grouping.map_lookup.key")?)?,
+                }),
+            )
+        }
+        api::GroupingExpressionKind::GroupingBucketExpression => {
+            let value = required_result(
+                value.expr_as_grouping_bucket_expression(),
+                "grouping.bucket",
+            )?;
+            let mut payload = Map::new();
+            payload.insert(
+                "lower".to_owned(),
+                range_bound_json(required_result(value.lower(), "grouping.bucket.lower")?)?,
+            );
+            payload.insert(
+                "upper".to_owned(),
+                range_bound_json(required_result(value.upper(), "grouping.bucket.upper")?)?,
+            );
+            if let Some(value) = value.include_lower() {
+                payload.insert("include_lower".to_owned(), Value::Bool(value.value()));
+            }
+            if let Some(value) = value.include_upper() {
+                payload.insert("include_upper".to_owned(), Value::Bool(value.value()));
+            }
+            ("bucket", Value::Object(payload))
+        }
+        api::GroupingExpressionKind::GroupingAggregationExpression => {
+            let value = required_result(
+                value.expr_as_grouping_aggregation_expression(),
+                "grouping.aggregation",
+            )?;
+            ("aggregation", grouping_aggregation_json(value)?)
+        }
+        _ => {
+            return Err(JsonCodecError::FlatBuffer(
+                "unsupported grouping expression JSON projection".to_owned(),
+            ))
+        }
+    };
+    Ok(serde_json::json!({key: payload}))
+}
+
+fn grouping_filter_json(value: api::GroupingFilterExpr<'_>) -> Result<Value, JsonCodecError> {
+    match value.expr_type() {
+        api::GroupingFilterExprKind::GroupingFilterAnd => {
+            let value =
+                required_result(value.expr_as_grouping_filter_and(), "grouping.filter.and")?;
+            let clauses = value
+                .clauses()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(grouping_filter_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(serde_json::json!({"and": {"clauses": clauses}}))
+        }
+        api::GroupingFilterExprKind::GroupingFilterOr => {
+            let value = required_result(value.expr_as_grouping_filter_or(), "grouping.filter.or")?;
+            let clauses = value
+                .clauses()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(grouping_filter_json)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(serde_json::json!({"or": {"clauses": clauses}}))
+        }
+        api::GroupingFilterExprKind::GroupingFilterNot => {
+            let value =
+                required_result(value.expr_as_grouping_filter_not(), "grouping.filter.not")?;
+            Ok(
+                serde_json::json!({"not": {"clause": grouping_filter_json(required_result(value.clause(), "grouping.filter.not.clause")?)?}}),
+            )
+        }
+        api::GroupingFilterExprKind::GroupingFilterRegex => {
+            let value = required_result(
+                value.expr_as_grouping_filter_regex(),
+                "grouping.filter.regex",
+            )?;
+            Ok(serde_json::json!({"regex": {
+                "expression": grouping_expression_json(required_result(value.expression(), "grouping.filter.regex.expression")?)?,
+                "pattern": required_result(value.pattern(), "grouping.filter.regex.pattern")?,
+            }}))
+        }
+        api::GroupingFilterExprKind::GroupingFilterRange => {
+            let value = required_result(
+                value.expr_as_grouping_filter_range(),
+                "grouping.filter.range",
+            )?;
+            let mut payload = Map::new();
+            payload.insert(
+                "expression".to_owned(),
+                grouping_expression_json(required_result(
+                    value.expression(),
+                    "grouping.filter.range.expression",
+                )?)?,
+            );
+            payload.insert(
+                "lower".to_owned(),
+                grouping_expression_json(required_result(
+                    value.lower(),
+                    "grouping.filter.range.lower",
+                )?)?,
+            );
+            payload.insert(
+                "upper".to_owned(),
+                grouping_expression_json(required_result(
+                    value.upper(),
+                    "grouping.filter.range.upper",
+                )?)?,
+            );
+            if let Some(value) = value.include_lower() {
+                payload.insert("include_lower".to_owned(), Value::Bool(value.value()));
+            }
+            if let Some(value) = value.include_upper() {
+                payload.insert("include_upper".to_owned(), Value::Bool(value.value()));
+            }
+            Ok(serde_json::json!({"range": payload}))
+        }
+        api::GroupingFilterExprKind::GroupingFilterIsTrue => Ok(
+            serde_json::json!({"is_true": {"expression": grouping_expression_json(required_result(value.expr_as_grouping_filter_is_true(), "grouping.filter.is_true")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing grouping filter expression".to_owned()))?)?}}),
+        ),
+        _ => Err(JsonCodecError::FlatBuffer(
+            "unsupported grouping filter JSON projection".to_owned(),
+        )),
+    }
+}
+
+fn grouping_aggregation_json(
+    value: api::GroupingAggregationExpression<'_>,
+) -> Result<Value, JsonCodecError> {
+    let (key, payload) = match value.aggregation_type() {
+        api::AggregationKind::CountAggregation => ("count", serde_json::json!({})),
+        api::AggregationKind::SumAggregation => (
+            "sum",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_sum_aggregation(), "grouping.sum")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing sum expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::AvgAggregation => (
+            "avg",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_avg_aggregation(), "grouping.avg")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing avg expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::MinAggregation => (
+            "min",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_min_aggregation(), "grouping.min")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing min expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::MaxAggregation => (
+            "max",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_max_aggregation(), "grouping.max")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing max expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::XorAggregation => (
+            "xor",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_xor_aggregation(), "grouping.xor")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing xor expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::StdDevAggregation => (
+            "stddev",
+            serde_json::json!({"expression": grouping_expression_json(required_result(value.aggregation_as_std_dev_aggregation(), "grouping.stddev")?.expression().ok_or_else(|| JsonCodecError::FlatBuffer("missing stddev expression".to_owned()))?)?}),
+        ),
+        api::AggregationKind::QuantilesAggregation => {
+            let value = required_result(
+                value.aggregation_as_quantiles_aggregation(),
+                "grouping.quantiles",
+            )?;
+            let quantiles = value
+                .quantiles()
+                .map(|values| values.iter().map(Value::from).collect::<Vec<_>>())
+                .unwrap_or_default();
+            (
+                "quantiles",
+                serde_json::json!({"quantiles": quantiles, "expression": grouping_expression_json(required_result(value.expression(), "grouping.quantiles.expression")?)?}),
+            )
+        }
+        api::AggregationKind::SummaryAggregation => {
+            let value = required_result(
+                value.aggregation_as_summary_aggregation(),
+                "grouping.summary",
+            )?;
+            (
+                "summary",
+                serde_json::json!({"summary": value.summary().unwrap_or_default()}),
+            )
+        }
+        _ => {
+            return Err(JsonCodecError::FlatBuffer(
+                "unknown grouping aggregation discriminator".to_owned(),
+            ))
+        }
+    };
+    Ok(serde_json::json!({key: payload}))
 }
 
 fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
@@ -5523,7 +7384,7 @@ fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
             let v = required_result(value.expr_as_filter_comparison(), "filter.comparison")?;
             (
                 "filter_comparison",
-                serde_json::json!({"field": required_result(v.field(), "comparison.field")?.path().unwrap_or_default(), "op": enum_json(v.op().variant_name(), "comparison.op")?, "value": value_json(required_result(v.value(), "comparison.value")?)?}),
+                serde_json::json!({"field": query_field_ref_json(required_result(v.field(), "comparison.field")?)?, "op": enum_json(v.op().variant_name(), "comparison.op")?, "value": value_json(required_result(v.value(), "comparison.value")?)?}),
             )
         }
         api::FilterExprKind::FilterRange => {
@@ -5531,7 +7392,7 @@ fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
             let mut o = Map::new();
             o.insert(
                 "field".to_owned(),
-                Value::String(required_result(v.field(), "range.field")?.path().unwrap_or_default().to_owned()),
+                query_field_ref_json(required_result(v.field(), "range.field")?)?,
             );
             if let Some(x) = v.lower() {
                 o.insert("lower".to_owned(), range_bound_json(x)?);
@@ -5551,7 +7412,7 @@ fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
             let v = required_result(value.expr_as_filter_exists(), "filter.exists")?;
             (
                 "filter_exists",
-                serde_json::json!({"field": required_result(v.field(), "exists.field")?.path().unwrap_or_default()}),
+                serde_json::json!({"field": query_field_ref_json(required_result(v.field(), "exists.field")?)?}),
             )
         }
         api::FilterExprKind::FilterIn => {
@@ -5559,7 +7420,7 @@ fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
             (
                 "filter_in",
                 serde_json::json!({
-                    "field": required_result(v.field(), "in.field")?.path().unwrap_or_default(),
+                    "field": query_field_ref_json(required_result(v.field(), "in.field")?)?,
                     "values": v.values().map(|xs| xs.iter().map(value_json).collect::<Result<Vec<_>, _>>()).transpose()?.map(Value::Array).unwrap_or_else(absent_vector_json)
                 }),
             )
@@ -5580,6 +7441,12 @@ fn range_bound_json(value: api::RangeBound<'_>) -> Result<Value, JsonCodecError>
             value_json(required_result(bound.value(), "range bound.value")?)
         }
         api::RangeBoundKind::UnboundedRangeBound => Ok(serde_json::json!({"unbounded": {}})),
+        api::RangeBoundKind::NegativeInfinityBound => {
+            Ok(serde_json::json!({"negative_infinity": {}}))
+        }
+        api::RangeBoundKind::PositiveInfinityBound => {
+            Ok(serde_json::json!({"positive_infinity": {}}))
+        }
         _ => Err(JsonCodecError::FlatBuffer("unknown range bound".to_owned())),
     }
 }
@@ -5600,7 +7467,7 @@ fn query_json(value: api::QueryExpr<'_>) -> Result<Value, JsonCodecError> {
             let item = required_result(v.item(), "query_contains.item")?;
             (
                 "query_contains",
-                serde_json::json!({"field": field.path().unwrap_or_default(), "item": query_json(item)?}),
+                serde_json::json!({"field": query_field_ref_json(field)?, "item": query_json(item)?}),
             )
         }
         api::QueryExprKind::QueryAnd => {
@@ -5647,13 +7514,281 @@ fn query_json(value: api::QueryExpr<'_>) -> Result<Value, JsonCodecError> {
                     })?,
             )?}),
         ),
+        api::QueryExprKind::QueryTrue => ("query_true", Value::Object(Map::new())),
+        api::QueryExprKind::QueryFalse => ("query_false", Value::Object(Map::new())),
+        api::QueryExprKind::QueryComparison => {
+            let v = required_result(value.expr_as_query_comparison(), "query.comparison")?;
+            (
+                "query_comparison",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query_comparison.field")?)?,
+                    "op": enum_json(v.op().variant_name(), "query_comparison.op")?,
+                    "value": value_json(required_result(v.value(), "query_comparison.value")?)?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryRange => {
+            let v = required_result(value.expr_as_query_range(), "query.range")?;
+            (
+                "query_range",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query_range.field")?)?,
+                    "lower": range_bound_json(required_result(v.lower(), "query_range.lower")?)?,
+                    "upper": range_bound_json(required_result(v.upper(), "query_range.upper")?)?,
+                    "include_lower": v.include_lower().map(|x| x.value()),
+                    "include_upper": v.include_upper().map(|x| x.value())
+                }),
+            )
+        }
+        api::QueryExprKind::QueryIn => {
+            let v = required_result(value.expr_as_query_in(), "query.in")?;
+            (
+                "query_in",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query_in.field")?)?,
+                    "values": v.values().map(|xs| xs.iter().map(value_json).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default()
+                }),
+            )
+        }
+        api::QueryExprKind::QueryPhrase => (
+            "query_phrase",
+            serde_json::json!({"terms": query_children_json(value.expr_as_query_phrase().and_then(|v| v.terms()))?}),
+        ),
+        api::QueryExprKind::QueryNear => (
+            "query_near",
+            serde_json::json!({"terms": query_children_json(value.expr_as_query_near().and_then(|v| v.terms()))?}),
+        ),
+        api::QueryExprKind::QueryONear => (
+            "query_onear",
+            serde_json::json!({"terms": query_children_json(value.expr_as_query_onear().and_then(|v| v.terms()))?}),
+        ),
+        api::QueryExprKind::QuerySameElement => (
+            "query_same_element",
+            serde_json::json!({"clauses": query_children_json(value.expr_as_query_same_element().and_then(|v| v.clauses()))?}),
+        ),
+        api::QueryExprKind::QueryEquiv => (
+            "query_equiv",
+            serde_json::json!({"clauses": query_children_json(value.expr_as_query_equiv().and_then(|v| v.clauses()))?}),
+        ),
+        api::QueryExprKind::QueryAlternatives => {
+            let v = required_result(value.expr_as_query_alternatives(), "query.alternatives")?;
+            let alternatives = v
+                .alternatives()
+                .map(|xs| {
+                    xs.iter().map(|item| {
+                Ok(serde_json::json!({
+                    "query": query_json(required_result(item.query(), "query.alternative.query")?)?,
+                    "exactness": item.exactness().map(|x| x.value())
+                }))
+            }).collect::<Result<Vec<Value>, JsonCodecError>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            (
+                "query_alternatives",
+                serde_json::json!({"alternatives": alternatives}),
+            )
+        }
+        api::QueryExprKind::QueryFuzzy => {
+            let v = required_result(value.expr_as_query_fuzzy(), "query.fuzzy")?;
+            (
+                "query_fuzzy",
+                serde_json::json!({"value": value_json(required_result(v.value(), "query.fuzzy.value")?)?}),
+            )
+        }
+        api::QueryExprKind::QueryMatches => {
+            let v = required_result(value.expr_as_query_matches(), "query.matches")?;
+            (
+                "query_matches",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query.matches.field")?)?,
+                    "pattern": required_result(v.pattern(), "query.matches.pattern")?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryText => {
+            let v = required_result(value.expr_as_query_text(), "query.text")?;
+            (
+                "query_text",
+                serde_json::json!({"text": required_result(v.text(), "query.text.text")?}),
+            )
+        }
+        api::QueryExprKind::QueryUserInput => {
+            let v = required_result(value.expr_as_query_user_input(), "query.user_input")?;
+            (
+                "query_user_input",
+                serde_json::json!({"value": required_result(v.value(), "query.user_input.value")?}),
+            )
+        }
+        api::QueryExprKind::QueryUserQuery => ("query_user_query", Value::Object(Map::new())),
+        api::QueryExprKind::QueryDotProduct
+        | api::QueryExprKind::QueryWeightedSet
+        | api::QueryExprKind::QueryWand => {
+            let (key, field, items) = match value.expr_type() {
+                api::QueryExprKind::QueryDotProduct => {
+                    let v =
+                        required_result(value.expr_as_query_dot_product(), "query.dot_product")?;
+                    ("query_dot_product", v.field(), v.items())
+                }
+                api::QueryExprKind::QueryWeightedSet => {
+                    let v =
+                        required_result(value.expr_as_query_weighted_set(), "query.weighted_set")?;
+                    ("query_weighted_set", v.field(), v.items())
+                }
+                _ => {
+                    let v = required_result(value.expr_as_query_wand(), "query.wand")?;
+                    ("query_wand", v.field(), v.items())
+                }
+            };
+            (
+                key,
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(field, "query.field")?)?,
+                    "items": weighted_query_items_json(items)?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryWeakAnd => (
+            "query_weak_and",
+            serde_json::json!({"clauses": query_children_json(value.expr_as_query_weak_and().and_then(|v| v.clauses()))?}),
+        ),
+        api::QueryExprKind::QueryRank => {
+            let v = required_result(value.expr_as_query_rank(), "query.rank")?;
+            (
+                "query_rank",
+                serde_json::json!({
+                    "match": query_json(required_result(v.match_(), "query.rank.match")?)?,
+                    "rank": query_children_json(v.rank())?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryLabeled => {
+            let v = required_result(value.expr_as_query_labeled(), "query.labeled")?;
+            (
+                "query_labeled",
+                serde_json::json!({
+                    "query": query_json(required_result(v.query(), "query.labeled.query")?)?,
+                    "label": required_result(v.label(), "query.labeled.label")?,
+                    "score": v.score()
+                }),
+            )
+        }
+        api::QueryExprKind::QueryNonEmpty => {
+            let v = required_result(value.expr_as_query_non_empty(), "query.non_empty")?;
+            (
+                "query_non_empty",
+                serde_json::json!({"query": query_json(required_result(v.query(), "query.non_empty.query")?)?}),
+            )
+        }
+        api::QueryExprKind::QueryGeoLocation => {
+            let v = required_result(value.expr_as_query_geo_location(), "query.geo_location")?;
+            (
+                "query_geo_location",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query.geo_location.field")?)?,
+                    "latitude": v.latitude(), "longitude": v.longitude(),
+                    "radius": required_result(v.radius(), "query.geo_location.radius")?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryGeoBoundingBox => {
+            let v = required_result(
+                value.expr_as_query_geo_bounding_box(),
+                "query.geo_bounding_box",
+            )?;
+            (
+                "query_geo_bounding_box",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query.geo_bounding_box.field")?)?,
+                    "south": v.south(), "west": v.west(), "north": v.north(), "east": v.east()
+                }),
+            )
+        }
+        api::QueryExprKind::QueryNearestNeighbor => {
+            let v = required_result(
+                value.expr_as_query_nearest_neighbor(),
+                "query.nearest_neighbor",
+            )?;
+            (
+                "query_nearest_neighbor",
+                serde_json::json!({
+                    "document_field": query_field_ref_json(required_result(v.document_field(), "query.nearest_neighbor.document_field")?)?,
+                    "query_tensor": required_result(v.query_tensor(), "query.nearest_neighbor.query_tensor")?
+                }),
+            )
+        }
+        api::QueryExprKind::QueryPredicate => {
+            let v = required_result(value.expr_as_query_predicate(), "query.predicate")?;
+            let features = v
+                .features()
+                .map(|x| value_map_json(x.fields()))
+                .transpose()?
+                .unwrap_or_else(|| Value::Object(Map::new()));
+            let range_features = v
+                .range_features()
+                .map(|x| value_map_json(x.fields()))
+                .transpose()?
+                .unwrap_or_else(|| Value::Object(Map::new()));
+            (
+                "query_predicate",
+                serde_json::json!({
+                    "field": query_field_ref_json(required_result(v.field(), "query.predicate.field")?)?,
+                    "features": features, "range_features": range_features
+                }),
+            )
+        }
         _ => {
             return Err(JsonCodecError::FlatBuffer(
                 "unknown query discriminator".to_owned(),
             ))
         }
     };
-    Ok(serde_json::json!({key: payload}))
+    let mut out = Map::new();
+    out.insert(key.to_owned(), payload);
+    if let Some(annotations) = value.annotations() {
+        out.insert("annotations".to_owned(), value_map_json(Some(annotations))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn query_children_json(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
+) -> Result<Value, JsonCodecError> {
+    let values = values
+        .map(|values| values.iter().map(query_json).collect::<Result<Vec<_>, _>>())
+        .transpose()?
+        .unwrap_or_default();
+    Ok(Value::Array(values))
+}
+
+fn query_field_ref_json(value: api::QueryFieldRef<'_>) -> Result<Value, JsonCodecError> {
+    let path = required_result(value.path(), "query field path")?;
+    match value.element_index() {
+        Some(index) => Ok(serde_json::json!({"path": path, "element_index": index.value()})),
+        None => Ok(Value::String(path.to_owned())),
+    }
+}
+
+fn weighted_query_items_json(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::WeightedQueryItem<'_>>>,
+    >,
+) -> Result<Value, JsonCodecError> {
+    let values = values
+        .map(|values| {
+            values
+                .iter()
+                .map(|item| {
+                    Ok(serde_json::json!({
+                        "key": value_json(required_result(item.key(), "weighted item.key")?)?,
+                        "weight": Value::String(item.weight().to_string())
+                    }))
+                })
+                .collect::<Result<Vec<Value>, JsonCodecError>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(Value::Array(values))
 }
 
 fn highlight_json(value: api::HighlightResult<'_>) -> Result<Value, JsonCodecError> {
@@ -5750,12 +7885,12 @@ fn insert<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_InsertRequest", "insert")?;
-    let document = field(o, "document").map(|value| document(b, value)).transpose()?;
+    let document = field(o, "document")
+        .map(|value| document(b, value))
+        .transpose()?;
     Ok(offset(api::InsertRequest::create(
         b,
-        &api::InsertRequestArgs {
-            document,
-        },
+        &api::InsertRequestArgs { document },
     )))
 }
 
@@ -5764,7 +7899,9 @@ fn upsert<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<UnionWIPOffset>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_UpsertRequest", "upsert")?;
-    let document = field(o, "document").map(|value| document(b, value)).transpose()?;
+    let document = field(o, "document")
+        .map(|value| document(b, value))
+        .transpose()?;
     let condition = optional_string(o, "condition", "upsert")?.map(|value| b.create_string(&value));
     Ok(offset(api::UpsertRequest::create(
         b,
@@ -5800,10 +7937,7 @@ fn get<'a>(
     };
     Ok(offset(api::GetRequest::create(
         b,
-        &api::GetRequestArgs {
-            id,
-            projection,
-        },
+        &api::GetRequestArgs { id, projection },
     )))
 }
 
@@ -5831,10 +7965,7 @@ fn patch<'a>(
     };
     Ok(offset(api::PatchRequest::create(
         b,
-        &api::PatchRequestArgs {
-            id,
-            operations,
-        },
+        &api::PatchRequestArgs { id, operations },
     )))
 }
 
@@ -5875,8 +8006,11 @@ fn set_field<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SetField<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_SetField", "set_field")?;
-    let field_offset = optional_string(o, "field", "set_field")?.map(|value| b.create_string(&value));
-    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
+    let field_offset =
+        optional_string(o, "field", "set_field")?.map(|value| b.create_string(&value));
+    let value = field(o, "value")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
     Ok(api::SetField::create(
         b,
         &api::SetFieldArgs {
@@ -5892,10 +8026,7 @@ fn unset_field<'a>(
 ) -> Result<WIPOffset<api::UnsetField<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_UnsetField", "unset_field")?;
     let field = optional_string(o, "field", "unset_field")?.map(|value| b.create_string(&value));
-    Ok(api::UnsetField::create(
-        b,
-        &api::UnsetFieldArgs { field },
-    ))
+    Ok(api::UnsetField::create(b, &api::UnsetFieldArgs { field }))
 }
 
 fn document<'a>(
@@ -5929,7 +8060,7 @@ fn map_entries<'a>(
     let mut entries = Vec::with_capacity(object.len());
     for (key, entry_value) in object {
         let key_offset = b.create_string(key);
-        let value_offset = value(b, entry_value)?;
+        let value_offset = value_from_json(b, entry_value)?;
         entries.push(api::ValueEntry::create(
             b,
             &api::ValueEntryArgs {
@@ -5941,7 +8072,7 @@ fn map_entries<'a>(
     Ok(entries)
 }
 
-fn value<'a>(
+fn value_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     input: &Value,
 ) -> Result<WIPOffset<api::Value<'a>>, JsonCodecError> {
@@ -6007,6 +8138,21 @@ fn value<'a>(
             );
             (api::ValueKind::Float64Value, offset(payload))
         }
+        "non_finite" => {
+            let (kind, payload) = one_key(payload, "value.non_finite")?;
+            if !payload.is_object() {
+                return Err(contract("value.non_finite payload must be an object"));
+            }
+            let kind = match kind {
+                "nan" => api::NonFiniteFloatKind::NaN,
+                "positive_infinity" => api::NonFiniteFloatKind::PositiveInfinity,
+                "negative_infinity" => api::NonFiniteFloatKind::NegativeInfinity,
+                _ => return Err(contract(format!("unknown non-finite value `{kind}`"))),
+            };
+            let payload =
+                api::NonFiniteFloatValue::create(b, &api::NonFiniteFloatValueArgs { kind });
+            (api::ValueKind::NonFiniteFloatValue, offset(payload))
+        }
         "string" => {
             let text = string(payload, "value.string")?;
             let text = b.create_string(&text);
@@ -6043,7 +8189,7 @@ fn value<'a>(
                 .map(|values| {
                     values
                         .iter()
-                        .map(|v| value(b, v))
+                        .map(|v| value_from_json(b, v))
                         .collect::<Result<Vec<_>, _>>()
                 })
                 .transpose()?;
@@ -6141,26 +8287,64 @@ fn search<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SearchRequest<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_SearchRequest", "search")?;
-    let query = optional_string(o, "query", "search")?
-        .map(|v| query_source(b, &v))
-        .transpose()?;
+    let query = match (field(o, "query"), field(o, "query_expr")) {
+        (Some(_), Some(_)) => {
+            return Err(contract(
+                "search.query and search.query_expr are mutually exclusive",
+            ))
+        }
+        (Some(value), None) => Some(query_source(b, &string(value, "search.query")?)?),
+        (None, Some(value)) => {
+            let query = query_expr(b, value, "search.query_expr")?;
+            Some(typed_query_source(b, query))
+        }
+        (None, None) => None,
+    };
     let search_fields = field(o, "search_fields")
         .map(|v| selection(b, v, "search.search_fields"))
         .transpose()?;
-    let filters = field(o, "filter")
-        .map(|v| filter(b, v, "search.filter"))
+    let filters = match (field(o, "filter"), field(o, "filters")) {
+        (Some(_), Some(_)) => {
+            return Err(contract(
+                "search.filter and search.filters are mutually exclusive",
+            ))
+        }
+        (Some(value), None) => {
+            let item = filter(b, value, "search.filter")?;
+            Some(b.create_vector(&[item]))
+        }
+        (None, Some(value)) => {
+            let items = array(value, "search.filters")?;
+            let items = items
+                .iter()
+                .enumerate()
+                .map(|(index, value)| filter(b, value, &format!("search.filters[{index}]")))
+                .collect::<Result<Vec<_>, _>>()?;
+            Some(b.create_vector(&items))
+        }
+        (None, None) => None,
+    };
+    let filter_sources = field(o, "filter_sources")
+        .map(|v| string_vector_from_json(b, Some(v), "search.filter_sources"))
         .transpose()?
-        .map(|v| b.create_vector(&[v]));
-    let filters = filters.map(|structured| {
+        .flatten();
+    let filter_parameters = field(o, "filter_parameters")
+        .map(|v| map_entries(b, Some(v), "search.filter_parameters"))
+        .transpose()?
+        .map(|entries| b.create_vector(&entries));
+    let filters = if filters.is_some() || filter_sources.is_some() || filter_parameters.is_some() {
         api::FilterRequest::create(
             b,
             &api::FilterRequestArgs {
-                structured: Some(structured),
-                sources: None,
-                parameters: None,
+                structured: filters,
+                sources: filter_sources,
+                parameters: filter_parameters,
             },
         )
-    });
+        .into()
+    } else {
+        None
+    };
     let sort = match field(o, "sort") {
         Some(v) => {
             let items = array(v, "search.sort")?;
@@ -6176,6 +8360,13 @@ fn search<'a>(
     let ranking = field(o, "ranking")
         .map(|v| ranking(b, v, "search.ranking"))
         .transpose()?;
+    let inputs = field(o, "inputs")
+        .map(|v| query_inputs(b, v, "search.inputs"))
+        .transpose()?;
+    let properties = field(o, "properties")
+        .map(|v| map_entries(b, Some(v), "search.properties"))
+        .transpose()?
+        .map(|entries| b.create_vector(&entries));
     let limit = optional_u32(o, "limit", "search")?;
     let offset_value = optional_u32(o, "offset", "search")?;
     let projection = field(o, "projection")
@@ -6184,27 +8375,56 @@ fn search<'a>(
     let highlighting = field(o, "highlighting")
         .map(|v| highlighting(b, v, "search.highlighting"))
         .transpose()?;
-    let presentation = if projection.is_some() || highlighting.is_some() {
+    let summary = optional_string(o, "summary", "search")?.map(|value| b.create_string(&value));
+    let format = optional_string(o, "format", "search")?.map(|value| b.create_string(&value));
+    let bolding = optional_bool(o, "bolding", "search")?;
+    let timing = optional_bool(o, "timing", "search")?;
+    let presentation = if projection.is_some()
+        || highlighting.is_some()
+        || summary.is_some()
+        || format.is_some()
+        || bolding.is_some()
+        || timing.is_some()
+    {
         Some(api::PresentationRequest::create(
             b,
             &api::PresentationRequestArgs {
+                summary,
                 fields: projection,
                 highlighting,
-                ..Default::default()
+                format,
+                bolding: bolding.as_ref(),
+                timing: timing.as_ref(),
             },
         ))
     } else {
         None
     };
-    let language = optional_string(o, "language", "search")?;
-    let query_model = language.map(|language| {
-        let language = b.create_string(&language);
-        api::QueryModel::create(b, &api::QueryModelArgs {
-            language: Some(language),
-            ..Default::default()
+    let query_model = field(o, "query_model")
+        .map(|value| query_model(b, value, "search.query_model"))
+        .transpose()?;
+    let query_model = if query_model.is_some() {
+        query_model
+    } else {
+        optional_string(o, "language", "search")?.map(|language| {
+            let language = b.create_string(&language);
+            api::QueryModel::create(
+                b,
+                &api::QueryModelArgs {
+                    language: Some(language),
+                    ..Default::default()
+                },
+            )
         })
-    });
+    };
     let timeout = optional_u64(o, "timeout", "search")?;
+    let query_profile =
+        optional_string(o, "query_profile", "search")?.map(|value| b.create_string(&value));
+    let search_chain =
+        optional_string(o, "search_chain", "search")?.map(|value| b.create_string(&value));
+    let grouping = field(o, "grouping")
+        .map(|value| grouping_requests(b, value, "search.grouping"))
+        .transpose()?;
     Ok(api::SearchRequest::create(
         b,
         &api::SearchRequestArgs {
@@ -6218,7 +8438,11 @@ fn search<'a>(
             timeout_ms: timeout.as_ref(),
             query_model,
             presentation,
-            ..Default::default()
+            grouping,
+            inputs,
+            properties,
+            query_profile,
+            search_chain,
         },
     ))
 }
@@ -6228,10 +8452,8 @@ fn query_source<'a>(
     text: &str,
 ) -> Result<WIPOffset<api::QuerySource<'a>>, JsonCodecError> {
     let text = b.create_string(text);
-    let payload = api::SearchKernelTextQuery::create(
-        b,
-        &api::SearchKernelTextQueryArgs { text: Some(text) },
-    );
+    let payload =
+        api::SearchKernelTextQuery::create(b, &api::SearchKernelTextQueryArgs { text: Some(text) });
     Ok(api::QuerySource::create(
         b,
         &api::QuerySourceArgs {
@@ -6239,6 +8461,20 @@ fn query_source<'a>(
             source: Some(payload.as_union_value()),
         },
     ))
+}
+
+fn typed_query_source<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    query: WIPOffset<api::QueryExpr<'a>>,
+) -> WIPOffset<api::QuerySource<'a>> {
+    let payload = api::TypedQuery::create(b, &api::TypedQueryArgs { query: Some(query) });
+    api::QuerySource::create(
+        b,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(payload.as_union_value()),
+        },
+    )
 }
 
 fn highlighting<'a>(
@@ -6327,12 +8563,7 @@ fn filter<'a>(
             let clause = field(object, "clause")
                 .map(|value| filter(b, value, &format!("{path}.clause")))
                 .transpose()?;
-            let value = api::FilterNot::create(
-                b,
-                &api::FilterNotArgs {
-                    clause,
-                },
-            );
+            let value = api::FilterNot::create(b, &api::FilterNotArgs { clause });
             (api::FilterExprKind::FilterNot, offset(value))
         }
         "filter_comparison" => (
@@ -6380,12 +8611,16 @@ fn comparison<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterComparison<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_FilterComparison", path)?;
-    let field_offset = optional_string(o, "field", path)?.map(|value| query_field_ref(b, &value));
+    let field_offset = field(o, "field")
+        .map(|value| query_field_ref_value(b, value, &format!("{path}.field")))
+        .transpose()?;
     let op = field(o, "op")
         .map(|value| parse_comparison_op(value, &format!("{path}.op")))
         .transpose()?
         .unwrap_or(api::ComparisonOp::Unspecified);
-    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
+    let value = field(o, "value")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
     Ok(api::FilterComparison::create(
         b,
         &api::FilterComparisonArgs {
@@ -6402,7 +8637,9 @@ fn range<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterRange<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_FilterRange", path)?;
-    let field_offset = optional_string(o, "field", path)?.map(|value| query_field_ref(b, &value));
+    let field_offset = field(o, "field")
+        .map(|value| query_field_ref_value(b, value, &format!("{path}.field")))
+        .transpose()?;
     let lower = field(o, "lower")
         .map(|v| range_bound(b, v, &format!("{path}.lower")))
         .transpose()?;
@@ -6428,8 +8665,52 @@ fn range_bound<'a>(
     raw: &Value,
     path: &str,
 ) -> Result<WIPOffset<api::RangeBound<'a>>, JsonCodecError> {
-    let finite = value(b, raw)?;
-    let finite = api::FiniteRangeBound::create(b, &api::FiniteRangeBoundArgs { value: Some(finite) });
+    if let Value::Object(object) = raw {
+        let (kind, payload) = one_key(raw, path)?;
+        let (bound_type, bound) = match kind {
+            "negative_infinity" => (api::RangeBoundKind::NegativeInfinityBound, {
+                if !payload.is_object() {
+                    return Err(contract(format!("`{path}.{kind}` must be an object")));
+                }
+                let value =
+                    api::NegativeInfinityBound::create(b, &api::NegativeInfinityBoundArgs {});
+                Some(value.as_union_value())
+            }),
+            "positive_infinity" => (api::RangeBoundKind::PositiveInfinityBound, {
+                if !payload.is_object() {
+                    return Err(contract(format!("`{path}.{kind}` must be an object")));
+                }
+                let value =
+                    api::PositiveInfinityBound::create(b, &api::PositiveInfinityBoundArgs {});
+                Some(value.as_union_value())
+            }),
+            "unbounded" => (api::RangeBoundKind::UnboundedRangeBound, {
+                if !payload.is_object() {
+                    return Err(contract(format!("`{path}.{kind}` must be an object")));
+                }
+                let value = api::UnboundedRangeBound::create(b, &api::UnboundedRangeBoundArgs {});
+                Some(value.as_union_value())
+            }),
+            _ => (api::RangeBoundKind::FiniteRangeBound, None),
+        };
+        if let Some(bound) = bound {
+            return Ok(api::RangeBound::create(
+                b,
+                &api::RangeBoundArgs {
+                    bound_type,
+                    bound: Some(bound),
+                },
+            ));
+        }
+        let _ = object;
+    }
+    let finite = value_from_json(b, raw)?;
+    let finite = api::FiniteRangeBound::create(
+        b,
+        &api::FiniteRangeBoundArgs {
+            value: Some(finite),
+        },
+    );
     Ok(api::RangeBound::create(
         b,
         &api::RangeBoundArgs {
@@ -6445,7 +8726,9 @@ fn exists<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterExists<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_FilterExists", path)?;
-    let field = optional_string(o, "field", path)?.map(|value| query_field_ref(b, &value));
+    let field = field(o, "field")
+        .map(|value| query_field_ref_value(b, value, &format!("{path}.field")))
+        .transpose()?;
     Ok(api::FilterExists::create(
         b,
         &api::FilterExistsArgs { field },
@@ -6458,7 +8741,9 @@ fn filter_in<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::FilterIn<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_FilterIn", path)?;
-    let field_offset = optional_string(o, "field", path)?.map(|value| query_field_ref(b, &value));
+    let field_offset = field(o, "field")
+        .map(|value| query_field_ref_value(b, value, &format!("{path}.field")))
+        .transpose()?;
     let values = field(o, "values")
         .map(|raw| {
             array(raw, &format!("{path}.values"))?
@@ -6484,17 +8769,88 @@ fn sort<'a>(
 ) -> Result<WIPOffset<api::SortExpr<'a>>, JsonCodecError> {
     let o = object(value, path)?;
     check_keys(o, "SearchKernel_V2_SortExpr", path)?;
-    let field_offset = optional_string(o, "field", path)?.map(|value| b.create_string(&value));
-    let target = field_offset.map(|field| {
-        let field = api::FieldSortTarget::create(b, &api::FieldSortTargetArgs { field: Some(field) });
-        api::SortTarget::create(
+    let target = if let Some(value) = field(o, "target") {
+        let (kind, payload) = one_key(value, &format!("{path}.target"))?;
+        let payload = object(payload, &format!("{path}.target.{kind}"))?;
+        let (target_type, target) = match kind {
+            "field" | "field_sort_target" => {
+                let field = b.create_string(&string(
+                    required(payload, "field", path)?,
+                    &format!("{path}.target.field"),
+                )?);
+                let target = api::FieldSortTarget::create(
+                    b,
+                    &api::FieldSortTargetArgs { field: Some(field) },
+                );
+                (
+                    api::SortTargetKind::FieldSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            "relevance" | "relevance_sort_target" => {
+                let target = api::RelevanceSortTarget::create(b, &api::RelevanceSortTargetArgs {});
+                (
+                    api::SortTargetKind::RelevanceSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            "rank_feature" | "rank_feature_sort_target" => {
+                let feature = b.create_string(&string(
+                    required(payload, "feature", path)?,
+                    &format!("{path}.target.rank_feature.feature"),
+                )?);
+                let target = api::RankFeatureSortTarget::create(
+                    b,
+                    &api::RankFeatureSortTargetArgs {
+                        feature: Some(feature),
+                    },
+                );
+                (
+                    api::SortTargetKind::RankFeatureSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            "raw" | "raw_sort_target" => {
+                let expression = b.create_string(&string(
+                    required(payload, "expression", path)?,
+                    &format!("{path}.target.raw.expression"),
+                )?);
+                let target = api::RawSortTarget::create(
+                    b,
+                    &api::RawSortTargetArgs {
+                        expression: Some(expression),
+                    },
+                );
+                (api::SortTargetKind::RawSortTarget, target.as_union_value())
+            }
+            _ => {
+                return Err(contract(format!(
+                    "unknown sort target `{path}.target.{kind}`"
+                )))
+            }
+        };
+        Some(api::SortTarget::create(
             b,
             &api::SortTargetArgs {
-                target_type: api::SortTargetKind::FieldSortTarget,
-                target: Some(field.as_union_value()),
+                target_type,
+                target: Some(target),
             },
-        )
-    });
+        ))
+    } else {
+        optional_string(o, "field", path)?.map(|value| {
+            let field = b.create_string(&value);
+            let field =
+                api::FieldSortTarget::create(b, &api::FieldSortTargetArgs { field: Some(field) });
+            let target = api::SortTarget::create(
+                b,
+                &api::SortTargetArgs {
+                    target_type: api::SortTargetKind::FieldSortTarget,
+                    target: Some(field.as_union_value()),
+                },
+            );
+            target
+        })
+    };
     let direction = field(o, "direction")
         .map(|v| parse_sort_direction(v, &format!("{path}.direction")))
         .transpose()?
@@ -6502,13 +8858,19 @@ fn sort<'a>(
     let missing = field(o, "missing")
         .map(|v| missing_policy(b, v, &format!("{path}.missing")))
         .transpose()?;
+    let annotations = if let Some(value) = field(o, "annotations") {
+        let entries = map_entries(b, Some(value), &format!("{path}.annotations"))?;
+        Some(b.create_vector(&entries))
+    } else {
+        None
+    };
     Ok(api::SortExpr::create(
         b,
         &api::SortExprArgs {
             target,
             direction,
             missing,
-            annotations: None,
+            annotations,
         },
     ))
 }
@@ -6518,28 +8880,1204 @@ fn ranking<'a>(
     value: &Value,
     path: &str,
 ) -> Result<WIPOffset<api::RankingRequest<'a>>, JsonCodecError> {
-    let profile = match value {
-        Value::String(value) => value.clone(),
+    let (profile, properties) = match value {
+        Value::String(value) => (value.clone(), None),
         Value::Object(object) => {
-            let (kind, payload) = one_key(value, path)?;
-            if !payload.is_object() {
-                return Err(contract(format!("`{path}.{kind}` must be an object")));
-            }
-            match kind {
-                "default_relevance_v1" | "default" => "default".to_owned(),
-                "bm25_ranking" | "bm25" => "bm25".to_owned(),
-                other => return Err(contract(format!("unknown ranking variant `{path}.{other}`"))),
+            if let Some(profile) = object.get("profile") {
+                check_keys(object, "SearchKernel_V2_RankingRequest", path)?;
+                let profile = string(profile, &format!("{path}.profile"))?;
+                let properties = field(object, "properties")
+                    .map(|value| string_map_from_json(value, &format!("{path}.properties")))
+                    .transpose()?;
+                (profile, properties)
+            } else {
+                let (kind, payload) = one_key(value, path)?;
+                if !payload.is_object() {
+                    return Err(contract(format!("`{path}.{kind}` must be an object")));
+                }
+                (
+                    match kind {
+                        "default_relevance_v1" | "default" => "default".to_owned(),
+                        "bm25_ranking" | "bm25" => "bm25".to_owned(),
+                        other => {
+                            return Err(contract(format!(
+                                "unknown ranking variant `{path}.{other}`"
+                            )))
+                        }
+                    },
+                    None,
+                )
             }
         }
         _ => return Err(contract(format!("`{path}` must be a string or object"))),
     };
     let profile = b.create_string(&profile);
+    let properties = properties.map(|values| {
+        let entries = values
+            .into_iter()
+            .map(|(key, value)| {
+                let key = b.create_string(&key);
+                let value = b.create_string(&value);
+                api::StringEntry::create(
+                    b,
+                    &api::StringEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        b.create_vector(&entries)
+    });
     Ok(api::RankingRequest::create(
         b,
         &api::RankingRequestArgs {
             profile: Some(profile),
-            properties: None,
-            ..Default::default()
+            properties,
+        },
+    ))
+}
+
+fn string_map_from_json(
+    value: &Value,
+    path: &str,
+) -> Result<Vec<(String, String)>, JsonCodecError> {
+    let object = object(value, path)?;
+    object
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), string(value, &format!("{path}.{key}"))?)))
+        .collect()
+}
+
+fn query_inputs<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::QueryInput<'a>>>>,
+    JsonCodecError,
+> {
+    let input_object = object(value, path)?;
+    let values = input_object
+        .iter()
+        .map(|(name, value)| {
+            let (kind, payload) = one_key(value, &format!("{path}.{name}"))?;
+            let payload = crate::generated::object(payload, &format!("{path}.{name}.{kind}"))?;
+            let (input_type, input) = match kind {
+                "literal" => {
+                    let value = value_from_json(
+                        b,
+                        required(payload, "value", &format!("{path}.{name}.literal"))?,
+                    )?;
+                    let input = api::LiteralQueryInput::create(
+                        b,
+                        &api::LiteralQueryInputArgs { value: Some(value) },
+                    );
+                    (
+                        api::QueryInputKind::LiteralQueryInput,
+                        input.as_union_value(),
+                    )
+                }
+                "expression" => {
+                    let expression = b.create_string(&string(
+                        required(payload, "expression", &format!("{path}.{name}.expression"))?,
+                        &format!("{path}.{name}.expression"),
+                    )?);
+                    let input = api::ExpressionQueryInput::create(
+                        b,
+                        &api::ExpressionQueryInputArgs {
+                            expression: Some(expression),
+                        },
+                    );
+                    (
+                        api::QueryInputKind::ExpressionQueryInput,
+                        input.as_union_value(),
+                    )
+                }
+                _ => {
+                    return Err(contract(format!(
+                        "unknown query input variant `{path}.{name}.{kind}`"
+                    )))
+                }
+            };
+            let name = b.create_string(name);
+            Ok(api::QueryInput::create(
+                b,
+                &api::QueryInputArgs {
+                    name: Some(name),
+                    input_type,
+                    input: Some(input),
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn query_model<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::QueryModel<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_QueryModel", path)?;
+    let type_ = field(object, "type")
+        .map(|value| query_model_type(b, value, &format!("{path}.type")))
+        .transpose()?;
+    let sources = string_vector_from_json(b, field(object, "sources"), &format!("{path}.sources"))?;
+    let restrict =
+        string_vector_from_json(b, field(object, "restrict"), &format!("{path}.restrict"))?;
+    let search_group = field(object, "search_group")
+        .map(|value| {
+            u32_value(value, &format!("{path}.search_group")).map(api::OptionalUInt32::new)
+        })
+        .transpose()?;
+    let query_string =
+        optional_string(object, "query_string", path)?.map(|value| b.create_string(&value));
+    let default_index =
+        optional_string(object, "default_index", path)?.map(|value| b.create_string(&value));
+    let encoding = optional_string(object, "encoding", path)?.map(|value| b.create_string(&value));
+    let filter = optional_string(object, "filter", path)?.map(|value| b.create_string(&value));
+    let language = optional_string(object, "language", path)?.map(|value| b.create_string(&value));
+    let locale = optional_string(object, "locale", path)?.map(|value| b.create_string(&value));
+    let search_path =
+        optional_string(object, "search_path", path)?.map(|value| b.create_string(&value));
+    Ok(api::QueryModel::create(
+        b,
+        &api::QueryModelArgs {
+            query_string,
+            default_index,
+            encoding,
+            filter,
+            language,
+            locale,
+            type_,
+            sources,
+            restrict,
+            search_path,
+            search_group: search_group.as_ref(),
+        },
+    ))
+}
+
+fn query_model_type<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::QueryModelType<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_QueryModelType", path)?;
+    let is_yql_default = optional_bool(object, "is_yql_default", path)?;
+    let composite =
+        optional_string(object, "composite", path)?.map(|value| b.create_string(&value));
+    let tokenization =
+        optional_string(object, "tokenization", path)?.map(|value| b.create_string(&value));
+    let syntax = optional_string(object, "syntax", path)?.map(|value| b.create_string(&value));
+    let profile = optional_string(object, "profile", path)?.map(|value| b.create_string(&value));
+    Ok(api::QueryModelType::create(
+        b,
+        &api::QueryModelTypeArgs {
+            composite,
+            tokenization,
+            syntax,
+            profile,
+            is_yql_default: is_yql_default.as_ref(),
+        },
+    ))
+}
+
+fn grouping_requests<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingRequest<'a>>>>,
+    JsonCodecError,
+> {
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|value| grouping_request(b, value.1, &format!("{path}[{}]", value.0)))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn grouping_request<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingRequest<'a>>, JsonCodecError> {
+    let input_object = object(value, path)?;
+    grouping_check_keys(input_object, &["source", "continuations"], path)?;
+    let source = required(input_object, "source", path)?;
+    let (kind, payload) = one_key(source, &format!("{path}.source"))?;
+    let (source_type, source) = match kind {
+        "raw" => {
+            let source_object = crate::generated::object(payload, &format!("{path}.source.raw"))?;
+            grouping_check_keys(
+                source_object,
+                &["expression"],
+                &format!("{path}.source.raw"),
+            )?;
+            let expression = b.create_string(&string(
+                required(source_object, "expression", &format!("{path}.source.raw"))?,
+                &format!("{path}.source.raw.expression"),
+            )?);
+            let source = api::RawGroupingSource::create(
+                b,
+                &api::RawGroupingSourceArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingSourceKind::RawGroupingSource,
+                source.as_union_value(),
+            )
+        }
+        "structured" => {
+            let root = grouping_all(b, payload, &format!("{path}.source.structured"))?;
+            let source = api::StructuredGroupingSource::create(
+                b,
+                &api::StructuredGroupingSourceArgs { root: Some(root) },
+            );
+            (
+                api::GroupingSourceKind::StructuredGroupingSource,
+                source.as_union_value(),
+            )
+        }
+        _ => return Err(contract(format!("unknown grouping source variant `{path}.source.{kind}`"))),
+    };
+    let continuations = field(input_object, "continuations")
+        .map(|value| string_vector_from_json(b, Some(value), &format!("{path}.continuations")))
+        .transpose()?
+        .flatten();
+    Ok(api::GroupingRequest::create(
+        b,
+        &api::GroupingRequestArgs {
+            source_type,
+            source: Some(source),
+            continuations,
+        },
+    ))
+}
+
+fn grouping_check_keys(
+    object: &Map<String, Value>,
+    allowed: &[&str],
+    path: &str,
+) -> Result<(), JsonCodecError> {
+    if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(contract(format!("unknown field `{path}.{key}`")));
+    }
+    Ok(())
+}
+
+fn grouping_all<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingAllOperation<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    grouping_check_keys(object, &["operations", "label"], path)?;
+    let operations = grouping_operations(
+        b,
+        field(object, "operations"),
+        &format!("{path}.operations"),
+    )?;
+    let label = optional_string(object, "label", path)?.map(|value| b.create_string(&value));
+    Ok(api::GroupingAllOperation::create(
+        b,
+        &api::GroupingAllOperationArgs { operations, label },
+    ))
+}
+
+fn grouping_operations<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<
+    Option<
+        WIPOffset<
+            flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingOperation<'a>>>,
+        >,
+    >,
+    JsonCodecError,
+> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if is_absent_vector(value, path)? {
+        return Ok(None);
+    }
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| grouping_operation(b, value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(b.create_vector(&values)))
+}
+
+fn grouping_operation<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingOperation<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (operation_type, operation) = match kind {
+        "all" => (
+            api::GroupingOperationKind::GroupingAllOperation,
+            grouping_all(b, payload, &format!("{path}.all"))?.as_union_value(),
+        ),
+        "each" => {
+            let object = object(payload, &format!("{path}.each"))?;
+            grouping_check_keys(object, &["operations", "label"], &format!("{path}.each"))?;
+            let operations = grouping_operations(
+                b,
+                field(object, "operations"),
+                &format!("{path}.each.operations"),
+            )?;
+            let label = optional_string(object, "label", &format!("{path}.each"))?
+                .map(|value| b.create_string(&value));
+            let operation = api::GroupingEachOperation::create(
+                b,
+                &api::GroupingEachOperationArgs { operations, label },
+            );
+            (
+                api::GroupingOperationKind::GroupingEachOperation,
+                operation.as_union_value(),
+            )
+        }
+        "group" => {
+            let object = object(payload, &format!("{path}.group"))?;
+            grouping_check_keys(object, &["expression"], &format!("{path}.group"))?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.group"))?,
+                &format!("{path}.group.expression"),
+            )?;
+            let operation = api::GroupingGroupOperation::create(
+                b,
+                &api::GroupingGroupOperationArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingGroupOperation,
+                operation.as_union_value(),
+            )
+        }
+        "output" => {
+            let object = object(payload, &format!("{path}.output"))?;
+            grouping_check_keys(object, &["outputs"], &format!("{path}.output"))?;
+            let outputs = grouping_outputs(
+                b,
+                required(object, "outputs", &format!("{path}.output"))?,
+                &format!("{path}.output.outputs"),
+            )?;
+            let operation = api::GroupingOutputOperation::create(
+                b,
+                &api::GroupingOutputOperationArgs {
+                    outputs: Some(outputs),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingOutputOperation,
+                operation.as_union_value(),
+            )
+        }
+        "max" => {
+            let max_object = object(payload, &format!("{path}.max"))?;
+            grouping_check_keys(max_object, &["finite", "infinite"], &format!("{path}.max"))?;
+            let (value_type, value) = one_key(payload, &format!("{path}.max"))?;
+            let (value_type, value) = match value_type {
+                "finite" => {
+                    let object = object(value, &format!("{path}.max.finite"))?;
+                    grouping_check_keys(object, &["value"], &format!("{path}.max.finite"))?;
+                    let value = u32_value(
+                        required(object, "value", &format!("{path}.max.finite"))?,
+                        &format!("{path}.max.finite.value"),
+                    )?;
+                    let value =
+                        api::FiniteGroupingMax::create(b, &api::FiniteGroupingMaxArgs { value });
+                    (
+                        api::GroupingMaxKind::FiniteGroupingMax,
+                        value.as_union_value(),
+                    )
+                }
+                "infinite" => {
+                    let object = object(value, &format!("{path}.max.infinite"))?;
+                    grouping_check_keys(object, &[], &format!("{path}.max.infinite"))?;
+                    let value =
+                        api::InfiniteGroupingMax::create(b, &api::InfiniteGroupingMaxArgs {});
+                    (
+                        api::GroupingMaxKind::InfiniteGroupingMax,
+                        value.as_union_value(),
+                    )
+                }
+                _ => {
+                    return Err(contract(format!(
+                        "unknown grouping max variant `{path}.max.{value_type}`"
+                    )))
+                }
+            };
+            let operation = api::GroupingMaxOperation::create(
+                b,
+                &api::GroupingMaxOperationArgs {
+                    value_type,
+                    value: Some(value),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingMaxOperation,
+                operation.as_union_value(),
+            )
+        }
+        "precision" => {
+            let object = object(payload, &format!("{path}.precision"))?;
+            grouping_check_keys(object, &["value"], &format!("{path}.precision"))?;
+            let value = u32_value(
+                required(object, "value", &format!("{path}.precision"))?,
+                &format!("{path}.precision.value"),
+            )?;
+            let operation = api::GroupingPrecisionOperation::create(
+                b,
+                &api::GroupingPrecisionOperationArgs { value },
+            );
+            (
+                api::GroupingOperationKind::GroupingPrecisionOperation,
+                operation.as_union_value(),
+            )
+        }
+        "order" => {
+            let object = object(payload, &format!("{path}.order"))?;
+            grouping_check_keys(object, &["expressions"], &format!("{path}.order"))?;
+            let expressions = grouping_order_expressions(
+                b,
+                required(object, "expressions", &format!("{path}.order"))?,
+                &format!("{path}.order.expressions"),
+            )?;
+            let operation = api::GroupingOrderOperation::create(
+                b,
+                &api::GroupingOrderOperationArgs {
+                    expressions: Some(expressions),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingOrderOperation,
+                operation.as_union_value(),
+            )
+        }
+        "alias" => {
+            let object = object(payload, &format!("{path}.alias"))?;
+            grouping_check_keys(object, &["name", "expression"], &format!("{path}.alias"))?;
+            let name = b.create_string(&string(
+                required(object, "name", &format!("{path}.alias"))?,
+                &format!("{path}.alias.name"),
+            )?);
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.alias"))?,
+                &format!("{path}.alias.expression"),
+            )?;
+            let operation = api::GroupingAliasOperation::create(
+                b,
+                &api::GroupingAliasOperationArgs {
+                    name: Some(name),
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingAliasOperation,
+                operation.as_union_value(),
+            )
+        }
+        "filter" | "keep" => {
+            let filter = grouping_filter(b, payload, &format!("{path}.{kind}"))?;
+            if kind == "filter" {
+                let operation = api::GroupingFilterOperation::create(
+                    b,
+                    &api::GroupingFilterOperationArgs {
+                        filter: Some(filter),
+                    },
+                );
+                (
+                    api::GroupingOperationKind::GroupingFilterOperation,
+                    operation.as_union_value(),
+                )
+            } else {
+                let operation = api::GroupingKeepOperation::create(
+                    b,
+                    &api::GroupingKeepOperationArgs {
+                        filter: Some(filter),
+                    },
+                );
+                (
+                    api::GroupingOperationKind::GroupingKeepOperation,
+                    operation.as_union_value(),
+                )
+            }
+        }
+        "where" => {
+            let object = object(payload, &format!("{path}.where"))?;
+            grouping_check_keys(object, &["expression"], &format!("{path}.where"))?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.where"))?,
+                &format!("{path}.where.expression"),
+            )?;
+            let operation = api::GroupingWhereOperation::create(
+                b,
+                &api::GroupingWhereOperationArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingOperationKind::GroupingWhereOperation,
+                operation.as_union_value(),
+            )
+        }
+        _ => {
+            return Err(contract(format!(
+                "unknown grouping operation `{path}.{kind}`"
+            )))
+        }
+    };
+    Ok(api::GroupingOperation::create(
+        b,
+        &api::GroupingOperationArgs {
+            operation_type,
+            operation: Some(operation),
+        },
+    ))
+}
+
+fn grouping_outputs<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingOutput<'a>>>,
+    >,
+    JsonCodecError,
+> {
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let object = object(value, &format!("{path}[{index}]"))?;
+            grouping_check_keys(
+                object,
+                &["label", "expression"],
+                &format!("{path}[{index}]"),
+            )?;
+            let label = optional_string(object, "label", &format!("{path}[{index}]"))?
+                .map(|value| b.create_string(&value));
+            let expression = field(object, "expression")
+                .map(|value| grouping_expression(b, value, &format!("{path}[{index}].expression")))
+                .transpose()?;
+            Ok(api::GroupingOutput::create(
+                b,
+                &api::GroupingOutputArgs { label, expression },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn grouping_order_expressions<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingOrderExpr<'a>>>,
+    >,
+    JsonCodecError,
+> {
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let expression = grouping_expression(b, value, &format!("{path}[{index}]"))?;
+            Ok(api::GroupingOrderExpr::create(
+                b,
+                &api::GroupingOrderExprArgs {
+                    expression: Some(expression),
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn grouping_expression<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingExpression<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (expr_type, expr) = match kind {
+        "attribute" => {
+            let object = object(payload, &format!("{path}.attribute"))?;
+            grouping_check_keys(object, &["field"], &format!("{path}.attribute"))?;
+            let field = b.create_string(&string(
+                required(object, "field", &format!("{path}.attribute"))?,
+                &format!("{path}.attribute.field"),
+            )?);
+            let expr = api::GroupingAttributeExpression::create(
+                b,
+                &api::GroupingAttributeExpressionArgs { field: Some(field) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAttributeExpression,
+                expr.as_union_value(),
+            )
+        }
+        "literal" => {
+            let object = object(payload, &format!("{path}.literal"))?;
+            grouping_check_keys(object, &["value"], &format!("{path}.literal"))?;
+            let value = value_from_json(b, required(object, "value", &format!("{path}.literal"))?)?;
+            let expr = api::GroupingLiteralExpression::create(
+                b,
+                &api::GroupingLiteralExpressionArgs { value: Some(value) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingLiteralExpression,
+                expr.as_union_value(),
+            )
+        }
+        "function" => {
+            let object = object(payload, &format!("{path}.function"))?;
+            grouping_check_keys(object, &["name", "arguments"], &format!("{path}.function"))?;
+            let name = b.create_string(&string(
+                required(object, "name", &format!("{path}.function"))?,
+                &format!("{path}.function.name"),
+            )?);
+            let arguments = grouping_expression_vector(
+                b,
+                required(object, "arguments", &format!("{path}.function"))?,
+                &format!("{path}.function.arguments"),
+            )?;
+            let expr = api::GroupingFunctionExpression::create(
+                b,
+                &api::GroupingFunctionExpressionArgs {
+                    name: Some(name),
+                    arguments: Some(arguments),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingFunctionExpression,
+                expr.as_union_value(),
+            )
+        }
+        "unary" => {
+            let object = object(payload, &format!("{path}.unary"))?;
+            grouping_check_keys(object, &["op", "expression"], &format!("{path}.unary"))?;
+            let op = grouping_unary_operator(
+                required(object, "op", &format!("{path}.unary"))?,
+                &format!("{path}.unary.op"),
+            )?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.unary"))?,
+                &format!("{path}.unary.expression"),
+            )?;
+            let expr = api::GroupingUnaryExpression::create(
+                b,
+                &api::GroupingUnaryExpressionArgs {
+                    op,
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingUnaryExpression,
+                expr.as_union_value(),
+            )
+        }
+        "binary" => {
+            let object = object(payload, &format!("{path}.binary"))?;
+            grouping_check_keys(object, &["op", "left", "right"], &format!("{path}.binary"))?;
+            let op = grouping_binary_operator(
+                required(object, "op", &format!("{path}.binary"))?,
+                &format!("{path}.binary.op"),
+            )?;
+            let left = grouping_expression(
+                b,
+                required(object, "left", &format!("{path}.binary"))?,
+                &format!("{path}.binary.left"),
+            )?;
+            let right = grouping_expression(
+                b,
+                required(object, "right", &format!("{path}.binary"))?,
+                &format!("{path}.binary.right"),
+            )?;
+            let expr = api::GroupingBinaryExpression::create(
+                b,
+                &api::GroupingBinaryExpressionArgs {
+                    op,
+                    left: Some(left),
+                    right: Some(right),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingBinaryExpression,
+                expr.as_union_value(),
+            )
+        }
+        "alias" => {
+            let object = object(payload, &format!("{path}.alias"))?;
+            grouping_check_keys(object, &["name"], &format!("{path}.alias"))?;
+            let name = b.create_string(&string(
+                required(object, "name", &format!("{path}.alias"))?,
+                &format!("{path}.alias.name"),
+            )?);
+            let expr = api::GroupingAliasReference::create(
+                b,
+                &api::GroupingAliasReferenceArgs { name: Some(name) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAliasReference,
+                expr.as_union_value(),
+            )
+        }
+        "member" => {
+            let object = object(payload, &format!("{path}.member"))?;
+            grouping_check_keys(object, &["base", "member"], &format!("{path}.member"))?;
+            let base = grouping_expression(
+                b,
+                required(object, "base", &format!("{path}.member"))?,
+                &format!("{path}.member.base"),
+            )?;
+            let member = b.create_string(&string(
+                required(object, "member", &format!("{path}.member"))?,
+                &format!("{path}.member.member"),
+            )?);
+            let expr = api::GroupingMemberExpression::create(
+                b,
+                &api::GroupingMemberExpressionArgs {
+                    base: Some(base),
+                    member: Some(member),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingMemberExpression,
+                expr.as_union_value(),
+            )
+        }
+        "map_lookup" => {
+            let object = object(payload, &format!("{path}.map_lookup"))?;
+            grouping_check_keys(object, &["base", "key"], &format!("{path}.map_lookup"))?;
+            let base = grouping_expression(
+                b,
+                required(object, "base", &format!("{path}.map_lookup"))?,
+                &format!("{path}.map_lookup.base"),
+            )?;
+            let key = grouping_expression(
+                b,
+                required(object, "key", &format!("{path}.map_lookup"))?,
+                &format!("{path}.map_lookup.key"),
+            )?;
+            let expr = api::GroupingMapLookupExpression::create(
+                b,
+                &api::GroupingMapLookupExpressionArgs {
+                    base: Some(base),
+                    key: Some(key),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingMapLookupExpression,
+                expr.as_union_value(),
+            )
+        }
+        "bucket" => {
+            let object = object(payload, &format!("{path}.bucket"))?;
+            grouping_check_keys(
+                object,
+                &["lower", "upper", "include_lower", "include_upper"],
+                &format!("{path}.bucket"),
+            )?;
+            let lower = range_bound(
+                b,
+                required(object, "lower", &format!("{path}.bucket"))?,
+                &format!("{path}.bucket.lower"),
+            )?;
+            let upper = range_bound(
+                b,
+                required(object, "upper", &format!("{path}.bucket"))?,
+                &format!("{path}.bucket.upper"),
+            )?;
+            let include_lower = optional_bool(object, "include_lower", &format!("{path}.bucket"))?;
+            let include_upper = optional_bool(object, "include_upper", &format!("{path}.bucket"))?;
+            let expr = api::GroupingBucketExpression::create(
+                b,
+                &api::GroupingBucketExpressionArgs {
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: include_lower.as_ref(),
+                    include_upper: include_upper.as_ref(),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingBucketExpression,
+                expr.as_union_value(),
+            )
+        }
+        "aggregation" => {
+            let expr = grouping_aggregation(b, payload, &format!("{path}.aggregation"))?;
+            (
+                api::GroupingExpressionKind::GroupingAggregationExpression,
+                expr.as_union_value(),
+            )
+        }
+        _ => {
+            return Err(contract(format!(
+                "unknown grouping expression `{path}.{kind}`"
+            )))
+        }
+    };
+    Ok(api::GroupingExpression::create(
+        b,
+        &api::GroupingExpressionArgs {
+            expr_type,
+            expr: Some(expr),
+        },
+    ))
+}
+
+fn grouping_expression_vector<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::GroupingExpression<'a>>>,
+    >,
+    JsonCodecError,
+> {
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| grouping_expression(b, value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn grouping_unary_operator(
+    value: &Value,
+    path: &str,
+) -> Result<api::GroupingUnaryOperator, JsonCodecError> {
+    match string(value, path)?.as_str() {
+        "positive" => Ok(api::GroupingUnaryOperator::Positive),
+        "negative" => Ok(api::GroupingUnaryOperator::Negative),
+        _ => Err(contract(format!(
+            "unknown grouping unary operator `{path}`"
+        ))),
+    }
+}
+
+fn grouping_binary_operator(
+    value: &Value,
+    path: &str,
+) -> Result<api::GroupingBinaryOperator, JsonCodecError> {
+    match string(value, path)?.as_str() {
+        "add" => Ok(api::GroupingBinaryOperator::Add),
+        "subtract" => Ok(api::GroupingBinaryOperator::Subtract),
+        "multiply" => Ok(api::GroupingBinaryOperator::Multiply),
+        "divide" => Ok(api::GroupingBinaryOperator::Divide),
+        "modulo" => Ok(api::GroupingBinaryOperator::Modulo),
+        _ => Err(contract(format!(
+            "unknown grouping binary operator `{path}`"
+        ))),
+    }
+}
+
+fn grouping_aggregation<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingAggregationExpression<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (aggregation_type, aggregation) = match kind {
+        "count" => {
+            let object = object(payload, &format!("{path}.count"))?;
+            grouping_check_keys(object, &[], &format!("{path}.count"))?;
+            let aggregation = api::CountAggregation::create(b, &api::CountAggregationArgs {});
+            (
+                api::AggregationKind::CountAggregation,
+                aggregation.as_union_value(),
+            )
+        }
+        "sum" | "avg" | "min" | "max" | "xor" | "stddev" => {
+            let object = object(payload, &format!("{path}.{kind}"))?;
+            grouping_check_keys(object, &["expression"], &format!("{path}.{kind}"))?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.{kind}"))?,
+                &format!("{path}.{kind}.expression"),
+            )?;
+            macro_rules! aggregation_with_expression {
+                ($type:ident, $args:ident, $kind:ident) => {
+                    (
+                        api::AggregationKind::$kind,
+                        api::$type::create(
+                            b,
+                            &api::$args {
+                                expression: Some(expression),
+                            },
+                        )
+                        .as_union_value(),
+                    )
+                };
+            }
+            match kind {
+                "sum" => {
+                    aggregation_with_expression!(SumAggregation, SumAggregationArgs, SumAggregation)
+                }
+                "avg" => {
+                    aggregation_with_expression!(AvgAggregation, AvgAggregationArgs, AvgAggregation)
+                }
+                "min" => {
+                    aggregation_with_expression!(MinAggregation, MinAggregationArgs, MinAggregation)
+                }
+                "max" => {
+                    aggregation_with_expression!(MaxAggregation, MaxAggregationArgs, MaxAggregation)
+                }
+                "xor" => {
+                    aggregation_with_expression!(XorAggregation, XorAggregationArgs, XorAggregation)
+                }
+                _ => aggregation_with_expression!(
+                    StdDevAggregation,
+                    StdDevAggregationArgs,
+                    StdDevAggregation
+                ),
+            }
+        }
+        "quantiles" => {
+            let object = object(payload, &format!("{path}.quantiles"))?;
+            grouping_check_keys(
+                object,
+                &["quantiles", "expression"],
+                &format!("{path}.quantiles"),
+            )?;
+            let quantiles = array(
+                required(object, "quantiles", &format!("{path}.quantiles"))?,
+                &format!("{path}.quantiles"),
+            )?
+            .iter()
+            .enumerate()
+            .map(|(index, value)| f64_value(value, &format!("{path}.quantiles.quantiles[{index}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+            let quantiles = b.create_vector(&quantiles);
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.quantiles"))?,
+                &format!("{path}.quantiles.expression"),
+            )?;
+            let aggregation = api::QuantilesAggregation::create(
+                b,
+                &api::QuantilesAggregationArgs {
+                    quantiles: Some(quantiles),
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::AggregationKind::QuantilesAggregation,
+                aggregation.as_union_value(),
+            )
+        }
+        "summary" => {
+            let object = object(payload, &format!("{path}.summary"))?;
+            grouping_check_keys(object, &["summary"], &format!("{path}.summary"))?;
+            let summary = b.create_string(&string(
+                required(object, "summary", &format!("{path}.summary"))?,
+                &format!("{path}.summary.summary"),
+            )?);
+            let aggregation = api::SummaryAggregation::create(
+                b,
+                &api::SummaryAggregationArgs {
+                    summary: Some(summary),
+                },
+            );
+            (
+                api::AggregationKind::SummaryAggregation,
+                aggregation.as_union_value(),
+            )
+        }
+        _ => {
+            return Err(contract(format!(
+                "unknown grouping aggregation `{path}.{kind}`"
+            )))
+        }
+    };
+    Ok(api::GroupingAggregationExpression::create(
+        b,
+        &api::GroupingAggregationExpressionArgs {
+            aggregation_type,
+            aggregation: Some(aggregation),
+        },
+    ))
+}
+
+fn grouping_filter<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::GroupingFilterExpr<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (expr_type, expr) = match kind {
+        "and" | "or" => {
+            let object = object(payload, &format!("{path}.{kind}"))?;
+            grouping_check_keys(object, &["clauses"], &format!("{path}.{kind}"))?;
+            let clauses = array(
+                required(object, "clauses", &format!("{path}.{kind}"))?,
+                &format!("{path}.{kind}.clauses"),
+            )?
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                grouping_filter(b, value, &format!("{path}.{kind}.clauses[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+            let clauses = b.create_vector(&clauses);
+            if kind == "and" {
+                let expr = api::GroupingFilterAnd::create(
+                    b,
+                    &api::GroupingFilterAndArgs {
+                        clauses: Some(clauses),
+                    },
+                );
+                (
+                    api::GroupingFilterExprKind::GroupingFilterAnd,
+                    expr.as_union_value(),
+                )
+            } else {
+                let expr = api::GroupingFilterOr::create(
+                    b,
+                    &api::GroupingFilterOrArgs {
+                        clauses: Some(clauses),
+                    },
+                );
+                (
+                    api::GroupingFilterExprKind::GroupingFilterOr,
+                    expr.as_union_value(),
+                )
+            }
+        }
+        "not" => {
+            let object = object(payload, &format!("{path}.not"))?;
+            grouping_check_keys(object, &["clause"], &format!("{path}.not"))?;
+            let clause = grouping_filter(
+                b,
+                required(object, "clause", &format!("{path}.not"))?,
+                &format!("{path}.not.clause"),
+            )?;
+            let expr = api::GroupingFilterNot::create(
+                b,
+                &api::GroupingFilterNotArgs {
+                    clause: Some(clause),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterNot,
+                expr.as_union_value(),
+            )
+        }
+        "regex" => {
+            let object = object(payload, &format!("{path}.regex"))?;
+            grouping_check_keys(object, &["expression", "pattern"], &format!("{path}.regex"))?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.regex"))?,
+                &format!("{path}.regex.expression"),
+            )?;
+            let pattern = b.create_string(&string(
+                required(object, "pattern", &format!("{path}.regex"))?,
+                &format!("{path}.regex.pattern"),
+            )?);
+            let expr = api::GroupingFilterRegex::create(
+                b,
+                &api::GroupingFilterRegexArgs {
+                    expression: Some(expression),
+                    pattern: Some(pattern),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterRegex,
+                expr.as_union_value(),
+            )
+        }
+        "range" => {
+            let object = object(payload, &format!("{path}.range"))?;
+            grouping_check_keys(
+                object,
+                &[
+                    "expression",
+                    "lower",
+                    "upper",
+                    "include_lower",
+                    "include_upper",
+                ],
+                &format!("{path}.range"),
+            )?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.range"))?,
+                &format!("{path}.range.expression"),
+            )?;
+            let lower = grouping_expression(
+                b,
+                required(object, "lower", &format!("{path}.range"))?,
+                &format!("{path}.range.lower"),
+            )?;
+            let upper = grouping_expression(
+                b,
+                required(object, "upper", &format!("{path}.range"))?,
+                &format!("{path}.range.upper"),
+            )?;
+            let include_lower = optional_bool(object, "include_lower", &format!("{path}.range"))?;
+            let include_upper = optional_bool(object, "include_upper", &format!("{path}.range"))?;
+            let expr = api::GroupingFilterRange::create(
+                b,
+                &api::GroupingFilterRangeArgs {
+                    expression: Some(expression),
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: include_lower.as_ref(),
+                    include_upper: include_upper.as_ref(),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterRange,
+                expr.as_union_value(),
+            )
+        }
+        "is_true" => {
+            let object = object(payload, &format!("{path}.is_true"))?;
+            grouping_check_keys(object, &["expression"], &format!("{path}.is_true"))?;
+            let expression = grouping_expression(
+                b,
+                required(object, "expression", &format!("{path}.is_true"))?,
+                &format!("{path}.is_true.expression"),
+            )?;
+            let expr = api::GroupingFilterIsTrue::create(
+                b,
+                &api::GroupingFilterIsTrueArgs {
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingFilterExprKind::GroupingFilterIsTrue,
+                expr.as_union_value(),
+            )
+        }
+        _ => return Err(contract(format!("unknown grouping filter `{path}.{kind}`"))),
+    };
+    Ok(api::GroupingFilterExpr::create(
+        b,
+        &api::GroupingFilterExprArgs {
+            expr_type,
+            expr: Some(expr),
         },
     ))
 }
@@ -6549,7 +10087,26 @@ fn query_expr<'a>(
     value: &Value,
     path: &str,
 ) -> Result<WIPOffset<api::QueryExpr<'a>>, JsonCodecError> {
-    let (kind, payload) = one_key(value, path)?;
+    let root = object(value, path)?;
+    let annotations = field(root, "annotations")
+        .map(|value| {
+            map_entries(b, Some(value), &format!("{path}.annotations"))
+                .map(|entries| b.create_vector(&entries))
+        })
+        .transpose()?;
+    let mut variant = None;
+    for (candidate, payload) in root {
+        if candidate == "annotations" {
+            continue;
+        }
+        if variant.replace((candidate.as_str(), payload)).is_some() {
+            return Err(contract(format!(
+                "`{path}` must contain exactly one query variant"
+            )));
+        }
+    }
+    let (kind, payload) =
+        variant.ok_or_else(|| contract(format!("`{path}` must contain a query variant")))?;
     if kind == "none" {
         if !payload.is_object() {
             return Err(contract(format!("`{path}.none` must be an object")));
@@ -6559,7 +10116,7 @@ fn query_expr<'a>(
             &api::QueryExprArgs {
                 expr_type: api::QueryExprKind::NONE,
                 expr: None,
-                annotations: None,
+                annotations,
             },
         ));
     }
@@ -6574,8 +10131,11 @@ fn query_expr<'a>(
         ),
         "query_contains" => {
             let object = object(payload, path)?;
-            let field_name = string(required(object, "field", path)?, &format!("{path}.field"))?;
-            let field_offset = query_field_ref(b, &field_name);
+            let field_offset = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
             let item = field(object, "item")
                 .map(|raw| query_expr(b, raw, &format!("{path}.item")))
                 .transpose()?;
@@ -6631,13 +10191,462 @@ fn query_expr<'a>(
             let clause = field(object, "clause")
                 .map(|value| query_expr(b, value, &format!("{path}.clause")))
                 .transpose()?;
-            let node = api::QueryNot::create(
+            let node = api::QueryNot::create(b, &api::QueryNotArgs { clause });
+            (api::QueryExprKind::QueryNot, offset(node))
+        }
+        "query_true" => (
+            api::QueryExprKind::QueryTrue,
+            offset(api::QueryTrue::create(b, &api::QueryTrueArgs {})),
+        ),
+        "query_false" => (
+            api::QueryExprKind::QueryFalse,
+            offset(api::QueryFalse::create(b, &api::QueryFalseArgs {})),
+        ),
+        "query_comparison" => {
+            let object = object(payload, path)?;
+            let field_ref = query_field_ref_value(
                 b,
-                &api::QueryNotArgs {
-                    clause,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let op = parse_comparison_op(required(object, "op", path)?, &format!("{path}.op"))?;
+            let value = value_from_json(b, required(object, "value", path)?)?;
+            let node = api::QueryComparison::create(
+                b,
+                &api::QueryComparisonArgs {
+                    field: Some(field_ref),
+                    op,
+                    value: Some(value),
                 },
             );
-            (api::QueryExprKind::QueryNot, offset(node))
+            (api::QueryExprKind::QueryComparison, offset(node))
+        }
+        "query_range" => {
+            let object = object(payload, path)?;
+            let field_ref = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let lower = range_bound(
+                b,
+                required(object, "lower", path)?,
+                &format!("{path}.lower"),
+            )?;
+            let upper = range_bound(
+                b,
+                required(object, "upper", path)?,
+                &format!("{path}.upper"),
+            )?;
+            let include_lower = field(object, "include_lower")
+                .map(|value| {
+                    bool_value(value, &format!("{path}.include_lower")).map(api::OptionalBool::new)
+                })
+                .transpose()?;
+            let include_upper = field(object, "include_upper")
+                .map(|value| {
+                    bool_value(value, &format!("{path}.include_upper")).map(api::OptionalBool::new)
+                })
+                .transpose()?;
+            let node = api::QueryRange::create(
+                b,
+                &api::QueryRangeArgs {
+                    field: Some(field_ref),
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: include_lower.as_ref(),
+                    include_upper: include_upper.as_ref(),
+                },
+            );
+            (api::QueryExprKind::QueryRange, offset(node))
+        }
+        "query_in" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let values = array(required(object, "values", path)?, &format!("{path}.values"))?
+                .iter()
+                .map(|value| value_from_json(b, value))
+                .collect::<Result<Vec<_>, _>>()?;
+            let values = b.create_vector(&values);
+            let node = api::QueryIn::create(
+                b,
+                &api::QueryInArgs {
+                    field: Some(field),
+                    values: Some(values),
+                },
+            );
+            (api::QueryExprKind::QueryIn, offset(node))
+        }
+        "query_phrase" | "query_near" | "query_onear" | "query_same_element" | "query_equiv"
+        | "query_weak_and" => {
+            let object = object(payload, path)?;
+            let key = if matches!(kind, "query_phrase" | "query_near" | "query_onear") {
+                "terms"
+            } else {
+                "clauses"
+            };
+            let children = query_expr_children(b, object, key, path)?;
+            match kind {
+                "query_phrase" => (
+                    api::QueryExprKind::QueryPhrase,
+                    offset(api::QueryPhrase::create(
+                        b,
+                        &api::QueryPhraseArgs { terms: children },
+                    )),
+                ),
+                "query_near" => (
+                    api::QueryExprKind::QueryNear,
+                    offset(api::QueryNear::create(
+                        b,
+                        &api::QueryNearArgs { terms: children },
+                    )),
+                ),
+                "query_onear" => (
+                    api::QueryExprKind::QueryONear,
+                    offset(api::QueryONear::create(
+                        b,
+                        &api::QueryONearArgs { terms: children },
+                    )),
+                ),
+                "query_same_element" => (
+                    api::QueryExprKind::QuerySameElement,
+                    offset(api::QuerySameElement::create(
+                        b,
+                        &api::QuerySameElementArgs { clauses: children },
+                    )),
+                ),
+                "query_equiv" => (
+                    api::QueryExprKind::QueryEquiv,
+                    offset(api::QueryEquiv::create(
+                        b,
+                        &api::QueryEquivArgs { clauses: children },
+                    )),
+                ),
+                _ => (
+                    api::QueryExprKind::QueryWeakAnd,
+                    offset(api::QueryWeakAnd::create(
+                        b,
+                        &api::QueryWeakAndArgs { clauses: children },
+                    )),
+                ),
+            }
+        }
+        "query_alternatives" => {
+            let payload_object = object(payload, path)?;
+            let values = array(
+                required(payload_object, "alternatives", path)?,
+                &format!("{path}.alternatives"),
+            )?
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let item = object(value, &format!("{path}.alternatives[{index}]"))?;
+                let query = query_expr(
+                    b,
+                    required(item, "query", &format!("{path}.alternatives[{index}]"))?,
+                    &format!("{path}.alternatives[{index}].query"),
+                )?;
+                let exactness = field(item, "exactness")
+                    .map(|value| {
+                        f64_value(value, &format!("{path}.alternatives[{index}].exactness"))
+                            .map(api::OptionalDouble::new)
+                    })
+                    .transpose()?;
+                Ok(api::QueryAlternative::create(
+                    b,
+                    &api::QueryAlternativeArgs {
+                        query: Some(query),
+                        exactness: exactness.as_ref(),
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, JsonCodecError>>()?;
+            let values = b.create_vector(&values);
+            let node = api::QueryAlternatives::create(
+                b,
+                &api::QueryAlternativesArgs {
+                    alternatives: Some(values),
+                },
+            );
+            (api::QueryExprKind::QueryAlternatives, offset(node))
+        }
+        "query_fuzzy" => {
+            let object = object(payload, path)?;
+            let value = value_from_json(b, required(object, "value", path)?)?;
+            (
+                api::QueryExprKind::QueryFuzzy,
+                offset(api::QueryFuzzy::create(
+                    b,
+                    &api::QueryFuzzyArgs { value: Some(value) },
+                )),
+            )
+        }
+        "query_matches" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let pattern = b.create_string(&string(
+                required(object, "pattern", path)?,
+                &format!("{path}.pattern"),
+            )?);
+            (
+                api::QueryExprKind::QueryMatches,
+                offset(api::QueryMatches::create(
+                    b,
+                    &api::QueryMatchesArgs {
+                        field: Some(field),
+                        pattern: Some(pattern),
+                    },
+                )),
+            )
+        }
+        "query_text" => {
+            let object = object(payload, path)?;
+            let text = b.create_string(&string(
+                required(object, "text", path)?,
+                &format!("{path}.text"),
+            )?);
+            (
+                api::QueryExprKind::QueryText,
+                offset(api::QueryText::create(
+                    b,
+                    &api::QueryTextArgs { text: Some(text) },
+                )),
+            )
+        }
+        "query_user_input" => {
+            let object = object(payload, path)?;
+            let value = b.create_string(&string(
+                required(object, "value", path)?,
+                &format!("{path}.value"),
+            )?);
+            (
+                api::QueryExprKind::QueryUserInput,
+                offset(api::QueryUserInput::create(
+                    b,
+                    &api::QueryUserInputArgs { value: Some(value) },
+                )),
+            )
+        }
+        "query_user_query" => (
+            api::QueryExprKind::QueryUserQuery,
+            offset(api::QueryUserQuery::create(b, &api::QueryUserQueryArgs {})),
+        ),
+        "query_dot_product" | "query_weighted_set" | "query_wand" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let items = weighted_query_items(
+                b,
+                required(object, "items", path)?,
+                &format!("{path}.items"),
+            )?;
+            match kind {
+                "query_dot_product" => (
+                    api::QueryExprKind::QueryDotProduct,
+                    offset(api::QueryDotProduct::create(
+                        b,
+                        &api::QueryDotProductArgs {
+                            field: Some(field),
+                            items: Some(items),
+                        },
+                    )),
+                ),
+                "query_weighted_set" => (
+                    api::QueryExprKind::QueryWeightedSet,
+                    offset(api::QueryWeightedSet::create(
+                        b,
+                        &api::QueryWeightedSetArgs {
+                            field: Some(field),
+                            items: Some(items),
+                        },
+                    )),
+                ),
+                _ => (
+                    api::QueryExprKind::QueryWand,
+                    offset(api::QueryWand::create(
+                        b,
+                        &api::QueryWandArgs {
+                            field: Some(field),
+                            items: Some(items),
+                        },
+                    )),
+                ),
+            }
+        }
+        "query_rank" => {
+            let object = object(payload, path)?;
+            let matching = query_expr(
+                b,
+                required(object, "match", path)?,
+                &format!("{path}.match"),
+            )?;
+            let ranking = query_expr_children(b, object, "rank", path)?;
+            let node = api::QueryRank::create(
+                b,
+                &api::QueryRankArgs {
+                    match_: Some(matching),
+                    rank: ranking,
+                },
+            );
+            (api::QueryExprKind::QueryRank, offset(node))
+        }
+        "query_labeled" => {
+            let object = object(payload, path)?;
+            let query = query_expr(
+                b,
+                required(object, "query", path)?,
+                &format!("{path}.query"),
+            )?;
+            let label = b.create_string(&string(
+                required(object, "label", path)?,
+                &format!("{path}.label"),
+            )?);
+            let score = f64_value(required(object, "score", path)?, &format!("{path}.score"))?;
+            (
+                api::QueryExprKind::QueryLabeled,
+                offset(api::QueryLabeled::create(
+                    b,
+                    &api::QueryLabeledArgs {
+                        query: Some(query),
+                        label: Some(label),
+                        score,
+                    },
+                )),
+            )
+        }
+        "query_non_empty" => {
+            let object = object(payload, path)?;
+            let query = query_expr(
+                b,
+                required(object, "query", path)?,
+                &format!("{path}.query"),
+            )?;
+            (
+                api::QueryExprKind::QueryNonEmpty,
+                offset(api::QueryNonEmpty::create(
+                    b,
+                    &api::QueryNonEmptyArgs { query: Some(query) },
+                )),
+            )
+        }
+        "query_geo_location" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let latitude = f64_value(
+                required(object, "latitude", path)?,
+                &format!("{path}.latitude"),
+            )?;
+            let longitude = f64_value(
+                required(object, "longitude", path)?,
+                &format!("{path}.longitude"),
+            )?;
+            let radius = b.create_string(&string(
+                required(object, "radius", path)?,
+                &format!("{path}.radius"),
+            )?);
+            (
+                api::QueryExprKind::QueryGeoLocation,
+                offset(api::QueryGeoLocation::create(
+                    b,
+                    &api::QueryGeoLocationArgs {
+                        field: Some(field),
+                        latitude,
+                        longitude,
+                        radius: Some(radius),
+                    },
+                )),
+            )
+        }
+        "query_geo_bounding_box" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let south = f64_value(required(object, "south", path)?, &format!("{path}.south"))?;
+            let west = f64_value(required(object, "west", path)?, &format!("{path}.west"))?;
+            let north = f64_value(required(object, "north", path)?, &format!("{path}.north"))?;
+            let east = f64_value(required(object, "east", path)?, &format!("{path}.east"))?;
+            (
+                api::QueryExprKind::QueryGeoBoundingBox,
+                offset(api::QueryGeoBoundingBox::create(
+                    b,
+                    &api::QueryGeoBoundingBoxArgs {
+                        field: Some(field),
+                        south,
+                        west,
+                        north,
+                        east,
+                    },
+                )),
+            )
+        }
+        "query_nearest_neighbor" => {
+            let object = object(payload, path)?;
+            let document_field = query_field_ref_value(
+                b,
+                required(object, "document_field", path)?,
+                &format!("{path}.document_field"),
+            )?;
+            let query_tensor = b.create_string(&string(
+                required(object, "query_tensor", path)?,
+                &format!("{path}.query_tensor"),
+            )?);
+            (
+                api::QueryExprKind::QueryNearestNeighbor,
+                offset(api::QueryNearestNeighbor::create(
+                    b,
+                    &api::QueryNearestNeighborArgs {
+                        document_field: Some(document_field),
+                        query_tensor: Some(query_tensor),
+                    },
+                )),
+            )
+        }
+        "query_predicate" => {
+            let object = object(payload, path)?;
+            let field = query_field_ref_value(
+                b,
+                required(object, "field", path)?,
+                &format!("{path}.field"),
+            )?;
+            let features = value_object_from_json(
+                b,
+                required(object, "features", path)?,
+                &format!("{path}.features"),
+            )?;
+            let range_features = value_object_from_json(
+                b,
+                required(object, "range_features", path)?,
+                &format!("{path}.range_features"),
+            )?;
+            (
+                api::QueryExprKind::QueryPredicate,
+                offset(api::QueryPredicate::create(
+                    b,
+                    &api::QueryPredicateArgs {
+                        field: Some(field),
+                        features: Some(features),
+                        range_features: Some(range_features),
+                    },
+                )),
+            )
         }
         _ => return Err(contract(format!("unknown query variant `{path}.{kind}`"))),
     };
@@ -6646,7 +10655,73 @@ fn query_expr<'a>(
         &api::QueryExprArgs {
             expr_type,
             expr: Some(expr),
-            annotations: None,
+            annotations,
+        },
+    ))
+}
+
+fn query_expr_children<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    object: &Map<String, Value>,
+    name: &str,
+    path: &str,
+) -> Result<
+    Option<WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::QueryExpr<'a>>>>>,
+    JsonCodecError,
+> {
+    let Some(value) = field(object, name) else {
+        return Ok(None);
+    };
+    let values = array(value, &format!("{path}.{name}"))?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| query_expr(b, value, &format!("{path}.{name}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(b.create_vector(&values)))
+}
+
+fn weighted_query_items<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::WeightedQueryItem<'a>>>>,
+    JsonCodecError,
+> {
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let object = object(value, &format!("{path}[{index}]"))?;
+            let key = value_from_json(b, required(object, "key", &format!("{path}[{index}]"))?)?;
+            let weight = decimal::<i64>(
+                required(object, "weight", &format!("{path}[{index}]"))?,
+                &format!("{path}[{index}].weight"),
+                "signed 64-bit integer",
+            )?;
+            Ok(api::WeightedQueryItem::create(
+                b,
+                &api::WeightedQueryItemArgs {
+                    key: Some(key),
+                    weight,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(b.create_vector(&values))
+}
+
+fn value_object_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ValueObject<'a>>, JsonCodecError> {
+    let entries = map_entries(b, Some(value), path)?;
+    let entries = b.create_vector(&entries);
+    Ok(api::ValueObject::create(
+        b,
+        &api::ValueObjectArgs {
+            fields: Some(entries),
         },
     ))
 }
@@ -6657,13 +10732,10 @@ fn term_query<'a>(
     path: &str,
 ) -> Result<WIPOffset<api::TermQuery<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_TermQuery", path)?;
-    let value = field(o, "value").map(|raw| value(b, raw)).transpose()?;
-    Ok(api::TermQuery::create(
-        b,
-        &api::TermQueryArgs {
-            value,
-        },
-    ))
+    let value = field(o, "value")
+        .map(|raw| value_from_json(b, raw))
+        .transpose()?;
+    Ok(api::TermQuery::create(b, &api::TermQueryArgs { value }))
 }
 
 fn analyze<'a>(
@@ -6737,8 +10809,8 @@ fn analyze_field_target<'a>(
         "SearchKernel_V2_AnalyzeFieldTarget",
         "analyze.target.field",
     )?;
-    let field = optional_string(o, "field", "analyze.target.field")?
-        .map(|value| b.create_string(&value));
+    let field =
+        optional_string(o, "field", "analyze.target.field")?.map(|value| b.create_string(&value));
     Ok(api::AnalyzeFieldTarget::create(
         b,
         &api::AnalyzeFieldTargetArgs { field },
@@ -6770,9 +10842,7 @@ fn inspect_query<'a>(
         .transpose()?;
     Ok(offset(api::InspectQueryRequest::create(
         b,
-        &api::InspectQueryRequestArgs {
-            request,
-        },
+        &api::InspectQueryRequestArgs { request },
     )))
 }
 
@@ -6955,7 +11025,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
     }
 }
 
-
 // BFBS-derived schema inventory. Direct Rust FlatBuffers builders/readers are used above.
 // table SearchKernel.Protocol.V2.RequestEnvelope
 // field SearchKernel.Protocol.V2.RequestEnvelope.payload
@@ -7007,16 +11076,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.ErrorDetail.message
 // field SearchKernel.V2.ErrorDetail.metadata
 // field SearchKernel.V2.ErrorDetail.path
-// table SearchKernel.V2.FacetRequest
-// field SearchKernel.V2.FacetRequest.field
-// field SearchKernel.V2.FacetRequest.limit
-// field SearchKernel.V2.FacetRequest.sort
-// table SearchKernel.V2.FacetResult
-// field SearchKernel.V2.FacetResult.field
-// field SearchKernel.V2.FacetResult.values
-// table SearchKernel.V2.FacetValue
-// field SearchKernel.V2.FacetValue.count
-// field SearchKernel.V2.FacetValue.value
 // table SearchKernel.V2.FieldDefinition
 // field SearchKernel.V2.FieldDefinition.analyzer
 // field SearchKernel.V2.FieldDefinition.cardinality
@@ -7096,8 +11155,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.OptionalBool.value
 // table SearchKernel.V2.OptionalDouble
 // field SearchKernel.V2.OptionalDouble.value
-// table SearchKernel.V2.OptionalFacetSort
-// field SearchKernel.V2.OptionalFacetSort.value
 // table SearchKernel.V2.OptionalMissingPlacement
 // field SearchKernel.V2.OptionalMissingPlacement.value
 // table SearchKernel.V2.OptionalUInt32
@@ -7121,16 +11178,12 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.QueryNot.clause
 // table SearchKernel.V2.QueryOr
 // field SearchKernel.V2.QueryOr.clauses
-// table SearchKernel.V2.RankingPolicy
-// field SearchKernel.V2.RankingPolicy.policy
-// field SearchKernel.V2.RankingPolicy.policy_type
 // table SearchKernel.V2.SearchField
 // field SearchKernel.V2.SearchField.field
 // field SearchKernel.V2.SearchField.weight
 // table SearchKernel.V2.SearchFieldSelection
 // field SearchKernel.V2.SearchFieldSelection.fields
 // table SearchKernel.V2.SearchRequest
-// field SearchKernel.V2.SearchRequest.facets
 // field SearchKernel.V2.SearchRequest.filter
 // field SearchKernel.V2.SearchRequest.highlighting
 // field SearchKernel.V2.SearchRequest.language
@@ -7261,10 +11314,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // variant QueryAnd=2
 // variant QueryOr=3
 // variant QueryNot=4
-// enum SearchKernel.V2.RankingPolicyKind
-// variant NONE=0
-// variant DefaultRelevanceV1=1
-// variant Bm25Ranking=2
 // enum SearchKernel.V2.SortDirection
 // variant Unspecified=0
 // variant Asc=1
@@ -7334,10 +11383,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.ErrorDetail.message
 // field SearchKernel.V2.ErrorDetail.metadata
 // field SearchKernel.V2.ErrorDetail.path
-// table SearchKernel.V2.FacetRequest
-// field SearchKernel.V2.FacetRequest.field
-// field SearchKernel.V2.FacetRequest.limit
-// field SearchKernel.V2.FacetRequest.sort
 // table SearchKernel.V2.FacetResult
 // field SearchKernel.V2.FacetResult.field
 // field SearchKernel.V2.FacetResult.values
@@ -7423,8 +11468,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.OptionalBool.value
 // table SearchKernel.V2.OptionalDouble
 // field SearchKernel.V2.OptionalDouble.value
-// table SearchKernel.V2.OptionalFacetSort
-// field SearchKernel.V2.OptionalFacetSort.value
 // table SearchKernel.V2.OptionalMissingPlacement
 // field SearchKernel.V2.OptionalMissingPlacement.value
 // table SearchKernel.V2.OptionalUInt32
@@ -7448,16 +11491,12 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.QueryNot.clause
 // table SearchKernel.V2.QueryOr
 // field SearchKernel.V2.QueryOr.clauses
-// table SearchKernel.V2.RankingPolicy
-// field SearchKernel.V2.RankingPolicy.policy
-// field SearchKernel.V2.RankingPolicy.policy_type
 // table SearchKernel.V2.SearchField
 // field SearchKernel.V2.SearchField.field
 // field SearchKernel.V2.SearchField.weight
 // table SearchKernel.V2.SearchFieldSelection
 // field SearchKernel.V2.SearchFieldSelection.fields
 // table SearchKernel.V2.SearchRequest
-// field SearchKernel.V2.SearchRequest.facets
 // field SearchKernel.V2.SearchRequest.filter
 // field SearchKernel.V2.SearchRequest.highlighting
 // field SearchKernel.V2.SearchRequest.language
@@ -7589,10 +11628,6 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // variant QueryAnd=2
 // variant QueryOr=3
 // variant QueryNot=4
-// enum SearchKernel.V2.RankingPolicyKind
-// variant NONE=0
-// variant DefaultRelevanceV1=1
-// variant Bm25Ranking=2
 // enum SearchKernel.V2.SortDirection
 // variant Unspecified=0
 // variant Asc=1

@@ -10,8 +10,6 @@ required=(
   "$root/core/crates/searchkernel-json/bfbs/searchkernel_response.bfbs"
   "$here/generated/manifest.json"
   "$here/generated/operation-map.json"
-  "$here/generated/searchkernel.schema.json"
-  "$here/generated/openapi-components.json"
   "$here/generated/API.md"
   "$here/generated/requests"
   "$here/generated/responses"

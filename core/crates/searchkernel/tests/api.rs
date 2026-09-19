@@ -3,9 +3,10 @@ use searchkernel::{
     Patch, Range, Ranking, Sort,
 };
 use searchkernel_ir::{
-    Backend, FieldName, FilterIr, GetResult, HighlightingIr, OperationIr, ProjectionIr, QueryIr,
-    RankingPolicyIr, SearchFieldIr, SearchFieldWeight, SearchRequestIr, SearchResult, TotalHits,
-    TotalHitsRelation, Value,
+    Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
+    GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
+    OperationIr, ProjectionIr, QueryIr, RankingPolicyIr, SearchFieldIr, SearchFieldWeight,
+    SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation, Value,
 };
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,35 @@ fn expected_search() -> SearchRequestIr {
         searchkernel_ir::PrefixPolicy::Disabled,
         searchkernel_ir::TypoPolicy::Disabled,
     )
+}
+
+fn expected_search_with_facet(field: &str) -> SearchRequestIr {
+    expected_search().with_grouping(vec![GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field.into())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Max(Some(10)),
+                        GroupingOperationIr::Order(vec![GroupingExpressionIr::Negative(Box::new(
+                            GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        ))]),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    }])
 }
 
 #[test]
@@ -249,21 +279,31 @@ fn analyze_uses_the_selected_field_and_returns_tokens() {
 fn scripted_results_map_to_product_values_and_preserve_totals() {
     let expected = expected_search();
     let result = SearchResult {
-        hits: vec![searchkernel_ir::Hit {
-            id: "sku-42".into(),
-            score: Some(2.5),
-            fields: BTreeMap::from([(String::from("title"), Value::String("headphones".into()))]),
-            highlights: vec![],
-        }],
+        root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
+            searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                id: "sku-42".into(),
+                score: Some(2.5),
+                fields: BTreeMap::from([(
+                    String::from("title"),
+                    Value::String("headphones".into()),
+                )]),
+                highlights: vec![],
+                ..Default::default()
+            }),
+        ])),
         total_hits: TotalHits {
             value: 9,
             relation: TotalHitsRelation::LowerBound,
         },
-        facets: vec![],
+        coverage: None,
+        timing: None,
+        errors: vec![],
+        trace: None,
+        metadata: BTreeMap::new(),
     };
     let backend = Arc::new(ScriptedBackend::new(vec![ExpectedCall::success(
         OperationIr::Search(expected),
-        ScriptedResult::Search(result),
+        ScriptedResult::Search(Box::new(result)),
     )]));
     let index = index_with(backend.clone());
     let result = index.search("").execute::<serde_json::Value>().unwrap();
@@ -391,61 +431,80 @@ fn scripted_crud_successes_are_consumed_and_mapped() {
 
 #[test]
 fn result_variants_map_to_owned_product_values() {
-    let expected = expected_search();
+    let expected = expected_search_with_facet("brand");
     let nested = BTreeMap::from([(String::from("source"), Value::String("catalog".into()))]);
     let result = SearchResult {
-        hits: vec![searchkernel_ir::Hit {
-            id: "sku-43".into(),
-            score: None,
-            fields: BTreeMap::from([
-                (String::from("title"), Value::String("headphones".into())),
-                (String::from("nullable"), Value::Null),
-                (String::from("signed"), Value::Int64(-7)),
-                (String::from("unsigned"), Value::UInt64(u64::MAX)),
-                (String::from("ratio"), Value::Float64(1.25)),
-                (String::from("bytes"), Value::Bytes(vec![1, 2, 255])),
-                (
-                    String::from("list"),
-                    Value::List(vec![Value::Bool(true), Value::String("nested".into())]),
-                ),
-                (String::from("object"), Value::Object(nested)),
-            ]),
-            highlights: vec![searchkernel_ir::HighlightResult {
-                field: "title".into(),
-                fragments: vec![searchkernel_ir::HighlightFragment {
-                    text: "<em>headphones</em>".into(),
-                    matches: vec![searchkernel_ir::HighlightSpan {
-                        start_byte: 0,
-                        end_byte: 18,
+        root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+            children: vec![
+                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                    id: "sku-43".into(),
+                    score: None,
+                    fields: BTreeMap::from([
+                        (String::from("title"), Value::String("headphones".into())),
+                        (String::from("nullable"), Value::Null),
+                        (String::from("signed"), Value::Int64(-7)),
+                        (String::from("unsigned"), Value::UInt64(u64::MAX)),
+                        (String::from("ratio"), Value::Float64(1.25)),
+                        (String::from("bytes"), Value::Bytes(vec![1, 2, 255])),
+                        (
+                            String::from("list"),
+                            Value::List(vec![Value::Bool(true), Value::String("nested".into())]),
+                        ),
+                        (String::from("object"), Value::Object(nested)),
+                    ]),
+                    highlights: vec![searchkernel_ir::HighlightResult {
+                        field: "title".into(),
+                        fragments: vec![searchkernel_ir::HighlightFragment {
+                            text: "<em>headphones</em>".into(),
+                            matches: vec![searchkernel_ir::HighlightSpan {
+                                start_byte: 0,
+                                end_byte: 18,
+                            }],
+                        }],
                     }],
-                }],
-            }],
-        }],
+                    ..Default::default()
+                }),
+                searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                    id: Some("brand".into()),
+                    label: Some("brand".into()),
+                    children: vec![
+                        searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                            value: Some(Value::String("Acme".into())),
+                            fields: BTreeMap::from([("count".into(), Value::UInt64(1))]),
+                            ..searchkernel_ir::ResultGroup::root(vec![])
+                        }),
+                        searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                            value: Some(Value::UInt64(2)),
+                            fields: BTreeMap::from([("count".into(), Value::UInt64(2))]),
+                            ..searchkernel_ir::ResultGroup::root(vec![])
+                        }),
+                    ],
+                    ..searchkernel_ir::ResultGroup::root(vec![])
+                }),
+            ],
+            ..searchkernel_ir::ResultGroup::root(vec![])
+        }),
         total_hits: TotalHits {
             value: 1,
             relation: TotalHitsRelation::Exact,
         },
-        facets: vec![searchkernel_ir::FacetResult {
-            field: "brand".into(),
-            values: vec![
-                searchkernel_ir::FacetValue {
-                    value: Value::String("Acme".into()),
-                    count: 1,
-                },
-                searchkernel_ir::FacetValue {
-                    value: Value::UInt64(2),
-                    count: 2,
-                },
-            ],
-        }],
+        coverage: None,
+        timing: None,
+        errors: vec![],
+        trace: None,
+        metadata: BTreeMap::new(),
     };
     let backend = Arc::new(ScriptedBackend::new(vec![ExpectedCall::success(
         OperationIr::Search(expected),
-        ScriptedResult::Search(result),
+        ScriptedResult::Search(Box::new(result)),
     )]));
     let index = index_with(backend.clone());
 
-    let result = index.search("").execute::<serde_json::Value>().unwrap();
+    let result = index
+        .search("")
+        .facet(Facet::new("brand"))
+        .execute::<serde_json::Value>()
+        .unwrap();
     assert_eq!(result.hits[0].score, None);
     assert_eq!(result.hits[0].document["signed"], -7);
     assert_eq!(result.hits[0].document["unsigned"], u64::MAX);
@@ -518,7 +577,7 @@ fn all_filter_operators_and_search_options_cross_the_boundary() {
     assert!(matches!(filters[0], FilterIr::And(ref clauses) if clauses.len() == 6));
     assert!(matches!(filters[1], FilterIr::Not(_)));
     assert!(
-        matches!(filters[2], FilterIr::Range(ref range) if range.upper().is_some() && range.include_upper())
+        matches!(filters[2], FilterIr::Range(ref range) if !matches!(range.upper(), searchkernel_ir::FilterRangeBoundIr::Unbounded) && range.include_upper())
     );
 }
 
@@ -585,47 +644,73 @@ fn portable_values_and_serialization_errors_are_preserved() {
 
 #[test]
 fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
-    let expected = expected_search();
+    let expected = expected_search_with_facet("ratio");
     let bad_document = SearchResult {
-        hits: vec![searchkernel_ir::Hit {
-            id: "bad".into(),
-            score: Some(1.0),
-            fields: BTreeMap::from([(String::from("title"), Value::String("ok".into()))]),
-            highlights: vec![],
-        }],
+        root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
+            searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                id: "bad".into(),
+                score: Some(1.0),
+                fields: BTreeMap::from([(String::from("title"), Value::String("ok".into()))]),
+                highlights: vec![],
+                ..Default::default()
+            }),
+        ])),
         total_hits: TotalHits {
             value: 1,
             relation: TotalHitsRelation::Exact,
         },
-        facets: vec![],
+        coverage: None,
+        timing: None,
+        errors: vec![],
+        trace: None,
+        metadata: BTreeMap::new(),
     };
     let backend = Arc::new(ScriptedBackend::new(vec![
         ExpectedCall::success(
             OperationIr::Search(expected.clone()),
-            ScriptedResult::Search(bad_document),
+            ScriptedResult::Search(Box::new(bad_document)),
         ),
         ExpectedCall::success(
             OperationIr::Search(expected),
-            ScriptedResult::Search(SearchResult {
-                hits: vec![],
+            ScriptedResult::Search(Box::new(SearchResult {
+                root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
+                    searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                        id: Some("ratio".into()),
+                        label: Some("ratio".into()),
+                        children: vec![searchkernel_ir::ResultNode::Group(
+                            searchkernel_ir::ResultGroup {
+                                value: Some(Value::Float64(f64::NAN)),
+                                fields: BTreeMap::from([("count".into(), Value::UInt64(1))]),
+                                ..searchkernel_ir::ResultGroup::root(vec![])
+                            },
+                        )],
+                        ..searchkernel_ir::ResultGroup::root(vec![])
+                    }),
+                ])),
                 total_hits: TotalHits {
                     value: 0,
                     relation: TotalHitsRelation::Exact,
                 },
-                facets: vec![searchkernel_ir::FacetResult {
-                    field: "ratio".into(),
-                    values: vec![searchkernel_ir::FacetValue {
-                        value: Value::Float64(f64::NAN),
-                        count: 1,
-                    }],
-                }],
-            }),
+                coverage: None,
+                timing: None,
+                errors: vec![],
+                trace: None,
+                metadata: BTreeMap::new(),
+            })),
         ),
     ]));
     let index = index_with(backend.clone());
-    let error = index.search("").execute::<String>().unwrap_err();
+    let error = index
+        .search("")
+        .facet(Facet::new("ratio"))
+        .execute::<String>()
+        .unwrap_err();
     assert!(matches!(error, Error::Deserialization(_)));
-    let error = index.search("").execute::<serde_json::Value>().unwrap_err();
+    let error = index
+        .search("")
+        .facet(Facet::new("ratio"))
+        .execute::<serde_json::Value>()
+        .unwrap_err();
     assert!(matches!(error, Error::Infrastructure(message) if message.contains("non-finite")));
     backend.finish().unwrap();
 }

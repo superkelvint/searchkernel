@@ -378,14 +378,10 @@ fn scripted_trait_supports_all_seven_families() {
         ),
         ExpectedCall::success(
             OperationIr::Search(search()),
-            ScriptedResult::Search(SearchResult {
-                hits: vec![],
-                total_hits: searchkernel_ir::TotalHits {
-                    value: 0,
-                    relation: searchkernel_ir::TotalHitsRelation::Exact,
-                },
-                facets: vec![],
-            }),
+            ScriptedResult::Search(Box::new(SearchResult::empty(searchkernel_ir::TotalHits {
+                value: 0,
+                relation: searchkernel_ir::TotalHitsRelation::Exact,
+            }))),
         ),
         ExpectedCall::success(
             OperationIr::Analyze(analyze()),

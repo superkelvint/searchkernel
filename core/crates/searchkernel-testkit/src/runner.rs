@@ -5,9 +5,10 @@ use searchkernel_ir::{
     AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldCardinality,
     FieldIr, FieldKind, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext,
     IndexDefinitionIr, IndexName, InsertRequestIr, LanguageHint, MissingPlacement,
-    PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryIr, RangeIr,
-    RankingPolicyIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
-    UpsertRequestIr, WriteRequestIr, WriteRequestRef,
+    PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryExprIr, QueryExprKindIr,
+    QueryFieldRefIr, QueryIr, QueryRangeBoundIr, RangeIr, RankingPolicyIr, RequestNonFiniteFloatIr,
+    RequestValueIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
+    SortTargetIr, UpsertRequestIr, WriteRequestIr, WriteRequestRef,
 };
 use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
 use serde_json::{json, Map, Value as JsonValue};
@@ -764,6 +765,51 @@ fn scalar_json(value: &ScalarValueIr) -> JsonValue {
         ScalarValueIr::String(v) => json!({"string":v}),
     }
 }
+fn request_value_json(value: &RequestValueIr) -> JsonValue {
+    match value {
+        RequestValueIr::Null => JsonValue::Null,
+        RequestValueIr::Bool(value) => json!({"bool": value}),
+        RequestValueIr::Int64(value) => json!({"int64": value}),
+        RequestValueIr::UInt64(value) => json!({"uint64": value}),
+        RequestValueIr::Float64(value) => json!({"float64": value}),
+        RequestValueIr::NonFiniteFloat(value) => json!({
+            "non_finite": match value {
+                RequestNonFiniteFloatIr::NaN => "nan",
+                RequestNonFiniteFloatIr::PositiveInfinity => "positive_infinity",
+                RequestNonFiniteFloatIr::NegativeInfinity => "negative_infinity",
+            }
+        }),
+        RequestValueIr::String(value) => json!({"string": value}),
+        RequestValueIr::Bytes(value) => json!({"bytes": value}),
+        RequestValueIr::List(value) => {
+            json!({"list": value.iter().map(request_value_json).collect::<Vec<_>>()})
+        }
+        RequestValueIr::Object(value) => json!({
+            "object": value
+                .iter()
+                .map(|(key, value)| (key.clone(), request_value_json(value)))
+                .collect::<Map<_, _>>()
+        }),
+        RequestValueIr::Tensor(value) => {
+            let payload = match &value.payload {
+                searchkernel_ir::RequestTensorPayloadIr::Dense(values) => json!({"dense": values}),
+                searchkernel_ir::RequestTensorPayloadIr::Sparse(values) => json!({
+                    "sparse": values.iter().map(|cell| json!({
+                        "address": cell.address,
+                        "value": cell.value,
+                    })).collect::<Vec<_>>()
+                }),
+                searchkernel_ir::RequestTensorPayloadIr::Mixed(values) => json!({
+                    "mixed": values.iter().map(|block| json!({
+                        "address": block.address,
+                        "values": block.values,
+                    })).collect::<Vec<_>>()
+                }),
+            };
+            json!({"tensor":{"type_spec":value.type_spec,"payload":payload}})
+        }
+    }
+}
 fn field_value_json(value: &FieldValueIr) -> JsonValue {
     match value {
         FieldValueIr::Single(v) => json!({"single":scalar_json(v)}),
@@ -905,7 +951,19 @@ fn comparison_json(value: &ComparisonIr) -> JsonValue {
     json!({"field":value.field().as_str(),"op":comparison_name(value.op()),"value":scalar_json(value.value())})
 }
 fn range_json(value: &RangeIr) -> JsonValue {
-    json!({"field":value.field().as_str(),"lower":value.lower().map(scalar_json),"upper":value.upper().map(scalar_json),"include_lower":value.include_lower(),"include_upper":value.include_upper()})
+    fn bound_json(value: &searchkernel_ir::FilterRangeBoundIr) -> JsonValue {
+        match value {
+            searchkernel_ir::FilterRangeBoundIr::Finite(value) => scalar_json(value),
+            searchkernel_ir::FilterRangeBoundIr::NegativeInfinity => {
+                json!("negative_infinity")
+            }
+            searchkernel_ir::FilterRangeBoundIr::PositiveInfinity => {
+                json!("positive_infinity")
+            }
+            searchkernel_ir::FilterRangeBoundIr::Unbounded => JsonValue::Null,
+        }
+    }
+    json!({"field":value.field().as_str(),"lower":bound_json(value.lower_bound()),"upper":bound_json(value.upper_bound()),"include_lower":value.include_lower(),"include_upper":value.include_upper()})
 }
 fn filter_json(value: &FilterIr) -> JsonValue {
     match value {
@@ -933,10 +991,107 @@ fn query_json(value: &QueryIr) -> JsonValue {
         QueryIr::Yql { source, parameters } => {
             json!({"yql":{"source":source,"parameter_count":parameters.len()}})
         }
+        QueryIr::Typed(value) => json!({"typed": query_expr_json(value)}),
     }
 }
+
+fn query_field_ref_json(value: &QueryFieldRefIr) -> JsonValue {
+    json!({"path":value.path.as_str(),"element_index":value.element_index})
+}
+
+fn query_children_json(values: &[QueryExprIr]) -> JsonValue {
+    JsonValue::Array(values.iter().map(query_expr_json).collect())
+}
+
+fn query_expr_json(value: &QueryExprIr) -> JsonValue {
+    let (name, payload) = match &value.kind {
+        QueryExprKindIr::Term { value } => ("term", json!({"value":request_value_json(value)})),
+        QueryExprKindIr::Contains { field, item } => ("contains", json!({"field":query_field_ref_json(field),"item":query_expr_json(item)})),
+        QueryExprKindIr::And(values) => ("and", query_children_json(values)),
+        QueryExprKindIr::Or(values) => ("or", query_children_json(values)),
+        QueryExprKindIr::Not(value) => ("not", query_expr_json(value)),
+        QueryExprKindIr::True => ("true", json!({})),
+        QueryExprKindIr::False => ("false", json!({})),
+        QueryExprKindIr::Comparison { field, op, value } => ("comparison", json!({"field":query_field_ref_json(field),"op":comparison_name(*op),"value":request_value_json(value)})),
+        QueryExprKindIr::Range { field, lower, upper, include_lower, include_upper } => ("range", json!({"field":query_field_ref_json(field),"lower":query_range_bound_json(lower),"upper":query_range_bound_json(upper),"include_lower":include_lower,"include_upper":include_upper})),
+        QueryExprKindIr::In { field, values } => ("in", json!({"field":query_field_ref_json(field),"values":values.iter().map(request_value_json).collect::<Vec<_>>() })),
+        QueryExprKindIr::Phrase(values) => ("phrase", query_children_json(values)),
+        QueryExprKindIr::Near(values) => ("near", query_children_json(values)),
+        QueryExprKindIr::ONear(values) => ("onear", query_children_json(values)),
+        QueryExprKindIr::SameElement(values) => ("same_element", query_children_json(values)),
+        QueryExprKindIr::Equiv(values) => ("equiv", query_children_json(values)),
+        QueryExprKindIr::Alternatives(values) => ("alternatives", json!(values.iter().map(|value| json!({"query":query_expr_json(&value.query),"exactness":value.exactness})).collect::<Vec<_>>())),
+        QueryExprKindIr::Fuzzy { value } => ("fuzzy", json!({"value":request_value_json(value)})),
+        QueryExprKindIr::Matches { field, pattern } => ("matches", json!({"field":query_field_ref_json(field),"pattern":pattern})),
+        QueryExprKindIr::Text { text } => ("text", json!({"text":text})),
+        QueryExprKindIr::UserInput { value } => ("user_input", json!({"value":value})),
+        QueryExprKindIr::UserQuery => ("user_query", json!({})),
+        QueryExprKindIr::DotProduct { field, items } => ("dot_product", weighted_items_json(field, items)),
+        QueryExprKindIr::WeightedSet { field, items } => ("weighted_set", weighted_items_json(field, items)),
+        QueryExprKindIr::Wand { field, items } => ("wand", weighted_items_json(field, items)),
+        QueryExprKindIr::WeakAnd(values) => ("weak_and", query_children_json(values)),
+        QueryExprKindIr::Rank { matching, ranking } => ("rank", json!({"matching":query_expr_json(matching),"ranking":query_children_json(ranking)})),
+        QueryExprKindIr::Labeled { query, label, score } => ("labeled", json!({"query":query_expr_json(query),"label":label,"score":score})),
+        QueryExprKindIr::NonEmpty(query) => ("non_empty", query_expr_json(query)),
+        QueryExprKindIr::GeoLocation { field, latitude, longitude, radius } => ("geo_location", json!({"field":query_field_ref_json(field),"latitude":latitude,"longitude":longitude,"radius":radius})),
+        QueryExprKindIr::GeoBoundingBox { field, south, west, north, east } => ("geo_bounding_box", json!({"field":query_field_ref_json(field),"south":south,"west":west,"north":north,"east":east})),
+        QueryExprKindIr::NearestNeighbor { document_field, query_tensor } => ("nearest_neighbor", json!({"document_field":query_field_ref_json(document_field),"query_tensor":query_tensor})),
+        QueryExprKindIr::Predicate { field, features, range_features } => ("predicate", json!({"field":query_field_ref_json(field),"features":features.iter().map(|(key,value)|(key.clone(),request_value_json(value))).collect::<Map<_,_>>(),"range_features":range_features.iter().map(|(key,value)|(key.clone(),request_value_json(value))).collect::<Map<_,_>>() })),
+    };
+    let mut output = json!({name:payload});
+    if !value.annotations.is_empty() {
+        output["annotations"] = JsonValue::Object(
+            value
+                .annotations
+                .iter()
+                .map(|(key, value)| (key.clone(), request_value_json(value)))
+                .collect(),
+        );
+    }
+    output
+}
+
+fn weighted_items_json(
+    field: &QueryFieldRefIr,
+    items: &[searchkernel_ir::WeightedQueryItemIr],
+) -> JsonValue {
+    json!({"field":query_field_ref_json(field),"items":items.iter().map(|item| json!({"key":request_value_json(&item.key),"weight":item.weight})).collect::<Vec<_>>()})
+}
+
+fn query_range_bound_json(value: &QueryRangeBoundIr) -> JsonValue {
+    match value {
+        QueryRangeBoundIr::Finite(value) => json!({"finite":request_value_json(value)}),
+        QueryRangeBoundIr::NegativeInfinity => json!({"negative_infinity":{}}),
+        QueryRangeBoundIr::PositiveInfinity => json!({"positive_infinity":{}}),
+        QueryRangeBoundIr::Unbounded => json!({"unbounded":{}}),
+    }
+}
+
 fn sort_json(value: &SortIr) -> JsonValue {
-    json!({"field":value.field().as_str(),"direction":match value.direction() {SortDirection::Asc=>"asc",SortDirection::Desc=>"desc"},"missing":match value.missing() {MissingPlacement::First=>"first",MissingPlacement::Last=>"last"}})
+    let missing = match value.missing() {
+        MissingPlacement::First => json!("first"),
+        MissingPlacement::Last => json!("last"),
+        MissingPlacement::As(value) => json!({"as": request_value_json(&value)}),
+    };
+    let mut output = json!({
+        "direction":match value.direction() {SortDirection::Asc=>"asc",SortDirection::Desc=>"desc"},
+        "missing":missing,
+    });
+    match value.target() {
+        SortTargetIr::Field(field) => output["field"] = json!(field.as_str()),
+        SortTargetIr::Relevance => output["target"] = json!({"relevance":{}}),
+        SortTargetIr::RankFeature(feature) => {
+            output["target"] = json!({"rank_feature":{"feature":feature}})
+        }
+    }
+    if !value.annotations().is_empty() {
+        output["annotations"] = json!(value
+            .annotations()
+            .iter()
+            .map(|(key, value)| (key.clone(), request_value_json(value)))
+            .collect::<Map<_, _>>());
+    }
+    output
 }
 fn facet_json(value: &searchkernel_ir::GroupingRequestIr) -> Option<JsonValue> {
     use searchkernel_ir::GroupingOperationIr as Operation;
@@ -1870,20 +2025,25 @@ impl WireBuilder {
                         api::MissingFirst::create(&mut self.builder, &api::MissingFirstArgs {});
                     (
                         api::MissingPolicyKind::MissingFirst,
-                        policy.as_union_value(),
+                        Some(policy.as_union_value()),
                     )
                 }
-                _ => {
+                "last" => {
                     let policy =
                         api::MissingLast::create(&mut self.builder, &api::MissingLastArgs {});
-                    (api::MissingPolicyKind::MissingLast, policy.as_union_value())
+                    (
+                        api::MissingPolicyKind::MissingLast,
+                        Some(policy.as_union_value()),
+                    )
                 }
+                "unspecified" => (api::MissingPolicyKind(0), None),
+                _ => (api::MissingPolicyKind(0), None),
             };
             api::MissingPolicy::create(
                 &mut self.builder,
                 &api::MissingPolicyArgs {
                     policy_type,
-                    policy: Some(policy),
+                    policy,
                 },
             )
         });
@@ -2072,11 +2232,18 @@ impl WireBuilder {
                 },
             ))
         } else {
-            let source = api::MatchAllQuery::create(&mut self.builder, &api::MatchAllQueryArgs {});
+            // A nullable legacy `query` is the wire spelling of an empty text
+            // query. Keep the text-source provenance so the IR applies the
+            // same default search-field selection as an explicit empty query.
+            let text = self.text("");
+            let source = api::SearchKernelTextQuery::create(
+                &mut self.builder,
+                &api::SearchKernelTextQueryArgs { text: Some(text) },
+            );
             Some(api::QuerySource::create(
                 &mut self.builder,
                 &api::QuerySourceArgs {
-                    source_type: api::QuerySourceKind::MatchAllQuery,
+                    source_type: api::QuerySourceKind::SearchKernelTextQuery,
                     source: Some(source.as_union_value()),
                 },
             ))

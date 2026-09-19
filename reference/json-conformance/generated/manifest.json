@@ -1,10 +1,10 @@
 {
   "bfbs": {
     "searchkernel_request.bfbs": {
-      "sha256": "6cded305acc8338ece80243e7393b3440766eb78810ba28a1a14eb987fc371c9"
+      "sha256": "504ced8e48f00a7dba76c62bd6ea76620415d49afd609f8dd6fa875a33712a3f"
     },
     "searchkernel_response.bfbs": {
-      "sha256": "9826a5c577bc70e8b501c7934d3a9dc50926165dff8e8226ddf828a1a6e5d0c1"
+      "sha256": "ff04e296f18876640d9a5f924c4abce9301bd59f44d0c838c907bffc6d49507c"
     }
   },
   "format_version": 1,

@@ -739,8 +739,8 @@ impl ComparisonIr {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RangeIr {
     pub(crate) field: FieldName,
-    pub(crate) lower: Option<ScalarValueIr>,
-    pub(crate) upper: Option<ScalarValueIr>,
+    pub(crate) lower: FilterRangeBoundIr,
+    pub(crate) upper: FilterRangeBoundIr,
     pub(crate) include_lower: bool,
     pub(crate) include_upper: bool,
 }
@@ -756,8 +756,8 @@ impl RangeIr {
     ) -> Self {
         Self {
             field,
-            lower,
-            upper,
+            lower: lower.map_or(FilterRangeBoundIr::Unbounded, FilterRangeBoundIr::Finite),
+            upper: upper.map_or(FilterRangeBoundIr::Unbounded, FilterRangeBoundIr::Finite),
             include_lower,
             include_upper,
         }
@@ -767,12 +767,20 @@ impl RangeIr {
         &self.field
     }
 
-    pub fn lower(&self) -> Option<&ScalarValueIr> {
-        self.lower.as_ref()
+    pub fn lower(&self) -> &FilterRangeBoundIr {
+        &self.lower
     }
 
-    pub fn upper(&self) -> Option<&ScalarValueIr> {
-        self.upper.as_ref()
+    pub fn upper(&self) -> &FilterRangeBoundIr {
+        &self.upper
+    }
+
+    pub fn lower_bound(&self) -> &FilterRangeBoundIr {
+        &self.lower
+    }
+
+    pub fn upper_bound(&self) -> &FilterRangeBoundIr {
+        &self.upper
     }
 
     pub fn include_lower(&self) -> bool {
@@ -782,6 +790,14 @@ impl RangeIr {
     pub fn include_upper(&self) -> bool {
         self.include_upper
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FilterRangeBoundIr {
+    Finite(ScalarValueIr),
+    NegativeInfinity,
+    PositiveInfinity,
+    Unbounded,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -806,31 +822,63 @@ pub enum SortDirection {
     Desc,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SortTargetIr {
+    Field(FieldName),
+    Relevance,
+    RankFeature(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum MissingPlacement {
     First,
     Last,
+    As(RequestValueIr),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SortIr {
-    pub(crate) field: FieldName,
+    pub(crate) target: SortTargetIr,
     pub(crate) direction: SortDirection,
     pub(crate) missing: MissingPlacement,
+    pub(crate) annotations: std::collections::BTreeMap<String, RequestValueIr>,
 }
 
 impl SortIr {
     #[cfg(any(test, feature = "test-support"))]
     pub fn new(field: FieldName, direction: SortDirection, missing: MissingPlacement) -> Self {
         Self {
-            field,
+            target: SortTargetIr::Field(field),
             direction,
             missing,
+            annotations: std::collections::BTreeMap::new(),
         }
     }
 
-    pub fn field(&self) -> &FieldName {
-        &self.field
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_target(
+        target: SortTargetIr,
+        direction: SortDirection,
+        missing: MissingPlacement,
+        annotations: std::collections::BTreeMap<String, RequestValueIr>,
+    ) -> Self {
+        Self {
+            target,
+            direction,
+            missing,
+            annotations,
+        }
+    }
+
+    pub fn target(&self) -> &SortTargetIr {
+        &self.target
+    }
+
+    pub fn field(&self) -> Option<&FieldName> {
+        match &self.target {
+            SortTargetIr::Field(field) => Some(field),
+            SortTargetIr::Relevance | SortTargetIr::RankFeature(_) => None,
+        }
     }
 
     pub fn direction(&self) -> SortDirection {
@@ -838,7 +886,11 @@ impl SortIr {
     }
 
     pub fn missing(&self) -> MissingPlacement {
-        self.missing
+        self.missing.clone()
+    }
+
+    pub fn annotations(&self) -> &std::collections::BTreeMap<String, RequestValueIr> {
+        &self.annotations
     }
 }
 
@@ -876,6 +928,138 @@ pub enum QueryIr {
         source: String,
         parameters: std::collections::BTreeMap<String, RequestValueIr>,
     },
+    /// A lossless typed V2 query expression. The legacy variants above remain
+    /// as the normalized execution forms used by the current native adapter.
+    Typed(Box<QueryExprIr>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryExprIr {
+    pub kind: QueryExprKindIr,
+    pub annotations: std::collections::BTreeMap<String, RequestValueIr>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum QueryExprKindIr {
+    Term {
+        value: RequestValueIr,
+    },
+    Contains {
+        field: QueryFieldRefIr,
+        item: Box<QueryExprIr>,
+    },
+    And(Vec<QueryExprIr>),
+    Or(Vec<QueryExprIr>),
+    Not(Box<QueryExprIr>),
+    True,
+    False,
+    Comparison {
+        field: QueryFieldRefIr,
+        op: ComparisonOp,
+        value: RequestValueIr,
+    },
+    Range {
+        field: QueryFieldRefIr,
+        lower: QueryRangeBoundIr,
+        upper: QueryRangeBoundIr,
+        include_lower: Option<bool>,
+        include_upper: Option<bool>,
+    },
+    In {
+        field: QueryFieldRefIr,
+        values: Vec<RequestValueIr>,
+    },
+    Phrase(Vec<QueryExprIr>),
+    Near(Vec<QueryExprIr>),
+    ONear(Vec<QueryExprIr>),
+    SameElement(Vec<QueryExprIr>),
+    Equiv(Vec<QueryExprIr>),
+    Alternatives(Vec<QueryAlternativeIr>),
+    Fuzzy {
+        value: RequestValueIr,
+    },
+    Matches {
+        field: QueryFieldRefIr,
+        pattern: String,
+    },
+    Text {
+        text: String,
+    },
+    UserInput {
+        value: String,
+    },
+    UserQuery,
+    DotProduct {
+        field: QueryFieldRefIr,
+        items: Vec<WeightedQueryItemIr>,
+    },
+    WeightedSet {
+        field: QueryFieldRefIr,
+        items: Vec<WeightedQueryItemIr>,
+    },
+    Wand {
+        field: QueryFieldRefIr,
+        items: Vec<WeightedQueryItemIr>,
+    },
+    WeakAnd(Vec<QueryExprIr>),
+    Rank {
+        matching: Box<QueryExprIr>,
+        ranking: Vec<QueryExprIr>,
+    },
+    Labeled {
+        query: Box<QueryExprIr>,
+        label: String,
+        score: f64,
+    },
+    NonEmpty(Box<QueryExprIr>),
+    GeoLocation {
+        field: QueryFieldRefIr,
+        latitude: f64,
+        longitude: f64,
+        radius: String,
+    },
+    GeoBoundingBox {
+        field: QueryFieldRefIr,
+        south: f64,
+        west: f64,
+        north: f64,
+        east: f64,
+    },
+    NearestNeighbor {
+        document_field: QueryFieldRefIr,
+        query_tensor: String,
+    },
+    Predicate {
+        field: QueryFieldRefIr,
+        features: std::collections::BTreeMap<String, RequestValueIr>,
+        range_features: std::collections::BTreeMap<String, RequestValueIr>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryFieldRefIr {
+    pub path: FieldName,
+    pub element_index: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum QueryRangeBoundIr {
+    Finite(RequestValueIr),
+    NegativeInfinity,
+    PositiveInfinity,
+    Unbounded,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryAlternativeIr {
+    pub query: QueryExprIr,
+    pub exactness: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightedQueryItemIr {
+    pub key: RequestValueIr,
+    pub weight: i64,
 }
 
 /// The complete V2 value domain used by request controls.  Document values
@@ -1591,6 +1775,7 @@ pub enum Value {
     Bytes(Vec<u8>),
     List(Vec<Value>),
     Object(std::collections::BTreeMap<String, Value>),
+    Tensor(RequestTensorIr),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1627,8 +1812,11 @@ pub struct GetResult {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TotalHitsRelation {
+    Unspecified,
     Exact,
     LowerBound,
+    Approximate,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1655,31 +1843,129 @@ pub struct HighlightResult {
     pub fragments: Vec<HighlightFragment>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Hit {
     pub id: String,
     pub score: Option<f64>,
     pub fields: std::collections::BTreeMap<String, Value>,
     pub highlights: Vec<HighlightResult>,
+    pub source: Option<String>,
+    pub types: Vec<String>,
+    pub match_features: std::collections::BTreeMap<String, Value>,
+    pub summary_features: std::collections::BTreeMap<String, Value>,
+    pub rank_features: std::collections::BTreeMap<String, Value>,
+    pub sort_values: Vec<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FacetValue {
-    pub value: Value,
-    pub count: u64,
+pub struct ResultLimits {
+    pub from: Option<Value>,
+    pub to: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FacetResult {
-    pub field: String,
-    pub values: Vec<FacetValue>,
+pub struct ResultGroup {
+    pub id: Option<String>,
+    pub label: Option<String>,
+    pub value: Option<Value>,
+    pub fields: std::collections::BTreeMap<String, Value>,
+    pub children: Vec<ResultNode>,
+    pub continuations: std::collections::BTreeMap<String, String>,
+    pub source: Option<String>,
+    pub types: Vec<String>,
+    pub score: Option<f64>,
+    pub limits: Option<ResultLimits>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ResultNode {
+    Hit(Hit),
+    Group(ResultGroup),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CoverageDegraded {
+    pub match_phase: Option<bool>,
+    pub timeout: Option<bool>,
+    pub adaptive_timeout: Option<bool>,
+    pub ann_timeout: Option<bool>,
+    pub non_ideal_state: Option<bool>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Coverage {
+    pub coverage_percent: Option<f64>,
+    pub documents: Option<u64>,
+    pub full: Option<bool>,
+    pub nodes: Option<u32>,
+    pub results: Option<u64>,
+    pub results_full: Option<u64>,
+    pub degraded: Option<CoverageDegraded>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchTiming {
+    pub query_time_seconds: Option<f64>,
+    pub search_time_seconds: Option<f64>,
+    pub summary_fetch_time_seconds: Option<f64>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchResultError {
+    pub code: i64,
+    pub summary: Option<String>,
+    pub message: Option<String>,
+    pub source: Option<String>,
+    pub stack_trace: Option<String>,
+    pub transient: Option<bool>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchResult {
-    pub hits: Vec<Hit>,
+    pub root: ResultNode,
     pub total_hits: TotalHits,
-    pub facets: Vec<FacetResult>,
+    pub coverage: Option<Coverage>,
+    pub timing: Option<SearchTiming>,
+    pub errors: Vec<SearchResultError>,
+    pub trace: Option<Value>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+}
+
+impl ResultGroup {
+    pub fn root(children: Vec<ResultNode>) -> Self {
+        Self {
+            id: None,
+            label: None,
+            value: None,
+            fields: std::collections::BTreeMap::new(),
+            children,
+            continuations: std::collections::BTreeMap::new(),
+            source: None,
+            types: Vec::new(),
+            score: None,
+            limits: None,
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+impl SearchResult {
+    pub fn empty(total_hits: TotalHits) -> Self {
+        Self {
+            root: ResultNode::Group(ResultGroup::root(Vec::new())),
+            total_hits,
+            coverage: None,
+            timing: None,
+            errors: Vec::new(),
+            trace: None,
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

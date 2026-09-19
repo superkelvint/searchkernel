@@ -59,7 +59,7 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_InsertResult,
                     |builder, result| {
-                        searchkernel_ir::insert_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::insert_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
@@ -76,7 +76,7 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_UpsertResult,
                     |builder, result| {
-                        searchkernel_ir::upsert_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::upsert_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
@@ -93,7 +93,7 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_PatchResult,
                     |builder, result| {
-                        searchkernel_ir::patch_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::patch_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
@@ -110,7 +110,7 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_DeleteResult,
                     |builder, result| {
-                        searchkernel_ir::delete_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::delete_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
@@ -127,7 +127,7 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_GetResult,
                     |builder, result| {
-                        searchkernel_ir::get_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::get_result_offset(builder, result).as_union_value())
                     },
                 ))
             }
@@ -144,7 +144,8 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_SearchResult,
                     |builder, result| {
-                        searchkernel_ir::search_result_offset(builder, result).as_union_value()
+                        searchkernel_ir::search_result_offset(builder, result)
+                            .map(|result| result.as_union_value())
                     },
                 ))
             }
@@ -161,7 +162,10 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_AnalyzeResult,
                     |builder, result| {
-                        searchkernel_ir::analyze_result_offset(builder, result).as_union_value()
+                        Ok(
+                            searchkernel_ir::analyze_result_offset(builder, result)
+                                .as_union_value(),
+                        )
                     },
                 ))
             }
@@ -175,7 +179,8 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_DescribeResult,
                     |builder, result| {
-                        searchkernel_ir::describe_result_offset(builder, result).as_union_value()
+                        Ok(searchkernel_ir::describe_result_offset(builder, result)
+                            .as_union_value())
                     },
                 ))
             }
@@ -189,8 +194,10 @@ impl Dispatcher {
                     result,
                     wire::ResponsePayload::SearchKernel_V2_InspectQueryResult,
                     |builder, result| {
-                        searchkernel_ir::inspect_query_result_offset(builder, result)
-                            .as_union_value()
+                        Ok(
+                            searchkernel_ir::inspect_query_result_offset(builder, result)
+                                .as_union_value(),
+                        )
                     },
                 ))
             }
@@ -236,11 +243,17 @@ fn encode_result<T>(
     encode: impl for<'a> FnOnce(
         &mut flatbuffers::FlatBufferBuilder<'a>,
         &T,
-    ) -> WIPOffset<flatbuffers::UnionWIPOffset>,
+    ) -> searchkernel_ir::Result<WIPOffset<flatbuffers::UnionWIPOffset>>,
 ) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let (payload_type, payload) = match result {
-        Ok(value) => (success_kind, encode(&mut builder, &value)),
+        Ok(value) => match encode(&mut builder, &value) {
+            Ok(payload) => (success_kind, payload),
+            Err(error) => (
+                wire::ResponsePayload::SearchKernel_V2_Error,
+                searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
+            ),
+        },
         Err(error) => (
             wire::ResponsePayload::SearchKernel_V2_Error,
             searchkernel_ir::error_offset(&mut builder, &error).as_union_value(),
@@ -263,7 +276,191 @@ mod tests {
     use super::*;
     use searchkernel_ir::{api, OperationIr};
     use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
+    use std::collections::BTreeMap;
     use std::fs;
+
+    fn representative_search_result() -> searchkernel_ir::SearchResult {
+        searchkernel_ir::SearchResult {
+            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                id: Some("root".into()),
+                label: Some("Root".into()),
+                value: Some(searchkernel_ir::Value::String("all".into())),
+                fields: BTreeMap::from([("count".into(), searchkernel_ir::Value::UInt64(2))]),
+                children: vec![
+                    searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                        id: "doc-1".into(),
+                        score: Some(4.5),
+                        fields: BTreeMap::from([(
+                            "title".into(),
+                            searchkernel_ir::Value::String("First".into()),
+                        )]),
+                        highlights: vec![searchkernel_ir::HighlightResult {
+                            field: "title".into(),
+                            fragments: vec![searchkernel_ir::HighlightFragment {
+                                text: "<em>First</em>".into(),
+                                matches: vec![searchkernel_ir::HighlightSpan {
+                                    start_byte: 0,
+                                    end_byte: 5,
+                                }],
+                            }],
+                        }],
+                        source: Some("catalog".into()),
+                        types: vec!["product".into()],
+                        match_features: BTreeMap::from([(
+                            "bm25".into(),
+                            searchkernel_ir::Value::Float64(2.0),
+                        )]),
+                        summary_features: BTreeMap::from([(
+                            "summary".into(),
+                            searchkernel_ir::Value::String("ready".into()),
+                        )]),
+                        rank_features: BTreeMap::from([(
+                            "rank".into(),
+                            searchkernel_ir::Value::Float64(8.0),
+                        )]),
+                        sort_values: vec![searchkernel_ir::Value::UInt64(1)],
+                    }),
+                    searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                        id: Some("nested".into()),
+                        label: Some("Nested".into()),
+                        value: Some(searchkernel_ir::Value::Int64(7)),
+                        fields: BTreeMap::from([(
+                            "count".into(),
+                            searchkernel_ir::Value::UInt64(1),
+                        )]),
+                        children: vec![searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                            id: "doc-2".into(),
+                            score: Some(1.25),
+                            fields: BTreeMap::from([(
+                                "price".into(),
+                                searchkernel_ir::Value::Float64(12.5),
+                            )]),
+                            ..Default::default()
+                        })],
+                        continuations: BTreeMap::from([("next".into(), "token".into())]),
+                        source: Some("group-source".into()),
+                        types: vec!["bucket".into()],
+                        score: Some(2.5),
+                        limits: Some(searchkernel_ir::ResultLimits {
+                            from: Some(searchkernel_ir::Value::UInt64(0)),
+                            to: Some(searchkernel_ir::Value::UInt64(10)),
+                        }),
+                        metadata: BTreeMap::from([(
+                            "owner".into(),
+                            searchkernel_ir::Value::Bool(true),
+                        )]),
+                    }),
+                ],
+                continuations: BTreeMap::from([("page".into(), "token-1".into())]),
+                source: Some("search".into()),
+                types: vec!["root".into()],
+                score: Some(3.5),
+                limits: Some(searchkernel_ir::ResultLimits {
+                    from: Some(searchkernel_ir::Value::UInt64(0)),
+                    to: Some(searchkernel_ir::Value::UInt64(20)),
+                }),
+                metadata: BTreeMap::from([(
+                    "trace_id".into(),
+                    searchkernel_ir::Value::String("r-1".into()),
+                )]),
+            }),
+            total_hits: searchkernel_ir::TotalHits {
+                value: 12,
+                relation: searchkernel_ir::TotalHitsRelation::LowerBound,
+            },
+            coverage: Some(searchkernel_ir::Coverage {
+                coverage_percent: Some(99.0),
+                documents: Some(12),
+                full: Some(true),
+                nodes: Some(2),
+                results: Some(12),
+                results_full: Some(12),
+                degraded: Some(searchkernel_ir::CoverageDegraded {
+                    match_phase: Some(true),
+                    timeout: Some(false),
+                    adaptive_timeout: Some(true),
+                    ann_timeout: Some(false),
+                    non_ideal_state: Some(true),
+                    metadata: BTreeMap::from([(
+                        "reason".into(),
+                        searchkernel_ir::Value::String("load".into()),
+                    )]),
+                }),
+                metadata: BTreeMap::from([(
+                    "region".into(),
+                    searchkernel_ir::Value::String("west".into()),
+                )]),
+            }),
+            timing: Some(searchkernel_ir::SearchTiming {
+                query_time_seconds: Some(0.001),
+                search_time_seconds: Some(0.002),
+                summary_fetch_time_seconds: Some(0.003),
+                metadata: BTreeMap::from([(
+                    "phase".into(),
+                    searchkernel_ir::Value::String("done".into()),
+                )]),
+            }),
+            errors: vec![searchkernel_ir::SearchResultError {
+                code: 503,
+                summary: Some("partial".into()),
+                message: Some("one node timed out".into()),
+                source: Some("node-2".into()),
+                stack_trace: Some("trace".into()),
+                transient: Some(true),
+                metadata: BTreeMap::from([(
+                    "node".into(),
+                    searchkernel_ir::Value::String("2".into()),
+                )]),
+            }],
+            trace: Some(searchkernel_ir::Value::Object(BTreeMap::from([(
+                "level".into(),
+                searchkernel_ir::Value::UInt64(3),
+            )]))),
+            metadata: BTreeMap::from([(
+                "request_id".into(),
+                searchkernel_ir::Value::String("r1".into()),
+            )]),
+        }
+    }
+
+    #[test]
+    fn invalid_search_result_encoding_becomes_error_response_without_panicking() {
+        let mut invalid = searchkernel_ir::SearchResult::empty(searchkernel_ir::TotalHits {
+            value: 0,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        });
+        invalid.root = searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+            score: Some(f64::NAN),
+            ..Default::default()
+        });
+
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            encode_result(
+                Ok(invalid),
+                wire::ResponsePayload::SearchKernel_V2_SearchResult,
+                |builder, result| {
+                    searchkernel_ir::search_result_offset(builder, result)
+                        .map(|result| result.as_union_value())
+                },
+            )
+        }));
+        let response = outcome.expect("invalid result encoding must not panic");
+        let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+        assert_eq!(
+            envelope.payload_type(),
+            wire::ResponsePayload::SearchKernel_V2_Error
+        );
+        let error = envelope.payload_as_search_kernel_v2_error().unwrap();
+        assert_eq!(error.code(), api::ErrorCode::InvalidArgument);
+        assert_eq!(
+            error.details().unwrap().get(0).code(),
+            Some("non_finite_relevance")
+        );
+        assert_eq!(
+            error.details().unwrap().get(0).path(),
+            Some("root.relevance")
+        );
+    }
 
     fn context() -> Arc<IndexContext> {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
@@ -606,14 +803,9 @@ mod tests {
                 OperationIr::Get(_) => {
                     ScriptedResult::Get(searchkernel_ir::GetResult { document: None })
                 }
-                OperationIr::Search(_) => ScriptedResult::Search(searchkernel_ir::SearchResult {
-                    hits: Vec::new(),
-                    total_hits: searchkernel_ir::TotalHits {
-                        value: 0,
-                        relation: searchkernel_ir::TotalHitsRelation::Exact,
-                    },
-                    facets: Vec::new(),
-                }),
+                OperationIr::Search(_) => {
+                    ScriptedResult::Search(Box::new(representative_search_result()))
+                }
                 OperationIr::Analyze(_) => {
                     ScriptedResult::Analyze(searchkernel_ir::AnalyzeResult { tokens: Vec::new() })
                 }
@@ -630,6 +822,436 @@ mod tests {
                 response_kind,
                 "{fixture} response kind"
             );
+            if response_kind == wire::ResponsePayload::SearchKernel_V2_SearchResult {
+                let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+                let result = envelope
+                    .payload_as_search_kernel_v2_search_result()
+                    .expect("search response payload");
+                assert_eq!(result.total_hits().unwrap().value(), 12);
+                assert_eq!(
+                    result.total_hits().unwrap().relation(),
+                    api::TotalHitsRelation::LowerBound
+                );
+                let root = result.root().unwrap().node_as_result_group().unwrap();
+                assert_eq!(root.id(), Some("root"));
+                assert_eq!(root.label(), Some("Root"));
+                assert_eq!(
+                    root.value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("all")
+                );
+                assert_eq!(root.fields().unwrap().get(0).key(), "count");
+                assert_eq!(
+                    root.fields()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    2
+                );
+                assert_eq!(root.continuations().unwrap().get(0).key(), "page");
+                assert_eq!(
+                    root.continuations().unwrap().get(0).value(),
+                    Some("token-1")
+                );
+                assert_eq!(root.source(), Some("search"));
+                assert_eq!(root.types().unwrap().iter().collect::<Vec<_>>(), ["root"]);
+                assert_eq!(
+                    root.relevance()
+                        .unwrap()
+                        .value_as_finite_relevance()
+                        .unwrap()
+                        .value(),
+                    3.5
+                );
+                assert_eq!(
+                    root.limits()
+                        .unwrap()
+                        .from()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    0
+                );
+                assert_eq!(root.metadata().unwrap().get(0).key(), "trace_id");
+                assert_eq!(
+                    root.metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("r-1")
+                );
+                let children = root.children().unwrap();
+                assert_eq!(children.len(), 2);
+                let hit = children.get(0).node_as_hit().unwrap();
+                assert_eq!(hit.id(), Some("doc-1"));
+                assert_eq!(
+                    hit.relevance()
+                        .unwrap()
+                        .value_as_finite_relevance()
+                        .unwrap()
+                        .value(),
+                    4.5
+                );
+                assert_eq!(hit.fields().unwrap().get(0).key(), "title");
+                assert_eq!(
+                    hit.fields()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("First")
+                );
+                assert_eq!(hit.highlights().unwrap().get(0).field(), Some("title"));
+                assert_eq!(
+                    hit.highlights()
+                        .unwrap()
+                        .get(0)
+                        .fragments()
+                        .unwrap()
+                        .get(0)
+                        .text(),
+                    Some("<em>First</em>")
+                );
+                assert_eq!(
+                    hit.highlights()
+                        .unwrap()
+                        .get(0)
+                        .fragments()
+                        .unwrap()
+                        .get(0)
+                        .matches()
+                        .unwrap()
+                        .get(0)
+                        .start_byte(),
+                    0
+                );
+                assert_eq!(
+                    hit.highlights()
+                        .unwrap()
+                        .get(0)
+                        .fragments()
+                        .unwrap()
+                        .get(0)
+                        .matches()
+                        .unwrap()
+                        .get(0)
+                        .end_byte(),
+                    5
+                );
+                assert_eq!(hit.source(), Some("catalog"));
+                assert_eq!(hit.types().unwrap().iter().collect::<Vec<_>>(), ["product"]);
+                assert_eq!(hit.match_features().unwrap().get(0).key(), "bm25");
+                assert_eq!(
+                    hit.match_features()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_float_64_value()
+                        .unwrap()
+                        .value(),
+                    2.0
+                );
+                assert_eq!(hit.summary_features().unwrap().get(0).key(), "summary");
+                assert_eq!(
+                    hit.summary_features()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("ready")
+                );
+                assert_eq!(hit.rank_features().unwrap().get(0).key(), "rank");
+                assert_eq!(
+                    hit.rank_features()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_float_64_value()
+                        .unwrap()
+                        .value(),
+                    8.0
+                );
+                assert_eq!(
+                    hit.sort_values().unwrap().get(0).kind_type(),
+                    api::ValueKind::UInt64Value
+                );
+                assert_eq!(
+                    hit.sort_values()
+                        .unwrap()
+                        .get(0)
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    1
+                );
+                let nested = children.get(1).node_as_result_group().unwrap();
+                assert_eq!(nested.id(), Some("nested"));
+                assert_eq!(nested.label(), Some("Nested"));
+                assert_eq!(
+                    nested
+                        .value()
+                        .unwrap()
+                        .kind_as_int_64_value()
+                        .unwrap()
+                        .value(),
+                    7
+                );
+                assert_eq!(nested.fields().unwrap().get(0).key(), "count");
+                assert_eq!(
+                    nested
+                        .fields()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    1
+                );
+                assert_eq!(
+                    nested.continuations().unwrap().get(0).value(),
+                    Some("token")
+                );
+                assert_eq!(nested.source(), Some("group-source"));
+                assert_eq!(
+                    nested.types().unwrap().iter().collect::<Vec<_>>(),
+                    ["bucket"]
+                );
+                assert_eq!(
+                    nested
+                        .relevance()
+                        .unwrap()
+                        .value_as_finite_relevance()
+                        .unwrap()
+                        .value(),
+                    2.5
+                );
+                assert_eq!(
+                    nested
+                        .limits()
+                        .unwrap()
+                        .to()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    10
+                );
+                assert_eq!(
+                    nested
+                        .limits()
+                        .unwrap()
+                        .from()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    0
+                );
+                assert!(nested
+                    .metadata()
+                    .unwrap()
+                    .get(0)
+                    .value()
+                    .unwrap()
+                    .kind_as_bool_value()
+                    .unwrap()
+                    .value());
+                assert_eq!(
+                    nested
+                        .children()
+                        .unwrap()
+                        .get(0)
+                        .node_as_hit()
+                        .unwrap()
+                        .id(),
+                    Some("doc-2")
+                );
+                assert_eq!(
+                    nested
+                        .children()
+                        .unwrap()
+                        .get(0)
+                        .node_as_hit()
+                        .unwrap()
+                        .fields()
+                        .unwrap()
+                        .get(0)
+                        .key(),
+                    "price"
+                );
+                assert_eq!(
+                    nested
+                        .children()
+                        .unwrap()
+                        .get(0)
+                        .node_as_hit()
+                        .unwrap()
+                        .fields()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_float_64_value()
+                        .unwrap()
+                        .value(),
+                    12.5
+                );
+                assert_eq!(
+                    result
+                        .coverage()
+                        .unwrap()
+                        .coverage_percent()
+                        .unwrap()
+                        .value(),
+                    99.0
+                );
+                let coverage = result.coverage().unwrap();
+                assert_eq!(coverage.documents().unwrap().value(), 12);
+                assert!(coverage.full().unwrap().value());
+                assert_eq!(coverage.nodes().unwrap().value(), 2);
+                assert_eq!(coverage.results().unwrap().value(), 12);
+                assert_eq!(coverage.results_full().unwrap().value(), 12);
+                let degraded = coverage.degraded().unwrap();
+                assert!(degraded.match_phase().unwrap().value());
+                assert!(!degraded.timeout().unwrap().value());
+                assert!(degraded.adaptive_timeout().unwrap().value());
+                assert!(!degraded.ann_timeout().unwrap().value());
+                assert!(degraded.non_ideal_state().unwrap().value());
+                assert_eq!(degraded.metadata().unwrap().get(0).key(), "reason");
+                assert_eq!(
+                    degraded
+                        .metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("load")
+                );
+                assert_eq!(coverage.metadata().unwrap().get(0).key(), "region");
+                assert_eq!(
+                    coverage
+                        .metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("west")
+                );
+                assert_eq!(
+                    result
+                        .timing()
+                        .unwrap()
+                        .search_time_seconds()
+                        .unwrap()
+                        .value(),
+                    0.002
+                );
+                let timing = result.timing().unwrap();
+                assert_eq!(timing.query_time_seconds().unwrap().value(), 0.001);
+                assert_eq!(timing.summary_fetch_time_seconds().unwrap().value(), 0.003);
+                assert_eq!(timing.metadata().unwrap().get(0).key(), "phase");
+                assert_eq!(
+                    timing
+                        .metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("done")
+                );
+                let error = result.errors().unwrap().get(0);
+                assert_eq!(error.code(), 503);
+                assert_eq!(error.summary(), Some("partial"));
+                assert_eq!(error.message(), Some("one node timed out"));
+                assert_eq!(error.source(), Some("node-2"));
+                assert_eq!(error.stack_trace(), Some("trace"));
+                assert!(error.transient().unwrap().value());
+                assert_eq!(error.metadata().unwrap().get(0).key(), "node");
+                assert_eq!(
+                    error
+                        .metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("2")
+                );
+                assert_eq!(
+                    result
+                        .trace()
+                        .unwrap()
+                        .kind_as_value_object()
+                        .unwrap()
+                        .fields()
+                        .unwrap()
+                        .get(0)
+                        .key(),
+                    "level"
+                );
+                assert_eq!(
+                    result
+                        .trace()
+                        .unwrap()
+                        .kind_as_value_object()
+                        .unwrap()
+                        .fields()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_uint_64_value()
+                        .unwrap()
+                        .value(),
+                    3
+                );
+                assert_eq!(result.metadata().unwrap().get(0).key(), "request_id");
+                assert_eq!(
+                    result
+                        .metadata()
+                        .unwrap()
+                        .get(0)
+                        .value()
+                        .unwrap()
+                        .kind_as_string_value()
+                        .unwrap()
+                        .value(),
+                    Some("r1")
+                );
+            }
             backend.assert_exhausted().unwrap();
         }
 

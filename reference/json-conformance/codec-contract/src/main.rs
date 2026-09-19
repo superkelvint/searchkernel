@@ -138,7 +138,7 @@ fn assert_scalar_policy() {
       "protocol_version":2,
       "response": {
         "search": {
-          "hits": [],
+          "root": {"result_group": {"children": []}},
           "total_hits": {"value": "9007199254740993", "relation": "exact"}
         }
       }
@@ -148,10 +148,10 @@ fn assert_scalar_policy() {
     assert_eq!(output, json(input));
 
     for invalid in [
-        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":42,"relation":"exact"}}}}"#.as_slice(),
-        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"+1","relation":"exact"}}}}"#.as_slice(),
-        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"01","relation":"exact"}}}}"#.as_slice(),
-        br#"{"protocol_version":2,"response":{"search":{"hits":[],"total_hits":{"value":"-1","relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"root":{"result_group":{"children":[]}},"total_hits":{"value":42,"relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"root":{"result_group":{"children":[]}},"total_hits":{"value":"+1","relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"root":{"result_group":{"children":[]}},"total_hits":{"value":"01","relation":"exact"}}}}"#.as_slice(),
+        br#"{"protocol_version":2,"response":{"search":{"root":{"result_group":{"children":[]}},"total_hits":{"value":"-1","relation":"exact"}}}}"#.as_slice(),
     ] {
         assert!(response_json_to_flatbuffer(invalid).is_err(), "invalid canonical scalar was accepted: {}", String::from_utf8_lossy(invalid));
     }

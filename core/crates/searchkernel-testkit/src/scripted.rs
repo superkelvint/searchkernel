@@ -10,7 +10,7 @@ pub enum ScriptedResult {
     Patch(searchkernel_ir::PatchResult),
     Delete(searchkernel_ir::DeleteResult),
     Get(searchkernel_ir::GetResult),
-    Search(searchkernel_ir::SearchResult),
+    Search(Box<searchkernel_ir::SearchResult>),
     Analyze(searchkernel_ir::AnalyzeResult),
 }
 
@@ -279,7 +279,7 @@ impl FromScriptedResult for searchkernel_ir::SearchResult {
         operation: OperationKind,
     ) -> std::result::Result<Self, TestkitError> {
         match result {
-            ScriptedResult::Search(value) => Ok(value),
+            ScriptedResult::Search(value) => Ok(*value),
             _ => Err(TestkitError::InvalidOutcome {
                 operation,
                 outcome: "search",

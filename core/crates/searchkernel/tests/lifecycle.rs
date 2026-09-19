@@ -111,14 +111,10 @@ impl Backend for BlockingBackend {
         while !*released {
             released = condition.wait(released).expect("release condition");
         }
-        Ok(SearchResult {
-            hits: Vec::new(),
-            total_hits: searchkernel_ir::TotalHits {
-                value: 0,
-                relation: searchkernel_ir::TotalHitsRelation::Exact,
-            },
-            facets: Vec::new(),
-        })
+        Ok(SearchResult::empty(searchkernel_ir::TotalHits {
+            value: 0,
+            relation: searchkernel_ir::TotalHitsRelation::Exact,
+        }))
     }
 
     fn analyze(

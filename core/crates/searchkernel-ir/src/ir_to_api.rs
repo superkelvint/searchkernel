@@ -1087,7 +1087,13 @@ fn search_request_offset<'a>(
 ) -> flatbuffers::WIPOffset<api::SearchRequest<'a>> {
     let query = query_source_offset(builder, &request.query);
 
-    let search_fields = search_field_selection_offset(builder, &request.search_fields);
+    let search_fields = match &request.query {
+        ir::QueryIr::Text(_) => Some(search_field_selection_offset(
+            builder,
+            &request.search_fields,
+        )),
+        _ => None,
+    };
     let filter = request.filter.as_ref().map(|value| {
         let expression = filter_offset(builder, value);
         let expressions = builder.create_vector(&[expression]);
@@ -1131,7 +1137,7 @@ fn search_request_offset<'a>(
         builder,
         &api::SearchRequestArgs {
             query: Some(query),
-            search_fields: Some(search_fields),
+            search_fields,
             filters: filter,
             sort: Some(sort),
             ranking: Some(ranking),
@@ -2636,6 +2642,9 @@ fn query_expr_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     query: &ir::QueryIr,
 ) -> flatbuffers::WIPOffset<api::QueryExpr<'a>> {
+    if let ir::QueryIr::Typed(query) = query {
+        return query_expr_ir_offset(builder, query);
+    }
     let (expr_type, expr) = match query {
         ir::QueryIr::Term { field, value } => {
             let field = query_field_ref_offset(builder, field.as_str());
@@ -2697,6 +2706,7 @@ fn query_expr_offset<'a>(
             (api::QueryExprKind::QueryNot, value.as_union_value())
         }
         ir::QueryIr::MatchAll | ir::QueryIr::Text(_) | ir::QueryIr::Yql { .. } => unreachable!(),
+        ir::QueryIr::Typed(_) => unreachable!(),
     };
     api::QueryExpr::create(
         builder,
@@ -2706,6 +2716,500 @@ fn query_expr_offset<'a>(
             annotations: None,
         },
     )
+}
+
+fn query_expr_ir_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    query: &ir::QueryExprIr,
+) -> flatbuffers::WIPOffset<api::QueryExpr<'a>> {
+    let (expr_type, expr) = match &query.kind {
+        ir::QueryExprKindIr::Term { value } => {
+            let value = request_value_offset(builder, value);
+            let value = api::TermQuery::create(builder, &api::TermQueryArgs { value: Some(value) });
+            (api::QueryExprKind::TermQuery, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Contains { field, item } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let item = query_expr_ir_offset(builder, item);
+            let value = api::QueryContains::create(
+                builder,
+                &api::QueryContainsArgs {
+                    field: Some(field),
+                    item: Some(item),
+                },
+            );
+            (api::QueryExprKind::QueryContains, value.as_union_value())
+        }
+        ir::QueryExprKindIr::And(values) => {
+            let clauses = query_expr_ir_vector(builder, values);
+            let value = api::QueryAnd::create(builder, &api::QueryAndArgs { clauses });
+            (api::QueryExprKind::QueryAnd, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Or(values) => {
+            let clauses = query_expr_ir_vector(builder, values);
+            let value = api::QueryOr::create(builder, &api::QueryOrArgs { clauses });
+            (api::QueryExprKind::QueryOr, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Not(value) => {
+            let clause = query_expr_ir_offset(builder, value);
+            let value = api::QueryNot::create(
+                builder,
+                &api::QueryNotArgs {
+                    clause: Some(clause),
+                },
+            );
+            (api::QueryExprKind::QueryNot, value.as_union_value())
+        }
+        ir::QueryExprKindIr::True => {
+            let value = api::QueryTrue::create(builder, &api::QueryTrueArgs {});
+            (api::QueryExprKind::QueryTrue, value.as_union_value())
+        }
+        ir::QueryExprKindIr::False => {
+            let value = api::QueryFalse::create(builder, &api::QueryFalseArgs {});
+            (api::QueryExprKind::QueryFalse, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Comparison { field, op, value } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let value = request_value_offset(builder, value);
+            let value = api::QueryComparison::create(
+                builder,
+                &api::QueryComparisonArgs {
+                    field: Some(field),
+                    op: comparison_op_to_api(*op),
+                    value: Some(value),
+                },
+            );
+            (api::QueryExprKind::QueryComparison, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Range {
+            field,
+            lower,
+            upper,
+            include_lower,
+            include_upper,
+        } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let lower = query_range_bound_offset(builder, lower);
+            let upper = query_range_bound_offset(builder, upper);
+            let include_lower = include_lower.map(api::OptionalBool::new);
+            let include_upper = include_upper.map(api::OptionalBool::new);
+            let value = api::QueryRange::create(
+                builder,
+                &api::QueryRangeArgs {
+                    field: Some(field),
+                    lower: Some(lower),
+                    upper: Some(upper),
+                    include_lower: include_lower.as_ref(),
+                    include_upper: include_upper.as_ref(),
+                },
+            );
+            (api::QueryExprKind::QueryRange, value.as_union_value())
+        }
+        ir::QueryExprKindIr::In { field, values } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let values = values
+                .iter()
+                .map(|value| request_value_offset(builder, value))
+                .collect::<Vec<_>>();
+            let values = builder.create_vector(&values);
+            let value = api::QueryIn::create(
+                builder,
+                &api::QueryInArgs {
+                    field: Some(field),
+                    values: Some(values),
+                },
+            );
+            (api::QueryExprKind::QueryIn, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Phrase(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QueryPhrase)
+        }
+        ir::QueryExprKindIr::Near(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QueryNear)
+        }
+        ir::QueryExprKindIr::ONear(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QueryONear)
+        }
+        ir::QueryExprKindIr::SameElement(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QuerySameElement)
+        }
+        ir::QueryExprKindIr::Equiv(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QueryEquiv)
+        }
+        ir::QueryExprKindIr::WeakAnd(values) => {
+            query_children_union(builder, values, api::QueryExprKind::QueryWeakAnd)
+        }
+        ir::QueryExprKindIr::Alternatives(values) => {
+            let alternatives = values
+                .iter()
+                .map(|alternative| {
+                    let query = query_expr_ir_offset(builder, &alternative.query);
+                    let exactness = alternative.exactness.map(api::OptionalDouble::new);
+                    api::QueryAlternative::create(
+                        builder,
+                        &api::QueryAlternativeArgs {
+                            query: Some(query),
+                            exactness: exactness.as_ref(),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            let alternatives = builder.create_vector(&alternatives);
+            let value = api::QueryAlternatives::create(
+                builder,
+                &api::QueryAlternativesArgs {
+                    alternatives: Some(alternatives),
+                },
+            );
+            (
+                api::QueryExprKind::QueryAlternatives,
+                value.as_union_value(),
+            )
+        }
+        ir::QueryExprKindIr::Fuzzy { value: query_value } => {
+            let query_value = request_value_offset(builder, query_value);
+            let value = api::QueryFuzzy::create(
+                builder,
+                &api::QueryFuzzyArgs {
+                    value: Some(query_value),
+                },
+            );
+            (api::QueryExprKind::QueryFuzzy, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Matches { field, pattern } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let pattern = builder.create_string(pattern);
+            let value = api::QueryMatches::create(
+                builder,
+                &api::QueryMatchesArgs {
+                    field: Some(field),
+                    pattern: Some(pattern),
+                },
+            );
+            (api::QueryExprKind::QueryMatches, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Text { text } => {
+            let text = builder.create_string(text);
+            let value = api::QueryText::create(builder, &api::QueryTextArgs { text: Some(text) });
+            (api::QueryExprKind::QueryText, value.as_union_value())
+        }
+        ir::QueryExprKindIr::UserInput { value: input } => {
+            let input = builder.create_string(input);
+            let value = api::QueryUserInput::create(
+                builder,
+                &api::QueryUserInputArgs { value: Some(input) },
+            );
+            (api::QueryExprKind::QueryUserInput, value.as_union_value())
+        }
+        ir::QueryExprKindIr::UserQuery => {
+            let value = api::QueryUserQuery::create(builder, &api::QueryUserQueryArgs {});
+            (api::QueryExprKind::QueryUserQuery, value.as_union_value())
+        }
+        ir::QueryExprKindIr::DotProduct { field, items } => {
+            weighted_query_union(builder, field, items, api::QueryExprKind::QueryDotProduct)
+        }
+        ir::QueryExprKindIr::WeightedSet { field, items } => {
+            weighted_query_union(builder, field, items, api::QueryExprKind::QueryWeightedSet)
+        }
+        ir::QueryExprKindIr::Wand { field, items } => {
+            weighted_query_union(builder, field, items, api::QueryExprKind::QueryWand)
+        }
+        ir::QueryExprKindIr::Rank { matching, ranking } => {
+            let matching = query_expr_ir_offset(builder, matching);
+            let ranking = query_expr_ir_vector(builder, ranking);
+            let value = api::QueryRank::create(
+                builder,
+                &api::QueryRankArgs {
+                    match_: Some(matching),
+                    rank: ranking,
+                },
+            );
+            (api::QueryExprKind::QueryRank, value.as_union_value())
+        }
+        ir::QueryExprKindIr::Labeled {
+            query: child,
+            label,
+            score,
+        } => {
+            let child = query_expr_ir_offset(builder, child);
+            let label = builder.create_string(label);
+            let value = api::QueryLabeled::create(
+                builder,
+                &api::QueryLabeledArgs {
+                    query: Some(child),
+                    label: Some(label),
+                    score: *score,
+                },
+            );
+            (api::QueryExprKind::QueryLabeled, value.as_union_value())
+        }
+        ir::QueryExprKindIr::NonEmpty(child) => {
+            let child = query_expr_ir_offset(builder, child);
+            let value =
+                api::QueryNonEmpty::create(builder, &api::QueryNonEmptyArgs { query: Some(child) });
+            (api::QueryExprKind::QueryNonEmpty, value.as_union_value())
+        }
+        ir::QueryExprKindIr::GeoLocation {
+            field,
+            latitude,
+            longitude,
+            radius,
+        } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let radius = builder.create_string(radius);
+            let value = api::QueryGeoLocation::create(
+                builder,
+                &api::QueryGeoLocationArgs {
+                    field: Some(field),
+                    latitude: *latitude,
+                    longitude: *longitude,
+                    radius: Some(radius),
+                },
+            );
+            (api::QueryExprKind::QueryGeoLocation, value.as_union_value())
+        }
+        ir::QueryExprKindIr::GeoBoundingBox {
+            field,
+            south,
+            west,
+            north,
+            east,
+        } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let value = api::QueryGeoBoundingBox::create(
+                builder,
+                &api::QueryGeoBoundingBoxArgs {
+                    field: Some(field),
+                    south: *south,
+                    west: *west,
+                    north: *north,
+                    east: *east,
+                },
+            );
+            (
+                api::QueryExprKind::QueryGeoBoundingBox,
+                value.as_union_value(),
+            )
+        }
+        ir::QueryExprKindIr::NearestNeighbor {
+            document_field,
+            query_tensor,
+        } => {
+            let field = query_field_ref_ir_offset(builder, document_field);
+            let query_tensor = builder.create_string(query_tensor);
+            let value = api::QueryNearestNeighbor::create(
+                builder,
+                &api::QueryNearestNeighborArgs {
+                    document_field: Some(field),
+                    query_tensor: Some(query_tensor),
+                },
+            );
+            (
+                api::QueryExprKind::QueryNearestNeighbor,
+                value.as_union_value(),
+            )
+        }
+        ir::QueryExprKindIr::Predicate {
+            field,
+            features,
+            range_features,
+        } => {
+            let field = query_field_ref_ir_offset(builder, field);
+            let features = value_object_offset(builder, features);
+            let range_features = value_object_offset(builder, range_features);
+            let value = api::QueryPredicate::create(
+                builder,
+                &api::QueryPredicateArgs {
+                    field: Some(field),
+                    features: Some(features),
+                    range_features: Some(range_features),
+                },
+            );
+            (api::QueryExprKind::QueryPredicate, value.as_union_value())
+        }
+    };
+    let annotations = request_value_entries_offset(builder, &query.annotations);
+    api::QueryExpr::create(
+        builder,
+        &api::QueryExprArgs {
+            expr_type,
+            expr: Some(expr),
+            annotations,
+        },
+    )
+}
+
+fn query_expr_ir_vector<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &[ir::QueryExprIr],
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::QueryExpr<'a>>>,
+    >,
+> {
+    let values = values
+        .iter()
+        .map(|value| query_expr_ir_offset(builder, value))
+        .collect::<Vec<_>>();
+    Some(builder.create_vector(&values))
+}
+
+fn query_children_union<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &[ir::QueryExprIr],
+    kind: api::QueryExprKind,
+) -> (
+    api::QueryExprKind,
+    flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+) {
+    let clauses = query_expr_ir_vector(builder, values);
+    let union = match kind {
+        api::QueryExprKind::QueryPhrase => {
+            api::QueryPhrase::create(builder, &api::QueryPhraseArgs { terms: clauses })
+                .as_union_value()
+        }
+        api::QueryExprKind::QueryNear => {
+            api::QueryNear::create(builder, &api::QueryNearArgs { terms: clauses }).as_union_value()
+        }
+        api::QueryExprKind::QueryONear => {
+            api::QueryONear::create(builder, &api::QueryONearArgs { terms: clauses })
+                .as_union_value()
+        }
+        api::QueryExprKind::QuerySameElement => {
+            api::QuerySameElement::create(builder, &api::QuerySameElementArgs { clauses })
+                .as_union_value()
+        }
+        api::QueryExprKind::QueryEquiv => {
+            api::QueryEquiv::create(builder, &api::QueryEquivArgs { clauses }).as_union_value()
+        }
+        api::QueryExprKind::QueryWeakAnd => {
+            api::QueryWeakAnd::create(builder, &api::QueryWeakAndArgs { clauses }).as_union_value()
+        }
+        _ => unreachable!(),
+    };
+    (kind, union)
+}
+
+fn weighted_query_union<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    field: &ir::QueryFieldRefIr,
+    items: &[ir::WeightedQueryItemIr],
+    kind: api::QueryExprKind,
+) -> (
+    api::QueryExprKind,
+    flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+) {
+    let field = query_field_ref_ir_offset(builder, field);
+    let items = items
+        .iter()
+        .map(|item| {
+            let key = request_value_offset(builder, &item.key);
+            api::WeightedQueryItem::create(
+                builder,
+                &api::WeightedQueryItemArgs {
+                    key: Some(key),
+                    weight: item.weight,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let items = Some(builder.create_vector(&items));
+    let union = match kind {
+        api::QueryExprKind::QueryDotProduct => api::QueryDotProduct::create(
+            builder,
+            &api::QueryDotProductArgs {
+                field: Some(field),
+                items,
+            },
+        )
+        .as_union_value(),
+        api::QueryExprKind::QueryWeightedSet => api::QueryWeightedSet::create(
+            builder,
+            &api::QueryWeightedSetArgs {
+                field: Some(field),
+                items,
+            },
+        )
+        .as_union_value(),
+        api::QueryExprKind::QueryWand => api::QueryWand::create(
+            builder,
+            &api::QueryWandArgs {
+                field: Some(field),
+                items,
+            },
+        )
+        .as_union_value(),
+        _ => unreachable!(),
+    };
+    (kind, union)
+}
+
+fn query_field_ref_ir_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    field: &ir::QueryFieldRefIr,
+) -> flatbuffers::WIPOffset<api::QueryFieldRef<'a>> {
+    let path = builder.create_string(field.path.as_str());
+    let element_index = field.element_index.map(api::OptionalUInt32::new);
+    api::QueryFieldRef::create(
+        builder,
+        &api::QueryFieldRefArgs {
+            path: Some(path),
+            element_index: element_index.as_ref(),
+        },
+    )
+}
+
+fn query_range_bound_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    bound: &ir::QueryRangeBoundIr,
+) -> flatbuffers::WIPOffset<api::RangeBound<'a>> {
+    let (bound_type, bound) = match bound {
+        ir::QueryRangeBoundIr::Finite(value) => {
+            let value = request_value_offset(builder, value);
+            (
+                api::RangeBoundKind::FiniteRangeBound,
+                api::FiniteRangeBound::create(
+                    builder,
+                    &api::FiniteRangeBoundArgs { value: Some(value) },
+                )
+                .as_union_value(),
+            )
+        }
+        ir::QueryRangeBoundIr::NegativeInfinity => (
+            api::RangeBoundKind::NegativeInfinityBound,
+            api::NegativeInfinityBound::create(builder, &api::NegativeInfinityBoundArgs {})
+                .as_union_value(),
+        ),
+        ir::QueryRangeBoundIr::PositiveInfinity => (
+            api::RangeBoundKind::PositiveInfinityBound,
+            api::PositiveInfinityBound::create(builder, &api::PositiveInfinityBoundArgs {})
+                .as_union_value(),
+        ),
+        ir::QueryRangeBoundIr::Unbounded => (
+            api::RangeBoundKind::UnboundedRangeBound,
+            api::UnboundedRangeBound::create(builder, &api::UnboundedRangeBoundArgs {})
+                .as_union_value(),
+        ),
+    };
+    api::RangeBound::create(
+        builder,
+        &api::RangeBoundArgs {
+            bound_type,
+            bound: Some(bound),
+        },
+    )
+}
+
+fn value_object_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &std::collections::BTreeMap<String, ir::RequestValueIr>,
+) -> flatbuffers::WIPOffset<api::ValueObject<'a>> {
+    let fields = request_value_entries_offset(builder, values);
+    api::ValueObject::create(builder, &api::ValueObjectArgs { fields })
+}
+
+fn comparison_op_to_api(value: ir::ComparisonOp) -> api::ComparisonOp {
+    comparison_op(value)
 }
 
 fn filter_offset<'a>(
@@ -2769,8 +3273,8 @@ fn filter_offset<'a>(
         }
         ir::FilterIr::Range(range) => {
             let field = query_field_ref_offset(builder, range.field.as_str());
-            let lower = range_bound_offset(builder, range.lower.as_ref());
-            let upper = range_bound_offset(builder, range.upper.as_ref());
+            let lower = range_bound_offset(builder, &range.lower);
+            let upper = range_bound_offset(builder, &range.upper);
             let include_lower = api::OptionalBool::new(range.include_lower);
             let include_upper = api::OptionalBool::new(range.include_upper);
             let value = api::FilterRange::create(
@@ -2819,10 +3323,10 @@ fn filter_offset<'a>(
 
 fn range_bound_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    value: Option<&ir::ScalarValueIr>,
+    value: &ir::FilterRangeBoundIr,
 ) -> flatbuffers::WIPOffset<api::RangeBound<'a>> {
     let (bound_type, bound) = match value {
-        Some(value) => (api::RangeBoundKind::FiniteRangeBound, {
+        ir::FilterRangeBoundIr::Finite(value) => (api::RangeBoundKind::FiniteRangeBound, {
             let value = scalar_value_offset(builder, value);
             api::FiniteRangeBound::create(
                 builder,
@@ -2830,9 +3334,19 @@ fn range_bound_offset<'a>(
             )
             .as_union_value()
         }),
-        None => (
+        ir::FilterRangeBoundIr::Unbounded => (
             api::RangeBoundKind::UnboundedRangeBound,
             api::UnboundedRangeBound::create(builder, &api::UnboundedRangeBoundArgs {})
+                .as_union_value(),
+        ),
+        ir::FilterRangeBoundIr::NegativeInfinity => (
+            api::RangeBoundKind::NegativeInfinityBound,
+            api::NegativeInfinityBound::create(builder, &api::NegativeInfinityBoundArgs {})
+                .as_union_value(),
+        ),
+        ir::FilterRangeBoundIr::PositiveInfinity => (
+            api::RangeBoundKind::PositiveInfinityBound,
+            api::PositiveInfinityBound::create(builder, &api::PositiveInfinityBoundArgs {})
                 .as_union_value(),
         ),
     };
@@ -2921,6 +3435,12 @@ fn missing_policy_offset<'a>(
             let policy = api::MissingLast::create(builder, &api::MissingLastArgs {});
             (api::MissingPolicyKind::MissingLast, policy.as_union_value())
         }
+        ir::MissingPlacement::As(value) => {
+            let value = request_value_offset(builder, &value);
+            let policy =
+                api::MissingAs::create(builder, &api::MissingAsArgs { value: Some(value) });
+            (api::MissingPolicyKind::MissingAs, policy.as_union_value())
+        }
     };
     api::MissingPolicy::create(
         builder,
@@ -2935,17 +3455,9 @@ fn sort_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     sort: &ir::SortIr,
 ) -> flatbuffers::WIPOffset<api::SortExpr<'a>> {
-    let field = builder.create_string(sort.field.as_str());
-    let field =
-        api::FieldSortTarget::create(builder, &api::FieldSortTargetArgs { field: Some(field) });
-    let target = api::SortTarget::create(
-        builder,
-        &api::SortTargetArgs {
-            target_type: api::SortTargetKind::FieldSortTarget,
-            target: Some(field.as_union_value()),
-        },
-    );
-    let missing = missing_policy_offset(builder, sort.missing);
+    let target = sort_target_offset(builder, &sort.target);
+    let missing = missing_policy_offset(builder, sort.missing.clone());
+    let annotations = request_value_entries_offset(builder, &sort.annotations);
     api::SortExpr::create(
         builder,
         &api::SortExprArgs {
@@ -2955,7 +3467,7 @@ fn sort_offset<'a>(
                 ir::SortDirection::Desc => api::SortDirection::Desc,
             },
             missing: Some(missing),
-            annotations: None,
+            annotations,
         },
     )
 }
@@ -2964,17 +3476,9 @@ fn resolved_sort_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     sort: &ir::SortIr,
 ) -> flatbuffers::WIPOffset<api::ResolvedSortExpr<'a>> {
-    let field = builder.create_string(sort.field.as_str());
-    let field =
-        api::FieldSortTarget::create(builder, &api::FieldSortTargetArgs { field: Some(field) });
-    let target = api::ResolvedSortTarget::create(
-        builder,
-        &api::ResolvedSortTargetArgs {
-            target_type: api::ResolvedSortTargetKind::FieldSortTarget,
-            target: Some(field.as_union_value()),
-        },
-    );
-    let missing = missing_policy_offset(builder, sort.missing);
+    let target = resolved_sort_target_offset(builder, &sort.target);
+    let missing = missing_policy_offset(builder, sort.missing.clone());
+    let annotations = request_value_entries_offset(builder, &sort.annotations);
     api::ResolvedSortExpr::create(
         builder,
         &api::ResolvedSortExprArgs {
@@ -2984,7 +3488,101 @@ fn resolved_sort_offset<'a>(
                 ir::SortDirection::Desc => api::SortDirection::Desc,
             },
             missing: Some(missing),
-            annotations: None,
+            annotations,
+        },
+    )
+}
+
+fn sort_target_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    target: &ir::SortTargetIr,
+) -> flatbuffers::WIPOffset<api::SortTarget<'a>> {
+    let (target_type, target) = match target {
+        ir::SortTargetIr::Field(field) => {
+            let field = builder.create_string(field.as_str());
+            let target = api::FieldSortTarget::create(
+                builder,
+                &api::FieldSortTargetArgs { field: Some(field) },
+            );
+            (
+                api::SortTargetKind::FieldSortTarget,
+                target.as_union_value(),
+            )
+        }
+        ir::SortTargetIr::Relevance => {
+            let target =
+                api::RelevanceSortTarget::create(builder, &api::RelevanceSortTargetArgs {});
+            (
+                api::SortTargetKind::RelevanceSortTarget,
+                target.as_union_value(),
+            )
+        }
+        ir::SortTargetIr::RankFeature(feature) => {
+            let feature = builder.create_string(feature);
+            let target = api::RankFeatureSortTarget::create(
+                builder,
+                &api::RankFeatureSortTargetArgs {
+                    feature: Some(feature),
+                },
+            );
+            (
+                api::SortTargetKind::RankFeatureSortTarget,
+                target.as_union_value(),
+            )
+        }
+    };
+    api::SortTarget::create(
+        builder,
+        &api::SortTargetArgs {
+            target_type,
+            target: Some(target),
+        },
+    )
+}
+
+fn resolved_sort_target_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    target: &ir::SortTargetIr,
+) -> flatbuffers::WIPOffset<api::ResolvedSortTarget<'a>> {
+    let (target_type, target) = match target {
+        ir::SortTargetIr::Field(field) => {
+            let field = builder.create_string(field.as_str());
+            let target = api::FieldSortTarget::create(
+                builder,
+                &api::FieldSortTargetArgs { field: Some(field) },
+            );
+            (
+                api::ResolvedSortTargetKind::FieldSortTarget,
+                target.as_union_value(),
+            )
+        }
+        ir::SortTargetIr::Relevance => {
+            let target =
+                api::RelevanceSortTarget::create(builder, &api::RelevanceSortTargetArgs {});
+            (
+                api::ResolvedSortTargetKind::RelevanceSortTarget,
+                target.as_union_value(),
+            )
+        }
+        ir::SortTargetIr::RankFeature(feature) => {
+            let feature = builder.create_string(feature);
+            let target = api::RankFeatureSortTarget::create(
+                builder,
+                &api::RankFeatureSortTargetArgs {
+                    feature: Some(feature),
+                },
+            );
+            (
+                api::ResolvedSortTargetKind::RankFeatureSortTarget,
+                target.as_union_value(),
+            )
+        }
+    };
+    api::ResolvedSortTarget::create(
+        builder,
+        &api::ResolvedSortTargetArgs {
+            target_type,
+            target: Some(target),
         },
     )
 }
@@ -3073,68 +3671,219 @@ pub fn get_result_offset<'a>(
     api::GetResult::create(builder, &api::GetResultArgs { document })
 }
 
-pub fn search_result_to_api(result: &ir::SearchResult) -> Vec<u8> {
+pub fn search_result_to_api(result: &ir::SearchResult) -> Result<Vec<u8>, PortableError> {
+    validate_search_result(result)?;
     let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let root = search_result_offset(&mut builder, result);
+    let root = search_result_offset_unchecked(&mut builder, result);
     builder.finish(root, None);
-    builder.finished_data().to_vec()
+    Ok(builder.finished_data().to_vec())
 }
 
 pub fn search_result_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     result: &ir::SearchResult,
+) -> Result<flatbuffers::WIPOffset<api::SearchResult<'a>>, PortableError> {
+    validate_search_result(result)?;
+    Ok(search_result_offset_unchecked(builder, result))
+}
+
+fn search_result_offset_unchecked<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::SearchResult,
 ) -> flatbuffers::WIPOffset<api::SearchResult<'a>> {
-    let hit_nodes = result
-        .hits
-        .iter()
-        .map(|hit| {
-            let hit = hit_offset(builder, hit);
-            api::ResultNode::create(
-                builder,
-                &api::ResultNodeArgs {
-                    node_type: api::ResultNodeKind::Hit,
-                    node: Some(hit.as_union_value()),
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let hit_nodes = builder.create_vector(&hit_nodes);
-    let group = api::ResultGroup::create(
-        builder,
-        &api::ResultGroupArgs {
-            children: Some(hit_nodes),
-            ..Default::default()
-        },
-    );
-    let root = api::ResultNode::create(
-        builder,
-        &api::ResultNodeArgs {
-            node_type: api::ResultNodeKind::ResultGroup,
-            node: Some(group.as_union_value()),
-        },
-    );
+    let root = result_node_offset(builder, &result.root);
     let total_hits = api::TotalHits::create(
         builder,
         &api::TotalHitsArgs {
             value: result.total_hits.value,
             relation: match result.total_hits.relation {
+                ir::TotalHitsRelation::Unspecified => api::TotalHitsRelation::Unspecified,
                 ir::TotalHitsRelation::Exact => api::TotalHitsRelation::Exact,
                 ir::TotalHitsRelation::LowerBound => api::TotalHitsRelation::LowerBound,
+                ir::TotalHitsRelation::Approximate => api::TotalHitsRelation::Approximate,
+                ir::TotalHitsRelation::Unknown => api::TotalHitsRelation::Unknown,
             },
         },
     );
+    let coverage = result
+        .coverage
+        .as_ref()
+        .map(|coverage| coverage_offset(builder, coverage));
+    let timing = result
+        .timing
+        .as_ref()
+        .map(|timing| search_timing_offset(builder, timing));
+    let errors = (!result.errors.is_empty()).then(|| {
+        let errors = result
+            .errors
+            .iter()
+            .map(|error| search_result_error_offset(builder, error))
+            .collect::<Vec<_>>();
+        builder.create_vector(&errors)
+    });
+    let trace = result
+        .trace
+        .as_ref()
+        .map(|trace| value_offset(builder, trace));
+    let metadata = value_entries_offset(builder, &result.metadata);
     api::SearchResult::create(
         builder,
         &api::SearchResultArgs {
             root: Some(root),
             total_hits: Some(total_hits),
-            coverage: None,
-            timing: None,
-            errors: None,
-            trace: None,
-            metadata: None,
+            coverage,
+            timing,
+            errors,
+            trace,
+            metadata,
         },
     )
+}
+
+/// Validate backend-owned result values before they enter the canonical V2
+/// response. The schema can represent non-finite scalar values explicitly,
+/// but relevance, coverage/timing doubles, and tensor cells have narrower
+/// contracts.
+pub fn validate_search_result(result: &ir::SearchResult) -> Result<(), PortableError> {
+    validate_result_node(&result.root, "root")?;
+    if let Some(coverage) = &result.coverage {
+        validate_finite(
+            coverage.coverage_percent,
+            "coverage.coverage_percent",
+            "coverage percentage must be finite",
+        )?;
+        if let Some(degraded) = &coverage.degraded {
+            validate_value_map(&degraded.metadata, "coverage.degraded.metadata")?;
+        }
+        validate_value_map(&coverage.metadata, "coverage.metadata")?;
+    }
+    if let Some(timing) = &result.timing {
+        validate_finite(
+            timing.query_time_seconds,
+            "timing.query_time_seconds",
+            "query time must be finite",
+        )?;
+        validate_finite(
+            timing.search_time_seconds,
+            "timing.search_time_seconds",
+            "search time must be finite",
+        )?;
+        validate_finite(
+            timing.summary_fetch_time_seconds,
+            "timing.summary_fetch_time_seconds",
+            "summary fetch time must be finite",
+        )?;
+        validate_value_map(&timing.metadata, "timing.metadata")?;
+    }
+    validate_value_map(&result.metadata, "metadata")?;
+    if let Some(trace) = &result.trace {
+        validate_value(trace, "trace")?;
+    }
+    for (index, error) in result.errors.iter().enumerate() {
+        validate_value_map(&error.metadata, &format!("errors[{index}].metadata"))?;
+    }
+    Ok(())
+}
+
+fn validate_result_node(node: &ir::ResultNode, path: &str) -> Result<(), PortableError> {
+    match node {
+        ir::ResultNode::Hit(hit) => {
+            validate_relevance(hit.score, &format!("{path}.relevance"))?;
+            validate_value_map(&hit.fields, &format!("{path}.fields"))?;
+            validate_value_map(&hit.match_features, &format!("{path}.match_features"))?;
+            validate_value_map(&hit.summary_features, &format!("{path}.summary_features"))?;
+            validate_value_map(&hit.rank_features, &format!("{path}.rank_features"))?;
+            for (index, value) in hit.sort_values.iter().enumerate() {
+                validate_value(value, &format!("{path}.sort_values[{index}]"))?;
+            }
+        }
+        ir::ResultNode::Group(group) => {
+            validate_relevance(group.score, &format!("{path}.relevance"))?;
+            validate_value_option(&group.value, &format!("{path}.value"))?;
+            validate_value_map(&group.fields, &format!("{path}.fields"))?;
+            for (index, child) in group.children.iter().enumerate() {
+                validate_result_node(child, &format!("{path}.children[{index}]"))?;
+            }
+            if let Some(limits) = &group.limits {
+                validate_value_option(&limits.from, &format!("{path}.limits.from"))?;
+                validate_value_option(&limits.to, &format!("{path}.limits.to"))?;
+            }
+            validate_value_map(&group.metadata, &format!("{path}.metadata"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_value_map(
+    values: &std::collections::BTreeMap<String, ir::Value>,
+    path: &str,
+) -> Result<(), PortableError> {
+    for (key, value) in values {
+        validate_value(value, &format!("{path}.{key}"))?;
+    }
+    Ok(())
+}
+
+fn validate_value_option(value: &Option<ir::Value>, path: &str) -> Result<(), PortableError> {
+    if let Some(value) = value {
+        validate_value(value, path)?;
+    }
+    Ok(())
+}
+
+fn validate_value(value: &ir::Value, path: &str) -> Result<(), PortableError> {
+    match value {
+        ir::Value::List(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_value(value, &format!("{path}[{index}]"))?;
+            }
+        }
+        ir::Value::Object(values) => validate_value_map(values, path)?,
+        ir::Value::Tensor(tensor) => {
+            let finite = match &tensor.payload {
+                ir::RequestTensorPayloadIr::Dense(values) => {
+                    values.iter().all(|value| value.is_finite())
+                }
+                ir::RequestTensorPayloadIr::Sparse(cells) => {
+                    cells.iter().all(|cell| cell.value.is_finite())
+                }
+                ir::RequestTensorPayloadIr::Mixed(blocks) => blocks
+                    .iter()
+                    .all(|block| block.values.iter().all(|value| value.is_finite())),
+            };
+            if !finite {
+                return Err(PortableError::invalid(
+                    "non_finite_tensor_cell",
+                    Some(format!("{path}.payload")),
+                    "tensor cell values must be finite",
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_relevance(score: Option<f64>, path: &str) -> Result<(), PortableError> {
+    if score.is_some_and(f64::is_nan) {
+        return Err(PortableError::invalid(
+            "non_finite_relevance",
+            Some(path),
+            "relevance must be finite or infinity",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_finite(value: Option<f64>, path: &str, message: &str) -> Result<(), PortableError> {
+    if value.is_some_and(|value| !value.is_finite()) {
+        return Err(PortableError::invalid(
+            "non_finite_number",
+            Some(path),
+            message,
+        ));
+    }
+    Ok(())
 }
 
 pub fn analyze_result_to_api(result: &ir::AnalyzeResult) -> Vec<u8> {
@@ -3204,11 +3953,25 @@ fn value_offset<'a>(
             api::UInt64Value::create(builder, &api::UInt64ValueArgs { value: *value })
                 .as_union_value(),
         ),
-        ir::Value::Float64(value) => (
+        ir::Value::Float64(value) if value.is_finite() => (
             api::ValueKind::Float64Value,
             api::Float64Value::create(builder, &api::Float64ValueArgs { value: *value })
                 .as_union_value(),
         ),
+        ir::Value::Float64(value) => {
+            let kind = if value.is_nan() {
+                api::NonFiniteFloatKind::NaN
+            } else if value.is_sign_positive() {
+                api::NonFiniteFloatKind::PositiveInfinity
+            } else {
+                api::NonFiniteFloatKind::NegativeInfinity
+            };
+            (
+                api::ValueKind::NonFiniteFloatValue,
+                api::NonFiniteFloatValue::create(builder, &api::NonFiniteFloatValueArgs { kind })
+                    .as_union_value(),
+            )
+        }
         ir::Value::String(value) => {
             let value = builder.create_string(value);
             let value =
@@ -3259,6 +4022,10 @@ fn value_offset<'a>(
             );
             (api::ValueKind::ValueObject, value.as_union_value())
         }
+        ir::Value::Tensor(value) => (
+            api::ValueKind::TensorValue,
+            request_tensor_offset(builder, value).as_union_value(),
+        ),
     };
     api::Value::create(
         builder,
@@ -3513,10 +4280,12 @@ fn rich_v2_index_definition_round_trips_through_ir() {
         query_commands: vec!["stem".to_owned()],
         properties: BTreeMap::new(),
     }];
-    definition.schema_fields = vec![field(
+    let mut derived = field(
         "derived",
         DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-    )];
+    );
+    derived.capabilities.filterable = false;
+    definition.schema_fields = vec![derived];
     definition.imported_fields = vec![ImportedFieldDefinitionIr {
         reference_field: FieldName::parse("parent").unwrap(),
         target_field: "name".to_owned(),
@@ -3804,57 +4573,296 @@ fn document_offset<'a>(
     )
 }
 
+fn value_entries_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    values: &std::collections::BTreeMap<String, ir::Value>,
+) -> Option<
+    flatbuffers::WIPOffset<
+        flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::ValueEntry<'a>>>,
+    >,
+> {
+    (!values.is_empty()).then(|| {
+        let entries = values
+            .iter()
+            .map(|(key, value)| {
+                let key = builder.create_string(key);
+                let value = value_offset(builder, value);
+                api::ValueEntry::create(
+                    builder,
+                    &api::ValueEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&entries)
+    })
+}
+
+fn relevance_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    score: f64,
+) -> flatbuffers::WIPOffset<api::Relevance<'a>> {
+    let (value_type, value) = if score.is_infinite() && score.is_sign_positive() {
+        (
+            api::RelevanceKind::PositiveInfinityRelevance,
+            api::PositiveInfinityRelevance::create(builder, &api::PositiveInfinityRelevanceArgs {})
+                .as_union_value(),
+        )
+    } else if score.is_infinite() {
+        (
+            api::RelevanceKind::NegativeInfinityRelevance,
+            api::NegativeInfinityRelevance::create(builder, &api::NegativeInfinityRelevanceArgs {})
+                .as_union_value(),
+        )
+    } else {
+        (
+            api::RelevanceKind::FiniteRelevance,
+            api::FiniteRelevance::create(builder, &api::FiniteRelevanceArgs { value: score })
+                .as_union_value(),
+        )
+    };
+    api::Relevance::create(
+        builder,
+        &api::RelevanceArgs {
+            value_type,
+            value: Some(value),
+        },
+    )
+}
+
+fn result_node_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    node: &ir::ResultNode,
+) -> flatbuffers::WIPOffset<api::ResultNode<'a>> {
+    let (node_type, node) = match node {
+        ir::ResultNode::Hit(hit) => (
+            api::ResultNodeKind::Hit,
+            hit_offset(builder, hit).as_union_value(),
+        ),
+        ir::ResultNode::Group(group) => (
+            api::ResultNodeKind::ResultGroup,
+            result_group_offset(builder, group).as_union_value(),
+        ),
+    };
+    api::ResultNode::create(
+        builder,
+        &api::ResultNodeArgs {
+            node_type,
+            node: Some(node),
+        },
+    )
+}
+
+fn result_group_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    group: &ir::ResultGroup,
+) -> flatbuffers::WIPOffset<api::ResultGroup<'a>> {
+    let id = group.id.as_ref().map(|id| builder.create_string(id));
+    let label = group
+        .label
+        .as_ref()
+        .map(|label| builder.create_string(label));
+    let value = group
+        .value
+        .as_ref()
+        .map(|value| value_offset(builder, value));
+    let fields = value_entries_offset(builder, &group.fields);
+    let children = (!group.children.is_empty()).then(|| {
+        let children = group
+            .children
+            .iter()
+            .map(|child| result_node_offset(builder, child))
+            .collect::<Vec<_>>();
+        builder.create_vector(&children)
+    });
+    let continuations = string_entry_offsets(builder, &group.continuations);
+    let source = group
+        .source
+        .as_ref()
+        .map(|source| builder.create_string(source));
+    let types = string_vector_offset(builder, &group.types);
+    let relevance = group.score.map(|score| relevance_offset(builder, score));
+    let limits = group.limits.as_ref().map(|limits| {
+        let from = limits
+            .from
+            .as_ref()
+            .map(|value| value_offset(builder, value));
+        let to = limits.to.as_ref().map(|value| value_offset(builder, value));
+        api::ResultLimits::create(builder, &api::ResultLimitsArgs { from, to })
+    });
+    let metadata = value_entries_offset(builder, &group.metadata);
+    api::ResultGroup::create(
+        builder,
+        &api::ResultGroupArgs {
+            id,
+            label,
+            value,
+            fields,
+            children,
+            continuations,
+            source,
+            types,
+            relevance,
+            limits,
+            metadata,
+        },
+    )
+}
+
+fn coverage_degraded_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    degraded: &ir::CoverageDegraded,
+) -> flatbuffers::WIPOffset<api::CoverageDegraded<'a>> {
+    let match_phase = degraded.match_phase.map(api::OptionalBool::new);
+    let timeout = degraded.timeout.map(api::OptionalBool::new);
+    let adaptive_timeout = degraded.adaptive_timeout.map(api::OptionalBool::new);
+    let ann_timeout = degraded.ann_timeout.map(api::OptionalBool::new);
+    let non_ideal_state = degraded.non_ideal_state.map(api::OptionalBool::new);
+    let metadata = value_entries_offset(builder, &degraded.metadata);
+    api::CoverageDegraded::create(
+        builder,
+        &api::CoverageDegradedArgs {
+            match_phase: match_phase.as_ref(),
+            timeout: timeout.as_ref(),
+            adaptive_timeout: adaptive_timeout.as_ref(),
+            ann_timeout: ann_timeout.as_ref(),
+            non_ideal_state: non_ideal_state.as_ref(),
+            metadata,
+        },
+    )
+}
+
+fn coverage_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    coverage: &ir::Coverage,
+) -> flatbuffers::WIPOffset<api::Coverage<'a>> {
+    let coverage_percent = coverage.coverage_percent.map(api::OptionalDouble::new);
+    let documents = coverage.documents.map(api::OptionalUInt64::new);
+    let full = coverage.full.map(api::OptionalBool::new);
+    let nodes = coverage.nodes.map(api::OptionalUInt32::new);
+    let results = coverage.results.map(api::OptionalUInt64::new);
+    let results_full = coverage.results_full.map(api::OptionalUInt64::new);
+    let degraded = coverage
+        .degraded
+        .as_ref()
+        .map(|degraded| coverage_degraded_offset(builder, degraded));
+    let metadata = value_entries_offset(builder, &coverage.metadata);
+    api::Coverage::create(
+        builder,
+        &api::CoverageArgs {
+            coverage_percent: coverage_percent.as_ref(),
+            documents: documents.as_ref(),
+            full: full.as_ref(),
+            nodes: nodes.as_ref(),
+            results: results.as_ref(),
+            results_full: results_full.as_ref(),
+            degraded,
+            metadata,
+        },
+    )
+}
+
+fn search_timing_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    timing: &ir::SearchTiming,
+) -> flatbuffers::WIPOffset<api::SearchTiming<'a>> {
+    let query_time_seconds = timing.query_time_seconds.map(api::OptionalDouble::new);
+    let search_time_seconds = timing.search_time_seconds.map(api::OptionalDouble::new);
+    let summary_fetch_time_seconds = timing
+        .summary_fetch_time_seconds
+        .map(api::OptionalDouble::new);
+    let metadata = value_entries_offset(builder, &timing.metadata);
+    api::SearchTiming::create(
+        builder,
+        &api::SearchTimingArgs {
+            query_time_seconds: query_time_seconds.as_ref(),
+            search_time_seconds: search_time_seconds.as_ref(),
+            summary_fetch_time_seconds: summary_fetch_time_seconds.as_ref(),
+            metadata,
+        },
+    )
+}
+
+fn search_result_error_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    error: &ir::SearchResultError,
+) -> flatbuffers::WIPOffset<api::SearchResultError<'a>> {
+    let summary = error
+        .summary
+        .as_ref()
+        .map(|summary| builder.create_string(summary));
+    let message = error
+        .message
+        .as_ref()
+        .map(|message| builder.create_string(message));
+    let source = error
+        .source
+        .as_ref()
+        .map(|source| builder.create_string(source));
+    let stack_trace = error
+        .stack_trace
+        .as_ref()
+        .map(|stack_trace| builder.create_string(stack_trace));
+    let transient = error.transient.map(api::OptionalBool::new);
+    let metadata = value_entries_offset(builder, &error.metadata);
+    api::SearchResultError::create(
+        builder,
+        &api::SearchResultErrorArgs {
+            code: error.code,
+            summary,
+            message,
+            source,
+            stack_trace,
+            transient: transient.as_ref(),
+            metadata,
+        },
+    )
+}
+
 fn hit_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     hit: &ir::Hit,
 ) -> flatbuffers::WIPOffset<api::Hit<'a>> {
     let id = builder.create_string(&hit.id);
-    let relevance = hit.score.map(|score| {
-        let value =
-            api::FiniteRelevance::create(builder, &api::FiniteRelevanceArgs { value: score });
-        api::Relevance::create(
-            builder,
-            &api::RelevanceArgs {
-                value_type: api::RelevanceKind::FiniteRelevance,
-                value: Some(value.as_union_value()),
-            },
-        )
-    });
-    let fields = hit
-        .fields
-        .iter()
-        .map(|(key, value)| {
-            let key = builder.create_string(key);
-            let value = value_offset(builder, value);
-            api::ValueEntry::create(
-                builder,
-                &api::ValueEntryArgs {
-                    key: Some(key),
-                    value: Some(value),
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let fields = builder.create_vector(&fields);
+    let relevance = hit.score.map(|score| relevance_offset(builder, score));
+    let fields = value_entries_offset(builder, &hit.fields);
     let highlights = hit
         .highlights
         .iter()
         .map(|highlight| highlight_result_offset(builder, highlight))
         .collect::<Vec<_>>();
-    let highlights = builder.create_vector(&highlights);
+    let highlights = (!highlights.is_empty()).then(|| builder.create_vector(&highlights));
+    let source = hit
+        .source
+        .as_ref()
+        .map(|source| builder.create_string(source));
+    let types = string_vector_offset(builder, &hit.types);
+    let match_features = value_entries_offset(builder, &hit.match_features);
+    let summary_features = value_entries_offset(builder, &hit.summary_features);
+    let rank_features = value_entries_offset(builder, &hit.rank_features);
+    let sort_values = (!hit.sort_values.is_empty()).then(|| {
+        let values = hit
+            .sort_values
+            .iter()
+            .map(|value| value_offset(builder, value))
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    });
     api::Hit::create(
         builder,
         &api::HitArgs {
             id: Some(id),
             relevance,
-            fields: Some(fields),
-            highlights: Some(highlights),
-            source: None,
-            types: None,
-            match_features: None,
-            summary_features: None,
-            rank_features: None,
-            sort_values: None,
+            fields,
+            highlights,
+            source,
+            types,
+            match_features,
+            summary_features,
+            rank_features,
+            sort_values,
         },
     )
 }

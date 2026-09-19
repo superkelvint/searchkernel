@@ -12,8 +12,8 @@ use searchkernel_ir::{
 };
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
-    GroupingResult, Query, ScalarValue, Schema, SearchRequest, SortField, SortOrder,
-    SummaryRequest, TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
+    Query, ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
+    TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -455,12 +455,16 @@ impl Backend for VespaBackend {
             .engine
             .search(m_request)
             .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
-        let facets = lower_facets(&result.facets, &facets)?;
-        Ok(SearchResult {
-            hits: result
-                .hits
-                .into_iter()
-                .map(|hit| searchkernel_ir::Hit {
+        if result.facets.len() != facets.len() {
+            return Err(internal(
+                "native search returned an unexpected grouping count",
+            ));
+        }
+        let mut children = result
+            .hits
+            .into_iter()
+            .map(|hit| {
+                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id,
                     score: Some(hit.score),
                     fields: hit
@@ -469,8 +473,89 @@ impl Backend for VespaBackend {
                         .map(|(name, value)| (name, value_to_ir(&value)))
                         .collect(),
                     highlights: Vec::new(),
+                    source: None,
+                    types: Vec::new(),
+                    match_features: hit
+                        .match_features
+                        .into_iter()
+                        .map(|(name, value)| (name, searchkernel_ir::Value::Float64(value)))
+                        .collect(),
+                    summary_features: std::collections::BTreeMap::new(),
+                    rank_features: std::collections::BTreeMap::new(),
+                    sort_values: Vec::new(),
                 })
-                .collect(),
+            })
+            .collect::<Vec<_>>();
+        let facet_nodes = result
+            .facets
+            .into_iter()
+            .zip(facets)
+            .map(|(grouping, facet)| -> Result<searchkernel_ir::ResultNode> {
+                let groups = grouping
+                    .groups
+                    .into_iter()
+                    .map(|group| {
+                        let mut fields = std::collections::BTreeMap::new();
+                        fields.insert(
+                            "count".to_owned(),
+                            searchkernel_ir::Value::UInt64(group.count),
+                        );
+                        for (index, aggregation) in group.aggregations.into_iter().enumerate() {
+                            let value = match aggregation {
+                                searchkernel_vespa_engine::AggregateValue::Integer(value) => {
+                                    searchkernel_ir::Value::Int64(value)
+                                }
+                                searchkernel_vespa_engine::AggregateValue::Float(value) => {
+                                    searchkernel_ir::Value::Float64(value)
+                                }
+                            };
+                            fields.insert(format!("aggregation_{index}"), value);
+                        }
+                        let value = match group.key {
+                            VespaValue::String(value) => ScalarValue::String(value),
+                            VespaValue::Integer(value) => ScalarValue::Integer(value),
+                            VespaValue::Boolean(value) => ScalarValue::Boolean(value),
+                            _ => {
+                                return Err(PortableError::unsupported(
+                                    "facet_key_type_not_supported",
+                                    Some("grouping"),
+                                    "native grouping returned a key kind not representable by the portable result value contract",
+                                ))
+                            }
+                        };
+                        Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                            id: None,
+                            label: None,
+                            value: Some(value_to_ir(&FieldValue::Scalar(value))),
+                            fields,
+                            children: Vec::new(),
+                            continuations: std::collections::BTreeMap::new(),
+                            source: None,
+                            types: Vec::new(),
+                            score: None,
+                            limits: None,
+                            metadata: std::collections::BTreeMap::new(),
+                        }))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                    id: Some(facet.field.clone()),
+                    label: Some(facet.field),
+                    value: None,
+                    fields: std::collections::BTreeMap::new(),
+                    children: groups,
+                    continuations: std::collections::BTreeMap::new(),
+                    source: None,
+                    types: Vec::new(),
+                    score: None,
+                    limits: None,
+                    metadata: std::collections::BTreeMap::new(),
+                }))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        children.extend(facet_nodes);
+        Ok(SearchResult {
+            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(children)),
             total_hits: searchkernel_ir::TotalHits {
                 value: result.total_hits,
                 relation: match result.total_hits_relation {
@@ -478,7 +563,11 @@ impl Backend for VespaBackend {
                     VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
                 },
             },
-            facets,
+            coverage: None,
+            timing: None,
+            errors: Vec::new(),
+            trace: None,
+            metadata: std::collections::BTreeMap::new(),
         })
     }
 
@@ -660,7 +749,7 @@ fn lower_search_options(
         m_request = m_request.timeout(timeout);
     }
     for sort in request.sort() {
-        m_request = m_request.sort(lower_sort(sort));
+        m_request = m_request.sort(lower_sort(sort)?);
     }
 
     // C2 has already resolved the projection. An empty list means that no
@@ -675,19 +764,48 @@ fn lower_search_options(
     Ok(m_request)
 }
 
-fn lower_sort(sort: &searchkernel_ir::SortIr) -> SortField {
-    let sort_field = match sort.direction() {
-        searchkernel_ir::SortDirection::Asc => {
-            SortField::new(sort.field().as_str(), SortOrder::Ascending)
+fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
+    if !sort.annotations().is_empty() {
+        return Err(PortableError::unsupported(
+            "sort_annotations_not_supported",
+            Some("sort.annotations"),
+            "the current native adapter cannot execute annotated sort expressions",
+        ));
+    }
+    let field = match sort.target() {
+        searchkernel_ir::SortTargetIr::Field(field) => field,
+        searchkernel_ir::SortTargetIr::Relevance => {
+            return Err(PortableError::unsupported(
+                "relevance_sort_not_supported",
+                Some("sort.target"),
+                "the current native adapter cannot execute relevance sort targets",
+            ));
         }
-        searchkernel_ir::SortDirection::Desc => {
-            SortField::new(sort.field().as_str(), SortOrder::Descending)
+        searchkernel_ir::SortTargetIr::RankFeature(_) => {
+            return Err(PortableError::unsupported(
+                "rank_feature_sort_not_supported",
+                Some("sort.target"),
+                "the current native adapter cannot execute rank-feature sort targets",
+            ));
         }
     };
-    match sort.missing() {
+    let sort_field = match sort.direction() {
+        searchkernel_ir::SortDirection::Asc => SortField::new(field.as_str(), SortOrder::Ascending),
+        searchkernel_ir::SortDirection::Desc => {
+            SortField::new(field.as_str(), SortOrder::Descending)
+        }
+    };
+    Ok(match sort.missing() {
         searchkernel_ir::MissingPlacement::First => sort_field.missing_first(),
         searchkernel_ir::MissingPlacement::Last => sort_field.missing_last(),
-    }
+        searchkernel_ir::MissingPlacement::As(_) => {
+            return Err(PortableError::unsupported(
+                "sort_missing_as_not_supported",
+                Some("sort.missing"),
+                "the current native adapter cannot execute missing-as sort policies",
+            ));
+        }
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -960,6 +1078,11 @@ fn lower_query_with_language(
             Some("query"),
             "the current native adapter does not expose a YQL execution path",
         )),
+        QueryIr::Typed(_) => Err(PortableError::unsupported(
+            "typed_query_not_supported",
+            Some("query"),
+            "the current native adapter does not expose execution for typed V2 query expressions",
+        )),
     }
 }
 
@@ -1040,24 +1163,32 @@ fn lower_comparison(comparison: &searchkernel_ir::ComparisonIr) -> Result<Query>
 fn lower_range(range: &RangeIr) -> Result<Query> {
     Ok(Query::AttributeRange {
         field: range.field().to_string(),
-        lower: attribute_bound(range.lower(), range.include_lower())?,
-        upper: attribute_bound(range.upper(), range.include_upper())?,
+        lower: attribute_bound(range.lower_bound(), range.include_lower())?,
+        upper: attribute_bound(range.upper_bound(), range.include_upper())?,
     })
 }
 
 fn attribute_bound(
-    value: Option<&ScalarValueIr>,
+    value: &searchkernel_ir::FilterRangeBoundIr,
     included: bool,
 ) -> Result<searchkernel_vespa_engine::AttributeBound> {
-    let Some(value) = value else {
-        return Ok(searchkernel_vespa_engine::AttributeBound::Unbounded);
-    };
-    let value = lower_attribute_value(value)?;
-    Ok(if included {
-        searchkernel_vespa_engine::AttributeBound::Included(value)
-    } else {
-        searchkernel_vespa_engine::AttributeBound::Excluded(value)
-    })
+    match value {
+        searchkernel_ir::FilterRangeBoundIr::Unbounded => {
+            Ok(searchkernel_vespa_engine::AttributeBound::Unbounded)
+        }
+        searchkernel_ir::FilterRangeBoundIr::NegativeInfinity
+        | searchkernel_ir::FilterRangeBoundIr::PositiveInfinity => Err(unsupported(
+            "infinite filter bounds are not supported by the native adapter",
+        )),
+        searchkernel_ir::FilterRangeBoundIr::Finite(value) => {
+            let value = lower_attribute_value(value)?;
+            Ok(if included {
+                searchkernel_vespa_engine::AttributeBound::Included(value)
+            } else {
+                searchkernel_vespa_engine::AttributeBound::Excluded(value)
+            })
+        }
+    }
 }
 
 fn lower_attribute_value(value: &ScalarValueIr) -> Result<VespaValue> {
@@ -1138,42 +1269,6 @@ fn native_search_error(
         return PortableError::unsupported(detail_code, path, error.to_string());
     }
     native_error(error)
-}
-
-fn lower_facets(
-    grouped: &[GroupingResult],
-    facets: &[FacetLowering],
-) -> Result<Vec<searchkernel_ir::FacetResult>> {
-    if grouped.len() != facets.len() {
-        return Err(internal("native search returned an unexpected facet count"));
-    }
-    facets
-        .iter()
-        .zip(grouped)
-        .map(|(facet, grouped)| {
-            let values = grouped
-                .groups
-                .iter()
-                .map(|group| Ok(searchkernel_ir::FacetValue {
-                    value: value_to_ir(&FieldValue::Scalar(match &group.key {
-                        VespaValue::String(value) => ScalarValue::String(value.clone()),
-                        VespaValue::Integer(value) => ScalarValue::Integer(*value),
-                        VespaValue::Boolean(value) => ScalarValue::Boolean(*value),
-                        _ => return Err(PortableError::unsupported(
-                            "facet_key_type_not_supported",
-                            Some("grouping"),
-                            "native grouping returned a key kind not representable by the portable facet contract",
-                        )),
-                    })),
-                    count: group.count,
-                }))
-                .collect::<Result<Vec<_>>>()?;
-            Ok(searchkernel_ir::FacetResult {
-                field: facet.field.clone(),
-                values,
-            })
-        })
-        .collect()
 }
 
 fn analysis_options(

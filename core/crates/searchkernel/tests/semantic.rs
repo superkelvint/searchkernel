@@ -132,20 +132,28 @@ impl Backend for StatefulBackend {
         let documents = self.documents.lock().unwrap();
         let hits = documents
             .iter()
-            .map(|(id, fields)| searchkernel_ir::Hit {
-                id: id.clone(),
-                score: Some(1.0),
-                fields: Self::fields_to_result(fields),
-                highlights: vec![],
+            .map(|(id, fields)| {
+                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                    id: id.clone(),
+                    score: Some(1.0),
+                    fields: Self::fields_to_result(fields),
+                    highlights: vec![],
+                    ..Default::default()
+                })
             })
             .collect::<Vec<_>>();
+        let total = hits.len() as u64;
         Ok(SearchResult {
+            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(hits)),
             total_hits: searchkernel_ir::TotalHits {
-                value: hits.len() as u64,
+                value: total,
                 relation: searchkernel_ir::TotalHitsRelation::Exact,
             },
-            hits,
-            facets: vec![],
+            coverage: None,
+            timing: None,
+            errors: vec![],
+            trace: None,
+            metadata: std::collections::BTreeMap::new(),
         })
     }
 

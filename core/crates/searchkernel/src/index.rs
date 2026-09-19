@@ -643,7 +643,17 @@ impl Index {
             let query = match normalized.query() {
                 searchkernel_ir::QueryIr::MatchAll => String::new(),
                 searchkernel_ir::QueryIr::Text(value) => value.clone(),
-                _ => format!("{:?}", normalized.query()),
+                searchkernel_ir::QueryIr::Yql { .. }
+                | searchkernel_ir::QueryIr::Term { .. }
+                | searchkernel_ir::QueryIr::And(_)
+                | searchkernel_ir::QueryIr::Or(_)
+                | searchkernel_ir::QueryIr::Not(_)
+                | searchkernel_ir::QueryIr::Typed { .. } => {
+                    return Err(Error::search(
+                        crate::error::ErrorCode::Unsupported,
+                        "inspect cannot represent this query source in the legacy query string",
+                    ));
+                }
             };
             let highlighting = match normalized.highlighting() {
                 searchkernel_ir::HighlightingIr::Disabled => None,
@@ -668,18 +678,36 @@ impl Index {
                     .sort()
                     .iter()
                     .map(|sort| {
-                        let value = match sort.direction() {
-                            searchkernel_ir::SortDirection::Asc => Sort::asc(sort.field().as_str()),
-                            searchkernel_ir::SortDirection::Desc => {
-                                Sort::desc(sort.field().as_str())
+                        if !sort.annotations().is_empty() {
+                            return Err(Error::search(
+                                crate::error::ErrorCode::Unsupported,
+                                "annotated sort expressions are not supported by the public search API",
+                            ));
+                        }
+                        let field = match sort.target() {
+                            searchkernel_ir::SortTargetIr::Field(field) => field,
+                            searchkernel_ir::SortTargetIr::Relevance
+                            | searchkernel_ir::SortTargetIr::RankFeature(_) => {
+                                return Err(Error::search(
+                                    crate::error::ErrorCode::Unsupported,
+                                    "the public search API supports only field sort targets",
+                                ));
                             }
                         };
+                        let value = match sort.direction() {
+                            searchkernel_ir::SortDirection::Asc => Sort::asc(field.as_str()),
+                            searchkernel_ir::SortDirection::Desc => Sort::desc(field.as_str()),
+                        };
                         match sort.missing() {
-                            searchkernel_ir::MissingPlacement::First => value.missing_first(),
-                            searchkernel_ir::MissingPlacement::Last => value.missing_last(),
+                            searchkernel_ir::MissingPlacement::First => Ok(value.missing_first()),
+                            searchkernel_ir::MissingPlacement::Last => Ok(value.missing_last()),
+                            searchkernel_ir::MissingPlacement::As(_) => Err(Error::search(
+                                crate::error::ErrorCode::Unsupported,
+                                "missing-as sort policies are not supported by the public search API",
+                            )),
                         }
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>>>()?,
                 facets: normalized
                     .grouping()
                     .iter()
@@ -725,7 +753,12 @@ impl Index {
                 .search_to_ir(wire_request)
                 .map_err(Error::from_ir)?;
             let backend_result = backend.search(ir_request).map_err(Error::from_ir)?;
-            result::search_result(backend_result)
+            let requested_facets = request
+                .facets
+                .iter()
+                .map(|facet| facet.field.as_str())
+                .collect::<Vec<_>>();
+            result::search_result(backend_result, &requested_facets)
         })
     }
 
@@ -849,11 +882,31 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
             let mut bounds = crate::Range::new()
                 .include_lower(range.include_lower())
                 .include_upper(range.include_upper());
-            if let Some(value) = range.lower() {
-                bounds = bounds.lower(scalar_to_json(value)?);
+            match range.lower_bound() {
+                searchkernel_ir::FilterRangeBoundIr::Finite(value) => {
+                    bounds = bounds.lower(scalar_to_json(value)?);
+                }
+                searchkernel_ir::FilterRangeBoundIr::Unbounded => {}
+                searchkernel_ir::FilterRangeBoundIr::NegativeInfinity
+                | searchkernel_ir::FilterRangeBoundIr::PositiveInfinity => {
+                    return Err(Error::search(
+                        crate::error::ErrorCode::Unsupported,
+                        "infinite filter bounds are not supported by the public filter API",
+                    ));
+                }
             }
-            if let Some(value) = range.upper() {
-                bounds = bounds.upper(scalar_to_json(value)?);
+            match range.upper_bound() {
+                searchkernel_ir::FilterRangeBoundIr::Finite(value) => {
+                    bounds = bounds.upper(scalar_to_json(value)?);
+                }
+                searchkernel_ir::FilterRangeBoundIr::Unbounded => {}
+                searchkernel_ir::FilterRangeBoundIr::NegativeInfinity
+                | searchkernel_ir::FilterRangeBoundIr::PositiveInfinity => {
+                    return Err(Error::search(
+                        crate::error::ErrorCode::Unsupported,
+                        "infinite filter bounds are not supported by the public filter API",
+                    ));
+                }
             }
             Ok(crate::field(range.field().as_str()).range(bounds))
         }
@@ -2266,14 +2319,12 @@ mod api_tests {
         let expected = expected_search(&context, &probe.browse());
         let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
             OperationIr::Search(expected),
-            ScriptedResult::Search(searchkernel_ir::SearchResult {
-                hits: Vec::new(),
-                total_hits: searchkernel_ir::TotalHits {
+            ScriptedResult::Search(Box::new(searchkernel_ir::SearchResult::empty(
+                searchkernel_ir::TotalHits {
                     value: 0,
                     relation: searchkernel_ir::TotalHitsRelation::Exact,
                 },
-                facets: Vec::new(),
-            }),
+            ))),
         )]));
         let (_runtime, index) = runtime_index(definition, backend.clone());
 
@@ -2298,14 +2349,12 @@ mod api_tests {
         let expected = expected_search(&context, &normalized_search(&probe));
         let backend = Arc::new(ScriptedBackend::new([ExpectedCall::success(
             OperationIr::Search(expected),
-            ScriptedResult::Search(searchkernel_ir::SearchResult {
-                hits: Vec::new(),
-                total_hits: searchkernel_ir::TotalHits {
+            ScriptedResult::Search(Box::new(searchkernel_ir::SearchResult::empty(
+                searchkernel_ir::TotalHits {
                     value: 0,
                     relation: searchkernel_ir::TotalHitsRelation::Exact,
                 },
-                facets: Vec::new(),
-            }),
+            ))),
         )]));
         let (_runtime, index) = runtime_index(definition, backend.clone());
 

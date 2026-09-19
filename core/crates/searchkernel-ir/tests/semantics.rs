@@ -111,6 +111,133 @@ fn text_query<'a>(
     )
 }
 
+fn search_request_for_source(
+    source_kind: api::QuerySourceKind,
+    with_search_fields: bool,
+) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let source = match source_kind {
+        api::QuerySourceKind::SearchKernelTextQuery => text_query(&mut builder, "headphones"),
+        api::QuerySourceKind::TypedQuery => {
+            let value = api::QueryTrue::create(&mut builder, &api::QueryTrueArgs {});
+            let expression = api::QueryExpr::create(
+                &mut builder,
+                &api::QueryExprArgs {
+                    expr_type: api::QueryExprKind::QueryTrue,
+                    expr: Some(value.as_union_value()),
+                    annotations: None,
+                },
+            );
+            let typed = api::TypedQuery::create(
+                &mut builder,
+                &api::TypedQueryArgs {
+                    query: Some(expression),
+                },
+            );
+            api::QuerySource::create(
+                &mut builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::TypedQuery,
+                    source: Some(typed.as_union_value()),
+                },
+            )
+        }
+        api::QuerySourceKind::YqlQuery => {
+            let source = builder.create_string("select * from sources * where true");
+            let yql = api::YqlQuery::create(
+                &mut builder,
+                &api::YqlQueryArgs {
+                    source: Some(source),
+                    parameters: None,
+                },
+            );
+            api::QuerySource::create(
+                &mut builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::YqlQuery,
+                    source: Some(yql.as_union_value()),
+                },
+            )
+        }
+        api::QuerySourceKind::MatchAllQuery => {
+            let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+            api::QuerySource::create(
+                &mut builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::MatchAllQuery,
+                    source: Some(match_all.as_union_value()),
+                },
+            )
+        }
+        _ => unreachable!("unknown query source kind"),
+    };
+    let search_fields = if with_search_fields {
+        let field = builder.create_string("title");
+        let weight = api::OptionalDouble::new(1.0);
+        let search_field = api::SearchField::create(
+            &mut builder,
+            &api::SearchFieldArgs {
+                field: Some(field),
+                weight: Some(&weight),
+            },
+        );
+        let fields = builder.create_vector(&[search_field]);
+        Some(api::SearchFieldSelection::create(
+            &mut builder,
+            &api::SearchFieldSelectionArgs {
+                fields: Some(fields),
+            },
+        ))
+    } else {
+        None
+    };
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            search_fields,
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn search_fields_are_source_specific() {
+    let context = index_context();
+    let source_kinds = [
+        api::QuerySourceKind::SearchKernelTextQuery,
+        api::QuerySourceKind::TypedQuery,
+        api::QuerySourceKind::YqlQuery,
+        api::QuerySourceKind::MatchAllQuery,
+    ];
+
+    for source_kind in source_kinds {
+        let bytes = search_request_for_source(source_kind, false);
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let converted = context
+            .search_to_ir(request)
+            .expect("source without search_fields should convert");
+        if source_kind == api::QuerySourceKind::SearchKernelTextQuery {
+            assert_eq!(converted.search_fields().len(), 1);
+        } else {
+            assert!(converted.search_fields().is_empty());
+        }
+    }
+
+    for source_kind in source_kinds {
+        let bytes = search_request_for_source(source_kind, true);
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let converted = context.search_to_ir(request);
+        if source_kind == api::QuerySourceKind::SearchKernelTextQuery {
+            assert!(converted.is_ok());
+        } else {
+            assert!(converted.is_err());
+        }
+    }
+}
+
 fn standalone_value<'a>(
     builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
     value: &str,
@@ -400,24 +527,189 @@ fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
 
 #[test]
 fn v2_search_result_encoding_uses_result_tree_and_relevance() {
-    let result = SearchResult {
-        hits: vec![Hit {
-            id: "doc-1".to_owned(),
-            score: Some(3.5),
-            fields: BTreeMap::new(),
-            highlights: Vec::new(),
+    let hit = Hit {
+        id: "doc-1".to_owned(),
+        score: Some(f64::INFINITY),
+        fields: BTreeMap::from([
+            ("title".to_owned(), Value::String("First".to_owned())),
+            ("price".to_owned(), Value::Float64(12.5)),
+        ]),
+        highlights: vec![HighlightResult {
+            field: "title".to_owned(),
+            fragments: vec![HighlightFragment {
+                text: "<em>First</em>".to_owned(),
+                matches: vec![HighlightSpan {
+                    start_byte: 0,
+                    end_byte: 5,
+                }],
+            }],
         }],
-        total_hits: TotalHits {
-            value: 1,
-            relation: TotalHitsRelation::Exact,
-        },
-        facets: Vec::new(),
+        source: Some("catalog".to_owned()),
+        types: vec!["product".to_owned(), "featured".to_owned()],
+        match_features: BTreeMap::from([("bm25(title)".to_owned(), Value::Float64(4.25))]),
+        summary_features: BTreeMap::from([("summary_score".to_owned(), Value::Int64(7))]),
+        rank_features: BTreeMap::from([("rank_score".to_owned(), Value::Float64(9.5))]),
+        sort_values: vec![Value::UInt64(10), Value::String("First".to_owned())],
     };
-    let bytes = search_result_to_api(&result);
+    let nested_hit = Hit {
+        id: "doc-2".to_owned(),
+        score: Some(f64::NEG_INFINITY),
+        ..Default::default()
+    };
+    let nested_group = ResultGroup {
+        id: Some("nested".to_owned()),
+        label: Some("Nested group".to_owned()),
+        value: Some(Value::String("child".to_owned())),
+        fields: BTreeMap::from([("count".to_owned(), Value::UInt64(1))]),
+        children: vec![ResultNode::Hit(nested_hit)],
+        continuations: BTreeMap::from([("next".to_owned(), "token-2".to_owned())]),
+        source: Some("group-source".to_owned()),
+        types: vec!["bucket".to_owned()],
+        score: Some(2.5),
+        limits: Some(ResultLimits {
+            from: Some(Value::Int64(1)),
+            to: Some(Value::Int64(10)),
+        }),
+        metadata: BTreeMap::from([("owner".to_owned(), Value::Bool(true))]),
+    };
+    let result = SearchResult {
+        root: ResultNode::Group(ResultGroup {
+            id: Some("root".to_owned()),
+            label: Some("Root".to_owned()),
+            value: Some(Value::Null),
+            fields: BTreeMap::from([("total".to_owned(), Value::UInt64(2))]),
+            children: vec![ResultNode::Hit(hit), ResultNode::Group(nested_group)],
+            continuations: BTreeMap::from([("page".to_owned(), "token-1".to_owned())]),
+            source: Some("search".to_owned()),
+            types: vec!["root".to_owned()],
+            score: Some(3.5),
+            limits: Some(ResultLimits {
+                from: Some(Value::UInt64(0)),
+                to: Some(Value::UInt64(20)),
+            }),
+            metadata: BTreeMap::from([("trace_id".to_owned(), Value::String("r-1".to_owned()))]),
+        }),
+        total_hits: TotalHits {
+            value: 42,
+            relation: TotalHitsRelation::Approximate,
+        },
+        coverage: Some(Coverage {
+            coverage_percent: Some(98.5),
+            documents: Some(100),
+            full: Some(false),
+            nodes: Some(3),
+            results: Some(42),
+            results_full: Some(40),
+            degraded: Some(CoverageDegraded {
+                match_phase: Some(true),
+                timeout: Some(false),
+                adaptive_timeout: Some(true),
+                ann_timeout: Some(false),
+                non_ideal_state: Some(true),
+                metadata: BTreeMap::from([("reason".to_owned(), Value::String("load".to_owned()))]),
+            }),
+            metadata: BTreeMap::from([("region".to_owned(), Value::String("west".to_owned()))]),
+        }),
+        timing: Some(SearchTiming {
+            query_time_seconds: Some(0.01),
+            search_time_seconds: Some(0.02),
+            summary_fetch_time_seconds: Some(0.03),
+            metadata: BTreeMap::from([("phase".to_owned(), Value::String("done".to_owned()))]),
+        }),
+        errors: vec![SearchResultError {
+            code: 503,
+            summary: Some("partial".to_owned()),
+            message: Some("one node timed out".to_owned()),
+            source: Some("node-2".to_owned()),
+            stack_trace: Some("trace".to_owned()),
+            transient: Some(true),
+            metadata: BTreeMap::from([("node".to_owned(), Value::String("2".to_owned()))]),
+        }],
+        trace: Some(Value::Object(BTreeMap::from([(
+            "level".to_owned(),
+            Value::UInt64(3),
+        )]))),
+        metadata: BTreeMap::from([("request_id".to_owned(), Value::String("req-1".to_owned()))]),
+    };
+    let bytes = search_result_to_api(&result).expect("valid V2 search result");
     let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
         .expect("valid V2 search result");
     let root = encoded.root().expect("result root");
     let group = root.node_as_result_group().expect("result group root");
+    assert_eq!(group.id(), Some("root"));
+    assert_eq!(group.label(), Some("Root"));
+    assert_eq!(
+        group
+            .value()
+            .unwrap()
+            .kind_as_null_value_value()
+            .unwrap()
+            .value(),
+        api::NullValue::Null
+    );
+    assert_eq!(group.fields().unwrap().len(), 1);
+    assert_eq!(group.fields().unwrap().get(0).key(), "total");
+    assert_eq!(
+        group
+            .fields()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        2
+    );
+    assert_eq!(group.source(), Some("search"));
+    assert_eq!(group.types().unwrap().iter().collect::<Vec<_>>(), ["root"]);
+    assert_eq!(group.continuations().unwrap().get(0).key(), "page");
+    assert_eq!(
+        group.continuations().unwrap().get(0).value(),
+        Some("token-1")
+    );
+    let limits = group.limits().expect("root limits");
+    assert_eq!(
+        limits
+            .from()
+            .unwrap()
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        0
+    );
+    assert_eq!(
+        limits
+            .to()
+            .unwrap()
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        20
+    );
+    assert_eq!(
+        group
+            .relevance()
+            .unwrap()
+            .value_as_finite_relevance()
+            .unwrap()
+            .value(),
+        3.5
+    );
+    assert_eq!(group.metadata().unwrap().len(), 1);
+    assert_eq!(group.metadata().unwrap().get(0).key(), "trace_id");
+    assert_eq!(
+        group
+            .metadata()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("r-1")
+    );
     let hit = group
         .children()
         .expect("result children")
@@ -426,11 +718,523 @@ fn v2_search_result_encoding_uses_result_tree_and_relevance() {
         .expect("hit node");
     assert_eq!(hit.id(), Some("doc-1"));
     assert_eq!(
-        hit.relevance()
-            .and_then(|relevance| relevance.value_as_finite_relevance())
-            .map(|relevance| relevance.value()),
-        Some(3.5)
+        hit.relevance().map(|relevance| relevance.value_type()),
+        Some(api::RelevanceKind::PositiveInfinityRelevance)
     );
+    assert_eq!(hit.source(), Some("catalog"));
+    assert_eq!(
+        hit.types().unwrap().iter().collect::<Vec<_>>(),
+        ["product", "featured"]
+    );
+    assert_eq!(hit.fields().unwrap().len(), 2);
+    assert_eq!(hit.fields().unwrap().get(0).key(), "price");
+    assert_eq!(
+        hit.fields()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_float_64_value()
+            .unwrap()
+            .value(),
+        12.5
+    );
+    assert_eq!(hit.fields().unwrap().get(1).key(), "title");
+    assert_eq!(
+        hit.fields()
+            .unwrap()
+            .get(1)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("First")
+    );
+    let highlight = hit.highlights().unwrap().get(0);
+    assert_eq!(highlight.field(), Some("title"));
+    assert_eq!(highlight.fragments().unwrap().len(), 1);
+    let fragment = highlight.fragments().unwrap().get(0);
+    assert_eq!(fragment.text(), Some("<em>First</em>"));
+    assert_eq!(fragment.matches().unwrap().len(), 1);
+    assert_eq!(fragment.matches().unwrap().get(0).start_byte(), 0);
+    assert_eq!(fragment.matches().unwrap().get(0).end_byte(), 5);
+    assert_eq!(hit.match_features().unwrap().get(0).key(), "bm25(title)");
+    assert_eq!(
+        hit.match_features()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_float_64_value()
+            .unwrap()
+            .value(),
+        4.25
+    );
+    assert_eq!(
+        hit.summary_features().unwrap().get(0).key(),
+        "summary_score"
+    );
+    assert_eq!(
+        hit.summary_features()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_int_64_value()
+            .unwrap()
+            .value(),
+        7
+    );
+    assert_eq!(hit.rank_features().unwrap().get(0).key(), "rank_score");
+    assert_eq!(
+        hit.rank_features()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_float_64_value()
+            .unwrap()
+            .value(),
+        9.5
+    );
+    assert_eq!(hit.sort_values().unwrap().len(), 2);
+    assert_eq!(
+        hit.sort_values()
+            .unwrap()
+            .get(0)
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        10
+    );
+    assert_eq!(
+        hit.sort_values()
+            .unwrap()
+            .get(1)
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("First")
+    );
+    let nested = group
+        .children()
+        .unwrap()
+        .get(1)
+        .node_as_result_group()
+        .expect("nested group");
+    assert_eq!(
+        nested
+            .children()
+            .unwrap()
+            .get(0)
+            .node_as_hit()
+            .unwrap()
+            .id(),
+        Some("doc-2")
+    );
+    assert_eq!(
+        nested
+            .children()
+            .unwrap()
+            .get(0)
+            .node_as_hit()
+            .unwrap()
+            .relevance()
+            .unwrap()
+            .value_type(),
+        api::RelevanceKind::NegativeInfinityRelevance
+    );
+    assert_eq!(nested.id(), Some("nested"));
+    assert_eq!(nested.label(), Some("Nested group"));
+    assert_eq!(
+        nested
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("child")
+    );
+    assert_eq!(nested.fields().unwrap().len(), 1);
+    assert_eq!(nested.fields().unwrap().get(0).key(), "count");
+    assert_eq!(
+        nested
+            .fields()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        1
+    );
+    assert_eq!(nested.continuations().unwrap().len(), 1);
+    assert_eq!(nested.continuations().unwrap().get(0).key(), "next");
+    assert_eq!(
+        nested.continuations().unwrap().get(0).value(),
+        Some("token-2")
+    );
+    assert_eq!(nested.source(), Some("group-source"));
+    assert_eq!(
+        nested.types().unwrap().iter().collect::<Vec<_>>(),
+        ["bucket"]
+    );
+    assert_eq!(
+        nested
+            .relevance()
+            .unwrap()
+            .value_as_finite_relevance()
+            .unwrap()
+            .value(),
+        2.5
+    );
+    let nested_limits = nested.limits().unwrap();
+    assert_eq!(
+        nested_limits
+            .from()
+            .unwrap()
+            .kind_as_int_64_value()
+            .unwrap()
+            .value(),
+        1
+    );
+    assert_eq!(
+        nested_limits
+            .to()
+            .unwrap()
+            .kind_as_int_64_value()
+            .unwrap()
+            .value(),
+        10
+    );
+    assert_eq!(nested.metadata().unwrap().len(), 1);
+    assert_eq!(nested.metadata().unwrap().get(0).key(), "owner");
+    assert!(nested
+        .metadata()
+        .unwrap()
+        .get(0)
+        .value()
+        .unwrap()
+        .kind_as_bool_value()
+        .unwrap()
+        .value());
+    assert_eq!(encoded.total_hits().unwrap().value(), 42);
+    assert_eq!(
+        encoded.total_hits().unwrap().relation(),
+        api::TotalHitsRelation::Approximate
+    );
+    assert!(!encoded
+        .coverage()
+        .unwrap()
+        .degraded()
+        .unwrap()
+        .timeout()
+        .unwrap()
+        .value());
+    assert_eq!(
+        encoded
+            .coverage()
+            .unwrap()
+            .coverage_percent()
+            .unwrap()
+            .value(),
+        98.5
+    );
+    let coverage = encoded.coverage().unwrap();
+    assert_eq!(coverage.documents().unwrap().value(), 100);
+    assert!(!coverage.full().unwrap().value());
+    assert_eq!(coverage.nodes().unwrap().value(), 3);
+    assert_eq!(coverage.results().unwrap().value(), 42);
+    assert_eq!(coverage.results_full().unwrap().value(), 40);
+    let degraded = coverage.degraded().unwrap();
+    assert!(degraded.match_phase().unwrap().value());
+    assert!(!degraded.timeout().unwrap().value());
+    assert!(degraded.adaptive_timeout().unwrap().value());
+    assert!(!degraded.ann_timeout().unwrap().value());
+    assert!(degraded.non_ideal_state().unwrap().value());
+    assert_eq!(degraded.metadata().unwrap().get(0).key(), "reason");
+    assert_eq!(
+        degraded
+            .metadata()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("load")
+    );
+    assert_eq!(coverage.metadata().unwrap().get(0).key(), "region");
+    assert_eq!(
+        coverage
+            .metadata()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("west")
+    );
+    assert_eq!(
+        encoded
+            .timing()
+            .unwrap()
+            .search_time_seconds()
+            .unwrap()
+            .value(),
+        0.02
+    );
+    let timing = encoded.timing().unwrap();
+    assert_eq!(timing.query_time_seconds().unwrap().value(), 0.01);
+    assert_eq!(timing.summary_fetch_time_seconds().unwrap().value(), 0.03);
+    assert_eq!(timing.metadata().unwrap().get(0).key(), "phase");
+    assert_eq!(
+        timing
+            .metadata()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("done")
+    );
+    assert_eq!(encoded.errors().unwrap().get(0).code(), 503);
+    let error = encoded.errors().unwrap().get(0);
+    assert_eq!(error.summary(), Some("partial"));
+    assert_eq!(error.message(), Some("one node timed out"));
+    assert_eq!(error.source(), Some("node-2"));
+    assert_eq!(error.stack_trace(), Some("trace"));
+    assert!(error.transient().unwrap().value());
+    assert_eq!(error.metadata().unwrap().get(0).key(), "node");
+    assert_eq!(
+        error
+            .metadata()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("2")
+    );
+    let trace = encoded.trace().unwrap().kind_as_value_object().unwrap();
+    assert_eq!(trace.fields().unwrap().len(), 1);
+    assert_eq!(trace.fields().unwrap().get(0).key(), "level");
+    assert_eq!(
+        trace
+            .fields()
+            .unwrap()
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_uint_64_value()
+            .unwrap()
+            .value(),
+        3
+    );
+    let metadata = encoded.metadata().unwrap();
+    assert_eq!(metadata.len(), 1);
+    assert_eq!(metadata.get(0).key(), "request_id");
+    assert_eq!(
+        metadata
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_string_value()
+            .unwrap()
+            .value(),
+        Some("req-1")
+    );
+}
+
+#[test]
+fn v2_result_direct_hit_and_nonfinite_value_variants_are_encoded() {
+    let result = SearchResult {
+        root: ResultNode::Hit(Hit {
+            id: "direct-hit".to_owned(),
+            fields: BTreeMap::from([
+                ("nan".to_owned(), Value::Float64(f64::NAN)),
+                ("infinity".to_owned(), Value::Float64(f64::INFINITY)),
+                ("bytes".to_owned(), Value::Bytes(vec![1, 2, 255])),
+                (
+                    "list".to_owned(),
+                    Value::List(vec![Value::Bool(true), Value::String("nested".to_owned())]),
+                ),
+                (
+                    "object".to_owned(),
+                    Value::Object(BTreeMap::from([("answer".to_owned(), Value::Int64(42))])),
+                ),
+                (
+                    "tensor".to_owned(),
+                    Value::Tensor(RequestTensorIr {
+                        type_spec: "tensor(x[2])".to_owned(),
+                        payload: RequestTensorPayloadIr::Dense(vec![1.0, 2.0]),
+                    }),
+                ),
+            ]),
+            ..Default::default()
+        }),
+        total_hits: TotalHits {
+            value: 0,
+            relation: TotalHitsRelation::Unspecified,
+        },
+        coverage: None,
+        timing: None,
+        errors: Vec::new(),
+        trace: None,
+        metadata: BTreeMap::new(),
+    };
+
+    let bytes = search_result_to_api(&result).expect("valid direct-hit result");
+    let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes)
+        .expect("valid direct-hit result");
+    assert_eq!(
+        encoded.total_hits().unwrap().relation(),
+        api::TotalHitsRelation::Unspecified
+    );
+    let hit = encoded
+        .root()
+        .unwrap()
+        .node_as_hit()
+        .expect("direct hit root");
+    assert_eq!(hit.id(), Some("direct-hit"));
+    let fields = hit.fields().expect("hit fields");
+    assert_eq!(
+        fields
+            .get(0)
+            .value()
+            .unwrap()
+            .kind_as_bytes_value()
+            .unwrap()
+            .value()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>(),
+        [1, 2, 255].into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        fields
+            .get(1)
+            .value()
+            .unwrap()
+            .kind_as_non_finite_float_value()
+            .unwrap()
+            .kind(),
+        api::NonFiniteFloatKind::PositiveInfinity
+    );
+    assert!(fields
+        .get(2)
+        .value()
+        .unwrap()
+        .kind_as_value_list()
+        .is_some());
+    assert_eq!(
+        fields
+            .get(3)
+            .value()
+            .unwrap()
+            .kind_as_non_finite_float_value()
+            .unwrap()
+            .kind(),
+        api::NonFiniteFloatKind::NaN
+    );
+    assert!(fields
+        .get(4)
+        .value()
+        .unwrap()
+        .kind_as_value_object()
+        .is_some());
+    assert_eq!(
+        fields
+            .get(5)
+            .value()
+            .unwrap()
+            .kind_as_tensor_value()
+            .unwrap()
+            .type_spec(),
+        Some("tensor(x[2])")
+    );
+}
+
+#[test]
+fn v2_result_validation_rejects_nonportable_doubles_and_tensor_cells_without_panicking() {
+    fn assert_error(result: SearchResult, detail_code: &str, path: &str) {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            search_result_to_api(&result)
+        }));
+        let error = outcome
+            .expect("invalid result encoding must return an error, not panic")
+            .expect_err("invalid result must be rejected");
+        assert_eq!(error.code, ErrorCode::InvalidArgument);
+        assert_eq!(error.details[0].code, detail_code);
+        assert_eq!(error.details[0].path.as_deref(), Some(path));
+    }
+
+    let mut relevance = SearchResult::empty(TotalHits {
+        value: 0,
+        relation: TotalHitsRelation::Exact,
+    });
+    relevance.root = ResultNode::Hit(Hit {
+        score: Some(f64::NAN),
+        ..Default::default()
+    });
+    assert_error(relevance, "non_finite_relevance", "root.relevance");
+
+    let mut tensor = SearchResult::empty(TotalHits {
+        value: 0,
+        relation: TotalHitsRelation::Exact,
+    });
+    tensor.root = ResultNode::Hit(Hit {
+        fields: BTreeMap::from([(
+            "embedding".to_owned(),
+            Value::Tensor(RequestTensorIr {
+                type_spec: "tensor(x[2])".to_owned(),
+                payload: RequestTensorPayloadIr::Dense(vec![1.0, f64::NAN]),
+            }),
+        )]),
+        ..Default::default()
+    });
+    assert_error(
+        tensor,
+        "non_finite_tensor_cell",
+        "root.fields.embedding.payload",
+    );
+
+    let mut coverage = SearchResult::empty(TotalHits {
+        value: 0,
+        relation: TotalHitsRelation::Exact,
+    });
+    coverage.coverage = Some(Coverage {
+        coverage_percent: Some(f64::INFINITY),
+        documents: None,
+        full: None,
+        nodes: None,
+        results: None,
+        results_full: None,
+        degraded: None,
+        metadata: BTreeMap::new(),
+    });
+    assert_error(coverage, "non_finite_number", "coverage.coverage_percent");
+
+    let mut timing = SearchResult::empty(TotalHits {
+        value: 0,
+        relation: TotalHitsRelation::Exact,
+    });
+    timing.timing = Some(SearchTiming {
+        query_time_seconds: None,
+        search_time_seconds: Some(f64::NAN),
+        summary_fetch_time_seconds: None,
+        metadata: BTreeMap::new(),
+    });
+    assert_error(timing, "non_finite_number", "timing.search_time_seconds");
 }
 
 #[test]

@@ -61,16 +61,13 @@ for name in ['searchkernel_request.bfbs','searchkernel_response.bfbs']:
     try: got=manifest['bfbs'][name]['sha256']
     except Exception as exc: raise SystemExit(f'manifest missing hash for {name}: {exc}')
     if got != want: raise SystemExit(f'manifest hash mismatch for {name}')
-schema=json.loads((generated/'searchkernel.schema.json').read_text()); openapi=json.loads((generated/'openapi-components.json').read_text())
-for filename,obj in [('searchkernel.schema.json',schema),('openapi-components.json',openapi)]:
-    if obj.get('x-searchkernel-generated-by')!='searchkernel-bindgen': raise SystemExit(f'{filename} missing generated marker')
-    rendered=json.dumps(obj,sort_keys=True)
-    for op in operations:
-        if op not in rendered: raise SystemExit(f'{filename} missing operation {op}')
-    for forbidden in ['payload_type','kind_type','expr_type','policy_type','operation_type','target_type']:
-        if f'"{forbidden}"' in rendered: raise SystemExit(f'{filename} exposes {forbidden}')
-components=openapi.get('components',{}).get('schemas')
-if not isinstance(components,dict) or not components: raise SystemExit('openapi components.schemas must be non-empty')
+# The old hand-assembled V1 JSON Schema/OpenAPI files were retired when the
+# BFBS/API contract moved to V2.  schema-model.json is the generated schema
+# inventory; semantic JSON behavior is verified by codec-contract below.
+schema_model=json.loads((generated/'schema-model.json').read_text())
+for op in operations:
+    rendered=json.dumps(schema_model,sort_keys=True)
+    if op not in rendered: raise SystemExit(f'schema-model.json missing operation {op}')
 rb=sorted((root/'core/crates/searchkernel-json/tests/fixtures/requests').glob('*.skrq')); sb=sorted((root/'core/crates/searchkernel-json/tests/fixtures/responses').glob('*.skrs'))
 rj=sorted((generated/'requests').glob('*.json')); sj=sorted((generated/'responses').glob('*.json'))
 if [p.stem for p in rj] != [p.stem for p in rb]: raise SystemExit('request JSON fixture names mismatch SKRQ corpus')
@@ -84,8 +81,4 @@ for path,envelope in [(p,'request') for p in rj]+[(p,'response') for p in sj]:
     rendered=json.dumps(obj,sort_keys=True)
     for forbidden in ['payload_type','kind_type','expr_type','policy_type','operation_type','target_type']:
         if f'"{forbidden}"' in rendered: raise SystemExit(f'{path.name}: leaked {forbidden}')
-    try:
-        validate(obj,schema[envelope],schema,f'$.{envelope}')
-    except (KeyError,TypeError,ValueError) as exc:
-        raise SystemExit(f'{path.name}: does not validate against searchkernel.schema.json: {exc}')
 print('C6 generated metadata/fixture coverage PASS')

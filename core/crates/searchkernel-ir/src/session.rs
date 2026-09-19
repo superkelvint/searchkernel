@@ -266,14 +266,10 @@ mod tests {
 
         fn search(&self, _request: SearchRequestIr) -> crate::Result<SearchResult> {
             self.search_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(SearchResult {
-                hits: Vec::new(),
-                total_hits: crate::TotalHits {
-                    value: 0,
-                    relation: crate::TotalHitsRelation::Exact,
-                },
-                facets: Vec::new(),
-            })
+            Ok(SearchResult::empty(crate::TotalHits {
+                value: 0,
+                relation: crate::TotalHitsRelation::Exact,
+            }))
         }
 
         fn analyze(&self, _request: AnalyzeRequestIr) -> crate::Result<AnalyzeResult> {

@@ -109,7 +109,7 @@ fn canonical_scalar_policy_round_trips() {
       "protocol_version": 2,
       "response": {
         "search": {
-          "hits": [],
+          "root": {"result_group": {"children": []}},
           "total_hits": {"value": "9007199254740993", "relation": "exact"}
         }
       }

@@ -7,19 +7,21 @@ use crate::model::{
     ConstantDefinitionIr, ConstantSourceIr, DataTypeIr, DeleteRequestIr, DistanceMetricIr,
     DocumentId, DocumentIr, DocumentSummaryDefinitionIr, DocumentSummaryFieldDefinitionIr,
     FieldCapabilities, FieldCardinality, FieldIr, FieldKind, FieldName, FieldSetDefinitionIr,
-    FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr, GroupingAllIr,
+    FieldValueIr, FilterIr, FilterRangeBoundIr, GetRequestIr, GroupingAggregationIr, GroupingAllIr,
     GroupingBinaryOperatorIr, GroupingBucketIr, GroupingExpressionIr, GroupingFilterIr,
     GroupingOperationIr, GroupingOutputIr, GroupingRangeBoundIr, GroupingRequestIr, HighlightingIr,
     HnswIndexConfigIr, ImportedFieldDefinitionIr, IndexConfigIr, IndexDefinitionIr, IndexName,
     InsertRequestIr, LanguageHint, MatchingConfigIr, MatchingModeIr, MissingPlacement,
     NamedStructDefinitionIr, OnnxModelDefinitionIr, PatchOperationIr, PatchRequestIr, PrefixPolicy,
-    PresentationIr, PrimitiveDataTypeIr, ProjectionIr, QueryInputIr, QueryIr, QueryModelIr,
-    QueryModelTypeIr, RangeIr, RankFunctionDefinitionIr, RankPhaseDefinitionIr,
+    PresentationIr, PrimitiveDataTypeIr, ProjectionIr, QueryAlternativeIr, QueryExprIr,
+    QueryExprKindIr, QueryFieldRefIr, QueryInputIr, QueryIr, QueryModelIr, QueryModelTypeIr,
+    QueryRangeBoundIr, RangeIr, RankFunctionDefinitionIr, RankPhaseDefinitionIr,
     RankProfileDefinitionIr, RankProfileInputIr, RankingPolicyIr, RankingRequestIr,
     RequestNonFiniteFloatIr, RequestTensorBlockIr, RequestTensorCellIr, RequestTensorIr,
     RequestTensorPayloadIr, RequestValueIr, ScalarValueIr, SchemaPropertiesIr, SearchFieldIr,
-    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, StructFieldConfigIr, StructFieldIr,
-    SummaryConfigIr, TypoPolicy, UpsertRequestIr, Value, WriteRequestIr,
+    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, StructFieldConfigIr,
+    StructFieldIr, SummaryConfigIr, TypoPolicy, UpsertRequestIr, Value, WeightedQueryItemIr,
+    WriteRequestIr,
 };
 use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
@@ -249,12 +251,27 @@ impl IndexContext {
         })
     }
     pub fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
-        let query = self.query_source_to_ir(request.query())?;
+        let query_model = query_model_to_ir(request.query_model())?;
+        let query =
+            self.query_source_to_ir(request.query(), query_model.default_index.as_deref())?;
         let search_fields_wrapper = request.search_fields();
         validate_search_request_combinations(request, &query)?;
-        let search_fields = match (&query, search_fields_wrapper) {
-            (_, None) => self.definition.default_search_fields.clone(),
-            (_, Some(s)) => self.search_fields_to_ir(s)?,
+        let source_kind = request.query().map(|source| source.source_type());
+        let search_fields = match (source_kind, search_fields_wrapper) {
+            (Some(api::QuerySourceKind::SearchKernelTextQuery), None) => {
+                self.definition.default_search_fields.clone()
+            }
+            (Some(api::QuerySourceKind::SearchKernelTextQuery), Some(selection)) => {
+                self.search_fields_to_ir(selection)?
+            }
+            (_, None) => Vec::new(),
+            (_, Some(_)) => {
+                return Err(invalid(
+                    "search_fields_not_supported",
+                    Some("search_fields"),
+                    "search fields apply only to text query sources",
+                ));
+            }
         };
         if matches!(query, QueryIr::Text(_)) && search_fields.is_empty() {
             return Err(PortableError::failed_precondition(
@@ -267,12 +284,13 @@ impl IndexContext {
         let sort = self.sorts_to_ir(request.sort())?;
         let grouping = grouping_to_ir(request.grouping())?;
         let ranking = ranking_to_ir(request.ranking())?;
-        let query_model = query_model_to_ir(request.query_model())?;
         let language = query_model.language.clone();
         let presentation = presentation_to_ir(request.presentation())?;
         let timeout = request
             .timeout_ms()
             .map(|value| Duration::from_millis(value.value()));
+        let inputs = query_inputs_to_ir(request.inputs())?;
+        validate_query_input_references(&query, &inputs, "query")?;
         Ok(SearchRequestIr {
             query,
             search_fields,
@@ -281,7 +299,7 @@ impl IndexContext {
             grouping,
             ranking,
             ranking_request: ranking_request_to_ir(request.ranking())?,
-            inputs: query_inputs_to_ir(request.inputs())?,
+            inputs,
             limit: request.limit().map_or(20, |v| v.value()),
             offset: request.offset().map_or(0, |v| v.value()),
             projection: self.projection_to_ir(request.presentation().and_then(|p| p.fields()))?,
@@ -407,7 +425,11 @@ impl IndexContext {
         }
     }
 
-    fn query_source_to_ir(&self, source: Option<api::QuerySource<'_>>) -> Result<QueryIr> {
+    fn query_source_to_ir(
+        &self,
+        source: Option<api::QuerySource<'_>>,
+        default_index: Option<&str>,
+    ) -> Result<QueryIr> {
         let source = source.ok_or_else(|| {
             invalid(
                 "missing_query",
@@ -430,7 +452,7 @@ impl IndexContext {
                     .ok_or_else(|| {
                         invalid("missing_query", Some("query"), "typed query is missing")
                     })?;
-                self.query_expr_to_ir(query, "query")
+                self.query_expr_to_ir_with_default_index(query, "query", default_index)
             }
             api::QuerySourceKind::MatchAllQuery => Ok(QueryIr::MatchAll),
             api::QuerySourceKind::YqlQuery => {
@@ -680,13 +702,20 @@ impl IndexContext {
         }
     }
     fn query_expr_to_ir(&self, expression: api::QueryExpr<'_>, path: &str) -> Result<QueryIr> {
+        self.query_expr_to_ir_with_default_index(expression, path, None)
+    }
+
+    fn query_expr_to_ir_with_default_index(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+        default_index: Option<&str>,
+    ) -> Result<QueryIr> {
         let tag = expression.expr_type();
         match tag {
-            api::QueryExprKind::TermQuery => Err(invalid(
-                "missing_query_field",
-                Some(format!("{path}.term_query")),
-                "query term requires a containing field",
-            )),
+            api::QueryExprKind::TermQuery => {
+                self.typed_query_to_ir(expression, path, default_index)
+            }
             api::QueryExprKind::QueryContains => {
                 let contains = expression.expr_as_query_contains().ok_or_else(|| {
                     invalid(
@@ -720,13 +749,18 @@ impl IndexContext {
                         "query contains requires an item",
                     )
                 })?;
-                let term = item.expr_as_term_query().ok_or_else(|| {
-                    invalid(
-                        "unsupported_query",
-                        Some(format!("{path}.contains.item")),
-                        "only term query items are supported by the embedded IR",
-                    )
-                })?;
+                let Some(term) = item.expr_as_term_query() else {
+                    return self.typed_query_to_ir(expression, path, default_index);
+                };
+                if expression.annotations().is_some()
+                    || item.annotations().is_some()
+                    || contains
+                        .field()
+                        .and_then(|field| field.element_index())
+                        .is_some()
+                {
+                    return self.typed_query_to_ir(expression, path, default_index);
+                }
                 let value = term.value().ok_or_else(|| {
                     invalid(
                         "missing_value",
@@ -734,14 +768,15 @@ impl IndexContext {
                         "query term requires a value",
                     )
                 })?;
-                Ok(QueryIr::Term {
-                    field: field.name.clone(),
-                    value: scalar_to_ir(
+                match scalar_to_ir(value, field.kind(), format!("{path}.contains.item.value")) {
+                    Ok(value) => Ok(QueryIr::Term {
+                        field: field.name.clone(),
                         value,
-                        field.kind(),
-                        format!("{path}.contains.item.value"),
-                    )?,
-                })
+                    }),
+                    Err(_) => self
+                        .typed_query_expr_to_ir(expression, path)
+                        .map(|query| QueryIr::Typed(Box::new(query))),
+                }
             }
             api::QueryExprKind::QueryAnd => {
                 let node = expression.expr_as_query_and().ok_or_else(|| {
@@ -751,13 +786,16 @@ impl IndexContext {
                         "query expression must select an operation",
                     )
                 })?;
-                let clauses = query_children(node.clauses(), self, path, "all")?;
+                let clauses = query_children(node.clauses(), self, path, "all", default_index)?;
                 if clauses.is_empty() {
                     return Err(invalid(
                         "invalid_query",
                         Some(format!("{path}.all")),
                         "query all requires at least one clause",
                     ));
+                }
+                if expression.annotations().is_some() || clauses.iter().any(query_ir_is_typed) {
+                    return self.typed_query_to_ir(expression, path, default_index);
                 }
                 Ok(flatten_query_and(clauses))
             }
@@ -769,13 +807,16 @@ impl IndexContext {
                         "query expression must select an operation",
                     )
                 })?;
-                let clauses = query_children(node.clauses(), self, path, "any")?;
+                let clauses = query_children(node.clauses(), self, path, "any", default_index)?;
                 if clauses.is_empty() {
                     return Err(invalid(
                         "invalid_query",
                         Some(format!("{path}.any")),
                         "query any requires at least one clause",
                     ));
+                }
+                if expression.annotations().is_some() || clauses.iter().any(query_ir_is_typed) {
+                    return self.typed_query_to_ir(expression, path, default_index);
                 }
                 Ok(flatten_query_or(clauses))
             }
@@ -794,17 +835,767 @@ impl IndexContext {
                         "query negation requires a clause",
                     )
                 })?;
-                Ok(QueryIr::Not(Box::new(self.query_expr_to_ir(
+                let clause = self.query_expr_to_ir_with_default_index(
                     clause,
                     &format!("{path}.negation.clause"),
-                )?)))
+                    default_index,
+                )?;
+                if expression.annotations().is_some() || query_ir_is_typed(&clause) {
+                    return self.typed_query_to_ir(expression, path, default_index);
+                }
+                Ok(QueryIr::Not(Box::new(clause)))
             }
-            _ => Err(invalid(
-                "invalid_query",
-                Some(path),
-                "query expression must select an operation",
-            )),
+            _ => self.typed_query_to_ir(expression, path, default_index),
         }
+    }
+
+    fn typed_query_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+        default_index: Option<&str>,
+    ) -> Result<QueryIr> {
+        let query = self.typed_query_expr_to_ir(expression, path)?;
+        self.validate_typed_query(&query, None, default_index, path)?;
+        Ok(QueryIr::Typed(Box::new(query)))
+    }
+
+    fn validate_typed_query(
+        &self,
+        query: &QueryExprIr,
+        field_context: Option<&QueryFieldRefIr>,
+        default_index: Option<&str>,
+        path: &str,
+    ) -> Result<()> {
+        let require_field_context = |kind: &str| {
+            if field_context.is_none() {
+                Err(invalid(
+                    "missing_field_context",
+                    Some(path.to_owned()),
+                    format!("{kind} query requires a containing field context"),
+                ))
+            } else {
+                Ok(())
+            }
+        };
+        let child_path = |suffix: &str| format!("{path}.{suffix}");
+        let validate_children = |children: &[QueryExprIr], name: &str| {
+            if children.is_empty() {
+                return Err(invalid(
+                    "empty_query_children",
+                    Some(child_path(name)),
+                    "query operation requires at least one child",
+                ));
+            }
+            for (index, child) in children.iter().enumerate() {
+                self.validate_typed_query(
+                    child,
+                    field_context,
+                    default_index,
+                    &format!("{path}.{name}[{index}]"),
+                )?;
+            }
+            Ok(())
+        };
+        let validate_proximity_children = |children: &[QueryExprIr], name: &str| {
+            if children.is_empty() {
+                return Err(invalid(
+                    "empty_query_children",
+                    Some(child_path(name)),
+                    "phrase/proximity operation requires at least one child",
+                ));
+            }
+            for (index, child) in children.iter().enumerate() {
+                if !matches!(
+                    child.kind,
+                    QueryExprKindIr::Term { .. }
+                        | QueryExprKindIr::Contains { .. }
+                        | QueryExprKindIr::Phrase(_)
+                        | QueryExprKindIr::Near(_)
+                        | QueryExprKindIr::ONear(_)
+                        | QueryExprKindIr::SameElement(_)
+                        | QueryExprKindIr::Equiv(_)
+                        | QueryExprKindIr::Alternatives(_)
+                        | QueryExprKindIr::Fuzzy { .. }
+                        | QueryExprKindIr::Matches { .. }
+                        | QueryExprKindIr::Text { .. }
+                        | QueryExprKindIr::UserInput { .. }
+                        | QueryExprKindIr::UserQuery
+                ) {
+                    return Err(invalid(
+                        "invalid_query_child",
+                        Some(format!("{path}.{name}[{index}]")),
+                        "phrase/proximity children must be query terms or other term-like nodes",
+                    ));
+                }
+                self.validate_typed_query(
+                    child,
+                    field_context,
+                    default_index,
+                    &format!("{path}.{name}[{index}]"),
+                )?;
+            }
+            Ok(())
+        };
+
+        match &query.kind {
+            QueryExprKindIr::Term { .. }
+            | QueryExprKindIr::Fuzzy { .. }
+            | QueryExprKindIr::Text { .. } => require_field_context("term-like"),
+            QueryExprKindIr::UserInput { .. } => {
+                if field_context.is_some()
+                    || query.annotations.contains_key("defaultIndex")
+                    || default_index.is_some()
+                {
+                    Ok(())
+                } else {
+                    require_field_context("user input")
+                }
+            }
+            QueryExprKindIr::Contains { field, item } => self.validate_typed_query(
+                item,
+                Some(field),
+                default_index,
+                &child_path("contains.item"),
+            ),
+            QueryExprKindIr::And(children)
+            | QueryExprKindIr::Or(children)
+            | QueryExprKindIr::WeakAnd(children) => validate_children(
+                children,
+                match &query.kind {
+                    QueryExprKindIr::And(_) => "and",
+                    QueryExprKindIr::Or(_) => "or",
+                    _ => "weak_and",
+                },
+            ),
+            QueryExprKindIr::Not(child) | QueryExprKindIr::NonEmpty(child) => {
+                self.validate_typed_query(child, field_context, default_index, &child_path("child"))
+            }
+            QueryExprKindIr::True | QueryExprKindIr::False | QueryExprKindIr::UserQuery => Ok(()),
+            QueryExprKindIr::Comparison { .. }
+            | QueryExprKindIr::Range { .. }
+            | QueryExprKindIr::In { .. }
+            | QueryExprKindIr::Matches { .. }
+            | QueryExprKindIr::DotProduct { .. }
+            | QueryExprKindIr::WeightedSet { .. }
+            | QueryExprKindIr::Wand { .. }
+            | QueryExprKindIr::GeoLocation { .. }
+            | QueryExprKindIr::GeoBoundingBox { .. }
+            | QueryExprKindIr::NearestNeighbor { .. } => Ok(()),
+            QueryExprKindIr::Phrase(children)
+            | QueryExprKindIr::Near(children)
+            | QueryExprKindIr::ONear(children)
+            | QueryExprKindIr::SameElement(children)
+            | QueryExprKindIr::Equiv(children) => {
+                require_field_context("phrase/proximity")?;
+                validate_proximity_children(
+                    children,
+                    match &query.kind {
+                        QueryExprKindIr::Phrase(_) => "phrase",
+                        QueryExprKindIr::Near(_) => "near",
+                        QueryExprKindIr::ONear(_) => "onear",
+                        QueryExprKindIr::SameElement(_) => "same_element",
+                        _ => "equiv",
+                    },
+                )
+            }
+            QueryExprKindIr::Alternatives(values) => {
+                require_field_context("alternatives")?;
+                if values.is_empty() {
+                    return Err(invalid(
+                        "empty_query_children",
+                        Some(child_path("alternatives")),
+                        "alternatives requires at least one query",
+                    ));
+                }
+                for (index, value) in values.iter().enumerate() {
+                    if value
+                        .exactness
+                        .is_some_and(|exactness| !(0.0..=1.0).contains(&exactness))
+                    {
+                        return Err(invalid(
+                            "invalid_exactness",
+                            Some(format!("{path}.alternatives[{index}].exactness")),
+                            "alternative exactness must be between zero and one",
+                        ));
+                    }
+                    self.validate_typed_query(
+                        &value.query,
+                        field_context,
+                        default_index,
+                        &format!("{path}.alternatives[{index}].query"),
+                    )?;
+                }
+                Ok(())
+            }
+            QueryExprKindIr::Rank { matching, ranking } => {
+                self.validate_typed_query(
+                    matching,
+                    field_context,
+                    default_index,
+                    &child_path("rank.match"),
+                )?;
+                validate_children(ranking, "rank.ranking")
+            }
+            QueryExprKindIr::Labeled { query, label, .. } => {
+                if label.is_empty() {
+                    return Err(invalid(
+                        "missing_label",
+                        Some(child_path("labeled.label")),
+                        "labeled query requires a non-empty label",
+                    ));
+                }
+                self.validate_typed_query(
+                    query,
+                    field_context,
+                    default_index,
+                    &child_path("labeled.query"),
+                )
+            }
+            QueryExprKindIr::Predicate {
+                features,
+                range_features,
+                ..
+            } => {
+                validate_predicate_values(features, &child_path("predicate.features"))?;
+                validate_predicate_values(range_features, &child_path("predicate.range_features"))
+            }
+        }
+    }
+
+    fn typed_query_expr_to_ir(
+        &self,
+        expression: api::QueryExpr<'_>,
+        path: &str,
+    ) -> Result<QueryExprIr> {
+        let annotations =
+            request_values_to_map(expression.annotations(), &format!("{path}.annotations"))?;
+        let kind = match expression.expr_type() {
+            api::QueryExprKind::TermQuery => {
+                let value = expression
+                    .expr_as_term_query()
+                    .and_then(|query| query.value())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.term.value")),
+                            "term query requires a value",
+                        )
+                    })?;
+                QueryExprKindIr::Term {
+                    value: RequestValueIr::from_api(value, format!("{path}.term.value"))?,
+                }
+            }
+            api::QueryExprKind::QueryContains => {
+                let query = expression.expr_as_query_contains().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "contains query is missing")
+                })?;
+                let field =
+                    self.query_field_ref_to_ir(query.field(), &format!("{path}.contains.field"))?;
+                let item = query.item().ok_or_else(|| {
+                    invalid(
+                        "missing_query_item",
+                        Some(format!("{path}.contains.item")),
+                        "query contains requires an item",
+                    )
+                })?;
+                QueryExprKindIr::Contains {
+                    field,
+                    item: Box::new(
+                        self.typed_query_expr_to_ir(item, &format!("{path}.contains.item"))?,
+                    ),
+                }
+            }
+            api::QueryExprKind::QueryAnd => QueryExprKindIr::And(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_and()
+                        .and_then(|value| value.clauses()),
+                    path,
+                    "and",
+                )?,
+            ),
+            api::QueryExprKind::QueryOr => QueryExprKindIr::Or(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_or()
+                        .and_then(|value| value.clauses()),
+                    path,
+                    "or",
+                )?,
+            ),
+            api::QueryExprKind::QueryNot => {
+                let query = expression
+                    .expr_as_query_not()
+                    .and_then(|value| value.clause())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_query",
+                            Some(format!("{path}.not.clause")),
+                            "not query requires a clause",
+                        )
+                    })?;
+                QueryExprKindIr::Not(Box::new(
+                    self.typed_query_expr_to_ir(query, &format!("{path}.not.clause"))?,
+                ))
+            }
+            api::QueryExprKind::QueryTrue => QueryExprKindIr::True,
+            api::QueryExprKind::QueryFalse => QueryExprKindIr::False,
+            api::QueryExprKind::QueryComparison => {
+                let query = expression.expr_as_query_comparison().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "comparison query is missing")
+                })?;
+                QueryExprKindIr::Comparison {
+                    field: self.query_field_ref_to_ir(
+                        query.field(),
+                        &format!("{path}.comparison.field"),
+                    )?,
+                    op: query_comparison_op(query.op().0, &format!("{path}.comparison.op"))?,
+                    value: RequestValueIr::from_api(
+                        query.value().ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("{path}.comparison.value")),
+                                "comparison requires a value",
+                            )
+                        })?,
+                        format!("{path}.comparison.value"),
+                    )?,
+                }
+            }
+            api::QueryExprKind::QueryRange => {
+                let query = expression.expr_as_query_range().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "range query is missing")
+                })?;
+                QueryExprKindIr::Range {
+                    field: self
+                        .query_field_ref_to_ir(query.field(), &format!("{path}.range.field"))?,
+                    lower: query_range_bound_to_ir(query.lower(), &format!("{path}.range.lower"))?,
+                    upper: query_range_bound_to_ir(query.upper(), &format!("{path}.range.upper"))?,
+                    include_lower: query.include_lower().map(|value| value.value()),
+                    include_upper: query.include_upper().map(|value| value.value()),
+                }
+            }
+            api::QueryExprKind::QueryIn => {
+                let query = expression
+                    .expr_as_query_in()
+                    .ok_or_else(|| invalid("invalid_query", Some(path), "in query is missing"))?;
+                QueryExprKindIr::In {
+                    field: self
+                        .query_field_ref_to_ir(query.field(), &format!("{path}.in.field"))?,
+                    values: query
+                        .values()
+                        .map(|values| {
+                            values
+                                .iter()
+                                .enumerate()
+                                .map(|(index, value)| {
+                                    RequestValueIr::from_api(
+                                        value,
+                                        format!("{path}.in.values[{index}]"),
+                                    )
+                                })
+                                .collect::<Result<Vec<_>>>()
+                        })
+                        .transpose()?
+                        .unwrap_or_default(),
+                }
+            }
+            api::QueryExprKind::QueryPhrase => QueryExprKindIr::Phrase(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_phrase()
+                        .and_then(|value| value.terms()),
+                    path,
+                    "phrase",
+                )?,
+            ),
+            api::QueryExprKind::QueryNear => QueryExprKindIr::Near(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_near()
+                        .and_then(|value| value.terms()),
+                    path,
+                    "near",
+                )?,
+            ),
+            api::QueryExprKind::QueryONear => QueryExprKindIr::ONear(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_onear()
+                        .and_then(|value| value.terms()),
+                    path,
+                    "onear",
+                )?,
+            ),
+            api::QueryExprKind::QuerySameElement => QueryExprKindIr::SameElement(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_same_element()
+                        .and_then(|value| value.clauses()),
+                    path,
+                    "same_element",
+                )?,
+            ),
+            api::QueryExprKind::QueryEquiv => QueryExprKindIr::Equiv(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_equiv()
+                        .and_then(|value| value.clauses()),
+                    path,
+                    "equiv",
+                )?,
+            ),
+            api::QueryExprKind::QueryAlternatives => {
+                let values = expression
+                    .expr_as_query_alternatives()
+                    .and_then(|value| value.alternatives())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| {
+                                let query = value.query().ok_or_else(|| {
+                                    invalid(
+                                        "missing_query",
+                                        Some(format!("{path}.alternatives[{index}].query")),
+                                        "alternative requires a query",
+                                    )
+                                })?;
+                                let exactness = value.exactness().map(|value| value.value());
+                                if exactness.is_some_and(|value| !value.is_finite()) {
+                                    return Err(invalid(
+                                        "non_finite_number",
+                                        Some(format!("{path}.alternatives[{index}].exactness")),
+                                        "alternative exactness must be finite",
+                                    ));
+                                }
+                                Ok(QueryAlternativeIr {
+                                    query: self.typed_query_expr_to_ir(
+                                        query,
+                                        &format!("{path}.alternatives[{index}].query"),
+                                    )?,
+                                    exactness,
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                QueryExprKindIr::Alternatives(values)
+            }
+            api::QueryExprKind::QueryFuzzy => {
+                let value = expression
+                    .expr_as_query_fuzzy()
+                    .and_then(|query| query.value())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.fuzzy.value")),
+                            "fuzzy query requires a value",
+                        )
+                    })?;
+                QueryExprKindIr::Fuzzy {
+                    value: RequestValueIr::from_api(value, format!("{path}.fuzzy.value"))?,
+                }
+            }
+            api::QueryExprKind::QueryMatches => {
+                let query = expression.expr_as_query_matches().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "matches query is missing")
+                })?;
+                QueryExprKindIr::Matches {
+                    field: self
+                        .query_field_ref_to_ir(query.field(), &format!("{path}.matches.field"))?,
+                    pattern: query
+                        .pattern()
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("{path}.matches.pattern")),
+                                "matches query requires a pattern",
+                            )
+                        })?
+                        .to_owned(),
+                }
+            }
+            api::QueryExprKind::QueryText => QueryExprKindIr::Text {
+                text: expression
+                    .expr_as_query_text()
+                    .and_then(|query| query.text())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.text.text")),
+                            "text query requires text",
+                        )
+                    })?
+                    .to_owned(),
+            },
+            api::QueryExprKind::QueryUserInput => QueryExprKindIr::UserInput {
+                value: expression
+                    .expr_as_query_user_input()
+                    .and_then(|query| query.value())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.user_input.value")),
+                            "user input query requires a value",
+                        )
+                    })?
+                    .to_owned(),
+            },
+            api::QueryExprKind::QueryUserQuery => QueryExprKindIr::UserQuery,
+            api::QueryExprKind::QueryDotProduct
+            | api::QueryExprKind::QueryWeightedSet
+            | api::QueryExprKind::QueryWand => {
+                let (field, items) = match expression.expr_type() {
+                    api::QueryExprKind::QueryDotProduct => {
+                        let query = expression.expr_as_query_dot_product().ok_or_else(|| {
+                            invalid("invalid_query", Some(path), "dot product query is missing")
+                        })?;
+                        (query.field(), query.items())
+                    }
+                    api::QueryExprKind::QueryWeightedSet => {
+                        let query = expression.expr_as_query_weighted_set().ok_or_else(|| {
+                            invalid("invalid_query", Some(path), "weighted set query is missing")
+                        })?;
+                        (query.field(), query.items())
+                    }
+                    _ => {
+                        let query = expression.expr_as_query_wand().ok_or_else(|| {
+                            invalid("invalid_query", Some(path), "wand query is missing")
+                        })?;
+                        (query.field(), query.items())
+                    }
+                };
+                let items = weighted_query_items_to_ir(items, path)?;
+                let field = self.query_field_ref_to_ir(field, &format!("{path}.field"))?;
+                match expression.expr_type() {
+                    api::QueryExprKind::QueryDotProduct => {
+                        QueryExprKindIr::DotProduct { field, items }
+                    }
+                    api::QueryExprKind::QueryWeightedSet => {
+                        QueryExprKindIr::WeightedSet { field, items }
+                    }
+                    _ => QueryExprKindIr::Wand { field, items },
+                }
+            }
+            api::QueryExprKind::QueryWeakAnd => QueryExprKindIr::WeakAnd(
+                self.typed_query_children(
+                    expression
+                        .expr_as_query_weak_and()
+                        .and_then(|value| value.clauses()),
+                    path,
+                    "weak_and",
+                )?,
+            ),
+            api::QueryExprKind::QueryRank => {
+                let query = expression
+                    .expr_as_query_rank()
+                    .ok_or_else(|| invalid("invalid_query", Some(path), "rank query is missing"))?;
+                QueryExprKindIr::Rank {
+                    matching: Box::new(self.typed_query_expr_to_ir(
+                        query.match_().ok_or_else(|| {
+                            invalid(
+                                "missing_query",
+                                Some(format!("{path}.rank.match")),
+                                "rank query requires a match",
+                            )
+                        })?,
+                        &format!("{path}.rank.match"),
+                    )?),
+                    ranking: self.typed_query_children(query.rank(), path, "rank")?,
+                }
+            }
+            api::QueryExprKind::QueryLabeled => {
+                let query = expression.expr_as_query_labeled().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "labeled query is missing")
+                })?;
+                let score = query.score();
+                if !score.is_finite() {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.labeled.score")),
+                        "labeled score must be finite",
+                    ));
+                }
+                QueryExprKindIr::Labeled {
+                    query: Box::new(self.typed_query_expr_to_ir(
+                        query.query().ok_or_else(|| {
+                            invalid(
+                                "missing_query",
+                                Some(format!("{path}.labeled.query")),
+                                "labeled query requires a query",
+                            )
+                        })?,
+                        &format!("{path}.labeled.query"),
+                    )?),
+                    label: query.label().unwrap_or_default().to_owned(),
+                    score,
+                }
+            }
+            api::QueryExprKind::QueryNonEmpty => {
+                let query = expression.expr_as_query_non_empty().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "non-empty query is missing")
+                })?;
+                QueryExprKindIr::NonEmpty(Box::new(self.typed_query_expr_to_ir(
+                    query.query().ok_or_else(|| {
+                        invalid(
+                            "missing_query",
+                            Some(format!("{path}.non_empty.query")),
+                            "non-empty query requires a query",
+                        )
+                    })?,
+                    &format!("{path}.non_empty.query"),
+                )?))
+            }
+            api::QueryExprKind::QueryGeoLocation => {
+                let query = expression.expr_as_query_geo_location().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "geo location query is missing")
+                })?;
+                let values = [query.latitude(), query.longitude()];
+                if values.iter().any(|value| !value.is_finite()) {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.geo_location")),
+                        "geo coordinates must be finite",
+                    ));
+                }
+                QueryExprKindIr::GeoLocation {
+                    field: self.query_field_ref_to_ir(
+                        query.field(),
+                        &format!("{path}.geo_location.field"),
+                    )?,
+                    latitude: query.latitude(),
+                    longitude: query.longitude(),
+                    radius: query
+                        .radius()
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("{path}.geo_location.radius")),
+                                "geo location query requires a radius",
+                            )
+                        })?
+                        .to_owned(),
+                }
+            }
+            api::QueryExprKind::QueryGeoBoundingBox => {
+                let query = expression.expr_as_query_geo_bounding_box().ok_or_else(|| {
+                    invalid(
+                        "invalid_query",
+                        Some(path),
+                        "geo bounding box query is missing",
+                    )
+                })?;
+                let values = [query.south(), query.west(), query.north(), query.east()];
+                if values.iter().any(|value| !value.is_finite()) {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "geo coordinates must be finite",
+                    ));
+                }
+                QueryExprKindIr::GeoBoundingBox {
+                    field: self.query_field_ref_to_ir(
+                        query.field(),
+                        &format!("{path}.geo_bounding_box.field"),
+                    )?,
+                    south: query.south(),
+                    west: query.west(),
+                    north: query.north(),
+                    east: query.east(),
+                }
+            }
+            api::QueryExprKind::QueryNearestNeighbor => {
+                let query = expression.expr_as_query_nearest_neighbor().ok_or_else(|| {
+                    invalid(
+                        "invalid_query",
+                        Some(path),
+                        "nearest neighbor query is missing",
+                    )
+                })?;
+                QueryExprKindIr::NearestNeighbor {
+                    document_field: self.query_field_ref_to_ir(
+                        query.document_field(),
+                        &format!("{path}.nearest_neighbor.document_field"),
+                    )?,
+                    query_tensor: query
+                        .query_tensor()
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_value",
+                                Some(format!("{path}.nearest_neighbor.query_tensor")),
+                                "nearest-neighbor query requires a query tensor name",
+                            )
+                        })?
+                        .to_owned(),
+                }
+            }
+            api::QueryExprKind::QueryPredicate => {
+                let query = expression.expr_as_query_predicate().ok_or_else(|| {
+                    invalid("invalid_query", Some(path), "predicate query is missing")
+                })?;
+                QueryExprKindIr::Predicate {
+                    field: self
+                        .query_field_ref_to_ir(query.field(), &format!("{path}.predicate.field"))?,
+                    features: query_value_object_to_ir(
+                        query.features(),
+                        &format!("{path}.predicate.features"),
+                    )?,
+                    range_features: query_value_object_to_ir(
+                        query.range_features(),
+                        &format!("{path}.predicate.range_features"),
+                    )?,
+                }
+            }
+            _ => {
+                return Err(invalid(
+                    "invalid_query",
+                    Some(path),
+                    "query expression must select an operation",
+                ))
+            }
+        };
+        Ok(QueryExprIr { kind, annotations })
+    }
+
+    fn query_field_ref_to_ir(
+        &self,
+        value: Option<api::QueryFieldRef<'_>>,
+        path: &str,
+    ) -> Result<QueryFieldRefIr> {
+        let value = value
+            .ok_or_else(|| invalid("missing_query_field", Some(path), "query field is required"))?;
+        let field_path = value.path().unwrap_or_default();
+        let field = self.query_field(field_path, format!("{path}.path"))?;
+        Ok(QueryFieldRefIr {
+            path: field.name.clone(),
+            element_index: value.element_index().map(|value| value.value()),
+        })
+    }
+
+    fn typed_query_children(
+        &self,
+        children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
+        parent_path: &str,
+        operation_name: &str,
+    ) -> Result<Vec<QueryExprIr>> {
+        children
+            .map(|children| {
+                children
+                    .iter()
+                    .enumerate()
+                    .map(|(index, child)| {
+                        self.typed_query_expr_to_ir(
+                            child,
+                            &format!("{parent_path}.{operation_name}.clauses[{index}]"),
+                        )
+                    })
+                    .collect()
+            })
+            .transpose()
+            .map(|value| value.unwrap_or_default())
     }
     fn filters_to_ir(&self, filters: Option<api::FilterRequest<'_>>) -> Result<Option<FilterIr>> {
         let Some(filters) = filters else {
@@ -943,7 +1734,7 @@ impl IndexContext {
                 })?;
                 let f = self.query_field(
                     n.field().and_then(|field| field.path()).unwrap_or_default(),
-                    format!("{path}.exists.field.path"),
+                    format!("{path}.exists.field"),
                 )?;
                 if !f.capabilities.filterable {
                     return Err(invalid(
@@ -982,7 +1773,7 @@ impl IndexContext {
     ) -> Result<ComparisonIr> {
         let f = self.query_field(
             c.field().and_then(|field| field.path()).unwrap_or_default(),
-            format!("{path}.field.path"),
+            format!("{path}.field"),
         )?;
         if !f.capabilities.filterable {
             return Err(invalid(
@@ -1040,7 +1831,7 @@ impl IndexContext {
                 .field()
                 .and_then(|field| field.path())
                 .unwrap_or_default(),
-            format!("{path}.field.path"),
+            format!("{path}.field"),
         )?;
         if !f.capabilities.filterable {
             return Err(invalid(
@@ -1081,7 +1872,7 @@ impl IndexContext {
     fn range_to_ir_at(&self, r: api::FilterRange<'_>, path: &str) -> Result<RangeIr> {
         let f = self.query_field(
             r.field().and_then(|field| field.path()).unwrap_or_default(),
-            format!("{path}.field.path"),
+            format!("{path}.field"),
         )?;
         if !f.capabilities.filterable {
             return Err(invalid(
@@ -1097,43 +1888,41 @@ impl IndexContext {
                 "range requires an Int64 or Float64 field",
             ));
         }
-        let lower = finite_range_bound(r.lower(), &format!("{path}.lower"))?;
-        let upper = finite_range_bound(r.upper(), &format!("{path}.upper"))?;
-        if lower.is_none() && upper.is_none() {
+        let lower = filter_range_bound_to_ir(r.lower(), f.kind(), &format!("{path}.lower"))?;
+        let upper = filter_range_bound_to_ir(r.upper(), f.kind(), &format!("{path}.upper"))?;
+        if matches!(lower, FilterRangeBoundIr::Unbounded)
+            && matches!(upper, FilterRangeBoundIr::Unbounded)
+        {
             return Err(invalid(
                 "invalid_range",
                 Some(path),
                 "range requires at least one bound",
             ));
         }
-        if lower.is_none() && r.include_lower().is_some_and(|v| v.value()) {
+        if matches!(lower, FilterRangeBoundIr::Unbounded)
+            && r.include_lower().is_some_and(|v| v.value())
+        {
             return Err(invalid(
                 "invalid_range",
                 Some(format!("{path}.include_lower")),
                 "lower inclusion requires a lower bound",
             ));
         }
-        if upper.is_none() && r.include_upper().is_some_and(|v| v.value()) {
+        if matches!(upper, FilterRangeBoundIr::Unbounded)
+            && r.include_upper().is_some_and(|v| v.value())
+        {
             return Err(invalid(
                 "invalid_range",
                 Some(format!("{path}.include_upper")),
                 "upper inclusion requires an upper bound",
             ));
         }
-        let lower = lower
-            .map(|v| scalar_to_ir(v, f.kind(), format!("{path}.lower")))
-            .transpose()?;
-        let upper = upper
-            .map(|v| scalar_to_ir(v, f.kind(), format!("{path}.upper")))
-            .transpose()?;
-        if let (Some(a), Some(b)) = (&lower, &upper) {
-            if numeric_gt(a, b) {
-                return Err(invalid(
-                    "invalid_range",
-                    Some(path),
-                    "range lower bound must not exceed upper bound",
-                ));
-            }
+        if filter_bound_greater(&lower, &upper) {
+            return Err(invalid(
+                "invalid_range",
+                Some(path),
+                "range lower bound must not exceed upper bound",
+            ));
         }
         Ok(RangeIr {
             field: f.name.clone(),
@@ -1151,34 +1940,68 @@ impl IndexContext {
                 "sort expression requires a target",
             )
         })?;
-        if target.target_type() != api::SortTargetKind::FieldSortTarget {
-            return Err(PortableError::unsupported(
-                "unsupported_sort",
-                Some(path),
-                "only field sort targets are supported by the embedded IR",
-            ));
-        }
-        let f = self.query_field(
-            target
-                .target_as_field_sort_target()
-                .and_then(|target| target.field())
-                .unwrap_or_default(),
-            format!("{path}.target.field"),
-        )?;
-        if !f.capabilities.sortable {
-            return Err(invalid(
-                "field_not_sortable",
-                Some(format!("{path}.target.field")),
-                "sort requires a sortable field",
-            ));
-        }
-        if f.cardinality() != FieldCardinality::Single {
-            return Err(invalid(
-                "invalid_capability",
-                Some(format!("{path}.target.field")),
-                "multi-valued fields cannot be sortable",
-            ));
-        }
+        let target = match target.target_type() {
+            api::SortTargetKind::FieldSortTarget => {
+                let field_path = format!("{path}.target.field");
+                let f = self.query_field(
+                    target
+                        .target_as_field_sort_target()
+                        .and_then(|target| target.field())
+                        .unwrap_or_default(),
+                    field_path.clone(),
+                )?;
+                if !f.capabilities.sortable {
+                    return Err(invalid(
+                        "field_not_sortable",
+                        Some(field_path.clone()),
+                        "sort requires a sortable field",
+                    ));
+                }
+                if f.cardinality() != FieldCardinality::Single {
+                    return Err(invalid(
+                        "invalid_capability",
+                        Some(field_path),
+                        "multi-valued fields cannot be sortable",
+                    ));
+                }
+                SortTargetIr::Field(f.name.clone())
+            }
+            api::SortTargetKind::RelevanceSortTarget => SortTargetIr::Relevance,
+            api::SortTargetKind::RankFeatureSortTarget => {
+                let feature = target
+                    .target_as_rank_feature_sort_target()
+                    .and_then(|target| target.feature())
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_sort",
+                            Some(format!("{path}.target.feature")),
+                            "rank-feature sort requires a feature name",
+                        )
+                    })?;
+                if feature.is_empty() {
+                    return Err(invalid(
+                        "invalid_sort",
+                        Some(format!("{path}.target.feature")),
+                        "rank-feature sort requires a non-empty feature name",
+                    ));
+                }
+                SortTargetIr::RankFeature(feature.to_owned())
+            }
+            api::SortTargetKind::RawSortTarget => {
+                return Err(PortableError::unsupported(
+                    "raw_sort_not_supported",
+                    Some(format!("{path}.target")),
+                    "raw sort expressions must be normalized before entering resolved IR",
+                ));
+            }
+            _ => {
+                return Err(invalid(
+                    "invalid_sort",
+                    Some(format!("{path}.target")),
+                    "sort target must select a known variant",
+                ));
+            }
+        };
         let direction = match s.direction().0 {
             0 | 1 => SortDirection::Asc,
             2 => SortDirection::Desc,
@@ -1199,6 +2022,22 @@ impl IndexContext {
                 api::MissingPolicyKind::MissingLast if v.policy_as_missing_last().is_some() => {
                     MissingPlacement::Last
                 }
+                api::MissingPolicyKind::MissingAs => {
+                    let value = v
+                        .policy_as_missing_as()
+                        .and_then(|value| value.value())
+                        .ok_or_else(|| {
+                            invalid(
+                                "invalid_sort",
+                                Some(format!("{path}.missing")),
+                                "missing-as policy requires a value",
+                            )
+                        })?;
+                    MissingPlacement::As(RequestValueIr::from_api(
+                        value,
+                        format!("{path}.missing.value"),
+                    )?)
+                }
                 _ => {
                     return Err(invalid(
                         "invalid_sort",
@@ -1209,9 +2048,10 @@ impl IndexContext {
             },
         };
         Ok(SortIr {
-            field: f.name.clone(),
+            target,
             direction,
             missing,
+            annotations: request_values_to_map(s.annotations(), &format!("{path}.annotations"))?,
         })
     }
     fn sorts_to_ir(
@@ -1223,12 +2063,14 @@ impl IndexContext {
         if let Some(sorts) = sorts {
             for (i, s) in sorts.iter().enumerate() {
                 let v = self.sort_to_ir_at(s, &format!("sort[{i}]"))?;
-                if !seen.insert(v.field.clone()) {
-                    return Err(invalid(
-                        "duplicate_sort_field",
-                        Some(format!("sort[{i}].field")),
-                        "sort fields must be unique",
-                    ));
+                if let Some(field) = v.field() {
+                    if !seen.insert(field.clone()) {
+                        return Err(invalid(
+                            "duplicate_sort_field",
+                            Some(format!("sort[{i}].field")),
+                            "sort fields must be unique",
+                        ));
+                    }
                 }
                 out.push(v)
             }
@@ -2615,6 +3457,96 @@ fn query_inputs_to_ir(
     Ok(inputs)
 }
 
+fn validate_query_input_references(
+    query: &QueryIr,
+    inputs: &BTreeMap<String, QueryInputIr>,
+    path: &str,
+) -> Result<()> {
+    let QueryIr::Typed(expression) = query else {
+        return Ok(());
+    };
+    validate_query_input_references_in_expr(expression, inputs, path)
+}
+
+fn validate_query_input_references_in_expr(
+    expression: &QueryExprIr,
+    inputs: &BTreeMap<String, QueryInputIr>,
+    path: &str,
+) -> Result<()> {
+    let mut children: Vec<(&QueryExprIr, String)> = Vec::new();
+    match &expression.kind {
+        QueryExprKindIr::Contains { item, .. }
+        | QueryExprKindIr::Not(item)
+        | QueryExprKindIr::NonEmpty(item)
+        | QueryExprKindIr::Labeled { query: item, .. } => {
+            children.push((item, path.to_owned()));
+        }
+        QueryExprKindIr::And(values)
+        | QueryExprKindIr::Or(values)
+        | QueryExprKindIr::Phrase(values)
+        | QueryExprKindIr::Near(values)
+        | QueryExprKindIr::ONear(values)
+        | QueryExprKindIr::SameElement(values)
+        | QueryExprKindIr::Equiv(values)
+        | QueryExprKindIr::WeakAnd(values) => {
+            children.extend(values.iter().map(|value| (value, path.to_owned())));
+        }
+        QueryExprKindIr::Alternatives(values) => {
+            children.extend(values.iter().map(|value| (&value.query, path.to_owned())));
+        }
+        QueryExprKindIr::Rank { matching, ranking } => {
+            children.push((matching, path.to_owned()));
+            children.extend(ranking.iter().map(|value| (value, path.to_owned())));
+        }
+        QueryExprKindIr::NearestNeighbor { query_tensor, .. }
+            if !inputs.contains_key(query_tensor) =>
+        {
+            return Err(invalid(
+                "unknown_query_input",
+                Some(format!("{path}.nearest_neighbor.query_tensor")),
+                format!("query tensor input {query_tensor} is not defined"),
+            ));
+        }
+        _ => {}
+    }
+    for (child, child_path) in children {
+        validate_query_input_references_in_expr(child, inputs, &child_path)?;
+    }
+    Ok(())
+}
+
+fn validate_predicate_values(values: &BTreeMap<String, RequestValueIr>, path: &str) -> Result<()> {
+    for (key, value) in values {
+        validate_predicate_value(value, &format!("{path}.{key}"))?;
+    }
+    Ok(())
+}
+
+fn validate_predicate_value(value: &RequestValueIr, path: &str) -> Result<()> {
+    match value {
+        RequestValueIr::Null
+        | RequestValueIr::Bytes(_)
+        | RequestValueIr::Tensor(_)
+        | RequestValueIr::NonFiniteFloat(_) => Err(invalid(
+            "invalid_predicate_value",
+            Some(path.to_owned()),
+            "predicate values must be finite scalar values, lists, or objects",
+        )),
+        RequestValueIr::List(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_predicate_value(value, &format!("{path}[{index}]"))?;
+            }
+            Ok(())
+        }
+        RequestValueIr::Object(values) => validate_predicate_values(values, path),
+        RequestValueIr::Bool(_)
+        | RequestValueIr::Int64(_)
+        | RequestValueIr::UInt64(_)
+        | RequestValueIr::Float64(_)
+        | RequestValueIr::String(_) => Ok(()),
+    }
+}
+
 fn request_values_to_map(
     values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
     path: &str,
@@ -2765,6 +3697,25 @@ fn field_to_ir_at(
             matching.as_ref().map(|value| value.mode),
             Some(MatchingModeIr::Exact | MatchingModeIr::Word)
         );
+    if keyword && searchable == Some(true) {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.searchable")),
+            "keyword fields cannot opt into full-text search",
+        ));
+    }
+    if matches!(
+        data_type,
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+    ) && !keyword
+        && filterable == Some(true)
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.filterable")),
+            "text fields cannot opt into filtering",
+        ));
+    }
     let analyzer = analyzer_config_to_ir(
         definition.analyzer(),
         string_type && !keyword,
@@ -2935,11 +3886,13 @@ fn analyzer_config_to_ir(
     }
     analyzer
         .map(|analyzer| {
-            Ok(AnalyzerIr {
+            let analyzer = AnalyzerIr {
                 name: required_string(analyzer.name(), path, "analyzer name")?,
                 version: analyzer.version(),
                 options: schema_properties_to_ir(analyzer.options(), &format!("{path}.options"))?,
-            })
+            };
+            analyzer_identity(&analyzer, path)?;
+            Ok(analyzer)
         })
         .transpose()
 }
@@ -4136,23 +5089,74 @@ fn ranking_to_ir(r: Option<api::RankingRequest<'_>>) -> Result<RankingPolicyIr> 
     }
 }
 
-fn finite_range_bound<'a>(
+fn filter_range_bound_to_ir<'a>(
     bound: Option<api::RangeBound<'a>>,
+    kind: FieldKind,
     path: &str,
-) -> Result<Option<api::Value<'a>>> {
+) -> Result<FilterRangeBoundIr> {
     let Some(bound) = bound else {
-        return Ok(None);
+        return Ok(FilterRangeBoundIr::Unbounded);
     };
     match bound.bound_type() {
         api::RangeBoundKind::FiniteRangeBound => bound
             .bound_as_finite_range_bound()
             .and_then(|value| value.value())
-            .map(Some)
-            .ok_or_else(|| invalid("invalid_range", Some(path), "finite range bound is missing")),
-        api::RangeBoundKind::NegativeInfinityBound
-        | api::RangeBoundKind::PositiveInfinityBound
-        | api::RangeBoundKind::UnboundedRangeBound => Ok(None),
+            .ok_or_else(|| invalid("invalid_range", Some(path), "finite range bound is missing"))
+            .and_then(|value| {
+                RequestValueIr::from_api(value, path.to_owned())
+                    .and_then(|value| scalar_request_value_to_ir(value, kind, path))
+                    .map(FilterRangeBoundIr::Finite)
+            }),
+        api::RangeBoundKind::NegativeInfinityBound => Ok(FilterRangeBoundIr::NegativeInfinity),
+        api::RangeBoundKind::PositiveInfinityBound => Ok(FilterRangeBoundIr::PositiveInfinity),
+        api::RangeBoundKind::UnboundedRangeBound => Ok(FilterRangeBoundIr::Unbounded),
         _ => Err(invalid("invalid_range", Some(path), "unknown range bound")),
+    }
+}
+
+fn scalar_request_value_to_ir(
+    value: RequestValueIr,
+    kind: FieldKind,
+    path: &str,
+) -> Result<ScalarValueIr> {
+    let scalar = match value {
+        RequestValueIr::Bool(value) => ScalarValueIr::Bool(value),
+        RequestValueIr::Int64(value) => ScalarValueIr::Int64(value),
+        RequestValueIr::Float64(value) if value.is_finite() => ScalarValueIr::Float64(value),
+        RequestValueIr::String(value) => ScalarValueIr::String(value),
+        _ => {
+            return Err(invalid(
+                "type_mismatch",
+                Some(path),
+                "range bound must be a scalar value",
+            ))
+        }
+    };
+    if !matches!(
+        (&scalar, kind),
+        (ScalarValueIr::Int64(_), FieldKind::Int64)
+            | (ScalarValueIr::Float64(_), FieldKind::Float64)
+    ) {
+        return Err(invalid(
+            "type_mismatch",
+            Some(path),
+            "range bound type does not match field kind",
+        ));
+    }
+    Ok(scalar)
+}
+
+fn filter_bound_greater(lower: &FilterRangeBoundIr, upper: &FilterRangeBoundIr) -> bool {
+    match (lower, upper) {
+        (FilterRangeBoundIr::Unbounded, _) => false,
+        (_, FilterRangeBoundIr::Unbounded) => false,
+        (FilterRangeBoundIr::PositiveInfinity, FilterRangeBoundIr::PositiveInfinity)
+        | (FilterRangeBoundIr::NegativeInfinity, FilterRangeBoundIr::NegativeInfinity) => false,
+        (FilterRangeBoundIr::PositiveInfinity, _) => true,
+        (_, FilterRangeBoundIr::NegativeInfinity) => true,
+        (FilterRangeBoundIr::Finite(a), FilterRangeBoundIr::Finite(b)) => numeric_gt(a, b),
+        (FilterRangeBoundIr::NegativeInfinity, _) => false,
+        (_, FilterRangeBoundIr::PositiveInfinity) => false,
     }
 }
 
@@ -4438,16 +5442,139 @@ fn query_children(
     context: &IndexContext,
     parent_path: &str,
     operation_name: &str,
+    default_index: Option<&str>,
 ) -> Result<Vec<QueryIr>> {
     let mut converted = Vec::new();
     if let Some(children) = children {
         for (index, child) in children.iter().enumerate() {
             let child_path = format!("{parent_path}.{operation_name}.clauses[{index}]");
-            converted.push(context.query_expr_to_ir(child, &child_path)?);
+            converted.push(context.query_expr_to_ir_with_default_index(
+                child,
+                &child_path,
+                default_index,
+            )?);
         }
     }
     Ok(converted)
 }
+
+fn query_ir_is_typed(value: &QueryIr) -> bool {
+    matches!(value, QueryIr::Typed(_))
+}
+
+fn query_comparison_op(value: u8, path: &str) -> Result<ComparisonOp> {
+    match value {
+        1 => Ok(ComparisonOp::Eq),
+        2 => Ok(ComparisonOp::Ne),
+        3 => Ok(ComparisonOp::Lt),
+        4 => Ok(ComparisonOp::Lte),
+        5 => Ok(ComparisonOp::Gt),
+        6 => Ok(ComparisonOp::Gte),
+        _ => Err(invalid(
+            "invalid_query",
+            Some(path),
+            "comparison operator is unspecified or unknown",
+        )),
+    }
+}
+
+fn query_range_bound_to_ir(
+    value: Option<api::RangeBound<'_>>,
+    path: &str,
+) -> Result<QueryRangeBoundIr> {
+    let value = value
+        .ok_or_else(|| invalid("missing_range_bound", Some(path), "range bound is required"))?;
+    match value.bound_type() {
+        api::RangeBoundKind::FiniteRangeBound => {
+            Ok(QueryRangeBoundIr::Finite(RequestValueIr::from_api(
+                value
+                    .bound_as_finite_range_bound()
+                    .and_then(|bound| bound.value())
+                    .ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(path),
+                            "finite range bound requires a value",
+                        )
+                    })?,
+                format!("{path}.value"),
+            )?))
+        }
+        api::RangeBoundKind::NegativeInfinityBound => Ok(QueryRangeBoundIr::NegativeInfinity),
+        api::RangeBoundKind::PositiveInfinityBound => Ok(QueryRangeBoundIr::PositiveInfinity),
+        api::RangeBoundKind::UnboundedRangeBound => Ok(QueryRangeBoundIr::Unbounded),
+        _ => Err(invalid(
+            "invalid_query",
+            Some(path),
+            "range bound must select a kind",
+        )),
+    }
+}
+
+fn weighted_query_items_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::WeightedQueryItem<'_>>>,
+    >,
+    path: &str,
+) -> Result<Vec<WeightedQueryItemIr>> {
+    values
+        .map(|values| {
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    Ok(WeightedQueryItemIr {
+                        key: RequestValueIr::from_api(
+                            value.key().ok_or_else(|| {
+                                invalid(
+                                    "missing_value",
+                                    Some(format!("{path}.items[{index}].key")),
+                                    "weighted query item requires a key",
+                                )
+                            })?,
+                            format!("{path}.items[{index}].key"),
+                        )?,
+                        weight: value.weight(),
+                    })
+                })
+                .collect()
+        })
+        .transpose()
+        .map(|value| value.unwrap_or_default())
+}
+
+fn query_value_object_to_ir(
+    value: Option<api::ValueObject<'_>>,
+    path: &str,
+) -> Result<BTreeMap<String, RequestValueIr>> {
+    let mut output = BTreeMap::new();
+    if let Some(value) = value {
+        if let Some(fields) = value.fields() {
+            for (index, entry) in fields.iter().enumerate() {
+                let key = entry.key().to_owned();
+                let value = RequestValueIr::from_api(
+                    entry.value().ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.fields[{index}].value")),
+                            "predicate feature value is required",
+                        )
+                    })?,
+                    format!("{path}.fields[{index}].value"),
+                )?;
+                if output.insert(key.clone(), value).is_some() {
+                    return Err(invalid(
+                        "duplicate_property",
+                        Some(format!("{path}.fields[{index}].key")),
+                        format!("predicate feature {key} occurs more than once"),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn flatten_and(clauses: Vec<FilterIr>) -> FilterIr {
     let mut flattened = Vec::new();
     for clause in clauses {
@@ -4767,5 +5894,859 @@ mod tests {
         assert!(detail.metadata.contains_key("end_offset"));
         assert!(!detail.metadata.contains_key("span_start"));
         assert!(!detail.metadata.contains_key("span_end"));
+    }
+
+    #[test]
+    fn v2_query_variant_malformed_payloads_are_rejected_explicitly() {
+        fn bare_expression(kind: api::QueryExprKind) -> Vec<u8> {
+            let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+            macro_rules! empty_payload {
+                ($table:ident, $args:ident) => {
+                    api::$table::create(&mut builder, &api::$args::default()).as_union_value()
+                };
+            }
+            let payload = match kind {
+                api::QueryExprKind::TermQuery => empty_payload!(TermQuery, TermQueryArgs),
+                api::QueryExprKind::QueryContains => {
+                    empty_payload!(QueryContains, QueryContainsArgs)
+                }
+                api::QueryExprKind::QueryAnd => empty_payload!(QueryAnd, QueryAndArgs),
+                api::QueryExprKind::QueryOr => empty_payload!(QueryOr, QueryOrArgs),
+                api::QueryExprKind::QueryNot => empty_payload!(QueryNot, QueryNotArgs),
+                api::QueryExprKind::QueryTrue => empty_payload!(QueryTrue, QueryTrueArgs),
+                api::QueryExprKind::QueryFalse => empty_payload!(QueryFalse, QueryFalseArgs),
+                api::QueryExprKind::QueryComparison => {
+                    empty_payload!(QueryComparison, QueryComparisonArgs)
+                }
+                api::QueryExprKind::QueryRange => empty_payload!(QueryRange, QueryRangeArgs),
+                api::QueryExprKind::QueryIn => empty_payload!(QueryIn, QueryInArgs),
+                api::QueryExprKind::QueryPhrase => empty_payload!(QueryPhrase, QueryPhraseArgs),
+                api::QueryExprKind::QueryNear => empty_payload!(QueryNear, QueryNearArgs),
+                api::QueryExprKind::QueryONear => empty_payload!(QueryONear, QueryONearArgs),
+                api::QueryExprKind::QuerySameElement => {
+                    empty_payload!(QuerySameElement, QuerySameElementArgs)
+                }
+                api::QueryExprKind::QueryEquiv => empty_payload!(QueryEquiv, QueryEquivArgs),
+                api::QueryExprKind::QueryAlternatives => {
+                    empty_payload!(QueryAlternatives, QueryAlternativesArgs)
+                }
+                api::QueryExprKind::QueryFuzzy => empty_payload!(QueryFuzzy, QueryFuzzyArgs),
+                api::QueryExprKind::QueryMatches => empty_payload!(QueryMatches, QueryMatchesArgs),
+                api::QueryExprKind::QueryText => empty_payload!(QueryText, QueryTextArgs),
+                api::QueryExprKind::QueryUserInput => {
+                    empty_payload!(QueryUserInput, QueryUserInputArgs)
+                }
+                api::QueryExprKind::QueryUserQuery => {
+                    empty_payload!(QueryUserQuery, QueryUserQueryArgs)
+                }
+                api::QueryExprKind::QueryDotProduct => {
+                    empty_payload!(QueryDotProduct, QueryDotProductArgs)
+                }
+                api::QueryExprKind::QueryWeightedSet => {
+                    empty_payload!(QueryWeightedSet, QueryWeightedSetArgs)
+                }
+                api::QueryExprKind::QueryWand => empty_payload!(QueryWand, QueryWandArgs),
+                api::QueryExprKind::QueryWeakAnd => empty_payload!(QueryWeakAnd, QueryWeakAndArgs),
+                api::QueryExprKind::QueryRank => empty_payload!(QueryRank, QueryRankArgs),
+                api::QueryExprKind::QueryLabeled => empty_payload!(QueryLabeled, QueryLabeledArgs),
+                api::QueryExprKind::QueryNonEmpty => {
+                    empty_payload!(QueryNonEmpty, QueryNonEmptyArgs)
+                }
+                api::QueryExprKind::QueryGeoLocation => {
+                    empty_payload!(QueryGeoLocation, QueryGeoLocationArgs)
+                }
+                api::QueryExprKind::QueryGeoBoundingBox => {
+                    empty_payload!(QueryGeoBoundingBox, QueryGeoBoundingBoxArgs)
+                }
+                api::QueryExprKind::QueryNearestNeighbor => {
+                    empty_payload!(QueryNearestNeighbor, QueryNearestNeighborArgs)
+                }
+                api::QueryExprKind::QueryPredicate => {
+                    empty_payload!(QueryPredicate, QueryPredicateArgs)
+                }
+                _ => unreachable!("unknown QueryExprKind in test fixture"),
+            };
+            let expression = api::QueryExpr::create(
+                &mut builder,
+                &api::QueryExprArgs {
+                    expr_type: kind,
+                    expr: Some(payload),
+                    annotations: None,
+                },
+            );
+            builder.finish(expression, None);
+            builder.finished_data().to_vec()
+        }
+
+        fn contains_expression() -> Vec<u8> {
+            let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+            let field_name = builder.create_string("brand");
+            let field = api::QueryFieldRef::create(
+                &mut builder,
+                &api::QueryFieldRefArgs {
+                    path: Some(field_name),
+                    element_index: None,
+                },
+            );
+            let term_value = builder.create_string("Acme");
+            let term_value = api::StringValue::create(
+                &mut builder,
+                &api::StringValueArgs {
+                    value: Some(term_value),
+                },
+            );
+            let term_value = api::Value::create(
+                &mut builder,
+                &api::ValueArgs {
+                    kind_type: api::ValueKind::StringValue,
+                    kind: Some(term_value.as_union_value()),
+                },
+            );
+            let term = api::TermQuery::create(
+                &mut builder,
+                &api::TermQueryArgs {
+                    value: Some(term_value),
+                },
+            );
+            let item = api::QueryExpr::create(
+                &mut builder,
+                &api::QueryExprArgs {
+                    expr_type: api::QueryExprKind::TermQuery,
+                    expr: Some(term.as_union_value()),
+                    annotations: None,
+                },
+            );
+            let contains = api::QueryContains::create(
+                &mut builder,
+                &api::QueryContainsArgs {
+                    field: Some(field),
+                    item: Some(item),
+                },
+            );
+            let expression = api::QueryExpr::create(
+                &mut builder,
+                &api::QueryExprArgs {
+                    expr_type: api::QueryExprKind::QueryContains,
+                    expr: Some(contains.as_union_value()),
+                    annotations: None,
+                },
+            );
+            builder.finish(expression, None);
+            builder.finished_data().to_vec()
+        }
+
+        fn boolean_expression(kind: api::QueryExprKind) -> Vec<u8> {
+            let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+            let child = {
+                let field_name = builder.create_string("brand");
+                let field = api::QueryFieldRef::create(
+                    &mut builder,
+                    &api::QueryFieldRefArgs {
+                        path: Some(field_name),
+                        element_index: None,
+                    },
+                );
+                let value = builder.create_string("Acme");
+                let value = api::StringValue::create(
+                    &mut builder,
+                    &api::StringValueArgs { value: Some(value) },
+                );
+                let value = api::Value::create(
+                    &mut builder,
+                    &api::ValueArgs {
+                        kind_type: api::ValueKind::StringValue,
+                        kind: Some(value.as_union_value()),
+                    },
+                );
+                let term = api::TermQuery::create(
+                    &mut builder,
+                    &api::TermQueryArgs { value: Some(value) },
+                );
+                let item = api::QueryExpr::create(
+                    &mut builder,
+                    &api::QueryExprArgs {
+                        expr_type: api::QueryExprKind::TermQuery,
+                        expr: Some(term.as_union_value()),
+                        annotations: None,
+                    },
+                );
+                let contains = api::QueryContains::create(
+                    &mut builder,
+                    &api::QueryContainsArgs {
+                        field: Some(field),
+                        item: Some(item),
+                    },
+                );
+                api::QueryExpr::create(
+                    &mut builder,
+                    &api::QueryExprArgs {
+                        expr_type: api::QueryExprKind::QueryContains,
+                        expr: Some(contains.as_union_value()),
+                        annotations: None,
+                    },
+                )
+            };
+            let clauses = builder.create_vector(&[child]);
+            let expression = match kind {
+                api::QueryExprKind::QueryAnd => {
+                    let value = api::QueryAnd::create(
+                        &mut builder,
+                        &api::QueryAndArgs {
+                            clauses: Some(clauses),
+                        },
+                    );
+                    api::QueryExpr::create(
+                        &mut builder,
+                        &api::QueryExprArgs {
+                            expr_type: kind,
+                            expr: Some(value.as_union_value()),
+                            annotations: None,
+                        },
+                    )
+                }
+                api::QueryExprKind::QueryOr => {
+                    let value = api::QueryOr::create(
+                        &mut builder,
+                        &api::QueryOrArgs {
+                            clauses: Some(clauses),
+                        },
+                    );
+                    api::QueryExpr::create(
+                        &mut builder,
+                        &api::QueryExprArgs {
+                            expr_type: kind,
+                            expr: Some(value.as_union_value()),
+                            annotations: None,
+                        },
+                    )
+                }
+                api::QueryExprKind::QueryNot => {
+                    let value = api::QueryNot::create(
+                        &mut builder,
+                        &api::QueryNotArgs {
+                            clause: Some(child),
+                        },
+                    );
+                    api::QueryExpr::create(
+                        &mut builder,
+                        &api::QueryExprArgs {
+                            expr_type: kind,
+                            expr: Some(value.as_union_value()),
+                            annotations: None,
+                        },
+                    )
+                }
+                _ => unreachable!(),
+            };
+            builder.finish(expression, None);
+            builder.finished_data().to_vec()
+        }
+
+        let mut query_context = context();
+        query_context.definition.fields[0].capabilities.searchable = true;
+        let supported = [
+            ("QueryContains", contains_expression()),
+            ("QueryAnd", boolean_expression(api::QueryExprKind::QueryAnd)),
+            ("QueryOr", boolean_expression(api::QueryExprKind::QueryOr)),
+            ("QueryNot", boolean_expression(api::QueryExprKind::QueryNot)),
+        ];
+        for (name, bytes) in &supported {
+            let expression = crate::__flatbuffers::root::<api::QueryExpr>(bytes).unwrap();
+            assert!(
+                query_context.query_expr_to_ir(expression, "query").is_ok(),
+                "{name} should be in the characterized supported subset"
+            );
+        }
+
+        let unsupported = [
+            ("TermQuery", api::QueryExprKind::TermQuery),
+            ("QueryTrue", api::QueryExprKind::QueryTrue),
+            ("QueryFalse", api::QueryExprKind::QueryFalse),
+            ("QueryComparison", api::QueryExprKind::QueryComparison),
+            ("QueryRange", api::QueryExprKind::QueryRange),
+            ("QueryIn", api::QueryExprKind::QueryIn),
+            ("QueryPhrase", api::QueryExprKind::QueryPhrase),
+            ("QueryNear", api::QueryExprKind::QueryNear),
+            ("QueryONear", api::QueryExprKind::QueryONear),
+            ("QuerySameElement", api::QueryExprKind::QuerySameElement),
+            ("QueryEquiv", api::QueryExprKind::QueryEquiv),
+            ("QueryAlternatives", api::QueryExprKind::QueryAlternatives),
+            ("QueryFuzzy", api::QueryExprKind::QueryFuzzy),
+            ("QueryMatches", api::QueryExprKind::QueryMatches),
+            ("QueryText", api::QueryExprKind::QueryText),
+            ("QueryUserInput", api::QueryExprKind::QueryUserInput),
+            ("QueryUserQuery", api::QueryExprKind::QueryUserQuery),
+            ("QueryDotProduct", api::QueryExprKind::QueryDotProduct),
+            ("QueryWeightedSet", api::QueryExprKind::QueryWeightedSet),
+            ("QueryWand", api::QueryExprKind::QueryWand),
+            ("QueryWeakAnd", api::QueryExprKind::QueryWeakAnd),
+            ("QueryRank", api::QueryExprKind::QueryRank),
+            ("QueryLabeled", api::QueryExprKind::QueryLabeled),
+            ("QueryNonEmpty", api::QueryExprKind::QueryNonEmpty),
+            ("QueryGeoLocation", api::QueryExprKind::QueryGeoLocation),
+            (
+                "QueryGeoBoundingBox",
+                api::QueryExprKind::QueryGeoBoundingBox,
+            ),
+            (
+                "QueryNearestNeighbor",
+                api::QueryExprKind::QueryNearestNeighbor,
+            ),
+            ("QueryPredicate", api::QueryExprKind::QueryPredicate),
+        ];
+        assert_eq!(supported.len() + unsupported.len(), 32);
+        for (name, kind) in unsupported {
+            let bytes = bare_expression(kind);
+            let expression = crate::__flatbuffers::root::<api::QueryExpr>(&bytes).unwrap();
+            if let Err(error) = query_context.query_expr_to_ir(expression, "query") {
+                assert!(
+                    error
+                        .details
+                        .iter()
+                        .all(|detail| detail.code != "unsupported_query_expression"),
+                    "{name} must be rejected by validation, not an unsupported-variant fallback"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_v2_query_variant_round_trips_through_typed_ir() {
+        fn field(name: &str) -> QueryFieldRefIr {
+            QueryFieldRefIr {
+                path: FieldName::parse(name).unwrap(),
+                element_index: Some(2),
+            }
+        }
+        fn leaf() -> QueryExprIr {
+            QueryExprIr {
+                kind: QueryExprKindIr::True,
+                annotations: BTreeMap::new(),
+            }
+        }
+        fn term() -> QueryExprIr {
+            QueryExprIr {
+                kind: QueryExprKindIr::Term {
+                    value: RequestValueIr::String("Acme".to_owned()),
+                },
+                annotations: BTreeMap::new(),
+            }
+        }
+        fn annotated(kind: QueryExprKindIr) -> QueryIr {
+            let mut annotations = BTreeMap::new();
+            annotations.insert("label".to_owned(), RequestValueIr::String("v2".to_owned()));
+            QueryIr::Typed(Box::new(QueryExprIr { kind, annotations }))
+        }
+        fn request(query: QueryIr) -> SearchRequestIr {
+            let mut request = SearchRequestIr::new(
+                query,
+                Vec::new(),
+                None,
+                Vec::new(),
+                RankingPolicyIr::DefaultRelevanceV1,
+                10,
+                0,
+                ProjectionIr::new(Vec::new()),
+                HighlightingIr::Disabled,
+                None,
+                PrefixPolicy::Disabled,
+                TypoPolicy::Disabled,
+            );
+            request.inputs.insert(
+                "q".to_owned(),
+                QueryInputIr::Literal(RequestValueIr::String("tensor".to_owned())),
+            );
+            request
+        }
+
+        let cases = vec![
+            (
+                "TermQuery",
+                QueryExprKindIr::Term {
+                    value: RequestValueIr::String("x".to_owned()),
+                },
+            ),
+            (
+                "QueryContains",
+                QueryExprKindIr::Contains {
+                    field: field("brand"),
+                    item: Box::new(term()),
+                },
+            ),
+            ("QueryAnd", QueryExprKindIr::And(vec![leaf()])),
+            ("QueryOr", QueryExprKindIr::Or(vec![leaf()])),
+            ("QueryNot", QueryExprKindIr::Not(Box::new(leaf()))),
+            ("QueryTrue", QueryExprKindIr::True),
+            ("QueryFalse", QueryExprKindIr::False),
+            (
+                "QueryComparison",
+                QueryExprKindIr::Comparison {
+                    field: field("price"),
+                    op: ComparisonOp::Gt,
+                    value: RequestValueIr::Int64(3),
+                },
+            ),
+            (
+                "QueryRange",
+                QueryExprKindIr::Range {
+                    field: field("price"),
+                    lower: QueryRangeBoundIr::Finite(RequestValueIr::Int64(1)),
+                    upper: QueryRangeBoundIr::PositiveInfinity,
+                    include_lower: Some(true),
+                    include_upper: Some(false),
+                },
+            ),
+            (
+                "QueryIn",
+                QueryExprKindIr::In {
+                    field: field("brand"),
+                    values: vec![RequestValueIr::String("Acme".to_owned())],
+                },
+            ),
+            ("QueryPhrase", QueryExprKindIr::Phrase(vec![term()])),
+            ("QueryNear", QueryExprKindIr::Near(vec![term()])),
+            ("QueryONear", QueryExprKindIr::ONear(vec![term()])),
+            (
+                "QuerySameElement",
+                QueryExprKindIr::SameElement(vec![term()]),
+            ),
+            ("QueryEquiv", QueryExprKindIr::Equiv(vec![term()])),
+            (
+                "QueryAlternatives",
+                QueryExprKindIr::Alternatives(vec![QueryAlternativeIr {
+                    query: term(),
+                    exactness: Some(0.75),
+                }]),
+            ),
+            (
+                "QueryFuzzy",
+                QueryExprKindIr::Fuzzy {
+                    value: RequestValueIr::String("acm".to_owned()),
+                },
+            ),
+            (
+                "QueryMatches",
+                QueryExprKindIr::Matches {
+                    field: field("brand"),
+                    pattern: "A.*".to_owned(),
+                },
+            ),
+            (
+                "QueryText",
+                QueryExprKindIr::Text {
+                    text: "Acme".to_owned(),
+                },
+            ),
+            (
+                "QueryUserInput",
+                QueryExprKindIr::UserInput {
+                    value: "query".to_owned(),
+                },
+            ),
+            ("QueryUserQuery", QueryExprKindIr::UserQuery),
+            (
+                "QueryDotProduct",
+                QueryExprKindIr::DotProduct {
+                    field: field("price"),
+                    items: vec![WeightedQueryItemIr {
+                        key: RequestValueIr::String("x".to_owned()),
+                        weight: 2,
+                    }],
+                },
+            ),
+            (
+                "QueryWeightedSet",
+                QueryExprKindIr::WeightedSet {
+                    field: field("brand"),
+                    items: vec![WeightedQueryItemIr {
+                        key: RequestValueIr::String("x".to_owned()),
+                        weight: 2,
+                    }],
+                },
+            ),
+            (
+                "QueryWand",
+                QueryExprKindIr::Wand {
+                    field: field("brand"),
+                    items: vec![WeightedQueryItemIr {
+                        key: RequestValueIr::String("x".to_owned()),
+                        weight: 2,
+                    }],
+                },
+            ),
+            ("QueryWeakAnd", QueryExprKindIr::WeakAnd(vec![term()])),
+            (
+                "QueryRank",
+                QueryExprKindIr::Rank {
+                    matching: Box::new(term()),
+                    ranking: vec![leaf()],
+                },
+            ),
+            (
+                "QueryLabeled",
+                QueryExprKindIr::Labeled {
+                    query: Box::new(term()),
+                    label: "my_label".to_owned(),
+                    score: 1.25,
+                },
+            ),
+            ("QueryNonEmpty", QueryExprKindIr::NonEmpty(Box::new(term()))),
+            (
+                "QueryGeoLocation",
+                QueryExprKindIr::GeoLocation {
+                    field: field("brand"),
+                    latitude: 59.9,
+                    longitude: 10.7,
+                    radius: "10 km".to_owned(),
+                },
+            ),
+            (
+                "QueryGeoBoundingBox",
+                QueryExprKindIr::GeoBoundingBox {
+                    field: field("brand"),
+                    south: 59.0,
+                    west: 10.0,
+                    north: 60.0,
+                    east: 11.0,
+                },
+            ),
+            (
+                "QueryNearestNeighbor",
+                QueryExprKindIr::NearestNeighbor {
+                    document_field: field("brand"),
+                    query_tensor: "q".to_owned(),
+                },
+            ),
+            (
+                "QueryPredicate",
+                QueryExprKindIr::Predicate {
+                    field: field("brand"),
+                    features: BTreeMap::from([(
+                        String::from("hobby"),
+                        RequestValueIr::String("ski".to_owned()),
+                    )]),
+                    range_features: BTreeMap::new(),
+                },
+            ),
+        ];
+        assert_eq!(cases.len(), 32);
+
+        let mut query_context = context();
+        query_context.definition.fields[0].capabilities.searchable = true;
+        for (name, kind) in cases {
+            let expected = annotated(kind);
+            let expected = if matches!(
+                name,
+                "TermQuery"
+                    | "QueryPhrase"
+                    | "QueryNear"
+                    | "QueryONear"
+                    | "QuerySameElement"
+                    | "QueryEquiv"
+                    | "QueryAlternatives"
+                    | "QueryFuzzy"
+                    | "QueryText"
+                    | "QueryUserInput"
+                    | "QueryWeakAnd"
+                    | "QueryRank"
+                    | "QueryLabeled"
+                    | "QueryNonEmpty"
+            ) {
+                let QueryIr::Typed(inner) = expected else {
+                    unreachable!()
+                };
+                QueryIr::Typed(Box::new(QueryExprIr {
+                    kind: QueryExprKindIr::Contains {
+                        field: field("brand"),
+                        item: inner,
+                    },
+                    annotations: BTreeMap::new(),
+                }))
+            } else {
+                expected
+            };
+            let bytes = crate::search_request_ir_to_api(&request(expected.clone()));
+            let api_request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+            let actual = query_context.search_to_ir(api_request).unwrap();
+            assert_eq!(
+                actual.query(),
+                &expected,
+                "{name} lost typed query semantics"
+            );
+        }
+    }
+
+    #[test]
+    fn query_user_input_accepts_annotation_or_query_model_default_index() {
+        fn request_bytes(annotation: bool, query_model: bool) -> Vec<u8> {
+            let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+            let input = builder.create_string("free form input");
+            let input = api::QueryUserInput::create(
+                &mut builder,
+                &api::QueryUserInputArgs { value: Some(input) },
+            );
+            let annotations = if annotation {
+                let key = builder.create_string("defaultIndex");
+                let value = builder.create_string("title");
+                let value = api::StringValue::create(
+                    &mut builder,
+                    &api::StringValueArgs { value: Some(value) },
+                );
+                let value = api::Value::create(
+                    &mut builder,
+                    &api::ValueArgs {
+                        kind_type: api::ValueKind::StringValue,
+                        kind: Some(value.as_union_value()),
+                    },
+                );
+                let entry = api::ValueEntry::create(
+                    &mut builder,
+                    &api::ValueEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                );
+                Some(builder.create_vector(&[entry]))
+            } else {
+                None
+            };
+            let expression = api::QueryExpr::create(
+                &mut builder,
+                &api::QueryExprArgs {
+                    expr_type: api::QueryExprKind::QueryUserInput,
+                    expr: Some(input.as_union_value()),
+                    annotations,
+                },
+            );
+            let typed = api::TypedQuery::create(
+                &mut builder,
+                &api::TypedQueryArgs {
+                    query: Some(expression),
+                },
+            );
+            let source = api::QuerySource::create(
+                &mut builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::TypedQuery,
+                    source: Some(typed.as_union_value()),
+                },
+            );
+            let query_model = if query_model {
+                let default_index = builder.create_string("title");
+                Some(api::QueryModel::create(
+                    &mut builder,
+                    &api::QueryModelArgs {
+                        default_index: Some(default_index),
+                        ..Default::default()
+                    },
+                ))
+            } else {
+                None
+            };
+            let request = api::SearchRequest::create(
+                &mut builder,
+                &api::SearchRequestArgs {
+                    query: Some(source),
+                    query_model,
+                    ..Default::default()
+                },
+            );
+            builder.finish(request, None);
+            builder.finished_data().to_vec()
+        }
+
+        for (name, bytes) in [
+            ("query expression annotation", request_bytes(true, false)),
+            ("query model", request_bytes(false, true)),
+        ] {
+            let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+            let converted = context().search_to_ir(request);
+            assert!(
+                converted.is_ok(),
+                "{name} should provide user input context"
+            );
+        }
+
+        let bytes = request_bytes(false, false);
+        let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let error = context().search_to_ir(request).unwrap_err();
+        assert_eq!(error.details[0].code, "missing_field_context");
+    }
+
+    #[test]
+    fn sort_missing_as_is_not_rejected_or_dropped() {
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let field = builder.create_string("price");
+        let field = api::FieldSortTarget::create(
+            &mut builder,
+            &api::FieldSortTargetArgs { field: Some(field) },
+        );
+        let target = api::SortTarget::create(
+            &mut builder,
+            &api::SortTargetArgs {
+                target_type: api::SortTargetKind::FieldSortTarget,
+                target: Some(field.as_union_value()),
+            },
+        );
+        let value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: -1 });
+        let value = api::Value::create(
+            &mut builder,
+            &api::ValueArgs {
+                kind_type: api::ValueKind::Int64Value,
+                kind: Some(value.as_union_value()),
+            },
+        );
+        let missing =
+            api::MissingAs::create(&mut builder, &api::MissingAsArgs { value: Some(value) });
+        let missing = api::MissingPolicy::create(
+            &mut builder,
+            &api::MissingPolicyArgs {
+                policy_type: api::MissingPolicyKind::MissingAs,
+                policy: Some(missing.as_union_value()),
+            },
+        );
+        let key = builder.create_string("locale");
+        let annotation_value = builder.create_string("en-US");
+        let annotation_value = api::StringValue::create(
+            &mut builder,
+            &api::StringValueArgs {
+                value: Some(annotation_value),
+            },
+        );
+        let annotation_value = api::Value::create(
+            &mut builder,
+            &api::ValueArgs {
+                kind_type: api::ValueKind::StringValue,
+                kind: Some(annotation_value.as_union_value()),
+            },
+        );
+        let annotation = api::ValueEntry::create(
+            &mut builder,
+            &api::ValueEntryArgs {
+                key: Some(key),
+                value: Some(annotation_value),
+            },
+        );
+        let annotations = builder.create_vector(&[annotation]);
+        let sort = api::SortExpr::create(
+            &mut builder,
+            &api::SortExprArgs {
+                target: Some(target),
+                direction: api::SortDirection::Asc,
+                missing: Some(missing),
+                annotations: Some(annotations),
+            },
+        );
+        builder.finish(sort, None);
+        let sort = crate::__flatbuffers::root::<api::SortExpr>(builder.finished_data()).unwrap();
+
+        let mut query_context = context();
+        query_context.definition.fields[1].capabilities.sortable = true;
+        let converted = query_context
+            .sort_to_ir(sort)
+            .expect("MissingAs and sort annotations must have an IR representation");
+        assert_eq!(
+            converted.missing(),
+            MissingPlacement::As(RequestValueIr::Int64(-1))
+        );
+        assert_eq!(
+            converted.annotations().get("locale"),
+            Some(&RequestValueIr::String("en-US".to_owned()))
+        );
+
+        let request = SearchRequestIr::new(
+            QueryIr::MatchAll,
+            Vec::new(),
+            None,
+            vec![converted],
+            RankingPolicyIr::DefaultRelevanceV1,
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        let bytes = crate::search_request_ir_to_api(&request);
+        let encoded = crate::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let encoded_sort = encoded.sort().unwrap().get(0);
+        assert_eq!(
+            encoded_sort
+                .missing()
+                .and_then(|value| value.policy_as_missing_as())
+                .and_then(|value| value.value())
+                .and_then(|value| value.kind_as_int_64_value())
+                .map(|value| value.value()),
+            Some(-1)
+        );
+        assert_eq!(encoded_sort.annotations().unwrap().get(0).key(), "locale");
+    }
+
+    #[test]
+    fn positive_infinity_filter_lower_bound_is_not_treated_as_unbounded() {
+        let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+        let field = builder.create_string("price");
+        let field = api::QueryFieldRef::create(
+            &mut builder,
+            &api::QueryFieldRefArgs {
+                path: Some(field),
+                element_index: None,
+            },
+        );
+        let lower =
+            api::PositiveInfinityBound::create(&mut builder, &api::PositiveInfinityBoundArgs {});
+        let lower = api::RangeBound::create(
+            &mut builder,
+            &api::RangeBoundArgs {
+                bound_type: api::RangeBoundKind::PositiveInfinityBound,
+                bound: Some(lower.as_union_value()),
+            },
+        );
+        let upper_value = api::Int64Value::create(&mut builder, &api::Int64ValueArgs { value: 10 });
+        let upper_value = api::Value::create(
+            &mut builder,
+            &api::ValueArgs {
+                kind_type: api::ValueKind::Int64Value,
+                kind: Some(upper_value.as_union_value()),
+            },
+        );
+        let upper = api::FiniteRangeBound::create(
+            &mut builder,
+            &api::FiniteRangeBoundArgs {
+                value: Some(upper_value),
+            },
+        );
+        let upper = api::RangeBound::create(
+            &mut builder,
+            &api::RangeBoundArgs {
+                bound_type: api::RangeBoundKind::FiniteRangeBound,
+                bound: Some(upper.as_union_value()),
+            },
+        );
+        let range = api::FilterRange::create(
+            &mut builder,
+            &api::FilterRangeArgs {
+                field: Some(field),
+                lower: Some(lower),
+                upper: Some(upper),
+                ..Default::default()
+            },
+        );
+        let expression = api::FilterExpr::create(
+            &mut builder,
+            &api::FilterExprArgs {
+                expr_type: api::FilterExprKind::FilterRange,
+                expr: Some(range.as_union_value()),
+            },
+        );
+        builder.finish(expression, None);
+        let expression =
+            crate::__flatbuffers::root::<api::FilterExpr>(builder.finished_data()).unwrap();
+
+        assert!(
+            context().filter_to_ir(expression).is_err(),
+            "a lower +infinity bound must not collapse into an absent lower bound"
+        );
     }
 }

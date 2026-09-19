@@ -6,8 +6,11 @@ use searchkernel_ir::{self as core, Value};
 #[non_exhaustive]
 /// Describes whether a hit count is exact or a lower bound.
 pub enum TotalHitsRelation {
+    Unspecified,
     Exact,
     LowerBound,
+    Approximate,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,22 +82,43 @@ pub struct HighlightSpan {
 
 pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
     result: core::SearchResult,
+    requested_facets: &[&str],
 ) -> Result<SearchResult<T>> {
-    let hits = result
-        .hits
-        .into_iter()
-        .map(convert_hit)
-        .collect::<Result<Vec<_>>>()?;
-    let facets = result
-        .facets
-        .into_iter()
-        .map(convert_facet)
-        .collect::<Result<Vec<_>>>()?;
+    let mut hits = Vec::new();
+    let mut facets = Vec::new();
+    project_root(result.root, requested_facets, &mut hits, &mut facets)?;
     Ok(SearchResult {
         hits,
         total_hits: total_hits(result.total_hits),
         facets,
     })
+}
+
+/// Project only the immediate children of the canonical search root into the
+/// legacy public result shape. Nested hits belong to their result groups and
+/// must not be promoted into `SearchResult.hits`.
+fn project_root<T: serde::de::DeserializeOwned>(
+    root: core::ResultNode,
+    requested_facets: &[&str],
+    hits: &mut Vec<Hit<T>>,
+    facets: &mut Vec<FacetResult>,
+) -> Result<()> {
+    match root {
+        core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
+        core::ResultNode::Group(group) => {
+            for child in group.children {
+                match child {
+                    core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
+                    core::ResultNode::Group(group) => {
+                        if let Some(facet) = convert_facet_group(&group, requested_facets)? {
+                            facets.push(facet);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn document<T: serde::de::DeserializeOwned>(
@@ -122,26 +146,72 @@ fn total_hits(total_hits: core::TotalHits) -> TotalHits {
     TotalHits {
         value: total_hits.value,
         relation: match total_hits.relation {
+            core::TotalHitsRelation::Unspecified => TotalHitsRelation::Unspecified,
             core::TotalHitsRelation::Exact => TotalHitsRelation::Exact,
             core::TotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
+            core::TotalHitsRelation::Approximate => TotalHitsRelation::Approximate,
+            core::TotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
         },
     }
 }
 
-fn convert_facet(facet: core::FacetResult) -> Result<FacetResult> {
-    Ok(FacetResult {
-        field: facet.field,
-        values: facet
-            .values
-            .into_iter()
-            .map(|facet_value| {
-                Ok(FacetValue {
-                    value: json_value(facet_value.value)?,
-                    count: facet_value.count,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-    })
+fn convert_facet_group(
+    group: &core::ResultGroup,
+    requested_facets: &[&str],
+) -> Result<Option<FacetResult>> {
+    let Some(field) = group.id.as_ref() else {
+        return Ok(None);
+    };
+    // Facets are a compatibility projection, not a general interpretation of
+    // arbitrary result groups. Only a group corresponding to a facet the
+    // caller actually requested may enter this legacy shape.
+    if !requested_facets.iter().any(|requested| *requested == field) {
+        return Ok(None);
+    }
+    if group.label.as_deref() != Some(field)
+        || group.value.is_some()
+        || !group.fields.is_empty()
+        || !group.continuations.is_empty()
+        || group.source.is_some()
+        || !group.types.is_empty()
+        || group.score.is_some()
+        || group.limits.is_some()
+        || !group.metadata.is_empty()
+    {
+        return Ok(None);
+    }
+    let mut values = Vec::with_capacity(group.children.len());
+    for child in &group.children {
+        let core::ResultNode::Group(child) = child else {
+            return Ok(None);
+        };
+        if child.id.is_some()
+            || child.label.is_some()
+            || !child.children.is_empty()
+            || !child.continuations.is_empty()
+            || child.source.is_some()
+            || !child.types.is_empty()
+            || child.score.is_some()
+            || child.limits.is_some()
+            || !child.metadata.is_empty()
+        {
+            return Ok(None);
+        }
+        let Some(value) = child.value.clone() else {
+            return Ok(None);
+        };
+        let Some(core::Value::UInt64(count)) = child.fields.get("count") else {
+            return Ok(None);
+        };
+        values.push(FacetValue {
+            value: json_value(value)?,
+            count: *count,
+        });
+    }
+    Ok(Some(FacetResult {
+        field: field.clone(),
+        values,
+    }))
 }
 
 fn convert_highlight(highlight: core::HighlightResult) -> HighlightResult {
@@ -204,6 +274,11 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
             }
             serde_json::Value::Object(object)
         }
+        Value::Tensor(_) => {
+            return Err(Error::infrastructure(
+                "backend returned a tensor value unsupported by the public JSON result projection",
+            ))
+        }
     })
 }
 
@@ -215,44 +290,63 @@ mod tests {
     #[test]
     fn result_conversion_preserves_totals_facets_highlights_and_nested_values() {
         let result = core::SearchResult {
-            hits: vec![core::Hit {
-                id: "doc-1".into(),
-                score: Some(1.5),
-                fields: BTreeMap::from([
-                    ("title".into(), Value::String("hello".into())),
-                    ("bytes".into(), Value::Bytes(vec![1, 255])),
-                    (
-                        "nested".into(),
-                        Value::Object(BTreeMap::from([("enabled".into(), Value::Bool(true))])),
-                    ),
-                ]),
-                highlights: vec![core::HighlightResult {
-                    field: "title".into(),
-                    fragments: vec![core::HighlightFragment {
-                        text: "<em>hello</em>".into(),
-                        matches: vec![core::HighlightSpan {
-                            start_byte: 0,
-                            end_byte: 5,
+            root: core::ResultNode::Group(core::ResultGroup {
+                children: vec![
+                    core::ResultNode::Hit(core::Hit {
+                        id: "doc-1".into(),
+                        score: Some(1.5),
+                        fields: BTreeMap::from([
+                            ("title".into(), Value::String("hello".into())),
+                            ("bytes".into(), Value::Bytes(vec![1, 255])),
+                            (
+                                "nested".into(),
+                                Value::Object(BTreeMap::from([(
+                                    "enabled".into(),
+                                    Value::Bool(true),
+                                )])),
+                            ),
+                        ]),
+                        highlights: vec![core::HighlightResult {
+                            field: "title".into(),
+                            fragments: vec![core::HighlightFragment {
+                                text: "<em>hello</em>".into(),
+                                matches: vec![core::HighlightSpan {
+                                    start_byte: 0,
+                                    end_byte: 5,
+                                }],
+                            }],
                         }],
-                    }],
-                }],
-            }],
+                        ..Default::default()
+                    }),
+                    core::ResultNode::Group(core::ResultGroup {
+                        id: Some("brand".into()),
+                        label: Some("brand".into()),
+                        children: vec![core::ResultNode::Group(core::ResultGroup {
+                            value: Some(Value::UInt64(2)),
+                            fields: BTreeMap::from([("count".into(), Value::UInt64(3))]),
+                            ..core::ResultGroup::root(vec![])
+                        })],
+                        ..core::ResultGroup::root(vec![])
+                    }),
+                ],
+                ..core::ResultGroup::root(vec![])
+            }),
             total_hits: core::TotalHits {
                 value: 7,
                 relation: core::TotalHitsRelation::LowerBound,
             },
-            facets: vec![core::FacetResult {
-                field: "brand".into(),
-                values: vec![core::FacetValue {
-                    value: Value::UInt64(2),
-                    count: 3,
-                }],
-            }],
+            coverage: None,
+            timing: None,
+            errors: vec![],
+            trace: None,
+            metadata: BTreeMap::new(),
         };
 
-        let converted: SearchResult<serde_json::Value> = search_result(result).unwrap();
+        let converted: SearchResult<serde_json::Value> = search_result(result, &["brand"]).unwrap();
         assert_eq!(converted.total_hits.value, 7);
         assert_eq!(converted.total_hits.relation, TotalHitsRelation::LowerBound);
+        assert_eq!(converted.hits.len(), 1);
+        assert_eq!(converted.hits[0].id.as_str(), "doc-1");
         assert_eq!(converted.hits[0].document["nested"]["enabled"], true);
         assert_eq!(
             converted.hits[0].document["bytes"],
@@ -266,23 +360,63 @@ mod tests {
     }
 
     #[test]
+    fn result_conversion_does_not_promote_nested_group_hits() {
+        let result = core::SearchResult {
+            root: core::ResultNode::Group(core::ResultGroup {
+                children: vec![core::ResultNode::Group(core::ResultGroup {
+                    id: Some("group".into()),
+                    children: vec![core::ResultNode::Hit(core::Hit {
+                        id: "nested-hit".into(),
+                        ..Default::default()
+                    })],
+                    ..core::ResultGroup::root(vec![])
+                })],
+                ..core::ResultGroup::root(vec![])
+            }),
+            total_hits: core::TotalHits {
+                value: 1,
+                relation: core::TotalHitsRelation::Exact,
+            },
+            coverage: None,
+            timing: None,
+            errors: Vec::new(),
+            trace: None,
+            metadata: BTreeMap::new(),
+        };
+
+        let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
+        assert!(converted.hits.is_empty());
+        assert!(converted.facets.is_empty());
+    }
+
+    #[test]
     fn result_conversion_rejects_nonfinite_values_and_bad_documents() {
         let nonfinite = core::SearchResult {
-            hits: vec![],
+            root: core::ResultNode::Group(core::ResultGroup {
+                children: vec![core::ResultNode::Group(core::ResultGroup {
+                    id: Some("score".into()),
+                    label: Some("score".into()),
+                    children: vec![core::ResultNode::Group(core::ResultGroup {
+                        value: Some(Value::Float64(f64::INFINITY)),
+                        fields: BTreeMap::from([("count".into(), Value::UInt64(1))]),
+                        ..core::ResultGroup::root(vec![])
+                    })],
+                    ..core::ResultGroup::root(vec![])
+                })],
+                ..core::ResultGroup::root(vec![])
+            }),
             total_hits: core::TotalHits {
                 value: 0,
                 relation: core::TotalHitsRelation::Exact,
             },
-            facets: vec![core::FacetResult {
-                field: "score".into(),
-                values: vec![core::FacetValue {
-                    value: Value::Float64(f64::INFINITY),
-                    count: 1,
-                }],
-            }],
+            coverage: None,
+            timing: None,
+            errors: vec![],
+            trace: None,
+            metadata: BTreeMap::new(),
         };
         assert!(matches!(
-            search_result::<serde_json::Value>(nonfinite),
+            search_result::<serde_json::Value>(nonfinite, &["score"]),
             Err(Error::Infrastructure(message)) if message.contains("non-finite")
         ));
 
