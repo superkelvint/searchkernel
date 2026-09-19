@@ -318,9 +318,7 @@ async fn stale_unix_socket_is_removed_before_binding() {
         std::process::id()
     ));
     let _ = std::fs::remove_file(&path);
-    let stale_listener = UnixListener::bind(&path)
-        .await
-        .expect("create stale UDS listener");
+    let stale_listener = UnixListener::bind(&path).expect("create stale UDS listener");
     drop(stale_listener);
     assert!(path.exists());
 
