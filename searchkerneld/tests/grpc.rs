@@ -7,7 +7,7 @@ use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_protocol::protocol::v2 as wire;
 use searchkernel_testkit::RecordingBackend;
-use searchkerneld::{rpc, start, start_with_dispatcher, ServerConfig};
+use searchkerneld::{rpc, start, ServerConfig};
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tonic::{Code, Request};
@@ -115,7 +115,7 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
     let direct = dispatcher
         .dispatch(&describe_request(PROTOCOL_VERSION))
         .expect("direct dispatch");
-    let server = start_with_dispatcher(
+    let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
         dispatcher,
     )
@@ -157,7 +157,7 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
     let direct = dispatcher
         .dispatch(&search_request())
         .expect("direct error response");
-    let server = start_with_dispatcher(
+    let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
         dispatcher,
     )
@@ -201,7 +201,7 @@ async fn execute_accepts_frames_larger_than_tonic_default_limit() {
     let (index, dispatcher) = dispatcher(backend);
     let payload = large_search_request();
     assert!(payload.len() > 4 * 1024 * 1024);
-    let server = start_with_dispatcher(
+    let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
         dispatcher,
     )
@@ -221,25 +221,9 @@ async fn execute_accepts_frames_larger_than_tonic_default_limit() {
 
 #[tokio::test]
 async fn framing_and_lifecycle_failures_are_transport_statuses() {
-    let server = start(ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))))
-        .await
-        .expect("start missing-target server");
-    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
-    let error = client
-        .execute(Request::new(rpc::FlatBufferFrame {
-            payload: b"malformed".to_vec(),
-        }))
-        .await
-        .expect_err("missing target must fail before parsing");
-    assert_eq!(error.code(), Code::FailedPrecondition);
-    server
-        .shutdown()
-        .await
-        .expect("shutdown missing-target server");
-
     let backend = Arc::new(RecordingBackend::new());
     let (index, dispatcher) = dispatcher(backend);
-    let server = start_with_dispatcher(
+    let server = start(
         ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
         dispatcher.clone(),
     )
@@ -275,11 +259,17 @@ async fn framing_and_lifecycle_failures_are_transport_statuses() {
 
 #[tokio::test]
 async fn shutdown_closes_the_real_socket() {
-    let server = start(ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))))
-        .await
-        .expect("start server");
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
+        dispatcher,
+    )
+    .await
+    .expect("start server");
     let address = server.tcp_addr().expect("TCP server address");
     server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
     let error = rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{address}"))
         .await
         .expect_err("shutdown server must close its listener");
@@ -296,7 +286,7 @@ async fn execute_works_over_a_unix_domain_socket() {
     let direct = dispatcher
         .dispatch(&describe_request(PROTOCOL_VERSION))
         .expect("direct dispatch");
-    let server = start_with_dispatcher(ServerConfig::unix(&path), dispatcher)
+    let server = start(ServerConfig::unix(&path), dispatcher)
         .await
         .expect("start UDS server");
     assert_eq!(server.unix_path(), Some(path.as_path()));

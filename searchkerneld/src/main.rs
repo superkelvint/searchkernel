@@ -2,7 +2,7 @@ use std::{env, error::Error, path::PathBuf, sync::Arc};
 
 use searchkernel::Index;
 use searchkernel_dispatch::Dispatcher;
-use searchkerneld::{start_with_dispatcher, ServerConfig, ServerError};
+use searchkerneld::{start, ServerConfig, ServerError};
 
 const DEFAULT_UNIX_SOCKET: &str = "/tmp/searchkerneld.sock";
 
@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let index = open_index(&config)?;
     let (context, session) = index.clone().into_session_parts();
     let dispatcher = Arc::new(Dispatcher::new(context, session));
-    let mut server = match start_with_dispatcher(config.server, dispatcher).await {
+    let mut server = match start(config.server, dispatcher).await {
         Ok(server) => server,
         Err(error) => {
             index.close()?;

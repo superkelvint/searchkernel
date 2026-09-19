@@ -91,27 +91,20 @@ impl Default for ServerConfig {
     }
 }
 
-/// The gRPC service for one optional process-local execution target.
-#[derive(Clone, Default)]
+/// The gRPC service for one process-local execution target.
+#[derive(Clone)]
 pub struct SearchKernelTransport {
-    dispatcher: Option<Arc<Dispatcher>>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl SearchKernelTransport {
     /// Creates a service with the supplied canonical dispatcher.
-    pub fn with_dispatcher(dispatcher: Arc<Dispatcher>) -> Self {
-        Self {
-            dispatcher: Some(dispatcher),
-        }
+    fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        Self { dispatcher }
     }
 
     fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
-        let dispatcher = self.dispatcher.as_ref().ok_or_else(|| {
-            Box::new(Status::failed_precondition(
-                "no Search Kernel target is configured",
-            ))
-        })?;
-        dispatcher
+        self.dispatcher
             .dispatch(payload)
             .map_err(|error| Box::new(dispatch_error_status(error)))
     }
@@ -284,17 +277,12 @@ impl Drop for RunningServer {
     }
 }
 
-/// Binds and starts the transport-only gRPC server.
-pub async fn start(config: ServerConfig) -> Result<RunningServer, ServerError> {
-    start_with_service(config, SearchKernelTransport::default()).await
-}
-
 /// Binds and starts a gRPC server backed by one canonical dispatcher.
-pub async fn start_with_dispatcher(
+pub async fn start(
     config: ServerConfig,
     dispatcher: Arc<Dispatcher>,
 ) -> Result<RunningServer, ServerError> {
-    start_with_service(config, SearchKernelTransport::with_dispatcher(dispatcher)).await
+    start_with_service(config, SearchKernelTransport::new(dispatcher)).await
 }
 
 async fn start_with_service(
