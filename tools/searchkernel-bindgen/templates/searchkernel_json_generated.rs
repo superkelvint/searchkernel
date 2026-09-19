@@ -5638,6 +5638,297 @@ fn response_describe_from_json<'a>(
     )))
 }
 
+fn resolved_query_source_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::QuerySource<'a>>, JsonCodecError> {
+    if let Value::String(text) = value {
+        return query_source(b, text);
+    }
+    let object = object(value, path)?;
+    if let Some(query) = field(object, "query_expr") {
+        return query_expr(b, query, &format!("{path}.query_expr"))
+            .map(|query| typed_query_source(b, query));
+    }
+    if object.contains_key("yql") || object.contains_key("match_all") {
+        return query_source_from_json(b, value, path);
+    }
+    query_expr(b, value, path).map(|query| typed_query_source(b, query))
+}
+
+fn resolved_search_fields<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::SearchField<'a>>>>,
+    JsonCodecError,
+> {
+    let items = array(value, path)?;
+    let fields = items
+        .iter()
+        .enumerate()
+        .map(|(index, value)| search_field(b, value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(b.create_vector(&fields))
+}
+
+fn resolved_sort<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResolvedSortExpr<'a>>, JsonCodecError> {
+    let object_value = object(value, path)?;
+    check_keys(object_value, "SearchKernel_V2_ResolvedSortExpr", path)?;
+    let target = if let Some(value) = field(object_value, "target") {
+        let (kind, payload) = one_key(value, &format!("{path}.target"))?;
+        let payload = crate::generated::object(payload, &format!("{path}.target.{kind}"))?;
+        let (target_type, target) = match kind {
+            "field" | "field_sort_target" => {
+                let field = b.create_string(&string(
+                    required(payload, "field", &format!("{path}.target.{kind}"))?,
+                    &format!("{path}.target.{kind}.field"),
+                )?);
+                let target = api::FieldSortTarget::create(
+                    b,
+                    &api::FieldSortTargetArgs { field: Some(field) },
+                );
+                (
+                    api::ResolvedSortTargetKind::FieldSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            "relevance" | "relevance_sort_target" => {
+                let target =
+                    api::RelevanceSortTarget::create(b, &api::RelevanceSortTargetArgs {});
+                (
+                    api::ResolvedSortTargetKind::RelevanceSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            "rank_feature" | "rank_feature_sort_target" => {
+                let feature = b.create_string(&string(
+                    required(payload, "feature", &format!("{path}.target.{kind}"))?,
+                    &format!("{path}.target.{kind}.feature"),
+                )?);
+                let target = api::RankFeatureSortTarget::create(
+                    b,
+                    &api::RankFeatureSortTargetArgs {
+                        feature: Some(feature),
+                    },
+                );
+                (
+                    api::ResolvedSortTargetKind::RankFeatureSortTarget,
+                    target.as_union_value(),
+                )
+            }
+            _ => {
+                return Err(contract(format!(
+                    "unknown resolved sort target {path}.target.{kind}"
+                )))
+            }
+        };
+        Some(api::ResolvedSortTarget::create(
+            b,
+            &api::ResolvedSortTargetArgs {
+                target_type,
+                target: Some(target),
+            },
+        ))
+    } else {
+        optional_string(object_value, "field", path)?.map(|field| {
+            let field = b.create_string(&field);
+            let target = api::FieldSortTarget::create(
+                b,
+                &api::FieldSortTargetArgs { field: Some(field) },
+            );
+            api::ResolvedSortTarget::create(
+                b,
+                &api::ResolvedSortTargetArgs {
+                    target_type: api::ResolvedSortTargetKind::FieldSortTarget,
+                    target: Some(target.as_union_value()),
+                },
+            )
+        })
+    };
+    let direction = field(object_value, "direction")
+        .map(|value| parse_sort_direction(value, &format!("{path}.direction")))
+        .transpose()?
+        .unwrap_or(api::SortDirection::Unspecified);
+    let missing = field(object_value, "missing")
+        .map(|value| missing_policy(b, value, &format!("{path}.missing")))
+        .transpose()?;
+    let annotations = field(object_value, "annotations")
+        .map(|value| {
+            map_entries(b, Some(value), &format!("{path}.annotations"))
+                .map(|entries| b.create_vector(&entries))
+        })
+        .transpose()?;
+    Ok(api::ResolvedSortExpr::create(
+        b,
+        &api::ResolvedSortExprArgs {
+            target,
+            direction,
+            missing,
+            annotations,
+        },
+    ))
+}
+
+fn resolved_grouping<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResolvedGroupingRequest<'a>>, JsonCodecError> {
+    let object_value = object(value, path)?;
+    check_keys(object_value, "SearchKernel_V2_ResolvedGroupingRequest", path)?;
+    let root = field(object_value, "root")
+        .map(|value| {
+            grouping_all(b, value, &format!("{path}.root"))
+        })
+        .transpose()?;
+    let continuations = field(object_value, "continuations")
+        .map(|value| {
+            string_vector_from_json(b, Some(value), &format!("{path}.continuations"))
+        })
+        .transpose()?
+        .flatten();
+    Ok(api::ResolvedGroupingRequest::create(
+        b,
+        &api::ResolvedGroupingRequestArgs {
+            root,
+            continuations,
+        },
+    ))
+}
+
+fn presentation_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::PresentationRequest<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_PresentationRequest", path)?;
+    let summary = optional_string(object, "summary", path)?.map(|value| b.create_string(&value));
+    let fields = field(object, "fields")
+        .map(|value| presentation_projection(b, value, &format!("{path}.fields")))
+        .transpose()?;
+    let highlighting = field(object, "highlighting")
+        .map(|value| highlighting_from_json(b, value, &format!("{path}.highlighting")))
+        .transpose()?;
+    let format = optional_string(object, "format", path)?.map(|value| b.create_string(&value));
+    let bolding = optional_bool(object, "bolding", path)?;
+    let timing = optional_bool(object, "timing", path)?;
+    Ok(api::PresentationRequest::create(
+        b,
+        &api::PresentationRequestArgs {
+            summary,
+            fields,
+            highlighting,
+            format,
+            bolding: bolding.as_ref(),
+            timing: timing.as_ref(),
+        },
+    ))
+}
+
+fn resolved_request<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::ResolvedSearchRequest<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_ResolvedSearchRequest", path)?;
+    let query = field(object, "query")
+        .map(|value| resolved_query_source_from_json(b, value, &format!("{path}.query")))
+        .transpose()?;
+    let search_fields = field(object, "search_fields")
+        .map(|value| resolved_search_fields(b, value, &format!("{path}.search_fields")))
+        .transpose()?;
+    let filters = field(object, "filters")
+        .map(|value| {
+            array(value, &format!("{path}.filters"))?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| filter(b, value, &format!("{path}.filters[{index}]")))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| b.create_vector(&values))
+        })
+        .transpose()?;
+    let sort = field(object, "sort")
+        .map(|value| {
+            array(value, &format!("{path}.sort"))?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| resolved_sort(b, value, &format!("{path}.sort[{index}]")))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| b.create_vector(&values))
+        })
+        .transpose()?;
+    let grouping = field(object, "grouping")
+        .map(|value| {
+            array(value, &format!("{path}.grouping"))?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    resolved_grouping(b, value, &format!("{path}.grouping[{index}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| b.create_vector(&values))
+        })
+        .transpose()?;
+    let ranking = field(object, "ranking")
+        .map(|value| ranking(b, value, &format!("{path}.ranking")))
+        .transpose()?;
+    let inputs = field(object, "inputs")
+        .map(|value| query_inputs(b, value, &format!("{path}.inputs")))
+        .transpose()?;
+    let limit = field(object, "limit")
+        .map(|value| u32_value(value, &format!("{path}.limit")))
+        .transpose()?
+        .unwrap_or(0);
+    let offset = field(object, "offset")
+        .map(|value| u32_value(value, &format!("{path}.offset")))
+        .transpose()?
+        .unwrap_or(0);
+    let timeout_ms = optional_u64(object, "timeout_ms", path)?;
+    let query_model = field(object, "query_model")
+        .map(|value| query_model(b, value, &format!("{path}.query_model")))
+        .transpose()?;
+    let presentation = field(object, "presentation")
+        .map(|value| presentation_from_json(b, value, &format!("{path}.presentation")))
+        .transpose()?;
+    let properties = field(object, "properties")
+        .map(|value| map_entries(b, Some(value), &format!("{path}.properties")))
+        .transpose()?
+        .map(|entries| b.create_vector(&entries));
+    let query_profile =
+        optional_string(object, "query_profile", path)?.map(|value| b.create_string(&value));
+    let search_chain =
+        optional_string(object, "search_chain", path)?.map(|value| b.create_string(&value));
+    Ok(api::ResolvedSearchRequest::create(
+        b,
+        &api::ResolvedSearchRequestArgs {
+            query,
+            search_fields,
+            filters,
+            sort,
+            grouping,
+            ranking,
+            inputs,
+            limit,
+            offset,
+            timeout_ms: timeout_ms.as_ref(),
+            query_model,
+            presentation,
+            properties,
+            query_profile,
+            search_chain,
+        },
+    ))
+}
+
 fn response_inspect_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
@@ -5648,11 +5939,11 @@ fn response_inspect_from_json<'a>(
         "SearchKernel_V2_InspectQueryResult",
         "response.inspect_query",
     )?;
-    // The V2 schema requires an InspectQueryResult.resolved_request table.
-    // An empty object is the canonical empty inspection result.
-    let _ = field(o, "resolved_request");
-    let resolved_request =
-        api::ResolvedSearchRequest::create(b, &api::ResolvedSearchRequestArgs::default());
+    let resolved_request = resolved_request(
+        b,
+        required(o, "resolved_request", "response.inspect_query")?,
+        "response.inspect_query.resolved_request",
+    )?;
     Ok(offset(api::InspectQueryResult::create(
         b,
         &api::InspectQueryResultArgs {
@@ -5692,16 +5983,69 @@ fn index_definition_from_json<'a>(
     let default_search_fields = field(o, "default_search_fields")
         .map(|value| selection(b, value, &format!("{path}.default_search_fields")))
         .transpose()?;
+    let properties = field(o, "properties")
+        .map(|value| map_entries(b, Some(value), &format!("{path}.properties")))
+        .transpose()?
+        .map(|entries| b.create_vector(&entries));
+    let document_type = optional_string(o, "document_type", path)?.map(|value| b.create_string(&value));
+    let schema_inherits = string_vector_from_json(
+        b,
+        field(o, "schema_inherits"),
+        &format!("{path}.schema_inherits"),
+    )?;
+    let document_inherits = string_vector_from_json(
+        b,
+        field(o, "document_inherits"),
+        &format!("{path}.document_inherits"),
+    )?;
+    let structs = index_vector_from_json(b, field(o, "structs"), path, "structs", named_struct_from_json)?;
+    let fieldsets = index_vector_from_json(b, field(o, "fieldsets"), path, "fieldsets", field_set_from_json)?;
+    let schema_fields = index_vector_from_json(b, field(o, "schema_fields"), path, "schema_fields", search_only_field_from_json)?;
+    let imported_fields = index_vector_from_json(b, field(o, "imported_fields"), path, "imported_fields", imported_field_from_json)?;
+    let document_summaries = index_vector_from_json(b, field(o, "document_summaries"), path, "document_summaries", document_summary_from_json)?;
+    let rank_profiles = index_vector_from_json(b, field(o, "rank_profiles"), path, "rank_profiles", rank_profile_from_json)?;
+    let constants = index_vector_from_json(b, field(o, "constants"), path, "constants", constant_from_json)?;
+    let onnx_models = index_vector_from_json(b, field(o, "onnx_models"), path, "onnx_models", onnx_model_from_json)?;
     Ok(api::IndexDefinition::create(
         b,
         &api::IndexDefinitionArgs {
             name,
             fields,
             default_search_fields,
-            properties: None,
-            ..Default::default()
+            properties,
+            document_type,
+            schema_inherits,
+            document_inherits,
+            structs,
+            fieldsets,
+            schema_fields,
+            imported_fields,
+            document_summaries,
+            rank_profiles,
+            constants,
+            onnx_models,
         },
     ))
+}
+
+fn index_vector_from_json<'a, T, F>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    parent_path: &str,
+    name: &str,
+    mut parse: F,
+) -> Result<Option<WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<T>>>>, JsonCodecError>
+where
+    F: FnMut(&mut FlatBufferBuilder<'a>, &Value, &str) -> Result<WIPOffset<T>, JsonCodecError>,
+{
+    let Some(value) = value else { return Ok(None) };
+    let path = format!("{parent_path}.{name}");
+    let values = array(value, &path)?
+        .iter()
+        .enumerate()
+        .map(|(i, value)| parse(b, value, &format!("{path}[{i}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(b.create_vector(&values)))
 }
 
 fn field_definition_from_json<'a>(
@@ -5730,6 +6074,31 @@ fn field_definition_from_json<'a>(
     let analyzer = field(o, "analyzer")
         .map(|value| analyzer(b, object(value, &format!("{path}.analyzer"))?))
         .transpose()?;
+    let matching = field(o, "matching")
+        .map(|value| matching_config_from_json(b, value, &format!("{path}.matching")))
+        .transpose()?;
+    let index = field(o, "index")
+        .map(|value| index_config_from_json(b, value, &format!("{path}.index")))
+        .transpose()?;
+    let attribute = field(o, "attribute")
+        .map(|value| attribute_config_from_json(b, value, &format!("{path}.attribute")))
+        .transpose()?;
+    let summary = field(o, "summary")
+        .map(|value| summary_config_from_json(b, value, &format!("{path}.summary")))
+        .transpose()?;
+    let indexing_script = optional_string(o, "indexing_script", path)?
+        .map(|value| b.create_string(&value));
+    let properties = field(o, "properties")
+        .map(|value| map_entries(b, Some(value), &format!("{path}.properties")))
+        .transpose()?
+        .map(|entries| b.create_vector(&entries));
+    let struct_fields = index_vector_from_json(
+        b,
+        field(o, "struct_fields"),
+        path,
+        "struct_fields",
+        struct_field_config_from_json,
+    )?;
     Ok(api::FieldDefinition::create(
         b,
         &api::FieldDefinitionArgs {
@@ -5741,7 +6110,13 @@ fn field_definition_from_json<'a>(
             sortable: sortable.as_ref(),
             facetable: facetable.as_ref(),
             analyzer,
-            ..Default::default()
+            matching,
+            index,
+            attribute,
+            summary,
+            indexing_script,
+            properties,
+            struct_fields,
         },
     ))
 }
@@ -5774,34 +6149,350 @@ fn data_type_from_json<'a>(
     value: &Value,
     path: &str,
 ) -> Result<WIPOffset<api::DataType<'a>>, JsonCodecError> {
-    let object = object(value, path)?;
-    let primitive = string(
-        required(object, "primitive", path)?,
-        &format!("{path}.primitive"),
-    )?;
-    let kind = match primitive.as_str() {
-        "string" => api::PrimitiveDataTypeKind::String,
-        "bool" => api::PrimitiveDataTypeKind::Bool,
-        "byte" => api::PrimitiveDataTypeKind::Byte,
-        "int32" => api::PrimitiveDataTypeKind::Int32,
-        "int64" => api::PrimitiveDataTypeKind::Int64,
-        "float32" => api::PrimitiveDataTypeKind::Float32,
-        "float64" => api::PrimitiveDataTypeKind::Float64,
-        "raw" => api::PrimitiveDataTypeKind::Raw,
-        other => {
-            return Err(contract(format!(
-                "unknown data type `{path}.primitive`: {other}"
-            )))
-        }
+    let (kind, raw_payload) = one_key(value, path)?;
+    let payload = if kind == "primitive" {
+        None
+    } else {
+        Some(object(raw_payload, &format!("{path}.{kind}"))?)
     };
-    let payload = api::PrimitiveDataType::create(b, &api::PrimitiveDataTypeArgs { kind });
-    Ok(api::DataType::create(
-        b,
-        &api::DataTypeArgs {
-            kind_type: api::DataTypeKind::PrimitiveDataType,
-            kind: Some(payload.as_union_value()),
-        },
-    ))
+    let (kind_type, union) = match kind {
+        "primitive" => {
+            let primitive = string(raw_payload, &format!("{path}.{kind}"))?;
+            let kind = match primitive.as_str() {
+                "string" => api::PrimitiveDataTypeKind::String,
+                "bool" => api::PrimitiveDataTypeKind::Bool,
+                "byte" => api::PrimitiveDataTypeKind::Byte,
+                "int32" => api::PrimitiveDataTypeKind::Int32,
+                "int64" => api::PrimitiveDataTypeKind::Int64,
+                "float32" => api::PrimitiveDataTypeKind::Float32,
+                "float64" => api::PrimitiveDataTypeKind::Float64,
+                "raw" => api::PrimitiveDataTypeKind::Raw,
+                other => return Err(contract(format!("unknown data type `{path}.{kind}.kind`: {other}"))),
+            };
+            let value = api::PrimitiveDataType::create(b, &api::PrimitiveDataTypeArgs { kind });
+            (api::DataTypeKind::PrimitiveDataType, value.as_union_value())
+        }
+        "tensor" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_TensorDataType", &format!("{path}.{kind}"))?;
+            let type_spec = optional_string(payload, "type_spec", &format!("{path}.{kind}"))?.map(|v| b.create_string(&v));
+            let value = api::TensorDataType::create(b, &api::TensorDataTypeArgs { type_spec });
+            (api::DataTypeKind::TensorDataType, value.as_union_value())
+        }
+        "array" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_ArrayDataType", &format!("{path}.{kind}"))?;
+            let element_type = data_type_from_json(b, required(payload, "element_type", &format!("{path}.{kind}"))?, &format!("{path}.{kind}.element_type"))?;
+            let value = api::ArrayDataType::create(b, &api::ArrayDataTypeArgs { element_type: Some(element_type) });
+            (api::DataTypeKind::ArrayDataType, value.as_union_value())
+        }
+        "map" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_MapDataType", &format!("{path}.{kind}"))?;
+            let key_type = data_type_from_json(b, required(payload, "key_type", &format!("{path}.{kind}"))?, &format!("{path}.{kind}.key_type"))?;
+            let value_type = data_type_from_json(b, required(payload, "value_type", &format!("{path}.{kind}"))?, &format!("{path}.{kind}.value_type"))?;
+            let value = api::MapDataType::create(b, &api::MapDataTypeArgs { key_type: Some(key_type), value_type: Some(value_type) });
+            (api::DataTypeKind::MapDataType, value.as_union_value())
+        }
+        "weighted_set" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_WeightedSetDataType", &format!("{path}.{kind}"))?;
+            let element_type = data_type_from_json(b, required(payload, "element_type", &format!("{path}.{kind}"))?, &format!("{path}.{kind}.element_type"))?;
+            let value = api::WeightedSetDataType::create(b, &api::WeightedSetDataTypeArgs { element_type: Some(element_type) });
+            (api::DataTypeKind::WeightedSetDataType, value.as_union_value())
+        }
+        "struct" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_StructDataType", &format!("{path}.{kind}"))?;
+            let fields = index_vector_from_json(b, field(payload, "fields"), &format!("{path}.{kind}"), "fields", struct_field_definition_from_json)?;
+            let value = api::StructDataType::create(b, &api::StructDataTypeArgs { fields });
+            (api::DataTypeKind::StructDataType, value.as_union_value())
+        }
+        "struct_reference" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_StructReferenceDataType", &format!("{path}.{kind}"))?;
+            let name = optional_string(payload, "name", &format!("{path}.{kind}"))?.map(|v| b.create_string(&v));
+            let value = api::StructReferenceDataType::create(b, &api::StructReferenceDataTypeArgs { name });
+            (api::DataTypeKind::StructReferenceDataType, value.as_union_value())
+        }
+        "predicate" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_PredicateDataType", &format!("{path}.{kind}"))?;
+            let value = api::PredicateDataType::create(b, &api::PredicateDataTypeArgs {});
+            (api::DataTypeKind::PredicateDataType, value.as_union_value())
+        }
+        "position" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_PositionDataType", &format!("{path}.{kind}"))?;
+            let value = api::PositionDataType::create(b, &api::PositionDataTypeArgs {});
+            (api::DataTypeKind::PositionDataType, value.as_union_value())
+        }
+        "reference" => {
+            let payload = payload.expect("non-primitive data type payload");
+            check_keys(payload, "SearchKernel_V2_ReferenceDataType", &format!("{path}.{kind}"))?;
+            let document_type = optional_string(payload, "document_type", &format!("{path}.{kind}"))?.map(|v| b.create_string(&v));
+            let value = api::ReferenceDataType::create(b, &api::ReferenceDataTypeArgs { document_type });
+            (api::DataTypeKind::ReferenceDataType, value.as_union_value())
+        }
+        other => return Err(contract(format!("unknown data type `{path}.{other}`"))),
+    };
+    Ok(api::DataType::create(b, &api::DataTypeArgs { kind_type, kind: Some(union) }))
+}
+
+fn matching_mode_from_json(value: &Value, path: &str) -> Result<api::MatchingMode, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::MatchingMode::Unspecified),
+        "text" => Ok(api::MatchingMode::Text),
+        "word" => Ok(api::MatchingMode::Word),
+        "exact" => Ok(api::MatchingMode::Exact),
+        "gram" => Ok(api::MatchingMode::Gram),
+        other => Err(contract(format!("unknown matching mode `{path}` value `{other}`"))),
+    }
+}
+
+fn distance_metric_from_json(value: &Value, path: &str) -> Result<api::DistanceMetric, JsonCodecError> {
+    match enum_name(value, path)?.as_str() {
+        "unspecified" => Ok(api::DistanceMetric::Unspecified),
+        "euclidean" => Ok(api::DistanceMetric::Euclidean),
+        "angular" => Ok(api::DistanceMetric::Angular),
+        "dot_product" => Ok(api::DistanceMetric::DotProduct),
+        "prenormalized_angular" => Ok(api::DistanceMetric::PrenormalizedAngular),
+        "geo_degrees" => Ok(api::DistanceMetric::GeoDegrees),
+        "hamming" => Ok(api::DistanceMetric::Hamming),
+        other => Err(contract(format!("unknown distance metric `{path}` value `{other}`"))),
+    }
+}
+
+fn value_entries_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>, value: Option<&Value>, path: &str,
+) -> Result<Option<WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::ValueEntry<'a>>>>>, JsonCodecError> {
+    value.map(|value| map_entries(b, Some(value), path).map(|entries| b.create_vector(&entries))).transpose()
+}
+
+fn matching_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::MatchingConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_MatchingConfig", path)?;
+    let mode = field(o, "mode").map(|v| matching_mode_from_json(v, &format!("{path}.mode"))).transpose()?.unwrap_or(api::MatchingMode::Unspecified);
+    let options = value_entries_from_json(b, field(o, "options"), &format!("{path}.options"))?;
+    Ok(api::MatchingConfig::create(b, &api::MatchingConfigArgs { mode, options }))
+}
+
+fn hnsw_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::HnswIndexConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_HnswIndexConfig", path)?;
+    let max_links_per_node = optional_u32(o, "max_links_per_node", path)?;
+    let neighbors_to_explore_at_insert = optional_u32(o, "neighbors_to_explore_at_insert", path)?;
+    let options = value_entries_from_json(b, field(o, "options"), &format!("{path}.options"))?;
+    Ok(api::HnswIndexConfig::create(b, &api::HnswIndexConfigArgs { max_links_per_node: max_links_per_node.as_ref(), neighbors_to_explore_at_insert: neighbors_to_explore_at_insert.as_ref(), options }))
+}
+
+fn index_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::IndexConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_IndexConfig", path)?;
+    let enabled = optional_bool(o, "enabled", path)?;
+    let hnsw = field(o, "hnsw").map(|v| hnsw_config_from_json(b, v, &format!("{path}.hnsw"))).transpose()?;
+    let options = value_entries_from_json(b, field(o, "options"), &format!("{path}.options"))?;
+    Ok(api::IndexConfig::create(b, &api::IndexConfigArgs { enabled: enabled.as_ref(), hnsw, options }))
+}
+
+fn attribute_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::AttributeConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_AttributeConfig", path)?;
+    let enabled = optional_bool(o, "enabled", path)?;
+    let fast_search = optional_bool(o, "fast_search", path)?;
+    let fast_access = optional_bool(o, "fast_access", path)?;
+    let distance_metric = field(o, "distance_metric").map(|v| distance_metric_from_json(v, &format!("{path}.distance_metric"))).transpose()?.unwrap_or(api::DistanceMetric::Unspecified);
+    let options = value_entries_from_json(b, field(o, "options"), &format!("{path}.options"))?;
+    Ok(api::AttributeConfig::create(b, &api::AttributeConfigArgs { enabled: enabled.as_ref(), fast_search: fast_search.as_ref(), fast_access: fast_access.as_ref(), distance_metric, options }))
+}
+
+fn summary_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::SummaryConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_SummaryConfig", path)?;
+    let enabled = optional_bool(o, "enabled", path)?;
+    let options = value_entries_from_json(b, field(o, "options"), &format!("{path}.options"))?;
+    Ok(api::SummaryConfig::create(b, &api::SummaryConfigArgs { enabled: enabled.as_ref(), options }))
+}
+
+fn struct_field_definition_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::StructFieldDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_StructFieldDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let data_type = field(o, "data_type").map(|v| data_type_from_json(b, v, &format!("{path}.data_type"))).transpose()?;
+    Ok(api::StructFieldDefinition::create(b, &api::StructFieldDefinitionArgs { name: Some(name), data_type }))
+}
+
+fn struct_field_config_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::StructFieldConfig<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_StructFieldConfig", path)?;
+    let path_value = b.create_string(&string(required(o, "path", path)?, &format!("{path}.path"))?);
+    let indexing_script = optional_string(o, "indexing_script", path)?.map(|v| b.create_string(&v));
+    let matching = field(o, "matching").map(|v| matching_config_from_json(b, v, &format!("{path}.matching"))).transpose()?;
+    let index = field(o, "index").map(|v| index_config_from_json(b, v, &format!("{path}.index"))).transpose()?;
+    let attribute = field(o, "attribute").map(|v| attribute_config_from_json(b, v, &format!("{path}.attribute"))).transpose()?;
+    let summary = field(o, "summary").map(|v| summary_config_from_json(b, v, &format!("{path}.summary"))).transpose()?;
+    let rank = optional_string(o, "rank", path)?.map(|v| b.create_string(&v));
+    let query_commands = string_vector_from_json(b, field(o, "query_commands"), &format!("{path}.query_commands"))?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::StructFieldConfig::create(b, &api::StructFieldConfigArgs { path: Some(path_value), indexing_script, matching, index, attribute, summary, rank, query_commands, properties }))
+}
+
+fn named_struct_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::NamedStructDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_NamedStructDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let fields = index_vector_from_json(b, field(o, "fields"), path, "fields", struct_field_definition_from_json)?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::NamedStructDefinition::create(b, &api::NamedStructDefinitionArgs { name: Some(name), fields, properties }))
+}
+
+fn field_set_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::FieldSetDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_FieldSetDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let fields = string_vector_from_json(b, field(o, "fields"), &format!("{path}.fields"))?;
+    let matching = field(o, "matching").map(|v| matching_config_from_json(b, v, &format!("{path}.matching"))).transpose()?;
+    let query_commands = string_vector_from_json(b, field(o, "query_commands"), &format!("{path}.query_commands"))?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::FieldSetDefinition::create(b, &api::FieldSetDefinitionArgs { name: Some(name), fields, matching, query_commands, properties }))
+}
+
+fn search_only_field_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::SearchOnlyFieldDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_SearchOnlyFieldDefinition", path)?;
+    let field = field(o, "field").map(|v| field_definition_from_json(b, v, &format!("{path}.field"))).transpose()?;
+    Ok(api::SearchOnlyFieldDefinition::create(b, &api::SearchOnlyFieldDefinitionArgs { field }))
+}
+
+fn imported_field_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::ImportedFieldDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_ImportedFieldDefinition", path)?;
+    let reference_field = optional_string(o, "reference_field", path)?.map(|v| b.create_string(&v));
+    let target_field = optional_string(o, "target_field", path)?.map(|v| b.create_string(&v));
+    let alias = b.create_string(&string(required(o, "alias", path)?, &format!("{path}.alias"))?);
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::ImportedFieldDefinition::create(b, &api::ImportedFieldDefinitionArgs { reference_field, target_field, alias: Some(alias), properties }))
+}
+
+fn document_summary_field_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::DocumentSummaryFieldDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_DocumentSummaryFieldDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let source = optional_string(o, "source", path)?.map(|v| b.create_string(&v));
+    let data_type = field(o, "data_type").map(|v| data_type_from_json(b, v, &format!("{path}.data_type"))).transpose()?;
+    let struct_fields = string_vector_from_json(b, field(o, "struct_fields"), &format!("{path}.struct_fields"))?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::DocumentSummaryFieldDefinition::create(b, &api::DocumentSummaryFieldDefinitionArgs { name: Some(name), source, data_type, struct_fields, properties }))
+}
+
+fn document_summary_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::DocumentSummaryDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_DocumentSummaryDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let inherits = string_vector_from_json(b, field(o, "inherits"), &format!("{path}.inherits"))?;
+    let fields = index_vector_from_json(b, field(o, "fields"), path, "fields", document_summary_field_from_json)?;
+    let from_disk = optional_bool(o, "from_disk", path)?;
+    let omit_summary_features = optional_bool(o, "omit_summary_features", path)?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::DocumentSummaryDefinition::create(b, &api::DocumentSummaryDefinitionArgs { name: Some(name), inherits, fields, from_disk: from_disk.as_ref(), omit_summary_features: omit_summary_features.as_ref(), properties }))
+}
+
+fn rank_profile_input_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::RankProfileInput<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_RankProfileInput", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let data_type = field(o, "data_type").map(|v| data_type_from_json(b, v, &format!("{path}.data_type"))).transpose()?;
+    let default_value = field(o, "default_value").map(|v| value_from_json(b, v)).transpose()?;
+    Ok(api::RankProfileInput::create(b, &api::RankProfileInputArgs { name: Some(name), data_type, default_value }))
+}
+
+fn rank_function_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::RankFunctionDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_RankFunctionDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let arguments = string_vector_from_json(b, field(o, "arguments"), &format!("{path}.arguments"))?;
+    let expression = optional_string(o, "expression", path)?.map(|v| b.create_string(&v));
+    let inline = optional_bool(o, "inline", path)?;
+    Ok(api::RankFunctionDefinition::create(b, &api::RankFunctionDefinitionArgs { name: Some(name), arguments, expression, inline: inline.as_ref() }))
+}
+
+fn rank_phase_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::RankPhaseDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_RankPhaseDefinition", path)?;
+    let expression = optional_string(o, "expression", path)?.map(|v| b.create_string(&v));
+    let rerank_count = optional_u32(o, "rerank_count", path)?;
+    let rank_score_drop_limit = optional_f64(o, "rank_score_drop_limit", path)?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    let total_rerank_count = optional_u32(o, "total_rerank_count", path)?;
+    let keep_rank_count = optional_u32(o, "keep_rank_count", path)?;
+    let total_keep_rank_count = optional_u32(o, "total_keep_rank_count", path)?;
+    Ok(api::RankPhaseDefinition::create(b, &api::RankPhaseDefinitionArgs { expression, rerank_count: rerank_count.as_ref(), rank_score_drop_limit: rank_score_drop_limit.as_ref(), properties, total_rerank_count: total_rerank_count.as_ref(), keep_rank_count: keep_rank_count.as_ref(), total_keep_rank_count: total_keep_rank_count.as_ref() }))
+}
+
+fn constant_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::ConstantDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_ConstantDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let data_type = field(o, "data_type").map(|v| data_type_from_json(b, v, &format!("{path}.data_type"))).transpose()?;
+    let (source_type, source) = if let Some(raw) = field(o, "source") {
+        let (kind, payload) = one_key(raw, &format!("{path}.source"))?;
+        let payload = object(payload, &format!("{path}.source.{kind}"))?;
+        match kind {
+            "literal" => {
+                check_keys(payload, "SearchKernel_V2_LiteralConstantSource", &format!("{path}.source.{kind}"))?;
+                let value = value_from_json(b, required(payload, "value", &format!("{path}.source.{kind}"))?)?;
+                let source = api::LiteralConstantSource::create(b, &api::LiteralConstantSourceArgs { value: Some(value) });
+                (api::ConstantSourceKind::LiteralConstantSource, Some(source.as_union_value()))
+            }
+            "file" => {
+                check_keys(payload, "SearchKernel_V2_FileConstantSource", &format!("{path}.source.{kind}"))?;
+                let path_value = optional_string(payload, "path", &format!("{path}.source.{kind}"))?.map(|v| b.create_string(&v));
+                let source = api::FileConstantSource::create(b, &api::FileConstantSourceArgs { path: path_value });
+                (api::ConstantSourceKind::FileConstantSource, Some(source.as_union_value()))
+            }
+            other => return Err(contract(format!("unknown constant source `{path}.source.{other}`"))),
+        }
+    } else {
+        (api::ConstantSourceKind::NONE, None)
+    };
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::ConstantDefinition::create(b, &api::ConstantDefinitionArgs { name: Some(name), data_type, source_type, source, properties }))
+}
+
+fn onnx_model_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::OnnxModelDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_OnnxModelDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let file = optional_string(o, "file", path)?.map(|v| b.create_string(&v));
+    let inputs = field(o, "inputs").map(|v| string_entries_from_json(b, v, &format!("{path}.inputs"))).transpose()?;
+    let outputs = field(o, "outputs").map(|v| string_entries_from_json(b, v, &format!("{path}.outputs"))).transpose()?;
+    let gpu_device = optional_u32(o, "gpu_device", path)?;
+    let intraop_threads = optional_u32(o, "intraop_threads", path)?;
+    let interop_threads = optional_u32(o, "interop_threads", path)?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::OnnxModelDefinition::create(b, &api::OnnxModelDefinitionArgs { name: Some(name), file, inputs, outputs, gpu_device: gpu_device.as_ref(), intraop_threads: intraop_threads.as_ref(), interop_threads: interop_threads.as_ref(), properties }))
+}
+
+fn rank_profile_from_json<'a>(b: &mut FlatBufferBuilder<'a>, value: &Value, path: &str) -> Result<WIPOffset<api::RankProfileDefinition<'a>>, JsonCodecError> {
+    let o = object(value, path)?;
+    check_keys(o, "SearchKernel_V2_RankProfileDefinition", path)?;
+    let name = b.create_string(&string(required(o, "name", path)?, &format!("{path}.name"))?);
+    let inherits = string_vector_from_json(b, field(o, "inherits"), &format!("{path}.inherits"))?;
+    let inputs = index_vector_from_json(b, field(o, "inputs"), path, "inputs", rank_profile_input_from_json)?;
+    let functions = index_vector_from_json(b, field(o, "functions"), path, "functions", rank_function_from_json)?;
+    let first_phase = field(o, "first_phase").map(|v| rank_phase_from_json(b, v, &format!("{path}.first_phase"))).transpose()?;
+    let second_phase = field(o, "second_phase").map(|v| rank_phase_from_json(b, v, &format!("{path}.second_phase"))).transpose()?;
+    let global_phase = field(o, "global_phase").map(|v| rank_phase_from_json(b, v, &format!("{path}.global_phase"))).transpose()?;
+    let rank_features = string_vector_from_json(b, field(o, "rank_features"), &format!("{path}.rank_features"))?;
+    let match_features = string_vector_from_json(b, field(o, "match_features"), &format!("{path}.match_features"))?;
+    let summary_features = string_vector_from_json(b, field(o, "summary_features"), &format!("{path}.summary_features"))?;
+    let sort_features = string_vector_from_json(b, field(o, "sort_features"), &format!("{path}.sort_features"))?;
+    let constants = index_vector_from_json(b, field(o, "constants"), path, "constants", constant_from_json)?;
+    let onnx_models = index_vector_from_json(b, field(o, "onnx_models"), path, "onnx_models", onnx_model_from_json)?;
+    let rank_properties = field(o, "rank_properties").map(|v| string_entries_from_json(b, v, &format!("{path}.rank_properties"))).transpose()?;
+    let strict = optional_bool(o, "strict", path)?;
+    let properties = value_entries_from_json(b, field(o, "properties"), &format!("{path}.properties"))?;
+    Ok(api::RankProfileDefinition::create(b, &api::RankProfileDefinitionArgs { name: Some(name), inherits, inputs, functions, first_phase, second_phase, global_phase, rank_features, match_features, summary_features, sort_features, constants, onnx_models, rank_properties, strict: strict.as_ref(), properties }))
 }
 
 fn response_payload_fallback<'a>(
@@ -5879,8 +6570,14 @@ fn response_describe(value: Option<api::DescribeResult<'_>>) -> Result<Value, Js
     Ok(serde_json::json!({"index": required_result(value.index(), "index").and_then(index_json)?}))
 }
 fn response_inspect(value: Option<api::InspectQueryResult<'_>>) -> Result<Value, JsonCodecError> {
-    required_result(value, "inspect_query")?;
-    Ok(Value::Object(Map::new()))
+    let value = required_result(value, "inspect_query")?;
+    let resolved_request = resolved_request_json(required_result(
+        value.resolved_request(),
+        "inspect_query.resolved_request",
+    )?)?;
+    Ok(serde_json::json!({
+        "resolved_request": resolved_request
+    }))
 }
 
 fn response_search(value: Option<api::SearchResult<'_>>) -> Result<Value, JsonCodecError> {
@@ -6498,23 +7195,7 @@ fn index_json(value: api::IndexDefinition<'_>) -> Result<Value, JsonCodecError> 
     let mut fields = Vec::new();
     if let Some(items) = value.fields() {
         for item in items.iter() {
-            let mut f = Map::new();
-            f.insert("name".to_owned(), Value::String(item.name().to_owned()));
-            for (name, v) in [
-                ("stored", item.stored().map(|x| x.value())),
-                ("searchable", item.searchable().map(|x| x.value())),
-                ("filterable", item.filterable().map(|x| x.value())),
-                ("sortable", item.sortable().map(|x| x.value())),
-                ("facetable", item.facetable().map(|x| x.value())),
-            ] {
-                if let Some(v) = v {
-                    f.insert(name.to_owned(), Value::Bool(v));
-                }
-            }
-            if let Some(a) = item.analyzer() {
-                f.insert("analyzer".to_owned(), analyzer_json(a)?);
-            }
-            fields.push(Value::Object(f));
+            fields.push(field_definition_json(item)?);
         }
     }
     if value.fields().is_some() {
@@ -6526,6 +7207,328 @@ fn index_json(value: api::IndexDefinition<'_>) -> Result<Value, JsonCodecError> 
             selection_json(selection)?,
         );
     }
+    if let Some(properties) = value.properties() {
+        out.insert("properties".to_owned(), value_map_json(Some(properties))?);
+    }
+    if let Some(document_type) = value.document_type() {
+        out.insert("document_type".to_owned(), Value::String(document_type.to_owned()));
+    }
+    if let Some(inherits) = value.schema_inherits() {
+        out.insert("schema_inherits".to_owned(), string_vector_json(inherits));
+    }
+    if let Some(inherits) = value.document_inherits() {
+        out.insert("document_inherits".to_owned(), string_vector_json(inherits));
+    }
+    if let Some(items) = value.structs() {
+        out.insert("structs".to_owned(), Value::Array(items.iter().map(named_struct_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.fieldsets() {
+        out.insert("fieldsets".to_owned(), Value::Array(items.iter().map(field_set_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.schema_fields() {
+        out.insert("schema_fields".to_owned(), Value::Array(items.iter().map(search_only_field_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.imported_fields() {
+        out.insert("imported_fields".to_owned(), Value::Array(items.iter().map(imported_field_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.document_summaries() {
+        out.insert("document_summaries".to_owned(), Value::Array(items.iter().map(document_summary_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.rank_profiles() {
+        out.insert("rank_profiles".to_owned(), Value::Array(items.iter().map(rank_profile_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.constants() {
+        out.insert("constants".to_owned(), Value::Array(items.iter().map(constant_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    if let Some(items) = value.onnx_models() {
+        out.insert("onnx_models".to_owned(), Value::Array(items.iter().map(onnx_model_json).collect::<Result<Vec<_>, _>>()?));
+    }
+    Ok(Value::Object(out))
+}
+
+fn string_vector_json<'a>(values: flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<&'a str>>) -> Value {
+    Value::Array(values.iter().map(|value| Value::String(value.to_owned())).collect())
+}
+
+fn optional_bool_json(value: Option<&api::OptionalBool>) -> Option<Value> {
+    value.map(|value| Value::Bool(value.value()))
+}
+
+fn optional_u32_json(value: Option<&api::OptionalUInt32>) -> Option<Value> {
+    value.map(|value| Value::Number(value.value().into()))
+}
+
+fn optional_f64_json(value: Option<&api::OptionalDouble>) -> Result<Option<Value>, JsonCodecError> {
+    value.map(|value| number(value.value(), "optional double")).transpose()
+}
+
+fn field_definition_json(value: api::FieldDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(data_type) = value.data_type() { out.insert("data_type".to_owned(), data_type_json(data_type)?); }
+    for (name, value) in [("stored", optional_bool_json(value.stored())), ("searchable", optional_bool_json(value.searchable())), ("filterable", optional_bool_json(value.filterable())), ("sortable", optional_bool_json(value.sortable())), ("facetable", optional_bool_json(value.facetable()))] {
+        if let Some(value) = value { out.insert(name.to_owned(), value); }
+    }
+    if let Some(analyzer) = value.analyzer() { out.insert("analyzer".to_owned(), analyzer_json(analyzer)?); }
+    if let Some(matching) = value.matching() { out.insert("matching".to_owned(), matching_config_json(matching)?); }
+    if let Some(index) = value.index() { out.insert("index".to_owned(), index_config_json(index)?); }
+    if let Some(attribute) = value.attribute() { out.insert("attribute".to_owned(), attribute_config_json(attribute)?); }
+    if let Some(summary) = value.summary() { out.insert("summary".to_owned(), summary_config_json(summary)?); }
+    if let Some(script) = value.indexing_script() { out.insert("indexing_script".to_owned(), Value::String(script.to_owned())); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    if let Some(fields) = value.struct_fields() { out.insert("struct_fields".to_owned(), Value::Array(fields.iter().map(struct_field_config_json).collect::<Result<Vec<_>, _>>()?)); }
+    Ok(Value::Object(out))
+}
+
+fn data_type_json(value: api::DataType<'_>) -> Result<Value, JsonCodecError> {
+    let (name, payload) = match value.kind_type() {
+        api::DataTypeKind::PrimitiveDataType => ("primitive", {
+            let value = required_result(value.kind_as_primitive_data_type(), "primitive data type")?;
+            let kind = match value.kind() {
+                api::PrimitiveDataTypeKind::String => "string",
+                api::PrimitiveDataTypeKind::Bool => "bool",
+                api::PrimitiveDataTypeKind::Byte => "byte",
+                api::PrimitiveDataTypeKind::Int32 => "int32",
+                api::PrimitiveDataTypeKind::Int64 => "int64",
+                api::PrimitiveDataTypeKind::Float32 => "float32",
+                api::PrimitiveDataTypeKind::Float64 => "float64",
+                api::PrimitiveDataTypeKind::Raw => "raw",
+                _ => return Err(JsonCodecError::FlatBuffer("unknown primitive data type".to_owned())),
+            };
+            Value::String(kind.to_owned())
+        }),
+        api::DataTypeKind::TensorDataType => ("tensor", {
+            let value = required_result(value.kind_as_tensor_data_type(), "tensor data type")?;
+            serde_json::json!({"type_spec": value.type_spec()})
+        }),
+        api::DataTypeKind::ArrayDataType => ("array", {
+            let value = required_result(value.kind_as_array_data_type(), "array data type")?;
+            serde_json::json!({"element_type": data_type_json(required_result(value.element_type(), "array element type")?)?})
+        }),
+        api::DataTypeKind::MapDataType => ("map", {
+            let value = required_result(value.kind_as_map_data_type(), "map data type")?;
+            serde_json::json!({"key_type": data_type_json(required_result(value.key_type(), "map key type")?)?, "value_type": data_type_json(required_result(value.value_type(), "map value type")?)?})
+        }),
+        api::DataTypeKind::WeightedSetDataType => ("weighted_set", {
+            let value = required_result(value.kind_as_weighted_set_data_type(), "weighted set data type")?;
+            serde_json::json!({"element_type": data_type_json(required_result(value.element_type(), "weighted set element type")?)?})
+        }),
+        api::DataTypeKind::StructDataType => ("struct", {
+            let value = required_result(value.kind_as_struct_data_type(), "struct data type")?;
+            let fields = value.fields().map(|fields| fields.iter().map(struct_field_definition_json).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default();
+            serde_json::json!({"fields": fields})
+        }),
+        api::DataTypeKind::StructReferenceDataType => ("struct_reference", {
+            let value = required_result(value.kind_as_struct_reference_data_type(), "struct reference data type")?;
+            serde_json::json!({"name": value.name()})
+        }),
+        api::DataTypeKind::PredicateDataType => ("predicate", Value::Object(Map::new())),
+        api::DataTypeKind::PositionDataType => ("position", Value::Object(Map::new())),
+        api::DataTypeKind::ReferenceDataType => ("reference", {
+            let value = required_result(value.kind_as_reference_data_type(), "reference data type")?;
+            serde_json::json!({"document_type": value.document_type()})
+        }),
+        _ => return Err(JsonCodecError::FlatBuffer("unknown data type discriminator".to_owned())),
+    };
+    Ok(serde_json::json!({name: payload}))
+}
+
+fn struct_field_definition_json(value: api::StructFieldDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(data_type) = value.data_type() { out.insert("data_type".to_owned(), data_type_json(data_type)?); }
+    Ok(Value::Object(out))
+}
+
+fn matching_config_json(value: api::MatchingConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    let mode = enum_json(value.mode().variant_name(), "matching.mode")?;
+    if mode != "unspecified" { out.insert("mode".to_owned(), Value::String(mode)); }
+    if let Some(options) = value.options() { out.insert("options".to_owned(), value_map_json(Some(options))?); }
+    Ok(Value::Object(out))
+}
+
+fn hnsw_config_json(value: api::HnswIndexConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = optional_u32_json(value.max_links_per_node()) { out.insert("max_links_per_node".to_owned(), value); }
+    if let Some(value) = optional_u32_json(value.neighbors_to_explore_at_insert()) { out.insert("neighbors_to_explore_at_insert".to_owned(), value); }
+    if let Some(options) = value.options() { out.insert("options".to_owned(), value_map_json(Some(options))?); }
+    Ok(Value::Object(out))
+}
+
+fn index_config_json(value: api::IndexConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = optional_bool_json(value.enabled()) { out.insert("enabled".to_owned(), value); }
+    if let Some(hnsw) = value.hnsw() { out.insert("hnsw".to_owned(), hnsw_config_json(hnsw)?); }
+    if let Some(options) = value.options() { out.insert("options".to_owned(), value_map_json(Some(options))?); }
+    Ok(Value::Object(out))
+}
+
+fn attribute_config_json(value: api::AttributeConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = optional_bool_json(value.enabled()) { out.insert("enabled".to_owned(), value); }
+    if let Some(value) = optional_bool_json(value.fast_search()) { out.insert("fast_search".to_owned(), value); }
+    if let Some(value) = optional_bool_json(value.fast_access()) { out.insert("fast_access".to_owned(), value); }
+    let metric = enum_json(value.distance_metric().variant_name(), "attribute.distance_metric")?;
+    if metric != "unspecified" { out.insert("distance_metric".to_owned(), Value::String(metric)); }
+    if let Some(options) = value.options() { out.insert("options".to_owned(), value_map_json(Some(options))?); }
+    Ok(Value::Object(out))
+}
+
+fn summary_config_json(value: api::SummaryConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = optional_bool_json(value.enabled()) { out.insert("enabled".to_owned(), value); }
+    if let Some(options) = value.options() { out.insert("options".to_owned(), value_map_json(Some(options))?); }
+    Ok(Value::Object(out))
+}
+
+fn struct_field_config_json(value: api::StructFieldConfig<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("path".to_owned(), Value::String(value.path().to_owned()));
+    if let Some(value) = value.indexing_script() { out.insert("indexing_script".to_owned(), Value::String(value.to_owned())); }
+    if let Some(value) = value.matching() { out.insert("matching".to_owned(), matching_config_json(value)?); }
+    if let Some(value) = value.index() { out.insert("index".to_owned(), index_config_json(value)?); }
+    if let Some(value) = value.attribute() { out.insert("attribute".to_owned(), attribute_config_json(value)?); }
+    if let Some(value) = value.summary() { out.insert("summary".to_owned(), summary_config_json(value)?); }
+    if let Some(value) = value.rank() { out.insert("rank".to_owned(), Value::String(value.to_owned())); }
+    if let Some(value) = value.query_commands() { out.insert("query_commands".to_owned(), string_vector_json(value)); }
+    if let Some(value) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(value))?); }
+    Ok(Value::Object(out))
+}
+
+fn named_struct_json(value: api::NamedStructDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(fields) = value.fields() { out.insert("fields".to_owned(), Value::Array(fields.iter().map(struct_field_definition_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn field_set_json(value: api::FieldSetDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(fields) = value.fields() { out.insert("fields".to_owned(), string_vector_json(fields)); }
+    if let Some(matching) = value.matching() { out.insert("matching".to_owned(), matching_config_json(matching)?); }
+    if let Some(commands) = value.query_commands() { out.insert("query_commands".to_owned(), string_vector_json(commands)); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn search_only_field_json(value: api::SearchOnlyFieldDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(field) = value.field() { out.insert("field".to_owned(), field_definition_json(field)?); }
+    Ok(Value::Object(out))
+}
+
+fn imported_field_json(value: api::ImportedFieldDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(value) = value.reference_field() { out.insert("reference_field".to_owned(), Value::String(value.to_owned())); }
+    if let Some(value) = value.target_field() { out.insert("target_field".to_owned(), Value::String(value.to_owned())); }
+    out.insert("alias".to_owned(), Value::String(value.alias().to_owned()));
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn document_summary_field_json(value: api::DocumentSummaryFieldDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(source) = value.source() { out.insert("source".to_owned(), Value::String(source.to_owned())); }
+    if let Some(data_type) = value.data_type() { out.insert("data_type".to_owned(), data_type_json(data_type)?); }
+    if let Some(fields) = value.struct_fields() { out.insert("struct_fields".to_owned(), string_vector_json(fields)); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn document_summary_json(value: api::DocumentSummaryDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(inherits) = value.inherits() { out.insert("inherits".to_owned(), string_vector_json(inherits)); }
+    if let Some(fields) = value.fields() { out.insert("fields".to_owned(), Value::Array(fields.iter().map(document_summary_field_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(value) = optional_bool_json(value.from_disk()) { out.insert("from_disk".to_owned(), value); }
+    if let Some(value) = optional_bool_json(value.omit_summary_features()) { out.insert("omit_summary_features".to_owned(), value); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn rank_profile_input_json(value: api::RankProfileInput<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(data_type) = value.data_type() { out.insert("data_type".to_owned(), data_type_json(data_type)?); }
+    if let Some(default_value) = value.default_value() { out.insert("default_value".to_owned(), value_json(default_value)?); }
+    Ok(Value::Object(out))
+}
+
+fn rank_function_json(value: api::RankFunctionDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(arguments) = value.arguments() { out.insert("arguments".to_owned(), string_vector_json(arguments)); }
+    if let Some(expression) = value.expression() { out.insert("expression".to_owned(), Value::String(expression.to_owned())); }
+    if let Some(value) = optional_bool_json(value.inline()) { out.insert("inline".to_owned(), value); }
+    Ok(Value::Object(out))
+}
+
+fn rank_phase_json(value: api::RankPhaseDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(expression) = value.expression() { out.insert("expression".to_owned(), Value::String(expression.to_owned())); }
+    if let Some(value) = optional_u32_json(value.rerank_count()) { out.insert("rerank_count".to_owned(), value); }
+    if let Some(value) = optional_f64_json(value.rank_score_drop_limit())? { out.insert("rank_score_drop_limit".to_owned(), value); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    if let Some(value) = optional_u32_json(value.total_rerank_count()) { out.insert("total_rerank_count".to_owned(), value); }
+    if let Some(value) = optional_u32_json(value.keep_rank_count()) { out.insert("keep_rank_count".to_owned(), value); }
+    if let Some(value) = optional_u32_json(value.total_keep_rank_count()) { out.insert("total_keep_rank_count".to_owned(), value); }
+    Ok(Value::Object(out))
+}
+
+fn constant_json(value: api::ConstantDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(data_type) = value.data_type() { out.insert("data_type".to_owned(), data_type_json(data_type)?); }
+    let source = match value.source_type() {
+        api::ConstantSourceKind::LiteralConstantSource => {
+            let source = required_result(value.source_as_literal_constant_source(), "literal constant source")?;
+            serde_json::json!({"literal": {"value": value_json(required_result(source.value(), "literal constant value")?)?}})
+        }
+        api::ConstantSourceKind::FileConstantSource => {
+            let source = required_result(value.source_as_file_constant_source(), "file constant source")?;
+            serde_json::json!({"file": {"path": source.path()}})
+        }
+        _ => return Err(JsonCodecError::FlatBuffer("unknown constant source discriminator".to_owned())),
+    };
+    out.insert("source".to_owned(), source);
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn onnx_model_json(value: api::OnnxModelDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(file) = value.file() { out.insert("file".to_owned(), Value::String(file.to_owned())); }
+    if let Some(inputs) = value.inputs() { out.insert("inputs".to_owned(), string_map_json(Some(inputs))?); }
+    if let Some(outputs) = value.outputs() { out.insert("outputs".to_owned(), string_map_json(Some(outputs))?); }
+    if let Some(value) = optional_u32_json(value.gpu_device()) { out.insert("gpu_device".to_owned(), value); }
+    if let Some(value) = optional_u32_json(value.intraop_threads()) { out.insert("intraop_threads".to_owned(), value); }
+    if let Some(value) = optional_u32_json(value.interop_threads()) { out.insert("interop_threads".to_owned(), value); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
+    Ok(Value::Object(out))
+}
+
+fn rank_profile_json(value: api::RankProfileDefinition<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    out.insert("name".to_owned(), Value::String(value.name().to_owned()));
+    if let Some(values) = value.inherits() { out.insert("inherits".to_owned(), string_vector_json(values)); }
+    if let Some(values) = value.inputs() { out.insert("inputs".to_owned(), Value::Array(values.iter().map(rank_profile_input_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(values) = value.functions() { out.insert("functions".to_owned(), Value::Array(values.iter().map(rank_function_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(value) = value.first_phase() { out.insert("first_phase".to_owned(), rank_phase_json(value)?); }
+    if let Some(value) = value.second_phase() { out.insert("second_phase".to_owned(), rank_phase_json(value)?); }
+    if let Some(value) = value.global_phase() { out.insert("global_phase".to_owned(), rank_phase_json(value)?); }
+    for (name, values) in [("rank_features", value.rank_features()), ("match_features", value.match_features()), ("summary_features", value.summary_features()), ("sort_features", value.sort_features())] {
+        if let Some(values) = values { out.insert(name.to_owned(), string_vector_json(values)); }
+    }
+    if let Some(values) = value.constants() { out.insert("constants".to_owned(), Value::Array(values.iter().map(constant_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(values) = value.onnx_models() { out.insert("onnx_models".to_owned(), Value::Array(values.iter().map(onnx_model_json).collect::<Result<Vec<_>, _>>()?)); }
+    if let Some(values) = value.rank_properties() { out.insert("rank_properties".to_owned(), string_map_json(Some(values))?); }
+    if let Some(value) = optional_bool_json(value.strict()) { out.insert("strict".to_owned(), value); }
+    if let Some(properties) = value.properties() { out.insert("properties".to_owned(), value_map_json(Some(properties))?); }
     Ok(Value::Object(out))
 }
 
@@ -6833,6 +7836,329 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
         out.insert(
             "timeout".to_owned(),
             Value::String(v.value().to_string()),
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+fn query_source_json(value: api::QuerySource<'_>) -> Result<Value, JsonCodecError> {
+    if let Some(text) = value.source_as_search_kernel_text_query() {
+        return Ok(Value::String(
+            required_result(text.text(), "query.text")?.to_owned(),
+        ));
+    }
+    if let Some(typed) = value.source_as_typed_query() {
+        return query_json(required_result(typed.query(), "query.query")?);
+    }
+    if let Some(yql) = value.source_as_yql_query() {
+        let mut source = Map::new();
+        source.insert(
+            "source".to_owned(),
+            Value::String(required_result(yql.source(), "query.yql.source")?.to_owned()),
+        );
+        if let Some(parameters) = yql.parameters() {
+            source.insert("parameters".to_owned(), value_map_json(Some(parameters))?);
+        }
+        return Ok(serde_json::json!({"yql": Value::Object(source)}));
+    }
+    if value.source_as_match_all_query().is_some() {
+        return Ok(serde_json::json!({"match_all": {}}));
+    }
+    Err(JsonCodecError::FlatBuffer(
+        "missing or unknown query source discriminator".to_owned(),
+    ))
+}
+
+fn resolved_search_fields_json(
+    value: flatbuffers::Vector<
+        '_ ,
+        flatbuffers::ForwardsUOffset<api::SearchField<'_>>,
+    >,
+) -> Result<Value, JsonCodecError> {
+    value
+        .iter()
+        .map(|item| {
+            let mut field = Map::new();
+            field.insert(
+                "field".to_owned(),
+                Value::String(required_result(item.field(), "search_fields.field")?.to_owned()),
+            );
+            if let Some(weight) = item.weight() {
+                field.insert("weight".to_owned(), number(weight.value(), "search_fields.weight")?);
+            }
+            Ok(Value::Object(field))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()
+        .map(Value::Array)
+}
+
+fn resolved_sort_json(value: api::ResolvedSortExpr<'_>) -> Result<Value, JsonCodecError> {
+    let target = required_result(value.target(), "sort.target")?;
+    let mut out = Map::new();
+    if let Some(field) = target
+        .target_as_field_sort_target()
+        .and_then(|target| target.field())
+    {
+        out.insert(
+            "target".to_owned(),
+            serde_json::json!({"field": {"field": field}}),
+        );
+    } else if target.target_as_relevance_sort_target().is_some() {
+        out.insert("target".to_owned(), serde_json::json!({"relevance": {}}));
+    } else if let Some(rank) = target.target_as_rank_feature_sort_target() {
+        out.insert(
+            "target".to_owned(),
+            serde_json::json!({"rank_feature": {"feature": required_result(rank.feature(), "sort.target.rank_feature.feature")?}}),
+        );
+    } else {
+        return Err(JsonCodecError::FlatBuffer(
+            "unknown resolved sort target".to_owned(),
+        ));
+    }
+    out.insert(
+        "direction".to_owned(),
+        Value::String(enum_json(value.direction().variant_name(), "sort.direction")?),
+    );
+    if let Some(missing) = value.missing() {
+        let missing = match missing.policy_type() {
+            api::MissingPolicyKind::MissingFirst if missing.policy_as_missing_first().is_some() => {
+                Value::String("first".to_owned())
+            }
+            api::MissingPolicyKind::MissingLast if missing.policy_as_missing_last().is_some() => {
+                Value::String("last".to_owned())
+            }
+            api::MissingPolicyKind::MissingAs => serde_json::json!({
+                "as": {"value": value_json(required_result(
+                    missing.policy_as_missing_as().and_then(|value| value.value()),
+                    "sort.missing.as",
+                )?)?}
+            }),
+            _ => {
+                return Err(JsonCodecError::FlatBuffer(
+                    "invalid resolved sort missing policy".to_owned(),
+                ))
+            }
+        };
+        out.insert("missing".to_owned(), missing);
+    }
+    if let Some(annotations) = value.annotations() {
+        out.insert("annotations".to_owned(), value_map_json(Some(annotations))?);
+    }
+    Ok(Value::Object(out))
+}
+
+fn ranking_json(value: api::RankingRequest<'_>) -> Result<Value, JsonCodecError> {
+    let profile = value.profile().map(str::to_owned);
+    if let Some(properties) = value.properties() {
+        return Ok(serde_json::json!({
+            "profile": profile.unwrap_or_default(),
+            "properties": string_map_json(Some(properties))?
+        }));
+    }
+    Ok(Value::String(profile.unwrap_or_default()))
+}
+
+fn query_inputs_json(
+    value: flatbuffers::Vector<
+        '_ ,
+        flatbuffers::ForwardsUOffset<api::QueryInput<'_>>,
+    >,
+) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    for input in value.iter() {
+        let payload = match input.input_type() {
+            api::QueryInputKind::LiteralQueryInput => {
+                let input = required_result(
+                    input.input_as_literal_query_input(),
+                    "inputs.literal",
+                )?;
+                serde_json::json!({"literal": {"value": value_json(required_result(input.value(), "inputs.literal.value")?)?}})
+            }
+            api::QueryInputKind::ExpressionQueryInput => {
+                let input = required_result(
+                    input.input_as_expression_query_input(),
+                    "inputs.expression",
+                )?;
+                serde_json::json!({"expression": {"expression": required_result(input.expression(), "inputs.expression.expression")?}})
+            }
+            _ => {
+                return Err(JsonCodecError::FlatBuffer(
+                    "unknown query input discriminator".to_owned(),
+                ))
+            }
+        };
+        out.insert(input.name().to_owned(), payload);
+    }
+    Ok(Value::Object(out))
+}
+
+fn highlighting_json(value: api::HighlightRequest<'_>) -> Result<Value, JsonCodecError> {
+    let fields = value
+        .fields()
+        .map(|fields| {
+            fields
+                .iter()
+                .map(|field| Value::String(field.to_owned()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(serde_json::json!({"fields": fields}))
+}
+
+fn highlighting_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::HighlightRequest<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_HighlightRequest", path)?;
+    let fields = field(object, "fields")
+        .map(|value| string_vector_from_json(b, Some(value), &format!("{path}.fields")))
+        .transpose()?
+        .flatten();
+    Ok(api::HighlightRequest::create(
+        b,
+        &api::HighlightRequestArgs { fields },
+    ))
+}
+
+fn presentation_json(value: api::PresentationRequest<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(summary) = value.summary() {
+        out.insert("summary".to_owned(), Value::String(summary.to_owned()));
+    }
+    if let Some(fields) = value.fields() {
+        out.insert(
+            "fields".to_owned(),
+            field_projection_json(fields)?,
+        );
+    }
+    if let Some(highlighting) = value.highlighting() {
+        out.insert("highlighting".to_owned(), highlighting_json(highlighting)?);
+    }
+    if let Some(format) = value.format() {
+        out.insert("format".to_owned(), Value::String(format.to_owned()));
+    }
+    if let Some(bolding) = value.bolding() {
+        out.insert("bolding".to_owned(), Value::Bool(bolding.value()));
+    }
+    if let Some(timing) = value.timing() {
+        out.insert("timing".to_owned(), Value::Bool(timing.value()));
+    }
+    Ok(Value::Object(out))
+}
+
+fn presentation_projection<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::FieldProjection<'a>>, JsonCodecError> {
+    if value.is_array() {
+        return projection(b, value, path);
+    }
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_FieldProjection", path)?;
+    projection(
+        b,
+        required(object, "fields", path)?,
+        &format!("{path}.fields"),
+    )
+}
+
+fn resolved_grouping_json(
+    value: api::ResolvedGroupingRequest<'_>,
+) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(root) = value.root() {
+        out.insert("root".to_owned(), grouping_all_json(root)?);
+    }
+    if let Some(continuations) = value.continuations() {
+        out.insert(
+            "continuations".to_owned(),
+            Value::Array(
+                continuations
+                    .iter()
+                    .map(|value| Value::String(value.to_owned()))
+                    .collect(),
+            ),
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+fn resolved_request_json(value: api::ResolvedSearchRequest<'_>) -> Result<Value, JsonCodecError> {
+    let mut out = Map::new();
+    if let Some(query) = value.query() {
+        out.insert("query".to_owned(), query_source_json(query)?);
+    }
+    if let Some(fields) = value.search_fields() {
+        out.insert("search_fields".to_owned(), resolved_search_fields_json(fields)?);
+    }
+    if let Some(filters) = value.filters() {
+        out.insert(
+            "filters".to_owned(),
+            Value::Array(
+                filters
+                    .iter()
+                    .map(filter_json)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        );
+    }
+    if let Some(sort) = value.sort() {
+        out.insert(
+            "sort".to_owned(),
+            Value::Array(
+                sort.iter()
+                    .map(resolved_sort_json)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        );
+    }
+    if let Some(grouping) = value.grouping() {
+        out.insert(
+            "grouping".to_owned(),
+            Value::Array(
+                grouping
+                    .iter()
+                    .map(resolved_grouping_json)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        );
+    }
+    if let Some(ranking) = value.ranking() {
+        out.insert("ranking".to_owned(), ranking_json(ranking)?);
+    }
+    if let Some(inputs) = value.inputs() {
+        out.insert("inputs".to_owned(), query_inputs_json(inputs)?);
+    }
+    out.insert("limit".to_owned(), Value::Number(value.limit().into()));
+    out.insert("offset".to_owned(), Value::Number(value.offset().into()));
+    if let Some(timeout) = value.timeout_ms() {
+        out.insert(
+            "timeout_ms".to_owned(),
+            Value::String(timeout.value().to_string()),
+        );
+    }
+    if let Some(query_model) = value.query_model() {
+        out.insert("query_model".to_owned(), query_model_json(query_model)?);
+    }
+    if let Some(presentation) = value.presentation() {
+        out.insert("presentation".to_owned(), presentation_json(presentation)?);
+    }
+    if let Some(properties) = value.properties() {
+        out.insert("properties".to_owned(), value_map_json(Some(properties))?);
+    }
+    if let Some(query_profile) = value.query_profile() {
+        out.insert(
+            "query_profile".to_owned(),
+            Value::String(query_profile.to_owned()),
+        );
+    }
+    if let Some(search_chain) = value.search_chain() {
+        out.insert(
+            "search_chain".to_owned(),
+            Value::String(search_chain.to_owned()),
         );
     }
     Ok(Value::Object(out))
@@ -8708,20 +10034,6 @@ fn query_source<'a>(
     ))
 }
 
-fn typed_query_source<'a>(
-    b: &mut FlatBufferBuilder<'a>,
-    query: WIPOffset<api::QueryExpr<'a>>,
-) -> WIPOffset<api::QuerySource<'a>> {
-    let payload = api::TypedQuery::create(b, &api::TypedQueryArgs { query: Some(query) });
-    api::QuerySource::create(
-        b,
-        &api::QuerySourceArgs {
-            source_type: api::QuerySourceKind::TypedQuery,
-            source: Some(payload.as_union_value()),
-        },
-    )
-}
-
 fn query_source_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     value: &Value,
@@ -8777,6 +10089,20 @@ fn query_source_from_json<'a>(
             source: Some(source),
         },
     ))
+}
+
+fn typed_query_source<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    query: WIPOffset<api::QueryExpr<'a>>,
+) -> WIPOffset<api::QuerySource<'a>> {
+    let payload = api::TypedQuery::create(b, &api::TypedQueryArgs { query: Some(query) });
+    api::QuerySource::create(
+        b,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(payload.as_union_value()),
+        },
+    )
 }
 
 fn highlighting<'a>(

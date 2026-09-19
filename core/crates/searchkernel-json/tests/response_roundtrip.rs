@@ -104,6 +104,55 @@ fn response_payload_required_fields_are_enforced_by_the_codec() {
 }
 
 #[test]
+fn inspect_query_resolved_request_round_trips_all_fields() {
+    let input = serde_json::json!({
+        "protocol_version": 2,
+        "response": {"inspect_query": {"resolved_request": {
+            "query": "shoes",
+            "search_fields": [{"field": "title", "weight": 4.0}],
+            "filters": [{"filter_exists": {"field": "brand"}}],
+            "sort": [{
+                "target": {"field": {"field": "price"}},
+                "direction": "asc"
+            }],
+            "grouping": [{
+                "root": {"operations": [{
+                    "group": {"expression": {"attribute": {"field": "brand"}}}
+                }]},
+                "continuations": ["cursor"]
+            }],
+            "ranking": {"profile": "bm25", "properties": {"k1": "1.2"}},
+            "inputs": {
+                "term": {"literal": {"value": {"string": "shoes"}}},
+                "embedding": {"expression": {"expression": "embed(@term)"}}
+            },
+            "limit": 20,
+            "offset": 2,
+            "timeout_ms": "1500",
+            "query_model": {"language": "en", "locale": "en_US"},
+            "presentation": {
+                "summary": "short",
+                "fields": ["title", "brand"],
+                "highlighting": {"fields": ["title"]},
+                "format": "json",
+                "bolding": true,
+                "timing": false
+            },
+            "properties": {"trace.level": {"string": "2"}},
+            "query_profile": "default",
+            "search_chain": "query"
+        }}}
+    });
+    let input = serde_json::to_vec(&input).unwrap();
+    let bytes = response_json_to_flatbuffer(&input).expect("inspect response JSON");
+    let output = response_flatbuffer_to_json(&bytes).expect("inspect response output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(&input).unwrap()
+    );
+}
+
+#[test]
 fn canonical_scalar_policy_round_trips() {
     let json = br#"{
       "protocol_version": 2,
@@ -185,5 +234,48 @@ fn tensor_values_round_trip_in_search_results() {
     assert_eq!(
         serde_json::from_slice::<Value>(&output).unwrap(),
         serde_json::from_slice::<Value>(input).unwrap()
+    );
+}
+
+#[test]
+fn rich_index_definition_round_trips_through_json() {
+    let input = serde_json::json!({
+        "protocol_version": 2,
+        "response": {"describe": {"index": {
+            "name": "schema",
+            "document_type": "doc",
+            "schema_inherits": ["base"],
+            "fields": [
+                {"name": "text", "data_type": {"primitive": "string"}, "stored": true,
+                 "matching": {"mode": "exact", "options": {"case": {"bool": true}}},
+                 "attribute": {"enabled": true, "fast_search": true}},
+                {"name": "tensor", "data_type": {"tensor": {"type_spec": "tensor(x[2])"}}},
+                {"name": "array", "data_type": {"array": {"element_type": {"primitive": "int64"}}}},
+                {"name": "map", "data_type": {"map": {"key_type": {"primitive": "string"}, "value_type": {"primitive": "float32"}}}},
+                {"name": "weighted", "data_type": {"weighted_set": {"element_type": {"primitive": "string"}}}},
+                {"name": "inline", "data_type": {"struct": {"fields": [{"name": "part", "data_type": {"primitive": "bool"}}]}}},
+                {"name": "named", "data_type": {"struct_reference": {"name": "address"}}},
+                {"name": "predicate", "data_type": {"predicate": {}}},
+                {"name": "position", "data_type": {"position": {}}},
+                {"name": "parent", "data_type": {"reference": {"document_type": "parent_doc"}}}
+            ],
+            "default_search_fields": [{"field": "text", "weight": 1.0}],
+            "properties": {"schema.version": {"int64": "2"}},
+            "structs": [{"name": "address", "fields": [{"name": "city", "data_type": {"primitive": "string"}}]}],
+            "fieldsets": [{"name": "all_text", "fields": ["text"], "query_commands": ["stem"]}],
+            "schema_fields": [{"field": {"name": "derived", "data_type": {"primitive": "string"}}}],
+            "imported_fields": [{"reference_field": "parent", "target_field": "name", "alias": "parent_name"}],
+            "document_summaries": [{"name": "short", "fields": [{"name": "text", "source": "text", "data_type": {"primitive": "string"}}], "from_disk": false, "omit_summary_features": true}],
+            "constants": [{"name": "bias", "data_type": {"primitive": "float64"}, "source": {"literal": {"value": {"float64": 1.0}}}}],
+            "onnx_models": [{"name": "model", "file": "model.onnx", "inputs": {"input": "query(q)"}, "gpu_device": 0, "intraop_threads": 1}],
+            "rank_profiles": [{"name": "rank", "match_features": ["score"], "rank_properties": {"foo": "bar"}, "strict": true}]
+        }}}
+    });
+    let input = serde_json::to_vec(&input).unwrap();
+    let bytes = response_json_to_flatbuffer(&input).expect("rich index JSON");
+    let output = response_flatbuffer_to_json(&bytes).expect("rich index output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(&input).unwrap()
     );
 }
