@@ -54,6 +54,9 @@ pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
 pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
 pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
+pub const SK_DEGRADATION_MATCH_PHASE: u32 = 1;
+pub const SK_DEGRADATION_TIMEOUT: u32 = 2;
+pub const SK_DEGRADATION_ANN_TIMEOUT: u32 = 4;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
 pub const SK_NATIVE_ABI_VERSION: u32 = 8;
 #[repr(C)]
@@ -1072,6 +1075,38 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_hit_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_coverage_active(result: *const sk_generic_search_result)
+        -> u64;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_coverage_covered(
+        result: *const sk_generic_search_result,
+    ) -> u64;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_coverage_target_active(
+        result: *const sk_generic_search_result,
+    ) -> u64;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_degradation_flags(
+        result: *const sk_generic_search_result,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_issue_count(result: *const sk_generic_search_result) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_issue_message(
+        result: *const sk_generic_search_result,
+        index: u32,
+        out_message: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_generic_search_result_hit(

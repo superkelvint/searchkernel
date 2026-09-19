@@ -208,6 +208,11 @@ void invalid_argument_surface() {
                                             error.data(), ERROR_CAPACITY), "generic search null");
     assert(sk_generic_search_result_total_hit_count(nullptr) == 0);
     assert(sk_generic_search_result_hit_count(nullptr) == 0);
+    assert(sk_generic_search_result_coverage_active(nullptr) == 0);
+    assert(sk_generic_search_result_coverage_covered(nullptr) == 0);
+    assert(sk_generic_search_result_coverage_target_active(nullptr) == 0);
+    assert(sk_generic_search_result_degradation_flags(nullptr) == 0);
+    assert(sk_generic_search_result_issue_count(nullptr) == 0);
     assert(sk_generic_search_result_summary_count(nullptr, 0) == 0);
     assert(sk_generic_search_result_match_feature_count(nullptr) == 0);
     assert(sk_generic_search_result_grouping_count(nullptr) == 0);
@@ -570,6 +575,11 @@ void exercise_native_engine(const std::filesystem::path &data,
     expect_ok(sk_engine_search_generic(engine, query, generic, &generic_result,
                                        error.data(), ERROR_CAPACITY), "generic search");
     assert(sk_generic_search_result_hit_count(generic_result) == 1);
+    assert(sk_generic_search_result_coverage_active(generic_result) > 0);
+    assert(sk_generic_search_result_coverage_covered(generic_result) > 0);
+    assert(sk_generic_search_result_coverage_target_active(generic_result) > 0);
+    assert(sk_generic_search_result_degradation_flags(generic_result) == 0);
+    assert(sk_generic_search_result_issue_count(generic_result) == 0);
     assert(sk_generic_search_result_grouping_count(generic_result) == 1);
     assert(sk_generic_search_result_group_count(generic_result, 0) >= 1);
     const char *generic_id = nullptr;
@@ -594,7 +604,69 @@ void exercise_native_engine(const std::filesystem::path &data,
     expect_invalid(sk_generic_search_result_group(generic_result, 1, 0, &key_kind, &key_string,
                                                   &key_string_length, &key_integer, &group_count,
                                                   error.data(), ERROR_CAPACITY), "generic group bounds");
+    const char *issue_message = nullptr;
+    uint32_t issue_length = 0;
+    expect_invalid(sk_generic_search_result_issue_message(
+                       generic_result, 0, &issue_message, &issue_length,
+                       error.data(), ERROR_CAPACITY),
+                   "generic issue bounds");
     sk_generic_search_result_destroy(generic_result);
+    sk_generic_search_request_destroy(generic);
+    sk_query_destroy(query);
+
+    for (uint32_t index = 0; index < 20; ++index) {
+        const auto document_id = "id:test:typea::degraded-" + std::to_string(index);
+        sk_document *degraded_document = nullptr;
+        expect_ok(sk_document_create_empty(document_id.c_str(), &degraded_document,
+                                           error.data(), ERROR_CAPACITY),
+                  "degraded document create");
+        expect_ok(sk_document_add_integer(degraded_document, "qty", 18,
+                                          error.data(), ERROR_CAPACITY),
+                  "degraded document value");
+        expect_ok(sk_engine_put(engine, degraded_document, error.data(), ERROR_CAPACITY),
+                  "degraded document put");
+        sk_document_destroy(degraded_document);
+    }
+    query = make_equals_query(engine);
+    generic = nullptr;
+    expect_ok(sk_generic_search_request_create("default", 10, 0, SK_SUMMARY_NONE, &generic,
+                                               error.data(), ERROR_CAPACITY),
+              "degraded request");
+    expect_ok(sk_generic_search_request_add_sort(generic, "qty", SK_SORT_ASCENDING,
+                                                 SK_SORT_MISSING_DEFAULT, error.data(),
+                                                 ERROR_CAPACITY),
+              "degraded sort");
+    expect_ok(sk_generic_search_request_add_rank_property(
+                  generic, "vespa.matchphase.degradation.maxfiltercoverage", "0.9",
+                  error.data(), ERROR_CAPACITY),
+              "degraded match-phase property");
+    generic_result = nullptr;
+    expect_ok(sk_engine_search_generic(engine, query, generic, &generic_result,
+                                       error.data(), ERROR_CAPACITY),
+              "valid degraded search");
+    assert(generic_result != nullptr);
+    assert(sk_generic_search_result_hit_count(generic_result) > 0);
+    assert(sk_generic_search_result_coverage_active(generic_result) > 0);
+    assert(sk_generic_search_result_coverage_covered(generic_result) > 0);
+    assert(sk_generic_search_result_coverage_target_active(generic_result) > 0);
+    assert((sk_generic_search_result_degradation_flags(generic_result) &
+            SK_DEGRADATION_MATCH_PHASE) != 0);
+    sk_generic_search_result_destroy(generic_result);
+    sk_generic_search_request_destroy(generic);
+    sk_query_destroy(query);
+
+    query = make_equals_query(engine);
+    generic = nullptr;
+    expect_ok(sk_generic_search_request_create("missing-rank-profile", 10, 0,
+                                               SK_SUMMARY_NONE, &generic,
+                                               error.data(), ERROR_CAPACITY),
+              "hard failure request");
+    generic_result = reinterpret_cast<sk_generic_search_result *>(1);
+    expect(sk_engine_search_generic(engine, query, generic, &generic_result,
+                                    error.data(), ERROR_CAPACITY),
+           SK_NATIVE_STATUS_INVALID_ARGUMENT, "hard native search failure");
+    assert(generic_result == nullptr);
+    assert(error.bytes[0] != 0);
     sk_generic_search_request_destroy(generic);
     sk_query_destroy(query);
 

@@ -351,6 +351,49 @@ pub(crate) fn read_generic_search_result(
     let hit_count = unsafe { sys::sk_generic_search_result_hit_count(result.0.as_ptr()) } as usize;
     let total_hit_count =
         unsafe { sys::sk_generic_search_result_total_hit_count(result.0.as_ptr()) };
+    let coverage = crate::search::SearchCoverage {
+        active: unsafe { sys::sk_generic_search_result_coverage_active(result.0.as_ptr()) },
+        covered: unsafe { sys::sk_generic_search_result_coverage_covered(result.0.as_ptr()) },
+        target_active: unsafe {
+            sys::sk_generic_search_result_coverage_target_active(result.0.as_ptr())
+        },
+        degradation_flags: unsafe {
+            sys::sk_generic_search_result_degradation_flags(result.0.as_ptr())
+        },
+    };
+    let issue_count =
+        unsafe { sys::sk_generic_search_result_issue_count(result.0.as_ptr()) } as usize;
+    let mut issues = Vec::with_capacity(issue_count);
+    for issue_index in 0..issue_count {
+        let mut message = ptr::null();
+        let mut message_length = 0;
+        let mut error = NativeError::new();
+        let status = unsafe {
+            sys::sk_generic_search_result_issue_message(
+                result.0.as_ptr(),
+                issue_index as u32,
+                &mut message,
+                &mut message_length,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        };
+        check(status, &error)?;
+        if message.is_null() && message_length != 0 {
+            return Err(Error::message(
+                "native search result issue returned null message",
+            ));
+        }
+        let bytes = if message_length == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(message.cast::<u8>(), message_length as usize) }
+        };
+        issues.push(
+            String::from_utf8(bytes.to_vec())
+                .map_err(|_| Error::message("native search result issue is invalid UTF-8"))?,
+        );
+    }
     let match_feature_count =
         unsafe { sys::sk_generic_search_result_match_feature_count(result.0.as_ptr()) } as usize;
     let mut match_feature_names = Vec::with_capacity(match_feature_count);
@@ -515,6 +558,8 @@ pub(crate) fn read_generic_search_result(
         total_hits_relation: TotalHitsRelation::Exact,
         hits,
         facets,
+        coverage,
+        issues,
     })
 }
 

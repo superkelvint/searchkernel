@@ -90,6 +90,30 @@ pub struct SearchResult {
     pub total_hits_relation: TotalHitsRelation,
     pub hits: Vec<Hit>,
     pub facets: Vec<GroupingResult>,
+    pub coverage: SearchCoverage,
+    pub issues: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchCoverage {
+    pub active: u64,
+    pub covered: u64,
+    pub target_active: u64,
+    pub degradation_flags: u32,
+}
+
+impl SearchCoverage {
+    pub fn degraded_by_match_phase(&self) -> bool {
+        self.degradation_flags & searchkernel_vespa_bindings::SK_DEGRADATION_MATCH_PHASE != 0
+    }
+
+    pub fn degraded_by_timeout(&self) -> bool {
+        self.degradation_flags & searchkernel_vespa_bindings::SK_DEGRADATION_TIMEOUT != 0
+    }
+
+    pub fn degraded_by_ann_timeout(&self) -> bool {
+        self.degradation_flags & searchkernel_vespa_bindings::SK_DEGRADATION_ANN_TIMEOUT != 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

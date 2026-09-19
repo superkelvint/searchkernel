@@ -31,7 +31,7 @@ pub use query::{
 pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 pub use search::{
     AggregateValue, Aggregation, FacetRequest, Group, GroupingOrder, GroupingRequest,
-    GroupingResult, Hit, MissingPlacement, QueryInput, SearchRequest, SearchResult, SortField,
+    GroupingResult, Hit, MissingPlacement, QueryInput, SearchCoverage, SearchRequest, SearchResult,
     SortOrder, Source, SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
