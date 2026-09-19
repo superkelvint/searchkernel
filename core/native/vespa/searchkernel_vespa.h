@@ -1,6 +1,7 @@
 #ifndef SEARCHKERNEL_VESPA_H
 #define SEARCHKERNEL_VESPA_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -26,6 +27,7 @@ extern "C" {
 #define SK_NATIVE_STATUS_INTERNAL 2
 #define SK_NATIVE_STATUS_OUT_OF_MEMORY 3
 #define SK_NATIVE_STATUS_UNSUPPORTED 4
+#define SK_NATIVE_STATUS_TYPE_ERROR 6
 
 #define SK_TEXT_QUERY_TERM 1U
 #define SK_TEXT_QUERY_PHRASE 2U
@@ -73,12 +75,21 @@ extern "C" {
 #define SK_AGGREGATION_MIN 2U
 #define SK_AGGREGATION_MAX 3U
 #define SK_AGGREGATION_AVERAGE 4U
+#define SK_GROUPING_RESULT_VALUE_STRING 1U
+#define SK_GROUPING_RESULT_VALUE_INTEGER 2U
+#define SK_GROUPING_RESULT_VALUE_FLOAT 3U
+#define SK_GROUPING_TREE_OUTPUT_VALUE 1U
+#define SK_GROUPING_TREE_OUTPUT_HIT_LIST 2U
 #define SK_GROUP_ORDER_NONE 0U
 #define SK_GROUP_ORDER_COUNT_ASC 1U
 #define SK_GROUP_ORDER_COUNT_DESC 2U
 #define SK_GROUP_ORDER_VALUE_ASC 3U
 #define SK_GROUP_ORDER_VALUE_DESC 4U
 #define SK_NATIVE_STATUS_DEADLINE_EXCEEDED 5U
+
+#define SK_DEGRADATION_MATCH_PHASE 0x01U
+#define SK_DEGRADATION_TIMEOUT 0x02U
+#define SK_DEGRADATION_ANN_TIMEOUT 0x04U
 
 /*
  * This is a primitive-only ABI. The semantic objects are opaque handles; the
@@ -108,6 +119,22 @@ typedef struct sk_generic_search_request sk_generic_search_request;
 typedef struct sk_generic_grouping_request sk_generic_grouping_request;
 typedef struct sk_local_search_result sk_generic_search_result;
 typedef struct sk_local_grouping_result sk_generic_grouping_result;
+typedef struct sk_feature_value sk_feature_value;
+
+/* FeatureSet::Value is deliberately narrower than the general Search Kernel
+ * value model: Vespa exposes either a scalar double or an opaque data payload.
+ * Data bytes returned by a result are borrowed from that result. */
+#define SK_FEATURE_VALUE_KIND_INVALID 0U
+#define SK_FEATURE_VALUE_DOUBLE 1U
+#define SK_FEATURE_VALUE_DATA 2U
+typedef struct sk_grouping_plan sk_grouping_plan;
+typedef struct sk_grouping_level sk_grouping_level;
+typedef struct sk_grouping_expression sk_grouping_expression;
+typedef struct sk_grouping_aggregation sk_grouping_aggregation;
+typedef struct sk_grouping_result_value sk_grouping_result_value;
+typedef struct sk_grouping_tree_output sk_grouping_tree_output;
+typedef struct sk_grouping_tree_result sk_grouping_tree_result;
+typedef struct sk_grouping_tree_node sk_grouping_tree_node;
 
 /*
  * Diagnostics are caller-owned bytes rather than a public error struct. The
@@ -122,7 +149,7 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
 
 /* This ABI revision adds Typed Query B nodes on top of tensor values and
    nearest-neighbor query support from the previous revision. */
-#define SK_NATIVE_ABI_VERSION 8U
+#define SK_NATIVE_ABI_VERSION 9U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -498,7 +525,21 @@ SK_API int32_t sk_local_search_result_match_feature_value(
     const sk_local_search_result *result, uint32_t hit_index,
     uint32_t feature_index, double *out_value, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Returns a borrowed feature value owned by result. */
+SK_API int32_t sk_local_search_result_match_feature_value_ref(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t feature_index, const sk_feature_value **out_value,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_local_search_result_destroy(sk_local_search_result *result) SK_NOEXCEPT;
+
+SK_API uint32_t sk_feature_value_kind(const sk_feature_value *value) SK_NOEXCEPT;
+SK_API int32_t sk_feature_value_double(const sk_feature_value *value,
+                                       double *out_value, uint8_t *out_error,
+                                       uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_feature_value_data(const sk_feature_value *value,
+                                     const uint8_t **out_data, size_t *out_size,
+                                     uint8_t *out_error,
+                                     uint32_t out_error_capacity) SK_NOEXCEPT;
 
 /* Generic M-layer search request/result. The older local request remains a
    frozen milestone surface; new generic consumers use these handles. */
@@ -543,6 +584,20 @@ SK_API uint64_t sk_generic_search_result_total_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint64_t sk_generic_search_result_coverage_active(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint64_t sk_generic_search_result_coverage_covered(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint64_t sk_generic_search_result_coverage_target_active(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_degradation_flags(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_issue_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_issue_message(
+    const sk_generic_search_result *result, uint32_t index,
+    const char **out_message, uint32_t *out_length, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_hit(
     const sk_generic_search_result *result, uint32_t index,
     const char **out_id, uint32_t *out_id_length, double *out_score,
@@ -569,6 +624,11 @@ SK_API int32_t sk_generic_search_result_match_feature_value(
     const sk_generic_search_result *result, uint32_t hit_index,
     uint32_t feature_index, double *out_value, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Returns a borrowed feature value owned by result. */
+SK_API int32_t sk_generic_search_result_match_feature_value_ref(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t feature_index, const sk_feature_value **out_value,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_grouping_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_group_count(
@@ -640,6 +700,86 @@ SK_API int32_t sk_engine_put_attributes(
 SK_API int32_t sk_engine_update_attributes(
     sk_engine *engine, const sk_attribute_update *update,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+
+/* General grouping uses opaque, domain-specific handles. Classifier and
+   aggregation inputs are cloned when attached to a plan/level. A level handle
+   is borrowed from its parent plan and remains valid only while that plan is
+   alive. */
+SK_API int32_t sk_grouping_plan_create(
+    sk_grouping_plan **out_plan, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_attribute(
+    const char *field, sk_grouping_expression **out_expression,
+    char *error, size_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_grouping_expression_destroy(
+    sk_grouping_expression *expression) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_count(
+    sk_grouping_aggregation **out, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_average(
+    const sk_grouping_expression *expression,
+    sk_grouping_aggregation **out, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_grouping_aggregation_destroy(
+    sk_grouping_aggregation *aggregation) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_plan_add_level(
+    sk_grouping_plan *plan, const sk_grouping_expression *classifier,
+    sk_grouping_level **out_level, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_add_count(
+    sk_grouping_level *level, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_add_aggregation(
+    sk_grouping_level *level, uint32_t kind, const char *field,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_add_aggregation_handle(
+    sk_grouping_level *level, const sk_grouping_aggregation *aggregation,
+    char *error, size_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_grouping_plan_destroy(sk_grouping_plan *plan) SK_NOEXCEPT;
+SK_API int32_t sk_engine_group_tree(
+    const sk_engine *engine, const sk_query *query,
+    const sk_grouping_plan *plan, sk_grouping_tree_result **out_result,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_result_root(
+    const sk_grouping_tree_result *result,
+    const sk_grouping_tree_node **out_root, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_tree_node_group_count(
+    const sk_grouping_tree_node *node) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_node_group(
+    const sk_grouping_tree_node *node, uint32_t group_index,
+    const sk_grouping_tree_node **out_group, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_node_key(
+    const sk_grouping_tree_node *node,
+    const sk_grouping_result_value **out_value, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_result_value_kind(
+    const sk_grouping_result_value *value) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_result_value_string(
+    const sk_grouping_result_value *value, const char **out_string,
+    uint32_t *out_length, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_result_value_integer(
+    const sk_grouping_result_value *value, int64_t *out_integer,
+    char *error, size_t error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_result_value_float(
+    const sk_grouping_result_value *value, double *out_float,
+    char *error, size_t error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_tree_node_output_count(
+    const sk_grouping_tree_node *node) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_node_output(
+    const sk_grouping_tree_node *node, uint32_t output_index,
+    const sk_grouping_tree_output **out_output, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_tree_output_kind(
+    const sk_grouping_tree_output *output) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_output_value(
+    const sk_grouping_tree_output *output,
+    const sk_grouping_result_value **out_value, char *error,
+    size_t error_capacity) SK_NOEXCEPT;
+SK_API void sk_grouping_tree_result_destroy(
+    sk_grouping_tree_result *result) SK_NOEXCEPT;
 
 SK_API int32_t sk_local_grouping_request_create(
     const char *group_field, sk_local_grouping_request **out_request,

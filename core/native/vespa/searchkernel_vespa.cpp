@@ -61,6 +61,7 @@
 #include <vespa/searchlib/engine/searchrequest.h>
 #include <vespa/searchlib/engine/docsumreply.h>
 #include <vespa/searchlib/engine/docsumrequest.h>
+#include <vespa/vespalib/util/featureset.h>
 #include <vespa/searchlib/aggregation/averageaggregationresult.h>
 #include <vespa/searchlib/aggregation/countaggregationresult.h>
 #include <vespa/searchlib/aggregation/group.h>
@@ -192,7 +193,59 @@ using vespa::config::content::core::BucketspacesConfig;
 using vespa::config::search::core::ProtonConfig;
 using cloud::config::filedistribution::FiledistributorrpcConfig;
 
+struct sk_feature_value {
+    vespalib::FeatureSet::Value value;
+};
+
+enum class GroupingAggregationKind : uint32_t {
+    COUNT,
+    AVERAGE,
+};
+
+struct sk_grouping_expression {
+    std::unique_ptr<search::expression::ExpressionNode> expression;
+};
+
+struct sk_grouping_aggregation {
+    GroupingAggregationKind kind = GroupingAggregationKind::COUNT;
+    std::unique_ptr<search::expression::ExpressionNode> expression;
+};
+
+struct sk_grouping_level {
+    std::unique_ptr<search::expression::ExpressionNode> classifier;
+    std::vector<sk_grouping_aggregation> aggregations;
+};
+
+struct sk_grouping_plan {
+    std::vector<std::unique_ptr<sk_grouping_level>> levels;
+};
+
+struct sk_grouping_result_value {
+    uint32_t kind = 0;
+    std::string string;
+    int64_t integer = 0;
+    double floating = 0.0;
+};
+
+struct sk_grouping_tree_output {
+    uint32_t kind = SK_GROUPING_TREE_OUTPUT_VALUE;
+    std::unique_ptr<sk_grouping_result_value> value;
+};
+
+struct sk_grouping_tree_node {
+    std::unique_ptr<sk_grouping_result_value> key;
+    std::vector<std::unique_ptr<sk_grouping_tree_output>> outputs;
+    std::vector<std::unique_ptr<sk_grouping_tree_node>> groups;
+};
+
+struct sk_grouping_tree_result {
+    std::unique_ptr<sk_grouping_tree_node> root;
+};
+
 namespace {
+
+std::unique_ptr<sk_grouping_tree_node> grouping_tree_node(
+    const Group &group, bool include_key);
 
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 class FailpointController {
@@ -1067,9 +1120,14 @@ struct LocalHitState {
 
 struct LocalSearchResultState {
     uint64_t total_hit_count = 0;
+    uint64_t coverage_active = 0;
+    uint64_t coverage_covered = 0;
+    uint64_t coverage_target_active = 0;
+    uint32_t degradation_flags = 0;
     std::vector<LocalHitState> hits;
     std::vector<std::string> match_feature_names;
-    std::vector<double> match_feature_values;
+    std::vector<sk_feature_value> match_feature_values;
+    std::vector<std::string> issues;
     std::vector<LocalGroupingResultState> groupings;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     std::shared_ptr<const FailpointController> failpoints;
@@ -1086,6 +1144,12 @@ public:
         : std::runtime_error(message), _detail_code(detail_code) {}
 
     const char *detail_code() const noexcept { return _detail_code; }
+};
+
+class TypeErrorNativeError final : public std::runtime_error {
+public:
+    explicit TypeErrorNativeError(const std::string &message)
+        : std::runtime_error(message) {}
 };
 
 class DeadlineExceededNativeError final : public std::runtime_error {
@@ -2401,16 +2465,21 @@ class EmbeddedEngine {
         manifest.fields.reserve(fields.children());
         std::vector<std::string> field_names;
         field_names.reserve(fields.children());
+        bool legacy_manifest_shape = false;
         for (size_t index = 0; index < fields.children(); ++index) {
             const auto &field = fields[index];
             if (!is_slime_type(field, vespalib::slime::OBJECT::ID) ||
                 !is_slime_type(field["name"], vespalib::slime::STRING::ID) ||
                 !is_slime_type(field["type"], vespalib::slime::STRING::ID) ||
-                !is_slime_type(field["index"], vespalib::slime::BOOL::ID) ||
                 !is_slime_type(field["attribute"], vespalib::slime::BOOL::ID) ||
                 !is_slime_type(field["summary"], vespalib::slime::BOOL::ID)) {
                 throw std::invalid_argument("generated schema manifest field is incomplete");
             }
+            if (field["index"].valid() &&
+                !is_slime_type(field["index"], vespalib::slime::BOOL::ID)) {
+                throw std::invalid_argument("generated schema manifest field index is invalid");
+            }
+            legacy_manifest_shape |= !field["index"].valid();
             auto name = field["name"].asString().make_string();
             validate_manifest_field_name(name);
             if (std::find(field_names.begin(), field_names.end(), name) != field_names.end()) {
@@ -2422,7 +2491,9 @@ class EmbeddedEngine {
                 type != "float" && type != "boolean" && type != "tensor") {
                 throw std::invalid_argument("unsupported generated schema field type: " + type);
             }
-            const bool indexed = field["index"].asBool();
+            const bool indexed = is_slime_type(field["index"], vespalib::slime::BOOL::ID)
+                                     ? field["index"].asBool()
+                                     : false;
             const bool attribute = field["attribute"].asBool();
             const bool summary = field["summary"].asBool();
             const auto tensor_type = is_slime_type(field["tensor_type"], vespalib::slime::STRING::ID)
@@ -2436,7 +2507,9 @@ class EmbeddedEngine {
             manifest.fields.push_back({std::move(name), std::move(type), std::move(tensor_type),
                                        indexed, attribute, summary});
         }
-        validate_generated_configuration(manifest, config_dir);
+        if (!legacy_manifest_shape) {
+            validate_generated_configuration(manifest, config_dir);
+        }
         return manifest;
     }
 
@@ -3155,6 +3228,69 @@ public:
         return result;
     }
 
+    Grouping make_grouping(const sk_grouping_plan &plan) const {
+        if (plan.levels.empty()) {
+            throw std::invalid_argument("grouping plan must contain at least one level");
+        }
+        Grouping grouping;
+        grouping.setFirstLevel(0)
+                .setLastLevel(static_cast<uint32_t>(plan.levels.size()));
+        for (const auto &level_state : plan.levels) {
+            if (!level_state || !level_state->classifier) {
+                throw std::invalid_argument("grouping level classifier is missing");
+            }
+            const auto *classifier = dynamic_cast<const AttributeNode *>(
+                level_state->classifier.get());
+            if (!classifier) {
+                throw UnsupportedNativeError(
+                    "grouping_expression_kind",
+                    "only attribute grouping classifiers are supported by M9");
+            }
+            const auto &classifier_field = require_attribute_field(
+                classifier->getAttributeName(), {"string", "integer", "float"});
+            (void)classifier_field;
+            auto level = GroupingLevel().setExpression(
+                std::unique_ptr<search::expression::ExpressionNode>(
+                    level_state->classifier->clone()));
+            if (level_state->aggregations.empty()) {
+                throw std::invalid_argument("grouping level must contain an aggregation");
+            }
+            for (const auto &aggregation_state : level_state->aggregations) {
+                std::unique_ptr<AggregationResult> aggregation;
+                if (aggregation_state.kind == GroupingAggregationKind::COUNT) {
+                    auto count = std::make_unique<CountAggregationResult>();
+                    count->setExpression(std::unique_ptr<search::expression::ExpressionNode>(
+                        level_state->classifier->clone()));
+                    aggregation = std::move(count);
+                } else if (aggregation_state.kind == GroupingAggregationKind::AVERAGE) {
+                    if (!aggregation_state.expression) {
+                        throw std::invalid_argument(
+                            "average grouping aggregation expression is missing");
+                    }
+                    const auto *expression = dynamic_cast<const AttributeNode *>(
+                        aggregation_state.expression.get());
+                    if (!expression) {
+                        throw UnsupportedNativeError(
+                            "grouping_expression_kind",
+                            "only attribute average expressions are supported by M9");
+                    }
+                    require_attribute_field(expression->getAttributeName(), {"integer", "float"});
+                    auto average = std::make_unique<AverageAggregationResult>();
+                    average->setExpression(std::unique_ptr<search::expression::ExpressionNode>(
+                        aggregation_state.expression->clone()));
+                    aggregation = std::move(average);
+                } else {
+                    throw UnsupportedNativeError(
+                        "grouping_aggregation_kind",
+                        "unsupported grouping aggregation kind");
+                }
+                level.addAggregationResult(std::move(aggregation));
+            }
+            grouping.addLevel(std::move(level));
+        }
+        return grouping;
+    }
+
     Grouping make_grouping(const LocalGroupingRequestState &options) const {
         const auto &group_field = require_manifest_field(options.group_field);
         if (!group_field.attribute) {
@@ -3387,11 +3523,25 @@ public:
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
-        if (reply->coverage.wasDegradedByTimeout()) {
-            throw DeadlineExceededNativeError("search execution deadline exceeded");
-        }
         LocalSearchResultState result;
         result.total_hit_count = reply->totalHitCount;
+        result.coverage_active = reply->coverage.getActive();
+        result.coverage_covered = reply->coverage.getCovered();
+        result.coverage_target_active = reply->coverage.getTargetActive();
+        if (reply->coverage.wasDegradedByMatchPhase()) {
+            result.degradation_flags |= SK_DEGRADATION_MATCH_PHASE;
+        }
+        if (reply->coverage.wasDegradedByTimeout()) {
+            result.degradation_flags |= SK_DEGRADATION_TIMEOUT;
+        }
+        if (reply->coverage.was_degraded_by_ann_timeout()) {
+            result.degradation_flags |= SK_DEGRADATION_ANN_TIMEOUT;
+        }
+        if (reply->my_issues) {
+            reply->my_issues->for_each_message([&result](const std::string &message) {
+                result.issues.push_back(message);
+            });
+        }
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
@@ -3415,10 +3565,7 @@ public:
         for (const size_t row : live_hit_rows) {
             for (size_t feature = 0; feature < result.match_feature_names.size(); ++feature) {
                 const auto &value = features.values[row * result.match_feature_names.size() + feature];
-                if (!value.is_double()) {
-                    throw std::runtime_error("M10 v1 match feature is not a scalar double");
-                }
-                result.match_feature_values.push_back(value.as_double());
+                result.match_feature_values.push_back({value});
             }
         }
         if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
@@ -3503,6 +3650,58 @@ public:
         Grouping result_grouping;
         result_grouping.deserialize(input);
         return decode_grouping(result_grouping, options);
+    }
+
+    sk_grouping_tree_result group_tree(const NativeQueryState &query,
+                                       const sk_grouping_plan &plan) const {
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
+        require_open();
+
+        SearchRequest request;
+        request.setTimeout(60s);
+        request.ranking = "default";
+        request.maxhits = 0;
+        request.propertiesMap.lookupCreate(search::MapNames::RANK)
+            .add("vespa.matching.numthreadspersearch", "1");
+        request.setSerializedQueryTree(
+            SerializedQueryTree::fromStackDump(query.serialized_stack_dump()));
+
+        const auto grouping = make_grouping(plan);
+        vespalib::nbostream request_buffer;
+        vespalib::NBOSerializer request_output(request_buffer);
+        uint32_t grouping_count = 1;
+        request_output << grouping_count;
+        grouping.serialize(request_output);
+        request.groupSpec.assign(request_buffer.data(),
+                                 request_buffer.data() + request_buffer.size());
+
+        failpoint("group_before_match");
+        auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        failpoint("group_after_match");
+        if (!reply) {
+            throw std::runtime_error("Vespa matcher returned no reply");
+        }
+        if (!reply->hits.empty()) {
+            throw std::runtime_error("general grouping returned ordinary hits");
+        }
+        if (reply->groupResult.empty()) {
+            throw std::runtime_error("general grouping result is empty");
+        }
+
+        vespalib::nbostream result_buffer(reply->groupResult.data(),
+                                          reply->groupResult.size());
+        vespalib::NBOSerializer input(result_buffer);
+        uint32_t result_count = 0;
+        input >> result_count;
+        if (result_count != 1) {
+            throw std::runtime_error("unexpected general grouping result count");
+        }
+        Grouping result_grouping;
+        result_grouping.deserialize(input);
+        sk_grouping_tree_result result;
+        result.root = grouping_tree_node(result_grouping.getRoot(), false);
+        return result;
     }
 
 public:
@@ -3666,6 +3865,8 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
                          exception.detail_code());
     } catch (const DeadlineExceededNativeError &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_DEADLINE_EXCEEDED, exception.what());
+    } catch (const TypeErrorNativeError &exception) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_TYPE_ERROR, exception.what());
     } catch (const std::invalid_argument &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
@@ -3675,12 +3876,106 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
     }
 }
 
+template <typename Function>
+int32_t invoke_grouping(char *error, size_t error_capacity,
+                        Function &&function) noexcept {
+    const auto capacity = error_capacity > std::numeric_limits<uint32_t>::max()
+                              ? std::numeric_limits<uint32_t>::max()
+                              : static_cast<uint32_t>(error_capacity);
+    return invoke(reinterpret_cast<uint8_t *>(error), capacity,
+                  std::forward<Function>(function));
+}
+
 template <typename Handle>
 void destroy_noexcept(Handle *handle) noexcept {
     try {
         delete handle;
     } catch (...) {
     }
+}
+
+std::unique_ptr<sk_grouping_result_value> grouping_result_value(
+    const search::expression::ResultNode &node) {
+    auto value = std::make_unique<sk_grouping_result_value>();
+    if (node.getClass().inherits(StringResultNode::classId)) {
+        HoldString string(node);
+        value->kind = SK_GROUPING_RESULT_VALUE_STRING;
+        value->string = std::string(string);
+    } else if (node.getClass().inherits(Int64ResultNode::classId)) {
+        value->kind = SK_GROUPING_RESULT_VALUE_INTEGER;
+        value->integer = static_cast<const Int64ResultNode &>(node).getInteger();
+    } else if (node.getClass().inherits(FloatResultNode::classId)) {
+        value->kind = SK_GROUPING_RESULT_VALUE_FLOAT;
+        value->floating = static_cast<const FloatResultNode &>(node).getFloat();
+    } else {
+        throw UnsupportedNativeError(
+            "grouping_result_value_kind",
+            "Vespa grouping result value is not supported by the native ABI");
+    }
+    return value;
+}
+
+std::unique_ptr<sk_grouping_tree_output> grouping_tree_output(
+    const AggregationResult &aggregation) {
+    auto output = std::make_unique<sk_grouping_tree_output>();
+    output->kind = SK_GROUPING_TREE_OUTPUT_VALUE;
+    output->value = std::make_unique<sk_grouping_result_value>();
+    if (aggregation.getClass().inherits(CountAggregationResult::classId)) {
+        const auto count = static_cast<const CountAggregationResult &>(aggregation).getCount();
+        if (count > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+            throw std::runtime_error("grouping count cannot be represented as int64");
+        }
+        output->value->kind = SK_GROUPING_RESULT_VALUE_INTEGER;
+        output->value->integer = static_cast<int64_t>(count);
+    } else if (aggregation.getClass().inherits(AverageAggregationResult::classId)) {
+        output->value->kind = SK_GROUPING_RESULT_VALUE_FLOAT;
+        output->value->floating = static_cast<const AverageAggregationResult &>(aggregation)
+                                     .getAverage()
+                                     .getFloat();
+    } else {
+        throw UnsupportedNativeError(
+            "grouping_output_kind",
+            "Vespa grouping output is not supported by the M9 native ABI");
+    }
+    return output;
+}
+
+std::unique_ptr<sk_grouping_tree_node> grouping_tree_node(
+    const Group &group, bool include_key) {
+    auto node = std::make_unique<sk_grouping_tree_node>();
+    if (include_key) {
+        node->key = grouping_result_value(group.getId());
+    }
+    node->outputs.reserve(group.getAggrSize());
+    for (uint32_t index = 0; index < group.getAggrSize(); ++index) {
+        node->outputs.push_back(grouping_tree_output(group.getAggregationResult(index)));
+    }
+    node->groups.reserve(group.getChildrenSize());
+    for (uint32_t index = 0; index < group.getChildrenSize(); ++index) {
+        node->groups.push_back(grouping_tree_node(group.getChild(index), true));
+    }
+    return node;
+}
+
+void attach_grouping_aggregation(sk_grouping_level &level,
+                                  const sk_grouping_aggregation &aggregation) {
+    sk_grouping_aggregation copy;
+    copy.kind = aggregation.kind;
+    if (aggregation.expression) {
+        copy.expression.reset(aggregation.expression->clone());
+    }
+    level.aggregations.push_back(std::move(copy));
+}
+
+std::unique_ptr<sk_grouping_expression> make_grouping_attribute_expression(
+    const char *field) {
+    validate_field_name(field);
+    if (*field == '\0') {
+        throw std::invalid_argument("grouping expression field must not be empty");
+    }
+    auto expression = std::make_unique<sk_grouping_expression>();
+    expression->expression = std::make_unique<AttributeNode>(field);
+    return expression;
 }
 
 std::string copy_text_bytes(const uint8_t *bytes, uint32_t length,
@@ -4144,10 +4439,10 @@ void match_feature_name(const LocalSearchResultState &result, uint32_t feature_i
     *out_length = static_cast<uint32_t>(name.size());
 }
 
-void match_feature_value(const LocalSearchResultState &result, uint32_t hit_index,
-                         uint32_t feature_index, double *out_value) {
-    if (!out_value || hit_index >= result.hits.size() ||
-        feature_index >= result.match_feature_names.size()) {
+const sk_feature_value *match_feature_value_ref(const LocalSearchResultState &result,
+                                                uint32_t hit_index,
+                                                uint32_t feature_index) {
+    if (hit_index >= result.hits.size() || feature_index >= result.match_feature_names.size()) {
         throw std::invalid_argument("match feature value arguments are invalid");
     }
     const size_t index = static_cast<size_t>(hit_index) * result.match_feature_names.size() +
@@ -4161,7 +4456,19 @@ void match_feature_value(const LocalSearchResultState &result, uint32_t hit_inde
         throw std::runtime_error("injected match feature accessor failure");
     }
 #endif
-    *out_value = result.match_feature_values[index];
+    return &result.match_feature_values[index];
+}
+
+void match_feature_value_double(const LocalSearchResultState &result, uint32_t hit_index,
+                                uint32_t feature_index, double *out_value) {
+    if (!out_value) {
+        throw std::invalid_argument("match feature value arguments are invalid");
+    }
+    const auto *value = match_feature_value_ref(result, hit_index, feature_index);
+    if (!value->value.is_double()) {
+        throw TypeErrorNativeError("match feature value is data, not double");
+    }
+    *out_value = value->value.as_double();
 }
 
 } // namespace
@@ -5002,7 +5309,61 @@ extern "C" int32_t sk_local_search_result_match_feature_value(
                          "match feature value arguments are invalid");
     }
     return invoke(error, error_capacity,
-                  [&] { match_feature_value(*result, hit_index, feature_index, out_value); });
+                  [&] { match_feature_value_double(*result, hit_index, feature_index, out_value); });
+}
+
+extern "C" int32_t sk_local_search_result_match_feature_value_ref(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t feature_index, const sk_feature_value **out_value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = nullptr;
+    if (!result || !out_value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature value arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        *out_value = match_feature_value_ref(*result, hit_index, feature_index);
+    });
+}
+
+extern "C" uint32_t sk_feature_value_kind(const sk_feature_value *value) SK_NOEXCEPT {
+    if (!value) return SK_FEATURE_VALUE_KIND_INVALID;
+    return value->value.is_double() ? SK_FEATURE_VALUE_DOUBLE : SK_FEATURE_VALUE_DATA;
+}
+
+extern "C" int32_t sk_feature_value_double(
+    const sk_feature_value *value, double *out_value, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = 0.0;
+    if (!value || !out_value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "feature double accessor arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (!value->value.is_double()) {
+            throw TypeErrorNativeError("feature value is data, not double");
+        }
+        *out_value = value->value.as_double();
+    });
+}
+
+extern "C" int32_t sk_feature_value_data(
+    const sk_feature_value *value, const uint8_t **out_data, size_t *out_size,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_data) *out_data = nullptr;
+    if (out_size) *out_size = 0;
+    if (!value || !out_data || !out_size) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "feature data accessor arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (!value->value.is_data()) {
+            throw TypeErrorNativeError("feature value is double, not data");
+        }
+        const auto data = value->value.as_data();
+        *out_data = reinterpret_cast<const uint8_t *>(data.data);
+        *out_size = data.size;
+    });
 }
 
 extern "C" void sk_local_search_result_destroy(sk_local_search_result *result) SK_NOEXCEPT { destroy_noexcept(result); }
@@ -5063,6 +5424,336 @@ extern "C" int32_t sk_engine_put_attributes(sk_engine *engine, const sk_attribut
 extern "C" int32_t sk_engine_update_attributes(sk_engine *engine, const sk_attribute_update *update, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (!engine || !engine->impl || !update) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, "attribute update arguments are invalid");
     return invoke(error, error_capacity, [&] { engine->impl->update_attributes(*update); });
+}
+
+extern "C" int32_t sk_grouping_plan_create(
+    sk_grouping_plan **out_plan, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_plan) *out_plan = nullptr;
+    if (!out_plan) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping plan arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto plan = std::make_unique<sk_grouping_plan>();
+        *out_plan = plan.release();
+    });
+}
+
+extern "C" int32_t sk_grouping_expression_attribute(
+    const char *field, sk_grouping_expression **out_expression,
+    char *error, size_t error_capacity) SK_NOEXCEPT {
+    if (out_expression) *out_expression = nullptr;
+    if (!field || !out_expression) {
+        return set_error(reinterpret_cast<uint8_t *>(error),
+                         static_cast<uint32_t>(std::min(error_capacity,
+                                                        static_cast<size_t>(std::numeric_limits<uint32_t>::max()))),
+                         SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping expression arguments are invalid");
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        auto expression = make_grouping_attribute_expression(field);
+        *out_expression = expression.release();
+    });
+}
+
+extern "C" void sk_grouping_expression_destroy(
+    sk_grouping_expression *expression) SK_NOEXCEPT {
+    destroy_noexcept(expression);
+}
+
+extern "C" int32_t sk_grouping_aggregation_count(
+    sk_grouping_aggregation **out, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!out) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping aggregation output is null");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        auto aggregation = std::make_unique<sk_grouping_aggregation>();
+        aggregation->kind = GroupingAggregationKind::COUNT;
+        *out = aggregation.release();
+    });
+}
+
+extern "C" int32_t sk_grouping_aggregation_average(
+    const sk_grouping_expression *expression,
+    sk_grouping_aggregation **out, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!expression || !out) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("average grouping aggregation arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (!expression->expression) {
+            throw std::invalid_argument("grouping expression is empty");
+        }
+        auto aggregation = std::make_unique<sk_grouping_aggregation>();
+        aggregation->kind = GroupingAggregationKind::AVERAGE;
+        aggregation->expression.reset(expression->expression->clone());
+        *out = aggregation.release();
+    });
+}
+
+extern "C" void sk_grouping_aggregation_destroy(
+    sk_grouping_aggregation *aggregation) SK_NOEXCEPT {
+    destroy_noexcept(aggregation);
+}
+
+extern "C" int32_t sk_grouping_plan_add_level(
+    sk_grouping_plan *plan, const sk_grouping_expression *classifier,
+    sk_grouping_level **out_level, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out_level) *out_level = nullptr;
+    if (!plan || !classifier || !out_level) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping level arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (!classifier->expression) {
+            throw std::invalid_argument("grouping classifier expression is empty");
+        }
+        auto level = std::make_unique<sk_grouping_level>();
+        level->classifier.reset(classifier->expression->clone());
+        plan->levels.push_back(std::move(level));
+        *out_level = plan->levels.back().get();
+    });
+}
+
+extern "C" int32_t sk_grouping_level_add_count(
+    sk_grouping_level *level, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping level is null");
+    }
+    return invoke(error, error_capacity, [&] {
+        sk_grouping_aggregation aggregation;
+        aggregation.kind = GroupingAggregationKind::COUNT;
+        attach_grouping_aggregation(*level, aggregation);
+    });
+}
+
+extern "C" int32_t sk_grouping_level_add_aggregation(
+    sk_grouping_level *level, uint32_t kind, const char *field,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping aggregation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (kind != SK_AGGREGATION_AVERAGE) {
+            throw UnsupportedNativeError(
+                "grouping_aggregation_kind",
+                "only average is supported by the general grouping convenience API");
+        }
+        sk_grouping_aggregation aggregation;
+        aggregation.kind = GroupingAggregationKind::AVERAGE;
+        aggregation.expression.reset(
+            make_grouping_attribute_expression(field)->expression->clone());
+        attach_grouping_aggregation(*level, aggregation);
+    });
+}
+
+extern "C" int32_t sk_grouping_level_add_aggregation_handle(
+    sk_grouping_level *level, const sk_grouping_aggregation *aggregation,
+    char *error, size_t error_capacity) SK_NOEXCEPT {
+    if (!level || !aggregation) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping aggregation handle arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (aggregation->kind == GroupingAggregationKind::AVERAGE &&
+            !aggregation->expression) {
+            throw std::invalid_argument("average grouping aggregation expression is empty");
+        }
+        attach_grouping_aggregation(*level, *aggregation);
+    });
+}
+
+extern "C" void sk_grouping_plan_destroy(sk_grouping_plan *plan) SK_NOEXCEPT {
+    destroy_noexcept(plan);
+}
+
+extern "C" int32_t sk_engine_group_tree(
+    const sk_engine *engine, const sk_query *query,
+    const sk_grouping_plan *plan, sk_grouping_tree_result **out_result,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    // EmbeddedEngine::group_tree maps GroupingLevel and Grouping classifiers and
+    // their AggregationResult, CountAggregationResult, and
+    // AverageAggregationResult prototypes from AttributeNode expressions into
+    // groupSpec, then recursively decodes Group, getChildrenSize, getChild, and
+    // groupResult from the real Vespa grouping response.
+    if (out_result) *out_result = nullptr;
+    if (!engine || !engine->impl || !query || !plan || !out_result) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "general grouping arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_grouping_tree_result>(
+            engine->impl->group_tree(*query, *plan));
+        *out_result = result.release();
+    });
+}
+
+extern "C" int32_t sk_grouping_tree_result_root(
+    const sk_grouping_tree_result *result,
+    const sk_grouping_tree_node **out_root, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_root) *out_root = nullptr;
+    if (!result || !result->root || !out_root) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping result root arguments are invalid");
+    }
+    *out_root = result->root.get();
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_grouping_tree_node_group_count(
+    const sk_grouping_tree_node *node) SK_NOEXCEPT {
+    return node ? static_cast<uint32_t>(node->groups.size()) : 0;
+}
+
+extern "C" int32_t sk_grouping_tree_node_group(
+    const sk_grouping_tree_node *node, uint32_t group_index,
+    const sk_grouping_tree_node **out_group, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_group) *out_group = nullptr;
+    if (!node || !out_group || group_index >= node->groups.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping child arguments are invalid");
+    }
+    *out_group = node->groups[group_index].get();
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_grouping_tree_node_key(
+    const sk_grouping_tree_node *node,
+    const sk_grouping_result_value **out_value, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = nullptr;
+    if (!node || !node->key || !out_value) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping node key arguments are invalid");
+        });
+    }
+    *out_value = node->key.get();
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_grouping_result_value_kind(
+    const sk_grouping_result_value *value) SK_NOEXCEPT {
+    return value ? value->kind : 0;
+}
+
+extern "C" int32_t sk_grouping_result_value_string(
+    const sk_grouping_result_value *value, const char **out_string,
+    uint32_t *out_length, char *error, size_t error_capacity) SK_NOEXCEPT {
+    if (out_string) *out_string = nullptr;
+    if (out_length) *out_length = 0;
+    if (!value || !out_string || !out_length) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping string value arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (value->kind != SK_GROUPING_RESULT_VALUE_STRING) {
+            throw std::invalid_argument("grouping result value is not a string");
+        }
+        if (value->string.size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::runtime_error("grouping string value is too large");
+        }
+        *out_string = value->string.data();
+        *out_length = static_cast<uint32_t>(value->string.size());
+    });
+}
+
+extern "C" int32_t sk_grouping_result_value_integer(
+    const sk_grouping_result_value *value, int64_t *out_integer,
+    char *error, size_t error_capacity) SK_NOEXCEPT {
+    if (out_integer) *out_integer = 0;
+    if (!value || !out_integer) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping integer value arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (value->kind != SK_GROUPING_RESULT_VALUE_INTEGER) {
+            throw std::invalid_argument("grouping result value is not an integer");
+        }
+        *out_integer = value->integer;
+    });
+}
+
+extern "C" int32_t sk_grouping_result_value_float(
+    const sk_grouping_result_value *value, double *out_float,
+    char *error, size_t error_capacity) SK_NOEXCEPT {
+    if (out_float) *out_float = 0.0;
+    if (!value || !out_float) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping float value arguments are invalid");
+        });
+    }
+    return invoke_grouping(error, error_capacity, [&] {
+        if (value->kind != SK_GROUPING_RESULT_VALUE_FLOAT) {
+            throw std::invalid_argument("grouping result value is not a float");
+        }
+        *out_float = value->floating;
+    });
+}
+
+extern "C" uint32_t sk_grouping_tree_node_output_count(
+    const sk_grouping_tree_node *node) SK_NOEXCEPT {
+    return node ? static_cast<uint32_t>(node->outputs.size()) : 0;
+}
+
+extern "C" int32_t sk_grouping_tree_node_output(
+    const sk_grouping_tree_node *node, uint32_t output_index,
+    const sk_grouping_tree_output **out_output, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out_output) *out_output = nullptr;
+    if (!node || !out_output || output_index >= node->outputs.size()) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping output arguments are invalid");
+        });
+    }
+    *out_output = node->outputs[output_index].get();
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_grouping_tree_output_kind(
+    const sk_grouping_tree_output *output) SK_NOEXCEPT {
+    return output ? output->kind : 0;
+}
+
+extern "C" int32_t sk_grouping_tree_output_value(
+    const sk_grouping_tree_output *output,
+    const sk_grouping_result_value **out_value, char *error,
+    size_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = nullptr;
+    if (!output || !output->value || !out_value) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping output value arguments are invalid");
+        });
+    }
+    if (output->kind != SK_GROUPING_TREE_OUTPUT_VALUE) {
+        return invoke_grouping(error, error_capacity, [] {
+            throw std::invalid_argument("grouping output is not a value");
+        });
+    }
+    *out_value = output->value.get();
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" void sk_grouping_tree_result_destroy(
+    sk_grouping_tree_result *result) SK_NOEXCEPT {
+    destroy_noexcept(result);
 }
 
 extern "C" int32_t sk_local_grouping_request_create(const char *field, sk_local_grouping_request **out, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -5348,6 +6039,40 @@ extern "C" uint32_t sk_generic_search_result_hit_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
     return sk_local_search_result_hit_count(static_cast<const sk_local_search_result *>(result));
 }
+extern "C" uint64_t sk_generic_search_result_coverage_active(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? result->coverage_active : 0;
+}
+extern "C" uint64_t sk_generic_search_result_coverage_covered(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? result->coverage_covered : 0;
+}
+extern "C" uint64_t sk_generic_search_result_coverage_target_active(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? result->coverage_target_active : 0;
+}
+extern "C" uint32_t sk_generic_search_result_degradation_flags(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? result->degradation_flags : 0;
+}
+extern "C" uint32_t sk_generic_search_result_issue_count(
+    const sk_generic_search_result *result) SK_NOEXCEPT {
+    return result ? static_cast<uint32_t>(result->issues.size()) : 0;
+}
+extern "C" int32_t sk_generic_search_result_issue_message(
+    const sk_generic_search_result *result, uint32_t index, const char **out_message,
+    uint32_t *out_length, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_message) *out_message = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_message || !out_length || index >= result->issues.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "search result issue arguments are invalid");
+    }
+    const auto &message = result->issues[index];
+    *out_message = message.data();
+    *out_length = static_cast<uint32_t>(message.size());
+    return SK_NATIVE_STATUS_OK;
+}
 extern "C" int32_t sk_generic_search_result_hit(
     const sk_generic_search_result *result, uint32_t index, const char **out_id,
     uint32_t *out_id_length, double *out_score, uint8_t *error,
@@ -5403,7 +6128,20 @@ extern "C" int32_t sk_generic_search_result_match_feature_value(
                          "match feature value arguments are invalid");
     }
     return invoke(error, error_capacity,
-                  [&] { match_feature_value(*result, hit_index, feature_index, out_value); });
+                  [&] { match_feature_value_double(*result, hit_index, feature_index, out_value); });
+}
+extern "C" int32_t sk_generic_search_result_match_feature_value_ref(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t feature_index, const sk_feature_value **out_value,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_value) *out_value = nullptr;
+    if (!result || !out_value) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "match feature value arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        *out_value = match_feature_value_ref(*result, hit_index, feature_index);
+    });
 }
 extern "C" uint32_t sk_generic_search_result_grouping_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {
