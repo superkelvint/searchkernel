@@ -1,0 +1,1549 @@
+use super::*;
+use crate::model::*;
+use searchkernel_protocol::v2 as api;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<IndexDefinitionIr> {
+    let field_views = definition.fields();
+    let field_count = field_views.map_or(0, |v| v.len());
+    if field_count == 0 {
+        return Err(invalid(
+            "invalid_schema",
+            Some("fields"),
+            "an index must define at least one field",
+        ));
+    }
+    let mut fields = Vec::with_capacity(field_count);
+    let mut names = BTreeSet::new();
+    if let Some(views) = field_views {
+        for (index, field) in views.iter().enumerate() {
+            let path = format!("fields[{index}]");
+            let name = parse_field_name(field.name(), format!("{path}.name"))?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_field",
+                    Some(format!("{path}.name")),
+                    "field names must be unique",
+                ));
+            }
+            fields.push(field_to_ir_at(field, name, &path)?);
+        }
+    }
+    let name = match definition.name() {
+        None => None,
+        Some(value) => Some(IndexName::parse(value).map_err(|_| {
+            invalid(
+                "invalid_index_name",
+                Some("name"),
+                "index name must not be empty",
+            )
+        })?),
+    };
+    let properties = schema_properties_to_ir(definition.properties(), "properties")?;
+    let document_type = optional_nonempty(definition.document_type(), "document_type")?;
+    let schema_inherits = strings_to_ir(definition.schema_inherits(), "schema_inherits")?;
+    let document_inherits = strings_to_ir(definition.document_inherits(), "document_inherits")?;
+    let structs = named_structs_to_ir(definition.structs())?;
+    let schema_fields = schema_fields_to_ir(definition.schema_fields(), &names)?;
+    let all_fields = fields
+        .iter()
+        .chain(schema_fields.iter())
+        .collect::<Vec<_>>();
+    let document_field_refs = fields.iter().collect::<Vec<_>>();
+    let searchable_fields = all_fields.clone();
+    validate_struct_references(&fields, &structs)?;
+    validate_struct_references(&schema_fields, &structs)?;
+    let default_search_fields = match definition.default_search_fields() {
+        None => all_fields
+            .iter()
+            .filter(|field| field.capabilities.searchable)
+            .map(|field| SearchFieldIr {
+                field: field.name.clone(),
+                weight: SearchFieldWeight::new(1.0).expect("constant is valid"),
+            })
+            .collect(),
+        Some(selection) => {
+            search_fields_to_ir_at(selection, &searchable_fields, "default_search_fields")?
+        }
+    };
+    let fieldsets = fieldsets_to_ir(definition.fieldsets(), &all_fields)?;
+    // Imported fields are fed from document/reference fields.  Schema-only
+    // fields are query-visible, but are not document values and cannot be the
+    // reference anchor for an imported alias.
+    let imported_fields =
+        imported_fields_to_ir(definition.imported_fields(), &document_field_refs)?;
+    let document_summaries =
+        document_summaries_to_ir(definition.document_summaries(), &all_fields)?;
+    let constants = constants_to_ir(definition.constants(), "constants")?;
+    let onnx_models = onnx_models_to_ir(definition.onnx_models(), "onnx_models")?;
+    let rank_profiles = rank_profiles_to_ir(definition.rank_profiles())?;
+    Ok(IndexDefinitionIr {
+        name,
+        fields,
+        default_search_fields,
+        default_ranking: RankingPolicyIr::DefaultRelevanceV1,
+        default_prefix_policy: PrefixPolicy::Disabled,
+        default_typo_policy: TypoPolicy::Disabled,
+        properties,
+        document_type,
+        schema_inherits,
+        document_inherits,
+        structs,
+        fieldsets,
+        schema_fields,
+        imported_fields,
+        document_summaries,
+        rank_profiles,
+        constants,
+        onnx_models,
+    })
+}
+
+pub fn field_to_ir(field: api::FieldDefinition<'_>) -> Result<FieldIr> {
+    let name = parse_field_name(field.name(), "name".to_owned())?;
+    field_to_ir_at(field, name, "field")
+}
+
+pub fn analyzer_to_ir(
+    analyzer: Option<api::Analyzer<'_>>,
+    kind: FieldKind,
+) -> Result<Option<AnalyzerIdentity>> {
+    analyzer_to_ir_at(analyzer, kind, "analyzer")
+}
+
+impl IndexContext {
+    pub fn from_api(definition: api::IndexDefinition<'_>) -> Result<Self> {
+        let definition = index_definition_to_ir(definition)?;
+        let document_fields = definition
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.as_str().to_owned(), i))
+            .collect();
+        let mut query_fields = definition
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.as_str().to_owned(), QueryFieldRef::Document(i)))
+            .collect::<BTreeMap<_, _>>();
+        query_fields.extend(
+            definition
+                .schema_fields
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (f.name.as_str().to_owned(), QueryFieldRef::Schema(i))),
+        );
+        Ok(Self {
+            definition,
+            document_fields,
+            query_fields,
+        })
+    }
+
+    pub fn definition(&self) -> &IndexDefinitionIr {
+        &self.definition
+    }
+    pub fn describe(&self) -> IndexDefinitionIr {
+        self.definition.clone()
+    }
+    pub(crate) fn field(&self, name: &str, path: String) -> Result<&FieldIr> {
+        self.document_fields
+            .get(name)
+            .map(|&i| &self.definition.fields[i])
+            .ok_or_else(|| invalid("unknown_field", Some(path), "field is not defined"))
+    }
+
+    pub(crate) fn query_field(&self, name: &str, path: String) -> Result<&FieldIr> {
+        match self.query_fields.get(name).copied() {
+            Some(QueryFieldRef::Document(index)) => Ok(&self.definition.fields[index]),
+            Some(QueryFieldRef::Schema(index)) => Ok(&self.definition.schema_fields[index]),
+            None if self.definition.imported_alias(name) => Err(PortableError::unsupported(
+                "imported_field_query_not_supported",
+                Some(path),
+                "imported field aliases are preserved in the schema but have no local type for query binding",
+            )),
+            None => Err(invalid("unknown_field", Some(path), "field is not defined")),
+        }
+    }
+}
+
+pub(crate) fn field_to_ir_at(
+    definition: api::FieldDefinition<'_>,
+    name: FieldName,
+    path: &str,
+) -> Result<FieldIr> {
+    let data_type = definition.data_type().ok_or_else(|| {
+        invalid(
+            "invalid_data_type",
+            Some(format!("{path}.data_type")),
+            "field data type is required",
+        )
+    })?;
+    let data_type = data_type_to_ir(data_type, &format!("{path}.data_type"))?;
+    let matching = matching_to_ir(definition.matching(), &format!("{path}.matching"))?;
+    let index = index_config_to_ir(definition.index(), &format!("{path}.index"))?;
+    let attribute = attribute_config_to_ir(definition.attribute(), &format!("{path}.attribute"))?;
+    let summary = summary_config_to_ir(definition.summary(), &format!("{path}.summary"))?;
+    let stored = definition.stored().map(|value| value.value());
+    let searchable = definition.searchable().map(|value| value.value());
+    let filterable = definition.filterable().map(|value| value.value());
+    let sortable = definition.sortable().map(|value| value.value());
+    let groupable = definition.facetable().map(|value| value.value());
+    let attribute_fast_search = attribute.as_ref().and_then(|value| value.fast_search);
+    let indexing_script = definition
+        .indexing_script()
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    check_bool_agreement(
+        stored,
+        summary.as_ref().and_then(|value| value.enabled),
+        path,
+        "stored",
+        "summary.enabled",
+    )?;
+    check_bool_agreement(
+        searchable,
+        index.as_ref().and_then(|value| value.enabled),
+        path,
+        "searchable",
+        "index.enabled",
+    )?;
+    if attribute_fast_search
+        .zip(filterable)
+        .is_some_and(|(fast_search, filterable)| fast_search && !filterable)
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.fast_search")),
+            "attribute.fast_search requires a filterable field",
+        ));
+    }
+    let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
+    if matching.is_some() && !string_type {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.matching")),
+            "matching is valid only for string fields",
+        ));
+    }
+    let keyword = string_type
+        && matches!(
+            matching.as_ref().map(|value| value.mode),
+            Some(MatchingModeIr::Exact | MatchingModeIr::Word)
+        );
+    if keyword && searchable == Some(true) {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.searchable")),
+            "keyword fields cannot opt into full-text search",
+        ));
+    }
+    if matches!(
+        data_type,
+        DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+    ) && !keyword
+        && filterable == Some(true)
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.filterable")),
+            "text fields cannot opt into filtering",
+        ));
+    }
+    let analyzer = analyzer_config_to_ir(
+        definition.analyzer(),
+        string_type && !keyword,
+        &format!("{path}.analyzer"),
+    )?;
+    let default_searchable = string_type && !keyword && indexing_script.is_none();
+    let default_filterable = if indexing_script.is_some() {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        true
+    };
+    let default_sortable = if indexing_script.is_some() {
+        false
+    } else {
+        !data_type.is_multi_valued() && (!string_type || keyword)
+    };
+    let default_groupable = if indexing_script.is_some() {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::Bool)
+    };
+    let analyzer = if string_type && !keyword && indexing_script.is_none() {
+        Some(analyzer.unwrap_or(AnalyzerIr {
+            name: "standard".to_owned(),
+            version: 1,
+            options: SchemaPropertiesIr::new(),
+        }))
+    } else {
+        analyzer
+    };
+    let capabilities = FieldCapabilities {
+        stored: stored
+            .or_else(|| summary.as_ref().and_then(|value| value.enabled))
+            .unwrap_or(true),
+        searchable: searchable
+            .or_else(|| index.as_ref().and_then(|value| value.enabled))
+            .unwrap_or(default_searchable),
+        filterable: filterable
+            .or(attribute_fast_search.filter(|value| *value))
+            .unwrap_or(default_filterable),
+        sortable: sortable.unwrap_or(default_sortable),
+        groupable: groupable.unwrap_or(default_groupable),
+    };
+    if attribute
+        .as_ref()
+        .and_then(|value| value.enabled)
+        .is_some_and(|enabled| !enabled)
+        && (capabilities.filterable
+            || capabilities.sortable
+            || capabilities.groupable
+            || !matches!(
+                &data_type,
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String)
+            ))
+    {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.attribute.enabled")),
+            "attribute.enabled=false conflicts with the resolved attribute-backed capabilities",
+        ));
+    }
+    if data_type.is_multi_valued() && capabilities.sortable {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.sortable")),
+            "multi-valued fields cannot be sortable",
+        ));
+    }
+    if index.as_ref().is_some_and(|config| config.hnsw.is_some())
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.index.hnsw")),
+            "HNSW indexing requires a tensor field",
+        ));
+    }
+    if attribute
+        .as_ref()
+        .is_some_and(|config| config.distance_metric != DistanceMetricIr::Unspecified)
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.attribute.distance_metric")),
+            "a distance metric requires a tensor field",
+        ));
+    }
+    if indexing_script.is_some()
+        && (stored.is_some()
+            || searchable.is_some()
+            || filterable.is_some()
+            || sortable.is_some()
+            || groupable.is_some()
+            || analyzer.is_some()
+            || matching.is_some()
+            || index.is_some()
+            || attribute.is_some()
+            || summary.is_some())
+    {
+        return Err(invalid("ambiguous_indexing_script", Some(format!("{path}.indexing_script")), "an indexing script cannot be combined with typed field behavior that C2 cannot prove equivalent"));
+    }
+    Ok(FieldIr {
+        name,
+        data_type,
+        analyzer,
+        capabilities,
+        matching,
+        index,
+        attribute,
+        summary,
+        indexing_script,
+        properties: schema_properties_to_ir(
+            definition.properties(),
+            &format!("{path}.properties"),
+        )?,
+        struct_fields: struct_field_configs_to_ir(
+            definition.struct_fields(),
+            &format!("{path}.struct_fields"),
+        )?,
+    })
+}
+
+pub(crate) fn analyzer_to_ir_at(
+    analyzer: Option<api::Analyzer<'_>>,
+    kind: FieldKind,
+    path: &str,
+) -> Result<Option<AnalyzerIdentity>> {
+    if kind != FieldKind::Text {
+        if analyzer.is_some() {
+            return Err(invalid(
+                "invalid_analyzer",
+                Some(path),
+                "only text fields may specify an analyzer",
+            ));
+        }
+        return Ok(None);
+    }
+    let Some(analyzer) = analyzer else {
+        return Ok(Some(AnalyzerIdentity::StandardV1));
+    };
+    analyzer_identity(
+        &AnalyzerIr {
+            name: required_string(analyzer.name(), path, "analyzer name")?,
+            version: analyzer.version(),
+            options: schema_properties_to_ir(analyzer.options(), &format!("{path}.options"))?,
+        },
+        path,
+    )
+    .map(Some)
+}
+
+pub(crate) fn analyzer_config_to_ir(
+    analyzer: Option<api::Analyzer<'_>>,
+    string_type: bool,
+    path: &str,
+) -> Result<Option<AnalyzerIr>> {
+    if !string_type && analyzer.is_some() {
+        return Err(invalid(
+            "invalid_analyzer",
+            Some(path),
+            "only text fields may specify an analyzer",
+        ));
+    }
+    analyzer
+        .map(|analyzer| {
+            let analyzer = AnalyzerIr {
+                name: required_string(analyzer.name(), path, "analyzer name")?,
+                version: analyzer.version(),
+                options: schema_properties_to_ir(analyzer.options(), &format!("{path}.options"))?,
+            };
+            analyzer_identity(&analyzer, path)?;
+            Ok(analyzer)
+        })
+        .transpose()
+}
+
+pub(crate) fn analyzer_identity(analyzer: &AnalyzerIr, path: &str) -> Result<AnalyzerIdentity> {
+    if analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty() {
+        Ok(AnalyzerIdentity::StandardV1)
+    } else {
+        Err(PortableError::unsupported("unsupported_analyzer", Some(path), "analysis execution currently supports only standard analyzer version 1 without options"))
+    }
+}
+
+pub(crate) fn data_type_to_ir(value: api::DataType<'_>, path: &str) -> Result<DataTypeIr> {
+    match value.kind_type() {
+        api::DataTypeKind::PrimitiveDataType => {
+            let primitive = value.kind_as_primitive_data_type().ok_or_else(|| {
+                invalid(
+                    "invalid_data_type",
+                    Some(path),
+                    "primitive data type is missing",
+                )
+            })?;
+            let kind = match primitive.kind() {
+                api::PrimitiveDataTypeKind::String => PrimitiveDataTypeIr::String,
+                api::PrimitiveDataTypeKind::Bool => PrimitiveDataTypeIr::Bool,
+                api::PrimitiveDataTypeKind::Byte => PrimitiveDataTypeIr::Byte,
+                api::PrimitiveDataTypeKind::Int32 => PrimitiveDataTypeIr::Int32,
+                api::PrimitiveDataTypeKind::Int64 => PrimitiveDataTypeIr::Int64,
+                api::PrimitiveDataTypeKind::Float32 => PrimitiveDataTypeIr::Float32,
+                api::PrimitiveDataTypeKind::Float64 => PrimitiveDataTypeIr::Float64,
+                api::PrimitiveDataTypeKind::Raw => PrimitiveDataTypeIr::Raw,
+                _ => {
+                    return Err(invalid(
+                        "invalid_data_type",
+                        Some(path),
+                        "primitive data type kind is required",
+                    ))
+                }
+            };
+            Ok(DataTypeIr::Primitive(kind))
+        }
+        api::DataTypeKind::TensorDataType => Ok(DataTypeIr::Tensor {
+            type_spec: required_string(
+                value.kind_as_tensor_data_type().and_then(|v| v.type_spec()),
+                path,
+                "tensor type spec",
+            )?,
+        }),
+        api::DataTypeKind::ArrayDataType => Ok(DataTypeIr::Array(Box::new(data_type_to_ir(
+            value
+                .kind_as_array_data_type()
+                .and_then(|v| v.element_type())
+                .ok_or_else(|| {
+                    invalid(
+                        "invalid_data_type",
+                        Some(path),
+                        "array element type is required",
+                    )
+                })?,
+            path,
+        )?))),
+        api::DataTypeKind::MapDataType => {
+            let map = value.kind_as_map_data_type().ok_or_else(|| {
+                invalid("invalid_data_type", Some(path), "map data type is missing")
+            })?;
+            Ok(DataTypeIr::Map {
+                key_type: Box::new(data_type_to_ir(
+                    map.key_type().ok_or_else(|| {
+                        invalid("invalid_data_type", Some(path), "map key type is required")
+                    })?,
+                    path,
+                )?),
+                value_type: Box::new(data_type_to_ir(
+                    map.value_type().ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(path),
+                            "map value type is required",
+                        )
+                    })?,
+                    path,
+                )?),
+            })
+        }
+        api::DataTypeKind::WeightedSetDataType => {
+            Ok(DataTypeIr::WeightedSet(Box::new(data_type_to_ir(
+                value
+                    .kind_as_weighted_set_data_type()
+                    .and_then(|v| v.element_type())
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(path),
+                            "weighted-set element type is required",
+                        )
+                    })?,
+                path,
+            )?)))
+        }
+        api::DataTypeKind::StructDataType => Ok(DataTypeIr::Struct {
+            fields: struct_fields_to_ir(
+                value.kind_as_struct_data_type().and_then(|v| v.fields()),
+                &format!("{path}.fields"),
+            )?,
+        }),
+        api::DataTypeKind::StructReferenceDataType => Ok(DataTypeIr::StructReference {
+            name: required_string(
+                value
+                    .kind_as_struct_reference_data_type()
+                    .and_then(|v| v.name()),
+                path,
+                "struct reference name",
+            )?,
+        }),
+        api::DataTypeKind::PredicateDataType => Ok(DataTypeIr::Predicate),
+        api::DataTypeKind::PositionDataType => Ok(DataTypeIr::Position),
+        api::DataTypeKind::ReferenceDataType => Ok(DataTypeIr::Reference {
+            document_type: required_string(
+                value
+                    .kind_as_reference_data_type()
+                    .and_then(|v| v.document_type()),
+                path,
+                "reference document type",
+            )?,
+        }),
+        _ => Err(invalid(
+            "invalid_data_type",
+            Some(path),
+            "data type must select a kind",
+        )),
+    }
+}
+
+pub(crate) fn struct_fields_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::StructFieldDefinition<'_>>>,
+    >,
+    path: &str,
+) -> Result<Vec<StructFieldIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let item_path = format!("{path}[{index}]");
+            let name = required_string(
+                Some(value.name()),
+                &format!("{item_path}.name"),
+                "struct field name",
+            )?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_field",
+                    Some(format!("{item_path}.name")),
+                    "struct field names must be unique",
+                ));
+            }
+            output.push(StructFieldIr {
+                name,
+                data_type: data_type_to_ir(
+                    value.data_type().ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(format!("{item_path}.data_type")),
+                            "struct field data type is required",
+                        )
+                    })?,
+                    &format!("{item_path}.data_type"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn matching_to_ir(
+    value: Option<api::MatchingConfig<'_>>,
+    path: &str,
+) -> Result<Option<MatchingConfigIr>> {
+    value
+        .map(|value| {
+            let mode = match value.mode() {
+                api::MatchingMode::Unspecified => MatchingModeIr::Unspecified,
+                api::MatchingMode::Text => MatchingModeIr::Text,
+                api::MatchingMode::Word => MatchingModeIr::Word,
+                api::MatchingMode::Exact => MatchingModeIr::Exact,
+                api::MatchingMode::Gram => MatchingModeIr::Gram,
+                _ => {
+                    return Err(invalid(
+                        "invalid_matching",
+                        Some(path),
+                        "unknown matching mode",
+                    ))
+                }
+            };
+            Ok(MatchingConfigIr {
+                mode,
+                options: schema_properties_to_ir(value.options(), &format!("{path}.options"))?,
+            })
+        })
+        .transpose()
+}
+
+pub(crate) fn index_config_to_ir(
+    value: Option<api::IndexConfig<'_>>,
+    path: &str,
+) -> Result<Option<IndexConfigIr>> {
+    value
+        .map(|value| {
+            Ok(IndexConfigIr {
+                enabled: value.enabled().map(|value| value.value()),
+                hnsw: value
+                    .hnsw()
+                    .map(|hnsw| {
+                        Ok(HnswIndexConfigIr {
+                            max_links_per_node: hnsw
+                                .max_links_per_node()
+                                .map(|value| value.value()),
+                            neighbors_to_explore_at_insert: hnsw
+                                .neighbors_to_explore_at_insert()
+                                .map(|value| value.value()),
+                            options: schema_properties_to_ir(
+                                hnsw.options(),
+                                &format!("{path}.hnsw.options"),
+                            )?,
+                        })
+                    })
+                    .transpose()?,
+                options: schema_properties_to_ir(value.options(), &format!("{path}.options"))?,
+            })
+        })
+        .transpose()
+}
+
+pub(crate) fn attribute_config_to_ir(
+    value: Option<api::AttributeConfig<'_>>,
+    path: &str,
+) -> Result<Option<AttributeConfigIr>> {
+    value
+        .map(|value| {
+            let distance_metric = match value.distance_metric() {
+                api::DistanceMetric::Unspecified => DistanceMetricIr::Unspecified,
+                api::DistanceMetric::Euclidean => DistanceMetricIr::Euclidean,
+                api::DistanceMetric::Angular => DistanceMetricIr::Angular,
+                api::DistanceMetric::DotProduct => DistanceMetricIr::DotProduct,
+                api::DistanceMetric::PrenormalizedAngular => DistanceMetricIr::PrenormalizedAngular,
+                api::DistanceMetric::GeoDegrees => DistanceMetricIr::GeoDegrees,
+                api::DistanceMetric::Hamming => DistanceMetricIr::Hamming,
+                _ => {
+                    return Err(invalid(
+                        "invalid_distance_metric",
+                        Some(path),
+                        "unknown distance metric",
+                    ))
+                }
+            };
+            Ok(AttributeConfigIr {
+                enabled: value.enabled().map(|value| value.value()),
+                fast_search: value.fast_search().map(|value| value.value()),
+                fast_access: value.fast_access().map(|value| value.value()),
+                distance_metric,
+                options: schema_properties_to_ir(value.options(), &format!("{path}.options"))?,
+            })
+        })
+        .transpose()
+}
+
+pub(crate) fn summary_config_to_ir(
+    value: Option<api::SummaryConfig<'_>>,
+    path: &str,
+) -> Result<Option<SummaryConfigIr>> {
+    value
+        .map(|value| {
+            Ok(SummaryConfigIr {
+                enabled: value.enabled().map(|value| value.value()),
+                options: schema_properties_to_ir(value.options(), &format!("{path}.options"))?,
+            })
+        })
+        .transpose()
+}
+
+pub(crate) fn schema_properties_to_ir(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
+    path: &str,
+) -> Result<SchemaPropertiesIr> {
+    request_values_to_map(values, path)
+}
+
+pub(crate) fn required_string(
+    value: Option<&str>,
+    path: &str,
+    description: &str,
+) -> Result<String> {
+    value
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            invalid(
+                "invalid_schema",
+                Some(path),
+                format!("{description} is required"),
+            )
+        })
+}
+
+pub(crate) fn optional_nonempty(value: Option<&str>, path: &str) -> Result<Option<String>> {
+    value
+        .map(|value| required_string(Some(value), path, "schema identifier"))
+        .transpose()
+}
+
+pub(crate) fn strings_to_ir(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<&str>>>,
+    path: &str,
+) -> Result<Vec<String>> {
+    values
+        .map(|values| {
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    required_string(Some(value), &format!("{path}[{index}]"), "identifier")
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))
+}
+
+pub(crate) fn check_bool_agreement(
+    left: Option<bool>,
+    right: Option<bool>,
+    path: &str,
+    left_name: &str,
+    right_name: &str,
+) -> Result<()> {
+    if left.zip(right).is_some_and(|(left, right)| left != right) {
+        return Err(invalid(
+            "invalid_capability",
+            Some(format!("{path}.{left_name}")),
+            format!("{left_name} conflicts with {right_name}"),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn struct_field_configs_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::StructFieldConfig<'_>>>,
+    >,
+    path: &str,
+) -> Result<Vec<StructFieldConfigIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let item = format!("{path}[{index}]");
+            let field_path = required_string(
+                Some(value.path()),
+                &format!("{item}.path"),
+                "struct field path",
+            )?;
+            if !names.insert(field_path.clone()) {
+                return Err(invalid(
+                    "duplicate_struct_field_config",
+                    Some(format!("{item}.path")),
+                    "struct field paths must be unique",
+                ));
+            }
+            output.push(StructFieldConfigIr {
+                path: field_path,
+                indexing_script: value
+                    .indexing_script()
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                matching: matching_to_ir(value.matching(), &format!("{item}.matching"))?,
+                index: index_config_to_ir(value.index(), &format!("{item}.index"))?,
+                attribute: attribute_config_to_ir(value.attribute(), &format!("{item}.attribute"))?,
+                summary: summary_config_to_ir(value.summary(), &format!("{item}.summary"))?,
+                rank: value
+                    .rank()
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                query_commands: strings_to_ir(
+                    value.query_commands(),
+                    &format!("{item}.query_commands"),
+                )?,
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{item}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn named_structs_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::NamedStructDefinition<'_>>>,
+    >,
+) -> Result<Vec<NamedStructDefinitionIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("structs[{index}]");
+            let name = required_string(Some(value.name()), &format!("{path}.name"), "struct name")?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_struct",
+                    Some(format!("{path}.name")),
+                    "struct names must be unique",
+                ));
+            }
+            output.push(NamedStructDefinitionIr {
+                name,
+                fields: struct_fields_to_ir(value.fields(), &format!("{path}.fields"))?,
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn validate_struct_references(
+    fields: &[FieldIr],
+    structs: &[NamedStructDefinitionIr],
+) -> Result<()> {
+    let names = structs
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect::<BTreeSet<_>>();
+    fn visit(value: &DataTypeIr, names: &BTreeSet<&str>) -> bool {
+        match value {
+            DataTypeIr::StructReference { name } => names.contains(name.as_str()),
+            DataTypeIr::Array(value) | DataTypeIr::WeightedSet(value) => visit(value, names),
+            DataTypeIr::Map {
+                key_type,
+                value_type,
+            } => visit(key_type, names) && visit(value_type, names),
+            DataTypeIr::Struct { fields } => {
+                fields.iter().all(|field| visit(&field.data_type, names))
+            }
+            _ => true,
+        }
+    }
+    for field in fields {
+        if !visit(&field.data_type, &names) {
+            return Err(invalid(
+                "unknown_struct",
+                Some("fields"),
+                "a struct reference is not declared by this schema",
+            ));
+        }
+    }
+    for value in structs {
+        for field in &value.fields {
+            if !visit(&field.data_type, &names) {
+                return Err(invalid(
+                    "unknown_struct",
+                    Some("structs"),
+                    "a struct reference is not declared by this schema",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn schema_fields_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::SearchOnlyFieldDefinition<'_>>>,
+    >,
+    names: &BTreeSet<FieldName>,
+) -> Result<Vec<FieldIr>> {
+    let mut output = Vec::new();
+    let mut all_names = names.clone();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("schema_fields[{index}].field");
+            let field = value.field().ok_or_else(|| {
+                invalid(
+                    "invalid_schema",
+                    Some(path.clone()),
+                    "schema field is required",
+                )
+            })?;
+            let name = parse_field_name(field.name(), format!("{path}.name"))?;
+            if !all_names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_field",
+                    Some(format!("{path}.name")),
+                    "field names must be unique across document and schema fields",
+                ));
+            }
+            output.push(field_to_ir_at(field, name, &path)?);
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn fieldsets_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FieldSetDefinition<'_>>>,
+    >,
+    fields: &[&FieldIr],
+) -> Result<Vec<FieldSetDefinitionIr>> {
+    let known = fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("fieldsets[{index}]");
+            let name =
+                required_string(Some(value.name()), &format!("{path}.name"), "fieldset name")?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_fieldset",
+                    Some(format!("{path}.name")),
+                    "fieldset names must be unique",
+                ));
+            }
+            let fields = strings_to_ir(value.fields(), &format!("{path}.fields"))?
+                .into_iter()
+                .enumerate()
+                .map(|(field_index, field)| {
+                    if !known.contains(field.as_str()) {
+                        return Err(invalid(
+                            "unknown_field",
+                            Some(format!("{path}.fields[{field_index}]")),
+                            "fieldset field is not defined",
+                        ));
+                    }
+                    parse_field_name(&field, format!("{path}.fields[{field_index}]"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            output.push(FieldSetDefinitionIr {
+                name,
+                fields,
+                matching: matching_to_ir(value.matching(), &format!("{path}.matching"))?,
+                query_commands: strings_to_ir(
+                    value.query_commands(),
+                    &format!("{path}.query_commands"),
+                )?,
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn imported_fields_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ImportedFieldDefinition<'_>>>,
+    >,
+    fields: &[&FieldIr],
+) -> Result<Vec<ImportedFieldDefinitionIr>> {
+    let known = fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::new();
+    let mut aliases = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("imported_fields[{index}]");
+            let reference_name = required_string(
+                value.reference_field(),
+                &format!("{path}.reference_field"),
+                "reference field",
+            )?;
+            let reference = parse_field_name(&reference_name, format!("{path}.reference_field"))?;
+            let reference_definition = fields
+                .iter()
+                .find(|field| field.name == reference)
+                .ok_or_else(|| {
+                    invalid(
+                        "unknown_field",
+                        Some(format!("{path}.reference_field")),
+                        "imported field reference is not defined",
+                    )
+                })?;
+            if !matches!(reference_definition.data_type, DataTypeIr::Reference { .. }) {
+                return Err(invalid(
+                    "invalid_imported_field",
+                    Some(format!("{path}.reference_field")),
+                    "an imported field must reference a document-reference field",
+                ));
+            }
+            let target_field = required_string(
+                value.target_field(),
+                &format!("{path}.target_field"),
+                "imported target field",
+            )?;
+            let alias = parse_field_name(value.alias(), format!("{path}.alias"))?;
+            if !aliases.insert(alias.clone()) || known.contains(alias.as_str()) {
+                return Err(invalid(
+                    "duplicate_imported_field",
+                    Some(format!("{path}.alias")),
+                    "imported aliases must not collide with schema fields",
+                ));
+            }
+            output.push(ImportedFieldDefinitionIr {
+                reference_field: reference,
+                target_field,
+                alias,
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn document_summaries_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::DocumentSummaryDefinition<'_>>>,
+    >,
+    fields: &[&FieldIr],
+) -> Result<Vec<DocumentSummaryDefinitionIr>> {
+    let known = fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("document_summaries[{index}]");
+            let name = required_string(
+                Some(value.name()),
+                &format!("{path}.name"),
+                "document summary name",
+            )?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_document_summary",
+                    Some(format!("{path}.name")),
+                    "document summary names must be unique",
+                ));
+            }
+            let mut summary_fields = Vec::new();
+            let mut field_names = BTreeSet::new();
+            if let Some(items) = value.fields() {
+                for (field_index, item) in items.iter().enumerate() {
+                    let item_path = format!("{path}.fields[{field_index}]");
+                    let field_name = required_string(
+                        Some(item.name()),
+                        &format!("{item_path}.name"),
+                        "summary field name",
+                    )?;
+                    if !field_names.insert(field_name.clone()) {
+                        return Err(invalid(
+                            "duplicate_summary_field",
+                            Some(format!("{item_path}.name")),
+                            "summary field names must be unique",
+                        ));
+                    }
+                    let source = required_string(
+                        item.source(),
+                        &format!("{item_path}.source"),
+                        "summary source",
+                    )?;
+                    if !known.contains(source.as_str()) {
+                        return Err(invalid(
+                            "unknown_field",
+                            Some(format!("{item_path}.source")),
+                            "summary source field is not defined",
+                        ));
+                    }
+                    summary_fields.push(DocumentSummaryFieldDefinitionIr {
+                        name: field_name,
+                        source,
+                        data_type: data_type_to_ir(
+                            item.data_type().ok_or_else(|| {
+                                invalid(
+                                    "invalid_data_type",
+                                    Some(format!("{item_path}.data_type")),
+                                    "summary field data type is required",
+                                )
+                            })?,
+                            &format!("{item_path}.data_type"),
+                        )?,
+                        struct_fields: strings_to_ir(
+                            item.struct_fields(),
+                            &format!("{item_path}.struct_fields"),
+                        )?,
+                        properties: schema_properties_to_ir(
+                            item.properties(),
+                            &format!("{item_path}.properties"),
+                        )?,
+                    });
+                }
+            }
+            output.push(DocumentSummaryDefinitionIr {
+                name,
+                inherits: strings_to_ir(value.inherits(), &format!("{path}.inherits"))?,
+                fields: summary_fields,
+                from_disk: value.from_disk().map(|value| value.value()),
+                omit_summary_features: value.omit_summary_features().map(|value| value.value()),
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn constants_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ConstantDefinition<'_>>>,
+    >,
+    path: &str,
+) -> Result<Vec<ConstantDefinitionIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let item = format!("{path}[{index}]");
+            let name =
+                required_string(Some(value.name()), &format!("{item}.name"), "constant name")?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_constant",
+                    Some(format!("{item}.name")),
+                    "constant names must be unique",
+                ));
+            }
+            let source = match value.source_type() {
+                api::ConstantSourceKind::LiteralConstantSource => {
+                    ConstantSourceIr::Literal(RequestValueIr::from_api(
+                        value
+                            .source_as_literal_constant_source()
+                            .and_then(|value| value.value())
+                            .ok_or_else(|| {
+                                invalid(
+                                    "invalid_constant",
+                                    Some(format!("{item}.source")),
+                                    "literal constant value is required",
+                                )
+                            })?,
+                        format!("{item}.source.value"),
+                    )?)
+                }
+                api::ConstantSourceKind::FileConstantSource => ConstantSourceIr::File {
+                    path: required_string(
+                        value
+                            .source_as_file_constant_source()
+                            .and_then(|value| value.path()),
+                        &format!("{item}.source.path"),
+                        "constant file path",
+                    )?,
+                },
+                _ => {
+                    return Err(invalid(
+                        "invalid_constant",
+                        Some(format!("{item}.source")),
+                        "constant source is required",
+                    ))
+                }
+            };
+            output.push(ConstantDefinitionIr {
+                name,
+                data_type: data_type_to_ir(
+                    value.data_type().ok_or_else(|| {
+                        invalid(
+                            "invalid_data_type",
+                            Some(format!("{item}.data_type")),
+                            "constant data type is required",
+                        )
+                    })?,
+                    &format!("{item}.data_type"),
+                )?,
+                source,
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{item}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn string_map_to_ir(
+    values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::StringEntry<'_>>>>,
+    path: &str,
+) -> Result<BTreeMap<String, String>> {
+    let mut output = BTreeMap::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let key = required_string(
+                Some(value.key()),
+                &format!("{path}[{index}].key"),
+                "map key",
+            )?;
+            let entry = required_string(
+                value.value(),
+                &format!("{path}[{index}].value"),
+                "map value",
+            )?;
+            if output.insert(key.clone(), entry).is_some() {
+                return Err(invalid(
+                    "duplicate_property",
+                    Some(format!("{path}[{index}].key")),
+                    format!("duplicate key `{key}`"),
+                ));
+            }
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn onnx_models_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::OnnxModelDefinition<'_>>>,
+    >,
+    path: &str,
+) -> Result<Vec<OnnxModelDefinitionIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let item = format!("{path}[{index}]");
+            let name = required_string(
+                Some(value.name()),
+                &format!("{item}.name"),
+                "ONNX model name",
+            )?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_onnx_model",
+                    Some(format!("{item}.name")),
+                    "ONNX model names must be unique",
+                ));
+            }
+            output.push(OnnxModelDefinitionIr {
+                name,
+                file: required_string(value.file(), &format!("{item}.file"), "ONNX model file")?,
+                inputs: string_map_to_ir(value.inputs(), &format!("{item}.inputs"))?,
+                outputs: string_map_to_ir(value.outputs(), &format!("{item}.outputs"))?,
+                gpu_device: value.gpu_device().map(|value| value.value()),
+                intraop_threads: value.intraop_threads().map(|value| value.value()),
+                interop_threads: value.interop_threads().map(|value| value.value()),
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{item}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn rank_phase_to_ir(
+    value: Option<api::RankPhaseDefinition<'_>>,
+    path: &str,
+) -> Result<Option<RankPhaseDefinitionIr>> {
+    value
+        .map(|value| {
+            Ok(RankPhaseDefinitionIr {
+                expression: value
+                    .expression()
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                rerank_count: value.rerank_count().map(|value| value.value()),
+                rank_score_drop_limit: value.rank_score_drop_limit().map(|value| value.value()),
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+                total_rerank_count: value.total_rerank_count().map(|value| value.value()),
+                keep_rank_count: value.keep_rank_count().map(|value| value.value()),
+                total_keep_rank_count: value.total_keep_rank_count().map(|value| value.value()),
+            })
+        })
+        .transpose()
+}
+
+#[derive(Clone, Copy)]
+enum RankPhaseKind {
+    First,
+    Second,
+    Global,
+}
+
+fn validate_rank_phase(
+    value: Option<&RankPhaseDefinitionIr>,
+    kind: RankPhaseKind,
+    path: &str,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value
+        .rank_score_drop_limit
+        .is_some_and(|limit| !limit.is_finite())
+    {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(format!("{path}.rank_score_drop_limit")),
+            "rank-score-drop-limit must be finite",
+        ));
+    }
+    if value.rerank_count.is_some() && value.total_rerank_count.is_some() {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "rerank_count and total_rerank_count are mutually exclusive",
+        ));
+    }
+    if value.keep_rank_count.is_some() && value.total_keep_rank_count.is_some() {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "keep_rank_count and total_keep_rank_count are mutually exclusive",
+        ));
+    }
+    let invalid_for_phase = match kind {
+        RankPhaseKind::First => value.rerank_count.is_some() || value.total_rerank_count.is_some(),
+        RankPhaseKind::Second => {
+            value.keep_rank_count.is_some() || value.total_keep_rank_count.is_some()
+        }
+        RankPhaseKind::Global => {
+            value.keep_rank_count.is_some()
+                || value.total_keep_rank_count.is_some()
+                || value.total_rerank_count.is_some()
+        }
+    };
+    if invalid_for_phase {
+        return Err(invalid(
+            "invalid_rank_phase",
+            Some(path),
+            "rank-phase controls are not applicable to this phase",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn rank_profiles_to_ir(
+    values: Option<
+        flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::RankProfileDefinition<'_>>>,
+    >,
+) -> Result<Vec<RankProfileDefinitionIr>> {
+    let mut output = Vec::new();
+    let mut names = BTreeSet::new();
+    if let Some(values) = values {
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("rank_profiles[{index}]");
+            let name = required_string(
+                Some(value.name()),
+                &format!("{path}.name"),
+                "rank profile name",
+            )?;
+            if !names.insert(name.clone()) {
+                return Err(invalid(
+                    "duplicate_rank_profile",
+                    Some(format!("{path}.name")),
+                    "rank profile names must be unique",
+                ));
+            }
+            let mut inputs = Vec::new();
+            let mut input_names = BTreeSet::new();
+            if let Some(items) = value.inputs() {
+                for (input_index, input) in items.iter().enumerate() {
+                    let item = format!("{path}.inputs[{input_index}]");
+                    let input_name = required_string(
+                        Some(input.name()),
+                        &format!("{item}.name"),
+                        "rank input name",
+                    )?;
+                    if !input_names.insert(input_name.clone()) {
+                        return Err(invalid(
+                            "duplicate_rank_input",
+                            Some(format!("{item}.name")),
+                            "rank input names must be unique",
+                        ));
+                    }
+                    inputs.push(RankProfileInputIr {
+                        name: input_name,
+                        data_type: data_type_to_ir(
+                            input.data_type().ok_or_else(|| {
+                                invalid(
+                                    "invalid_data_type",
+                                    Some(format!("{item}.data_type")),
+                                    "rank input data type is required",
+                                )
+                            })?,
+                            &format!("{item}.data_type"),
+                        )?,
+                        default_value: RequestValueIr::from_api(
+                            input.default_value().ok_or_else(|| {
+                                invalid(
+                                    "missing_value",
+                                    Some(format!("{item}.default_value")),
+                                    "rank input default value is required",
+                                )
+                            })?,
+                            format!("{item}.default_value"),
+                        )?,
+                    });
+                }
+            }
+            let mut functions = Vec::new();
+            let mut function_names = BTreeSet::new();
+            if let Some(items) = value.functions() {
+                for (function_index, function) in items.iter().enumerate() {
+                    let item = format!("{path}.functions[{function_index}]");
+                    let function_name = required_string(
+                        Some(function.name()),
+                        &format!("{item}.name"),
+                        "rank function name",
+                    )?;
+                    if !function_names.insert(function_name.clone()) {
+                        return Err(invalid(
+                            "duplicate_rank_function",
+                            Some(format!("{item}.name")),
+                            "rank function names must be unique",
+                        ));
+                    }
+                    functions.push(RankFunctionDefinitionIr {
+                        name: function_name,
+                        arguments: strings_to_ir(
+                            function.arguments(),
+                            &format!("{item}.arguments"),
+                        )?,
+                        expression: required_string(
+                            function.expression(),
+                            &format!("{item}.expression"),
+                            "rank function expression",
+                        )?,
+                        inline: function.inline().map(|value| value.value()),
+                    });
+                }
+            }
+            let first_phase =
+                rank_phase_to_ir(value.first_phase(), &format!("{path}.first_phase"))?;
+            let second_phase =
+                rank_phase_to_ir(value.second_phase(), &format!("{path}.second_phase"))?;
+            let global_phase =
+                rank_phase_to_ir(value.global_phase(), &format!("{path}.global_phase"))?;
+            validate_rank_phase(
+                first_phase.as_ref(),
+                RankPhaseKind::First,
+                &format!("{path}.first_phase"),
+            )?;
+            validate_rank_phase(
+                second_phase.as_ref(),
+                RankPhaseKind::Second,
+                &format!("{path}.second_phase"),
+            )?;
+            validate_rank_phase(
+                global_phase.as_ref(),
+                RankPhaseKind::Global,
+                &format!("{path}.global_phase"),
+            )?;
+            output.push(RankProfileDefinitionIr {
+                name,
+                inherits: strings_to_ir(value.inherits(), &format!("{path}.inherits"))?,
+                inputs,
+                functions,
+                first_phase,
+                second_phase,
+                global_phase,
+                rank_features: strings_to_ir(
+                    value.rank_features(),
+                    &format!("{path}.rank_features"),
+                )?,
+                match_features: strings_to_ir(
+                    value.match_features(),
+                    &format!("{path}.match_features"),
+                )?,
+                summary_features: strings_to_ir(
+                    value.summary_features(),
+                    &format!("{path}.summary_features"),
+                )?,
+                sort_features: strings_to_ir(
+                    value.sort_features(),
+                    &format!("{path}.sort_features"),
+                )?,
+                constants: constants_to_ir(value.constants(), &format!("{path}.constants"))?,
+                onnx_models: onnx_models_to_ir(
+                    value.onnx_models(),
+                    &format!("{path}.onnx_models"),
+                )?,
+                rank_properties: string_map_to_ir(
+                    value.rank_properties(),
+                    &format!("{path}.rank_properties"),
+                )?,
+                strict: value.strict().map(|value| value.value()),
+                properties: schema_properties_to_ir(
+                    value.properties(),
+                    &format!("{path}.properties"),
+                )?,
+            });
+        }
+    }
+    Ok(output)
+}
+pub(crate) fn parse_field_name(v: &str, path: String) -> Result<FieldName> {
+    FieldName::parse(v.to_owned()).map_err(|_| {
+        invalid(
+            "invalid_field_name",
+            Some(path),
+            "field name must match [A-Za-z][A-Za-z0-9_]*",
+        )
+    })
+}

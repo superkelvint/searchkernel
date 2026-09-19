@@ -985,12 +985,27 @@ dependencies = [
 name = "searchkerneld"
 version = "0.1.0"
 dependencies = [
+ "flatbuffers",
  "prost",
  "protoc-bin-vendored",
+ "searchkernel",
+ "searchkernel-dispatch",
+ "searchkernel-protocol",
+ "searchkernel-testkit",
  "tokio",
  "tokio-stream",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "searchkerneld-e2e-harness"
+version = "0.1.0"
+dependencies = [
+ "searchkernel",
+ "searchkernel-dispatch",
+ "searchkerneld",
+ "tokio",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ members = [
     "core/crates/searchkernel-dispatch",
     "core/crates/searchkernel-ir-adapter",
     "searchkerneld",
+    "tools/searchkerneld-e2e-harness",
     "tools/searchkernel-bindgen",
 ]
 resolver = "2"

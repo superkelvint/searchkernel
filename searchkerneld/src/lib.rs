@@ -1,10 +1,12 @@
-//! Transport-only gRPC host for Search Kernel.
+//! gRPC host for Search Kernel.
 //!
-//! The generated RPC accepts and returns opaque FlatBuffer frames. Semantic
-//! dispatch is intentionally not wired into this crate yet.
+//! The generated RPC accepts and returns opaque FlatBuffer frames. All
+//! semantic work is delegated to the canonical transport-independent
+//! dispatcher.
 
-use std::{fmt, net::SocketAddr};
+use std::{fmt, net::SocketAddr, sync::Arc};
 
+use searchkernel_dispatch::{DispatchError, Dispatcher};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
@@ -41,19 +43,57 @@ impl Default for ServerConfig {
     }
 }
 
-/// The temporary transport implementation of the generated RPC service.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SearchKernelTransport;
+/// The gRPC service for one optional process-local execution target.
+#[derive(Clone, Default)]
+pub struct SearchKernelTransport {
+    dispatcher: Option<Arc<Dispatcher>>,
+}
+
+impl SearchKernelTransport {
+    /// Creates a service with the supplied canonical dispatcher.
+    pub fn with_dispatcher(dispatcher: Arc<Dispatcher>) -> Self {
+        Self {
+            dispatcher: Some(dispatcher),
+        }
+    }
+
+    fn dispatch(&self, payload: &[u8]) -> Result<Vec<u8>, Box<Status>> {
+        let dispatcher = self.dispatcher.as_ref().ok_or_else(|| {
+            Box::new(Status::failed_precondition(
+                "no Search Kernel target is configured",
+            ))
+        })?;
+        dispatcher
+            .dispatch(payload)
+            .map_err(|error| Box::new(dispatch_error_status(error)))
+    }
+}
 
 #[tonic::async_trait]
 impl SearchKernel for SearchKernelTransport {
     async fn execute(
         &self,
-        _request: Request<FlatBufferFrame>,
+        request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        Err(Status::unimplemented(
-            "Search Kernel Execute is not wired to the dispatcher yet",
-        ))
+        let payload = self
+            .dispatch(&request.into_inner().payload)
+            .map_err(|status| *status)?;
+        Ok(Response::new(FlatBufferFrame { payload }))
+    }
+}
+
+fn dispatch_error_status(error: DispatchError) -> Status {
+    match error {
+        DispatchError::InvalidRequest => {
+            Status::invalid_argument("invalid Search Kernel request FlatBuffer")
+        }
+        DispatchError::UnsupportedProtocol(version) => Status::failed_precondition(format!(
+            "unsupported Search Kernel protocol version {version}"
+        )),
+        DispatchError::UnsupportedOperation(operation) => Status::unimplemented(format!(
+            "unsupported Search Kernel operation discriminator {operation}"
+        )),
+        DispatchError::Closed => Status::failed_precondition("Search Kernel target is closed"),
     }
 }
 
@@ -144,6 +184,21 @@ impl RunningServer {
 
 /// Binds and starts the transport-only gRPC server.
 pub async fn start(config: ServerConfig) -> Result<RunningServer, ServerError> {
+    start_with_service(config, SearchKernelTransport::default()).await
+}
+
+/// Binds and starts a gRPC server backed by one canonical dispatcher.
+pub async fn start_with_dispatcher(
+    config: ServerConfig,
+    dispatcher: Arc<Dispatcher>,
+) -> Result<RunningServer, ServerError> {
+    start_with_service(config, SearchKernelTransport::with_dispatcher(dispatcher)).await
+}
+
+async fn start_with_service(
+    config: ServerConfig,
+    service: SearchKernelTransport,
+) -> Result<RunningServer, ServerError> {
     let listener = TcpListener::bind(config.listen_addr)
         .await
         .map_err(ServerError::Bind)?;
@@ -153,7 +208,7 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer, ServerError> {
 
     let task = tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(SearchKernelServer::new(SearchKernelTransport))
+            .add_service(SearchKernelServer::new(service))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_requested.await;
             })

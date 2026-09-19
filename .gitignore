@@ -11,6 +11,7 @@
 .almalinux_bash_history
 /venv/
 /lib64/
-try_searchkernel_builder_api.py
+try_searchkernel_client_api_e2e.py
 /clients/python/build/
 **/node_modules/*
+**/dist/**
