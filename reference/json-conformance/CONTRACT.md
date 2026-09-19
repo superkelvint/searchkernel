@@ -164,29 +164,25 @@ Canonical JSON behavior is verified directly by the retained codec contract.
 
 The verifier runs bindgen twice in clean output directories. Trees must be byte-for-byte identical and match checked-in generated outputs. No timestamps, absolute paths, random ordering, or host-specific data are permitted.
 
-## BFBS-only mutation proof
+## BFBS-only fail-closed mutation proof
 
-The verifier adds temporary:
+The verifier compiles temporary schema mutations to BFBS, deletes the temporary
+`.fbs` sources, and invokes bindgen with only the resulting BFBS. The mutations
+must fail non-zero:
 
-```text
-VerifierProbeRequest
-VerifierProbeResult
-SearchRequest.verifier_probe_field
-```
+* adding `SearchKernel.V2.SearchRequest.verifier_probe_field` must report
+  `JSON field disposition inventory diverges from BFBS` and identify the field;
+* adding `SearchKernel.V2.ErrorCode.VerifierSynthetic = 11` must report
+  `JSON enum/union variant disposition inventory diverges from BFBS` and identify the
+  variant;
+* adding `VerifierOrphanRequest` to `RequestPayload` without a paired result
+  must report an unpaired request operation and identify the operation; and
+* truncating a BFBS file must report invalid BFBS input.
 
-It compiles the temporary schemas to BFBS, deletes the `.fbs` sources, copies the bindgen executable into an isolated temp directory, and generates using only BFBS.
-
-Required output includes operation metadata for `verifier_probe`, the generated
-Python domain model, and schema metadata containing `verifier_probe_field`.
-
-The verifier also appends `ErrorCode.VerifierSynthetic = 11` in a separate
-BFBS-only mutation. Generation must either emit the variant and its complete
-JSON conversion mappings or fail non-zero with a diagnostic naming the enum and
-variant. Successful generation that silently omits the mapping is rejected.
-
-## Fail-closed mutation proof
-
-The verifier creates `VerifierOrphanRequest` with no result pair. Bindgen must fail non-zero and identify the orphan in its diagnostic. Malformed BFBS must also fail non-zero.
+The JSON disposition policy is intentionally a checked-in allowlist. A new BFBS
+field or enum/union variant is not required to acquire automatic JSON semantics:
+generation remains fail-closed until its disposition is deliberately defined in
+the policy. This replaces the former synthetic probe success requirement.
 
 ## Existing semantic authority
 
