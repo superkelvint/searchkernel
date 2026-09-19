@@ -1,6 +1,6 @@
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentAnalysis, DocumentTerm, Engine, Field, FieldType, Query,
-    RankProfile, Schema, SearchRequest,
+    RankProfile, Schema, SearchRequest, TensorValue,
 };
 use serde_json::{json, Map, Value as Json};
 use std::fs;
@@ -17,6 +17,7 @@ fn field_type(value: &str) -> FieldType {
         "integer" => FieldType::Integer,
         "float" => FieldType::Float,
         "boolean" => FieldType::Boolean,
+        "tensor" => FieldType::Tensor("tensor<float>(x[2])".to_owned()),
         other => panic!("unsupported verifier field type {other}"),
     }
 }
@@ -25,7 +26,13 @@ pub fn schema(root: &Json) -> Schema {
     let s=&root["schema"];
     let mut schema=Schema::new(s["document_type"].as_str().unwrap());
     for f in s["fields"].as_array().unwrap() {
-        let mut field=Field::new(f["name"].as_str().unwrap(),field_type(f["type"].as_str().unwrap()));
+        let field_kind = f["type"].as_str().unwrap();
+        let field_type = if field_kind == "tensor" {
+            FieldType::Tensor(f["tensor_type"].as_str().unwrap().to_owned())
+        } else {
+            field_type(field_kind)
+        };
+        let mut field=Field::new(f["name"].as_str().unwrap(),field_type);
         if f.get("index").and_then(Json::as_bool).unwrap_or(false) { field=field.indexed(); }
         if f.get("attribute").and_then(Json::as_bool).unwrap_or(false) { field=field.attribute(); }
         if f.get("summary").and_then(Json::as_bool).unwrap_or(false) { field=field.summary(); }
@@ -36,6 +43,9 @@ pub fn schema(root: &Json) -> Schema {
             .first_phase(p["first_phase"].as_str().unwrap());
         for feature in p.get("match_features").and_then(Json::as_array).into_iter().flatten() {
             profile=profile.match_feature(feature.as_str().unwrap());
+        }
+        for input in p.get("query_inputs").and_then(Json::as_array).into_iter().flatten() {
+            profile=profile.query_input(input["name"].as_str().unwrap(),input["type_spec"].as_str().unwrap());
         }
         schema=schema.rank_profile(profile);
     }
@@ -78,6 +88,10 @@ pub fn populate(engine:&Engine, root:&Json) -> searchkernel_vespa_engine::Result
                 doc=doc.field(name,v);
             } else if let Some(v)=value.get("string").and_then(Json::as_str) {
                 doc=doc.field(name,v);
+            } else if let Some(type_spec)=value.get("type_spec").and_then(Json::as_str) {
+                let values=value["values"].as_array().unwrap().iter()
+                    .map(|cell| cell.as_f64().unwrap()).collect::<Vec<_>>();
+                doc=doc.field(name,TensorValue::dense(type_spec,values));
             } else {
                 panic!("unsupported M10 verifier field encoding: {value}");
             }
@@ -109,6 +123,12 @@ pub fn search_request(v:&Json)->SearchRequest {
     for item in v.get("query_features").and_then(Json::as_array).into_iter().flatten() {
         r=r.query_feature(item["name"].as_str().unwrap(),feature_value(item));
     }
+    for item in v.get("query_tensors").and_then(Json::as_array).into_iter().flatten() {
+        let values=item["values"].as_array().unwrap().iter()
+            .map(|cell| cell.as_f64().unwrap()).collect::<Vec<_>>();
+        r=r.query_tensor(item["name"].as_str().unwrap(), TensorValue::dense(
+            item["type_spec"].as_str().unwrap(), values));
+    }
     for item in v.get("rank_properties").and_then(Json::as_array).into_iter().flatten() {
         r=r.rank_property(item["name"].as_str().unwrap(),item["value"].as_str().unwrap());
     }
@@ -116,12 +136,35 @@ pub fn search_request(v:&Json)->SearchRequest {
 }
 
 pub fn run_positive(engine:&Engine,root:&Json)->searchkernel_vespa_engine::Result<Json> {
+    let kinded_values = root.get("feature_value_format").and_then(Json::as_str) == Some("kinded");
     let mut steps=Vec::new();
     for step in root["steps"].as_array().unwrap() {
         let result=engine.search(search_request(&step["request"]))?;
         let hits=result.hits.into_iter().map(|hit| {
             let features:Map<String,Json>=hit.match_features.into_iter()
-                .map(|(name,value)|(name,Json::String(format!("0x{:016x}",value.to_bits())))).collect();
+                .map(|(name,value)| {
+                    let encoded = match value {
+                        searchkernel_vespa_engine::MatchFeatureValue::Double(value) => {
+                            if kinded_values {
+                                json!({"kind":"double","bits":format!("0x{:016x}",value.to_bits())})
+                            } else {
+                                Json::String(format!("0x{:016x}",value.to_bits()))
+                            }
+                        }
+                        searchkernel_vespa_engine::MatchFeatureValue::Data(data) => {
+                            if !kinded_values {
+                                panic!("M10 scalar ranking verifier received data-backed match feature");
+                            }
+                            let mut hex = String::with_capacity(data.len() * 2);
+                            for byte in data {
+                                use std::fmt::Write as _;
+                                write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
+                            }
+                            json!({"kind":"data","hex":hex})
+                        }
+                    };
+                    (name,encoded)
+                }).collect();
             json!({"document_id":hit.document_id,"score_bits":format!("0x{:016x}",hit.score.to_bits()),"match_features":features})
         }).collect::<Vec<_>>();
         steps.push(json!({"id":step["id"],"op":"search","total_hit_count":result.total_hits,"hits":hits}));
@@ -145,4 +188,3 @@ pub fn classify_error(error:&searchkernel_vespa_engine::Error)->&'static str {
     else if m.contains("rank profile") || m.contains("rank-profile") || m.contains("profile") { "invalid_rank_profile" }
     else { "invalid_request" }
 }
-

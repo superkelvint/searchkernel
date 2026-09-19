@@ -12,11 +12,13 @@
 #include <vespa/document/annotation/spantree.h>
 #include <vespa/document/datatype/datatype.h>
 #include <vespa/document/datatype/documenttype.h>
+#include <vespa/document/datatype/tensor_data_type.h>
 #include <vespa/document/fieldvalue/boolfieldvalue.h>
 #include <vespa/document/fieldvalue/document.h>
 #include <vespa/document/fieldvalue/doublefieldvalue.h>
 #include <vespa/document/fieldvalue/intfieldvalue.h>
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
+#include <vespa/document/fieldvalue/tensorfieldvalue.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
 #include <vespa/document/test/make_bucket_space.h>
@@ -50,9 +52,13 @@
 #include <vespa/vespalib/data/slime/json_format.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/net/socket_spec.h>
+#include <vespa/vespalib/objects/nbostream.h>
 #include <vespa/vespalib/util/hw_info.h>
 #include <vespa/vespalib/util/thread_bundle.h>
 #include <vespa/vespalib/util/threadstackexecutor.h>
+#include <vespa/eval/eval/fast_value.h>
+#include <vespa/eval/eval/tensor_spec.h>
+#include <vespa/eval/eval/value_codec.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
 
@@ -198,9 +204,42 @@ std::string hex64(uint64_t value) {
 
 std::string double_bits(double value) { return hex64(std::bit_cast<uint64_t>(value)); }
 
+std::string data_hex(Memory data) {
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (size_t index = 0; index < data.size; ++index) {
+        out << std::setw(2)
+            << static_cast<unsigned int>(static_cast<unsigned char>(data.data[index]));
+    }
+    return out.str();
+}
+
+std::string encoded_dense_tensor(const Inspector& item) {
+    const auto type_spec = string_value(object_field(item, "type_spec"), "query tensor type_spec");
+    const auto& values = object_field(item, "values");
+    require(values.type() == vespalib::slime::ARRAY::instance, "query tensor values must be an array");
+    vespalib::eval::TensorSpec spec(type_spec);
+    for (size_t index = 0; index < values.children(); ++index) {
+        require(values[index].type() == vespalib::slime::DOUBLE::instance ||
+                    values[index].type() == vespalib::slime::LONG::instance,
+                "query tensor cell must be numeric");
+        const double value = values[index].type() == vespalib::slime::DOUBLE::instance
+                                 ? values[index].asDouble()
+                                 : static_cast<double>(values[index].asLong());
+        spec.add({{"x", vespalib::eval::TensorSpec::Label(index)}}, value);
+    }
+    auto tensor = vespalib::eval::value_from_spec(
+        spec, vespalib::eval::FastValueBuilderFactory::get());
+    require(static_cast<bool>(tensor), "could not construct query tensor");
+    vespalib::nbostream stream;
+    vespalib::eval::encode_value(*tensor, stream);
+    return std::string(stream.data(), stream.size());
+}
+
 struct FieldSpec {
     std::string name;
     std::string type;
+    std::string tensor_type;
     bool index = false;
     bool attribute = false;
     bool summary = false;
@@ -221,6 +260,9 @@ std::vector<FieldSpec> fields_from_schema(const Inspector& root) {
         FieldSpec spec;
         spec.name = string_value(object_field(f, "name"), "field name must be string");
         spec.type = string_value(object_field(f, "type"), "field type must be string");
+        if (present(object_field(f, "tensor_type"))) {
+            spec.tensor_type = string_value(object_field(f, "tensor_type"), "tensor_type must be string");
+        }
         if (present(object_field(f, "index"))) spec.index = bool_value(object_field(f, "index"), "index must be bool");
         if (present(object_field(f, "attribute"))) spec.attribute = bool_value(object_field(f, "attribute"), "attribute must be bool");
         if (present(object_field(f, "summary"))) spec.summary = bool_value(object_field(f, "summary"), "summary must be bool");
@@ -239,6 +281,9 @@ std::vector<FieldSpec> fields_from_fixture_schema(const Inspector& root) {
         FieldSpec spec;
         spec.name = string_value(object_field(f, "name"), "field name must be string");
         spec.type = string_value(object_field(f, "type"), "field type must be string");
+        if (present(object_field(f, "tensor_type"))) {
+            spec.tensor_type = string_value(object_field(f, "tensor_type"), "tensor_type must be string");
+        }
         if (present(object_field(f, "index"))) spec.index = bool_value(object_field(f, "index"), "index must be bool");
         if (present(object_field(f, "attribute"))) spec.attribute = bool_value(object_field(f, "attribute"), "attribute must be bool");
         if (present(object_field(f, "summary"))) spec.summary = bool_value(object_field(f, "summary"), "summary must be bool");
@@ -342,6 +387,7 @@ class Fixture {
     DummyFileHeaderContext _header;
     TransLogServer _tls;
     proton::matching::QueryLimiter _limiter;
+    std::vector<std::unique_ptr<const document::TensorDataType>> _tensor_types;
     DocumentType _type;
     std::shared_ptr<DocumentTypeRepo> _repo;
     DocumentDB::SP _db;
@@ -364,6 +410,14 @@ public:
         for (const auto& spec : specs) {
             if (spec.type == "integer") _type.addField(document::Field(spec.name, field_id++, *document::DataType::INT));
             else if (spec.type == "text") _type.addField(document::Field(spec.name, field_id++, *document::DataType::STRING));
+            else if (spec.type == "tensor") {
+                require(!spec.tensor_type.empty(), "tensor field type is missing");
+                auto tensor_type = document::TensorDataType::fromSpec(spec.tensor_type);
+                require(static_cast<bool>(tensor_type), "could not construct tensor field type");
+                const auto* tensor_type_ptr = tensor_type.get();
+                _tensor_types.emplace_back(std::move(tensor_type));
+                _type.addField(document::Field(spec.name, field_id++, *tensor_type_ptr));
+            }
             else fail("unsupported M10 fixture field type");
         }
         _repo = std::make_shared<DocumentTypeRepo>(_type);
@@ -433,6 +487,29 @@ public:
             ++known_fields;
             const auto& field = _type.getField(spec.name);
             if (spec.type == "integer") result->setFieldValue(field, std::make_unique<document::IntFieldValue>(integer_value(object_field(encoded, "integer"), "integer value")));
+            else if (spec.type == "tensor") {
+                const auto type_spec = string_value(object_field(encoded, "type_spec"), "tensor type_spec");
+                require(type_spec == spec.tensor_type, "document tensor type does not match field type");
+                const auto& tensor_values = object_field(encoded, "values");
+                require(tensor_values.type() == vespalib::slime::ARRAY::instance, "tensor values must be an array");
+                vespalib::eval::TensorSpec tensor_spec(type_spec);
+                for (size_t index = 0; index < tensor_values.children(); ++index) {
+                    require(tensor_values[index].type() == vespalib::slime::DOUBLE::instance ||
+                                tensor_values[index].type() == vespalib::slime::LONG::instance,
+                            "tensor cell must be numeric");
+                    const double value = tensor_values[index].type() == vespalib::slime::DOUBLE::instance
+                                             ? tensor_values[index].asDouble()
+                                             : static_cast<double>(tensor_values[index].asLong());
+                    tensor_spec.add({{"x", vespalib::eval::TensorSpec::Label(index)}}, value);
+                }
+                auto tensor = vespalib::eval::value_from_spec(
+                    tensor_spec, vespalib::eval::FastValueBuilderFactory::get());
+                require(static_cast<bool>(tensor), "could not construct document tensor");
+                auto tensor_value = std::make_unique<document::TensorFieldValue>(
+                    *field.getDataType().cast_tensor());
+                *tensor_value = std::move(tensor);
+                result->setFieldValue(field, std::move(tensor_value));
+            }
             else {
                 const auto raw = string_value(object_field(encoded, "text"), "text value");
                 result->setFieldValue(field, annotated_string(raw, analysis_from_value(encoded), *_repo, _type));
@@ -486,6 +563,16 @@ public:
                 text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
                 // Vespa's query(name) executor consumes the rank property under `name`.
                 rank.add(name, text.str());
+            }
+        }
+        const auto& query_tensors = object_field(request, "query_tensors");
+        if (present(query_tensors)) {
+            require(query_tensors.type() == vespalib::slime::ARRAY::instance,
+                    "query_tensors must be an array");
+            for (size_t i = 0; i < query_tensors.children(); ++i) {
+                const auto& item = query_tensors[i];
+                const auto name = string_value(object_field(item, "name"), "query tensor name");
+                rank.add("query(" + name + ")", encoded_dense_tensor(item));
             }
         }
         const auto& rank_properties = object_field(request, "rank_properties");
@@ -608,7 +695,8 @@ private:
     }
 };
 
-void emit_search_step(const std::string& step_id, const SearchReply& reply, const Fixture& fixture) {
+void emit_search_step(const std::string& step_id, const SearchReply& reply, const Fixture& fixture,
+                      bool kinded_values) {
     const auto& features = reply.match_features;
     require(features.values.size() == features.names.size() * reply.hits.size(),
             "native match-feature matrix shape mismatch");
@@ -623,8 +711,24 @@ void emit_search_step(const std::string& step_id, const SearchReply& reply, cons
         for (size_t f = 0; f < features.names.size(); ++f) {
             if (f) std::cout << ',';
             const auto& value = features.values[i * features.names.size() + f];
-            require(value.is_double(), "M10 v1 match feature is not scalar double");
-            std::cout << json_escape(features.names[f]) << ":\"" << double_bits(value.as_double()) << "\"";
+            std::cout << json_escape(features.names[f]) << ':';
+            if (value.is_double()) {
+                if (kinded_values) {
+                    std::cout << "{\"kind\":\"double\",\"bits\":"
+                              << json_escape(double_bits(value.as_double())) << '}';
+                } else {
+                    std::cout << json_escape(double_bits(value.as_double()));
+                }
+            } else {
+                const auto data = value.as_data();
+                require(value.is_data(), "unexpected invalid match-feature value");
+                if (kinded_values) {
+                    std::cout << "{\"kind\":\"data\",\"hex\":"
+                              << json_escape(data_hex(data)) << '}';
+                } else {
+                    std::cout << "{\"data_hex\":" << json_escape(data_hex(data)) << '}';
+                }
+            }
         }
         std::cout << "}}";
     }
@@ -641,6 +745,8 @@ int run(const std::filesystem::path& scenario_path) {
     auto scenario = read_json(scenario_path);
     const auto& root = scenario.get();
     const auto id = string_value(object_field(root, "id"), "scenario id");
+    const auto& format = object_field(root, "feature_value_format");
+    const bool kinded_values = present(format) && string_value(format, "feature_value_format") == "kinded";
     const auto specs = fields_from_schema(root);
     const auto config = std::filesystem::path(required_env("M10_ORACLE_FIXTURE_ROOT"));
     const auto fixture_schema = read_json(config / "searchkernel-schema.json");
@@ -663,7 +769,7 @@ int run(const std::filesystem::path& scenario_path) {
         require(string_value(object_field(step, "op"), "step op") == "search", "M10 positive step must be search");
         const auto step_id = string_value(object_field(step, "id"), "step id");
         auto reply = fixture.search(object_field(step, "request"));
-        emit_search_step(step_id, *reply, fixture);
+        emit_search_step(step_id, *reply, fixture, kinded_values);
     }
     std::cout << "]}\n" << std::flush;
     std::cerr << "M10_ORACLE result emitted\n" << std::flush;

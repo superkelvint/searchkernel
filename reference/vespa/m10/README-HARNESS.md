@@ -1,6 +1,6 @@
 # M10 verifier harness
 
-M10 verifies scalar local ranking and feature inspection against the pinned Vespa C++ engine. It is cumulative on M9.
+M10 verifies local ranking and feature inspection against the pinned Vespa C++ engine. It is cumulative on M9. The additive `feature-values/` verifier also proves the `double | opaque data` match-feature boundary with a real tensor-valued Vespa feature; it does not decode the opaque payload.
 
 ## Files
 
@@ -25,6 +25,7 @@ canonicalize.py
 check-structure.sh
 freeze-goldens.sh
 verify-m10.sh
+feature-values/
 ```
 
 The public Rust shape is additionally frozen by:

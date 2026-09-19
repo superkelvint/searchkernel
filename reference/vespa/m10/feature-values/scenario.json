@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "double-and-data-feature-values",
+  "feature_value_format": "kinded",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {"name":"title","type":"text","index":true,"attribute":false,"summary":true},
+      {"name":"ordinal","type":"integer","index":false,"attribute":true,"summary":false},
+      {"name":"embedding","type":"tensor","tensor_type":"tensor<float>(x[2])","index":false,"attribute":true,"summary":false}
+    ],
+    "rank_profiles": [
+      {"name":"feature_values","first_phase":"attribute(ordinal)","match_features":["attribute(ordinal)","query(embedding)"],"query_inputs":[{"name":"embedding","type_spec":"tensor<float>(x[2])"}]}
+    ]
+  },
+  "documents": [
+    {
+      "id":"id:test:typea::feature-values",
+      "fields": {
+        "title": {"text":"fox","analysis":[{"position":0,"byte_start":0,"byte_len":3,"term":"fox"}]},
+        "ordinal": {"integer":7},
+        "embedding": {"type_spec":"tensor<float>(x[2])","values":[1.25,-2.5]}
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id":"search",
+      "op":"search",
+      "request": {
+        "query":{"term":{"field":"title","text":"fox","analysis":["fox"]}},
+        "rank_profile":"feature_values",
+        "query_features":[],
+        "query_tensors":[{"name":"embedding","type_spec":"tensor<float>(x[2])","values":[1.25,-2.5]}],
+        "rank_properties":[],
+        "limit":10,
+        "offset":0,
+        "sort":[],
+        "summary":"none"
+      }
+    }
+  ]
+}

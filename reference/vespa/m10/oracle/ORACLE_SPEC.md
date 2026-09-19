@@ -19,5 +19,9 @@ The oracle does **not** call the Rust wrapper, `ConfigCompiler`, the M10 Rust
 driver, Java/container search, or a Search Kernel ranking implementation.
 
 `match_features.values` is interpreted as the pinned Vespa contract states:
-`names.size() * N` values, one feature row for each returned hit. Any non-double
-feature is an explicit M10-v1 oracle failure.
+`names.size() * N` values, one feature row for each returned hit. Scalar values
+are emitted as exact IEEE-754 bits and DATA values as exact opaque bytes. The
+additive M10 feature-value scenario exercises both representations using
+`attribute(ordinal)` and the tensor-valued `query(embedding)` feature. The
+oracle uses `is_double()`, `is_data()`, `as_double()`, and `as_data()` and does
+not decode opaque DATA into a Search Kernel tensor representation.

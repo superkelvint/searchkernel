@@ -1,0 +1,1 @@
+{"id":"double-and-data-feature-values","steps":[{"hits":[{"document_id":"id:test:typea::feature-values","match_features":{"attribute(ordinal)":{"bits":"0x401c000000000000","kind":"double"},"query(embedding)":{"hex":"0601010178023fa00000c0200000","kind":"data"}},"score_bits":"0x401c000000000000"}],"id":"search","op":"search","total_hit_count":1}]}

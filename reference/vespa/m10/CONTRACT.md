@@ -4,7 +4,9 @@
 
 Expose Vespa's existing local ranking system through the low-level `searchkernel-vespa-engine` API without introducing a Search Kernel scoring engine.
 
-M10 freezes a deliberately small scalar ranking surface:
+M10 freezes a deliberately small ranking surface. The existing ranking corpus
+uses scalar features; the additive feature-value scenario also freezes Vespa's
+opaque DATA representation:
 
 ```text
 Schema
@@ -56,7 +58,7 @@ zero or more match features
 
 The expression and feature names use Vespa ranking syntax. Search Kernel validates safe structural constraints but does not parse or evaluate Vespa ranking expressions itself.
 
-M10 v1 requires scalar ranking only. The verifier covers:
+The existing M10 ranking corpus covers scalar ranking features:
 
 ```text
 bm25(field)
@@ -178,7 +180,7 @@ Search Kernel must return the values produced by Vespa.
 
 M10 v1 uses Vespa match features as the low-level inspection surface.
 
-A rank profile declares match features. For every returned hit, `Hit::match_features` contains the scalar values returned by the native matcher.
+A rank profile declares match features. For every returned hit, `Hit::match_features` contains the values returned by the native matcher. A scalar Vespa value becomes `MatchFeatureValue::Double`; a data-backed value becomes `MatchFeatureValue::Data` with the exact opaque bytes copied from the borrowed native view.
 
 The verifier compares exact IEEE-754 bit patterns for:
 
@@ -189,7 +191,20 @@ match-feature values
 
 Feature order is not semantic. Feature names are semantic.
 
-If Vespa returns a non-scalar/data/tensor match feature through this M10 v1 surface, Search Kernel must fail explicitly rather than silently coerce it to a float.
+The invariant is:
+
+```text
+scalar feature       -> Double
+data-backed feature  -> Data
+no coercion between the two
+tensor decoding is outside this raw ABI layer
+```
+
+The additive `feature-values` verifier uses a real pinned-Vespa tensor-valued
+query feature as a data-backed match feature. It verifies the raw bytes through
+the direct oracle, generic and local native accessors, and the Rust wrapper.
+The legacy scalar accessor remains available and returns `TYPE_ERROR` for
+that same data-backed value.
 
 ## Ranking expressions
 

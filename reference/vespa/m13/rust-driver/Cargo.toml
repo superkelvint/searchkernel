@@ -1,0 +1,15 @@
+[package]
+name = "searchkernel-m13-verifier"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+searchkernel-vespa-bindings = { path = "../../../../core/crates/searchkernel-vespa-bindings" }
+searchkernel-vespa-engine = { path = "../../../../core/crates/searchkernel-vespa-engine" }
+
+[[bin]]
+name = "searchkernel-m13-driver"
+path = "src/main.rs"
+
+[workspace]
