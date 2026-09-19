@@ -24,10 +24,12 @@ pub use schema::{compile_index_definition, validate_index_definition};
 #[cfg(test)]
 pub(crate) use search::filter::{lower_comparison, lower_filter};
 #[cfg(test)]
+pub(crate) use search::lower_facet_groupings;
+#[cfg(test)]
 pub(crate) use search::lower_query;
 #[cfg(test)]
 pub(crate) use search::{
-    lower_facet_groupings, lower_facets_into_request, lower_search_options, lower_search_query,
+    lower_facets_into_request, lower_groupings, lower_search_options, lower_search_query,
     query_feature_value, ranking_profile, validate_search_request,
 };
 
@@ -233,9 +235,13 @@ fn native_search_error(
 ) -> PortableError {
     if error.kind() == searchkernel_vespa_engine::ErrorKind::Unsupported {
         let detail_code = error.detail_code().unwrap_or(unsupported_code);
-        let path = match detail_code {
-            "facet_key_type_not_supported" => Some("grouping"),
-            _ => Some("sort"),
+        let path = if detail_code == "facet_key_type_not_supported"
+            || detail_code.starts_with("grouping_")
+            || detail_code == "grouping_not_supported"
+        {
+            Some("grouping")
+        } else {
+            Some("sort")
         };
         return PortableError::unsupported(detail_code, path, error.to_string());
     }

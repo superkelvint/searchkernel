@@ -71,6 +71,114 @@ fn facet_grouping(
     }
 }
 
+fn native_grouping(levels: &[(&str, Vec<GroupingExpressionIr>)]) -> GroupingRequestIr {
+    let mut nested = None;
+    for (field, outputs) in levels.iter().rev() {
+        let mut operations = vec![GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+            (*field).to_owned(),
+        ))];
+        if !outputs.is_empty() {
+            operations.push(GroupingOperationIr::Output(
+                outputs
+                    .iter()
+                    .cloned()
+                    .map(|expression| GroupingOutputIr {
+                        label: None,
+                        expression,
+                    })
+                    .collect(),
+            ));
+        }
+        if let Some(child) = nested {
+            operations.push(GroupingOperationIr::Each(child));
+        }
+        nested = Some(GroupingAllIr {
+            operations,
+            label: None,
+        });
+    }
+    GroupingRequestIr {
+        root: nested.expect("native grouping requires at least one level"),
+        continuations: Vec::new(),
+    }
+}
+
+fn count_expression() -> GroupingExpressionIr {
+    GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count))
+}
+
+fn average_expression(field: &str) -> GroupingExpressionIr {
+    GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Avg(
+        GroupingExpressionIr::Attribute(field.to_owned()),
+    )))
+}
+
+#[test]
+fn native_grouping_ir_lowers_to_linear_attribute_plan() {
+    let request = native_grouping(&[
+        (
+            "category",
+            vec![count_expression(), average_expression("price")],
+        ),
+        ("qty", vec![count_expression(), average_expression("price")]),
+    ]);
+    let lowered = lower_groupings(&[request]).expect("native grouping should lower");
+    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
+        panic!("expected a native grouping lowering");
+    };
+    assert_eq!(
+        native.plan,
+        searchkernel_vespa_engine::GroupingPlan::new()
+            .level(
+                searchkernel_vespa_engine::GroupingLevel::new(
+                    searchkernel_vespa_engine::GroupingExpression::attribute("category"),
+                )
+                .aggregation(searchkernel_vespa_engine::GroupingAggregation::Count)
+                .aggregation(
+                    searchkernel_vespa_engine::GroupingAggregation::Average(
+                        searchkernel_vespa_engine::GroupingExpression::attribute("price"),
+                    )
+                ),
+            )
+            .level(
+                searchkernel_vespa_engine::GroupingLevel::new(
+                    searchkernel_vespa_engine::GroupingExpression::attribute("qty"),
+                )
+                .aggregation(searchkernel_vespa_engine::GroupingAggregation::Count)
+                .aggregation(
+                    searchkernel_vespa_engine::GroupingAggregation::Average(
+                        searchkernel_vespa_engine::GroupingExpression::attribute("price"),
+                    )
+                ),
+            )
+    );
+}
+
+#[test]
+fn unsupported_grouping_ir_is_not_approximated() {
+    let request = native_grouping(&[(
+        "category",
+        vec![GroupingExpressionIr::Aggregation(Box::new(
+            GroupingAggregationIr::Sum(GroupingExpressionIr::Attribute("price".into())),
+        ))],
+    )]);
+    let error = lower_groupings(&[request]).expect_err("sum must remain unsupported");
+    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    assert_eq!(error.details[0].code, "grouping_aggregation_not_supported");
+
+    let request = native_grouping(&[(
+        "category",
+        vec![GroupingExpressionIr::Aggregation(Box::new(
+            GroupingAggregationIr::Avg(GroupingExpressionIr::Literal(RequestValueIr::String(
+                "price".into(),
+            ))),
+        ))],
+    )]);
+    let error = lower_groupings(&[request]).expect_err("average literal must remain unsupported");
+    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    assert_eq!(error.details[0].code, "grouping_classifier_not_supported");
+}
+
 #[test]
 fn analyzed_multi_term_text_lowers_to_a_phrase() {
     let search_field = || {
@@ -894,7 +1002,7 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
         TypoPolicy::Disabled,
     );
     let result = backend
-        .search(comparison)
+        .search(comparison.clone())
         .expect("execute typed comparison");
     let ResultNode::Group(group) = result.root else {
         panic!("search root must be a group");
@@ -904,6 +1012,25 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
         &group.children[0],
         ResultNode::Hit(hit) if hit.id == "doc:wireless"
     ));
+
+    let grouped = comparison.with_grouping(vec![native_grouping(&[(
+        "price",
+        vec![count_expression(), average_expression("price")],
+    )])]);
+    let result = backend.search(grouped).expect("execute native grouping");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    let [ResultNode::Hit(_), ResultNode::Group(grouping)] = group.children.as_slice() else {
+        panic!("expected the hit and native grouping result");
+    };
+    assert_eq!(grouping.children.len(), 1);
+    let ResultNode::Group(bucket) = &grouping.children[0] else {
+        panic!("grouping result child must be a group");
+    };
+    assert_eq!(bucket.value, Some(Value::Int64(20)));
+    assert_eq!(bucket.fields["count"], Value::Int64(1));
+    assert_eq!(bucket.fields["average(price)"], Value::Float64(20.0));
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");
@@ -1279,7 +1406,7 @@ fn unsupported_structured_grouping_is_explicitly_rejected() {
     }]);
     let error = validate_search_request(&request).expect_err("grouping must not be dropped");
     assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-    assert_eq!(error.details[0].code, "grouping_not_supported");
+    assert_eq!(error.details[0].code, "grouping_level_missing_classifier");
 }
 
 #[test]

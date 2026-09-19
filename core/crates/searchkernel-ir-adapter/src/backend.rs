@@ -1,8 +1,8 @@
 //! Vespa-backed implementation of the portable backend contract.
 
 use crate::search::{
-    lower_facet_groupings, lower_facets_into_request, lower_search_options, lower_search_query,
-    validate_search_request,
+    lower_facets_into_request, lower_groupings, lower_search_options, lower_search_query,
+    validate_search_request, GroupingLowering,
 };
 use crate::{
     analysis_options, internal, lower_document, lower_field_value, native_error,
@@ -15,7 +15,8 @@ use searchkernel_ir::{
     TotalHitsRelation, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_vespa_engine::{
-    DocumentUpdate, Engine, FieldValue, MatchFeatureValue, ScalarValue,
+    DocumentUpdate, Engine, FieldValue, GroupingAggregation, GroupingExpression, GroupingOutput,
+    GroupingPlan, GroupingResult, GroupingResultValue, MatchFeatureValue, ScalarValue,
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
@@ -66,6 +67,149 @@ impl VespaBackend {
 
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+}
+
+fn facet_result_node(
+    grouping: searchkernel_vespa_engine::FacetResult,
+    facet: crate::search::FacetLowering,
+) -> Result<searchkernel_ir::ResultNode> {
+    let groups = grouping
+        .groups
+        .into_iter()
+        .map(|group| {
+            let mut fields = std::collections::BTreeMap::new();
+            fields.insert("count".to_owned(), searchkernel_ir::Value::UInt64(group.count));
+            let value = match group.key {
+                VespaValue::String(value) => ScalarValue::String(value),
+                VespaValue::Integer(value) => ScalarValue::Integer(value),
+                VespaValue::Boolean(value) => ScalarValue::Boolean(value),
+                _ => {
+                    return Err(PortableError::unsupported(
+                        "facet_key_type_not_supported",
+                        Some("grouping"),
+                        "native grouping returned a key kind not representable by the portable result value contract",
+                    ))
+                }
+            };
+            Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                id: None,
+                label: None,
+                value: Some(value_to_ir(&FieldValue::Scalar(value))),
+                fields,
+                children: Vec::new(),
+                continuations: std::collections::BTreeMap::new(),
+                source: None,
+                types: Vec::new(),
+                score: None,
+                limits: None,
+                metadata: std::collections::BTreeMap::new(),
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(searchkernel_ir::ResultNode::Group(
+        searchkernel_ir::ResultGroup {
+            id: Some(facet.field.clone()),
+            label: Some(facet.field),
+            value: None,
+            fields: std::collections::BTreeMap::new(),
+            children: groups,
+            continuations: std::collections::BTreeMap::new(),
+            source: None,
+            types: Vec::new(),
+            score: None,
+            limits: None,
+            metadata: std::collections::BTreeMap::new(),
+        },
+    ))
+}
+
+fn grouping_result_node(
+    result: GroupingResult,
+    plan: &GroupingPlan,
+) -> Result<searchkernel_ir::ResultNode> {
+    grouping_result_group(result, plan, None).map(searchkernel_ir::ResultNode::Group)
+}
+
+fn grouping_result_group(
+    result: GroupingResult,
+    plan: &GroupingPlan,
+    level: Option<usize>,
+) -> Result<searchkernel_ir::ResultGroup> {
+    let fields = match level {
+        None => {
+            if !result.outputs.is_empty() {
+                return Err(internal(
+                    "native grouping returned outputs on its root node",
+                ));
+            }
+            std::collections::BTreeMap::new()
+        }
+        Some(level) => {
+            let grouping_level = plan
+                .levels
+                .get(level)
+                .ok_or_else(|| internal("native grouping returned a node below its plan"))?;
+            if result.outputs.len() != grouping_level.aggregations.len() {
+                return Err(internal(
+                    "native grouping returned an unexpected output count",
+                ));
+            }
+            grouping_level
+                .aggregations
+                .iter()
+                .zip(result.outputs)
+                .map(|(aggregation, output)| {
+                    Ok((
+                        grouping_aggregation_name(aggregation),
+                        grouping_output_value(output)?,
+                    ))
+                })
+                .collect::<Result<std::collections::BTreeMap<_, _>>>()?
+        }
+    };
+    let child_level = level.map_or(0, |level| level + 1);
+    let children = result
+        .groups
+        .into_iter()
+        .map(|child| grouping_result_group(child, plan, Some(child_level)))
+        .map(|child| child.map(searchkernel_ir::ResultNode::Group))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(searchkernel_ir::ResultGroup {
+        id: None,
+        label: None,
+        value: result.key.map(grouping_value_to_ir),
+        fields,
+        children,
+        continuations: std::collections::BTreeMap::new(),
+        source: None,
+        types: Vec::new(),
+        score: None,
+        limits: None,
+        metadata: std::collections::BTreeMap::new(),
+    })
+}
+
+fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
+    match aggregation {
+        GroupingAggregation::Count => "count".to_owned(),
+        GroupingAggregation::Average(GroupingExpression::Attribute(field)) => {
+            format!("average({field})")
+        }
+    }
+}
+
+fn grouping_output_value(output: GroupingOutput) -> Result<searchkernel_ir::Value> {
+    match output {
+        GroupingOutput::Value(value) => Ok(grouping_value_to_ir(value)),
+    }
+}
+
+fn grouping_value_to_ir(value: GroupingResultValue) -> searchkernel_ir::Value {
+    match value {
+        GroupingResultValue::String(value) => searchkernel_ir::Value::String(value),
+        GroupingResultValue::Integer(value) => searchkernel_ir::Value::Int64(value),
+        GroupingResultValue::Float(value) => searchkernel_ir::Value::Float64(value),
     }
 }
 
@@ -176,8 +320,15 @@ impl Backend for VespaBackend {
         validate_search_request(&request)?;
         let language = analysis_options(request.language())?;
         let query = lower_search_query(&request, language)?;
+        let groupings = lower_groupings(request.grouping())?;
+        let facets = groupings
+            .iter()
+            .filter_map(|grouping| match grouping {
+                GroupingLowering::Facet(facet) => Some(facet.clone()),
+                GroupingLowering::Native(_) => None,
+            })
+            .collect::<Vec<_>>();
         let m_request = lower_search_options(&request, query.clone(), language)?;
-        let facets = lower_facet_groupings(request.grouping())?;
         let m_request = lower_facets_into_request(m_request, &facets);
         let result = self
             .engine
@@ -224,63 +375,27 @@ impl Backend for VespaBackend {
                 })
             })
             .collect::<Vec<_>>();
-        let facet_nodes = result
-            .facets
-            .into_iter()
-            .zip(facets)
-            .map(|(grouping, facet)| -> Result<searchkernel_ir::ResultNode> {
-                let groups = grouping
-                    .groups
-                    .into_iter()
-                    .map(|group| {
-                        let mut fields = std::collections::BTreeMap::new();
-                        fields.insert(
-                            "count".to_owned(),
-                            searchkernel_ir::Value::UInt64(group.count),
-                        );
-                        let value = match group.key {
-                            VespaValue::String(value) => ScalarValue::String(value),
-                            VespaValue::Integer(value) => ScalarValue::Integer(value),
-                            VespaValue::Boolean(value) => ScalarValue::Boolean(value),
-                            _ => {
-                                return Err(PortableError::unsupported(
-                                    "facet_key_type_not_supported",
-                                    Some("grouping"),
-                                    "native grouping returned a key kind not representable by the portable result value contract",
-                                ))
-                            }
-                        };
-                        Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
-                            id: None,
-                            label: None,
-                            value: Some(value_to_ir(&FieldValue::Scalar(value))),
-                            fields,
-                            children: Vec::new(),
-                            continuations: std::collections::BTreeMap::new(),
-                            source: None,
-                            types: Vec::new(),
-                            score: None,
-                            limits: None,
-                            metadata: std::collections::BTreeMap::new(),
-                        }))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
-                    id: Some(facet.field.clone()),
-                    label: Some(facet.field),
-                    value: None,
-                    fields: std::collections::BTreeMap::new(),
-                    children: groups,
-                    continuations: std::collections::BTreeMap::new(),
-                    source: None,
-                    types: Vec::new(),
-                    score: None,
-                    limits: None,
-                    metadata: std::collections::BTreeMap::new(),
-                }))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        children.extend(facet_nodes);
+        let mut native_facets = result.facets.into_iter();
+        for grouping in groupings {
+            match grouping {
+                GroupingLowering::Facet(facet) => {
+                    let native = native_facets.next().ok_or_else(|| {
+                        internal("native search returned too few facet groupings")
+                    })?;
+                    children.push(facet_result_node(native, facet)?);
+                }
+                GroupingLowering::Native(native) => {
+                    let grouped = self
+                        .engine
+                        .group(&query, &native.plan)
+                        .map_err(|error| native_search_error(error, "grouping_not_supported"))?;
+                    children.push(grouping_result_node(grouped, &native.plan)?);
+                }
+            }
+        }
+        if native_facets.next().is_some() {
+            return Err(internal("native search returned too many facet groupings"));
+        }
         Ok(SearchResult {
             root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(children)),
             total_hits: searchkernel_ir::TotalHits {

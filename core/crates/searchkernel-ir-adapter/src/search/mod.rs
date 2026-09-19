@@ -124,7 +124,7 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
 }
 
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
-    grouping::lower_facet_groupings(request.grouping())?;
+    grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
     validate_nearest_neighbor_inputs(request)?;
     if !request.properties().is_empty() {
@@ -439,6 +439,10 @@ pub(crate) fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f6
     }
 }
 
-pub(crate) use grouping::{lower_facet_groupings, lower_facets_into_request};
+#[cfg(test)]
+pub(crate) use grouping::lower_facet_groupings;
+pub(crate) use grouping::{
+    lower_facets_into_request, lower_groupings, FacetLowering, GroupingLowering,
+};
 #[cfg(test)]
 pub(crate) use typed_query::lower_query;
