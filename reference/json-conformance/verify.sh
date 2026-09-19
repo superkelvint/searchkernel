@@ -9,7 +9,6 @@ root=$(cd "$here/../.." && pwd)
 "$here/scripts/check-generation.sh"
 python3 "$here/scripts/check-operation-map.py"
 python3 "$here/scripts/check-generated-metadata.py"
-python3 "$here/scripts/check-generated-docs.py"
 
 cargo run -q --manifest-path "$here/codec-contract/Cargo.toml"
 

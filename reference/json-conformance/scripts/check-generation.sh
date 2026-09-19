@@ -8,6 +8,9 @@ bfbs_root="$root/core/crates/searchkernel-json/bfbs"
 run_generate() { "$binary" generate --bfbs-root "$bfbs_root" --output-root "$1"; }
 run_generate "$out1"; run_generate "$out2"
 diff -ru --strip-trailing-cr "$out1" "$out2"
+sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$here/GENERATED_PATHS.txt" | sort > "$tmp/expected-paths"
+find "$out1" -type f -printf '%P\n' | sort > "$tmp/actual-paths"
+diff -u "$tmp/expected-paths" "$tmp/actual-paths"
 while IFS= read -r relative; do
   [[ -z "$relative" || "$relative" == \#* ]] && continue
   committed="$root/$relative"; first="$out1/$relative"

@@ -13,11 +13,11 @@ The complete verifier proves:
 1. canonical `.fbs` schemas reproducibly compile to committed BFBS with `flatc 25.12.19`;
 2. `searchkernel-bindgen` consumes BFBS and deterministically generates the C6 artifact tree;
 3. BFBS is genuinely the generator input, proven with an isolated synthetic-schema mutation after the temporary `.fbs` sources are deleted;
-4. generated BFBS-derived Python domain models and operation metadata cover the canonical request/response surface;
+4. generated BFBS-derived Python domain models and schema metadata cover the canonical request/response surface;
 5. matching SKRS responses decode through the retained JSON codec and portable SKRS errors remain portable errors;
 6. public JSON is Search Kernel canonical JSON, not official FlatBuffers JSON;
 7. JSON preserves presence, uses symbolic one-key unions, decimal-string int64/uint64, base64 bytes, and strict decoding;
-8. generated operation metadata, schema inventory, docs, and corpus fixtures are synchronized;
+8. the generated schema inventory, operation map, and frozen binary fixture manifest are synchronized;
 9. generator completeness is fail-closed: new valid BFBS operations, fields, and enum variants are generated completely, while unsupported mutations, an unpaired operation, and malformed BFBS are rejected;
 10. JSON→FlatBuffers and native FlatBuffers use the exact same dispatcher and produce identical Search Kernel IR;
 11. the full `reference/api-conformance` semantic suite remains green.

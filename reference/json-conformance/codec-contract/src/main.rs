@@ -46,13 +46,42 @@ fn fixtures(kind: &str, extension: &str) -> Vec<PathBuf> {
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == extension))
         .collect::<Vec<_>>();
-    paths.sort();
+    paths.sort_by_key(|path| {
+        path.file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
     paths
+}
+
+fn fixture_manifest() -> Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../expected/fixture-manifest.json");
+    json(&std::fs::read(path).expect("fixture manifest must be readable"))
+}
+
+fn manifest_names(manifest: &Value, kind: &str) -> Vec<String> {
+    manifest
+        .get(kind)
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("fixture manifest missing {kind} list"))
+        .iter()
+        .map(|value| value.as_str().unwrap_or_else(|| panic!("{kind} fixture name must be a string")))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn assert_fixture_set(paths: &[PathBuf], expected: &[String], kind: &str) {
+    let actual = paths
+        .iter()
+        .map(|path| path.file_stem().unwrap().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected, "{kind} fixture set changed; update fixture-manifest.json");
 }
 
 fn assert_request_roundtrip_corpus() {
     let paths = fixtures("requests", "skrq");
-    assert_eq!(paths.len(), 77, "request corpus size changed; update frozen C6 verifier first");
+    let manifest = fixture_manifest();
+    assert_fixture_set(&paths, &manifest_names(&manifest, "requests"), "request");
     for path in paths {
         let name = path.file_name().unwrap().to_string_lossy();
         let native = std::fs::read(&path).unwrap();
@@ -71,7 +100,8 @@ fn assert_request_roundtrip_corpus() {
 
 fn assert_response_roundtrip_corpus() {
     let paths = fixtures("responses", "skrs");
-    assert_eq!(paths.len(), 67, "response corpus size changed; update frozen C6 verifier first");
+    let manifest = fixture_manifest();
+    assert_fixture_set(&paths, &manifest_names(&manifest, "responses"), "response");
     for path in paths {
         let name = path.file_name().unwrap().to_string_lossy();
         let native = std::fs::read(&path).unwrap();
