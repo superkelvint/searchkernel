@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "id": "recursive-two-level",
+  "schema": {
+    "document_type": "typea",
+    "fields": [
+      {"name":"category","type":"string","attribute":true,"summary":true},
+      {"name":"qty","type":"integer","attribute":true,"summary":true},
+      {"name":"price","type":"float","attribute":true,"summary":true},
+      {"name":"active","type":"boolean","attribute":true,"summary":true}
+    ]
+  },
+  "documents": [
+    {"id":"id:test:typea::p1","fields":{"category":{"string":"A"},"qty":{"integer":1},"price":{"float":10.0},"active":{"boolean":true}}},
+    {"id":"id:test:typea::p2","fields":{"category":{"string":"A"},"qty":{"integer":1},"price":{"float":20.0},"active":{"boolean":true}}},
+    {"id":"id:test:typea::p3","fields":{"category":{"string":"A"},"qty":{"integer":2},"price":{"float":30.0},"active":{"boolean":true}}},
+    {"id":"id:test:typea::p4","fields":{"category":{"string":"B"},"qty":{"integer":1},"price":{"float":40.0},"active":{"boolean":true}}}
+  ],
+  "query": {
+    "attribute_range": {
+      "field": "price",
+      "lower": {"included":{"float":0.0}},
+      "upper": {"included":{"float":100.0}}
+    }
+  },
+  "levels": [
+    {"group_by":"category","outputs":["count",{"average":"price"}]},
+    {"group_by":"qty","outputs":["count",{"average":"price"}]}
+  ]
+}

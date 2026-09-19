@@ -19,7 +19,7 @@ $SK_NATIVE_SDK/
 
 ```json
 {
-  "native_abi_version": 5,
+  "native_abi_version": 9,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 ```
@@ -37,7 +37,7 @@ sk_engine_destroy
 A C program compiled outside the Vespa source tree must:
 
 1. dynamically load/link `libsearchkernel_vespa.so`;
-2. report native ABI version 5;
+2. report native ABI version 9;
 3. open a fresh engine using the bundled config fixture;
 4. destroy it cleanly;
 5. repeat open/destroy on the same data directory;

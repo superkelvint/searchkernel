@@ -3876,16 +3876,6 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
     }
 }
 
-template <typename Function>
-int32_t invoke_grouping(char *error, size_t error_capacity,
-                        Function &&function) noexcept {
-    const auto capacity = error_capacity > std::numeric_limits<uint32_t>::max()
-                              ? std::numeric_limits<uint32_t>::max()
-                              : static_cast<uint32_t>(error_capacity);
-    return invoke(reinterpret_cast<uint8_t *>(error), capacity,
-                  std::forward<Function>(function));
-}
-
 template <typename Handle>
 void destroy_noexcept(Handle *handle) noexcept {
     try {
@@ -5442,16 +5432,13 @@ extern "C" int32_t sk_grouping_plan_create(
 
 extern "C" int32_t sk_grouping_expression_attribute(
     const char *field, sk_grouping_expression **out_expression,
-    char *error, size_t error_capacity) SK_NOEXCEPT {
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_expression) *out_expression = nullptr;
     if (!field || !out_expression) {
-        return set_error(reinterpret_cast<uint8_t *>(error),
-                         static_cast<uint32_t>(std::min(error_capacity,
-                                                        static_cast<size_t>(std::numeric_limits<uint32_t>::max()))),
-                         SK_NATIVE_STATUS_INVALID_ARGUMENT,
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "grouping expression arguments are invalid");
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         auto expression = make_grouping_attribute_expression(field);
         *out_expression = expression.release();
     });
@@ -5463,15 +5450,15 @@ extern "C" void sk_grouping_expression_destroy(
 }
 
 extern "C" int32_t sk_grouping_aggregation_count(
-    sk_grouping_aggregation **out, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    sk_grouping_aggregation **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out) *out = nullptr;
     if (!out) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping aggregation output is null");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         auto aggregation = std::make_unique<sk_grouping_aggregation>();
         aggregation->kind = GroupingAggregationKind::COUNT;
         *out = aggregation.release();
@@ -5480,15 +5467,15 @@ extern "C" int32_t sk_grouping_aggregation_count(
 
 extern "C" int32_t sk_grouping_aggregation_average(
     const sk_grouping_expression *expression,
-    sk_grouping_aggregation **out, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    sk_grouping_aggregation **out, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out) *out = nullptr;
     if (!expression || !out) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("average grouping aggregation arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (!expression->expression) {
             throw std::invalid_argument("grouping expression is empty");
         }
@@ -5506,15 +5493,15 @@ extern "C" void sk_grouping_aggregation_destroy(
 
 extern "C" int32_t sk_grouping_plan_add_level(
     sk_grouping_plan *plan, const sk_grouping_expression *classifier,
-    sk_grouping_level **out_level, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    sk_grouping_level **out_level, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out_level) *out_level = nullptr;
     if (!plan || !classifier || !out_level) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping level arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (!classifier->expression) {
             throw std::invalid_argument("grouping classifier expression is empty");
         }
@@ -5562,13 +5549,13 @@ extern "C" int32_t sk_grouping_level_add_aggregation(
 
 extern "C" int32_t sk_grouping_level_add_aggregation_handle(
     sk_grouping_level *level, const sk_grouping_aggregation *aggregation,
-    char *error, size_t error_capacity) SK_NOEXCEPT {
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (!level || !aggregation) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping aggregation handle arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (aggregation->kind == GroupingAggregationKind::AVERAGE &&
             !aggregation->expression) {
             throw std::invalid_argument("average grouping aggregation expression is empty");
@@ -5635,11 +5622,11 @@ extern "C" int32_t sk_grouping_tree_node_group(
 
 extern "C" int32_t sk_grouping_tree_node_key(
     const sk_grouping_tree_node *node,
-    const sk_grouping_result_value **out_value, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    const sk_grouping_result_value **out_value, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out_value) *out_value = nullptr;
     if (!node || !node->key || !out_value) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping node key arguments are invalid");
         });
     }
@@ -5654,15 +5641,15 @@ extern "C" uint32_t sk_grouping_result_value_kind(
 
 extern "C" int32_t sk_grouping_result_value_string(
     const sk_grouping_result_value *value, const char **out_string,
-    uint32_t *out_length, char *error, size_t error_capacity) SK_NOEXCEPT {
+    uint32_t *out_length, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_string) *out_string = nullptr;
     if (out_length) *out_length = 0;
     if (!value || !out_string || !out_length) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping string value arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (value->kind != SK_GROUPING_RESULT_VALUE_STRING) {
             throw std::invalid_argument("grouping result value is not a string");
         }
@@ -5676,14 +5663,14 @@ extern "C" int32_t sk_grouping_result_value_string(
 
 extern "C" int32_t sk_grouping_result_value_integer(
     const sk_grouping_result_value *value, int64_t *out_integer,
-    char *error, size_t error_capacity) SK_NOEXCEPT {
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_integer) *out_integer = 0;
     if (!value || !out_integer) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping integer value arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (value->kind != SK_GROUPING_RESULT_VALUE_INTEGER) {
             throw std::invalid_argument("grouping result value is not an integer");
         }
@@ -5693,14 +5680,14 @@ extern "C" int32_t sk_grouping_result_value_integer(
 
 extern "C" int32_t sk_grouping_result_value_float(
     const sk_grouping_result_value *value, double *out_float,
-    char *error, size_t error_capacity) SK_NOEXCEPT {
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     if (out_float) *out_float = 0.0;
     if (!value || !out_float) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping float value arguments are invalid");
         });
     }
-    return invoke_grouping(error, error_capacity, [&] {
+    return invoke(error, error_capacity, [&] {
         if (value->kind != SK_GROUPING_RESULT_VALUE_FLOAT) {
             throw std::invalid_argument("grouping result value is not a float");
         }
@@ -5715,11 +5702,11 @@ extern "C" uint32_t sk_grouping_tree_node_output_count(
 
 extern "C" int32_t sk_grouping_tree_node_output(
     const sk_grouping_tree_node *node, uint32_t output_index,
-    const sk_grouping_tree_output **out_output, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    const sk_grouping_tree_output **out_output, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out_output) *out_output = nullptr;
     if (!node || !out_output || output_index >= node->outputs.size()) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping output arguments are invalid");
         });
     }
@@ -5734,16 +5721,16 @@ extern "C" uint32_t sk_grouping_tree_output_kind(
 
 extern "C" int32_t sk_grouping_tree_output_value(
     const sk_grouping_tree_output *output,
-    const sk_grouping_result_value **out_value, char *error,
-    size_t error_capacity) SK_NOEXCEPT {
+    const sk_grouping_result_value **out_value, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
     if (out_value) *out_value = nullptr;
     if (!output || !output->value || !out_value) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping output value arguments are invalid");
         });
     }
     if (output->kind != SK_GROUPING_TREE_OUTPUT_VALUE) {
-        return invoke_grouping(error, error_capacity, [] {
+        return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping output is not a value");
         });
     }

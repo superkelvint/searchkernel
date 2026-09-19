@@ -386,7 +386,7 @@ pub(crate) fn grouping_expression_attribute(
             field.as_ptr(),
             &mut pointer,
             error.as_mut_ptr().cast(),
-            error.capacity() as usize,
+            error.capacity(),
         )
     };
     check(status, &error)?;
@@ -403,7 +403,7 @@ pub(crate) fn grouping_aggregation_count() -> Result<NativeGroupingAggregation, 
         sys::sk_grouping_aggregation_count(
             &mut pointer,
             error.as_mut_ptr().cast(),
-            error.capacity() as usize,
+            error.capacity(),
         )
     };
     check(status, &error)?;
@@ -423,7 +423,7 @@ pub(crate) fn grouping_aggregation_average(
             expression.0.as_ptr(),
             &mut pointer,
             error.as_mut_ptr().cast(),
-            error.capacity() as usize,
+            error.capacity(),
         )
     };
     check(status, &error)?;
@@ -445,7 +445,7 @@ pub(crate) fn grouping_plan_add_level(
             classifier.0.as_ptr(),
             &mut pointer,
             error.as_mut_ptr().cast(),
-            error.capacity() as usize,
+            error.capacity(),
         )
     };
     check(status, &error)?;
@@ -462,7 +462,7 @@ pub(crate) fn grouping_level_add_aggregation(
             level.as_ptr(),
             aggregation.0.as_ptr(),
             error.as_mut_ptr().cast(),
-            error.capacity() as usize,
+            error.capacity(),
         )
     };
     check(status, &error)
@@ -507,7 +507,7 @@ fn grouping_result_value(
                         &mut string,
                         &mut length,
                         error.as_mut_ptr().cast(),
-                        error.capacity() as usize,
+                        error.capacity(),
                     )
                 },
                 &error,
@@ -536,7 +536,7 @@ fn grouping_result_value(
                         value,
                         &mut integer,
                         error.as_mut_ptr().cast(),
-                        error.capacity() as usize,
+                        error.capacity(),
                     )
                 },
                 &error,
@@ -552,7 +552,7 @@ fn grouping_result_value(
                         value,
                         &mut floating,
                         error.as_mut_ptr().cast(),
-                        error.capacity() as usize,
+                        error.capacity(),
                     )
                 },
                 &error,
@@ -579,7 +579,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                         output,
                         &mut value,
                         error.as_mut_ptr().cast(),
-                        error.capacity() as usize,
+                        error.capacity(),
                     )
                 },
                 &error,
@@ -611,7 +611,7 @@ fn grouping_tree_node(
                     node,
                     &mut value,
                     error.as_mut_ptr().cast(),
-                    error.capacity() as usize,
+                    error.capacity(),
                 )
             },
             &error,
@@ -632,7 +632,7 @@ fn grouping_tree_node(
                     index,
                     &mut output,
                     error.as_mut_ptr().cast(),
-                    error.capacity() as usize,
+                    error.capacity(),
                 )
             },
             &error,

@@ -1476,8 +1476,8 @@ unsafe extern "C" {
     pub fn sk_grouping_expression_attribute(
         field: *const ::std::os::raw::c_char,
         out_expression: *mut *mut sk_grouping_expression,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1486,16 +1486,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn sk_grouping_aggregation_count(
         out: *mut *mut sk_grouping_aggregation,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_grouping_aggregation_average(
         expression: *const sk_grouping_expression,
         out: *mut *mut sk_grouping_aggregation,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1506,8 +1506,8 @@ unsafe extern "C" {
         plan: *mut sk_grouping_plan,
         classifier: *const sk_grouping_expression,
         out_level: *mut *mut sk_grouping_level,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1530,8 +1530,8 @@ unsafe extern "C" {
     pub fn sk_grouping_level_add_aggregation_handle(
         level: *mut sk_grouping_level,
         aggregation: *const sk_grouping_aggregation,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1571,8 +1571,8 @@ unsafe extern "C" {
     pub fn sk_grouping_tree_node_key(
         node: *const sk_grouping_tree_node,
         out_value: *mut *const sk_grouping_result_value,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1583,24 +1583,24 @@ unsafe extern "C" {
         value: *const sk_grouping_result_value,
         out_string: *mut *const ::std::os::raw::c_char,
         out_length: *mut u32,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_grouping_result_value_integer(
         value: *const sk_grouping_result_value,
         out_integer: *mut i64,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_grouping_result_value_float(
         value: *const sk_grouping_result_value,
         out_float: *mut f64,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1611,8 +1611,8 @@ unsafe extern "C" {
         node: *const sk_grouping_tree_node,
         output_index: u32,
         out_output: *mut *const sk_grouping_tree_output,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
@@ -1622,8 +1622,8 @@ unsafe extern "C" {
     pub fn sk_grouping_tree_output_value(
         output: *const sk_grouping_tree_output,
         out_value: *mut *const sk_grouping_result_value,
-        error: *mut ::std::os::raw::c_char,
-        error_capacity: usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
     ) -> i32;
 }
 unsafe extern "C" {
