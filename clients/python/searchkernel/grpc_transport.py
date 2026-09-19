@@ -9,6 +9,9 @@ import grpc
 from .rpc import searchkernel_pb2, searchkernel_pb2_grpc
 
 
+MAX_GRPC_MESSAGE_SIZE = 256 * 1024 * 1024
+
+
 class GrpcTransportError(RuntimeError):
     """A gRPC channel or RPC failure."""
 
@@ -18,7 +21,12 @@ class GrpcTransport:
 
     def __init__(self, target: str, *, channel: Optional[grpc.Channel] = None):
         self._owned_channel = channel is None
-        options = (("grpc.default_authority", "localhost"),) if target.startswith("unix:") else ()
+        options = [
+            ("grpc.max_receive_message_length", MAX_GRPC_MESSAGE_SIZE),
+            ("grpc.max_send_message_length", MAX_GRPC_MESSAGE_SIZE),
+        ]
+        if target.startswith("unix:"):
+            options.append(("grpc.default_authority", "localhost"))
         self._channel = channel or grpc.insecure_channel(target, options=options)
         self._stub = searchkernel_pb2_grpc.SearchKernelStub(self._channel)
         self._closed = False

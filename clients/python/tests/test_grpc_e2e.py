@@ -16,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from searchkernel import Client, GrpcTransport, Index  # noqa: E402
 from searchkernel.client import value  # noqa: E402
-from searchkernel.protocol import pack_object  # noqa: E402
+from searchkernel.protocol import pack_object, pack_request  # noqa: E402
+from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
+from SearchKernel.V2.AnalyzeRequest import AnalyzeRequestT  # noqa: E402
+from SearchKernel.V2.AnalyzeTarget import AnalyzeTarget  # noqa: E402
 from SearchKernel.V2.DataType import DataTypeT  # noqa: E402
 from SearchKernel.V2.DataTypeKind import DataTypeKind  # noqa: E402
 from SearchKernel.V2.FieldDefinition import FieldDefinitionT  # noqa: E402
@@ -175,6 +178,20 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             limit=OptionalUInt32T(value=10),
         ))
         self.assertEqual(surviving.totalHits.value, 1)
+
+    def test_python_grpc_handles_frames_larger_than_default_limit(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        large_text = "alpha " * (5 * 1024 * 1024 // 6)
+        analyze = AnalyzeRequestT(
+            targetType=AnalyzeTarget.AnalyzeFieldTarget,
+            target=AnalyzeFieldTargetT(field="title"),
+            text=large_text,
+        )
+        request_frame = pack_request("analyze", analyze)
+        self.assertGreater(len(request_frame), 4 * 1024 * 1024)
+        response_frame = self.client.transport.call(request_frame)
+        self.assertGreater(len(response_frame), 4 * 1024 * 1024)
 
     def test_managed_local_mode_uses_production_daemon_over_uds(self):
         index = Index.create(self.index_path, fields=self.definition)
