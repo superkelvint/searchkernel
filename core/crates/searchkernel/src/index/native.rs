@@ -1,0 +1,367 @@
+use super::{definition_from_ir, definition_to_ir, Index, IndexInner};
+use crate::error::{Error, Result};
+use crate::schema::IndexDefinition;
+use searchkernel_ir::{Backend, BackendSession};
+use std::sync::Arc;
+
+#[cfg(feature = "native")]
+pub(super) fn create_staging_directory(root: &std::path::Path) -> Result<std::path::PathBuf> {
+    if root.exists() {
+        return Err(Error::already_exists(root.display().to_string()));
+    }
+    let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|error| Error::Infrastructure(error.to_string()))?;
+    let name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::infrastructure("index path has an invalid final component"))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| Error::infrastructure(error.to_string()))?
+        .as_nanos();
+    let staging = parent.join(format!(
+        ".{name}.searchkernel-creating-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&staging).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::already_exists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+    Ok(staging)
+}
+
+#[cfg(feature = "native")]
+pub(super) fn publish_staging_directory(
+    staging: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<()> {
+    std::fs::rename(staging, root).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::already_exists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+    let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+    // The rename is the publication point. A failure to sync the parent is a
+    // durability warning, not a failed create: the index is already visible
+    // at `root` and must not be reported as though publication was rolled
+    // back.
+    let _ = sync_published_parent(parent);
+    Ok(())
+}
+
+#[cfg(feature = "native")]
+fn sync_published_parent(parent: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_PARENT_FSYNC.with(|flag| flag.replace(false)) {
+        return Err(std::io::Error::other("injected parent fsync failure"));
+    }
+    std::fs::File::open(parent).and_then(|directory| directory.sync_all())
+}
+
+#[cfg(feature = "native")]
+pub(super) fn remove_published_root(root: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_PUBLISHED_CLEANUP.with(|flag| flag.replace(false)) {
+        return Err(std::io::Error::other(
+            "injected published-root cleanup failure",
+        ));
+    }
+    std::fs::remove_dir_all(root)
+}
+
+#[cfg(feature = "native")]
+fn open_native_backend(
+    data: &std::path::Path,
+    config: &std::path::Path,
+) -> std::result::Result<searchkernel_ir_adapter::VespaBackend, searchkernel_ir::PortableError> {
+    #[cfg(test)]
+    if FAIL_NEXT_BACKEND_OPEN.with(|flag| flag.replace(false)) {
+        return Err(searchkernel_ir::PortableError::new(
+            searchkernel_ir::ErrorCode::Unavailable,
+            "injected backend open failure",
+        ));
+    }
+    searchkernel_ir_adapter::VespaBackend::open(data, config)
+}
+
+#[cfg(all(feature = "native", test))]
+thread_local! {
+    pub(super) static FAIL_NEXT_PARENT_FSYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    pub(super) static FAIL_NEXT_PUBLISHED_CLEANUP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    pub(super) static FAIL_NEXT_BACKEND_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(feature = "native")]
+pub(super) struct LifecycleLock {
+    _file: std::fs::File,
+}
+
+#[cfg(feature = "native")]
+impl LifecycleLock {
+    fn acquire(root: &std::path::Path) -> Result<Self> {
+        use std::os::fd::AsRawFd;
+
+        let parent = root.parent().unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        let name = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| Error::infrastructure("index path has an invalid final component"))?;
+        let path = parent.join(format!(".{name}.searchkernel.lock"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        // This lock covers the interval in which a complete index is being
+        // assembled and published, when its final data directory is absent.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let error = std::io::Error::last_os_error();
+            if matches!(error.raw_os_error(), Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN)
+            {
+                return Err(Error::already_exists(root.display().to_string()));
+            }
+            return Err(Error::Infrastructure(format!(
+                "could not lock index lifecycle path '{}': {error}",
+                path.display()
+            )));
+        }
+        Ok(Self { _file: file })
+    }
+}
+
+#[cfg(all(feature = "native", test))]
+pub(super) fn create_directory_transaction<T>(
+    root: &std::path::Path,
+    initialize: impl FnOnce(&std::path::Path) -> Result<T>,
+) -> Result<T> {
+    if root.exists() {
+        return Err(Error::already_exists(root.display().to_string()));
+    }
+    if let Some(parent) = root.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+    }
+    std::fs::create_dir(root).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::already_exists(root.display().to_string())
+        } else {
+            Error::Infrastructure(error.to_string())
+        }
+    })?;
+
+    match initialize(root) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            if let Err(cleanup_error) = std::fs::remove_dir_all(root) {
+                return Err(Error::Infrastructure(format!(
+                    "{error}; failed to clean up partial index {}: {cleanup_error}",
+                    root.display()
+                )));
+            }
+            Err(error)
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+impl Index {
+    /// Construct an index from the canonical FlatBuffers index-definition
+    /// payload used by the native bootstrap. This is intentionally hidden from
+    /// the ergonomic Rust API; the portable wire definition is validated by
+    /// `searchkernel-ir` before it reaches the product lifecycle.
+    #[doc(hidden)]
+    #[cfg(feature = "internal-api")]
+    pub fn create_from_definition_bytes(
+        path: impl AsRef<std::path::Path>,
+        bytes: &[u8],
+    ) -> Result<Self> {
+        let root =
+            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(bytes)
+                .map_err(|error| {
+                    Error::Serialization(format!("invalid index definition: {error}"))
+                })?;
+        let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+        searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
+        searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
+        let resolved_definition = definition_from_ir(&ir);
+        Self::create_with_definitions(path.as_ref(), bytes.to_vec(), ir, resolved_definition)
+    }
+
+    /// Create a new on-disk index and persist all information required to
+    /// reopen it safely.
+    pub fn create(path: impl AsRef<std::path::Path>, definition: IndexDefinition) -> Result<Self> {
+        let root = path.as_ref();
+        let portable_definition_bytes =
+            crate::portable_definition::encode_portable_definition(&definition);
+        let resolved_ir = definition_to_ir(&definition)?;
+        searchkernel_ir_adapter::validate_index_definition(&resolved_ir).map_err(Error::from_ir)?;
+        let resolved_definition = definition_from_ir(&resolved_ir);
+        Self::create_with_definitions(
+            root,
+            portable_definition_bytes,
+            resolved_ir,
+            resolved_definition,
+        )
+    }
+
+    fn create_with_definitions(
+        root: &std::path::Path,
+        portable_definition_bytes: Vec<u8>,
+        resolved_ir: searchkernel_ir::IndexDefinitionIr,
+        resolved_definition: IndexDefinition,
+    ) -> Result<Self> {
+        // Create and open can arrive in either order. If an opener briefly
+        // owns the lock while observing an absent root, retrying here avoids
+        // turning that harmless ordering into an AlreadyExists failure.
+        let lifecycle_lock = loop {
+            match LifecycleLock::acquire(root) {
+                Ok(lock) => break lock,
+                Err(error)
+                    if error.code() == crate::error::ErrorCode::AlreadyExists && !root.is_dir() =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        let staging = create_staging_directory(root)?;
+        let initialize = (|| {
+            let staging_data = staging.join("data");
+            let staging_config = staging.join("config");
+            std::fs::create_dir(&staging_data)
+                .map_err(|error| Error::Infrastructure(error.to_string()))?;
+            searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &staging_config)
+                .map_err(Error::from_ir)?;
+            let manifest = super::manifest::IndexManifest::for_definitions(
+                &portable_definition_bytes,
+                &resolved_definition,
+                &staging_config,
+            )?;
+            manifest.write(&staging)?;
+            Ok::<(), Error>(())
+        })();
+        if let Err(error) = initialize {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        // Publish the complete on-disk description before opening Vespa. The
+        // native backend retains its data-directory path for asynchronous
+        // flushes, so it must be opened at the final path rather than at the
+        // temporary staging path.
+        if let Err(error) = publish_staging_directory(&staging, root) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        let backend = match open_native_backend(&root.join("data"), &root.join("config")) {
+            Ok(backend) => backend,
+            Err(error) => {
+                return match remove_published_root(root) {
+                    Ok(()) => Err(Error::Infrastructure(error.to_string())),
+                    Err(cleanup_error) => Err(Error::search(
+                        crate::ErrorCode::Unavailable,
+                        format!("index was published but backend opening failed: {error}; cleanup failed: {cleanup_error}"),
+                    )
+                    .with_detail(
+                        "index_published",
+                        Some(root.display().to_string()),
+                        "published index remains available for recovery",
+                    )),
+                };
+            }
+        };
+        Self::from_owned_backend(
+            resolved_definition,
+            BackendSession::new(Box::new(backend)),
+            Some(lifecycle_lock),
+        )
+    }
+
+    /// Reopen an existing index using its durable manifest.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let root = path.as_ref();
+        // A creator holds the lifecycle lock while it assembles the staging
+        // tree, before atomically publishing `root`. An opener that arrives in
+        // that interval must wait for publication; reporting AlreadyExists
+        // would turn a successful create/open race into two failures.
+        let lifecycle_lock = loop {
+            match LifecycleLock::acquire(root) {
+                Ok(lock) => break lock,
+                Err(error)
+                    if error.code() == crate::error::ErrorCode::AlreadyExists && !root.is_dir() =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        if !root.is_dir() {
+            return Err(Error::not_found(root.display().to_string()));
+        }
+        let manifest = super::manifest::IndexManifest::read(root)?;
+        let definition = manifest.definition()?;
+        let config = root.join("config");
+        if !root.join("data").is_dir() || !config.is_dir() {
+            return Err(Error::corrupt_index(
+                "index data/config directories are missing",
+            ));
+        }
+        manifest.validate_config(&config)?;
+        let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
+            .map_err(|error| Error::Infrastructure(error.to_string()))?;
+        Self::from_owned_backend(
+            definition,
+            BackendSession::new(Box::new(backend)),
+            Some(lifecycle_lock),
+        )
+    }
+
+    /// Construct an index around a backend for tests and infrastructure.
+    #[doc(hidden)]
+    pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
+        Self::from_owned_backend(definition, BackendSession::from_backend(backend), None)
+    }
+
+    fn from_owned_backend(
+        definition: IndexDefinition,
+        session: Arc<BackendSession>,
+        lifecycle_lock: Option<LifecycleLock>,
+    ) -> Result<Self> {
+        let resolved = definition_to_ir(&definition)?;
+        let context = searchkernel_ir::IndexContext::from_definition_ir(resolved);
+        let effective_definition = definition_from_ir(context.definition());
+        let context = Arc::new(context);
+        let definition = Arc::new(effective_definition);
+        Ok(Self {
+            inner: Arc::new(IndexInner {
+                session,
+                context,
+                definition,
+                lifecycle_lock: std::sync::Mutex::new(lifecycle_lock),
+            }),
+        })
+    }
+
+    /// Gracefully close this index and all of its clones after draining active
+    /// operations.
+    pub fn close(&self) -> Result<()> {
+        let result = self.inner.session.close().map_err(Error::from_ir);
+        // Release the publication lock only after the backend has drained and
+        // shut down. All cloned handles share this same mutex.
+        let _ = self
+            .inner
+            .lifecycle_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        result
+    }
+}
