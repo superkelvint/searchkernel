@@ -9,6 +9,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import weakref
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -153,11 +154,56 @@ def _host_binary() -> Path:
     return Path(__file__).resolve().parents[3] / "target" / "debug" / "searchkerneld"
 
 
+def _signal_managed_process(process: subprocess.Popen[bytes], signum: int) -> None:
+    """Signal the daemon and every child it owns in its private process group."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            return
+    else:
+        process.send_signal(signum)
+
+
+def _cleanup_managed_local_host(
+    process: subprocess.Popen[bytes] | None,
+    definition_path: Path | None,
+    socket_dir: tempfile.TemporaryDirectory,
+    force: bool,
+) -> None:
+    if process is not None:
+        if process.poll() is None:
+            _signal_managed_process(process, signal.SIGKILL if force else signal.SIGINT)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                _signal_managed_process(process, signal.SIGKILL)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+    if definition_path is not None:
+        definition_path.unlink(missing_ok=True)
+    socket_dir.cleanup()
+
+
 class _ManagedLocalHost:
+    """Own a searchkerneld process and its private Unix-socket resources.
+
+    The daemon starts a new session, making its process group the ownership
+    boundary for cleanup. The finalizer is also enabled at interpreter exit so
+    callers are not required to explicitly close every managed Index.
+    """
+
     def __init__(self, path: Path, definition: bytes | None):
         self.path = path
         self.definition_path: Path | None = None
         self.process: subprocess.Popen[bytes] | None = None
+        self._finalizer: weakref.finalize | None = None
         self.socket_dir = tempfile.TemporaryDirectory(prefix="searchkernel-socket-")
         self.socket_path = Path(self.socket_dir.name) / "searchkerneld.sock"
         self.endpoint = f"unix://{self.socket_path}"
@@ -206,8 +252,17 @@ class _ManagedLocalHost:
                 command,
                 cwd=Path(__file__).resolve().parents[3],
                 env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self._finalizer = weakref.finalize(
+                self,
+                _cleanup_managed_local_host,
+                self.process,
+                self.definition_path,
+                self.socket_dir,
+                False,
             )
             self._wait_until_ready()
         except Exception:
@@ -219,8 +274,7 @@ class _ManagedLocalHost:
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                stderr = self.process.stderr.read().decode(errors="replace") if self.process.stderr else ""
-                raise ClientError(f"managed local host exited during startup: {stderr}")
+                raise ClientError("managed local host exited during startup")
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.settimeout(0.1)
                 try:
@@ -231,26 +285,15 @@ class _ManagedLocalHost:
         raise ClientError("managed local host did not open its gRPC socket")
 
     def close(self, *, force: bool = False) -> None:
-        process, self.process = self.process, None
-        if process is not None and process.poll() is None:
-            if force:
-                process.kill()
-            else:
-                process.send_signal(signal.SIGINT)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        if process is not None:
-            if process.stdout is not None:
-                process.stdout.close()
-            if process.stderr is not None:
-                process.stderr.close()
-        if self.definition_path is not None:
-            self.definition_path.unlink(missing_ok=True)
-            self.definition_path = None
-        self.socket_dir.cleanup()
+        finalizer = self._finalizer
+        if finalizer is not None and not finalizer.alive:
+            return
+        if finalizer is not None:
+            finalizer.detach()
+        _cleanup_managed_local_host(self.process, self.definition_path, self.socket_dir, force)
+        self.process = None
+        self.definition_path = None
+        self._finalizer = None
 
 
 class Client:
