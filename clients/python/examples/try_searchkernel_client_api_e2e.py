@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from math import isclose, isfinite
 from pathlib import Path
+import atexit
 import shutil
+import tempfile
 
 from searchkernel import (
     Index,
@@ -22,7 +24,15 @@ from searchkernel import (
 )
 
 
-INDEX_PATH = Path("./showcase-index")
+WORKSPACE_PATH = Path(tempfile.mkdtemp(prefix="searchkernel-client-api-e2e-"))
+INDEX_PATH = WORKSPACE_PATH / "showcase-index"
+
+
+def cleanup_workspace() -> None:
+    shutil.rmtree(WORKSPACE_PATH, ignore_errors=True)
+
+
+atexit.register(cleanup_workspace)
 
 
 def heading(title: str) -> None:
@@ -121,9 +131,6 @@ def all_continuations(results) -> list[str]:
 # ---------------------------------------------------------------------------
 # Start completely fresh.
 # ---------------------------------------------------------------------------
-
-shutil.rmtree(INDEX_PATH, ignore_errors=True)
-
 
 heading("1. CREATE INDEX")
 

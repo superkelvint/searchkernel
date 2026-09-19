@@ -31,12 +31,16 @@ mod showcase {
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::{Path, PathBuf};
-
-    const INDEX_PATH: &str = "./showcase-index-rust";
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-        let path = PathBuf::from(INDEX_PATH);
-        remove_if_present(&path)?;
+        // Keep all showcase state, including any sibling lock files created by
+        // Search Kernel, underneath one unique temporary directory. The guard
+        // removes the whole directory when the example exits.
+        let temp = TempWorkspace::new()?;
+        let path = temp.index_path();
+
+        println!("temporary workspace: {}", temp.root().display());
 
         heading("1. CREATE INDEX");
 
@@ -398,7 +402,7 @@ mod showcase {
 
         let results = index
             .search("shoes")
-            .facet("brand")
+            .facet("brand".into())
             .limit(20)
             .execute::<Value>()?;
         assert!(!facet_counts(&results, "brand").contains_key("Budget"));
@@ -478,7 +482,7 @@ mod showcase {
             .browse()
             .filter(field("in_stock").eq(true))
             .sort(Sort::asc("price"))
-            .facet("brand")
+            .facet("brand".into())
             .limit(20)
             .execute::<Value>()?;
         print_results(&results);
@@ -622,11 +626,45 @@ adapter internals. This file is meant to exercise the actual public Rust API.
             .collect()
     }
 
-    fn remove_if_present(path: &Path) -> std::io::Result<()> {
-        match std::fs::remove_dir_all(path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
+    struct TempWorkspace {
+        root: PathBuf,
+    }
+
+    impl TempWorkspace {
+        fn new() -> std::io::Result<Self> {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+
+            let root = std::env::temp_dir().join(format!(
+                "searchkernel-client-api-e2e-{}-{nonce}",
+                std::process::id()
+            ));
+
+            std::fs::create_dir_all(&root)?;
+            Ok(Self { root })
+        }
+
+        fn root(&self) -> &Path {
+            &self.root
+        }
+
+        fn index_path(&self) -> PathBuf {
+            self.root.join("showcase-index-rust")
+        }
+    }
+
+    impl Drop for TempWorkspace {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_dir_all(&self.root) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!(
+                        "warning: failed to remove temporary showcase workspace {}: {error}",
+                        self.root.display()
+                    );
+                }
+            }
         }
     }
 }
