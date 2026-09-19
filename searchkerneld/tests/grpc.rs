@@ -43,6 +43,39 @@ fn search_request() -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+fn large_search_request() -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string(&"x".repeat(5 * 1024 * 1024));
+    let query = wire::SearchKernelTextQuery::create(
+        &mut builder,
+        &wire::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let source = wire::QuerySource::create(
+        &mut builder,
+        &wire::QuerySourceArgs {
+            source_type: wire::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(query.as_union_value()),
+        },
+    );
+    let request = wire::SearchRequest::create(
+        &mut builder,
+        &wire::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    let envelope = wire::RequestEnvelope::create(
+        &mut builder,
+        &wire::RequestEnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            payload_type: wire::RequestPayload::SearchKernel_V2_SearchRequest,
+            payload: Some(request.as_union_value()),
+        },
+    );
+    builder.finish(envelope, Some("SKRQ"));
+    builder.finished_data().to_vec()
+}
+
 fn dispatcher(backend: Arc<RecordingBackend>) -> (Index, Arc<Dispatcher>) {
     let definition =
         IndexDefinition::new().field(Field::text("title").stored(true).searchable(true));
@@ -158,6 +191,30 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
         remote.payload_as_search_kernel_v2_error().unwrap().code()
     );
 
+    server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn execute_accepts_frames_larger_than_tonic_default_limit() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let payload = large_search_request();
+    assert!(payload.len() > 4 * 1024 * 1024);
+    let server = start_with_dispatcher(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0))),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC server");
+    let mut client = connect_client(server.tcp_addr().expect("TCP server address")).await;
+    let response = client
+        .execute(Request::new(rpc::FlatBufferFrame { payload }))
+        .await
+        .expect("large gRPC frame should be accepted")
+        .into_inner();
+
+    assert!(!response.payload.is_empty());
     server.shutdown().await.expect("shutdown server");
     index.close().expect("close test index");
 }

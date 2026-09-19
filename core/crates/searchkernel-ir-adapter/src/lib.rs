@@ -24,7 +24,8 @@ pub(crate) use search::lower_query;
 #[cfg(test)]
 pub(crate) use search::{
     lower_comparison, lower_facet_groupings, lower_facets_into_request, lower_filter,
-    lower_search_options, lower_search_query, ranking_profile, validate_search_request,
+    lower_search_options, lower_search_query, query_feature_value, ranking_profile,
+    validate_search_request,
 };
 
 fn lower_document(document: &DocumentIr) -> Result<Document> {

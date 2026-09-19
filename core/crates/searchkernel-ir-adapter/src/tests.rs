@@ -851,6 +851,43 @@ fn ranking_inputs_lower_to_the_existing_native_request_surface() {
 }
 
 #[test]
+fn integer_query_features_reject_float_saturation_at_i64_and_u64_boundaries() {
+    for value in [i64::MAX, i64::MAX - 1] {
+        let error = query_feature_value(
+            "integer_feature",
+            &QueryInputIr::Literal(RequestValueIr::Int64(value)),
+        )
+        .expect_err("values rounded to 2^63 must not be accepted as i64");
+        assert_eq!(error.details[0].code, "query_input_precision_loss");
+    }
+
+    assert_eq!(
+        query_feature_value(
+            "integer_feature",
+            &QueryInputIr::Literal(RequestValueIr::Int64(i64::MAX - 1023)),
+        )
+        .unwrap(),
+        (i64::MAX - 1023) as f64
+    );
+
+    let error = query_feature_value(
+        "unsigned_feature",
+        &QueryInputIr::Literal(RequestValueIr::UInt64(u64::MAX)),
+    )
+    .expect_err("values rounded to 2^64 must not be accepted as u64");
+    assert_eq!(error.details[0].code, "query_input_precision_loss");
+
+    assert_eq!(
+        query_feature_value(
+            "unsigned_feature",
+            &QueryInputIr::Literal(RequestValueIr::UInt64(u64::MAX - 2047)),
+        )
+        .unwrap(),
+        (u64::MAX - 2047) as f64
+    );
+}
+
+#[test]
 fn unsupported_query_inputs_and_rank_property_collisions_are_explicit() {
     let expression =
         request(Vec::new(), Vec::new(), None).with_inputs(std::collections::BTreeMap::from([(

@@ -337,7 +337,7 @@ fn validate_ranking_inputs(request: &SearchRequestIr) -> Result<()> {
     Ok(())
 }
 
-fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
+pub(crate) fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
     let QueryInputIr::Literal(value) = input else {
         return Err(PortableError::unsupported(
             "query_input_expression_not_supported",
@@ -349,7 +349,13 @@ fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
         RequestValueIr::Float64(value) if value.is_finite() => Ok(*value),
         RequestValueIr::Int64(value) => {
             let converted = *value as f64;
-            if converted as i64 == *value {
+            // Rust's float-to-int cast saturates at the integer boundary.
+            // Check the half-open f64 domain explicitly before round-tripping
+            // so i64::MAX cannot masquerade as the exact value 2^63.
+            if converted >= i64::MIN as f64
+                && converted < 2_f64.powi(63)
+                && converted as i64 == *value
+            {
                 Ok(converted)
             } else {
                 Err(PortableError::unsupported(
@@ -361,7 +367,9 @@ fn query_feature_value(name: &str, input: &QueryInputIr) -> Result<f64> {
         }
         RequestValueIr::UInt64(value) => {
             let converted = *value as f64;
-            if converted as u64 == *value {
+            // The upper bound is exclusive because 2^64 is outside u64 and
+            // Rust saturates that cast to u64::MAX.
+            if converted >= 0.0 && converted < 2_f64.powi(64) && converted as u64 == *value {
                 Ok(converted)
             } else {
                 Err(PortableError::unsupported(

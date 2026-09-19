@@ -33,6 +33,11 @@ use rpc::{
     FlatBufferFrame,
 };
 
+/// Explicit transport bound for canonical FlatBuffer request and response
+/// frames. Tonic's default decode limit is 4 MiB, which is too small for
+/// legitimate documents and tensor payloads.
+pub const MAX_GRPC_MESSAGE_SIZE: usize = 256 * 1024 * 1024;
+
 /// The address type used by the gRPC transport server.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ListenAddress {
@@ -118,8 +123,11 @@ impl SearchKernel for SearchKernelTransport {
         &self,
         request: Request<FlatBufferFrame>,
     ) -> Result<Response<FlatBufferFrame>, Status> {
-        let payload = self
-            .dispatch(&request.into_inner().payload)
+        let payload = request.into_inner().payload;
+        let transport = self.clone();
+        let payload = tokio::task::spawn_blocking(move || transport.dispatch(&payload))
+            .await
+            .map_err(|error| Status::internal(format!("blocking dispatch task failed: {error}")))?
             .map_err(|status| *status)?;
         Ok(Response::new(FlatBufferFrame { payload }))
     }
@@ -333,7 +341,11 @@ where
 {
     tokio::spawn(async move {
         tonic::transport::Server::builder()
-            .add_service(SearchKernelServer::new(service))
+            .add_service(
+                SearchKernelServer::new(service)
+                    .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+                    .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE),
+            )
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_requested.await;
             })
