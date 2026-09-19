@@ -3,24 +3,51 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE="$ROOT/core/crates/searchkernel-ir/src"
 
-# `ir_to_api.rs` intentionally mentions generated V2 Resolved* wire tables
-# while encoding the owned IR.  Only owned legacy IR names belong in this
-# check; rejecting generated wire names made the verifier stale after the V2
-# resolved-request encoder was introduced.
-if rg -n 'Resolved[A-Z][A-Za-z0-9_]*Ir|IndexSemantics|pub fn resolve_' "$CORE"; then
+# `api_to_ir/resolve.rs` is the intentional semantic composition boundary.
+# `resolve_*` functions there convert validated public inputs into owned IR;
+# they are not legacy IR names.  Keep this check limited to names that indicate
+# the removed pre-refactor model.
+if rg -n 'Resolved[A-Z][A-Za-z0-9_]*Ir|IndexSemantics' "$CORE"; then
   echo "legacy IR names remain" >&2; exit 1
 fi
-if rg -n 'searchkernel_protocol|flatbuffers::' "$CORE/model.rs" "$CORE/backend.rs" "$CORE/error.rs"; then
+
+# Owned model, backend, and error types must not carry generated wire values or
+# FlatBuffer handles.  The conversion modules are checked separately below.
+if rg -n 'searchkernel_protocol|flatbuffers::|api::' \
+    "$CORE/model.rs" "$CORE/backend.rs" "$CORE/error.rs"; then
   echo "wire types leaked into owned core modules" >&2; exit 1
 fi
 if rg -n 'searchkernel_protocol::.*(Insert|Upsert|Patch|Delete|Get|Search|Analyze)Result' "$CORE/backend.rs"; then
   echo "generated result type in backend trait" >&2; exit 1
 fi
-# Only generated wire discriminators are boundary concerns.  Owned IR enums
-# intentionally use the same semantic nouns, and filter_expression.rs is the
-# API-side builder for textual filter clauses.
-UNION='api::(ValueKind|PatchOperationKind|FilterExprKind|RankingPolicyKind|QueryExprKind|AnalyzeTarget)'
-if rg -n "$UNION" "$CORE" -g '*.rs' -g '!api_to_ir.rs' -g '!ir_to_api.rs' -g '!filter_expression.rs'; then
-  echo "generated union discriminator interpreted past conversion boundary" >&2; exit 1
+# Generated protocol types may appear only at the two conversion boundaries.
+# The crate-level `api` and hidden FlatBuffers re-exports are compatibility
+# entry points, not semantic-layer dependencies.  Directory exclusions are
+# deliberate: the IR refactor split both conversion modules into submodules.
+WIRE='searchkernel_protocol|flatbuffers::|api::'
+if rg -n "$WIRE" "$CORE" -g '*.rs' \
+    -g '!**/api_to_ir/**' -g '!**/ir_to_api/**' -g '!**/*_tests.rs' \
+    -g '!**/lib.rs'; then
+  echo "generated protocol type interpreted past conversion boundary" >&2; exit 1
+fi
+
+# Aggregate IR construction belongs to the API-to-IR resolvers.  Test-only
+# constructors are permitted for focused adapter tests; SearchFieldWeight is
+# a validated scalar value and is intentionally constructible in production.
+if awk '
+  /^impl [A-Za-z0-9_]+/ { type = $2; test_cfg = 0 }
+  /^[[:space:]]*#\[cfg\(any\(test, feature = "test-support"\)\)\]/ { test_cfg = 1 }
+  /^[[:space:]]*pub fn new\(/ {
+    if (type != "SearchFieldWeight" && !test_cfg) {
+      print FILENAME ":" FNR ":" $0
+      bad = 1
+    }
+    test_cfg = 0
+  }
+  END { exit bad }
+' "$CORE/model.rs"; then
+  :
+else
+  echo "ungated public aggregate IR constructor" >&2; exit 1
 fi
 echo "IR boundary PASS"
