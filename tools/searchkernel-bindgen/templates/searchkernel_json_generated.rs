@@ -1598,7 +1598,6 @@ pub(crate) mod schema {
                     schema: "integer",
                 },
             ]),
-            "SearchKernel_V2_Bm25Ranking" => Some(&[]),
             "SearchKernel_V2_BoolValue" => Some(&[FieldMetadata {
                 name: "value",
                 schema: "boolean",
@@ -2416,7 +2415,6 @@ pub(crate) mod schema {
                 Some(&["end_byte", "position", "start_byte", "surface", "term"])
             }
             "SearchKernel_V2_Analyzer" => Some(&["name", "options", "version"]),
-            "SearchKernel_V2_Bm25Ranking" => Some(&[]),
             "SearchKernel_V2_BoolValue" => Some(&["value"]),
             "SearchKernel_V2_BytesValue" => Some(&["value"]),
             "SearchKernel_V2_ComparisonOp" => Some(&[]),
@@ -2877,9 +2875,6 @@ pub(crate) mod json_types {
         #[serde(rename = "version", default, skip_serializing_if = "Option::is_none")]
         pub version: Option<serde_json::Value>,
     }
-
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2Bm25Ranking {}
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2BoolValue {

@@ -1,5 +1,5 @@
 use searchkernel_json::{request_flatbuffer_to_json, request_json_to_flatbuffer, JsonCodecError};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn request_fixtures() -> Vec<(String, Vec<u8>)> {
     let directory =
@@ -44,6 +44,17 @@ fn assert_no_wire_discriminators(value: &Value) {
         Value::Array(values) => values.iter().for_each(assert_no_wire_discriminators),
         _ => {}
     }
+}
+
+fn assert_request_json_round_trip(name: &str, input: Value, expected: Value) {
+    let input = serde_json::to_vec(&input).unwrap();
+    let bytes = request_json_to_flatbuffer(&input)
+        .unwrap_or_else(|error| panic!("{name}: request JSON encoding failed: {error}"));
+    let output = request_flatbuffer_to_json(&bytes)
+        .unwrap_or_else(|error| panic!("{name}: request JSON decoding failed: {error}"));
+    let output: Value = serde_json::from_slice(&output)
+        .unwrap_or_else(|error| panic!("{name}: invalid output JSON: {error}"));
+    assert_eq!(output, expected, "{name}");
 }
 
 #[test]
@@ -183,6 +194,291 @@ fn filter_fields_round_trip_element_qualified_refs() {
         serde_json::from_slice::<Value>(&output).unwrap(),
         serde_json::from_slice::<Value>(json).unwrap()
     );
+}
+
+#[test]
+fn query_expression_variants_round_trip_with_explicit_json_shapes() {
+    let cases = [
+        (
+            "term_query",
+            json!({"term_query": {"value": {"string": "rust"}}}),
+        ),
+        (
+            "query_contains",
+            json!({"query_contains": {
+                "field": {"path": "tags", "element_index": 2},
+                "item": {"term_query": {"value": {"string": "rust"}}}
+            }}),
+        ),
+        (
+            "query_and",
+            json!({"query_and": {"clauses": [
+                {"term_query": {"value": {"string": "rust"}}},
+                {"query_true": {}}
+            ]}}),
+        ),
+        (
+            "query_or",
+            json!({"query_or": {"clauses": [
+                {"term_query": {"value": {"string": "rust"}}},
+                {"query_false": {}}
+            ]}}),
+        ),
+        (
+            "query_not",
+            json!({"query_not": {
+                "clause": {"term_query": {"value": {"string": "rust"}}}
+            }}),
+        ),
+        ("query_true", json!({"query_true": {}})),
+        ("query_false", json!({"query_false": {}})),
+        (
+            "query_comparison",
+            json!({"query_comparison": {
+                "field": "price",
+                "op": "gte",
+                "value": {"int64": "10"}
+            }}),
+        ),
+        (
+            "query_range",
+            json!({"query_range": {
+                "field": "price",
+                "lower": {"int64": "10"},
+                "upper": {"int64": "20"},
+                "include_lower": true,
+                "include_upper": false
+            }}),
+        ),
+        (
+            "query_in",
+            json!({"query_in": {
+                "field": "brand",
+                "values": [{"string": "Sony"}, {"string": "Bose"}]
+            }}),
+        ),
+        (
+            "query_phrase",
+            json!({"query_phrase": {"terms": [
+                {"term_query": {"value": {"string": "rust"}}},
+                {"term_query": {"value": {"string": "search"}}}
+            ]}}),
+        ),
+        (
+            "query_near",
+            json!({"query_near": {"terms": [
+                {"term_query": {"value": {"string": "rust"}}},
+                {"term_query": {"value": {"string": "search"}}}
+            ]}}),
+        ),
+        (
+            "query_onear",
+            json!({"query_onear": {"terms": [
+                {"term_query": {"value": {"string": "rust"}}},
+                {"term_query": {"value": {"string": "search"}}}
+            ]}}),
+        ),
+        (
+            "query_same_element",
+            json!({"query_same_element": {"clauses": [
+                {"term_query": {"value": {"string": "rust"}}}
+            ]}}),
+        ),
+        (
+            "query_equiv",
+            json!({"query_equiv": {"clauses": [
+                {"term_query": {"value": {"string": "rust"}}}
+            ]}}),
+        ),
+        (
+            "query_alternatives",
+            json!({"query_alternatives": {"alternatives": [
+                {"query": {"term_query": {"value": {"string": "rust"}}}, "exactness": 0.75},
+                {"query": {"term_query": {"value": {"string": "oxidation"}}}}
+            ]}}),
+        ),
+        (
+            "query_fuzzy",
+            json!({"query_fuzzy": {"value": {"string": "serch"}}}),
+        ),
+        (
+            "query_matches",
+            json!({"query_matches": {
+                "field": "title",
+                "pattern": "rust.*"
+            }}),
+        ),
+        ("query_text", json!({"query_text": {"text": "rust search"}})),
+        (
+            "query_user_input",
+            json!({"query_user_input": {"value": "title:rust"}}),
+        ),
+        ("query_user_query", json!({"query_user_query": {}})),
+        (
+            "query_dot_product",
+            json!({"query_dot_product": {
+                "field": "embedding",
+                "items": [{"key": {"string": "rust"}, "weight": "7"}]
+            }}),
+        ),
+        (
+            "query_weighted_set",
+            json!({"query_weighted_set": {
+                "field": "tags",
+                "items": [{"key": {"string": "rust"}, "weight": "7"}]
+            }}),
+        ),
+        (
+            "query_wand",
+            json!({"query_wand": {
+                "field": "tags",
+                "items": [{"key": {"string": "rust"}, "weight": "7"}]
+            }}),
+        ),
+        (
+            "query_weak_and",
+            json!({"query_weak_and": {"clauses": [
+                {"term_query": {"value": {"string": "rust"}}}
+            ]}}),
+        ),
+        (
+            "query_rank",
+            json!({"query_rank": {
+                "match": {"term_query": {"value": {"string": "rust"}}},
+                "rank": [{"term_query": {"value": {"string": "search"}}}]
+            }}),
+        ),
+        (
+            "query_labeled",
+            json!({"query_labeled": {
+                "query": {"term_query": {"value": {"string": "rust"}}},
+                "label": "primary",
+                "score": 1.5
+            }}),
+        ),
+        (
+            "query_non_empty",
+            json!({"query_non_empty": {
+                "query": {"term_query": {"value": {"string": "rust"}}}
+            }}),
+        ),
+        (
+            "query_geo_location",
+            json!({"query_geo_location": {
+                "field": "location",
+                "latitude": 59.91,
+                "longitude": 10.75,
+                "radius": "10 km"
+            }}),
+        ),
+        (
+            "query_geo_bounding_box",
+            json!({"query_geo_bounding_box": {
+                "field": "location",
+                "south": 59.8,
+                "west": 10.6,
+                "north": 60.0,
+                "east": 10.9
+            }}),
+        ),
+        (
+            "query_nearest_neighbor",
+            json!({"query_nearest_neighbor": {
+                "document_field": "embedding",
+                "query_tensor": "query_embedding"
+            }}),
+        ),
+        (
+            "query_predicate",
+            json!({"query_predicate": {
+                "field": "access",
+                "features": {"user": {"string": "alice"}},
+                "range_features": {"age": {"int64": "42"}}
+            }}),
+        ),
+    ];
+
+    for (name, query) in cases {
+        let request = json!({
+            "protocol_version": 2,
+            "request": {"search": {"query_expr": query}}
+        });
+        let expected_query = match name {
+            // Optional scalar fields are emitted as explicit nulls by the
+            // canonical JSON encoder when the FlatBuffer field is absent.
+            "query_alternatives" => json!({"query_alternatives": {"alternatives": [
+                {"query": {"term_query": {"value": {"string": "rust"}}}, "exactness": 0.75},
+                {"query": {"term_query": {"value": {"string": "oxidation"}}}, "exactness": null}
+            ]}}),
+            _ => request["request"]["search"]["query_expr"].clone(),
+        };
+        let expected = json!({
+            "protocol_version": 2,
+            "request": {"search": {"query_expr": expected_query}}
+        });
+        assert_request_json_round_trip(name, request, expected);
+    }
+}
+
+#[test]
+fn filter_variants_round_trip_with_explicit_json_shapes() {
+    let cases = [
+        (
+            "filter_and",
+            json!({"filter_and": {"clauses": [
+                {"filter_exists": {"field": "title"}}
+            ]}}),
+        ),
+        (
+            "filter_or",
+            json!({"filter_or": {"clauses": [
+                {"filter_exists": {"field": "title"}}
+            ]}}),
+        ),
+        (
+            "filter_not",
+            json!({"filter_not": {
+                "clause": {"filter_exists": {"field": "title"}}
+            }}),
+        ),
+        (
+            "filter_comparison",
+            json!({"filter_comparison": {
+                "field": "price",
+                "op": "gte",
+                "value": {"int64": "10"}
+            }}),
+        ),
+        (
+            "filter_range",
+            json!({"filter_range": {
+                "field": "price",
+                "lower": {"int64": "10"},
+                "upper": {"int64": "20"},
+                "include_lower": true,
+                "include_upper": false
+            }}),
+        ),
+        (
+            "filter_exists",
+            json!({"filter_exists": {"field": "title"}}),
+        ),
+        (
+            "filter_in",
+            json!({"filter_in": {
+                "field": "brand",
+                "values": [{"string": "Sony"}, {"string": "Bose"}]
+            }}),
+        ),
+    ];
+
+    for (name, filter) in cases {
+        let request = json!({
+            "protocol_version": 2,
+            "request": {"search": {"filter": filter}}
+        });
+        assert_request_json_round_trip(name, request.clone(), request);
+    }
 }
 
 #[test]

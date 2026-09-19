@@ -4176,9 +4176,6 @@ pub(crate) mod json_types {
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct JsonSearchKernelV2Bm25Ranking {}
-
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2BoolValue {
         #[serde(rename = "value", default, skip_serializing_if = "Option::is_none")]
         pub value: Option<bool>,
