@@ -121,3 +121,30 @@ fn canonical_scalar_policy_round_trips() {
         serde_json::from_slice::<Value>(json).unwrap()
     );
 }
+
+#[test]
+fn tensor_values_round_trip_in_search_results() {
+    let input = br#"{
+      "protocol_version": 2,
+      "response": {
+        "search": {
+          "root": {"result_group": {
+            "fields": {
+              "embedding": {"tensor": {
+                "type_spec": "tensor<float>(x[2])",
+                "payload": {"dense": {"values": [0.25, 0.5]}}
+              }}
+            },
+            "children": []
+          }},
+          "total_hits": {"value": "1", "relation": "exact"}
+        }
+      }
+    }"#;
+    let bytes = response_json_to_flatbuffer(input).expect("tensor response JSON");
+    let output = response_flatbuffer_to_json(&bytes).expect("tensor response JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(input).unwrap()
+    );
+}

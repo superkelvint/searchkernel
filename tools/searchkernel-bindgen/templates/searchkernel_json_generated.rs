@@ -8072,6 +8072,203 @@ fn map_entries<'a>(
     Ok(entries)
 }
 
+fn tensor_numbers_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<Option<WIPOffset<flatbuffers::Vector<'a, f64>>>, JsonCodecError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| f64_value(value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(b.create_vector(&values)))
+}
+
+fn tensor_address_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<
+    Option<
+        WIPOffset<
+            flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'a>>>,
+        >,
+    >,
+    JsonCodecError,
+> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let entries = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let path = format!("{path}[{index}]");
+            let object = object(value, &path)?;
+            check_keys(object, "SearchKernel_V2_TensorAddressEntry", &path)?;
+            let dimension = b.create_string(&string(
+                required(object, "dimension", &path)?,
+                &format!("{path}.dimension"),
+            )?);
+            let label =
+                optional_string(object, "label", &path)?.map(|value| b.create_string(&value));
+            Ok(api::TensorAddressEntry::create(
+                b,
+                &api::TensorAddressEntryArgs {
+                    dimension: Some(dimension),
+                    label,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(Some(b.create_vector(&entries)))
+}
+
+fn tensor_cell_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorCell<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorCell", path)?;
+    let address =
+        tensor_address_from_json(b, field(object, "address"), &format!("{path}.address"))?;
+    let value = field(object, "value")
+        .map(|value| f64_value(value, &format!("{path}.value")))
+        .transpose()?
+        .unwrap_or(0.0);
+    Ok(api::TensorCell::create(
+        b,
+        &api::TensorCellArgs { address, value },
+    ))
+}
+
+fn tensor_block_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorBlock<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorBlock", path)?;
+    let address =
+        tensor_address_from_json(b, field(object, "address"), &format!("{path}.address"))?;
+    let values =
+        tensor_numbers_from_json(b, field(object, "values"), &format!("{path}.values"))?;
+    Ok(api::TensorBlock::create(
+        b,
+        &api::TensorBlockArgs { address, values },
+    ))
+}
+
+fn tensor_payload_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    (
+        api::TensorPayloadKind,
+        Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+    ),
+    JsonCodecError,
+> {
+    let (kind, payload) = one_key(value, path)?;
+    match kind {
+        "none" => {
+            if !payload.is_object() {
+                return Err(contract("tensor payload none must be an object"));
+            }
+            Ok((api::TensorPayloadKind::NONE, None))
+        }
+        "dense" => {
+            let path = format!("{path}.dense");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_DenseTensorValues", &path)?;
+            let values =
+                tensor_numbers_from_json(b, field(object, "values"), &format!("{path}.values"))?;
+            let payload =
+                api::DenseTensorValues::create(b, &api::DenseTensorValuesArgs { values });
+            Ok((
+                api::TensorPayloadKind::DenseTensorValues,
+                Some(payload.as_union_value()),
+            ))
+        }
+        "sparse" => {
+            let path = format!("{path}.sparse");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_SparseTensorCells", &path)?;
+            let cells = field(object, "cells")
+                .map(|value| {
+                    array(value, &format!("{path}.cells"))?
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            tensor_cell_from_json(b, value, &format!("{path}.cells[{index}]"))
+                        })
+                        .collect::<Result<Vec<_>, JsonCodecError>>()
+                })
+                .transpose()?
+                .map(|cells| b.create_vector(&cells));
+            let payload =
+                api::SparseTensorCells::create(b, &api::SparseTensorCellsArgs { cells });
+            Ok((
+                api::TensorPayloadKind::SparseTensorCells,
+                Some(payload.as_union_value()),
+            ))
+        }
+        "mixed" => {
+            let path = format!("{path}.mixed");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_MixedTensorBlocks", &path)?;
+            let blocks = field(object, "blocks")
+                .map(|value| {
+                    array(value, &format!("{path}.blocks"))?
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            tensor_block_from_json(b, value, &format!("{path}.blocks[{index}]"))
+                        })
+                        .collect::<Result<Vec<_>, JsonCodecError>>()
+                })
+                .transpose()?
+                .map(|blocks| b.create_vector(&blocks));
+            let payload =
+                api::MixedTensorBlocks::create(b, &api::MixedTensorBlocksArgs { blocks });
+            Ok((
+                api::TensorPayloadKind::MixedTensorBlocks,
+                Some(payload.as_union_value()),
+            ))
+        }
+        _ => Err(contract(format!("unknown tensor payload variant {}", kind))),
+    }
+}
+
+fn tensor_value_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorValue<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorValue", path)?;
+    let type_spec = optional_string(object, "type_spec", path)?
+        .map(|value| b.create_string(&value));
+    let (payload_type, payload) = field(object, "payload")
+        .map(|value| tensor_payload_from_json(b, value, path))
+        .transpose()?
+        .unwrap_or((api::TensorPayloadKind::NONE, None));
+    Ok(api::TensorValue::create(
+        b,
+        &api::TensorValueArgs {
+            type_spec,
+            payload_type,
+            payload,
+        },
+    ))
+}
+
 fn value_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     input: &Value,
@@ -8207,6 +8404,10 @@ fn value_from_json<'a>(
             let payload = api::ValueObject::create(b, &api::ValueObjectArgs { fields: entries });
             (api::ValueKind::ValueObject, offset(payload))
         }
+        "tensor" => (
+            api::ValueKind::TensorValue,
+            offset(tensor_value_from_json(b, payload, "value.tensor")?),
+        ),
         _ => return Err(contract(format!("unknown value variant `{kind}`"))),
     };
     Ok(api::Value::create(

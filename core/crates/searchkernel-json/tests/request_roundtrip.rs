@@ -323,6 +323,60 @@ fn filter_shorthand_remains_canonical_for_one_structured_filter() {
 }
 
 #[test]
+fn generic_value_tensors_round_trip_all_payload_styles() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"insert": {
+            "document": {
+                "id": "tensor-doc",
+                "fields": {
+                    "dense": {"tensor": {
+                        "type_spec": "tensor<float>(x[3])",
+                        "payload": {"dense": {"values": [1.0, 2.5, -3.0]}}
+                    }},
+                    "sparse": {"tensor": {
+                        "type_spec": "tensor<float>(x{})",
+                        "payload": {"sparse": {"cells": [
+                            {"address": [{"dimension": "x", "label": "a"}], "value": 4.0},
+                            {"address": [{"dimension": "x", "label": "b"}], "value": 5.5}
+                        ]}}
+                    }},
+                    "mixed": {"tensor": {
+                        "type_spec": "tensor<float>(label{},x[2])",
+                        "payload": {"mixed": {"blocks": [
+                            {"address": [{"dimension": "label", "label": "first"}], "values": [6.0, 7.0]},
+                            {"address": [], "values": [8.0, 9.0]}
+                        ]}}
+                    }}
+                }
+            }
+        }}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("tensor request JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("tensor request JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn tensor_values_reject_non_finite_cells() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"insert": {
+            "document": {"fields": {
+                "embedding": {"tensor": {
+                    "type_spec": "tensor<float>(x[1])",
+                    "payload": {"dense": {"values": [1e999]}}
+                }}
+            }}
+        }}
+    }"#;
+    assert!(request_json_to_flatbuffer(json).is_err());
+}
+
+#[test]
 fn structured_grouping_round_trips_all_decoder_shapes() {
     let json = br#"{
         "protocol_version": 2,
