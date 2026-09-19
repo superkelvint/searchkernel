@@ -186,6 +186,34 @@ fn filter_fields_round_trip_element_qualified_refs() {
 }
 
 #[test]
+fn full_query_sources_round_trip_without_loss() {
+    for json in [
+        br#"{
+            "protocol_version": 2,
+            "request": {"search": {"query_source": {
+                "yql": {
+                    "source": "select * from sources * where userInput(@term)",
+                    "parameters": {"term": {"string": "rust"}}
+                }
+            }}}
+        }"#
+        .as_slice(),
+        br#"{
+            "protocol_version": 2,
+            "request": {"search": {"query_source": {"match_all": {}}}}
+        }"#
+        .as_slice(),
+    ] {
+        let bytes = request_json_to_flatbuffer(json).expect("full query source JSON");
+        let output = request_flatbuffer_to_json(&bytes).expect("full query source output");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output).unwrap(),
+            serde_json::from_slice::<Value>(json).unwrap()
+        );
+    }
+}
+
+#[test]
 fn v2_typed_query_sort_and_range_semantics_round_trip() {
     let json = br#"{
         "protocol_version": 2,
@@ -262,7 +290,7 @@ fn v2_search_request_context_round_trips_without_field_loss() {
             "timing": true,
             "limit": 20,
             "offset": 5,
-            "timeout": 250
+            "timeout": "250"
         }}
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("complete request JSON");
@@ -423,7 +451,7 @@ fn structured_grouping_round_trips_all_decoder_shapes() {
 fn engine_timeout_is_preserved_in_canonical_json() {
     let json = br#"{
         "protocol_version": 2,
-        "request": {"search": {"query": "foo", "timeout": 200}}
+        "request": {"search": {"query": "foo", "timeout": "200"}}
     }"#;
     let bytes = request_json_to_flatbuffer(json).expect("timeout request JSON");
     let output = request_flatbuffer_to_json(&bytes).expect("request JSON output");

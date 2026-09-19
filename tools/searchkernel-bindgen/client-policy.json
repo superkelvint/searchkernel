@@ -893,6 +893,7 @@
       "language",
       "projection",
       "query_expr",
+      "query_source",
       "summary",
       "timing",
       "timeout"

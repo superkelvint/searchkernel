@@ -123,6 +123,45 @@ fn canonical_scalar_policy_round_trips() {
 }
 
 #[test]
+fn optional_uint64_fields_round_trip_as_decimal_strings() {
+    let json = br#"{
+      "protocol_version": 2,
+      "response": {
+        "search": {
+          "root": {"result_group": {"children": []}},
+          "total_hits": {"value": "18446744073709551615", "relation": "exact"},
+          "coverage": {
+            "documents": "18446744073709551615",
+            "results": "9007199254740993",
+            "results_full": "18446744073709551615"
+          }
+        }
+      }
+    }"#;
+    let bytes = response_json_to_flatbuffer(json).expect("canonical uint64 response JSON");
+    let output = response_flatbuffer_to_json(&bytes).expect("canonical uint64 response output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
+fn optional_uint64_fields_reject_json_numbers() {
+    let input = br#"{
+      "protocol_version": 2,
+      "response": {
+        "search": {
+          "root": {"result_group": {"children": []}},
+          "total_hits": {"value": "1", "relation": "exact"},
+          "coverage": {"documents": 1}
+        }
+      }
+    }"#;
+    assert!(response_json_to_flatbuffer(input).is_err());
+}
+
+#[test]
 fn tensor_values_round_trip_in_search_results() {
     let input = br#"{
       "protocol_version": 2,

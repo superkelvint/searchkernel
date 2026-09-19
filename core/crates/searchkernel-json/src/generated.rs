@@ -3744,6 +3744,7 @@ pub(crate) mod schema {
                 "query_expr",
                 "query_model",
                 "query_profile",
+                "query_source",
                 "ranking",
                 "search_chain",
                 "search_fields",
@@ -4757,6 +4758,12 @@ pub(crate) mod json_types {
             skip_serializing_if = "Option::is_none"
         )]
         pub query_expr: Option<serde_json::Value>,
+        #[serde(
+            rename = "query_source",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub query_source: Option<serde_json::Value>,
         #[serde(rename = "query_model", default, skip_serializing_if = "Option::is_none")]
         pub query_model: Option<serde_json::Value>,
         #[serde(rename = "query_profile", default, skip_serializing_if = "Option::is_none")]
@@ -5048,6 +5055,12 @@ pub(crate) mod json_types {
             skip_serializing_if = "Option::is_none"
         )]
         pub query_expr: Option<serde_json::Value>,
+        #[serde(
+            rename = "query_source",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub query_source: Option<serde_json::Value>,
         #[serde(rename = "query_model", default, skip_serializing_if = "Option::is_none")]
         pub query_model: Option<serde_json::Value>,
         #[serde(rename = "query_profile", default, skip_serializing_if = "Option::is_none")]
@@ -5534,10 +5547,7 @@ fn u32_value(value: &Value, path: &str) -> Result<u32, JsonCodecError> {
 }
 
 fn u64_value(value: &Value, path: &str) -> Result<u64, JsonCodecError> {
-    let value = non_null(value, path)?;
-    value
-        .as_u64()
-        .ok_or_else(|| contract(format!("`{path}` must be an unsigned 64-bit integer")))
+    decimal(value, path, "unsigned 64-bit integer")
 }
 
 fn f64_value(value: &Value, path: &str) -> Result<f64, JsonCodecError> {
@@ -7366,7 +7376,10 @@ fn coverage_json(coverage: api::Coverage<'_>) -> Result<Value, JsonCodecError> {
         );
     }
     if let Some(value) = coverage.documents() {
-        out.insert("documents".to_owned(), Value::Number(value.value().into()));
+        out.insert(
+            "documents".to_owned(),
+            Value::String(value.value().to_string()),
+        );
     }
     if let Some(value) = coverage.full() {
         out.insert("full".to_owned(), Value::Bool(value.value()));
@@ -7375,12 +7388,15 @@ fn coverage_json(coverage: api::Coverage<'_>) -> Result<Value, JsonCodecError> {
         out.insert("nodes".to_owned(), Value::Number(value.value().into()));
     }
     if let Some(value) = coverage.results() {
-        out.insert("results".to_owned(), Value::Number(value.value().into()));
+        out.insert(
+            "results".to_owned(),
+            Value::String(value.value().to_string()),
+        );
     }
     if let Some(value) = coverage.results_full() {
         out.insert(
             "results_full".to_owned(),
-            Value::Number(value.value().into()),
+            Value::String(value.value().to_string()),
         );
     }
     if let Some(value) = coverage.degraded() {
@@ -7834,12 +7850,28 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
                 out.insert("query_expr".to_owned(), query_json(query)?);
             }
         } else if v.source_as_match_all_query().is_some() {
-            out.insert("query_expr".to_owned(), serde_json::json!({"true": {}}));
-        } else if v.source_as_yql_query().is_some() {
-            return Err(JsonCodecError::Contract(
-                "YQL query JSON encoding is unsupported; preserve it as FlatBuffers or use the native API"
-                    .to_owned(),
-            ));
+            out.insert(
+                "query_source".to_owned(),
+                serde_json::json!({"match_all": {}}),
+            );
+        } else if let Some(yql) = v.source_as_yql_query() {
+            let mut source = Map::new();
+            source.insert(
+                "source".to_owned(),
+                Value::String(
+                    required_result(yql.source(), "query_source.yql.source")?.to_owned(),
+                ),
+            );
+            if let Some(parameters) = yql.parameters() {
+                source.insert(
+                    "parameters".to_owned(),
+                    value_map_json(Some(parameters))?,
+                );
+            }
+            out.insert(
+                "query_source".to_owned(),
+                serde_json::json!({"yql": Value::Object(source)}),
+            );
         } else {
             return Err(JsonCodecError::FlatBuffer(
                 "unknown query source discriminator".to_owned(),
@@ -8095,7 +8127,10 @@ fn search_json(value: api::SearchRequest<'_>) -> Result<Value, JsonCodecError> {
         }
     }
     if let Some(v) = value.timeout_ms() {
-        out.insert("timeout".to_owned(), Value::Number(v.value().into()));
+        out.insert(
+            "timeout".to_owned(),
+            Value::String(v.value().to_string()),
+        );
     }
     Ok(Value::Object(out))
 }
@@ -9785,18 +9820,27 @@ fn search<'a>(
     o: &Map<String, Value>,
 ) -> Result<WIPOffset<api::SearchRequest<'a>>, JsonCodecError> {
     check_keys(o, "SearchKernel_V2_SearchRequest", "search")?;
-    let query = match (field(o, "query"), field(o, "query_expr")) {
-        (Some(_), Some(_)) => {
-            return Err(contract(
-                "search.query and search.query_expr are mutually exclusive",
-            ))
-        }
-        (Some(value), None) => Some(query_source(b, &string(value, "search.query")?)?),
-        (None, Some(value)) => {
+    let query = match (
+        field(o, "query"),
+        field(o, "query_expr"),
+        field(o, "query_source"),
+    ) {
+        (Some(value), None, None) => Some(query_source(b, &string(value, "search.query")?)?),
+        (None, Some(value), None) => {
             let query = query_expr(b, value, "search.query_expr")?;
             Some(typed_query_source(b, query))
         }
-        (None, None) => None,
+        (None, None, Some(value)) => Some(query_source_from_json(
+            b,
+            value,
+            "search.query_source",
+        )?),
+        (None, None, None) => None,
+        _ => {
+            return Err(contract(
+                "search.query, search.query_expr, and search.query_source are mutually exclusive",
+            ))
+        }
     };
     let search_fields = field(o, "search_fields")
         .map(|v| selection(b, v, "search.search_fields"))
@@ -9973,6 +10017,63 @@ fn typed_query_source<'a>(
             source: Some(payload.as_union_value()),
         },
     )
+}
+
+fn query_source_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::QuerySource<'a>>, JsonCodecError> {
+    let (kind, payload) = one_key(value, path)?;
+    let (source_type, source) = match kind {
+        "yql" => {
+            let payload = object(payload, &format!("{path}.yql"))?;
+            check_keys(
+                payload,
+                "SearchKernel_V2_YqlQuery",
+                &format!("{path}.yql"),
+            )?;
+            let source = b.create_string(&string(
+                required(payload, "source", &format!("{path}.yql"))?,
+                &format!("{path}.yql.source"),
+            )?);
+            let parameters = field(payload, "parameters")
+                .map(|value| {
+                    map_entries(b, Some(value), &format!("{path}.yql.parameters"))
+                        .map(|entries| b.create_vector(&entries))
+                })
+                .transpose()?;
+            let source = api::YqlQuery::create(
+                b,
+                &api::YqlQueryArgs {
+                    source: Some(source),
+                    parameters,
+                },
+            );
+            (api::QuerySourceKind::YqlQuery, source.as_union_value())
+        }
+        "match_all" => {
+            let payload = object(payload, &format!("{path}.match_all"))?;
+            check_keys(
+                payload,
+                "SearchKernel_V2_MatchAllQuery",
+                &format!("{path}.match_all"),
+            )?;
+            let source = api::MatchAllQuery::create(b, &api::MatchAllQueryArgs {});
+            (
+                api::QuerySourceKind::MatchAllQuery,
+                source.as_union_value(),
+            )
+        }
+        _ => return Err(contract(format!("unknown query source `{path}.{kind}`"))),
+    };
+    Ok(api::QuerySource::create(
+        b,
+        &api::QuerySourceArgs {
+            source_type,
+            source: Some(source),
+        },
+    ))
 }
 
 fn highlighting<'a>(
