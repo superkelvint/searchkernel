@@ -1,0 +1,19 @@
+{
+  "category": "textual-filter",
+  "description": "Identical placeholder names are local to separate clauses.",
+  "id": "textual-filter.local-binding-reuse",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {
+        "source": "price <= :value",
+        "bindings": {"value": {"int64": 120}}
+      },
+      {
+        "source": "price >= :value",
+        "bindings": {"value": {"int64": 4}}
+      }
+    ]
+  },
+  "operation": "filters_to_ir"
+}

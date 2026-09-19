@@ -21,6 +21,7 @@ from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
 from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
+from searchkernel.ergonomic import SearchBuilder  # noqa: E402
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
@@ -88,6 +89,30 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(
             [clause.bindings[0].key for clause in decoded.filters.textual],
             ["value", "value"],
+        )
+
+    def test_ergonomic_filter_bindings_are_sorted(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, None).filter("price <= :z", {"z": 1, "a": 2}).execute()
+        self.assertEqual(
+            [entry.key for entry in index.client.request.filters.textual[0].bindings],
+            ["a", "z"],
         )
 
 

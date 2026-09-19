@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "unknown_parameter",
+        "path": "filters.textual[0].source"
+      }
+    ],
+    "retryable": false
+  }
+}

@@ -5,6 +5,8 @@ use searchkernel_filter::parse_filter;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
+pub(crate) const MAX_FILTER_BINDINGS: usize = 1024;
+
 impl IndexContext {
     pub fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
         self.filter_to_ir_at(filter, "filter")
@@ -56,17 +58,18 @@ impl IndexContext {
                 })?;
                 let parsed = parse_filter(source)
                     .map_err(parse_error_to_portable)
-                    .map_err(|error| decorate_filter_source_error(error, clause_index))?;
-                let bindings = filter_bindings(clause.bindings(), &format!("{path}.bindings"))?;
+                    .map_err(|error| decorate_filter_clause_error(error, clause_index, &path))?;
+                let bindings = filter_bindings(clause.bindings(), &format!("{path}.bindings"))
+                    .map_err(|error| decorate_filter_clause_error(error, clause_index, &path))?;
                 let bound = bind_parsed_filter(&parsed, &self.definition, &bindings)
-                    .map_err(|error| decorate_filter_source_error(error, clause_index))?;
+                    .map_err(|error| decorate_filter_clause_error(error, clause_index, &path))?;
                 clauses.push(bound.expression().clone());
             }
         }
         Ok(match clauses.len() {
             0 => None,
             1 => clauses.into_iter().next(),
-            _ => Some(FilterIr::And(clauses)),
+            _ => Some(flatten_and(clauses)),
         })
     }
 
@@ -366,14 +369,26 @@ impl IndexContext {
     }
 }
 
-pub(crate) fn decorate_filter_source_error(
+pub(crate) fn decorate_filter_clause_error(
     mut error: PortableError,
     clause_index: usize,
+    clause_path: &str,
 ) -> PortableError {
     for detail in &mut error.details {
         detail
             .metadata
             .insert("clause_index".to_owned(), clause_index.to_string());
+        if let Some(path) = detail.path.take() {
+            detail.path = Some(
+                if let Some(binding_path) = path.strip_prefix("filter.bindings") {
+                    format!("{clause_path}.bindings{binding_path}")
+                } else if path == "filter" || path.starts_with("filter.") {
+                    format!("{clause_path}.source")
+                } else {
+                    path
+                },
+            );
+        }
         // Parser and binder offsets are local to the source clause.
         if let Some(start) = detail.metadata.remove("span_start") {
             detail.metadata.insert("start_offset".to_owned(), start);
@@ -460,10 +475,17 @@ pub(crate) fn filter_bindings(
     entries: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
     path: &str,
 ) -> Result<FilterBindings> {
-    let mut bindings = BTreeMap::new();
     let Some(entries) = entries else {
-        return Ok(bindings);
+        return Ok(BTreeMap::new());
     };
+    if entries.len() > MAX_FILTER_BINDINGS {
+        return Err(invalid(
+            "expression_too_complex",
+            Some(path),
+            format!("filter clause contains too many bindings; maximum is {MAX_FILTER_BINDINGS}"),
+        ));
+    }
+    let mut bindings = BTreeMap::new();
     for (index, entry) in entries.iter().enumerate() {
         let name = entry.key().to_owned();
         if bindings.contains_key(&name) {

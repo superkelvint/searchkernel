@@ -1,0 +1,10 @@
+{
+  "category": "textual-filter",
+  "description": "Legacy request-global textual fields are rejected.",
+  "id": "textual-filter.legacy-global-fields-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "sources": ["price <= 120"]
+  },
+  "operation": "filters_to_ir"
+}

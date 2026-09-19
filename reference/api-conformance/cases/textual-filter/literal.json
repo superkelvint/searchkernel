@@ -1,0 +1,12 @@
+{
+  "category": "textual-filter",
+  "description": "A literal textual filter resolves through the canonical filter IR.",
+  "id": "textual-filter.literal",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {"source": "price <= 120"}
+    ]
+  },
+  "operation": "filters_to_ir"
+}

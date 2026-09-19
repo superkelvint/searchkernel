@@ -14,7 +14,7 @@ case_files=sorted((root/'cases').glob('*/*.json'))
 golden_files=sorted((root/'golden').glob('*/*.json'))
 allowed={
 'index_definition_to_ir','field_to_ir','analyzer_to_ir','value_to_ir','document_to_ir','search_fields_to_ir','projection_to_ir','highlighting_to_ir','comparison_to_ir','range_to_ir',
-'insert_to_ir','upsert_to_ir','patch_to_ir','delete_to_ir','get_to_ir','write_to_ir','filter_to_ir','sort_to_ir','facet_to_ir','ranking_to_ir','query_to_ir','search_to_ir','analyze_to_ir','describe','inspect_query'
+'insert_to_ir','upsert_to_ir','patch_to_ir','delete_to_ir','get_to_ir','write_to_ir','filter_to_ir','filters_to_ir','sort_to_ir','facet_to_ir','ranking_to_ir','query_to_ir','search_to_ir','analyze_to_ir','describe','inspect_query'
 }
 expected=[]; counts=Counter(); seen=set()
 for p in case_files:

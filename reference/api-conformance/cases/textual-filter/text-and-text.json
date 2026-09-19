@@ -1,0 +1,13 @@
+{
+  "category": "textual-filter",
+  "description": "Repeated textual clauses are ANDed and nested ANDs flatten.",
+  "id": "textual-filter.text-and-text",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {"source": "price > 10 AND price < 100"},
+      {"source": "in_stock = true"}
+    ]
+  },
+  "operation": "filters_to_ir"
+}

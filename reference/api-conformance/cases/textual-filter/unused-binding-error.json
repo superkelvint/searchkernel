@@ -1,0 +1,18 @@
+{
+  "category": "textual-filter",
+  "description": "An unused local textual binding is a portable error.",
+  "id": "textual-filter.unused-binding-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {
+        "source": "price <= :max",
+        "bindings": {
+          "max": {"int64": 120},
+          "unused": {"int64": 4}
+        }
+      }
+    ]
+  },
+  "operation": "filters_to_ir"
+}

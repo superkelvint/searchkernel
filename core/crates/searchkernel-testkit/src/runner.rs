@@ -546,6 +546,13 @@ fn execute(
                 &context.filter_to_ir(root).map_err(ExecError::Portable)?,
             ))
         }
+        "filters_to_ir" => {
+            let context = context.ok_or("operation requires index fixture")?;
+            let root = flatbuffers::root::<api::SearchRequest>(&bytes)
+                .map_err(|error| error.to_string())?;
+            let request = context.search_to_ir(root).map_err(ExecError::Portable)?;
+            ok(request.filter().map(filter_json).unwrap_or(JsonValue::Null))
+        }
         "sort_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
             let root =
@@ -1278,6 +1285,10 @@ impl WireBuilder {
             }
             "range_to_ir" => {
                 let root = self.range(input.get("range").unwrap_or(input))?;
+                self.finish(root)
+            }
+            "filters_to_ir" => {
+                let root = self.search(input)?;
                 self.finish(root)
             }
             "filter_to_ir" => {
@@ -2193,6 +2204,24 @@ impl WireBuilder {
         ))
     }
 
+    fn filter_clause(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::FilterClause<'static>>, String> {
+        let source = input
+            .get("source")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let bindings = input
+            .get("bindings")
+            .map(|value| self.entries(Some(value)))
+            .transpose()?;
+        Ok(api::FilterClause::create(
+            &mut self.builder,
+            &api::FilterClauseArgs { source, bindings },
+        ))
+    }
+
     fn search(
         &mut self,
         input: &JsonValue,
@@ -2252,14 +2281,53 @@ impl WireBuilder {
             .get("search_fields")
             .map(|v| self.selection(v))
             .transpose()?;
-        let filter = input.get("filter").map(|v| self.filter(v)).transpose()?;
-        let filters = filter.map(|filter| self.builder.create_vector(&[filter]));
-        let filters = filters.map(|structured| {
+        let structured = input.get("filter").map(|v| self.filter(v)).transpose()?;
+        let structured = structured.map(|filter| self.builder.create_vector(&[filter]));
+        let textual = input
+            .get("textual")
+            .map(|values| {
+                values
+                    .as_array()
+                    .ok_or("textual must be an array")?
+                    .iter()
+                    .map(|value| self.filter_clause(value))
+                    .collect::<StdResult<Vec<_>, _>>()
+            })
+            .transpose()?
+            .map(|values| self.builder.create_vector(&values));
+        let legacy_sources = input
+            .get("sources")
+            .map(|values| {
+                values
+                    .as_array()
+                    .ok_or("sources must be an array")?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(|value| self.text(value))
+                            .ok_or("source must be a string")
+                    })
+                    .collect::<StdResult<Vec<_>, _>>()
+            })
+            .transpose()?
+            .map(|values| self.builder.create_vector(&values));
+        let legacy_parameters = input
+            .get("parameters")
+            .map(|values| self.entries(Some(values)))
+            .transpose()?;
+        let filters = (structured.is_some()
+            || textual.is_some()
+            || legacy_sources.is_some()
+            || legacy_parameters.is_some())
+        .then(|| {
             api::FilterRequest::create(
                 &mut self.builder,
                 &api::FilterRequestArgs {
-                    structured: Some(structured),
-                    ..Default::default()
+                    structured,
+                    textual,
+                    sources: legacy_sources,
+                    parameters: legacy_parameters,
                 },
             )
         });

@@ -1,0 +1,20 @@
+{
+  "ok": {
+    "and": [
+      {
+        "comparison": {
+          "field": "price",
+          "op": "lte",
+          "value": {"float64": 120.0}
+        }
+      },
+      {
+        "comparison": {
+          "field": "price",
+          "op": "gte",
+          "value": {"float64": 4.0}
+        }
+      }
+    ]
+  }
+}

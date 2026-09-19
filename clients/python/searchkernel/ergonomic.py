@@ -386,7 +386,10 @@ class SearchBuilder:
         textual = [
             FilterClauseT(
                 source=source,
-                bindings=[ValueEntryT(key=name, value=value(item)) for name, item in bindings.items()],
+                bindings=[
+                    ValueEntryT(key=name, value=value(item))
+                    for name, item in sorted(bindings.items())
+                ],
             )
             for source, bindings in self._filters
         ]

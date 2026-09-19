@@ -3,6 +3,8 @@ use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
+use super::filter::MAX_FILTER_BINDINGS;
+
 fn context() -> IndexContext {
     let field = |name, kind| {
         let data_type = match kind {
@@ -33,6 +35,7 @@ fn context() -> IndexContext {
             field("brand", FieldKind::Keyword),
             field("price", FieldKind::Int64),
             field("rating", FieldKind::Float64),
+            field("in_stock", FieldKind::Bool),
         ],
         Vec::new(),
         RankingPolicyIr::DefaultRelevanceV1,
@@ -62,6 +65,194 @@ fn context() -> IndexContext {
         document_fields,
         query_fields,
     }
+}
+
+fn int_value(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    value: i64,
+) -> crate::__flatbuffers::WIPOffset<api::Value<'static>> {
+    let value = api::Int64Value::create(builder, &api::Int64ValueArgs { value });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(value.as_union_value()),
+        },
+    )
+}
+
+fn bool_value(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    value: bool,
+) -> crate::__flatbuffers::WIPOffset<api::Value<'static>> {
+    let value = api::BoolValue::create(builder, &api::BoolValueArgs { value });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::BoolValue,
+            kind: Some(value.as_union_value()),
+        },
+    )
+}
+
+fn structured_comparison(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    field: &str,
+    op: api::ComparisonOp,
+    value: crate::__flatbuffers::WIPOffset<api::Value<'static>>,
+) -> crate::__flatbuffers::WIPOffset<api::FilterExpr<'static>> {
+    let field = builder.create_string(field);
+    let field = api::QueryFieldRef::create(
+        builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field),
+            element_index: None,
+        },
+    );
+    let comparison = api::FilterComparison::create(
+        builder,
+        &api::FilterComparisonArgs {
+            field: Some(field),
+            op,
+            value: Some(value),
+        },
+    );
+    api::FilterExpr::create(
+        builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterComparison,
+            expr: Some(comparison.as_union_value()),
+        },
+    )
+}
+
+fn textual_clause(
+    builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+    source: &str,
+) -> crate::__flatbuffers::WIPOffset<api::FilterClause<'static>> {
+    let source = builder.create_string(source);
+    api::FilterClause::create(
+        builder,
+        &api::FilterClauseArgs {
+            source: Some(source),
+            ..Default::default()
+        },
+    )
+}
+
+fn assert_flattened_and(filter: FilterIr, expected_len: usize) {
+    match filter {
+        FilterIr::And(clauses) => {
+            assert_eq!(clauses.len(), expected_len);
+            assert!(clauses
+                .iter()
+                .all(|clause| !matches!(clause, FilterIr::And(_))));
+        }
+        other => panic!("expected flattened AND, got {other:?}"),
+    }
+}
+
+#[test]
+fn request_level_textual_and_is_flattened() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let first = textual_clause(&mut builder, "price > 10 AND price < 100");
+    let second = textual_clause(&mut builder, "in_stock = true");
+    let textual = builder.create_vector(&[first, second]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    assert_flattened_and(
+        context()
+            .filters_to_ir(Some(request))
+            .expect("textual filters resolve")
+            .expect("filter is present"),
+        3,
+    );
+}
+
+#[test]
+fn request_level_structured_and_textual_filters_are_flattened() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let lower = int_value(&mut builder, 10);
+    let upper = int_value(&mut builder, 100);
+    let lower = structured_comparison(&mut builder, "price", api::ComparisonOp::Gt, lower);
+    let upper = structured_comparison(&mut builder, "price", api::ComparisonOp::Lt, upper);
+    let structured_and = builder.create_vector(&[lower, upper]);
+    let structured = api::FilterAnd::create(
+        &mut builder,
+        &api::FilterAndArgs {
+            clauses: Some(structured_and),
+        },
+    );
+    let structured = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterAnd,
+            expr: Some(structured.as_union_value()),
+        },
+    );
+    let structured = builder.create_vector(&[structured]);
+    let textual_clause = textual_clause(&mut builder, "in_stock = true");
+    let textual = builder.create_vector(&[textual_clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured),
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    assert_flattened_and(
+        context()
+            .filters_to_ir(Some(request))
+            .expect("structured and textual filters resolve")
+            .expect("filter is present"),
+        3,
+    );
+}
+
+#[test]
+fn request_level_multiple_structured_and_textual_clauses_are_flattened() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let lower = int_value(&mut builder, 10);
+    let in_stock = bool_value(&mut builder, true);
+    let lower = structured_comparison(&mut builder, "price", api::ComparisonOp::Gt, lower);
+    let in_stock = structured_comparison(&mut builder, "in_stock", api::ComparisonOp::Eq, in_stock);
+    let structured = builder.create_vector(&[lower, in_stock]);
+    let price_clause = textual_clause(&mut builder, "price < 100");
+    let stock_clause = textual_clause(&mut builder, "in_stock = true");
+    let textual = builder.create_vector(&[price_clause, stock_clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured),
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+
+    assert_flattened_and(
+        context()
+            .filters_to_ir(Some(request))
+            .expect("multiple filters resolve")
+            .expect("filter is present"),
+        4,
+    );
 }
 
 #[test]
@@ -320,6 +511,7 @@ fn repeated_source_errors_identify_clause_and_local_offsets() {
     let detail = &error.details[0];
     assert_eq!(detail.code, "syntax_error");
     assert_eq!(detail.metadata.get("clause_index"), Some(&"1".to_owned()));
+    assert_eq!(detail.path.as_deref(), Some("filters.textual[1].source"));
     assert!(detail.metadata.contains_key("start_offset"));
     assert!(detail.metadata.contains_key("end_offset"));
     assert!(!detail.metadata.contains_key("span_start"));
@@ -454,6 +646,100 @@ fn binding_from_one_clause_cannot_satisfy_another_clause() {
     assert_eq!(
         error.details[0].metadata.get("clause_index"),
         Some(&"1".to_owned())
+    );
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("filters.textual[1].source")
+    );
+}
+
+#[test]
+fn filter_bindings_are_bounded_per_clause() {
+    fn entries(
+        builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
+        count: usize,
+    ) -> crate::__flatbuffers::WIPOffset<
+        crate::__flatbuffers::Vector<
+            'static,
+            crate::__flatbuffers::ForwardsUOffset<api::ValueEntry<'static>>,
+        >,
+    > {
+        let value = int_value(builder, 1);
+        let values = (0..count)
+            .map(|index| {
+                let key = builder.create_string(&format!("binding_{index}"));
+                api::ValueEntry::create(
+                    builder,
+                    &api::ValueEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        builder.create_vector(&values)
+    }
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let at_limit = entries(&mut builder, MAX_FILTER_BINDINGS);
+    let clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            bindings: Some(at_limit),
+            ..Default::default()
+        },
+    );
+    let textual = builder.create_vector(&[clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+    let bindings = super::filter::filter_bindings(
+        request
+            .textual()
+            .and_then(|values| values.get(0).bindings()),
+        "filters.textual[0].bindings",
+    )
+    .expect("the binding limit itself is valid");
+    assert_eq!(bindings.len(), MAX_FILTER_BINDINGS);
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let over_limit = entries(&mut builder, MAX_FILTER_BINDINGS + 1);
+    let clause = api::FilterClause::create(
+        &mut builder,
+        &api::FilterClauseArgs {
+            bindings: Some(over_limit),
+            ..Default::default()
+        },
+    );
+    let textual = builder.create_vector(&[clause]);
+    let request = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            textual: Some(textual),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::FilterRequest>(builder.finished_data())
+        .expect("valid filter request");
+    let error = super::filter::filter_bindings(
+        request
+            .textual()
+            .and_then(|values| values.get(0).bindings()),
+        "filters.textual[0].bindings",
+    )
+    .expect_err("one binding over the limit must fail");
+    assert_eq!(error.details[0].code, "expression_too_complex");
+    assert_eq!(
+        error.details[0].path.as_deref(),
+        Some("filters.textual[0].bindings")
     );
 }
 

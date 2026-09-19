@@ -2,7 +2,7 @@
 
 Executable, backend-free specification of the **Portable API → Search Kernel IR** boundary.
 
-**v0.5 contains 204 active cases across 13 categories.**
+**v0.5 contains 212 active cases across 14 categories.**
 
 The naming grammar is final:
 

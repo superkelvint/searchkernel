@@ -176,6 +176,9 @@ fn standard_json_preserves_textual_filter_clause_bindings() {
     assert_eq!(clauses[0]["bindings"][0]["key"], "max");
     assert_eq!(clauses[1]["source"], "rating >= :value");
     assert_eq!(clauses[1]["bindings"][0]["key"], "value");
+    let again = request_json_to_flatbuffer(&printed).expect("printed textual filter JSON");
+    let printed_again = request_flatbuffer_to_json(&again).expect("textual filter JSON again");
+    assert_eq!(printed_again, printed);
 }
 
 #[test]

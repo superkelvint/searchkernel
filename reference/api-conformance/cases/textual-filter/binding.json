@@ -1,0 +1,15 @@
+{
+  "category": "textual-filter",
+  "description": "A textual filter binds a typed local value.",
+  "id": "textual-filter.binding",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {
+        "source": "price <= :max",
+        "bindings": {"max": {"int64": 120}}
+      }
+    ]
+  },
+  "operation": "filters_to_ir"
+}

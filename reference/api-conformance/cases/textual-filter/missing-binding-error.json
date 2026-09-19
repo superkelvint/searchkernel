@@ -1,0 +1,12 @@
+{
+  "category": "textual-filter",
+  "description": "A missing local textual binding is a portable error.",
+  "id": "textual-filter.missing-binding-error",
+  "index_fixture": "product-v2",
+  "input": {
+    "textual": [
+      {"source": "price <= :missing"}
+    ]
+  },
+  "operation": "filters_to_ir"
+}

@@ -1,0 +1,30 @@
+{
+  "category": "textual-filter",
+  "description": "Structured and textual clauses share the canonical request filter.",
+  "id": "textual-filter.structured-and-textual",
+  "index_fixture": "product-v2",
+  "input": {
+    "filter": {
+      "all": [
+        {
+          "comparison": {
+            "field": "price",
+            "op": "gt",
+            "value": {"float64": 10.0}
+          }
+        },
+        {
+          "comparison": {
+            "field": "price",
+            "op": "lt",
+            "value": {"float64": 100.0}
+          }
+        }
+      ]
+    },
+    "textual": [
+      {"source": "in_stock = true"}
+    ]
+  },
+  "operation": "filters_to_ir"
+}

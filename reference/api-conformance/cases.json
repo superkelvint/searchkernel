@@ -835,6 +835,54 @@
       "operation": "sort_to_ir"
     },
     {
+      "case": "cases/textual-filter/binding.json",
+      "golden": "golden/textual-filter/binding.json",
+      "id": "textual-filter.binding",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/legacy-global-fields-error.json",
+      "golden": "golden/textual-filter/legacy-global-fields-error.json",
+      "id": "textual-filter.legacy-global-fields-error",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/literal.json",
+      "golden": "golden/textual-filter/literal.json",
+      "id": "textual-filter.literal",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/local-binding-reuse.json",
+      "golden": "golden/textual-filter/local-binding-reuse.json",
+      "id": "textual-filter.local-binding-reuse",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/missing-binding-error.json",
+      "golden": "golden/textual-filter/missing-binding-error.json",
+      "id": "textual-filter.missing-binding-error",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/structured-and-textual.json",
+      "golden": "golden/textual-filter/structured-and-textual.json",
+      "id": "textual-filter.structured-and-textual",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/text-and-text.json",
+      "golden": "golden/textual-filter/text-and-text.json",
+      "id": "textual-filter.text-and-text",
+      "operation": "filters_to_ir"
+    },
+    {
+      "case": "cases/textual-filter/unused-binding-error.json",
+      "golden": "golden/textual-filter/unused-binding-error.json",
+      "id": "textual-filter.unused-binding-error",
+      "operation": "filters_to_ir"
+    },
+    {
       "case": "cases/value/f64-nan.json",
       "golden": "golden/value/f64-nan.json",
       "id": "value.f64-nan",
