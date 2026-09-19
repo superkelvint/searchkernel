@@ -1,8 +1,9 @@
 use super::*;
-use crate::filter_expression::{bind_filter_expression_with_references, FilterParameters};
+use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable, FilterBindings};
 use crate::model::*;
+use searchkernel_filter::parse_filter;
 use searchkernel_protocol::v2 as api;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 impl IndexContext {
     pub fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
@@ -34,26 +35,33 @@ impl IndexContext {
             })
             .transpose()?
             .unwrap_or_default();
-        let parameters = filter_parameters(filters.parameters())?;
-        let mut referenced_parameters = BTreeSet::new();
-        if let Some(sources) = filters.sources() {
-            for (clause_index, source) in sources.iter().enumerate() {
-                let bound =
-                    bind_filter_expression_with_references(source, &self.definition, &parameters)
-                        .map_err(|error| decorate_filter_source_error(error, clause_index))?;
-                referenced_parameters.extend(bound.referenced_parameters().iter().cloned());
+
+        if filters.sources().is_some() || filters.parameters().is_some() {
+            return Err(invalid(
+                "invalid_filter",
+                Some("filters"),
+                "legacy global textual filter fields are unsupported; use filters.textual",
+            ));
+        }
+
+        if let Some(textual) = filters.textual() {
+            for (clause_index, clause) in textual.iter().enumerate() {
+                let path = format!("filters.textual[{clause_index}]");
+                let source = clause.source().ok_or_else(|| {
+                    invalid(
+                        "missing_source",
+                        Some(format!("{path}.source")),
+                        "textual filter clause source is required",
+                    )
+                })?;
+                let parsed = parse_filter(source)
+                    .map_err(parse_error_to_portable)
+                    .map_err(|error| decorate_filter_source_error(error, clause_index))?;
+                let bindings = filter_bindings(clause.bindings(), &format!("{path}.bindings"))?;
+                let bound = bind_parsed_filter(&parsed, &self.definition, &bindings)
+                    .map_err(|error| decorate_filter_source_error(error, clause_index))?;
                 clauses.push(bound.expression().clone());
             }
-        }
-        if let Some((name, _)) = parameters
-            .iter()
-            .find(|(name, _)| !referenced_parameters.contains(*name))
-        {
-            return Err(invalid(
-                "unused_parameter",
-                Some(format!("filters.parameters.{name}")),
-                format!("parameter `:{name}` is not referenced by a filter source"),
-            ));
         }
         Ok(match clauses.len() {
             0 => None,
@@ -448,35 +456,36 @@ pub(crate) fn filter_bound_greater(lower: &FilterRangeBoundIr, upper: &FilterRan
     }
 }
 
-pub(crate) fn filter_parameters(
+pub(crate) fn filter_bindings(
     entries: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
-) -> Result<FilterParameters> {
-    let mut parameters = BTreeMap::new();
+    path: &str,
+) -> Result<FilterBindings> {
+    let mut bindings = BTreeMap::new();
     let Some(entries) = entries else {
-        return Ok(parameters);
+        return Ok(bindings);
     };
     for (index, entry) in entries.iter().enumerate() {
         let name = entry.key().to_owned();
-        if parameters.contains_key(&name) {
+        if bindings.contains_key(&name) {
             return Err(invalid(
                 "duplicate_parameter",
-                Some(format!("filters.parameters[{index}]")),
-                format!("parameter `:{name}` occurs more than once"),
+                Some(format!("{path}[{index}]")),
+                format!("binding `:{name}` occurs more than once"),
             ));
         }
         let value = entry.value().ok_or_else(|| {
             invalid(
                 "missing_value",
-                Some(format!("filters.parameters[{index}].value")),
-                "parameter value is required",
+                Some(format!("{path}[{index}].value")),
+                "binding value is required",
             )
         })?;
-        parameters.insert(
+        bindings.insert(
             name,
-            value_from_api(value, format!("filters.parameters[{index}].value"))?,
+            value_from_api(value, format!("{path}[{index}].value"))?,
         );
     }
-    Ok(parameters)
+    Ok(bindings)
 }
 pub(crate) fn filter_children(
     children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FilterExpr<'_>>>>,

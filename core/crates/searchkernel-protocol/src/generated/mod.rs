@@ -286,6 +286,8 @@ pub mod search_kernel {
         pub use self::filter_in_generated::*;
         mod filter_expr_generated;
         pub use self::filter_expr_generated::*;
+        mod filter_clause_generated;
+        pub use self::filter_clause_generated::*;
         mod filter_request_generated;
         pub use self::filter_request_generated::*;
         mod missing_first_generated;

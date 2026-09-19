@@ -695,6 +695,21 @@ fn typed_parameters_and_references_are_preserved() {
 }
 
 #[test]
+fn parsed_syntax_ast_binds_without_reparsing() {
+    let parsed = searchkernel_filter::parse_filter("price <= :max").unwrap();
+    let bound = super::bind_parsed_filter(
+        &parsed,
+        &schema(),
+        &parameters([("max", Value::Int64(120))]),
+    )
+    .unwrap();
+    assert_eq!(
+        bound.expression(),
+        &comparison("price", ComparisonOp::Lte, ScalarValueIr::Int64(120))
+    );
+}
+
+#[test]
 fn binder_rejects_invalid_fields_operators_and_types() {
     let empty = FilterParameters::new();
     assert_detail("missing = 1", &empty, "unknown_field");
@@ -741,6 +756,14 @@ fn binder_rejects_invalid_parameter_use() {
         &parameters([("brands", Value::List(Vec::new()))]),
         "empty_in",
     );
+
+    let error = bind_filter_expression(
+        "price <= :max",
+        &schema(),
+        &parameters([("max", Value::Int64(120)), ("unused", Value::Int64(4))]),
+    )
+    .unwrap_err();
+    assert_eq!(error.details[0].code, "unused_parameter");
 }
 
 #[test]

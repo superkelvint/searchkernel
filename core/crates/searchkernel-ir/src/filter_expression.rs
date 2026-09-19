@@ -13,8 +13,11 @@ use std::collections::{BTreeMap, BTreeSet};
 #[path = "filter_expression_tests.rs"]
 mod tests;
 
-/// Typed request parameters available to a filter expression.
-pub type FilterParameters = BTreeMap<String, Value>;
+/// Typed bindings available to one textual filter clause.
+pub type FilterBindings = BTreeMap<String, Value>;
+
+/// Compatibility name for callers of the pre-clause-local binder API.
+pub type FilterParameters = FilterBindings;
 
 /// A bound filter and the parameter references it consumed.
 #[derive(Clone, Debug, PartialEq)]
@@ -56,13 +59,23 @@ pub fn bind_filter_expression_with_references(
     bind_parsed_filter(&parsed, schema, params)
 }
 
-fn bind_parsed_filter(
+pub(crate) fn bind_parsed_filter(
     parsed: &Spanned<Expr>,
     schema: &IndexDefinitionIr,
-    params: &FilterParameters,
+    bindings: &FilterBindings,
 ) -> Result<BoundFilter> {
     let mut referenced_parameters = BTreeSet::new();
-    let expression = bind_expr(parsed, schema, params, &mut referenced_parameters)?;
+    let expression = bind_expr(parsed, schema, bindings, &mut referenced_parameters)?;
+    if let Some(name) = bindings
+        .keys()
+        .find(|name| !referenced_parameters.contains(*name))
+    {
+        return Err(PortableError::invalid(
+            "unused_parameter",
+            Some(format!("filter.bindings.{name}")),
+            format!("binding `:{name}` is not referenced by the filter expression"),
+        ));
+    }
     Ok(BoundFilter {
         expression,
         referenced_parameters,
@@ -499,7 +512,7 @@ fn flatten_or(children: Vec<FilterIr>) -> FilterIr {
     }
 }
 
-fn parse_error_to_portable(error: ParseError) -> PortableError {
+pub(crate) fn parse_error_to_portable(error: ParseError) -> PortableError {
     let (code, reason) = match error.kind {
         ErrorKind::SyntaxError => (
             "syntax_error",

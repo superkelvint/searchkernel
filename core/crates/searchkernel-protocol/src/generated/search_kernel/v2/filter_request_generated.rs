@@ -23,6 +23,7 @@ impl<'a> FilterRequest<'a> {
     pub const VT_STRUCTURED: ::flatbuffers::VOffsetT = 4;
     pub const VT_SOURCES: ::flatbuffers::VOffsetT = 6;
     pub const VT_PARAMETERS: ::flatbuffers::VOffsetT = 8;
+    pub const VT_TEXTUAL: ::flatbuffers::VOffsetT = 10;
 
     #[inline]
     pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -39,6 +40,9 @@ impl<'a> FilterRequest<'a> {
         args: &'args FilterRequestArgs<'args>,
     ) -> ::flatbuffers::WIPOffset<FilterRequest<'bldr>> {
         let mut builder = FilterRequestBuilder::new(_fbb);
+        if let Some(x) = args.textual {
+            builder.add_textual(x);
+        }
         if let Some(x) = args.parameters {
             builder.add_parameters(x);
         }
@@ -90,6 +94,19 @@ impl<'a> FilterRequest<'a> {
             >>(FilterRequest::VT_PARAMETERS, None)
         }
     }
+    #[inline]
+    pub fn textual(
+        &self,
+    ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<FilterClause<'a>>>> {
+        // Safety:
+        // Created from valid Table for this object
+        // which contains a valid value in this slot
+        unsafe {
+            self._tab.get::<::flatbuffers::ForwardsUOffset<
+                ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<FilterClause>>,
+            >>(FilterRequest::VT_TEXTUAL, None)
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for FilterRequest<'_> {
@@ -108,6 +125,9 @@ impl ::flatbuffers::Verifiable for FilterRequest<'_> {
             .visit_field::<::flatbuffers::ForwardsUOffset<
                 ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<ValueEntry>>,
             >>("parameters", Self::VT_PARAMETERS, false)?
+            .visit_field::<::flatbuffers::ForwardsUOffset<
+                ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<FilterClause>>,
+            >>("textual", Self::VT_TEXTUAL, false)?
             .finish();
         Ok(())
     }
@@ -128,6 +148,11 @@ pub struct FilterRequestArgs<'a> {
             ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ValueEntry<'a>>>,
         >,
     >,
+    pub textual: Option<
+        ::flatbuffers::WIPOffset<
+            ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<FilterClause<'a>>>,
+        >,
+    >,
 }
 impl<'a> Default for FilterRequestArgs<'a> {
     #[inline]
@@ -136,6 +161,7 @@ impl<'a> Default for FilterRequestArgs<'a> {
             structured: None,
             sources: None,
             parameters: None,
+            textual: None,
         }
     }
 }
@@ -180,6 +206,16 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> FilterRequestBuilder<'a, 'b, 
         );
     }
     #[inline]
+    pub fn add_textual(
+        &mut self,
+        textual: ::flatbuffers::WIPOffset<
+            ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<FilterClause<'b>>>,
+        >,
+    ) {
+        self.fbb_
+            .push_slot_always::<::flatbuffers::WIPOffset<_>>(FilterRequest::VT_TEXTUAL, textual);
+    }
+    #[inline]
     pub fn new(
         _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
     ) -> FilterRequestBuilder<'a, 'b, A> {
@@ -202,6 +238,7 @@ impl ::core::fmt::Debug for FilterRequest<'_> {
         ds.field("structured", &self.structured());
         ds.field("sources", &self.sources());
         ds.field("parameters", &self.parameters());
+        ds.field("textual", &self.textual());
         ds.finish()
     }
 }

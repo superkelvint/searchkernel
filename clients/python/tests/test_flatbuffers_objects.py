@@ -18,6 +18,9 @@ from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
 from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind  # noqa: E402
 from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
+from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
+from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
+from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
@@ -53,6 +56,39 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         expression = (g.field("price") + 1).model
         self.assertEqual(expression.expr.left.expr.field, "price")
         self.assertEqual(expression.expr.right.expr.value.kind.value, 1)
+
+    def test_textual_filter_clauses_preserve_local_bindings(self):
+        request = SearchRequestT(
+            filters=FilterRequestT(
+                textual=[
+                    FilterClauseT(
+                        source="price <= :value",
+                        bindings=[
+                            __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                                key="value", value=value(120)
+                            )
+                        ],
+                    ),
+                    FilterClauseT(
+                        source="rating >= :value",
+                        bindings=[
+                            __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                                key="value", value=value(4)
+                            )
+                        ],
+                    ),
+                ]
+            )
+        )
+        decoded = SearchRequestT.InitFromPackedBuf(pack_object(request))
+        self.assertEqual(
+            [clause.source for clause in decoded.filters.textual],
+            ["price <= :value", "rating >= :value"],
+        )
+        self.assertEqual(
+            [clause.bindings[0].key for clause in decoded.filters.textual],
+            ["value", "value"],
+        )
 
 
 if __name__ == "__main__":
