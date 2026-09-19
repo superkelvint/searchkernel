@@ -3921,7 +3921,7 @@ void validate_weighted_query_inputs(const uint8_t *key_bytes, uint32_t key_bytes
     }
 }
 
-void add_weighted_query_strings(NativeQueryState &query, bool wand, const char *field,
+void add_weighted_query_strings(NativeQueryState &query, uint32_t kind, const char *field,
                                 const uint8_t *key_bytes, uint32_t key_bytes_length,
                                 const uint32_t *key_lengths, const int64_t *weights,
                                 uint32_t item_count) {
@@ -3936,15 +3936,17 @@ void add_weighted_query_strings(NativeQueryState &query, bool wand, const char *
         offset += length;
     }
     const auto type = search::query::MultiTerm::Type::WEIGHTED_STRING;
-    if (wand) {
+    if (kind == 1) {
         query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
                                   100, 0, 1.0);
+    } else if (kind == 2) {
+        query.builder.addDotProduct(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     } else {
         query.builder.addWeightedSetTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     }
 }
 
-void add_weighted_query_integers(NativeQueryState &query, bool wand, const char *field,
+void add_weighted_query_integers(NativeQueryState &query, uint32_t kind, const char *field,
                                  const int64_t *keys, const int64_t *weights,
                                  uint32_t item_count) {
     validate_query_multi_field(query, field);
@@ -3962,9 +3964,11 @@ void add_weighted_query_integers(NativeQueryState &query, bool wand, const char 
         terms->addTerm(keys[index], query_item_weight(weights[index]));
     }
     const auto type = search::query::MultiTerm::Type::WEIGHTED_INTEGER;
-    if (wand) {
+    if (kind == 1) {
         query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
                                   100, 0, 1.0);
+    } else if (kind == 2) {
+        query.builder.addDotProduct(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     } else {
         query.builder.addWeightedSetTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     }
@@ -6022,6 +6026,64 @@ extern "C" int32_t sk_query_add_fuzzy(
     });
 }
 
+extern "C" int32_t sk_query_add_alternatives(
+    sk_query *query, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const int64_t *exactness_weights, uint32_t term_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "alternatives query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_TEXT, field);
+        validate_weighted_query_inputs(term_bytes, term_bytes_length, term_lengths,
+                                       exactness_weights, term_count);
+        auto terms = std::make_unique<search::query::WeightedStringTermVector>(term_count);
+        size_t offset = 0;
+        for (uint32_t index = 0; index < term_count; ++index) {
+            const auto length = term_lengths[index];
+            terms->addTerm(std::string_view(reinterpret_cast<const char *>(term_bytes + offset), length),
+                           query_item_weight(exactness_weights[index]));
+            offset += length;
+        }
+        query->builder.add_word_alternatives(
+            std::move(terms), field, query->allocate_term_id(), Weight(100));
+    });
+}
+
+extern "C" int32_t sk_query_add_matches(
+    sk_query *query, const char *field, const char *pattern, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field || !pattern) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "matches query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_fuzzy_query_field(*query, field);
+        validate_string_size(pattern, MAX_TEXT_TERM_BYTES, "matches query pattern");
+        if (*pattern == '\0') {
+            throw std::invalid_argument("matches query pattern must not be empty");
+        }
+        query->builder.addRegExpTerm(pattern, field, query->allocate_term_id(), Weight(100));
+    });
+}
+
+extern "C" int32_t sk_query_add_labeled(
+    sk_query *query, int32_t unique_id, double score, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "labeled query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (unique_id < 0 || !std::isfinite(score)) {
+            throw std::invalid_argument("labeled query id and score are invalid");
+        }
+        query->builder.add_label_wrapper(unique_id, score);
+    });
+}
+
 extern "C" int32_t sk_query_add_weighted_set_strings(
     sk_query *query, const char *field, const uint8_t *key_bytes,
     uint32_t key_bytes_length, const uint32_t *key_lengths,
@@ -6032,7 +6094,7 @@ extern "C" int32_t sk_query_add_weighted_set_strings(
                          "weighted-set query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        add_weighted_query_strings(*query, false, field, key_bytes, key_bytes_length,
+        add_weighted_query_strings(*query, 0, field, key_bytes, key_bytes_length,
                                    key_lengths, weights, item_count);
     });
 }
@@ -6046,7 +6108,35 @@ extern "C" int32_t sk_query_add_weighted_set_integers(
                          "weighted-set query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        add_weighted_query_integers(*query, false, field, keys, weights, item_count);
+        add_weighted_query_integers(*query, 0, field, keys, weights, item_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_dot_product_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "dot-product query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_strings(*query, 2, field, key_bytes, key_bytes_length,
+                                   key_lengths, weights, item_count);
+    });
+}
+
+extern "C" int32_t sk_query_add_dot_product_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "dot-product query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        add_weighted_query_integers(*query, 2, field, keys, weights, item_count);
     });
 }
 
@@ -6060,7 +6150,7 @@ extern "C" int32_t sk_query_add_wand_strings(
                          "wand query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        add_weighted_query_strings(*query, true, field, key_bytes, key_bytes_length,
+        add_weighted_query_strings(*query, 1, field, key_bytes, key_bytes_length,
                                    key_lengths, weights, item_count);
     });
 }
@@ -6074,7 +6164,7 @@ extern "C" int32_t sk_query_add_wand_integers(
                          "wand query arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        add_weighted_query_integers(*query, true, field, keys, weights, item_count);
+        add_weighted_query_integers(*query, 1, field, keys, weights, item_count);
     });
 }
 

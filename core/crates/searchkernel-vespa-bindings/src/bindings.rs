@@ -52,7 +52,7 @@ pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
 pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 7;
+pub const SK_NATIVE_ABI_VERSION: u32 = 8;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -640,6 +640,37 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_query_add_alternatives(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        exactness_weights: *const i64,
+        term_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_matches(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        pattern: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_labeled(
+        query: *mut sk_query,
+        unique_id: i32,
+        score: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_query_add_weighted_set_strings(
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
@@ -654,6 +685,30 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_query_add_weighted_set_integers(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        keys: *const i64,
+        weights: *const i64,
+        item_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_dot_product_strings(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        key_bytes: *const u8,
+        key_bytes_length: u32,
+        key_lengths: *const u32,
+        weights: *const i64,
+        item_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_dot_product_integers(
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
         keys: *const i64,

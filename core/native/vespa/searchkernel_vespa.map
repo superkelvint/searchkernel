@@ -42,8 +42,13 @@ SEARCHKERNEL_2 {
         sk_query_add_weak_and;
         sk_query_add_rank;
         sk_query_add_fuzzy;
+        sk_query_add_alternatives;
+        sk_query_add_matches;
+        sk_query_add_labeled;
         sk_query_add_weighted_set_strings;
         sk_query_add_weighted_set_integers;
+        sk_query_add_dot_product_strings;
+        sk_query_add_dot_product_integers;
         sk_query_add_wand_strings;
         sk_query_add_wand_integers;
         sk_query_add_equals;

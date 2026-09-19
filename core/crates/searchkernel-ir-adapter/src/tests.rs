@@ -498,6 +498,146 @@ fn typed_query_b_rejects_unsupported_weighted_values() {
 }
 
 #[test]
+fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
+    let alternatives = typed_contains(
+        "title",
+        QueryExprKindIr::Alternatives(vec![
+            QueryAlternativeIr {
+                query: typed_term("wireless"),
+                exactness: Some(1.0),
+            },
+            QueryAlternativeIr {
+                query: typed_term("cordless"),
+                exactness: Some(0.7),
+            },
+        ]),
+    );
+    assert_eq!(
+        lower_query(&alternatives, &[]).unwrap(),
+        Query::Alternatives {
+            field: "title".to_owned(),
+            alternatives: vec![
+                searchkernel_vespa_engine::QueryAlternative {
+                    text: "wireless".to_owned(),
+                    exactness: 1.0,
+                },
+                searchkernel_vespa_engine::QueryAlternative {
+                    text: "cordless".to_owned(),
+                    exactness: 0.7,
+                },
+            ],
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::Matches {
+                field: typed_field("title"),
+                pattern: "wire.*".to_owned(),
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::Matches {
+            field: "title".to_owned(),
+            pattern: "wire.*".to_owned(),
+        }
+    );
+    assert_eq!(
+        lower_query(
+            &typed_expression(QueryExprKindIr::DotProduct {
+                field: typed_field("tags"),
+                items: vec![WeightedQueryItemIr {
+                    key: RequestValueIr::String("wireless".to_owned()),
+                    weight: 4,
+                }],
+            }),
+            &[],
+        )
+        .unwrap(),
+        Query::DotProduct {
+            field: "tags".to_owned(),
+            items: vec![searchkernel_vespa_engine::WeightedQueryItem::String {
+                key: "wireless".to_owned(),
+                weight: 4,
+            }],
+        }
+    );
+
+    let labeled_request = request(Vec::new(), Vec::new(), None).with_ranking_request(
+        "default",
+        std::collections::BTreeMap::from([("vespa.label.candidate.id".to_owned(), "7".to_owned())]),
+    );
+    let labeled_request = labeled_request.with_query(typed_contains(
+        "title",
+        QueryExprKindIr::Labeled {
+            query: Box::new(typed_term("wireless")),
+            label: "candidate".to_owned(),
+            score: 2.5,
+        },
+    ));
+    assert_eq!(
+        lower_search_query(
+            &labeled_request,
+            searchkernel_vespa_engine::LinguisticsOptions::default(),
+        )
+        .unwrap(),
+        Query::Labeled {
+            query: Box::new(Query::term("title", "wireless")),
+            unique_id: 7,
+            score: 2.5,
+        }
+    );
+
+    assert_eq!(
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless")))
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::term("title", "wireless")
+    );
+    assert_eq!(
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::UserInput {
+                    value: "wireless headphones".to_owned(),
+                },
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::WeakAnd {
+            field: "title".to_owned(),
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphone"),
+            ],
+            target_num_hits: 100,
+        }
+    );
+
+    let user_query_request = request(Vec::new(), Vec::new(), None)
+        .with_query(typed_expression(QueryExprKindIr::UserQuery))
+        .with_query_model(QueryModelIr {
+            query_string: Some("wireless headphones".to_owned()),
+            default_index: Some("title".to_owned()),
+            ..QueryModelIr::default()
+        });
+    assert!(matches!(
+        lower_search_query(
+            &user_query_request,
+            searchkernel_vespa_engine::LinguisticsOptions::default(),
+        )
+        .unwrap(),
+        Query::WeakAnd { field, .. } if field == "title"
+    ));
+}
+
+#[test]
 fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-typed-query-a-{}-{}",
@@ -773,6 +913,95 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
         )))
         .expect("execute rank query"));
     assert_eq!(rank_ids.first().map(String::as_str), Some("doc:ordered"));
+
+    let alternatives_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::Alternatives(vec![
+                QueryAlternativeIr {
+                    query: typed_term("wireless"),
+                    exactness: Some(1.0),
+                },
+                QueryAlternativeIr {
+                    query: typed_term("cordless"),
+                    exactness: Some(0.5),
+                },
+            ]),
+        )))
+        .expect("execute alternatives query"));
+    assert!(alternatives_ids.contains(&"doc:ordered".to_owned()));
+
+    let matches_ids = ids(backend
+        .search(request(typed_expression(QueryExprKindIr::Matches {
+            field: typed_field("sku"),
+            pattern: "wire.*".to_owned(),
+        })))
+        .expect("execute matches query"));
+    assert_eq!(
+        matches_ids,
+        vec!["doc:ordered".to_owned(), "doc:reversed".to_owned()]
+    );
+
+    let dot_product_ids = ids(backend
+        .search(request(typed_expression(QueryExprKindIr::DotProduct {
+            field: typed_field("sku"),
+            items: vec![WeightedQueryItemIr {
+                key: RequestValueIr::String("wireless".to_owned()),
+                weight: 100,
+            }],
+        })))
+        .expect("execute dot-product query"));
+    assert!(dot_product_ids.contains(&"doc:ordered".to_owned()));
+
+    let user_input_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::UserInput {
+                value: "wireless headphones".to_owned(),
+            },
+        )))
+        .expect("execute user-input query"));
+    assert!(user_input_ids.contains(&"doc:ordered".to_owned()));
+
+    let user_query_ids = ids(backend
+        .search(
+            request(typed_expression(QueryExprKindIr::UserQuery)).with_query_model(QueryModelIr {
+                query_string: Some("wireless headphones".to_owned()),
+                default_index: Some("title".to_owned()),
+                ..QueryModelIr::default()
+            }),
+        )
+        .expect("execute user-query query"));
+    assert!(user_query_ids.contains(&"doc:ordered".to_owned()));
+
+    let labeled_ids = ids(backend
+        .search(
+            request(typed_contains(
+                "title",
+                QueryExprKindIr::Labeled {
+                    query: Box::new(typed_term("wireless")),
+                    label: "candidate".to_owned(),
+                    score: 2.5,
+                },
+            ))
+            .with_ranking_request(
+                "default",
+                std::collections::BTreeMap::from([(
+                    "vespa.label.candidate.id".to_owned(),
+                    "7".to_owned(),
+                )]),
+            ),
+        )
+        .expect("execute labeled query"));
+    assert!(labeled_ids.contains(&"doc:ordered".to_owned()));
+
+    let non_empty_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
+        )))
+        .expect("execute non-empty query"));
+    assert!(non_empty_ids.contains(&"doc:ordered".to_owned()));
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");

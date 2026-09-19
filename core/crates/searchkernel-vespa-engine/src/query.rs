@@ -38,6 +38,12 @@ pub enum WeightedQueryItem {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct QueryAlternative {
+    pub text: String,
+    pub exactness: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 /// A low-level query which is lowered directly to Vespa query nodes.
 pub enum Query {
     True,
@@ -63,6 +69,14 @@ pub enum Query {
         distance: u32,
     },
     Equiv(Vec<Query>),
+    Alternatives {
+        field: String,
+        alternatives: Vec<QueryAlternative>,
+    },
+    Matches {
+        field: String,
+        pattern: String,
+    },
     WeakAnd {
         field: String,
         children: Vec<Query>,
@@ -83,9 +97,18 @@ pub enum Query {
         field: String,
         items: Vec<WeightedQueryItem>,
     },
+    DotProduct {
+        field: String,
+        items: Vec<WeightedQueryItem>,
+    },
     Wand {
         field: String,
         items: Vec<WeightedQueryItem>,
+    },
+    Labeled {
+        query: Box<Query>,
+        unique_id: i32,
+        score: f64,
     },
     Equals {
         field: String,
@@ -255,6 +278,38 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 validate_query_at(child, depth + 1, nodes)?;
             }
         }
+        Query::Alternatives {
+            field,
+            alternatives,
+        } => {
+            if field.is_empty() {
+                return Err(invalid_query("alternatives query field must not be empty"));
+            }
+            if alternatives.is_empty() {
+                return Err(invalid_query(
+                    "alternatives query requires at least one alternative",
+                ));
+            }
+            for alternative in alternatives {
+                if alternative.text.is_empty() {
+                    return Err(invalid_query("alternative text must not be empty"));
+                }
+                if !alternative.exactness.is_finite()
+                    || !(0.0..=1.0).contains(&alternative.exactness)
+                {
+                    return Err(invalid_query(
+                        "alternative exactness must be finite and between zero and one",
+                    ));
+                }
+            }
+        }
+        Query::Matches { field, pattern } => {
+            if field.is_empty() || pattern.is_empty() {
+                return Err(invalid_query(
+                    "matches query field and pattern must not be empty",
+                ));
+            }
+        }
         Query::Not(child) => validate_query_at(child, depth + 1, nodes)?,
         Query::Rank { matching, ranking } => {
             validate_query_at(matching, depth + 1, nodes)?;
@@ -280,7 +335,9 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 ));
             }
         }
-        Query::WeightedSet { field, items } | Query::Wand { field, items } => {
+        Query::WeightedSet { field, items }
+        | Query::DotProduct { field, items }
+        | Query::Wand { field, items } => {
             if field.is_empty() {
                 return Err(invalid_query("weighted query field must not be empty"));
             }
@@ -296,6 +353,12 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                     "weighted query cannot mix string and integer keys",
                 ));
             }
+        }
+        Query::Labeled { query, score, .. } => {
+            if !score.is_finite() {
+                return Err(invalid_query("labeled query score must be finite"));
+            }
+            validate_query_at(query, depth + 1, nodes)?;
         }
         Query::Equals { field, .. } | Query::Exists { field } => {
             if field.is_empty() {
@@ -1379,6 +1442,14 @@ pub(crate) fn lower_query(
             }
             Ok(())
         }
+        Query::Alternatives {
+            field,
+            alternatives,
+        } => {
+            add_native_alternatives(native, field, alternatives)?;
+            Ok(())
+        }
+        Query::Matches { field, pattern } => add_native_matches(native, field, pattern),
         Query::WeakAnd {
             field,
             children,
@@ -1412,8 +1483,17 @@ pub(crate) fn lower_query(
             *prefix_lock_length,
             *prefix_match,
         ),
-        Query::WeightedSet { field, items } => add_native_weighted(native, false, field, items),
-        Query::Wand { field, items } => add_native_weighted(native, true, field, items),
+        Query::WeightedSet { field, items } => add_native_weighted(native, 0, field, items),
+        Query::DotProduct { field, items } => add_native_weighted(native, 2, field, items),
+        Query::Wand { field, items } => add_native_weighted(native, 1, field, items),
+        Query::Labeled {
+            query,
+            unique_id,
+            score,
+        } => {
+            add_native_labeled(native, *unique_id, *score)?;
+            lower_query(native, query, language)
+        }
         Query::Equals { field, value } => {
             let field = cstring(field)?;
             let mut error = NativeError::new();
@@ -1565,6 +1645,13 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
         Query::Term { field, .. } | Query::Phrase { field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
         }
+        Query::Alternatives { field, .. } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+        }
+        Query::Matches { field, .. } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+                .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field))
+        }
         Query::And(children) | Query::Or(children) => {
             for child in children {
                 validate_query_fields(native, child)?;
@@ -1610,10 +1697,13 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
             validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
                 .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field))
         }
-        Query::WeightedSet { field, .. } | Query::Wand { field, .. } => {
+        Query::WeightedSet { field, .. }
+        | Query::DotProduct { field, .. }
+        | Query::Wand { field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
                 .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field))
         }
+        Query::Labeled { query, .. } => validate_query_fields(native, query),
         Query::Equals { field, .. } | Query::Range { field, .. } | Query::Exists { field } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field)
         }
@@ -1889,9 +1979,76 @@ fn add_native_fuzzy(
     check(status, &error)
 }
 
+fn add_native_alternatives(
+    native: &NativeQuery,
+    field: &str,
+    alternatives: &[QueryAlternative],
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut key_bytes = Vec::new();
+    let mut key_lengths = Vec::with_capacity(alternatives.len());
+    let mut weights = Vec::with_capacity(alternatives.len());
+    for alternative in alternatives {
+        key_lengths.push(length_u32(alternative.text.len(), "alternative text")?);
+        key_bytes.extend_from_slice(alternative.text.as_bytes());
+        let weight = (alternative.exactness * 100.0).round();
+        if !weight.is_finite() || weight < i32::MIN as f64 || weight > i32::MAX as f64 {
+            return Err(invalid_query(
+                "alternative exactness cannot be represented by Vespa",
+            ));
+        }
+        weights.push(weight as i64);
+    }
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_alternatives(
+            native.0.as_ptr(),
+            field.as_ptr(),
+            key_bytes.as_ptr(),
+            length_u32(key_bytes.len(), "alternative text bytes")?,
+            key_lengths.as_ptr(),
+            weights.as_ptr(),
+            length_u32(alternatives.len(), "alternative")?,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_matches(native: &NativeQuery, field: &str, pattern: &str) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let pattern = cstring(pattern)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_matches(
+            native.0.as_ptr(),
+            field.as_ptr(),
+            pattern.as_ptr(),
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_labeled(native: &NativeQuery, unique_id: i32, score: f64) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_labeled(
+            native.0.as_ptr(),
+            unique_id,
+            score,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
 fn add_native_weighted(
     native: &NativeQuery,
-    wand: bool,
+    kind: u32,
     field: &str,
     items: &[WeightedQueryItem],
 ) -> Result<(), Error> {
@@ -1914,8 +2071,20 @@ fn add_native_weighted(
             }
             let item_count = length_u32(items.len(), "weighted query item")?;
             unsafe {
-                if wand {
+                if kind == 1 {
                     sys::sk_query_add_wand_strings(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        key_bytes.as_ptr(),
+                        length_u32(key_bytes.len(), "weighted query key bytes")?,
+                        key_lengths.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                } else if kind == 2 {
+                    sys::sk_query_add_dot_product_strings(
                         native.0.as_ptr(),
                         field.as_ptr(),
                         key_bytes.as_ptr(),
@@ -1955,8 +2124,18 @@ fn add_native_weighted(
             }
             let item_count = length_u32(items.len(), "weighted query item")?;
             unsafe {
-                if wand {
+                if kind == 1 {
                     sys::sk_query_add_wand_integers(
+                        native.0.as_ptr(),
+                        field.as_ptr(),
+                        keys.as_ptr(),
+                        weights.as_ptr(),
+                        item_count,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                } else if kind == 2 {
+                    sys::sk_query_add_dot_product_integers(
                         native.0.as_ptr(),
                         field.as_ptr(),
                         keys.as_ptr(),

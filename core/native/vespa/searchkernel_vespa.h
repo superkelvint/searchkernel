@@ -119,7 +119,7 @@ typedef struct sk_local_grouping_result sk_generic_grouping_result;
 
 /* This ABI revision adds Typed Query B nodes on top of tensor values and
    nearest-neighbor query support from the previous revision. */
-#define SK_NATIVE_ABI_VERSION 7U
+#define SK_NATIVE_ABI_VERSION 8U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -364,12 +364,32 @@ SK_API int32_t sk_query_add_fuzzy(
     uint32_t max_edit_distance, uint32_t prefix_lock_length,
     uint8_t prefix_match, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_alternatives(
+    sk_query *query, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const int64_t *exactness_weights, uint32_t term_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_matches(
+    sk_query *query, const char *field, const char *pattern,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_labeled(
+    sk_query *query, int32_t unique_id, double score,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_weighted_set_strings(
     sk_query *query, const char *field, const uint8_t *key_bytes,
     uint32_t key_bytes_length, const uint32_t *key_lengths,
     const int64_t *weights, uint32_t item_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_weighted_set_integers(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_dot_product_strings(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_dot_product_integers(
     sk_query *query, const char *field, const int64_t *keys,
     const int64_t *weights, uint32_t item_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;

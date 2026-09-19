@@ -6,8 +6,8 @@ use searchkernel_ir::{
     QueryRangeBoundIr, RangeIr, RequestValueIr, Result, ScalarValueIr, SearchRequestIr,
 };
 use searchkernel_vespa_engine::{
-    FacetRequest, Query, SearchRequest, SortField, SortOrder, SummaryRequest, Value as VespaValue,
-    WeightedQueryItem,
+    FacetRequest, Query, QueryAlternative, SearchRequest, SortField, SortOrder, SummaryRequest,
+    Value as VespaValue, WeightedQueryItem,
 };
 
 const DEFAULT_PROXIMITY_DISTANCE: u32 = 3;
@@ -18,10 +18,13 @@ pub(crate) fn lower_search_query(
     request: &SearchRequestIr,
     language: searchkernel_vespa_engine::LinguisticsOptions,
 ) -> Result<Query> {
-    let mut clauses = vec![lower_query_with_language(
+    let mut clauses = vec![lower_query_with_context(
         request.query(),
         request.search_fields(),
         language,
+        request.query_model().default_index.as_deref(),
+        request.query_model().query_string.as_deref(),
+        &request.ranking_request().properties,
     )?];
     if let Some(filter) = request.filter() {
         clauses.push(lower_filter(filter)?);
@@ -227,9 +230,7 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
             "search chains require a container-aware Vespa execution path",
         ));
     }
-    if request.query_model().query_string.is_some()
-        || request.query_model().default_index.is_some()
-        || request.query_model().encoding.is_some()
+    if request.query_model().encoding.is_some()
         || request.query_model().filter.is_some()
         || request.query_model().locale.is_some()
         || request.query_model().query_type.is_some()
@@ -241,7 +242,7 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
         return Err(PortableError::unsupported(
             "query_model_not_supported",
             Some("query_model"),
-            "the current native adapter supports only query_model.language",
+            "the current native adapter supports query_model.language, query_string, and default_index only",
         ));
     }
     if request.presentation().summary.is_some()
@@ -411,10 +412,29 @@ pub(crate) fn lower_query(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn lower_query_with_language(
     query: &QueryIr,
     fields: &[searchkernel_ir::SearchFieldIr],
     language: searchkernel_vespa_engine::LinguisticsOptions,
+) -> Result<Query> {
+    lower_query_with_context(
+        query,
+        fields,
+        language,
+        None,
+        None,
+        &std::collections::BTreeMap::new(),
+    )
+}
+
+fn lower_query_with_context(
+    query: &QueryIr,
+    fields: &[searchkernel_ir::SearchFieldIr],
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+    default_index: Option<&str>,
+    query_string: Option<&str>,
+    rank_properties: &std::collections::BTreeMap<String, String>,
 ) -> Result<Query> {
     match query {
         QueryIr::MatchAll => Ok(Query::True),
@@ -449,24 +469,55 @@ pub(crate) fn lower_query_with_language(
         QueryIr::And(children) => Ok(Query::And(
             children
                 .iter()
-                .map(|child| lower_query_with_language(child, fields, language))
+                .map(|child| {
+                    lower_query_with_context(
+                        child,
+                        fields,
+                        language,
+                        default_index,
+                        query_string,
+                        rank_properties,
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?,
         )),
         QueryIr::Or(children) => Ok(Query::Or(
             children
                 .iter()
-                .map(|child| lower_query_with_language(child, fields, language))
+                .map(|child| {
+                    lower_query_with_context(
+                        child,
+                        fields,
+                        language,
+                        default_index,
+                        query_string,
+                        rank_properties,
+                    )
+                })
                 .collect::<Result<Vec<_>>>()?,
         )),
-        QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query_with_language(
-            child, fields, language,
+        QueryIr::Not(child) => Ok(Query::Not(Box::new(lower_query_with_context(
+            child,
+            fields,
+            language,
+            default_index,
+            query_string,
+            rank_properties,
         )?))),
         QueryIr::Yql { .. } => Err(PortableError::unsupported(
             "yql_not_supported",
             Some("query"),
             "the current native adapter does not expose a YQL execution path",
         )),
-        QueryIr::Typed(expression) => lower_typed_query(expression, None, language, "query"),
+        QueryIr::Typed(expression) => lower_typed_query(
+            expression,
+            None,
+            language,
+            default_index,
+            query_string,
+            rank_properties,
+            "query",
+        ),
     }
 }
 
@@ -474,13 +525,23 @@ fn lower_typed_query(
     expression: &QueryExprIr,
     field_context: Option<&QueryFieldRefIr>,
     language: searchkernel_vespa_engine::LinguisticsOptions,
+    default_index: Option<&str>,
+    query_string: Option<&str>,
+    rank_properties: &std::collections::BTreeMap<String, String>,
     path: &str,
 ) -> Result<Query> {
-    if !expression.annotations.is_empty() {
+    let annotation_default_index = typed_default_index(expression, path)?;
+    let default_index = annotation_default_index.as_deref().or(default_index);
+    if !expression.annotations.is_empty()
+        && !matches!(
+            expression.kind,
+            QueryExprKindIr::UserInput { .. } | QueryExprKindIr::UserQuery
+        )
+    {
         return Err(PortableError::unsupported(
             "typed_query_annotations_not_supported",
             Some(format!("{path}.annotations")),
-            "typed query annotations are outside the Typed Query A execution subset",
+            "only defaultIndex is supported for userInput/userQuery in the current native adapter",
         ));
     }
 
@@ -495,6 +556,9 @@ fn lower_typed_query(
                 item,
                 Some(field),
                 language,
+                default_index,
+                query_string,
+                rank_properties,
                 &format!("{path}.contains.item"),
             )
         }
@@ -507,6 +571,9 @@ fn lower_typed_query(
                         child,
                         field_context,
                         language,
+                        default_index,
+                        query_string,
+                        rank_properties,
                         &format!("{path}.and[{index}]"),
                     )
                 })
@@ -521,6 +588,9 @@ fn lower_typed_query(
                         child,
                         field_context,
                         language,
+                        default_index,
+                        query_string,
+                        rank_properties,
                         &format!("{path}.or[{index}]"),
                     )
                 })
@@ -530,6 +600,9 @@ fn lower_typed_query(
             child,
             field_context,
             language,
+            default_index,
+            query_string,
+            rank_properties,
             &format!("{path}.not.child"),
         )?))),
         QueryExprKindIr::True => Ok(Query::True),
@@ -599,6 +672,9 @@ fn lower_typed_query(
                 children,
                 field_context,
                 language,
+                default_index,
+                query_string,
+                rank_properties,
                 path,
                 if matches!(&expression.kind, QueryExprKindIr::Near(_)) {
                     "near"
@@ -634,6 +710,9 @@ fn lower_typed_query(
                 children,
                 field_context,
                 language,
+                default_index,
+                query_string,
+                rank_properties,
                 path,
                 "equiv",
             )?))
@@ -656,6 +735,9 @@ fn lower_typed_query(
                     children,
                     field_context,
                     language,
+                    default_index,
+                    query_string,
+                    rank_properties,
                     path,
                     "weak_and",
                 )?,
@@ -667,9 +749,21 @@ fn lower_typed_query(
                 matching,
                 field_context,
                 language,
+                default_index,
+                query_string,
+                rank_properties,
                 &format!("{path}.rank.match"),
             )?),
-            ranking: lower_typed_children(ranking, field_context, language, path, "rank")?,
+            ranking: lower_typed_children(
+                ranking,
+                field_context,
+                language,
+                default_index,
+                query_string,
+                rank_properties,
+                path,
+                "rank",
+            )?,
         }),
         QueryExprKindIr::WeightedSet { field, items } => Ok(Query::WeightedSet {
             field: typed_query_field(Some(field), &format!("{path}.weighted_set.field"))?
@@ -680,18 +774,106 @@ fn lower_typed_query(
             field: typed_query_field(Some(field), &format!("{path}.wand.field"))?.to_owned(),
             items: lower_weighted_items(items, &format!("{path}.wand.items"))?,
         }),
+        QueryExprKindIr::Alternatives(values) => {
+            let field = typed_query_field(field_context, path)?;
+            let alternatives = values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let QueryExprKindIr::Term { value: term_value } = &value.query.kind else {
+                        return Err(PortableError::unsupported(
+                            "typed_query_alternative_not_supported",
+                            Some(format!("{path}.alternatives[{index}].query")),
+                            "alternatives currently require term children",
+                        ));
+                    };
+                    if !value.query.annotations.is_empty() {
+                        return Err(PortableError::unsupported(
+                            "typed_query_annotations_not_supported",
+                            Some(format!("{path}.alternatives[{index}].query.annotations")),
+                            "alternative term annotations are not supported",
+                        ));
+                    }
+                    Ok(QueryAlternative {
+                        text: typed_term_text(
+                            term_value,
+                            &format!("{path}.alternatives[{index}].query"),
+                        )?,
+                        exactness: value.exactness.unwrap_or(1.0),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Query::Alternatives {
+                field: field.to_owned(),
+                alternatives,
+            })
+        }
+        QueryExprKindIr::Matches { field, pattern } => Ok(Query::Matches {
+            field: typed_query_field(Some(field), &format!("{path}.matches.field"))?.to_owned(),
+            pattern: pattern.clone(),
+        }),
+        QueryExprKindIr::DotProduct { field, items } => Ok(Query::DotProduct {
+            field: typed_query_field(Some(field), &format!("{path}.dot_product.field"))?.to_owned(),
+            items: lower_weighted_items(items, &format!("{path}.dot_product.items"))?,
+        }),
+        QueryExprKindIr::Labeled {
+            query,
+            label,
+            score,
+        } => {
+            let unique_id = label_unique_id(label, rank_properties, path)?;
+            Ok(Query::Labeled {
+                query: Box::new(lower_typed_query(
+                    query,
+                    field_context,
+                    language,
+                    default_index,
+                    query_string,
+                    rank_properties,
+                    &format!("{path}.labeled.query"),
+                )?),
+                unique_id,
+                score: *score,
+            })
+        }
+        QueryExprKindIr::NonEmpty(child) => lower_typed_query(
+            child,
+            field_context,
+            language,
+            default_index,
+            query_string,
+            rank_properties,
+            &format!("{path}.non_empty.query"),
+        ),
+        QueryExprKindIr::UserInput { value } => {
+            lower_user_input(value, field_context, default_index, language, path)
+        }
+        QueryExprKindIr::UserQuery => {
+            let Some(value) = query_string else {
+                return Err(PortableError::invalid(
+                    "user_query_context_missing",
+                    Some(path),
+                    "userQuery requires query_model.query_string",
+                ));
+            };
+            lower_user_input(value, field_context, default_index, language, path)
+        }
         _ => Err(PortableError::unsupported(
             "typed_query_operator_not_supported",
             Some(path),
-            "this typed query operator is outside the Typed Query A execution subset",
+            "this typed query operator is outside the supported Typed Query A/B execution subset",
         )),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_typed_children(
     children: &[QueryExprIr],
     field_context: Option<&QueryFieldRefIr>,
     language: searchkernel_vespa_engine::LinguisticsOptions,
+    default_index: Option<&str>,
+    query_string: Option<&str>,
+    rank_properties: &std::collections::BTreeMap<String, String>,
     path: &str,
     operator: &str,
 ) -> Result<Vec<Query>> {
@@ -703,10 +885,118 @@ fn lower_typed_children(
                 child,
                 field_context,
                 language,
+                default_index,
+                query_string,
+                rank_properties,
                 &format!("{path}.{operator}[{index}]"),
             )
         })
         .collect()
+}
+
+fn typed_default_index(expression: &QueryExprIr, path: &str) -> Result<Option<String>> {
+    let mut default_index = None;
+    for (name, value) in &expression.annotations {
+        if name != "defaultIndex" {
+            return Err(PortableError::unsupported(
+                "typed_query_annotations_not_supported",
+                Some(format!("{path}.annotations.{name}")),
+                "only defaultIndex is supported for userInput/userQuery",
+            ));
+        }
+        let RequestValueIr::String(value) = value else {
+            return Err(PortableError::unsupported(
+                "typed_query_default_index_not_supported",
+                Some(format!("{path}.annotations.defaultIndex")),
+                "defaultIndex must be a string",
+            ));
+        };
+        if value.is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_typed_query",
+                Some(format!("{path}.annotations.defaultIndex")),
+                "defaultIndex must not be empty",
+            ));
+        }
+        default_index = Some(value.clone());
+    }
+    Ok(default_index)
+}
+
+fn label_unique_id(
+    label: &str,
+    rank_properties: &std::collections::BTreeMap<String, String>,
+    path: &str,
+) -> Result<i32> {
+    if label.is_empty() {
+        return Err(PortableError::invalid(
+            "invalid_typed_query",
+            Some(format!("{path}.labeled.label")),
+            "labeled query label must not be empty",
+        ));
+    }
+    let property = format!("vespa.label.{label}.id");
+    let Some(value) = rank_properties.get(&property) else {
+        return Err(PortableError::invalid(
+            "labeled_query_label_id_missing",
+            Some(format!("{path}.labeled.label")),
+            format!("rank property {property} is required for labeled queries"),
+        ));
+    };
+    let value = value.parse::<i32>().map_err(|_| {
+        PortableError::invalid(
+            "labeled_query_label_id_invalid",
+            Some(format!("{path}.labeled.label")),
+            format!("rank property {property} must be a signed 32-bit integer"),
+        )
+    })?;
+    if value < 0 {
+        return Err(PortableError::invalid(
+            "labeled_query_label_id_invalid",
+            Some(format!("{path}.labeled.label")),
+            format!("rank property {property} must not be negative"),
+        ));
+    }
+    Ok(value)
+}
+
+fn lower_user_input(
+    value: &str,
+    field_context: Option<&QueryFieldRefIr>,
+    default_index: Option<&str>,
+    language: searchkernel_vespa_engine::LinguisticsOptions,
+    path: &str,
+) -> Result<Query> {
+    let field = match field_context {
+        Some(field) => typed_query_field(Some(field), path)?,
+        None => default_index.ok_or_else(|| {
+            PortableError::invalid(
+                "missing_field_context",
+                Some(path),
+                "userInput/userQuery requires a containing field or defaultIndex",
+            )
+        })?,
+    };
+    let terms = searchkernel_vespa_engine::Linguistics
+        .analyze_query(value, language)
+        .terms
+        .into_iter()
+        .filter_map(|term| term.stems.into_iter().next())
+        .filter(|term| !term.is_empty())
+        .map(|term| Query::term(field, term))
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        return Err(PortableError::invalid(
+            "empty_typed_query",
+            Some(path),
+            "userInput/userQuery must contain at least one searchable term",
+        ));
+    }
+    Ok(Query::WeakAnd {
+        field: field.to_owned(),
+        children: terms,
+        target_num_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+    })
 }
 
 fn lower_weighted_items(

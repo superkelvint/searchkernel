@@ -1737,6 +1737,18 @@ impl SearchRequestIr {
         self
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_query_model(mut self, query_model: QueryModelIr) -> Self {
+        self.query_model = query_model;
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_query(mut self, query: QueryIr) -> Self {
+        self.query = query;
+        self
+    }
+
     pub fn prefix_policy(&self) -> PrefixPolicy {
         self.prefix_policy
     }
