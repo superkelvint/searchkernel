@@ -6,7 +6,6 @@
   "required_native_path": ["searchkernel", "searchkernel-ir-adapter", "searchkernel-vespa-engine"],
   "unsupported_detail_codes": [
     "ranking_weights_not_supported",
-    "bm25_ranking_not_supported",
     "highlighting_native_result_unavailable",
     "language_not_supported",
     "multi_valued_fields_not_supported",

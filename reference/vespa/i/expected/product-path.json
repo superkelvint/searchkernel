@@ -1320,20 +1320,57 @@
       }
     },
     {
-      "id": "unsupported-bm25",
+      "id": "bm25-ranking",
       "result": {
-        "error": {
-          "code": "unsupported",
-          "details": [
+        "ok": true,
+        "value": {
+          "facets": [],
+          "hits": [
             {
-              "code": "bm25_ranking_not_supported",
-              "metadata": {},
-              "path": "ranking"
+              "document": {
+                "active": true,
+                "brand": "Acme",
+                "description": "portable audio",
+                "price": 100,
+                "rating": 4.5,
+                "title": "Wireless Headphones"
+              },
+              "highlights": [],
+              "id": "p1",
+              "score": 0.6931471805599453
+            },
+            {
+              "document": {
+                "active": false,
+                "brand": "Bravo",
+                "description": "office wireless",
+                "price": 75,
+                "rating": 3.5,
+                "title": "Wireless Mouse"
+              },
+              "highlights": [],
+              "id": "p3",
+              "score": 0.6931471805599453
+            },
+            {
+              "document": {
+                "active": true,
+                "brand": "Charlie",
+                "description": "office wireless",
+                "price": 25,
+                "rating": 4.8,
+                "title": "Wireless Keyboard"
+              },
+              "highlights": [],
+              "id": "p4",
+              "score": 0.6931471805599453
             }
           ],
-          "retryable": false
-        },
-        "ok": false
+          "total_hits": {
+            "relation": "Exact",
+            "value": 3
+          }
+        }
       }
     },
     {

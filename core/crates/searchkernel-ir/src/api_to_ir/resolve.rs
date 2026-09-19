@@ -542,16 +542,24 @@ pub(crate) fn resolve_filter(
                     "range requires at least one bound",
                 ));
             }
-            let include_lower = include_lower.unwrap_or(true);
-            let include_upper = include_upper.unwrap_or(true);
-            if matches!(lower, crate::model::FilterRangeBoundIr::Unbounded) && include_lower {
+            let explicit_lower_inclusion = *include_lower == Some(true);
+            let explicit_upper_inclusion = *include_upper == Some(true);
+            let include_lower = (*include_lower).unwrap_or(true);
+            let include_upper = (*include_upper).unwrap_or(true);
+            if matches!(lower, crate::model::FilterRangeBoundIr::Unbounded)
+                && include_lower
+                && explicit_lower_inclusion
+            {
                 return Err(invalid(
                     "invalid_range",
                     Some(format!("{path}.include_lower")),
                     "lower inclusion requires a lower bound",
                 ));
             }
-            if matches!(upper, crate::model::FilterRangeBoundIr::Unbounded) && include_upper {
+            if matches!(upper, crate::model::FilterRangeBoundIr::Unbounded)
+                && include_upper
+                && explicit_upper_inclusion
+            {
                 return Err(invalid(
                     "invalid_range",
                     Some(format!("{path}.include_upper")),

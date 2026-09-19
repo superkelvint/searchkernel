@@ -1,7 +1,7 @@
 use super::{definition_from_ir, definition_to_ir, Index, IndexInner};
 use crate::error::{Error, Result};
 use crate::schema::IndexDefinition;
-use searchkernel_ir::{Backend, BackendSession};
+use searchkernel_ir::{Backend, BackendSession, IndexContext};
 use std::sync::Arc;
 
 #[cfg(feature = "native")]
@@ -191,9 +191,8 @@ impl Index {
                 })?;
         let ir = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
         searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
-        searchkernel_ir_adapter::validate_index_definition(&ir).map_err(Error::from_ir)?;
-        let resolved_definition = definition_from_ir(&ir);
-        Self::create_with_definitions(path.as_ref(), bytes.to_vec(), ir, resolved_definition)
+        let resolved_context = IndexContext::from_definition_ir(ir);
+        Self::create_with_definitions(path.as_ref(), bytes.to_vec(), resolved_context)
     }
 
     /// Create a new on-disk index and persist all information required to
@@ -204,20 +203,14 @@ impl Index {
             crate::portable_definition::encode_portable_definition(&definition);
         let resolved_ir = definition_to_ir(&definition)?;
         searchkernel_ir_adapter::validate_index_definition(&resolved_ir).map_err(Error::from_ir)?;
-        let resolved_definition = definition_from_ir(&resolved_ir);
-        Self::create_with_definitions(
-            root,
-            portable_definition_bytes,
-            resolved_ir,
-            resolved_definition,
-        )
+        let resolved_context = IndexContext::from_definition_ir(resolved_ir);
+        Self::create_with_definitions(root, portable_definition_bytes, resolved_context)
     }
 
     fn create_with_definitions(
         root: &std::path::Path,
         portable_definition_bytes: Vec<u8>,
-        resolved_ir: searchkernel_ir::IndexDefinitionIr,
-        resolved_definition: IndexDefinition,
+        resolved_context: IndexContext,
     ) -> Result<Self> {
         // Create and open can arrive in either order. If an opener briefly
         // owns the lock while observing an absent root, retrying here avoids
@@ -239,11 +232,14 @@ impl Index {
             let staging_config = staging.join("config");
             std::fs::create_dir(&staging_data)
                 .map_err(|error| Error::Infrastructure(error.to_string()))?;
-            searchkernel_ir_adapter::compile_index_definition(&resolved_ir, &staging_config)
-                .map_err(Error::from_ir)?;
+            searchkernel_ir_adapter::compile_index_definition(
+                resolved_context.definition(),
+                &staging_config,
+            )
+            .map_err(Error::from_ir)?;
             let manifest = super::manifest::IndexManifest::for_definitions(
                 &portable_definition_bytes,
-                &resolved_definition,
+                &resolved_context,
                 &staging_config,
             )?;
             manifest.write(&staging)?;
@@ -279,7 +275,7 @@ impl Index {
             }
         };
         Self::from_owned_backend(
-            resolved_definition,
+            resolved_context,
             BackendSession::new(Box::new(backend)),
             Some(lifecycle_lock),
         )
@@ -307,7 +303,7 @@ impl Index {
             return Err(Error::not_found(root.display().to_string()));
         }
         let manifest = super::manifest::IndexManifest::read(root)?;
-        let definition = manifest.definition()?;
+        let resolved_context = manifest.resolved_context()?;
         let config = root.join("config");
         if !root.join("data").is_dir() || !config.is_dir() {
             return Err(Error::corrupt_index(
@@ -318,7 +314,7 @@ impl Index {
         let backend = searchkernel_ir_adapter::VespaBackend::open(root.join("data"), &config)
             .map_err(|error| Error::Infrastructure(error.to_string()))?;
         Self::from_owned_backend(
-            definition,
+            resolved_context,
             BackendSession::new(Box::new(backend)),
             Some(lifecycle_lock),
         )
@@ -327,16 +323,15 @@ impl Index {
     /// Construct an index around a backend for tests and infrastructure.
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
-        Self::from_owned_backend(definition, BackendSession::from_backend(backend), None)
+        let context = IndexContext::from_definition_ir(definition_to_ir(&definition)?);
+        Self::from_owned_backend(context, BackendSession::from_backend(backend), None)
     }
 
     fn from_owned_backend(
-        definition: IndexDefinition,
+        context: IndexContext,
         session: Arc<BackendSession>,
         lifecycle_lock: Option<LifecycleLock>,
     ) -> Result<Self> {
-        let resolved = definition_to_ir(&definition)?;
-        let context = searchkernel_ir::IndexContext::from_definition_ir(resolved);
         let effective_definition = definition_from_ir(context.definition());
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);

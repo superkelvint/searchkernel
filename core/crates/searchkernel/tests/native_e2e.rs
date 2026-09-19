@@ -359,13 +359,12 @@ fn native_product_path_has_current_search_and_facet_parity() {
             .execute::<serde_json::Value>(),
         "ranking_weights_not_supported",
     );
-    assert_search_detail(
-        index
-            .search("wireless")
-            .ranking(Ranking::bm25())
-            .execute::<serde_json::Value>(),
-        "bm25_ranking_not_supported",
-    );
+    let bm25 = index
+        .search("wireless")
+        .ranking(Ranking::bm25())
+        .execute::<serde_json::Value>()
+        .expect("native BM25 ranking");
+    assert_eq!(bm25.total_hits.value, 6);
     assert_search_detail(
         index
             .search("wireless")

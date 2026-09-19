@@ -62,7 +62,7 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
 impl IndexManifest {
     pub(crate) fn for_definitions(
         portable_definition_bytes: &[u8],
-        resolved_definition: &IndexDefinition,
+        resolved_context: &IndexContext,
         config: &std::path::Path,
     ) -> Result<Self> {
         Ok(Self {
@@ -80,7 +80,7 @@ impl IndexManifest {
             }),
             portable_definition_bytes: portable_definition_bytes.to_vec(),
             resolved_definition_bytes: searchkernel_ir::index_definition_ir_to_api(
-                &definition_to_ir(resolved_definition)?,
+                resolved_context.definition(),
             ),
         })
     }
@@ -159,11 +159,9 @@ impl IndexManifest {
             .map_err(|error| {
                 Error::corrupt_index(format!("invalid resolved index definition: {error}"))
             })?;
-            let resolved =
-                searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
-            let _ = resolved;
+            searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
         }
-        manifest.definition()?;
+        manifest.resolved_context()?;
         Ok(manifest)
     }
 
@@ -295,7 +293,26 @@ impl IndexManifest {
         Ok(())
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn definition(&self) -> Result<IndexDefinition> {
+        let version = self
+            .value
+            .get("manifest_format_version")
+            .or_else(|| self.value.get("format_version"))
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
+        if version == u64::from(MANIFEST_FORMAT_VERSION) {
+            let context = self.resolved_context()?;
+            return Ok(definition_from_ir(context.definition()));
+        }
+        definition_from_json(
+            self.value
+                .get("resolved_index_definition")
+                .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
+        )
+    }
+
+    pub(crate) fn resolved_context(&self) -> Result<IndexContext> {
         let version = self
             .value
             .get("manifest_format_version")
@@ -307,14 +324,16 @@ impl IndexManifest {
                 &self.resolved_definition_bytes,
             )
             .map_err(|error| Error::corrupt_index(format!("invalid index definition: {error}")))?;
-            let context = IndexContext::from_api(root).map_err(Error::from_ir)?;
-            Ok(definition_from_ir(context.definition()))
+            IndexContext::from_api(root).map_err(Error::from_ir)
         } else {
-            definition_from_json(
+            let definition = definition_from_json(
                 self.value
                     .get("resolved_index_definition")
                     .ok_or_else(|| Error::corrupt_index("resolved definition is missing"))?,
-            )
+            )?;
+            Ok(IndexContext::from_definition_ir(definition_to_ir(
+                &definition,
+            )?))
         }
     }
 }

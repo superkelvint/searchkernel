@@ -27,6 +27,10 @@ fn write_config(config: &std::path::Path) {
     }
 }
 
+fn resolved_context(definition: &IndexDefinition) -> IndexContext {
+    IndexContext::from_definition_ir(definition_to_ir(definition).unwrap())
+}
+
 fn manifest_definition() -> IndexDefinition {
     IndexDefinition::new()
         .name("catalog")
@@ -146,7 +150,7 @@ fn manifest_round_trips_definition_and_config_identity() {
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&definition),
-        &resolved,
+        &resolved_context(&resolved),
         &config,
     )
     .unwrap();
@@ -201,8 +205,12 @@ fn manifest_separates_portable_intent_from_resolved_definition() {
     let resolved_definition = definition_from_ir(&resolved_ir);
     let portable_bytes =
         crate::portable_definition::encode_portable_definition(&portable_definition);
-    let manifest =
-        IndexManifest::for_definitions(&portable_bytes, &resolved_definition, &config).unwrap();
+    let manifest = IndexManifest::for_definitions(
+        &portable_bytes,
+        &resolved_context(&resolved_definition),
+        &config,
+    )
+    .unwrap();
 
     manifest.write(&root).unwrap();
     let loaded = IndexManifest::read(&root).unwrap();
@@ -243,6 +251,63 @@ fn manifest_separates_portable_intent_from_resolved_definition() {
 }
 
 #[test]
+fn manifest_preserves_rich_resolved_ir() {
+    let root = temporary_path("manifest-rich-resolved-ir");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = IndexDefinition::new().field(Field::text("title"));
+    let mut resolved_ir = definition_to_ir(&definition).unwrap();
+    resolved_ir.set_rank_profiles(vec![searchkernel_ir::RankProfileDefinitionIr {
+        name: "product_search".to_owned(),
+        inherits: Vec::new(),
+        inputs: Vec::new(),
+        functions: Vec::new(),
+        first_phase: Some(searchkernel_ir::RankPhaseDefinitionIr {
+            expression: Some("bm25(title) + query(boost)".to_owned()),
+            rerank_count: None,
+            rank_score_drop_limit: None,
+            properties: std::collections::BTreeMap::new(),
+            total_rerank_count: None,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }),
+        second_phase: None,
+        global_phase: None,
+        rank_features: Vec::new(),
+        match_features: vec!["bm25(title)".to_owned(), "query(boost)".to_owned()],
+        summary_features: Vec::new(),
+        sort_features: Vec::new(),
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+        rank_properties: std::collections::BTreeMap::new(),
+        strict: None,
+        properties: std::collections::BTreeMap::new(),
+    }]);
+    let context = IndexContext::from_definition_ir(resolved_ir);
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &context,
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let loaded = IndexManifest::read(&root).unwrap();
+    let loaded_context = loaded.resolved_context().unwrap();
+    let profile = &loaded_context.definition().rank_profiles()[0];
+    assert_eq!(profile.name, "product_search");
+    assert_eq!(
+        profile.first_phase.as_ref().unwrap().expression.as_deref(),
+        Some("bm25(title) + query(boost)")
+    );
+    assert_eq!(
+        profile.match_features,
+        vec!["bm25(title)".to_owned(), "query(boost)".to_owned()]
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
     let root = temporary_path("manifest-mismatched-definition");
     let config = root.join("config");
@@ -252,7 +317,7 @@ fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
     let portable_definition = IndexDefinition::new().field(Field::text("different"));
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&portable_definition),
-        &resolved_definition,
+        &resolved_context(&resolved_definition),
         &config,
     )
     .unwrap();
@@ -272,7 +337,7 @@ fn semantically_invalid_portable_provenance_does_not_block_reopen() {
         definition_from_ir(&definition_to_ir(&manifest_definition()).unwrap());
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&manifest_definition()),
-        &resolved_definition,
+        &resolved_context(&resolved_definition),
         &config,
     )
     .unwrap();
@@ -431,7 +496,7 @@ fn canonical_definition_corruption_is_rejected() {
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&definition),
-        &resolved,
+        &resolved_context(&resolved),
         &config,
     )
     .unwrap();
@@ -457,7 +522,7 @@ fn portable_definition_corruption_is_rejected() {
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&definition),
-        &resolved,
+        &resolved_context(&resolved),
         &config,
     )
     .unwrap();
@@ -487,7 +552,7 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
     let manifest = IndexManifest::for_definitions(
         &crate::portable_definition::encode_portable_definition(&definition),
-        &resolved,
+        &resolved_context(&resolved),
         &config,
     )
     .unwrap();

@@ -63,15 +63,11 @@ impl Index {
     /// Construct an index around a backend for tests and infrastructure.
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
-        Self::from_owned_backend(definition, BackendSession::from_backend(backend))
+        let context = IndexContext::from_definition_ir(definition_to_ir(&definition)?);
+        Self::from_owned_backend(context, BackendSession::from_backend(backend))
     }
 
-    fn from_owned_backend(
-        definition: IndexDefinition,
-        session: Arc<BackendSession>,
-    ) -> Result<Self> {
-        let resolved = definition_to_ir(&definition)?;
-        let context = IndexContext::from_definition_ir(resolved);
+    fn from_owned_backend(context: IndexContext, session: Arc<BackendSession>) -> Result<Self> {
         let effective_definition = definition_from_ir(context.definition());
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);

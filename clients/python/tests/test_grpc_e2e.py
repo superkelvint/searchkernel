@@ -25,12 +25,16 @@ from SearchKernel.V2.MatchingConfig import MatchingConfigT  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.OptionalBool import OptionalBoolT  # noqa: E402
 from SearchKernel.V2.PrimitiveDataType import PrimitiveDataTypeT  # noqa: E402
+from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinitionT  # noqa: E402
+from SearchKernel.V2.RankProfileDefinition import RankProfileDefinitionT  # noqa: E402
+from SearchKernel.V2.RankingRequest import RankingRequestT  # noqa: E402
 from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT  # noqa: E402
 from SearchKernel.V2.QuerySource import QuerySourceT  # noqa: E402
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T  # noqa: E402
+from SearchKernel.V2.StringEntry import StringEntryT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -176,6 +180,79 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             self.assertEqual(index.get("doc:1")["_id"], "doc:1")
         finally:
             index.close()
+
+    def test_ranking_profile_reaches_vespa_and_survives_reopen(self):
+        self.definition = IndexDefinitionT(
+            name="ranking_e2e",
+            fields=[
+                _field("title", 1, matching=MatchingMode.Text),
+                _field("popularity", 5),
+            ],
+            rankProfiles=[
+                RankProfileDefinitionT(
+                    name="product_search",
+                    firstPhase=RankPhaseDefinitionT(
+                        expression="bm25(title) + query(boost) * attribute(popularity)",
+                    ),
+                    matchFeatures=[
+                        "bm25(title)",
+                        "query(boost)",
+                        "attribute(popularity)",
+                    ],
+                ),
+            ],
+        )
+        self.definition_path.write_bytes(pack_object(self.definition))
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert("d1", {"title": "fox", "popularity": 10})
+        index.upsert("d2", {"title": "fox fox", "popularity": 5})
+
+        def search(boost):
+            return index.search(
+                SearchRequestT(
+                    query=QuerySourceT(
+                        sourceType=QuerySourceKind.SearchKernelTextQuery,
+                        source=SearchKernelTextQueryT(text="fox"),
+                    ),
+                    ranking=RankingRequestT(
+                        profile="product_search",
+                        properties=[StringEntryT(key="boost", value=str(boost))],
+                    ),
+                    limit=OptionalUInt32T(value=10),
+                )
+            )
+
+        positive = search(2.0)
+        negative = search(-1.0)
+        self.assertEqual(positive.root.node.children[0].node.id, "d1")
+        self.assertEqual(negative.root.node.children[0].node.id, "d2")
+        self.assertEqual(
+            {entry.key for entry in positive.root.node.children[0].node.matchFeatures},
+            {"bm25(title)", "query(boost)", "attribute(popularity)"},
+        )
+
+        self.client.close()
+        self.client = None
+        self._stop_server()
+        endpoint = self._start_server(definition=False)
+        self.client = Client(GrpcTransport(endpoint))
+        reopened = Index(self.client)
+        surviving = reopened.search(
+            SearchRequestT(
+                query=QuerySourceT(
+                    sourceType=QuerySourceKind.SearchKernelTextQuery,
+                    source=SearchKernelTextQueryT(text="fox"),
+                ),
+                ranking=RankingRequestT(
+                    profile="product_search",
+                    properties=[StringEntryT(key="boost", value="2.0")],
+                ),
+                limit=OptionalUInt32T(value=10),
+            )
+        )
+        self.assertEqual(surviving.root.node.children[0].node.id, "d1")
 
 
 if __name__ == "__main__":
