@@ -1,0 +1,95 @@
+{
+  "category": "search",
+  "description": "V2 request controls remain observable in the internal IR snapshot.",
+  "id": "search.v2-controls",
+  "index_fixture": "product-v2",
+  "input": {
+    "query": "wireless headphones",
+    "ranking": {
+      "profile": "product_search",
+      "properties": {
+        "rankfeatures.query_intent": "commercial"
+      }
+    },
+    "inputs": {
+      "ranking.query_boost": {
+        "int64": 3
+      },
+      "ranking.expression": {
+        "expression": "ranking.query_boost * 2"
+      }
+    },
+    "query_model": {
+      "query_string": "wireless headphones",
+      "default_index": "title",
+      "encoding": "utf-8",
+      "filter": "and(in_stock=true)",
+      "language": "en-US",
+      "locale": "en_US",
+      "type": {
+        "composite": "and",
+        "tokenization": "best",
+        "syntax": "advanced",
+        "profile": "default",
+        "is_yql_default": false
+      },
+      "sources": ["products"],
+      "restrict": ["title", "description"],
+      "search_path": "one",
+      "search_group": 2
+    },
+    "presentation": {
+      "summary": "short",
+      "fields": {
+        "fields": ["title", "brand"]
+      },
+      "highlighting": {
+        "fields": ["title"]
+      },
+      "format": "json",
+      "bolding": true,
+      "timing": true
+    },
+    "properties": {
+      "trace.level": {
+        "string": "all"
+      }
+    },
+    "query_profile": "default",
+    "search_chain": "vespa",
+    "timeout": 75,
+    "grouping": [
+      {
+        "operations": [
+          {
+            "group": {
+              "attribute": "brand"
+            }
+          },
+          {
+            "each": {
+              "label": "brands",
+              "operations": [
+                {
+                  "max": 5
+                },
+                {
+                  "output": [
+                {
+                  "label": "count",
+                  "expression": {
+                    "aggregation": "count"
+                  }
+                }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "continuations": ["continuation-1"]
+      }
+    ]
+  },
+  "operation": "search_to_ir"
+}

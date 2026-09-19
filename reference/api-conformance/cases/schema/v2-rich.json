@@ -1,0 +1,58 @@
+{
+  "category": "schema",
+  "description": "V2 schema identity, properties, schema fields, and fieldsets remain observable.",
+  "id": "schema.v2-rich",
+  "input": {
+    "document_type": "product",
+    "document_inherits": ["base_product"],
+    "fieldsets": [
+      {
+        "fields": ["title", "description"],
+        "name": "default",
+        "properties": {
+          "mode": {
+            "string": "text"
+          }
+        },
+        "query_commands": ["userInput"]
+      }
+    ],
+    "name": "products_v2",
+    "properties": {
+      "schema.version": {
+        "string": "v2"
+      }
+    },
+    "schema_fields": [
+      {
+        "field": {
+          "name": "normalized_brand",
+          "kind": "keyword",
+          "stored": false,
+          "searchable": true,
+          "filterable": true
+        }
+      }
+    ],
+    "fields": [
+      {
+        "name": "title",
+        "kind": "text",
+        "indexing_script": "input title | lowercase | index"
+      },
+      {
+        "name": "description",
+        "kind": "text"
+      }
+    ],
+    "default_search_fields": {
+      "fields": [
+        {
+          "field": "title",
+          "weight": 3.0
+        }
+      ]
+    }
+  },
+  "operation": "index_definition_to_ir"
+}

@@ -1,3 +1,6 @@
 {
-  "ok": "bm25"
+  "ok": {
+    "profile": "bm25",
+    "properties": {}
+  }
 }

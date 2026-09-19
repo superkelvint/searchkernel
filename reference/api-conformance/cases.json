@@ -607,6 +607,12 @@
       "operation": "index_definition_to_ir"
     },
     {
+      "case": "cases/schema/v2-rich.json",
+      "golden": "golden/schema/v2-rich.json",
+      "id": "schema.v2-rich",
+      "operation": "index_definition_to_ir"
+    },
+    {
       "case": "cases/schema/weighted-search-fields.json",
       "golden": "golden/schema/weighted-search-fields.json",
       "id": "schema.weighted-search-fields",
@@ -766,6 +772,12 @@
       "case": "cases/search/unknown-projection-field.json",
       "golden": "golden/search/unknown-projection-field.json",
       "id": "search.unknown-projection-field",
+      "operation": "search_to_ir"
+    },
+    {
+      "case": "cases/search/v2-controls.json",
+      "golden": "golden/search/v2-controls.json",
+      "id": "search.v2-controls",
       "operation": "search_to_ir"
     },
     {

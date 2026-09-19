@@ -1,11 +1,10 @@
 {
   "ok": {
-    "comparison": {
-      "field": "brand",
-      "op": "ne",
-      "value": {
-        "string": "Sony"
-      }
+    "field": "brand",
+    "kind": "comparison",
+    "op": "ne",
+    "value": {
+      "string": "Sony"
     }
   }
 }

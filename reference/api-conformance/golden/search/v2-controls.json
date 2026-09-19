@@ -1,0 +1,134 @@
+{
+  "ok": {
+    "filter": null,
+    "grouping": [
+      {
+        "continuations": [
+          "continuation-1"
+        ],
+        "root": {
+          "label": null,
+          "operations": [
+            {
+              "expression": {
+                "kind": "attribute",
+                "value": "brand"
+              },
+              "kind": "group"
+            },
+            {
+              "kind": "each",
+              "value": {
+                "label": "brands",
+                "operations": [
+                  {
+                    "kind": "max",
+                    "value": 5
+                  },
+                  {
+                    "kind": "output",
+                    "values": [
+                      {
+                        "expression": {
+                          "kind": "aggregation",
+                          "value": {
+                            "kind": "count"
+                          }
+                        },
+                        "label": "count"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "highlighting": {
+      "fields": [
+        "title"
+      ],
+      "kind": "requested"
+    },
+    "inputs": {
+      "ranking.expression": {
+        "expression": "ranking.query_boost * 2"
+      },
+      "ranking.query_boost": {
+        "literal": {
+          "int64": 3
+        }
+      }
+    },
+    "language": "en-us",
+    "limit": 20,
+    "offset": 0,
+    "prefix_policy": "disabled",
+    "presentation": {
+      "bolding": true,
+      "format": "json",
+      "summary": "short",
+      "timing": true
+    },
+    "projection": [
+      "title",
+      "brand"
+    ],
+    "properties": {
+      "trace.level": {
+        "string": "all"
+      }
+    },
+    "query": {
+      "kind": "text",
+      "value": "wireless headphones"
+    },
+    "query_model": {
+      "default_index": "title",
+      "encoding": "utf-8",
+      "filter": "and(in_stock=true)",
+      "language": "en-us",
+      "locale": "en_US",
+      "query_string": "wireless headphones",
+      "query_type": {
+        "composite": "and",
+        "is_yql_default": false,
+        "profile": "default",
+        "syntax": "advanced",
+        "tokenization": "best"
+      },
+      "restrict": [
+        "title",
+        "description"
+      ],
+      "search_group": 2,
+      "search_path": "one",
+      "sources": [
+        "products"
+      ]
+    },
+    "query_profile": "default",
+    "ranking_request": {
+      "profile": "product_search",
+      "properties": {
+        "rankfeatures.query_intent": "commercial"
+      }
+    },
+    "search_chain": "vespa",
+    "search_fields": [
+      {
+        "field": "title",
+        "weight": 4.0
+      },
+      {
+        "field": "description",
+        "weight": 1.0
+      }
+    ],
+    "sort": [],
+    "timeout": 75,
+    "typo_policy": "disabled"
+  }
+}

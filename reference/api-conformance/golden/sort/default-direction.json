@@ -1,7 +1,13 @@
 {
   "ok": {
+    "annotations": {},
     "direction": "asc",
-    "field": "price",
-    "missing": "last"
+    "missing": {
+      "kind": "last"
+    },
+    "target": {
+      "field": "price",
+      "kind": "field"
+    }
   }
 }

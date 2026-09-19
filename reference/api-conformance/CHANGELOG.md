@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+- records successful V2 `*_to_ir()` results as deterministic internal IR snapshots;
+- observes the complete `SearchRequestIr` and `IndexDefinitionIr` state, including
+  grouping, ranking-request properties, inputs, presentation, query controls, and
+  schema extensions;
+- removes the legacy `SearchRequestIr.ranking` compatibility projection;
+- keeps unsupported V2 constructs as negative conversion cases rather than
+  manufacturing IR for them;
+- adds focused V2 request/schema coverage and serializer sensitivity tests.
+
 ## 0.5.0
 
 - renamed API→IR operations from `resolve_*` to `*_to_ir`;

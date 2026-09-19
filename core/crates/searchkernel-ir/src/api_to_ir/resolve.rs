@@ -8,7 +8,7 @@ use crate::model::{
     GroupingAllIr, GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
     HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr,
     PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryInputIr, QueryIr,
-    QueryModelIr, RankingPolicyIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
+    QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
     SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy,
     UpsertRequestIr,
 };
@@ -290,7 +290,6 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
             ));
         }
     };
-    let ranking = resolve_basic_ranking(Some(profile.as_str()));
     let language = input
         .language
         .as_deref()
@@ -306,7 +305,6 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
         filter,
         sort,
         grouping,
-        ranking,
         ranking_request: RankingRequestIr {
             profile,
             properties: input.rank_properties,
@@ -765,14 +763,6 @@ pub(crate) fn resolve_language(value: &str, path: &str) -> Result<LanguageHint> 
             "language must be a basic BCP-47-style ASCII tag",
         )
     })
-}
-
-pub(crate) fn resolve_basic_ranking(profile: Option<&str>) -> RankingPolicyIr {
-    match profile.unwrap_or("default") {
-        "bm25" => RankingPolicyIr::Bm25,
-        "" | "default" | "default-relevance" => RankingPolicyIr::DefaultRelevanceV1,
-        _ => RankingPolicyIr::DefaultRelevanceV1,
-    }
 }
 
 pub(crate) fn resolve_pagination(limit: Option<u32>, offset: Option<u32>) -> (u32, u32) {

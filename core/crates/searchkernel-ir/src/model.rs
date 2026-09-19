@@ -1585,7 +1585,6 @@ pub struct SearchRequestIr {
     pub(crate) sort: Vec<SortIr>,
     /// V2's canonical aggregation mechanism.
     pub(crate) grouping: Vec<GroupingRequestIr>,
-    pub(crate) ranking: RankingPolicyIr,
     pub(crate) ranking_request: RankingRequestIr,
     pub(crate) inputs: std::collections::BTreeMap<String, QueryInputIr>,
     pub(crate) limit: u32,
@@ -1611,7 +1610,6 @@ impl SearchRequestIr {
         search_fields: Vec<SearchFieldIr>,
         filter: Option<FilterIr>,
         sort: Vec<SortIr>,
-        ranking: RankingPolicyIr,
         limit: u32,
         offset: u32,
         projection: ProjectionIr,
@@ -1626,7 +1624,6 @@ impl SearchRequestIr {
             filter,
             sort,
             grouping: Vec::new(),
-            ranking,
             ranking_request: RankingRequestIr {
                 profile: "default".to_owned(),
                 properties: std::collections::BTreeMap::new(),
@@ -1666,10 +1663,6 @@ impl SearchRequestIr {
 
     pub fn grouping(&self) -> &[GroupingRequestIr] {
         &self.grouping
-    }
-
-    pub fn ranking(&self) -> RankingPolicyIr {
-        self.ranking
     }
 
     pub fn ranking_request(&self) -> &RankingRequestIr {

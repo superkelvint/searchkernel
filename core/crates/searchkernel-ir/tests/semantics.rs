@@ -364,7 +364,7 @@ fn v2_structured_filter_sort_and_ranking_convert_to_ir() {
     let converted = context.search_to_ir(request).expect("search converts");
     assert!(converted.filter().is_some());
     assert_eq!(converted.sort().len(), 1);
-    assert_eq!(converted.ranking(), RankingPolicyIr::Bm25);
+    assert_eq!(converted.ranking_request().profile, "bm25");
 }
 
 #[test]

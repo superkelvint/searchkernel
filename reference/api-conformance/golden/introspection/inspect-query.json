@@ -1,43 +1,71 @@
 {
   "ok": {
     "resolved_request": {
-      "facets": [],
       "filter": null,
-      "highlighting": null,
+      "grouping": [],
+      "highlighting": {
+        "kind": "disabled"
+      },
+      "inputs": {},
       "language": null,
       "limit": 20,
       "offset": 0,
-      "projection": {
-        "fields": [
-          "title",
-          "description",
-          "brand",
-          "category",
-          "price",
-          "in_stock",
-          "popularity",
-          "tags",
-          "sku",
-          "image_url"
-        ]
+      "prefix_policy": "disabled",
+      "presentation": {
+        "bolding": null,
+        "format": null,
+        "summary": null,
+        "timing": null
       },
-      "query": "x",
-      "ranking": {
-        "default_relevance_v1": {}
+      "projection": [
+        "title",
+        "description",
+        "brand",
+        "category",
+        "price",
+        "in_stock",
+        "popularity",
+        "tags",
+        "sku",
+        "image_url"
+      ],
+      "properties": {},
+      "query": {
+        "kind": "text",
+        "value": "x"
       },
-      "search_fields": {
-        "fields": [
-          {
-            "field": "title",
-            "weight": 4.0
-          },
-          {
-            "field": "description",
-            "weight": 1.0
-          }
-        ]
+      "query_model": {
+        "default_index": null,
+        "encoding": null,
+        "filter": null,
+        "language": null,
+        "locale": null,
+        "query_string": null,
+        "query_type": null,
+        "restrict": [],
+        "search_group": null,
+        "search_path": null,
+        "sources": []
       },
-      "sort": []
+      "query_profile": null,
+      "ranking_request": {
+        "profile": "default",
+        "properties": {}
+      },
+      "search_chain": null,
+      "search_fields": [
+        {
+          "field": "title",
+          "weight": 4.0
+        },
+        {
+          "field": "description",
+          "weight": 1.0
+        }
+      ],
+      "sort": [],
+      "timeout": null,
+      "typo_policy": "disabled"
     }
   }
 }

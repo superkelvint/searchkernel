@@ -1,8 +1,14 @@
-# Search Kernel IR conformance suite v0.5
+# Search Kernel IR conformance suite v0.6
 
 Executable, backend-free specification of the **Portable API → Search Kernel IR** boundary.
 
-**v0.5 contains 212 active cases across 14 categories.**
+**v0.6 contains the active API→IR cases and records an internal V2 IR snapshot.**
+
+Successful outputs are deterministic observations of owned `*_to_ir()` values.
+They are not public JSON, portable client DTOs, or backend result formats.
+Optional IR members are represented as `null`, empty collections remain empty,
+and ordered IR collections preserve their order. Unsupported V2 wire constructs
+remain negative conversion cases with stable error projections.
 
 The naming grammar is final:
 

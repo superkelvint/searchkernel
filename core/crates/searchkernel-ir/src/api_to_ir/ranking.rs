@@ -1,15 +1,14 @@
 use super::*;
-use crate::api_to_ir::resolve::resolve_basic_ranking;
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
 impl IndexContext {
-    pub fn ranking_to_ir(
+    pub fn ranking_request_to_ir(
         &self,
         ranking: Option<api::RankingRequest<'_>>,
-    ) -> Result<RankingPolicyIr> {
-        ranking_to_ir(ranking)
+    ) -> Result<RankingRequestIr> {
+        ranking_request_to_ir(ranking)
     }
 }
 
@@ -49,20 +48,4 @@ pub(crate) fn ranking_request_to_ir(
         profile: profile.to_owned(),
         properties,
     })
-}
-pub(crate) fn ranking_to_ir(r: Option<api::RankingRequest<'_>>) -> Result<RankingPolicyIr> {
-    let Some(r) = r else {
-        return Ok(resolve_basic_ranking(None));
-    };
-    let profile = r.profile().ok_or_else(|| {
-        invalid(
-            "invalid_ranking",
-            Some("ranking"),
-            "ranking request must select a profile",
-        )
-    })?;
-    // The concrete profile remains losslessly represented in
-    // `RankingRequestIr`; this compatibility classification is used only
-    // by the older native lowering path.
-    Ok(resolve_basic_ranking(Some(profile)))
 }

@@ -1,24 +1,23 @@
 {
   "ok": {
-    "and": [
+    "children": [
       {
-        "comparison": {
-          "field": "brand",
-          "op": "eq",
-          "value": {
-            "string": "Sony"
-          }
+        "field": "brand",
+        "kind": "comparison",
+        "op": "eq",
+        "value": {
+          "string": "Sony"
         }
       },
       {
-        "comparison": {
-          "field": "price",
-          "op": "lte",
-          "value": {
-            "float64": 500.0
-          }
+        "field": "price",
+        "kind": "comparison",
+        "op": "lte",
+        "value": {
+          "float64": 500.0
         }
       }
-    ]
+    ],
+    "kind": "and"
   }
 }

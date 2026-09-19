@@ -1,13 +1,18 @@
 {
   "ok": {
-    "range": {
-      "field": "ratings",
-      "include_lower": true,
-      "include_upper": true,
-      "lower": {
+    "field": "ratings",
+    "include_lower": true,
+    "include_upper": true,
+    "kind": "range",
+    "lower": {
+      "kind": "finite",
+      "value": {
         "int64": 3
-      },
-      "upper": {
+      }
+    },
+    "upper": {
+      "kind": "finite",
+      "value": {
         "int64": 5
       }
     }

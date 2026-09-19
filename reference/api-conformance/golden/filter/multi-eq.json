@@ -1,11 +1,10 @@
 {
   "ok": {
-    "comparison": {
-      "field": "tags",
-      "op": "eq",
-      "value": {
-        "string": "sale"
-      }
+    "field": "tags",
+    "kind": "comparison",
+    "op": "eq",
+    "value": {
+      "string": "sale"
     }
   }
 }

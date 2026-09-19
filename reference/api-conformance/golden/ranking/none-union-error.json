@@ -1,12 +1,6 @@
 {
-  "error": {
-    "code": "invalid_argument",
-    "details": [
-      {
-        "code": "invalid_ranking",
-        "path": "ranking"
-      }
-    ],
-    "retryable": false
+  "ok": {
+    "profile": "default",
+    "properties": {}
   }
 }

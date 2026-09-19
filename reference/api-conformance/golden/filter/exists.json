@@ -1,7 +1,6 @@
 {
   "ok": {
-    "exists": {
-      "field": "brand"
-    }
+    "field": "brand",
+    "kind": "exists"
   }
 }

@@ -1,5 +1,6 @@
 {
   "ok": {
+    "constants": [],
     "default_prefix_policy": "disabled",
     "default_ranking": "default_relevance_v1",
     "default_search_fields": [
@@ -9,21 +10,51 @@
       }
     ],
     "default_typo_policy": "disabled",
+    "document_inherits": [],
+    "document_summaries": [],
+    "document_type": null,
     "fields": [
       {
-        "analyzer": "standard_v1",
+        "analyzer": {
+          "name": "standard",
+          "options": {},
+          "version": 1
+        },
+        "attribute": null,
         "capabilities": {
-          "facetable": false,
           "filterable": false,
+          "groupable": false,
           "searchable": true,
           "sortable": false,
           "stored": true
         },
-        "cardinality": "multi",
-        "kind": "text",
-        "name": "value"
+        "data_type": {
+          "element": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "kind": "array"
+        },
+        "index": null,
+        "indexing_script": null,
+        "matching": {
+          "mode": "text",
+          "options": {}
+        },
+        "name": "value",
+        "properties": {},
+        "struct_fields": [],
+        "summary": null
       }
     ],
-    "name": "multi_text"
+    "fieldsets": [],
+    "imported_fields": [],
+    "name": "multi_text",
+    "onnx_models": [],
+    "properties": {},
+    "rank_profiles": [],
+    "schema_fields": [],
+    "schema_inherits": [],
+    "structs": []
   }
 }

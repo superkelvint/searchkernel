@@ -4,6 +4,7 @@
   "id": "write.upsert",
   "index_fixture": "product-v2",
   "input": {
+    "condition": "in_stock = true",
     "document": {
       "fields": {
         "brand": {

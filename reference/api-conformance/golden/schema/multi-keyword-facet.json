@@ -1,24 +1,51 @@
 {
   "ok": {
+    "constants": [],
     "default_prefix_policy": "disabled",
     "default_ranking": "default_relevance_v1",
     "default_search_fields": [],
     "default_typo_policy": "disabled",
+    "document_inherits": [],
+    "document_summaries": [],
+    "document_type": null,
     "fields": [
       {
         "analyzer": null,
+        "attribute": null,
         "capabilities": {
-          "facetable": true,
           "filterable": true,
+          "groupable": true,
           "searchable": false,
           "sortable": false,
           "stored": true
         },
-        "cardinality": "multi",
-        "kind": "keyword",
-        "name": "tags"
+        "data_type": {
+          "element": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "kind": "array"
+        },
+        "index": null,
+        "indexing_script": null,
+        "matching": {
+          "mode": "exact",
+          "options": {}
+        },
+        "name": "tags",
+        "properties": {},
+        "struct_fields": [],
+        "summary": null
       }
     ],
-    "name": "multi_kw"
+    "fieldsets": [],
+    "imported_fields": [],
+    "name": "multi_kw",
+    "onnx_models": [],
+    "properties": {},
+    "rank_profiles": [],
+    "schema_fields": [],
+    "schema_inherits": [],
+    "structs": []
   }
 }

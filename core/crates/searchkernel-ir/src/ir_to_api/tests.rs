@@ -50,7 +50,6 @@ fn inspect_query_encoding_preserves_tensors_empty_objects_query_type_and_nested_
             },
             continuations: Vec::new(),
         }],
-        ranking: ir::RankingPolicyIr::DefaultRelevanceV1,
         ranking_request: ir::RankingRequestIr {
             profile: "default".to_owned(),
             properties: BTreeMap::new(),

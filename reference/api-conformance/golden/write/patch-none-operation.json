@@ -4,7 +4,7 @@
     "details": [
       {
         "code": "invalid_patch_operation",
-        "path": "operations[0]"
+        "path": "operations"
       }
     ],
     "retryable": false

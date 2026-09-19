@@ -1,15 +1,27 @@
 {
   "ok": {
     "analyzer": null,
+    "attribute": null,
     "capabilities": {
-      "facetable": true,
       "filterable": true,
+      "groupable": true,
       "searchable": false,
       "sortable": true,
       "stored": true
     },
-    "cardinality": "single",
-    "kind": "keyword",
-    "name": "brand"
+    "data_type": {
+      "kind": "primitive",
+      "type": "string"
+    },
+    "index": null,
+    "indexing_script": null,
+    "matching": {
+      "mode": "exact",
+      "options": {}
+    },
+    "name": "brand",
+    "properties": {},
+    "struct_fields": [],
+    "summary": null
   }
 }

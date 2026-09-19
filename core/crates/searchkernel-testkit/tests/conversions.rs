@@ -1,5 +1,5 @@
 use searchkernel_ir::__flatbuffers::{root, FlatBufferBuilder};
-use searchkernel_ir::{api, IndexContext, QueryIr, RankingPolicyIr};
+use searchkernel_ir::{api, IndexContext, QueryIr};
 
 fn context() -> IndexContext {
     let mut builder = FlatBufferBuilder::new();
@@ -158,5 +158,5 @@ fn representative_v2_converters_use_direct_core_calls() {
     let converted = context.search_to_ir(request).unwrap();
     assert!(matches!(converted.query(), QueryIr::Text(text) if text == "headphones"));
     assert!(converted.filter().is_some());
-    assert_eq!(converted.ranking(), RankingPolicyIr::DefaultRelevanceV1);
+    assert_eq!(converted.ranking_request().profile, "default");
 }

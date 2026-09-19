@@ -1,22 +1,21 @@
 {
   "ok": {
-    "and": [
+    "children": [
       {
-        "term": {
-          "field": "title",
-          "value": {
-            "string": "a"
-          }
+        "field": "title",
+        "kind": "term",
+        "value": {
+          "string": "a"
         }
       },
       {
-        "term": {
-          "field": "description",
-          "value": {
-            "string": "b"
-          }
+        "field": "description",
+        "kind": "term",
+        "value": {
+          "string": "b"
         }
       }
-    ]
+    ],
+    "kind": "and"
   }
 }

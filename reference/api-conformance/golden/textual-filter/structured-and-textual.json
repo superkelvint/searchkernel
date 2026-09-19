@@ -1,27 +1,31 @@
 {
   "ok": {
-    "and": [
+    "children": [
       {
-        "comparison": {
-          "field": "price",
-          "op": "gt",
-          "value": {"float64": 10.0}
+        "field": "price",
+        "kind": "comparison",
+        "op": "gt",
+        "value": {
+          "float64": 10.0
         }
       },
       {
-        "comparison": {
-          "field": "price",
-          "op": "lt",
-          "value": {"float64": 100.0}
+        "field": "price",
+        "kind": "comparison",
+        "op": "lt",
+        "value": {
+          "float64": 100.0
         }
       },
       {
-        "comparison": {
-          "field": "in_stock",
-          "op": "eq",
-          "value": {"bool": true}
+        "field": "in_stock",
+        "kind": "comparison",
+        "op": "eq",
+        "value": {
+          "bool": true
         }
       }
-    ]
+    ],
+    "kind": "and"
   }
 }

@@ -1,15 +1,31 @@
 {
   "ok": {
-    "analyzer": "standard_v1",
+    "analyzer": {
+      "name": "standard",
+      "options": {},
+      "version": 1
+    },
+    "attribute": null,
     "capabilities": {
-      "facetable": false,
       "filterable": false,
+      "groupable": false,
       "searchable": true,
       "sortable": false,
       "stored": true
     },
-    "cardinality": "single",
-    "kind": "text",
-    "name": "title"
+    "data_type": {
+      "kind": "primitive",
+      "type": "string"
+    },
+    "index": null,
+    "indexing_script": null,
+    "matching": {
+      "mode": "text",
+      "options": {}
+    },
+    "name": "title",
+    "properties": {},
+    "struct_fields": [],
+    "summary": null
   }
 }

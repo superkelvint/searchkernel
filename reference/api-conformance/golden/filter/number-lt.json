@@ -1,11 +1,10 @@
 {
   "ok": {
-    "comparison": {
-      "field": "price",
-      "op": "lt",
-      "value": {
-        "float64": 500.0
-      }
+    "field": "price",
+    "kind": "comparison",
+    "op": "lt",
+    "value": {
+      "float64": 500.0
     }
   }
 }

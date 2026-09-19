@@ -1,20 +1,19 @@
 {
   "ok": {
-    "or": [
+    "children": [
       {
-        "comparison": {
-          "field": "brand",
-          "op": "eq",
-          "value": {
-            "string": "Sony"
-          }
+        "field": "brand",
+        "kind": "comparison",
+        "op": "eq",
+        "value": {
+          "string": "Sony"
         }
       },
       {
-        "exists": {
-          "field": "in_stock"
-        }
+        "field": "in_stock",
+        "kind": "exists"
       }
-    ]
+    ],
+    "kind": "or"
   }
 }

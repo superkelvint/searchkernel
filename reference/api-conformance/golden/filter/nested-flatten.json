@@ -1,29 +1,27 @@
 {
   "ok": {
-    "and": [
+    "children": [
       {
-        "comparison": {
-          "field": "brand",
-          "op": "eq",
-          "value": {
-            "string": "Sony"
-          }
+        "field": "brand",
+        "kind": "comparison",
+        "op": "eq",
+        "value": {
+          "string": "Sony"
         }
       },
       {
-        "comparison": {
-          "field": "price",
-          "op": "lte",
-          "value": {
-            "float64": 500.0
-          }
+        "field": "price",
+        "kind": "comparison",
+        "op": "lte",
+        "value": {
+          "float64": 500.0
         }
       },
       {
-        "exists": {
-          "field": "in_stock"
-        }
+        "field": "in_stock",
+        "kind": "exists"
       }
-    ]
+    ],
+    "kind": "and"
   }
 }

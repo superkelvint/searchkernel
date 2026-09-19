@@ -1,11 +1,10 @@
 {
   "ok": {
-    "comparison": {
-      "field": "in_stock",
-      "op": "eq",
-      "value": {
-        "bool": true
-      }
+    "field": "in_stock",
+    "kind": "comparison",
+    "op": "eq",
+    "value": {
+      "bool": true
     }
   }
 }

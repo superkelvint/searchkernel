@@ -1,24 +1,45 @@
 {
   "ok": {
+    "constants": [],
     "default_prefix_policy": "disabled",
     "default_ranking": "default_relevance_v1",
     "default_search_fields": [],
     "default_typo_policy": "disabled",
+    "document_inherits": [],
+    "document_summaries": [],
+    "document_type": null,
     "fields": [
       {
         "analyzer": null,
+        "attribute": null,
         "capabilities": {
-          "facetable": false,
           "filterable": true,
+          "groupable": false,
           "searchable": false,
           "sortable": true,
           "stored": true
         },
-        "cardinality": "single",
-        "kind": "float64",
-        "name": "value"
+        "data_type": {
+          "kind": "primitive",
+          "type": "float64"
+        },
+        "index": null,
+        "indexing_script": null,
+        "matching": null,
+        "name": "value",
+        "properties": {},
+        "struct_fields": [],
+        "summary": null
       }
     ],
-    "name": "f64_default"
+    "fieldsets": [],
+    "imported_fields": [],
+    "name": "f64_default",
+    "onnx_models": [],
+    "properties": {},
+    "rank_profiles": [],
+    "schema_fields": [],
+    "schema_inherits": [],
+    "structs": []
   }
 }

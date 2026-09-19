@@ -1,13 +1,13 @@
 {
   "ok": {
-    "not": {
-      "comparison": {
-        "field": "brand",
-        "op": "eq",
-        "value": {
-          "string": "Sony"
-        }
+    "child": {
+      "field": "brand",
+      "kind": "comparison",
+      "op": "eq",
+      "value": {
+        "string": "Sony"
       }
-    }
+    },
+    "kind": "not"
   }
 }

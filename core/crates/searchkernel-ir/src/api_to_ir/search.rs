@@ -45,7 +45,6 @@ impl IndexContext {
         let filter = self.filters_to_ir(request.filters())?;
         let sort = self.sorts_to_ir(request.sort())?;
         let grouping = grouping_to_ir(request.grouping())?;
-        let ranking = ranking_to_ir(request.ranking())?;
         let language = query_model.language.clone();
         let presentation = presentation_to_ir(request.presentation())?;
         let timeout = request
@@ -64,7 +63,6 @@ impl IndexContext {
             filter,
             sort,
             grouping,
-            ranking,
             ranking_request: ranking_request_to_ir(request.ranking())?,
             inputs,
             limit,

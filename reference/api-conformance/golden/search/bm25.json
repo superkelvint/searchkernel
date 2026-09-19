@@ -1,32 +1,57 @@
 {
   "ok": {
-    "facets": [],
     "filter": null,
+    "grouping": [],
     "highlighting": {
       "kind": "disabled"
     },
+    "inputs": {},
     "language": null,
     "limit": 20,
     "offset": 0,
     "prefix_policy": "disabled",
-    "projection": {
-      "fields": [
-        "title",
-        "description",
-        "brand",
-        "category",
-        "price",
-        "in_stock",
-        "popularity",
-        "tags",
-        "sku",
-        "image_url"
-      ]
+    "presentation": {
+      "bolding": null,
+      "format": null,
+      "summary": null,
+      "timing": null
     },
+    "projection": [
+      "title",
+      "description",
+      "brand",
+      "category",
+      "price",
+      "in_stock",
+      "popularity",
+      "tags",
+      "sku",
+      "image_url"
+    ],
+    "properties": {},
     "query": {
-      "text": "x"
+      "kind": "text",
+      "value": "x"
     },
-    "ranking": "bm25",
+    "query_model": {
+      "default_index": null,
+      "encoding": null,
+      "filter": null,
+      "language": null,
+      "locale": null,
+      "query_string": null,
+      "query_type": null,
+      "restrict": [],
+      "search_group": null,
+      "search_path": null,
+      "sources": []
+    },
+    "query_profile": null,
+    "ranking_request": {
+      "profile": "bm25",
+      "properties": {}
+    },
+    "search_chain": null,
     "search_fields": [
       {
         "field": "title",
@@ -38,6 +63,7 @@
       }
     ],
     "sort": [],
+    "timeout": null,
     "typo_policy": "disabled"
   }
 }

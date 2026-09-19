@@ -1,3 +1,6 @@
 {
-  "ok": "default_relevance_v1"
+  "ok": {
+    "profile": "default",
+    "properties": {}
+  }
 }

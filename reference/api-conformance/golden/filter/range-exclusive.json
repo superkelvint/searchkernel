@@ -1,13 +1,18 @@
 {
   "ok": {
-    "range": {
-      "field": "price",
-      "include_lower": false,
-      "include_upper": false,
-      "lower": {
+    "field": "price",
+    "include_lower": false,
+    "include_upper": false,
+    "kind": "range",
+    "lower": {
+      "kind": "finite",
+      "value": {
         "float64": 10.0
-      },
-      "upper": {
+      }
+    },
+    "upper": {
+      "kind": "finite",
+      "value": {
         "float64": 20.0
       }
     }

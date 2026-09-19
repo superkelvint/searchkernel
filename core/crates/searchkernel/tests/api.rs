@@ -5,9 +5,8 @@ use searchkernel::{
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
     GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
-    OperationIr, ProjectionIr, QueryInputIr, QueryIr, RankingPolicyIr, RequestValueIr,
-    SearchFieldIr, SearchFieldWeight, SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation,
-    Value,
+    OperationIr, ProjectionIr, QueryInputIr, QueryIr, RequestValueIr, SearchFieldIr,
+    SearchFieldWeight, SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation, Value,
 };
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde::{Deserialize, Serialize};
@@ -44,7 +43,6 @@ fn expected_search() -> SearchRequestIr {
         )],
         None,
         vec![],
-        RankingPolicyIr::DefaultRelevanceV1,
         20,
         0,
         ProjectionIr::new(vec![
@@ -596,7 +594,7 @@ fn all_filter_operators_and_search_options_cross_the_boundary() {
     assert_eq!(request.search_fields()[0].weight().get(), 0.0);
     assert_eq!(request.sort().len(), 2);
     assert!(request.grouping().is_empty());
-    assert_eq!(request.ranking(), RankingPolicyIr::DefaultRelevanceV1);
+    assert_eq!(request.ranking_request().profile, "default");
     assert_eq!(request.language().unwrap().as_str(), "en-us");
     let Some(FilterIr::Or(filters)) = request.filter() else {
         panic!("expected OR filter");

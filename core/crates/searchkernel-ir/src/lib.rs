@@ -14,6 +14,7 @@ pub mod filter_expression;
 pub mod ir_to_api;
 pub mod model;
 pub mod session;
+pub mod snapshot;
 
 pub use api_to_ir::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, request_value_from_json, resolve_analyze,

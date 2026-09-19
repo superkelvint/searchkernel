@@ -1,5 +1,6 @@
 {
   "ok": {
+    "condition": "in_stock = true",
     "document": {
       "fields": {
         "brand": {

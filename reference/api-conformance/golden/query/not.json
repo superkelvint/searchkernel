@@ -1,12 +1,12 @@
 {
   "ok": {
-    "not": {
-      "term": {
-        "field": "title",
-        "value": {
-          "string": "a"
-        }
+    "child": {
+      "field": "title",
+      "kind": "term",
+      "value": {
+        "string": "a"
       }
-    }
+    },
+    "kind": "not"
   }
 }

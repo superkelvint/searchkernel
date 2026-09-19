@@ -14,7 +14,7 @@ mod value;
 mod tests;
 
 pub(crate) use grouping::grouping_to_ir;
-pub(crate) use ranking::{ranking_request_to_ir, ranking_to_ir};
+pub(crate) use ranking::ranking_request_to_ir;
 pub use resolve::{
     resolve_analyze, resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
     resolve_projection, resolve_search, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,

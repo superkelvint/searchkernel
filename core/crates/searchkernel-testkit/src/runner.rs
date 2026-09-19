@@ -2,13 +2,11 @@
 
 use searchkernel_ir::{
     analyzer_to_ir, api, error_to_api, field_to_ir, index_definition_to_ir, AnalyzeRequestIr,
-    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldCardinality,
-    FieldIr, FieldKind, FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext,
-    IndexDefinitionIr, IndexName, InsertRequestIr, LanguageHint, MissingPlacement,
-    PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryExprIr, QueryExprKindIr,
-    QueryFieldRefIr, QueryIr, QueryRangeBoundIr, RangeIr, RankingPolicyIr, RequestNonFiniteFloatIr,
-    RequestValueIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortDirection, SortIr,
-    SortTargetIr, UpsertRequestIr, WriteRequestIr, WriteRequestRef,
+    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldIr, FieldKind,
+    FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext, IndexDefinitionIr,
+    InsertRequestIr, LanguageHint, PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr,
+    QueryIr, RangeIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr, UpsertRequestIr,
+    WriteRequestIr, WriteRequestRef,
 };
 use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
 use serde_json::{json, Map, Value as JsonValue};
@@ -336,6 +334,59 @@ impl ConformanceRunner {
             categories: categories.into_iter().collect(),
         })
     }
+
+    /// Regenerate checked-in internal IR snapshots for an explicitly approved
+    /// corpus update. This is intentionally separate from `run` so normal
+    /// verification never mutates acceptance artifacts.
+    pub fn regenerate_goldens(&self) -> StdResult<ConformanceReport, RunnerError> {
+        let manifest = read_json(&self.root.join("manifest.json"))?;
+        if manifest.get("version").and_then(JsonValue::as_str) != Some("0.6.0")
+            || manifest.get("snapshot_format").and_then(JsonValue::as_str)
+                != Some("searchkernel-ir-internal/v2")
+        {
+            return Err(RunnerError::Case {
+                id: "runner".to_owned(),
+                message: "golden regeneration requires the v0.6 internal snapshot corpus"
+                    .to_owned(),
+            });
+        }
+        let cases_path = self.root.join("cases.json");
+        let cases = read_json(&cases_path)?;
+        let cases = cases
+            .get("cases")
+            .and_then(JsonValue::as_array)
+            .ok_or_else(|| RunnerError::Case {
+                id: "runner".to_owned(),
+                message: "cases.json must contain a cases array".to_owned(),
+            })?;
+        let mut categories = BTreeMap::new();
+        for entry in cases {
+            let id = required_string(entry, "id")?.to_owned();
+            let case_path = self.root.join(required_string(entry, "case")?);
+            let golden_path = self.root.join(required_string(entry, "golden")?);
+            let case = read_json(&case_path)?;
+            let actual = case_output(&self.root, &case).map_err(|message| RunnerError::Case {
+                id: id.clone(),
+                message,
+            })?;
+            let contents =
+                serde_json::to_string_pretty(&actual).map_err(|source| RunnerError::Json {
+                    path: golden_path.clone(),
+                    source,
+                })?;
+            fs::write(&golden_path, format!("{contents}\n")).map_err(|source| RunnerError::Io {
+                path: golden_path,
+                source,
+            })?;
+            *categories
+                .entry(required_string(&case, "category")?.to_owned())
+                .or_insert(0) += 1;
+        }
+        Ok(ConformanceReport {
+            passed: cases.len(),
+            categories: categories.into_iter().collect(),
+        })
+    }
 }
 
 fn read_json(path: &Path) -> StdResult<JsonValue, RunnerError> {
@@ -360,6 +411,16 @@ fn required_string<'a>(value: &'a JsonValue, key: &str) -> StdResult<&'a str, Ru
 }
 
 fn run_case(root: &Path, case: &JsonValue, golden: &JsonValue) -> StdResult<(), String> {
+    let actual = case_output(root, case)?;
+    if &actual != golden {
+        return Err(format!(
+            "golden mismatch\nexpected: {golden}\nactual:   {actual}"
+        ));
+    }
+    Ok(())
+}
+
+fn case_output(root: &Path, case: &JsonValue) -> StdResult<JsonValue, String> {
     let operation = case
         .get("operation")
         .and_then(JsonValue::as_str)
@@ -372,17 +433,11 @@ fn run_case(root: &Path, case: &JsonValue, golden: &JsonValue) -> StdResult<(), 
         ),
         None => None,
     };
-    let actual = match execute(operation, &input, index_json.as_ref()) {
-        Ok(value) => value,
-        Err(ExecError::Portable(error)) => json!({"error": error_json(&error)}),
-        Err(error) => return Err(error.to_string()),
-    };
-    if &actual != golden {
-        return Err(format!(
-            "golden mismatch\nexpected: {golden}\nactual:   {actual}"
-        ));
+    match execute(operation, &input, index_json.as_ref()) {
+        Ok(value) => Ok(value),
+        Err(ExecError::Portable(error)) => Ok(json!({"error": error_json(&error)})),
+        Err(error) => Err(error.to_string()),
     }
-    Ok(())
 }
 
 fn execute(
@@ -569,11 +624,10 @@ fn execute(
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::RankingRequest>(&bytes)
                 .map_err(|error| error.to_string())?;
-            ok(json!(ranking_name(
-                context
-                    .ranking_to_ir(Some(root))
-                    .map_err(ExecError::Portable)?
-            )))
+            let ranking = context
+                .ranking_request_to_ir(Some(root))
+                .map_err(ExecError::Portable)?;
+            ok(json!({"profile": ranking.profile, "properties": ranking.properties}))
         }
         "query_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
@@ -772,51 +826,6 @@ fn scalar_json(value: &ScalarValueIr) -> JsonValue {
         ScalarValueIr::String(v) => json!({"string":v}),
     }
 }
-fn request_value_json(value: &RequestValueIr) -> JsonValue {
-    match value {
-        RequestValueIr::Null => JsonValue::Null,
-        RequestValueIr::Bool(value) => json!({"bool": value}),
-        RequestValueIr::Int64(value) => json!({"int64": value}),
-        RequestValueIr::UInt64(value) => json!({"uint64": value}),
-        RequestValueIr::Float64(value) => json!({"float64": value}),
-        RequestValueIr::NonFiniteFloat(value) => json!({
-            "non_finite": match value {
-                RequestNonFiniteFloatIr::NaN => "nan",
-                RequestNonFiniteFloatIr::PositiveInfinity => "positive_infinity",
-                RequestNonFiniteFloatIr::NegativeInfinity => "negative_infinity",
-            }
-        }),
-        RequestValueIr::String(value) => json!({"string": value}),
-        RequestValueIr::Bytes(value) => json!({"bytes": value}),
-        RequestValueIr::List(value) => {
-            json!({"list": value.iter().map(request_value_json).collect::<Vec<_>>()})
-        }
-        RequestValueIr::Object(value) => json!({
-            "object": value
-                .iter()
-                .map(|(key, value)| (key.clone(), request_value_json(value)))
-                .collect::<Map<_, _>>()
-        }),
-        RequestValueIr::Tensor(value) => {
-            let payload = match &value.payload {
-                searchkernel_ir::RequestTensorPayloadIr::Dense(values) => json!({"dense": values}),
-                searchkernel_ir::RequestTensorPayloadIr::Sparse(values) => json!({
-                    "sparse": values.iter().map(|cell| json!({
-                        "address": cell.address,
-                        "value": cell.value,
-                    })).collect::<Vec<_>>()
-                }),
-                searchkernel_ir::RequestTensorPayloadIr::Mixed(values) => json!({
-                    "mixed": values.iter().map(|block| json!({
-                        "address": block.address,
-                        "values": block.values,
-                    })).collect::<Vec<_>>()
-                }),
-            };
-            json!({"tensor":{"type_spec":value.type_spec,"payload":payload}})
-        }
-    }
-}
 fn field_value_json(value: &FieldValueIr) -> JsonValue {
     match value {
         FieldValueIr::Single(v) => json!({"single":scalar_json(v)}),
@@ -858,70 +867,22 @@ fn highlighting_json(value: &HighlightingIr) -> JsonValue {
         }
     }
 }
-fn ranking_name(value: RankingPolicyIr) -> &'static str {
-    match value {
-        RankingPolicyIr::DefaultRelevanceV1 => "default_relevance_v1",
-        RankingPolicyIr::Bm25 => "bm25",
-    }
-}
-fn field_analyzer_name(value: Option<&searchkernel_ir::AnalyzerIr>) -> Option<&str> {
-    value.map(|value| {
-        if value.name == "standard" && value.version == 1 && value.options.is_empty() {
-            "standard_v1"
-        } else {
-            value.name.as_str()
-        }
-    })
-}
 fn analyzer_name(value: Option<AnalyzerIdentity>) -> Option<&'static str> {
     value.map(|value| match value {
         AnalyzerIdentity::StandardV1 => "standard_v1",
     })
 }
-fn field_kind_name(value: FieldKind) -> &'static str {
-    match value {
-        FieldKind::Text => "text",
-        FieldKind::Keyword => "keyword",
-        FieldKind::Int64 => "int64",
-        FieldKind::Float64 => "float64",
-        FieldKind::Bool => "bool",
-    }
-}
-fn cardinality_name(value: FieldCardinality) -> &'static str {
-    match value {
-        FieldCardinality::Single => "single",
-        FieldCardinality::Multi => "multi",
-    }
-}
 fn field_json(value: &FieldIr) -> JsonValue {
-    let capabilities = value.capabilities();
-    json!({"name":value.name().as_str(),"kind":field_kind_name(value.kind()),"cardinality":cardinality_name(value.cardinality()),"analyzer":field_analyzer_name(value.analyzer()),"capabilities":{"stored":capabilities.stored(),"searchable":capabilities.searchable(),"filterable":capabilities.filterable(),"sortable":capabilities.sortable(),"facetable":capabilities.facetable()}})
+    searchkernel_ir::snapshot::field(value)
 }
 fn index_json_value(value: &IndexDefinitionIr) -> JsonValue {
-    json!({"name":value.name().map(IndexName::as_str),"fields":value.fields().iter().map(field_json).collect::<Vec<_>>(),"default_search_fields":search_fields_json(value.default_search_fields()),"default_ranking":ranking_name(value.default_ranking()),"default_prefix_policy":"disabled","default_typo_policy":"disabled"})
+    searchkernel_ir::snapshot::index_definition(value)
 }
 fn describe_json(value: &IndexDefinitionIr) -> JsonValue {
-    let fields = value.fields().iter().map(|field| {
-        let capabilities = field.capabilities();
-        let analyzer = field.analyzer().map(|analyzer| json!({"name":analyzer.name,"options":{},"version":analyzer.version}));
-        json!({"name":field.name().as_str(),"kind":field_kind_name(field.kind()),"cardinality":cardinality_name(field.cardinality()),"stored":capabilities.stored(),"searchable":capabilities.searchable(),"filterable":capabilities.filterable(),"sortable":capabilities.sortable(),"facetable":capabilities.facetable(),"analyzer":analyzer})
-    }).collect::<Vec<_>>();
-    json!({"index":{"name":value.name().map(IndexName::as_str),"fields":fields,"default_search_fields":{"fields":value.default_search_fields().iter().map(|field|json!({"field":field.field().as_str(),"weight":field.weight().get()})).collect::<Vec<_>>()}}})
+    json!({"index":searchkernel_ir::snapshot::index_definition(value)})
 }
 fn inspect_json(value: &SearchRequestIr) -> JsonValue {
-    let query = match value.query() {
-        QueryIr::Text(text) => json!(text),
-        QueryIr::MatchAll => json!(""),
-        other => query_json(other),
-    };
-    let ranking = json!({ranking_name(value.ranking()):{}});
-    let highlighting = match value.highlighting() {
-        HighlightingIr::Disabled => JsonValue::Null,
-        HighlightingIr::Requested { fields } => {
-            json!({"fields":fields.iter().map(|field|field.as_str()).collect::<Vec<_>>()})
-        }
-    };
-    json!({"resolved_request":{"query":query,"search_fields":{"fields":value.search_fields().iter().map(|field|json!({"field":field.field().as_str(),"weight":field.weight().get()})).collect::<Vec<_>>()},"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.grouping().iter().filter_map(facet_json).collect::<Vec<_>>(),"ranking":ranking,"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting,"language":value.language().map(LanguageHint::as_str)}})
+    json!({"resolved_request":searchkernel_ir::snapshot::search_request(value)})
 }
 fn document_json(value: &DocumentIr) -> JsonValue {
     let fields: Map<String, JsonValue> = value
@@ -935,10 +896,10 @@ fn insert_json(value: &InsertRequestIr) -> JsonValue {
     json!({"document":document_json(value.document())})
 }
 fn upsert_json(value: &UpsertRequestIr) -> JsonValue {
-    json!({"document":document_json(value.document())})
+    json!({"document":document_json(value.document()),"condition":value.condition()})
 }
 fn delete_json(value: &DeleteRequestIr) -> JsonValue {
-    json!({"id":value.id().as_str()})
+    json!({"id":value.id().as_str(),"condition":value.condition()})
 }
 fn get_json(value: &GetRequestIr) -> JsonValue {
     json!({"id":value.id().as_str(),"projection":projection_json(value.projection())})
@@ -991,170 +952,15 @@ fn range_json(value: &RangeIr) -> JsonValue {
     json!({"field":value.field().as_str(),"lower":bound_json(value.lower_bound()),"upper":bound_json(value.upper_bound()),"include_lower":value.include_lower(),"include_upper":value.include_upper()})
 }
 fn filter_json(value: &FilterIr) -> JsonValue {
-    match value {
-        FilterIr::And(v) => json!({"and":v.iter().map(filter_json).collect::<Vec<_>>() }),
-        FilterIr::Or(v) => json!({"or":v.iter().map(filter_json).collect::<Vec<_>>() }),
-        FilterIr::Not(v) => json!({"not":filter_json(v)}),
-        FilterIr::Comparison(v) => json!({"comparison":comparison_json(v)}),
-        FilterIr::Range(v) => json!({"range":range_json(v)}),
-        FilterIr::In { field, values } => {
-            json!({"in":{"field":field.as_str(),"values":values.iter().map(scalar_json).collect::<Vec<_>>()}})
-        }
-        FilterIr::Exists { field } => json!({"exists":{"field":field.as_str()}}),
-    }
+    searchkernel_ir::snapshot::filter(value)
 }
 fn query_json(value: &QueryIr) -> JsonValue {
-    match value {
-        QueryIr::MatchAll => json!({"match_all":{}}),
-        QueryIr::Text(v) => json!({"text":v}),
-        QueryIr::Term { field, value } => {
-            json!({"term":{"field":field.as_str(),"value":scalar_json(value)}})
-        }
-        QueryIr::And(v) => json!({"and":v.iter().map(query_json).collect::<Vec<_>>() }),
-        QueryIr::Or(v) => json!({"or":v.iter().map(query_json).collect::<Vec<_>>() }),
-        QueryIr::Not(v) => json!({"not":query_json(v)}),
-        QueryIr::Yql { source, parameters } => {
-            json!({"yql":{"source":source,"parameter_count":parameters.len()}})
-        }
-        QueryIr::Typed(value) => json!({"typed": query_expr_json(value)}),
-    }
-}
-
-fn query_field_ref_json(value: &QueryFieldRefIr) -> JsonValue {
-    json!({"path":value.path.as_str(),"element_index":value.element_index})
-}
-
-fn query_children_json(values: &[QueryExprIr]) -> JsonValue {
-    JsonValue::Array(values.iter().map(query_expr_json).collect())
-}
-
-fn query_expr_json(value: &QueryExprIr) -> JsonValue {
-    let (name, payload) = match &value.kind {
-        QueryExprKindIr::Term { value } => ("term", json!({"value":request_value_json(value)})),
-        QueryExprKindIr::Contains { field, item } => ("contains", json!({"field":query_field_ref_json(field),"item":query_expr_json(item)})),
-        QueryExprKindIr::And(values) => ("and", query_children_json(values)),
-        QueryExprKindIr::Or(values) => ("or", query_children_json(values)),
-        QueryExprKindIr::Not(value) => ("not", query_expr_json(value)),
-        QueryExprKindIr::True => ("true", json!({})),
-        QueryExprKindIr::False => ("false", json!({})),
-        QueryExprKindIr::Comparison { field, op, value } => ("comparison", json!({"field":query_field_ref_json(field),"op":comparison_name(*op),"value":request_value_json(value)})),
-        QueryExprKindIr::Range { field, lower, upper, include_lower, include_upper } => ("range", json!({"field":query_field_ref_json(field),"lower":query_range_bound_json(lower),"upper":query_range_bound_json(upper),"include_lower":include_lower,"include_upper":include_upper})),
-        QueryExprKindIr::In { field, values } => ("in", json!({"field":query_field_ref_json(field),"values":values.iter().map(request_value_json).collect::<Vec<_>>() })),
-        QueryExprKindIr::Phrase(values) => ("phrase", query_children_json(values)),
-        QueryExprKindIr::Near { children, distance } => ("near", json!({"children":query_children_json(children),"distance":distance})),
-        QueryExprKindIr::ONear { children, distance } => ("onear", json!({"children":query_children_json(children),"distance":distance})),
-        QueryExprKindIr::SameElement(values) => ("same_element", query_children_json(values)),
-        QueryExprKindIr::Equiv(values) => ("equiv", query_children_json(values)),
-        QueryExprKindIr::Alternatives(values) => ("alternatives", json!(values.iter().map(|value| json!({"query":query_expr_json(&value.query),"exactness":value.exactness})).collect::<Vec<_>>())),
-        QueryExprKindIr::Fuzzy { value, max_edit_distance, prefix_length, prefix } => ("fuzzy", json!({"value":request_value_json(value),"max_edit_distance":max_edit_distance,"prefix_length":prefix_length,"prefix":prefix})),
-        QueryExprKindIr::Matches { field, pattern } => ("matches", json!({"field":query_field_ref_json(field),"pattern":pattern})),
-        QueryExprKindIr::Text { text } => ("text", json!({"text":text})),
-        QueryExprKindIr::UserInput { value, default_index, target_hits } => ("user_input", json!({"value":value,"default_index":default_index,"target_hits":target_hits})),
-        QueryExprKindIr::UserQuery { default_index, target_hits } => ("user_query", json!({"default_index":default_index,"target_hits":target_hits})),
-        QueryExprKindIr::DotProduct { field, items } => ("dot_product", weighted_items_json(field, items)),
-        QueryExprKindIr::WeightedSet { field, items } => ("weighted_set", weighted_items_json(field, items)),
-        QueryExprKindIr::Wand { field, items } => ("wand", weighted_items_json(field, items)),
-        QueryExprKindIr::WeakAnd { children, target_hits } => ("weak_and", json!({"children":query_children_json(children),"target_hits":target_hits})),
-        QueryExprKindIr::Rank { matching, ranking } => ("rank", json!({"matching":query_expr_json(matching),"ranking":query_children_json(ranking)})),
-        QueryExprKindIr::Labeled { query, label, score } => ("labeled", json!({"query":query_expr_json(query),"label":label,"score":score})),
-        QueryExprKindIr::NonEmpty(query) => ("non_empty", query_expr_json(query)),
-        QueryExprKindIr::GeoLocation { field, latitude, longitude, radius } => ("geo_location", json!({"field":query_field_ref_json(field),"latitude":latitude,"longitude":longitude,"radius":radius})),
-        QueryExprKindIr::GeoBoundingBox { field, south, west, north, east } => ("geo_bounding_box", json!({"field":query_field_ref_json(field),"south":south,"west":west,"north":north,"east":east})),
-        QueryExprKindIr::NearestNeighbor { document_field, query_tensor } => ("nearest_neighbor", json!({"document_field":query_field_ref_json(document_field),"query_tensor":query_tensor})),
-        QueryExprKindIr::Predicate { field, features, range_features } => ("predicate", json!({"field":query_field_ref_json(field),"features":features.iter().map(|(key,value)|(key.clone(),request_value_json(value))).collect::<Map<_,_>>(),"range_features":range_features.iter().map(|(key,value)|(key.clone(),request_value_json(value))).collect::<Map<_,_>>() })),
-    };
-    let mut output = json!({name:payload});
-    if !value.annotations.is_empty() {
-        output["annotations"] = JsonValue::Object(
-            value
-                .annotations
-                .iter()
-                .map(|(key, value)| (key.clone(), request_value_json(value)))
-                .collect(),
-        );
-    }
-    output
-}
-
-fn weighted_items_json(
-    field: &QueryFieldRefIr,
-    items: &[searchkernel_ir::WeightedQueryItemIr],
-) -> JsonValue {
-    json!({"field":query_field_ref_json(field),"items":items.iter().map(|item| json!({"key":request_value_json(&item.key),"weight":item.weight})).collect::<Vec<_>>()})
-}
-
-fn query_range_bound_json(value: &QueryRangeBoundIr) -> JsonValue {
-    match value {
-        QueryRangeBoundIr::Finite(value) => json!({"finite":request_value_json(value)}),
-        QueryRangeBoundIr::NegativeInfinity => json!({"negative_infinity":{}}),
-        QueryRangeBoundIr::PositiveInfinity => json!({"positive_infinity":{}}),
-        QueryRangeBoundIr::Unbounded => json!({"unbounded":{}}),
-    }
+    searchkernel_ir::snapshot::query(value)
 }
 
 fn sort_json(value: &SortIr) -> JsonValue {
-    let missing = match value.missing() {
-        MissingPlacement::First => json!("first"),
-        MissingPlacement::Last => json!("last"),
-        MissingPlacement::As(value) => json!({"as": request_value_json(&value)}),
-    };
-    let mut output = json!({
-        "direction":match value.direction() {SortDirection::Asc=>"asc",SortDirection::Desc=>"desc"},
-        "missing":missing,
-    });
-    match value.target() {
-        SortTargetIr::Field(field) => output["field"] = json!(field.as_str()),
-        SortTargetIr::Relevance => output["target"] = json!({"relevance":{}}),
-        SortTargetIr::RankFeature(feature) => {
-            output["target"] = json!({"rank_feature":{"feature":feature}})
-        }
-    }
-    if !value.annotations().is_empty() {
-        output["annotations"] = json!(value
-            .annotations()
-            .iter()
-            .map(|(key, value)| (key.clone(), request_value_json(value)))
-            .collect::<Map<_, _>>());
-    }
-    output
+    searchkernel_ir::snapshot::sort(value)
 }
-fn facet_json(value: &searchkernel_ir::GroupingRequestIr) -> Option<JsonValue> {
-    use searchkernel_ir::GroupingOperationIr as Operation;
-    use searchkernel_ir::{GroupingAggregationIr as Aggregation, GroupingExpressionIr as Expr};
-
-    let [Operation::Group(Expr::Attribute(field)), Operation::Each(each)] =
-        value.root.operations.as_slice()
-    else {
-        return None;
-    };
-    let limit = each
-        .operations
-        .iter()
-        .find_map(|operation| match operation {
-            Operation::Max(Some(limit)) => Some(*limit),
-            _ => None,
-        })?;
-    let order = each
-        .operations
-        .iter()
-        .find_map(|operation| match operation {
-            Operation::Order(values) => values.first(),
-            _ => None,
-        })?;
-    let sort = match order {
-        Expr::Negative(value) if matches!(value.as_ref(), Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count)) => {
-            "count_desc"
-        }
-        Expr::Aggregation(value) if matches!(value.as_ref(), Aggregation::Count) => "count_asc",
-        Expr::Negative(value) if matches!(value.as_ref(), Expr::Attribute(value) if value == field) => {
-            "value_desc"
-        }
-        Expr::Attribute(value) if value == field => "value_asc",
-        _ => return None,
-    };
-    Some(json!({"field":field,"limit":limit,"sort":sort}))
-}
-
 fn facet_from_json(
     input: &JsonValue,
     context: &IndexContext,
@@ -1218,7 +1024,7 @@ fn analyze_json(value: &AnalyzeRequestIr) -> JsonValue {
     json!({"analyzer":analyzer_name(Some(value.analyzer())),"text":value.text(),"language":value.language().map(LanguageHint::as_str)})
 }
 fn search_json(value: &SearchRequestIr) -> JsonValue {
-    json!({"query":query_json(value.query()),"search_fields":search_fields_json(value.search_fields()),"filter":value.filter().map(filter_json),"sort":value.sort().iter().map(sort_json).collect::<Vec<_>>(),"facets":value.grouping().iter().filter_map(facet_json).collect::<Vec<_>>(),"ranking":ranking_name(value.ranking()),"limit":value.limit(),"offset":value.offset(),"projection":projection_json(value.projection()),"highlighting":highlighting_json(value.highlighting()),"language":value.language().map(LanguageHint::as_str),"prefix_policy":"disabled","typo_policy":"disabled"})
+    searchkernel_ir::snapshot::search_request(value)
 }
 
 struct WireBuilder {
@@ -1345,11 +1151,15 @@ impl WireBuilder {
                     );
                     self.finish(root)
                 } else {
+                    let condition = input
+                        .get("condition")
+                        .and_then(JsonValue::as_str)
+                        .map(|value| self.text(value));
                     let root = api::UpsertRequest::create(
                         &mut self.builder,
                         &api::UpsertRequestArgs {
                             document: Some(document),
-                            condition: None,
+                            condition,
                         },
                     );
                     self.finish(root)
@@ -1360,12 +1170,13 @@ impl WireBuilder {
                     .get("id")
                     .and_then(JsonValue::as_str)
                     .map(|v| self.text(v));
+                let condition = input
+                    .get("condition")
+                    .and_then(JsonValue::as_str)
+                    .map(|value| self.text(value));
                 let root = api::DeleteRequest::create(
                     &mut self.builder,
-                    &api::DeleteRequestArgs {
-                        id,
-                        condition: None,
-                    },
+                    &api::DeleteRequestArgs { id, condition },
                 );
                 self.finish(root)
             }
@@ -1426,11 +1237,15 @@ impl WireBuilder {
                     }
                     "upsert" => {
                         let document = self.document(request.get("document").unwrap_or(request))?;
+                        let condition = request
+                            .get("condition")
+                            .and_then(JsonValue::as_str)
+                            .map(|value| self.text(value));
                         let root = api::UpsertRequest::create(
                             &mut self.builder,
                             &api::UpsertRequestArgs {
                                 document: Some(document),
-                                condition: None,
+                                condition,
                             },
                         );
                         self.finish(root)
@@ -1440,12 +1255,13 @@ impl WireBuilder {
                             .get("id")
                             .and_then(JsonValue::as_str)
                             .map(|v| self.text(v));
+                        let condition = request
+                            .get("condition")
+                            .and_then(JsonValue::as_str)
+                            .map(|value| self.text(value));
                         let root = api::DeleteRequest::create(
                             &mut self.builder,
-                            &api::DeleteRequestArgs {
-                                id,
-                                condition: None,
-                            },
+                            &api::DeleteRequestArgs { id, condition },
                         );
                         self.finish(root)
                     }
@@ -1729,6 +1545,14 @@ impl WireBuilder {
             .get("analyzer")
             .map(|v| self.analyzer(Some(v)))
             .transpose()?;
+        let indexing_script = input
+            .get("indexing_script")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let properties = input
+            .get("properties")
+            .map(|value| self.entries(Some(value)))
+            .transpose()?;
         let name = input
             .get("name")
             .and_then(JsonValue::as_str)
@@ -1745,6 +1569,8 @@ impl WireBuilder {
                 facetable: facetable.as_ref(),
                 analyzer,
                 matching,
+                indexing_script,
+                properties,
                 ..Default::default()
             },
         ))
@@ -1844,16 +1670,106 @@ impl WireBuilder {
             .get("name")
             .and_then(JsonValue::as_str)
             .map(|v| self.text(v));
+        let properties = input
+            .get("properties")
+            .map(|value| self.entries(Some(value)))
+            .transpose()?;
+        let document_type = input
+            .get("document_type")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let schema_inherits = input
+            .get("schema_inherits")
+            .map(|value| self.string_vector(value))
+            .transpose()?;
+        let document_inherits = input
+            .get("document_inherits")
+            .map(|value| self.string_vector(value))
+            .transpose()?;
+        let schema_fields = input
+            .get("schema_fields")
+            .map(|value| self.schema_fields(value))
+            .transpose()?
+            .map(|value| self.builder.create_vector(&value));
+        let fieldsets = input
+            .get("fieldsets")
+            .map(|value| self.fieldsets(value))
+            .transpose()?
+            .map(|value| self.builder.create_vector(&value));
         Ok(api::IndexDefinition::create(
             &mut self.builder,
             &api::IndexDefinitionArgs {
                 name,
                 fields,
                 default_search_fields,
-                properties: None,
+                properties,
+                document_type,
+                schema_inherits,
+                document_inherits,
+                fieldsets,
+                schema_fields,
                 ..Default::default()
             },
         ))
+    }
+
+    fn schema_fields(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<Vec<flatbuffers::WIPOffset<api::SearchOnlyFieldDefinition<'static>>>, String>
+    {
+        let values = input.as_array().ok_or("schema_fields must be an array")?;
+        values
+            .iter()
+            .map(|value| {
+                let field = value.get("field").unwrap_or(value);
+                let field = self.field(field)?;
+                Ok(api::SearchOnlyFieldDefinition::create(
+                    &mut self.builder,
+                    &api::SearchOnlyFieldDefinitionArgs { field: Some(field) },
+                ))
+            })
+            .collect()
+    }
+
+    fn fieldsets(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<Vec<flatbuffers::WIPOffset<api::FieldSetDefinition<'static>>>, String> {
+        let values = input.as_array().ok_or("fieldsets must be an array")?;
+        values
+            .iter()
+            .map(|value| {
+                let value = value.as_object().ok_or("fieldset must be an object")?;
+                let name = value
+                    .get("name")
+                    .and_then(JsonValue::as_str)
+                    .ok_or("fieldset name is required")?;
+                let fields = value
+                    .get("fields")
+                    .map(|value| self.string_vector(value))
+                    .transpose()?;
+                let query_commands = value
+                    .get("query_commands")
+                    .map(|value| self.string_vector(value))
+                    .transpose()?;
+                let properties = value
+                    .get("properties")
+                    .map(|value| self.entries(Some(value)))
+                    .transpose()?;
+                let name = self.text(name);
+                Ok(api::FieldSetDefinition::create(
+                    &mut self.builder,
+                    &api::FieldSetDefinitionArgs {
+                        name: Some(name),
+                        fields,
+                        matching: None,
+                        query_commands,
+                        properties,
+                    },
+                ))
+            })
+            .collect()
     }
 
     fn comparison(
@@ -2106,17 +2022,513 @@ impl WireBuilder {
     ) -> StdResult<flatbuffers::WIPOffset<api::RankingRequest<'static>>, String> {
         let profile = if input.get("_union").and_then(JsonValue::as_str) == Some("NONE") {
             None
-        } else if input.get("bm25").is_some() {
-            Some("bm25")
         } else {
-            Some("default")
+            input
+                .get("profile")
+                .and_then(JsonValue::as_str)
+                .or_else(|| input.get("bm25").map(|_| "bm25"))
+                .or(Some("default"))
         };
         let profile = profile.map(|value| self.text(value));
+        let properties = input
+            .get("properties")
+            .map(|value| self.string_entries(value))
+            .transpose()?;
         Ok(api::RankingRequest::create(
             &mut self.builder,
             &api::RankingRequestArgs {
                 profile,
-                properties: None,
+                properties,
+            },
+        ))
+    }
+
+    fn string_entries(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<
+        flatbuffers::WIPOffset<
+            flatbuffers::Vector<'static, flatbuffers::ForwardsUOffset<api::StringEntry<'static>>>,
+        >,
+        String,
+    > {
+        let mut result = Vec::new();
+        if let Some(values) = input.as_object() {
+            for (key, value) in values {
+                let key = self.text(key);
+                let value = value.as_str().ok_or("string map values must be strings")?;
+                let value = self.text(value);
+                result.push(api::StringEntry::create(
+                    &mut self.builder,
+                    &api::StringEntryArgs {
+                        key: Some(key),
+                        value: Some(value),
+                    },
+                ));
+            }
+        }
+        Ok(self.builder.create_vector(&result))
+    }
+
+    fn query_inputs(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<Vec<flatbuffers::WIPOffset<api::QueryInput<'static>>>, String> {
+        let values = input.as_object().ok_or("inputs must be an object")?;
+        values
+            .iter()
+            .map(|(name, value)| {
+                let (input_type, input) =
+                    if let Some(expression) = value.get("expression").and_then(JsonValue::as_str) {
+                        let expression = self.text(expression);
+                        let expression = api::ExpressionQueryInput::create(
+                            &mut self.builder,
+                            &api::ExpressionQueryInputArgs {
+                                expression: Some(expression),
+                            },
+                        );
+                        (
+                            api::QueryInputKind::ExpressionQueryInput,
+                            expression.as_union_value(),
+                        )
+                    } else {
+                        let value = self.value(value)?;
+                        let literal = api::LiteralQueryInput::create(
+                            &mut self.builder,
+                            &api::LiteralQueryInputArgs { value: Some(value) },
+                        );
+                        (
+                            api::QueryInputKind::LiteralQueryInput,
+                            literal.as_union_value(),
+                        )
+                    };
+                let name = self.text(name);
+                Ok(api::QueryInput::create(
+                    &mut self.builder,
+                    &api::QueryInputArgs {
+                        name: Some(name),
+                        input_type,
+                        input: Some(input),
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    fn query_model(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::QueryModel<'static>>, String> {
+        let input = input.as_object().ok_or("query_model must be an object")?;
+        let get_text = |this: &mut Self, key: &str| {
+            input
+                .get(key)
+                .and_then(JsonValue::as_str)
+                .map(|value| this.text(value))
+        };
+        let query_type = if let Some(value) = input.get("type") {
+            let value = value
+                .as_object()
+                .ok_or("query_model.type must be an object")?;
+            let is_yql_default = value
+                .get("is_yql_default")
+                .and_then(JsonValue::as_bool)
+                .map(api::OptionalBool::new);
+            let composite = value
+                .get("composite")
+                .and_then(JsonValue::as_str)
+                .map(|v| self.text(v));
+            let tokenization = value
+                .get("tokenization")
+                .and_then(JsonValue::as_str)
+                .map(|v| self.text(v));
+            let syntax = value
+                .get("syntax")
+                .and_then(JsonValue::as_str)
+                .map(|v| self.text(v));
+            let profile = value
+                .get("profile")
+                .and_then(JsonValue::as_str)
+                .map(|v| self.text(v));
+            Some(api::QueryModelType::create(
+                &mut self.builder,
+                &api::QueryModelTypeArgs {
+                    composite,
+                    tokenization,
+                    syntax,
+                    profile,
+                    is_yql_default: is_yql_default.as_ref(),
+                },
+            ))
+        } else {
+            None
+        };
+        let sources = input
+            .get("sources")
+            .map(|value| self.string_vector(value))
+            .transpose()?;
+        let restrict = input
+            .get("restrict")
+            .map(|value| self.string_vector(value))
+            .transpose()?;
+        let search_group = input
+            .get("search_group")
+            .and_then(JsonValue::as_u64)
+            .map(|value| api::OptionalUInt32::new(value as u32));
+        let query_string = get_text(self, "query_string");
+        let default_index = get_text(self, "default_index");
+        let encoding = get_text(self, "encoding");
+        let filter = get_text(self, "filter");
+        let language = get_text(self, "language");
+        let locale = get_text(self, "locale");
+        let search_path = get_text(self, "search_path");
+        Ok(api::QueryModel::create(
+            &mut self.builder,
+            &api::QueryModelArgs {
+                query_string,
+                default_index,
+                encoding,
+                filter,
+                language,
+                locale,
+                type_: query_type,
+                sources,
+                restrict,
+                search_path,
+                search_group: search_group.as_ref(),
+            },
+        ))
+    }
+
+    fn string_vector(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<
+        flatbuffers::WIPOffset<
+            flatbuffers::Vector<'static, flatbuffers::ForwardsUOffset<&'static str>>,
+        >,
+        String,
+    > {
+        let values = input.as_array().ok_or("string vector must be an array")?;
+        let values = values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(|value| self.text(value))
+                    .ok_or("string vector values must be strings")
+            })
+            .collect::<StdResult<Vec<_>, _>>()?;
+        Ok(self.builder.create_vector(&values))
+    }
+
+    fn presentation(
+        &mut self,
+        input: &JsonValue,
+        fallback_projection: Option<flatbuffers::WIPOffset<api::FieldProjection<'static>>>,
+        fallback_highlighting: Option<flatbuffers::WIPOffset<api::HighlightRequest<'static>>>,
+    ) -> StdResult<flatbuffers::WIPOffset<api::PresentationRequest<'static>>, String> {
+        let input = input.as_object().ok_or("presentation must be an object")?;
+        let fields = input
+            .get("fields")
+            .map(|value| self.projection(value))
+            .transpose()?
+            .or(fallback_projection);
+        let highlighting = input
+            .get("highlighting")
+            .map(|value| self.highlighting(Some(value)))
+            .transpose()?
+            .or(fallback_highlighting);
+        let bolding = input
+            .get("bolding")
+            .and_then(JsonValue::as_bool)
+            .map(api::OptionalBool::new);
+        let timing = input
+            .get("timing")
+            .and_then(JsonValue::as_bool)
+            .map(api::OptionalBool::new);
+        let summary = input
+            .get("summary")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let format = input
+            .get("format")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        Ok(api::PresentationRequest::create(
+            &mut self.builder,
+            &api::PresentationRequestArgs {
+                summary,
+                fields,
+                highlighting,
+                format,
+                bolding: bolding.as_ref(),
+                timing: timing.as_ref(),
+            },
+        ))
+    }
+
+    fn grouping_requests(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<Vec<flatbuffers::WIPOffset<api::GroupingRequest<'static>>>, String> {
+        let values = input.as_array().ok_or("grouping must be an array")?;
+        values
+            .iter()
+            .map(|value| self.grouping_request(value))
+            .collect()
+    }
+
+    fn grouping_request(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::GroupingRequest<'static>>, String> {
+        let input = input
+            .as_object()
+            .ok_or("grouping request must be an object")?;
+        let operations = input
+            .get("operations")
+            .or_else(|| input.get("root").and_then(|root| root.get("operations")))
+            .ok_or("grouping request requires operations")?;
+        let root = self.grouping_all(operations, input.get("label"))?;
+        let source = api::StructuredGroupingSource::create(
+            &mut self.builder,
+            &api::StructuredGroupingSourceArgs { root: Some(root) },
+        );
+        let continuations = input
+            .get("continuations")
+            .map(|value| self.string_vector(value))
+            .transpose()?;
+        Ok(api::GroupingRequest::create(
+            &mut self.builder,
+            &api::GroupingRequestArgs {
+                source_type: api::GroupingSourceKind::StructuredGroupingSource,
+                source: Some(source.as_union_value()),
+                continuations,
+            },
+        ))
+    }
+
+    fn grouping_all(
+        &mut self,
+        input: &JsonValue,
+        label: Option<&JsonValue>,
+    ) -> StdResult<flatbuffers::WIPOffset<api::GroupingAllOperation<'static>>, String> {
+        let values = input
+            .as_array()
+            .ok_or("grouping operations must be an array")?;
+        let operations = values
+            .iter()
+            .map(|value| self.grouping_operation(value))
+            .collect::<StdResult<Vec<_>, _>>()?;
+        let operations = self.builder.create_vector(&operations);
+        let label = label
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        Ok(api::GroupingAllOperation::create(
+            &mut self.builder,
+            &api::GroupingAllOperationArgs {
+                operations: Some(operations),
+                label,
+            },
+        ))
+    }
+
+    fn grouping_operation(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::GroupingOperation<'static>>, String> {
+        let input = input
+            .as_object()
+            .ok_or("grouping operation must be an object")?;
+        let (operation_type, operation) = if let Some(value) = input.get("all") {
+            (
+                api::GroupingOperationKind::GroupingAllOperation,
+                self.grouping_all(value.get("operations").unwrap_or(value), value.get("label"))?
+                    .as_union_value(),
+            )
+        } else if let Some(value) = input.get("each") {
+            let value = value.as_object().ok_or("grouping each must be an object")?;
+            let operations = self.grouping_operations_vector(
+                value
+                    .get("operations")
+                    .ok_or("grouping each requires operations")?,
+            )?;
+            let label = value
+                .get("label")
+                .and_then(JsonValue::as_str)
+                .map(|v| self.text(v));
+            (
+                api::GroupingOperationKind::GroupingEachOperation,
+                api::GroupingEachOperation::create(
+                    &mut self.builder,
+                    &api::GroupingEachOperationArgs {
+                        operations: Some(operations),
+                        label,
+                    },
+                )
+                .as_union_value(),
+            )
+        } else if let Some(value) = input.get("group") {
+            let expression = self.grouping_expression(value)?;
+            (
+                api::GroupingOperationKind::GroupingGroupOperation,
+                api::GroupingGroupOperation::create(
+                    &mut self.builder,
+                    &api::GroupingGroupOperationArgs {
+                        expression: Some(expression),
+                    },
+                )
+                .as_union_value(),
+            )
+        } else if let Some(value) = input.get("max") {
+            let value = value.as_u64().ok_or("grouping max must be an integer")? as u32;
+            let max = api::FiniteGroupingMax::create(
+                &mut self.builder,
+                &api::FiniteGroupingMaxArgs { value },
+            );
+            (
+                api::GroupingOperationKind::GroupingMaxOperation,
+                api::GroupingMaxOperation::create(
+                    &mut self.builder,
+                    &api::GroupingMaxOperationArgs {
+                        value_type: api::GroupingMaxKind::FiniteGroupingMax,
+                        value: Some(max.as_union_value()),
+                    },
+                )
+                .as_union_value(),
+            )
+        } else if let Some(value) = input.get("output") {
+            let values = value.as_array().ok_or("grouping output must be an array")?;
+            let outputs = values
+                .iter()
+                .map(|value| self.grouping_output(value))
+                .collect::<StdResult<Vec<_>, _>>()?;
+            let outputs = self.builder.create_vector(&outputs);
+            (
+                api::GroupingOperationKind::GroupingOutputOperation,
+                api::GroupingOutputOperation::create(
+                    &mut self.builder,
+                    &api::GroupingOutputOperationArgs {
+                        outputs: Some(outputs),
+                    },
+                )
+                .as_union_value(),
+            )
+        } else {
+            return Err("unsupported grouping operation builder shape".to_owned());
+        };
+        Ok(api::GroupingOperation::create(
+            &mut self.builder,
+            &api::GroupingOperationArgs {
+                operation_type,
+                operation: Some(operation),
+            },
+        ))
+    }
+
+    fn grouping_operations_vector(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<
+        flatbuffers::WIPOffset<
+            flatbuffers::Vector<
+                'static,
+                flatbuffers::ForwardsUOffset<api::GroupingOperation<'static>>,
+            >,
+        >,
+        String,
+    > {
+        let values = input
+            .as_array()
+            .ok_or("grouping operations must be an array")?;
+        let values = values
+            .iter()
+            .map(|value| self.grouping_operation(value))
+            .collect::<StdResult<Vec<_>, _>>()?;
+        Ok(self.builder.create_vector(&values))
+    }
+
+    fn grouping_output(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::GroupingOutput<'static>>, String> {
+        let input = input
+            .as_object()
+            .ok_or("grouping output must be an object")?;
+        let expression = input
+            .get("expression")
+            .or_else(|| input.get("aggregation"))
+            .ok_or("grouping output requires expression")?;
+        let expression = self.grouping_expression(expression)?;
+        let label = input
+            .get("label")
+            .and_then(JsonValue::as_str)
+            .map(|v| self.text(v));
+        Ok(api::GroupingOutput::create(
+            &mut self.builder,
+            &api::GroupingOutputArgs {
+                label,
+                expression: Some(expression),
+            },
+        ))
+    }
+
+    fn grouping_expression(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::GroupingExpression<'static>>, String> {
+        let input = input
+            .as_object()
+            .ok_or("grouping expression must be an object")?;
+        let (expr_type, expr) = if let Some(value) = input.get("attribute") {
+            let field = value
+                .as_str()
+                .ok_or("grouping attribute must be a string")?;
+            let field = self.text(field);
+            let value = api::GroupingAttributeExpression::create(
+                &mut self.builder,
+                &api::GroupingAttributeExpressionArgs { field: Some(field) },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAttributeExpression,
+                value.as_union_value(),
+            )
+        } else if input.get("aggregation").and_then(JsonValue::as_str) == Some("count") {
+            let count =
+                api::CountAggregation::create(&mut self.builder, &api::CountAggregationArgs {});
+            let aggregation = api::GroupingAggregationExpression::create(
+                &mut self.builder,
+                &api::GroupingAggregationExpressionArgs {
+                    aggregation_type: api::AggregationKind::CountAggregation,
+                    aggregation: Some(count.as_union_value()),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingAggregationExpression,
+                aggregation.as_union_value(),
+            )
+        } else if let Some(value) = input.get("negative") {
+            let expression = self.grouping_expression(value)?;
+            let value = api::GroupingUnaryExpression::create(
+                &mut self.builder,
+                &api::GroupingUnaryExpressionArgs {
+                    op: api::GroupingUnaryOperator::Negative,
+                    expression: Some(expression),
+                },
+            );
+            (
+                api::GroupingExpressionKind::GroupingUnaryExpression,
+                value.as_union_value(),
+            )
+        } else {
+            return Err("unsupported grouping expression builder shape".to_owned());
+        };
+        Ok(api::GroupingExpression::create(
+            &mut self.builder,
+            &api::GroupingExpressionArgs {
+                expr_type,
+                expr: Some(expr),
             },
         ))
     }
@@ -2360,6 +2772,11 @@ impl WireBuilder {
             .transpose()?
             .map(|v| self.builder.create_vector(&v));
         let ranking = input.get("ranking").map(|v| self.ranking(v)).transpose()?;
+        let inputs = input
+            .get("inputs")
+            .map(|v| self.query_inputs(v))
+            .transpose()?
+            .map(|v| self.builder.create_vector(&v));
         let limit = input
             .get("limit")
             .and_then(JsonValue::as_u64)
@@ -2384,16 +2801,24 @@ impl WireBuilder {
             .get("language")
             .and_then(JsonValue::as_str)
             .map(|v| self.text(v));
-        let query_model = language.map(|language| {
-            api::QueryModel::create(
-                &mut self.builder,
-                &api::QueryModelArgs {
-                    language: Some(language),
-                    ..Default::default()
-                },
-            )
+        let query_model = input
+            .get("query_model")
+            .map(|value| self.query_model(value))
+            .transpose()?;
+        let query_model = query_model.or_else(|| {
+            language.map(|language| {
+                api::QueryModel::create(
+                    &mut self.builder,
+                    &api::QueryModelArgs {
+                        language: Some(language),
+                        ..Default::default()
+                    },
+                )
+            })
         });
-        let presentation = if projection.is_some() || highlighting.is_some() {
+        let presentation = if let Some(value) = input.get("presentation") {
+            Some(self.presentation(value, projection, highlighting)?)
+        } else if projection.is_some() || highlighting.is_some() {
             Some(api::PresentationRequest::create(
                 &mut self.builder,
                 &api::PresentationRequestArgs {
@@ -2405,6 +2830,23 @@ impl WireBuilder {
         } else {
             None
         };
+        let properties = input
+            .get("properties")
+            .map(|value| self.entries(Some(value)))
+            .transpose()?;
+        let grouping = input
+            .get("grouping")
+            .map(|value| self.grouping_requests(value))
+            .transpose()?
+            .map(|value| self.builder.create_vector(&value));
+        let query_profile = input
+            .get("query_profile")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let search_chain = input
+            .get("search_chain")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
         Ok(api::SearchRequest::create(
             &mut self.builder,
             &api::SearchRequestArgs {
@@ -2412,17 +2854,17 @@ impl WireBuilder {
                 search_fields,
                 filters,
                 sort: sorts,
-                grouping: None,
+                grouping,
                 ranking,
-                inputs: None,
+                inputs,
                 limit: limit.as_ref(),
                 offset: offset.as_ref(),
                 timeout_ms: timeout.as_ref(),
                 query_model,
                 presentation,
-                properties: None,
-                query_profile: None,
-                search_chain: None,
+                properties,
+                query_profile,
+                search_chain,
             },
         ))
     }

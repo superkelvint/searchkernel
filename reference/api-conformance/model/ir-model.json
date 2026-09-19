@@ -2,7 +2,7 @@
   "principles": [
     "FlatBuffers generated types terminate at *_to_ir.",
     "IR is owned Rust and contains no wire lifetimes/unions.",
-    "Goldens encode product meaning, not FlatBuffers bytes.",
+    "Goldens are deterministic internal snapshots of owned IR, not FlatBuffers bytes or public JSON.",
     "Human-readable error messages are not golden-stable.",
     "V2 schema IR preserves document/feed fields separately from query-visible schema-only fields."
   ],
@@ -56,6 +56,61 @@
       "rank_profiles",
       "constants",
       "onnx_models"
+    ],
+    "RankingRequestIr": [
+      "profile",
+      "properties"
+    ],
+    "QueryInputIr": [
+      "literal",
+      "expression"
+    ],
+    "QueryModelIr": [
+      "query_string",
+      "default_index",
+      "encoding",
+      "filter",
+      "language",
+      "locale",
+      "query_type",
+      "sources",
+      "restrict",
+      "search_path",
+      "search_group"
+    ],
+    "QueryModelTypeIr": [
+      "composite",
+      "tokenization",
+      "syntax",
+      "profile",
+      "is_yql_default"
+    ],
+    "PresentationIr": [
+      "summary",
+      "format",
+      "bolding",
+      "timing"
+    ],
+    "GroupingRequestIr": [
+      "root",
+      "continuations"
+    ],
+    "GroupingAllIr": [
+      "operations",
+      "label"
+    ],
+    "GroupingOperationIr": [
+      "all",
+      "each",
+      "group",
+      "output",
+      "max",
+      "precision",
+      "order",
+      "alias",
+      "filter",
+      "keep",
+      "where"
     ],
     "MatchingConfigIr": [
       "mode",
@@ -146,13 +201,20 @@
       "search_fields",
       "filter",
       "sort",
-      "facets",
-      "ranking",
+      "grouping",
+      "ranking_request",
+      "inputs",
       "limit",
       "offset",
       "projection",
       "highlighting",
       "language",
+      "query_model",
+      "presentation",
+      "properties",
+      "query_profile",
+      "search_chain",
+      "timeout",
       "prefix_policy",
       "typo_policy"
     ]

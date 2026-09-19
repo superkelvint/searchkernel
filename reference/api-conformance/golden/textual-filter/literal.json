@@ -1,9 +1,10 @@
 {
   "ok": {
-    "comparison": {
-      "field": "price",
-      "op": "lte",
-      "value": {"float64": 120.0}
+    "field": "price",
+    "kind": "comparison",
+    "op": "lte",
+    "value": {
+      "float64": 120.0
     }
   }
 }
