@@ -8,7 +8,9 @@ mod backend;
 mod schema;
 mod search;
 
-use searchkernel_ir::{DocumentIr, FieldValueIr, PortableError, Result, ScalarValueIr, Value};
+use searchkernel_ir::{
+    DocumentIr, FieldValueIr, PortableError, RequestTensorPayloadIr, Result, ScalarValueIr, Value,
+};
 use searchkernel_vespa_engine::{Document, FieldValue, ScalarValue};
 use std::collections::BTreeMap;
 
@@ -67,6 +69,31 @@ fn project_document(
 fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
     match value {
         FieldValueIr::Single(value) => Ok(FieldValue::Scalar(lower_scalar(value)?)),
+        FieldValueIr::Tensor(tensor) => match &tensor.payload {
+            RequestTensorPayloadIr::Dense(values)
+                if !tensor.type_spec.trim().is_empty()
+                    && values.iter().all(|value| value.is_finite()) =>
+            {
+                Ok(FieldValue::Tensor(
+                    searchkernel_vespa_engine::TensorValue::dense(
+                        tensor.type_spec.clone(),
+                        values.clone(),
+                    ),
+                ))
+            }
+            RequestTensorPayloadIr::Dense(_) => Err(PortableError::invalid(
+                "invalid_tensor_value",
+                Some("document.value".to_owned()),
+                "dense tensor document values require a non-empty type spec and finite values",
+            )),
+            RequestTensorPayloadIr::Sparse(_) | RequestTensorPayloadIr::Mixed(_) => {
+                Err(PortableError::unsupported(
+                    "tensor_value_not_supported",
+                    Some("document.value".to_owned()),
+                    "sparse and mixed tensor document values are not supported by the current native document interface",
+                ))
+            }
+        },
         FieldValueIr::Multi(values) => {
             let mut values = values.iter();
             let Some(first) = values.next() else {

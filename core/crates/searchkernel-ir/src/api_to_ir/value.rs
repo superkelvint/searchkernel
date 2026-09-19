@@ -46,6 +46,23 @@ impl IndexContext {
         value: api::Value<'_>,
         path: String,
     ) -> Result<FieldValueIr> {
+        if matches!(field.data_type(), DataTypeIr::Tensor { .. }) {
+            if value.kind_type() != api::ValueKind::TensorValue {
+                return Err(invalid(
+                    "type_mismatch",
+                    Some(path),
+                    "tensor fields require tensor values",
+                ));
+            }
+            let tensor = value.kind_as_tensor_value().ok_or_else(|| {
+                invalid(
+                    "missing_value",
+                    Some(path.clone()),
+                    "tensor value payload is missing",
+                )
+            })?;
+            return request_tensor_to_ir(tensor, path).map(FieldValueIr::Tensor);
+        }
         if value.kind_type() == api::ValueKind::NONE {
             return Err(invalid(
                 "missing_value",

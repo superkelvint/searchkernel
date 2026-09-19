@@ -3703,7 +3703,7 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
     }
     switch (kind) {
     case SK_QUERY_FIELD_TEXT:
-        if (metadata->type != "text" || !metadata->index) {
+        if ((metadata->type != "text" && metadata->type != "array<string>") || !metadata->index) {
             throw std::invalid_argument(
                 "text operation requires an indexed text field: " + std::string(field));
         }
@@ -6291,8 +6291,9 @@ uint32_t parse_geo_radius_microdegrees(const char *radius) {
         multiplier = 1.0 / 111195.0802335329;
         number = std::string_view(value).substr(0, value.size() - 1);
     }
+    std::string number_text(number);
     char *end = nullptr;
-    const double amount = std::strtod(std::string(number).c_str(), &end);
+    const double amount = std::strtod(number_text.c_str(), &end);
     if (!std::isfinite(amount) || amount <= 0.0 || !end || *end != '\0') {
         throw std::invalid_argument("geo radius must be a positive number with optional m or km suffix");
     }
@@ -6328,7 +6329,8 @@ extern "C" int32_t sk_query_add_geo_location(
                                                   geo_microdegrees(latitude, "latitude")};
         const auto radius_microdegrees = parse_geo_radius_microdegrees(radius);
         const auto aspect = static_cast<uint32_t>(std::llround(
-            std::max(0.0, std::cos(latitude * M_PI / 180.0)) * 1'000'000.0));
+            std::min(1.0, std::max(0.0, std::cos(latitude * M_PI / 180.0))) *
+            4'294'967'295.0));
         query->builder.addLocationTerm(
             search::query::Location(point, radius_microdegrees, aspect), field,
             query->allocate_term_id(), Weight(100));

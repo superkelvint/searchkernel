@@ -62,6 +62,7 @@ fn field_value(value: &FieldValueIr) -> Value {
     match value {
         FieldValueIr::Single(value) => scalar_value(value),
         FieldValueIr::Multi(values) => Value::List(values.iter().map(scalar_value).collect()),
+        FieldValueIr::Tensor(value) => Value::Tensor(value.clone()),
     }
 }
 

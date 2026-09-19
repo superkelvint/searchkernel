@@ -525,6 +525,7 @@ pub enum ScalarValueIr {
 pub enum FieldValueIr {
     Single(ScalarValueIr),
     Multi(Vec<ScalarValueIr>),
+    Tensor(RequestTensorIr),
 }
 
 #[derive(Clone, Debug, PartialEq)]

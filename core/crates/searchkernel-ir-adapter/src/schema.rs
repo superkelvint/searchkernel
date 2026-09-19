@@ -38,12 +38,17 @@ pub fn compile_index_definition(
                 ),
             ));
         }
-        let kind = match field.kind() {
-            searchkernel_ir::FieldKind::Text => FieldType::Text,
-            searchkernel_ir::FieldKind::Keyword => FieldType::String,
-            searchkernel_ir::FieldKind::Int64 => FieldType::Integer,
-            searchkernel_ir::FieldKind::Float64 => FieldType::Float,
-            searchkernel_ir::FieldKind::Bool => FieldType::Boolean,
+        let kind = match field.data_type() {
+            searchkernel_ir::DataTypeIr::Tensor { type_spec } => {
+                FieldType::Tensor(type_spec.clone())
+            }
+            _ => match field.kind() {
+                searchkernel_ir::FieldKind::Text => FieldType::Text,
+                searchkernel_ir::FieldKind::Keyword => FieldType::String,
+                searchkernel_ir::FieldKind::Int64 => FieldType::Integer,
+                searchkernel_ir::FieldKind::Float64 => FieldType::Float,
+                searchkernel_ir::FieldKind::Bool => FieldType::Boolean,
+            },
         };
         let capabilities = field.capabilities();
         let mut native = Field::new(field.name().as_str(), kind);
@@ -273,7 +278,8 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 | searchkernel_ir::PrimitiveDataTypeIr::Bool
                 | searchkernel_ir::PrimitiveDataTypeIr::Int64
                 | searchkernel_ir::PrimitiveDataTypeIr::Float64,
-            ) => {}
+            )
+            | searchkernel_ir::DataTypeIr::Tensor { .. } => {}
             _ => {
                 return Err(PortableError::unsupported(
                     "data_type_not_supported",

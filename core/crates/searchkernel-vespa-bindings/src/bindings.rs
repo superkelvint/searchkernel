@@ -28,6 +28,9 @@ pub const SK_QUERY_FIELD_FLOAT: u32 = 4;
 pub const SK_QUERY_FIELD_BOOLEAN: u32 = 5;
 pub const SK_QUERY_FIELD_ATTRIBUTE: u32 = 6;
 pub const SK_QUERY_FIELD_TENSOR: u32 = 7;
+pub const SK_QUERY_FIELD_ARRAY_STRING: u32 = 8;
+pub const SK_QUERY_FIELD_POSITION: u32 = 9;
+pub const SK_QUERY_FIELD_PREDICATE: u32 = 10;
 pub const SK_VALUE_STRING: u32 = 1;
 pub const SK_VALUE_INTEGER: u32 = 2;
 pub const SK_VALUE_FLOAT: u32 = 3;
@@ -770,6 +773,57 @@ unsafe extern "C" {
         query_tensor: *const ::std::os::raw::c_char,
         target_num_hits: u32,
         allow_approximate: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_same_element(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        child_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_geo_location(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        latitude: f64,
+        longitude: f64,
+        radius: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_geo_bounding_box(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        south: f64,
+        west: f64,
+        north: f64,
+        east: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_predicate(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        feature_key_bytes: *const u8,
+        feature_key_lengths: *const u32,
+        feature_value_bytes: *const u8,
+        feature_value_lengths: *const u32,
+        feature_masks: *const u64,
+        feature_count: u32,
+        range_key_bytes: *const u8,
+        range_key_lengths: *const u32,
+        range_values: *const u64,
+        range_masks: *const u64,
+        range_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

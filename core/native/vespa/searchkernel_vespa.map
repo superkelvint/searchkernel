@@ -54,6 +54,10 @@ SEARCHKERNEL_2 {
         sk_query_add_equals;
         sk_query_add_range;
         sk_query_add_nearest_neighbor;
+        sk_query_add_same_element;
+        sk_query_add_geo_location;
+        sk_query_add_geo_bounding_box;
+        sk_query_add_predicate;
         sk_query_destroy;
         sk_engine_search_query;
         sk_document_create_empty;

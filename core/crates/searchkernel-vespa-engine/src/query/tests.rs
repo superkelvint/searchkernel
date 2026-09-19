@@ -223,6 +223,35 @@ fn typed_boolean_and_ranges_are_validated() {
 }
 
 #[test]
+fn specialized_query_nodes_validate_their_required_shape() {
+    assert!(validate_query(&Query::SameElement {
+        field: "tags".into(),
+        children: vec![Query::term("tags", "one")],
+    })
+    .is_err());
+    assert!(validate_query(&Query::GeoLocation {
+        field: "location".into(),
+        latitude: f64::NAN,
+        longitude: 0.0,
+        radius: "1km".into(),
+    })
+    .is_err());
+    assert!(validate_query(&Query::Predicate {
+        field: "access".into(),
+        features: Vec::new(),
+        range_features: Vec::new(),
+    })
+    .is_err());
+    assert!(validate_query(&Query::NearestNeighbor {
+        document_field: "embedding".into(),
+        query_tensor: "query_embedding".into(),
+        target_num_hits: 100,
+        approximate: true,
+    })
+    .is_ok());
+}
+
+#[test]
 fn parser_accepts_named_source_without_changing_query() {
     let parsed = Query::from_yql("select * from typea where title contains \"fox\"").unwrap();
     assert_eq!(

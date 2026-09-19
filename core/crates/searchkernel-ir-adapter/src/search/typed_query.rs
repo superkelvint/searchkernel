@@ -537,6 +537,13 @@ fn lower_typed_query(
                 range_features,
                 &format!("{path}.predicate.range_features"),
             )?;
+            if features.is_empty() && range_features.is_empty() {
+                return Err(PortableError::invalid(
+                    "empty_typed_query",
+                    Some(path),
+                    "predicate query requires at least one feature",
+                ));
+            }
             Ok(Query::Predicate {
                 field: field.to_owned(),
                 features,
@@ -855,6 +862,13 @@ fn lower_predicate_range_value(
 ) -> Result<()> {
     match value {
         RequestValueIr::UInt64(value) => {
+            if key.is_empty() {
+                return Err(PortableError::invalid(
+                    "invalid_predicate_value",
+                    Some(format!("{path}.{key}")),
+                    "predicate range feature keys must not be empty",
+                ));
+            }
             output.push(PredicateRangeFeature {
                 key: key.to_owned(),
                 value: *value,
@@ -863,6 +877,13 @@ fn lower_predicate_range_value(
             Ok(())
         }
         RequestValueIr::Int64(value) if *value >= 0 => {
+            if key.is_empty() {
+                return Err(PortableError::invalid(
+                    "invalid_predicate_value",
+                    Some(format!("{path}.{key}")),
+                    "predicate range feature keys must not be empty",
+                ));
+            }
             output.push(PredicateRangeFeature {
                 key: key.to_owned(),
                 value: *value as u64,

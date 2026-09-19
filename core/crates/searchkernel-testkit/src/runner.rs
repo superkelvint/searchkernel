@@ -821,6 +821,24 @@ fn field_value_json(value: &FieldValueIr) -> JsonValue {
     match value {
         FieldValueIr::Single(v) => json!({"single":scalar_json(v)}),
         FieldValueIr::Multi(v) => json!({"multi":v.iter().map(scalar_json).collect::<Vec<_>>()}),
+        FieldValueIr::Tensor(value) => {
+            let payload = match &value.payload {
+                searchkernel_ir::RequestTensorPayloadIr::Dense(values) => json!({"dense": values}),
+                searchkernel_ir::RequestTensorPayloadIr::Sparse(values) => json!({
+                    "sparse": values.iter().map(|cell| json!({
+                        "address": cell.address,
+                        "value": cell.value,
+                    })).collect::<Vec<_>>()
+                }),
+                searchkernel_ir::RequestTensorPayloadIr::Mixed(values) => json!({
+                    "mixed": values.iter().map(|block| json!({
+                        "address": block.address,
+                        "values": block.values,
+                    })).collect::<Vec<_>>()
+                }),
+            };
+            json!({"tensor":{"type_spec":value.type_spec,"payload":payload}})
+        }
     }
 }
 fn search_fields_json(values: &[SearchFieldIr]) -> JsonValue {
@@ -1023,20 +1041,20 @@ fn query_expr_json(value: &QueryExprIr) -> JsonValue {
         QueryExprKindIr::Range { field, lower, upper, include_lower, include_upper } => ("range", json!({"field":query_field_ref_json(field),"lower":query_range_bound_json(lower),"upper":query_range_bound_json(upper),"include_lower":include_lower,"include_upper":include_upper})),
         QueryExprKindIr::In { field, values } => ("in", json!({"field":query_field_ref_json(field),"values":values.iter().map(request_value_json).collect::<Vec<_>>() })),
         QueryExprKindIr::Phrase(values) => ("phrase", query_children_json(values)),
-        QueryExprKindIr::Near(values) => ("near", query_children_json(values)),
-        QueryExprKindIr::ONear(values) => ("onear", query_children_json(values)),
+        QueryExprKindIr::Near { children, distance } => ("near", json!({"children":query_children_json(children),"distance":distance})),
+        QueryExprKindIr::ONear { children, distance } => ("onear", json!({"children":query_children_json(children),"distance":distance})),
         QueryExprKindIr::SameElement(values) => ("same_element", query_children_json(values)),
         QueryExprKindIr::Equiv(values) => ("equiv", query_children_json(values)),
         QueryExprKindIr::Alternatives(values) => ("alternatives", json!(values.iter().map(|value| json!({"query":query_expr_json(&value.query),"exactness":value.exactness})).collect::<Vec<_>>())),
-        QueryExprKindIr::Fuzzy { value } => ("fuzzy", json!({"value":request_value_json(value)})),
+        QueryExprKindIr::Fuzzy { value, max_edit_distance, prefix_length, prefix } => ("fuzzy", json!({"value":request_value_json(value),"max_edit_distance":max_edit_distance,"prefix_length":prefix_length,"prefix":prefix})),
         QueryExprKindIr::Matches { field, pattern } => ("matches", json!({"field":query_field_ref_json(field),"pattern":pattern})),
         QueryExprKindIr::Text { text } => ("text", json!({"text":text})),
-        QueryExprKindIr::UserInput { value } => ("user_input", json!({"value":value})),
-        QueryExprKindIr::UserQuery => ("user_query", json!({})),
+        QueryExprKindIr::UserInput { value, default_index, target_hits } => ("user_input", json!({"value":value,"default_index":default_index,"target_hits":target_hits})),
+        QueryExprKindIr::UserQuery { default_index, target_hits } => ("user_query", json!({"default_index":default_index,"target_hits":target_hits})),
         QueryExprKindIr::DotProduct { field, items } => ("dot_product", weighted_items_json(field, items)),
         QueryExprKindIr::WeightedSet { field, items } => ("weighted_set", weighted_items_json(field, items)),
         QueryExprKindIr::Wand { field, items } => ("wand", weighted_items_json(field, items)),
-        QueryExprKindIr::WeakAnd(values) => ("weak_and", query_children_json(values)),
+        QueryExprKindIr::WeakAnd { children, target_hits } => ("weak_and", json!({"children":query_children_json(children),"target_hits":target_hits})),
         QueryExprKindIr::Rank { matching, ranking } => ("rank", json!({"matching":query_expr_json(matching),"ranking":query_children_json(ranking)})),
         QueryExprKindIr::Labeled { query, label, score } => ("labeled", json!({"query":query_expr_json(query),"label":label,"score":score})),
         QueryExprKindIr::NonEmpty(query) => ("non_empty", query_expr_json(query)),

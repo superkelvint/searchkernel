@@ -1982,6 +1982,103 @@ fn ranking_inputs_lower_to_the_existing_native_request_surface() {
 }
 
 #[test]
+fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-typed-query-c-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("typed_query_c")
+        .field(
+            Field::new(
+                "embedding",
+                FieldType::Tensor("tensor<float>(x[2])".to_owned()),
+            )
+            .attribute(),
+        )
+        .rank_profile(
+            searchkernel_vespa_engine::RankProfile::new("semantic")
+                .query_input("query_embedding", "tensor<float>(x[2])")
+                .first_phase("closeness(embedding)"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile nearest-neighbor schema");
+    let backend = VespaBackend::open(&data, &config).expect("open nearest-neighbor backend");
+
+    for (id, values) in [("doc:near", vec![1.0, 0.0]), ("doc:far", vec![0.0, 1.0])] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([(
+                    field("embedding"),
+                    FieldValueIr::Tensor(RequestTensorIr {
+                        type_spec: "tensor<float>(x[2])".to_owned(),
+                        payload: RequestTensorPayloadIr::Dense(values),
+                    }),
+                )]),
+            )))
+            .expect("insert tensor document");
+    }
+
+    let request = SearchRequestIr::new(
+        typed_expression(QueryExprKindIr::NearestNeighbor {
+            document_field: typed_field("embedding"),
+            query_tensor: "query_embedding".to_owned(),
+        }),
+        Vec::new(),
+        None,
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        2,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_ranking_request("semantic", std::collections::BTreeMap::new())
+    .with_inputs(std::collections::BTreeMap::from([(
+        "query_embedding".to_owned(),
+        QueryInputIr::Literal(RequestValueIr::Tensor(RequestTensorIr {
+            type_spec: "tensor<float>(x[2])".to_owned(),
+            payload: RequestTensorPayloadIr::Dense(vec![0.9, 0.1]),
+        })),
+    )]));
+    let result = backend
+        .search(request)
+        .expect("execute nearest-neighbor query");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    let ids = group
+        .children
+        .iter()
+        .map(|child| match child {
+            ResultNode::Hit(hit) => hit.id.as_str(),
+            ResultNode::Group(_) => panic!("unexpected nested group"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["doc:near", "doc:far"]);
+    assert!(matches!(
+        group.children.as_slice(),
+        [ResultNode::Hit(first), ResultNode::Hit(second)] if first.score > second.score
+    ));
+
+    backend
+        .engine
+        .close()
+        .expect("close nearest-neighbor backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn nearest_neighbor_lowers_dense_tensor_input_to_native_request_input() {
     let request = request(Vec::new(), Vec::new(), None)
         .with_query(typed_expression(QueryExprKindIr::NearestNeighbor {
@@ -1994,7 +2091,7 @@ fn nearest_neighbor_lowers_dense_tensor_input_to_native_request_input() {
                 type_spec: "tensor<float>(x[2])".to_owned(),
                 payload: RequestTensorPayloadIr::Dense(vec![0.1, 0.2]),
             })),
-        ])));
+        )]));
     validate_search_request(&request).expect("dense nearest-neighbor input validates");
     let query = lower_search_query(&request, analysis_options(request.language()).unwrap())
         .expect("nearest-neighbor query lowers");
@@ -2015,6 +2112,38 @@ fn nearest_neighbor_lowers_dense_tensor_input_to_native_request_input() {
                 }
             )
         )]
+    );
+}
+
+#[test]
+fn specialized_query_inputs_reject_unsupported_shapes_explicitly() {
+    let nearest = typed_expression(QueryExprKindIr::NearestNeighbor {
+        document_field: typed_field("embedding"),
+        query_tensor: "query_embedding".to_owned(),
+    });
+    let missing = request(Vec::new(), Vec::new(), None).with_query(nearest.clone());
+    let error = validate_search_request(&missing).unwrap_err();
+    assert_eq!(error.details[0].code, "missing_query_input");
+
+    let scalar = missing.with_inputs(std::collections::BTreeMap::from([(
+        "query_embedding".to_owned(),
+        QueryInputIr::Literal(RequestValueIr::Float64(1.0)),
+    )]));
+    let error = validate_search_request(&scalar).unwrap_err();
+    assert_eq!(error.details[0].code, "nearest_neighbor_tensor_required");
+
+    let predicate = typed_expression(QueryExprKindIr::Predicate {
+        field: typed_field("access"),
+        features: std::collections::BTreeMap::from([(
+            "hobby".to_owned(),
+            RequestValueIr::Float64(1.0),
+        )]),
+        range_features: std::collections::BTreeMap::new(),
+    });
+    let error = lower_query(&predicate, &[]).unwrap_err();
+    assert_eq!(
+        error.details[0].code,
+        "predicate_feature_value_not_supported"
     );
 }
 

@@ -51,6 +51,9 @@ extern "C" {
 #define SK_QUERY_FIELD_BOOLEAN 5U
 #define SK_QUERY_FIELD_ATTRIBUTE 6U
 #define SK_QUERY_FIELD_TENSOR 7U
+#define SK_QUERY_FIELD_ARRAY_STRING 8U
+#define SK_QUERY_FIELD_POSITION 9U
+#define SK_QUERY_FIELD_PREDICATE 10U
 
 #define SK_VALUE_STRING 1U
 #define SK_VALUE_INTEGER 2U
@@ -414,6 +417,26 @@ SK_API int32_t sk_query_add_nearest_neighbor(
     sk_query *query, const char *document_field, const char *query_tensor,
     uint32_t target_num_hits, uint8_t allow_approximate,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_same_element(
+    sk_query *query, const char *field, uint32_t child_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_geo_location(
+    sk_query *query, const char *field, double latitude, double longitude,
+    const char *radius, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_geo_bounding_box(
+    sk_query *query, const char *field, double south, double west,
+    double north, double east, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_predicate(
+    sk_query *query, const char *field,
+    const uint8_t *feature_key_bytes, const uint32_t *feature_key_lengths,
+    const uint8_t *feature_value_bytes, const uint32_t *feature_value_lengths,
+    const uint64_t *feature_masks, uint32_t feature_count,
+    const uint8_t *range_key_bytes, const uint32_t *range_key_lengths,
+    const uint64_t *range_values, const uint64_t *range_masks,
+    uint32_t range_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_query_destroy(sk_query *query) SK_NOEXCEPT;
 SK_API int32_t sk_engine_search_query(const sk_engine *engine,
                                       const sk_query *query,

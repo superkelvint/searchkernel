@@ -312,11 +312,9 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
     match query {
         Query::True => Ok(()),
         Query::Term { field, .. } | Query::Phrase { field, .. } => {
-            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+            validate_native_text_field(native, field)
         }
-        Query::Alternatives { field, .. } => {
-            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
-        }
+        Query::Alternatives { field, .. } => validate_native_text_field(native, field),
         Query::Matches { field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
                 .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field))
@@ -334,7 +332,7 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
         | Query::ONear {
             field, children, ..
         } => {
-            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)?;
+            validate_native_text_field(native, field)?;
             for child in children {
                 validate_query_fields(native, child)?;
             }
@@ -359,10 +357,8 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
             }
             Ok(())
         }
-        Query::Fuzzy { field, .. } => {
-            validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
-                .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field))
-        }
+        Query::Fuzzy { field, .. } => validate_native_text_field(native, field)
+            .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field)),
         Query::WeightedSet { field, .. }
         | Query::DotProduct { field, .. }
         | Query::Wand { field, .. } => {
@@ -421,6 +417,11 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
             validate_native_field(native, sys::SK_QUERY_FIELD_PREDICATE, field)
         }
     }
+}
+
+fn validate_native_text_field(native: &NativeQuery, field: &str) -> Result<(), Error> {
+    validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
+        .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_ARRAY_STRING, field))
 }
 
 #[derive(Clone, Copy)]
