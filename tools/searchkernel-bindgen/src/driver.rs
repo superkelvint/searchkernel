@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod json_emitter;
 mod normalized;
 mod python_emitter;
 
@@ -48,7 +49,7 @@ fn run() -> Result<(), String> {
         python_emitter::generate(&model, PYTHON_TEMPLATE)?.into_bytes(),
         serde_json::to_vec_pretty(&normalized::schema_model(&model))
             .map_err(|error| error.to_string())?,
-        format!("{}\n", JSON_TEMPLATE.trim_end()).into_bytes(),
+        json_emitter::generate(&model, JSON_TEMPLATE)?.into_bytes(),
     ];
 
     for (relative, mut contents) in GENERATED_PATHS.into_iter().zip(generated) {
@@ -127,5 +128,30 @@ fn check_file(path: &Path, expected: &[u8]) -> Result<(), String> {
             "generated artifact is stale: {}; run searchkernel-bindgen generate",
             path.display()
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_inventory_is_taken_from_normalized_bfbs() {
+        let request_bytes =
+            include_bytes!("../../../core/crates/searchkernel-json/bfbs/searchkernel_request.bfbs");
+        let response_bytes = include_bytes!(
+            "../../../core/crates/searchkernel-json/bfbs/searchkernel_response.bfbs"
+        );
+        let request = root::<Schema<'_>>(request_bytes).expect("request BFBS");
+        let response = root::<Schema<'_>>(response_bytes).expect("response BFBS");
+        let model = normalized::normalize(&request, &response).expect("normalized BFBS");
+        let generated = json_emitter::generate(&model, JSON_TEMPLATE).expect("JSON generation");
+
+        assert!(generated.contains("SearchKernel_V2_PrimitiveDataTypeKind"));
+        assert!(generated.contains("name: \"condition\", schema: \"string\""));
+        assert!(generated.contains("SearchKernel_V2_QueryExprKind"));
+        assert!(!generated.contains("SearchKernel_V2_Bm25Ranking"));
+        assert!(!generated.contains("SearchKernel_V2_FieldCardinality"));
+        assert!(!generated.contains("SearchKernel_V2_OptionalMissingPlacement"));
     }
 }

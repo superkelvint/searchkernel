@@ -1505,797 +1505,1051 @@ pub(crate) mod schema {
 
     pub(crate) fn metadata(name: &str) -> Option<&'static [FieldMetadata]> {
         match name {
-            "SearchKernel_FFI_V1_RequestEnvelope" => Some(&[
-                FieldMetadata {
-                    name: "payload",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "payload_type",
-                    schema: "ref:#/definitions/SearchKernel_FFI_V1_RequestPayload",
-                },
-                FieldMetadata {
-                    name: "protocol_version",
-                    schema: "integer",
-                },
+            "SearchKernel_Protocol_V2_RequestEnvelope" => Some(&[
+                FieldMetadata { name: "payload", schema: "union" },
+                FieldMetadata { name: "payload_type", schema: "ref:#/definitions/SearchKernel_Protocol_V2_RequestPayload" },
+                FieldMetadata { name: "protocol_version", schema: "integer" },
             ]),
-            "SearchKernel_FFI_V1_RequestPayload" => Some(&[]),
-            "SearchKernel_FFI_V1_ResponseEnvelope" => Some(&[
-                FieldMetadata {
-                    name: "payload",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "payload_type",
-                    schema: "ref:#/definitions/SearchKernel_FFI_V1_ResponsePayload",
-                },
-                FieldMetadata {
-                    name: "protocol_version",
-                    schema: "integer",
-                },
+            "SearchKernel_Protocol_V2_ResponseEnvelope" => Some(&[
+                FieldMetadata { name: "payload", schema: "union" },
+                FieldMetadata { name: "payload_type", schema: "ref:#/definitions/SearchKernel_Protocol_V2_ResponsePayload" },
+                FieldMetadata { name: "protocol_version", schema: "integer" },
             ]),
-            "SearchKernel_FFI_V1_ResponsePayload" => Some(&[]),
-            "SearchKernel_V2_AnalyzeFieldTarget" => Some(&[FieldMetadata {
-                name: "field",
-                schema: "string",
-            }]),
+            "SearchKernel_V2_AddUpdate" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_AnalyzeFieldTarget" => Some(&[
+                FieldMetadata { name: "field", schema: "string" },
+            ]),
             "SearchKernel_V2_AnalyzeRequest" => Some(&[
-                FieldMetadata {
-                    name: "language",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "target",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "target_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_AnalyzeTarget",
-                },
-                FieldMetadata {
-                    name: "text",
-                    schema: "string",
-                },
+                FieldMetadata { name: "language", schema: "string" },
+                FieldMetadata { name: "target", schema: "union" },
+                FieldMetadata { name: "target_type", schema: "ref:#/definitions/SearchKernel_V2_AnalyzeTarget" },
+                FieldMetadata { name: "text", schema: "string" },
             ]),
-            "SearchKernel_V2_AnalyzeResult" => Some(&[FieldMetadata {
-                name: "tokens",
-                schema: "array:ref:#/definitions/SearchKernel_V2_AnalyzedToken",
-            }]),
-            "SearchKernel_V2_AnalyzeTarget" => Some(&[]),
+            "SearchKernel_V2_AnalyzeResult" => Some(&[
+                FieldMetadata { name: "tokens", schema: "array:ref:#/definitions/SearchKernel_V2_AnalyzedToken" },
+            ]),
             "SearchKernel_V2_AnalyzedToken" => Some(&[
-                FieldMetadata {
-                    name: "end_byte",
-                    schema: "integer",
-                },
-                FieldMetadata {
-                    name: "position",
-                    schema: "integer",
-                },
-                FieldMetadata {
-                    name: "start_byte",
-                    schema: "integer",
-                },
-                FieldMetadata {
-                    name: "surface",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "term",
-                    schema: "string",
-                },
+                FieldMetadata { name: "end_byte", schema: "integer" },
+                FieldMetadata { name: "position", schema: "integer" },
+                FieldMetadata { name: "start_byte", schema: "integer" },
+                FieldMetadata { name: "surface", schema: "string" },
+                FieldMetadata { name: "term", schema: "string" },
             ]),
             "SearchKernel_V2_Analyzer" => Some(&[
-                FieldMetadata {
-                    name: "name",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "options",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_ValueEntry",
-                },
-                FieldMetadata {
-                    name: "version",
-                    schema: "integer",
-                },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "options", schema: "object" },
+                FieldMetadata { name: "version", schema: "integer" },
             ]),
-            "SearchKernel_V2_Bm25Ranking" => Some(&[]),
-            "SearchKernel_V2_BoolValue" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "boolean",
-            }]),
-            "SearchKernel_V2_BytesValue" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "array:integer",
-            }]),
-            "SearchKernel_V2_ComparisonOp" => Some(&[]),
-            "SearchKernel_V2_DefaultRelevanceV1" => Some(&[]),
-            "SearchKernel_V2_DeleteRequest" => Some(&[FieldMetadata {
-                name: "id",
-                schema: "string",
-            }]),
+            "SearchKernel_V2_ArithmeticUpdate" => Some(&[
+                FieldMetadata { name: "operand", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "operator", schema: "ref:#/definitions/SearchKernel_V2_ArithmeticUpdateOperator" },
+            ]),
+            "SearchKernel_V2_ArrayDataType" => Some(&[
+                FieldMetadata { name: "element_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+            ]),
+            "SearchKernel_V2_AssignUpdate" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_AttributeConfig" => Some(&[
+                FieldMetadata { name: "distance_metric", schema: "ref:#/definitions/SearchKernel_V2_DistanceMetric" },
+                FieldMetadata { name: "enabled", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "fast_access", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "fast_search", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "options", schema: "object" },
+            ]),
+            "SearchKernel_V2_AvgAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_BoolValue" => Some(&[
+                FieldMetadata { name: "value", schema: "boolean" },
+            ]),
+            "SearchKernel_V2_BytesValue" => Some(&[
+                FieldMetadata { name: "value", schema: "array:integer" },
+            ]),
+            "SearchKernel_V2_ClearUpdate" => Some(&[
+            ]),
+            "SearchKernel_V2_ConstantDefinition" => Some(&[
+                FieldMetadata { name: "data_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "source", schema: "union" },
+                FieldMetadata { name: "source_type", schema: "ref:#/definitions/SearchKernel_V2_ConstantSourceKind" },
+            ]),
+            "SearchKernel_V2_CountAggregation" => Some(&[
+            ]),
+            "SearchKernel_V2_Coverage" => Some(&[
+                FieldMetadata { name: "coverage_percent", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+                FieldMetadata { name: "degraded", schema: "ref:#/definitions/SearchKernel_V2_CoverageDegraded" },
+                FieldMetadata { name: "documents", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt64" },
+                FieldMetadata { name: "full", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "nodes", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "results", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt64" },
+                FieldMetadata { name: "results_full", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt64" },
+            ]),
+            "SearchKernel_V2_CoverageDegraded" => Some(&[
+                FieldMetadata { name: "adaptive_timeout", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "ann_timeout", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "match_phase", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "non_ideal_state", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "timeout", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+            ]),
+            "SearchKernel_V2_DataType" => Some(&[
+                FieldMetadata { name: "kind", schema: "union" },
+                FieldMetadata { name: "kind_type", schema: "ref:#/definitions/SearchKernel_V2_DataTypeKind" },
+            ]),
+            "SearchKernel_V2_DeleteRequest" => Some(&[
+                FieldMetadata { name: "condition", schema: "string" },
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
             "SearchKernel_V2_DeleteResult" => Some(&[
-                FieldMetadata {
-                    name: "deleted",
-                    schema: "boolean",
-                },
-                FieldMetadata {
-                    name: "id",
-                    schema: "string",
-                },
+                FieldMetadata { name: "deleted", schema: "boolean" },
+                FieldMetadata { name: "id", schema: "string" },
             ]),
-            "SearchKernel_V2_DescribeRequest" => Some(&[]),
-            "SearchKernel_V2_DescribeResult" => Some(&[FieldMetadata {
-                name: "index",
-                schema: "ref:#/definitions/SearchKernel_V2_IndexDefinition",
-            }]),
+            "SearchKernel_V2_DenseTensorValues" => Some(&[
+                FieldMetadata { name: "values", schema: "array:number" },
+            ]),
+            "SearchKernel_V2_DescribeRequest" => Some(&[
+            ]),
+            "SearchKernel_V2_DescribeResult" => Some(&[
+                FieldMetadata { name: "index", schema: "ref:#/definitions/SearchKernel_V2_IndexDefinition" },
+            ]),
             "SearchKernel_V2_Document" => Some(&[
-                FieldMetadata {
-                    name: "fields",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_ValueEntry",
-                },
-                FieldMetadata {
-                    name: "id",
-                    schema: "string",
-                },
+                FieldMetadata { name: "fields", schema: "object" },
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
+            "SearchKernel_V2_DocumentSummaryDefinition" => Some(&[
+                FieldMetadata { name: "fields", schema: "array:ref:#/definitions/SearchKernel_V2_DocumentSummaryFieldDefinition" },
+                FieldMetadata { name: "from_disk", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "inherits", schema: "array:string" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "omit_summary_features", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "properties", schema: "object" },
+            ]),
+            "SearchKernel_V2_DocumentSummaryFieldDefinition" => Some(&[
+                FieldMetadata { name: "data_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "source", schema: "string" },
+                FieldMetadata { name: "struct_fields", schema: "array:string" },
             ]),
             "SearchKernel_V2_Error" => Some(&[
-                FieldMetadata {
-                    name: "code",
-                    schema: "ref:#/definitions/SearchKernel_V2_ErrorCode",
-                },
-                FieldMetadata {
-                    name: "details",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_ErrorDetail",
-                },
-                FieldMetadata {
-                    name: "message",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "retryable",
-                    schema: "boolean",
-                },
+                FieldMetadata { name: "code", schema: "ref:#/definitions/SearchKernel_V2_ErrorCode" },
+                FieldMetadata { name: "details", schema: "array:ref:#/definitions/SearchKernel_V2_ErrorDetail" },
+                FieldMetadata { name: "message", schema: "string" },
+                FieldMetadata { name: "retryable", schema: "boolean" },
             ]),
-            "SearchKernel_V2_ErrorCode" => Some(&[]),
             "SearchKernel_V2_ErrorDetail" => Some(&[
-                FieldMetadata {
-                    name: "code",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "message",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "metadata",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_StringEntry",
-                },
-                FieldMetadata {
-                    name: "path",
-                    schema: "string",
-                },
+                FieldMetadata { name: "code", schema: "string" },
+                FieldMetadata { name: "message", schema: "string" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "path", schema: "string" },
             ]),
-            "SearchKernel_V2_FieldCardinality" => Some(&[]),
+            "SearchKernel_V2_ExpressionQueryInput" => Some(&[
+                FieldMetadata { name: "expression", schema: "string" },
+            ]),
             "SearchKernel_V2_FieldDefinition" => Some(&[
-                FieldMetadata {
-                    name: "analyzer",
-                    schema: "ref:#/definitions/SearchKernel_V2_Analyzer",
-                },
-                FieldMetadata {
-                    name: "cardinality",
-                    schema: "ref:#/definitions/SearchKernel_V2_FieldCardinality",
-                },
-                FieldMetadata {
-                    name: "facetable",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "filterable",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "kind",
-                    schema: "ref:#/definitions/SearchKernel_V2_FieldKind",
-                },
-                FieldMetadata {
-                    name: "name",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "searchable",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "sortable",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "stored",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
+                FieldMetadata { name: "analyzer", schema: "ref:#/definitions/SearchKernel_V2_Analyzer" },
+                FieldMetadata { name: "attribute", schema: "ref:#/definitions/SearchKernel_V2_AttributeConfig" },
+                FieldMetadata { name: "data_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "facetable", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "filterable", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "index", schema: "ref:#/definitions/SearchKernel_V2_IndexConfig" },
+                FieldMetadata { name: "indexing_script", schema: "string" },
+                FieldMetadata { name: "matching", schema: "ref:#/definitions/SearchKernel_V2_MatchingConfig" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "searchable", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "sortable", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "stored", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "struct_fields", schema: "array:ref:#/definitions/SearchKernel_V2_StructFieldConfig" },
+                FieldMetadata { name: "summary", schema: "ref:#/definitions/SearchKernel_V2_SummaryConfig" },
             ]),
-            "SearchKernel_V2_FieldKind" => Some(&[]),
-            "SearchKernel_V2_FieldProjection" => Some(&[FieldMetadata {
-                name: "fields",
-                schema: "array:string",
-            }]),
-            "SearchKernel_V2_FilterAnd" => Some(&[FieldMetadata {
-                name: "clauses",
-                schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr",
-            }]),
+            "SearchKernel_V2_FieldPath" => Some(&[
+                FieldMetadata { name: "path", schema: "string" },
+            ]),
+            "SearchKernel_V2_FieldProjection" => Some(&[
+                FieldMetadata { name: "fields", schema: "array:string" },
+            ]),
+            "SearchKernel_V2_FieldSetDefinition" => Some(&[
+                FieldMetadata { name: "fields", schema: "array:string" },
+                FieldMetadata { name: "matching", schema: "ref:#/definitions/SearchKernel_V2_MatchingConfig" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "query_commands", schema: "array:string" },
+            ]),
+            "SearchKernel_V2_FieldSortTarget" => Some(&[
+                FieldMetadata { name: "field", schema: "string" },
+            ]),
+            "SearchKernel_V2_FileConstantSource" => Some(&[
+                FieldMetadata { name: "path", schema: "string" },
+            ]),
+            "SearchKernel_V2_FilterAnd" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr" },
+            ]),
             "SearchKernel_V2_FilterComparison" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "op",
-                    schema: "ref:#/definitions/SearchKernel_V2_ComparisonOp",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "op", schema: "ref:#/definitions/SearchKernel_V2_ComparisonOp" },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
             ]),
-            "SearchKernel_V2_FilterExists" => Some(&[FieldMetadata {
-                name: "field",
-                schema: "string",
-            }]),
-            "SearchKernel_V2_FilterIn" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "values",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_Value",
-                },
+            "SearchKernel_V2_FilterExists" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
             ]),
             "SearchKernel_V2_FilterExpr" => Some(&[
-                FieldMetadata {
-                    name: "expr",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "expr_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_FilterExprKind",
-                },
+                FieldMetadata { name: "expr", schema: "union" },
+                FieldMetadata { name: "expr_type", schema: "ref:#/definitions/SearchKernel_V2_FilterExprKind" },
             ]),
-            "SearchKernel_V2_FilterExprKind" => Some(&[]),
-            "SearchKernel_V2_FilterNot" => Some(&[FieldMetadata {
-                name: "clause",
-                schema: "ref:#/definitions/SearchKernel_V2_FilterExpr",
-            }]),
-            "SearchKernel_V2_FilterOr" => Some(&[FieldMetadata {
-                name: "clauses",
-                schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr",
-            }]),
+            "SearchKernel_V2_FilterIn" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "values", schema: "array:ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_FilterNot" => Some(&[
+                FieldMetadata { name: "clause", schema: "ref:#/definitions/SearchKernel_V2_FilterExpr" },
+            ]),
+            "SearchKernel_V2_FilterOr" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr" },
+            ]),
             "SearchKernel_V2_FilterRange" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "include_lower",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "include_upper",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalBool",
-                },
-                FieldMetadata {
-                    name: "lower",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
-                FieldMetadata {
-                    name: "upper",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "include_lower", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "include_upper", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "lower", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
+                FieldMetadata { name: "upper", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
             ]),
-            "SearchKernel_V2_Float64Value" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "number",
-            }]),
+            "SearchKernel_V2_FilterRequest" => Some(&[
+                FieldMetadata { name: "parameters", schema: "object" },
+                FieldMetadata { name: "sources", schema: "array:string" },
+                FieldMetadata { name: "structured", schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr" },
+            ]),
+            "SearchKernel_V2_FiniteGroupingMax" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
+            "SearchKernel_V2_FiniteRangeBound" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_FiniteRelevance" => Some(&[
+                FieldMetadata { name: "value", schema: "number" },
+            ]),
+            "SearchKernel_V2_Float64Value" => Some(&[
+                FieldMetadata { name: "value", schema: "number" },
+            ]),
             "SearchKernel_V2_GetRequest" => Some(&[
-                FieldMetadata {
-                    name: "id",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "projection",
-                    schema: "ref:#/definitions/SearchKernel_V2_FieldProjection",
-                },
+                FieldMetadata { name: "id", schema: "string" },
+                FieldMetadata { name: "projection", schema: "ref:#/definitions/SearchKernel_V2_FieldProjection" },
             ]),
-            "SearchKernel_V2_GetResult" => Some(&[FieldMetadata {
-                name: "document",
-                schema: "ref:#/definitions/SearchKernel_V2_Document",
-            }]),
+            "SearchKernel_V2_GetResult" => Some(&[
+                FieldMetadata { name: "document", schema: "ref:#/definitions/SearchKernel_V2_Document" },
+            ]),
+            "SearchKernel_V2_GroupingAggregationExpression" => Some(&[
+                FieldMetadata { name: "aggregation", schema: "union" },
+                FieldMetadata { name: "aggregation_type", schema: "ref:#/definitions/SearchKernel_V2_AggregationKind" },
+            ]),
+            "SearchKernel_V2_GroupingAliasOperation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingAliasReference" => Some(&[
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingAllOperation" => Some(&[
+                FieldMetadata { name: "label", schema: "string" },
+                FieldMetadata { name: "operations", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingOperation" },
+            ]),
+            "SearchKernel_V2_GroupingAttributeExpression" => Some(&[
+                FieldMetadata { name: "field", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingBinaryExpression" => Some(&[
+                FieldMetadata { name: "left", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "op", schema: "ref:#/definitions/SearchKernel_V2_GroupingBinaryOperator" },
+                FieldMetadata { name: "right", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingBucketExpression" => Some(&[
+                FieldMetadata { name: "include_lower", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "include_upper", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "lower", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
+                FieldMetadata { name: "upper", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
+            ]),
+            "SearchKernel_V2_GroupingEachOperation" => Some(&[
+                FieldMetadata { name: "label", schema: "string" },
+                FieldMetadata { name: "operations", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingOperation" },
+            ]),
+            "SearchKernel_V2_GroupingExpression" => Some(&[
+                FieldMetadata { name: "expr", schema: "union" },
+                FieldMetadata { name: "expr_type", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpressionKind" },
+            ]),
+            "SearchKernel_V2_GroupingFilterAnd" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingFilterExpr" },
+            ]),
+            "SearchKernel_V2_GroupingFilterExpr" => Some(&[
+                FieldMetadata { name: "expr", schema: "union" },
+                FieldMetadata { name: "expr_type", schema: "ref:#/definitions/SearchKernel_V2_GroupingFilterExprKind" },
+            ]),
+            "SearchKernel_V2_GroupingFilterIsTrue" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingFilterNot" => Some(&[
+                FieldMetadata { name: "clause", schema: "ref:#/definitions/SearchKernel_V2_GroupingFilterExpr" },
+            ]),
+            "SearchKernel_V2_GroupingFilterOperation" => Some(&[
+                FieldMetadata { name: "filter", schema: "ref:#/definitions/SearchKernel_V2_GroupingFilterExpr" },
+            ]),
+            "SearchKernel_V2_GroupingFilterOr" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingFilterExpr" },
+            ]),
+            "SearchKernel_V2_GroupingFilterRange" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "include_lower", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "include_upper", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "lower", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "upper", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingFilterRegex" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "pattern", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingFunctionExpression" => Some(&[
+                FieldMetadata { name: "arguments", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingGroupOperation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingKeepOperation" => Some(&[
+                FieldMetadata { name: "filter", schema: "ref:#/definitions/SearchKernel_V2_GroupingFilterExpr" },
+            ]),
+            "SearchKernel_V2_GroupingLiteralExpression" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_GroupingMapLookupExpression" => Some(&[
+                FieldMetadata { name: "base", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "key", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingMaxOperation" => Some(&[
+                FieldMetadata { name: "value", schema: "union" },
+                FieldMetadata { name: "value_type", schema: "ref:#/definitions/SearchKernel_V2_GroupingMaxKind" },
+            ]),
+            "SearchKernel_V2_GroupingMemberExpression" => Some(&[
+                FieldMetadata { name: "base", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "member", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingOperation" => Some(&[
+                FieldMetadata { name: "operation", schema: "union" },
+                FieldMetadata { name: "operation_type", schema: "ref:#/definitions/SearchKernel_V2_GroupingOperationKind" },
+            ]),
+            "SearchKernel_V2_GroupingOrderExpr" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_GroupingOrderOperation" => Some(&[
+                FieldMetadata { name: "expressions", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingOrderExpr" },
+            ]),
+            "SearchKernel_V2_GroupingOutput" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "label", schema: "string" },
+            ]),
+            "SearchKernel_V2_GroupingOutputOperation" => Some(&[
+                FieldMetadata { name: "outputs", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingOutput" },
+            ]),
+            "SearchKernel_V2_GroupingPrecisionOperation" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
+            "SearchKernel_V2_GroupingRequest" => Some(&[
+                FieldMetadata { name: "continuations", schema: "array:string" },
+                FieldMetadata { name: "source", schema: "union" },
+                FieldMetadata { name: "source_type", schema: "ref:#/definitions/SearchKernel_V2_GroupingSourceKind" },
+            ]),
+            "SearchKernel_V2_GroupingUnaryExpression" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "op", schema: "ref:#/definitions/SearchKernel_V2_GroupingUnaryOperator" },
+            ]),
+            "SearchKernel_V2_GroupingWhereOperation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
             "SearchKernel_V2_HighlightFragment" => Some(&[
-                FieldMetadata {
-                    name: "matches",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_HighlightSpan",
-                },
-                FieldMetadata {
-                    name: "text",
-                    schema: "string",
-                },
+                FieldMetadata { name: "matches", schema: "array:ref:#/definitions/SearchKernel_V2_HighlightSpan" },
+                FieldMetadata { name: "text", schema: "string" },
             ]),
-            "SearchKernel_V2_HighlightRequest" => Some(&[FieldMetadata {
-                name: "fields",
-                schema: "array:string",
-            }]),
+            "SearchKernel_V2_HighlightRequest" => Some(&[
+                FieldMetadata { name: "fields", schema: "array:string" },
+            ]),
             "SearchKernel_V2_HighlightResult" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "fragments",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_HighlightFragment",
-                },
+                FieldMetadata { name: "field", schema: "string" },
+                FieldMetadata { name: "fragments", schema: "array:ref:#/definitions/SearchKernel_V2_HighlightFragment" },
             ]),
             "SearchKernel_V2_HighlightSpan" => Some(&[
-                FieldMetadata {
-                    name: "end_byte",
-                    schema: "integer",
-                },
-                FieldMetadata {
-                    name: "start_byte",
-                    schema: "integer",
-                },
+                FieldMetadata { name: "end_byte", schema: "integer" },
+                FieldMetadata { name: "start_byte", schema: "integer" },
             ]),
             "SearchKernel_V2_Hit" => Some(&[
-                FieldMetadata {
-                    name: "fields",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_ValueEntry",
-                },
-                FieldMetadata {
-                    name: "highlights",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_HighlightResult",
-                },
-                FieldMetadata {
-                    name: "id",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "score",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble",
-                },
+                FieldMetadata { name: "fields", schema: "object" },
+                FieldMetadata { name: "highlights", schema: "array:ref:#/definitions/SearchKernel_V2_HighlightResult" },
+                FieldMetadata { name: "id", schema: "string" },
+                FieldMetadata { name: "match_features", schema: "object" },
+                FieldMetadata { name: "rank_features", schema: "object" },
+                FieldMetadata { name: "relevance", schema: "ref:#/definitions/SearchKernel_V2_Relevance" },
+                FieldMetadata { name: "sort_values", schema: "array:ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "source", schema: "string" },
+                FieldMetadata { name: "summary_features", schema: "object" },
+                FieldMetadata { name: "types", schema: "array:string" },
+            ]),
+            "SearchKernel_V2_HnswIndexConfig" => Some(&[
+                FieldMetadata { name: "max_links_per_node", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "neighbors_to_explore_at_insert", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "options", schema: "object" },
+            ]),
+            "SearchKernel_V2_ImportedFieldDefinition" => Some(&[
+                FieldMetadata { name: "alias", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "reference_field", schema: "string" },
+                FieldMetadata { name: "target_field", schema: "string" },
+            ]),
+            "SearchKernel_V2_IndexConfig" => Some(&[
+                FieldMetadata { name: "enabled", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "hnsw", schema: "ref:#/definitions/SearchKernel_V2_HnswIndexConfig" },
+                FieldMetadata { name: "options", schema: "object" },
             ]),
             "SearchKernel_V2_IndexDefinition" => Some(&[
-                FieldMetadata {
-                    name: "default_search_fields",
-                    schema: "ref:#/definitions/SearchKernel_V2_SearchFieldSelection",
-                },
-                FieldMetadata {
-                    name: "fields",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_FieldDefinition",
-                },
-                FieldMetadata {
-                    name: "name",
-                    schema: "string",
-                },
+                FieldMetadata { name: "constants", schema: "array:ref:#/definitions/SearchKernel_V2_ConstantDefinition" },
+                FieldMetadata { name: "default_search_fields", schema: "ref:#/definitions/SearchKernel_V2_SearchFieldSelection" },
+                FieldMetadata { name: "document_inherits", schema: "array:string" },
+                FieldMetadata { name: "document_summaries", schema: "array:ref:#/definitions/SearchKernel_V2_DocumentSummaryDefinition" },
+                FieldMetadata { name: "document_type", schema: "string" },
+                FieldMetadata { name: "fields", schema: "array:ref:#/definitions/SearchKernel_V2_FieldDefinition" },
+                FieldMetadata { name: "fieldsets", schema: "array:ref:#/definitions/SearchKernel_V2_FieldSetDefinition" },
+                FieldMetadata { name: "imported_fields", schema: "array:ref:#/definitions/SearchKernel_V2_ImportedFieldDefinition" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "onnx_models", schema: "array:ref:#/definitions/SearchKernel_V2_OnnxModelDefinition" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "rank_profiles", schema: "array:ref:#/definitions/SearchKernel_V2_RankProfileDefinition" },
+                FieldMetadata { name: "schema_fields", schema: "array:ref:#/definitions/SearchKernel_V2_SearchOnlyFieldDefinition" },
+                FieldMetadata { name: "schema_inherits", schema: "array:string" },
+                FieldMetadata { name: "structs", schema: "array:ref:#/definitions/SearchKernel_V2_NamedStructDefinition" },
             ]),
-            "SearchKernel_V2_InsertRequest" => Some(&[FieldMetadata {
-                name: "document",
-                schema: "ref:#/definitions/SearchKernel_V2_Document",
-            }]),
-            "SearchKernel_V2_InsertResult" => Some(&[FieldMetadata {
-                name: "id",
-                schema: "string",
-            }]),
-            "SearchKernel_V2_InspectQueryRequest" => Some(&[FieldMetadata {
-                name: "request",
-                schema: "ref:#/definitions/SearchKernel_V2_SearchRequest",
-            }]),
-            "SearchKernel_V2_InspectQueryResult" => Some(&[FieldMetadata {
-                name: "resolved_request",
-                schema: "ref:#/definitions/SearchKernel_V2_SearchRequest",
-            }]),
-            "SearchKernel_V2_Int64Value" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "integer",
-            }]),
-            "SearchKernel_V2_MissingPlacement" => Some(&[]),
-            "SearchKernel_V2_NullValue" => Some(&[]),
-            "SearchKernel_V2_NullValueValue" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "ref:#/definitions/SearchKernel_V2_NullValue",
-            }]),
-            "SearchKernel_V2_OptionalBool" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "boolean",
-            }]),
-            "SearchKernel_V2_OptionalDouble" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "number",
-            }]),
-            "SearchKernel_V2_OptionalMissingPlacement" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "ref:#/definitions/SearchKernel_V2_MissingPlacement",
-            }]),
-            "SearchKernel_V2_OptionalUInt32" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "integer",
-            }]),
-            "SearchKernel_V2_OptionalUInt64" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "integer",
-            }]),
+            "SearchKernel_V2_InfiniteGroupingMax" => Some(&[
+            ]),
+            "SearchKernel_V2_InsertRequest" => Some(&[
+                FieldMetadata { name: "document", schema: "ref:#/definitions/SearchKernel_V2_Document" },
+            ]),
+            "SearchKernel_V2_InsertResult" => Some(&[
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
+            "SearchKernel_V2_InspectQueryRequest" => Some(&[
+                FieldMetadata { name: "request", schema: "ref:#/definitions/SearchKernel_V2_SearchRequest" },
+            ]),
+            "SearchKernel_V2_InspectQueryResult" => Some(&[
+                FieldMetadata { name: "resolved_request", schema: "ref:#/definitions/SearchKernel_V2_ResolvedSearchRequest" },
+            ]),
+            "SearchKernel_V2_Int64Value" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
+            "SearchKernel_V2_LiteralConstantSource" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_LiteralQueryInput" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_MapDataType" => Some(&[
+                FieldMetadata { name: "key_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "value_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+            ]),
+            "SearchKernel_V2_MatchAllQuery" => Some(&[
+            ]),
+            "SearchKernel_V2_MatchUpdate" => Some(&[
+                FieldMetadata { name: "element", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "update", schema: "ref:#/definitions/SearchKernel_V2_MatchedElementUpdate" },
+            ]),
+            "SearchKernel_V2_MatchedElementUpdate" => Some(&[
+                FieldMetadata { name: "operation", schema: "union" },
+                FieldMetadata { name: "operation_type", schema: "ref:#/definitions/SearchKernel_V2_MatchedElementUpdateKind" },
+            ]),
+            "SearchKernel_V2_MatchingConfig" => Some(&[
+                FieldMetadata { name: "mode", schema: "ref:#/definitions/SearchKernel_V2_MatchingMode" },
+                FieldMetadata { name: "options", schema: "object" },
+            ]),
+            "SearchKernel_V2_MaxAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_MinAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_MissingAs" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_MissingFirst" => Some(&[
+            ]),
+            "SearchKernel_V2_MissingLast" => Some(&[
+            ]),
+            "SearchKernel_V2_MissingPolicy" => Some(&[
+                FieldMetadata { name: "policy", schema: "union" },
+                FieldMetadata { name: "policy_type", schema: "ref:#/definitions/SearchKernel_V2_MissingPolicyKind" },
+            ]),
+            "SearchKernel_V2_MixedTensorBlocks" => Some(&[
+                FieldMetadata { name: "blocks", schema: "array:ref:#/definitions/SearchKernel_V2_TensorBlock" },
+            ]),
+            "SearchKernel_V2_NamedStructDefinition" => Some(&[
+                FieldMetadata { name: "fields", schema: "object" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+            ]),
+            "SearchKernel_V2_NegativeInfinityBound" => Some(&[
+            ]),
+            "SearchKernel_V2_NegativeInfinityRelevance" => Some(&[
+            ]),
+            "SearchKernel_V2_NonFiniteFloatValue" => Some(&[
+                FieldMetadata { name: "kind", schema: "ref:#/definitions/SearchKernel_V2_NonFiniteFloatKind" },
+            ]),
+            "SearchKernel_V2_NullValueValue" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_NullValue" },
+            ]),
+            "SearchKernel_V2_OnnxModelDefinition" => Some(&[
+                FieldMetadata { name: "file", schema: "string" },
+                FieldMetadata { name: "gpu_device", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "inputs", schema: "object" },
+                FieldMetadata { name: "interop_threads", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "intraop_threads", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "outputs", schema: "object" },
+                FieldMetadata { name: "properties", schema: "object" },
+            ]),
+            "SearchKernel_V2_OptionalBool" => Some(&[
+                FieldMetadata { name: "value", schema: "boolean" },
+            ]),
+            "SearchKernel_V2_OptionalDouble" => Some(&[
+                FieldMetadata { name: "value", schema: "number" },
+            ]),
+            "SearchKernel_V2_OptionalUInt32" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
+            "SearchKernel_V2_OptionalUInt64" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
             "SearchKernel_V2_PatchOperation" => Some(&[
-                FieldMetadata {
-                    name: "operation",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "operation_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_PatchOperationKind",
-                },
+                FieldMetadata { name: "operation", schema: "union" },
+                FieldMetadata { name: "operation_type", schema: "ref:#/definitions/SearchKernel_V2_PatchOperationKind" },
             ]),
-            "SearchKernel_V2_PatchOperationKind" => Some(&[]),
             "SearchKernel_V2_PatchRequest" => Some(&[
-                FieldMetadata {
-                    name: "id",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "operations",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_PatchOperation",
-                },
+                FieldMetadata { name: "id", schema: "string" },
+                FieldMetadata { name: "operations", schema: "array:ref:#/definitions/SearchKernel_V2_PatchOperation" },
             ]),
-            "SearchKernel_V2_PatchResult" => Some(&[FieldMetadata {
-                name: "id",
-                schema: "string",
-            }]),
-            "SearchKernel_V2_QueryAnd" => Some(&[FieldMetadata {
-                name: "clauses",
-                schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr",
-            }]),
+            "SearchKernel_V2_PatchResult" => Some(&[
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
+            "SearchKernel_V2_PositionDataType" => Some(&[
+            ]),
+            "SearchKernel_V2_PositiveInfinityBound" => Some(&[
+            ]),
+            "SearchKernel_V2_PositiveInfinityRelevance" => Some(&[
+            ]),
+            "SearchKernel_V2_PredicateDataType" => Some(&[
+            ]),
+            "SearchKernel_V2_PresentationRequest" => Some(&[
+                FieldMetadata { name: "bolding", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "fields", schema: "ref:#/definitions/SearchKernel_V2_FieldProjection" },
+                FieldMetadata { name: "format", schema: "string" },
+                FieldMetadata { name: "highlighting", schema: "ref:#/definitions/SearchKernel_V2_HighlightRequest" },
+                FieldMetadata { name: "summary", schema: "string" },
+                FieldMetadata { name: "timing", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+            ]),
+            "SearchKernel_V2_PrimitiveDataType" => Some(&[
+                FieldMetadata { name: "kind", schema: "ref:#/definitions/SearchKernel_V2_PrimitiveDataTypeKind" },
+            ]),
+            "SearchKernel_V2_QuantilesAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+                FieldMetadata { name: "quantiles", schema: "array:number" },
+            ]),
+            "SearchKernel_V2_QueryAlternative" => Some(&[
+                FieldMetadata { name: "exactness", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+                FieldMetadata { name: "query", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryAlternatives" => Some(&[
+                FieldMetadata { name: "alternatives", schema: "array:ref:#/definitions/SearchKernel_V2_QueryAlternative" },
+            ]),
+            "SearchKernel_V2_QueryAnd" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryComparison" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "op", schema: "ref:#/definitions/SearchKernel_V2_ComparisonOp" },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_QueryContains" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "item", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryDotProduct" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "items", schema: "array:ref:#/definitions/SearchKernel_V2_WeightedQueryItem" },
+            ]),
+            "SearchKernel_V2_QueryEquiv" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
             "SearchKernel_V2_QueryExpr" => Some(&[
-                FieldMetadata {
-                    name: "expr",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "expr_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_QueryExprKind",
-                },
+                FieldMetadata { name: "annotations", schema: "object" },
+                FieldMetadata { name: "expr", schema: "union" },
+                FieldMetadata { name: "expr_type", schema: "ref:#/definitions/SearchKernel_V2_QueryExprKind" },
             ]),
-            "SearchKernel_V2_QueryExprKind" => Some(&[]),
-            "SearchKernel_V2_QueryNot" => Some(&[FieldMetadata {
-                name: "clause",
-                schema: "ref:#/definitions/SearchKernel_V2_QueryExpr",
-            }]),
-            "SearchKernel_V2_QueryOr" => Some(&[FieldMetadata {
-                name: "clauses",
-                schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr",
-            }]),
+            "SearchKernel_V2_QueryFalse" => Some(&[
+            ]),
+            "SearchKernel_V2_QueryFieldRef" => Some(&[
+                FieldMetadata { name: "element_index", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "path", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryFuzzy" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_QueryGeoBoundingBox" => Some(&[
+                FieldMetadata { name: "east", schema: "number" },
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "north", schema: "number" },
+                FieldMetadata { name: "south", schema: "number" },
+                FieldMetadata { name: "west", schema: "number" },
+            ]),
+            "SearchKernel_V2_QueryGeoLocation" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "latitude", schema: "number" },
+                FieldMetadata { name: "longitude", schema: "number" },
+                FieldMetadata { name: "radius", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryIn" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "values", schema: "array:ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_QueryInput" => Some(&[
+                FieldMetadata { name: "input", schema: "union" },
+                FieldMetadata { name: "input_type", schema: "ref:#/definitions/SearchKernel_V2_QueryInputKind" },
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryLabeled" => Some(&[
+                FieldMetadata { name: "label", schema: "string" },
+                FieldMetadata { name: "query", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+                FieldMetadata { name: "score", schema: "number" },
+            ]),
+            "SearchKernel_V2_QueryMatches" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "pattern", schema: "string" },
+            ]),
             "SearchKernel_V2_QueryModel" => Some(&[
-                FieldMetadata { name: "query_string", schema: "string" },
                 FieldMetadata { name: "default_index", schema: "string" },
                 FieldMetadata { name: "encoding", schema: "string" },
                 FieldMetadata { name: "filter", schema: "string" },
                 FieldMetadata { name: "language", schema: "string" },
                 FieldMetadata { name: "locale", schema: "string" },
-                FieldMetadata { name: "type", schema: "object" },
-                FieldMetadata { name: "sources", schema: "array:string" },
+                FieldMetadata { name: "query_string", schema: "string" },
                 FieldMetadata { name: "restrict", schema: "array:string" },
+                FieldMetadata { name: "search_group", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
                 FieldMetadata { name: "search_path", schema: "string" },
-                FieldMetadata { name: "search_group", schema: "integer" },
+                FieldMetadata { name: "sources", schema: "array:string" },
+                FieldMetadata { name: "type", schema: "ref:#/definitions/SearchKernel_V2_QueryModelType" },
             ]),
             "SearchKernel_V2_QueryModelType" => Some(&[
                 FieldMetadata { name: "composite", schema: "string" },
-                FieldMetadata { name: "tokenization", schema: "string" },
-                FieldMetadata { name: "syntax", schema: "string" },
+                FieldMetadata { name: "is_yql_default", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
                 FieldMetadata { name: "profile", schema: "string" },
-                FieldMetadata { name: "is_yql_default", schema: "boolean" },
+                FieldMetadata { name: "syntax", schema: "string" },
+                FieldMetadata { name: "tokenization", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryNear" => Some(&[
+                FieldMetadata { name: "terms", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryNearestNeighbor" => Some(&[
+                FieldMetadata { name: "document_field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "query_tensor", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryNonEmpty" => Some(&[
+                FieldMetadata { name: "query", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryNot" => Some(&[
+                FieldMetadata { name: "clause", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryONear" => Some(&[
+                FieldMetadata { name: "terms", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryOr" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryPhrase" => Some(&[
+                FieldMetadata { name: "terms", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryPredicate" => Some(&[
+                FieldMetadata { name: "features", schema: "ref:#/definitions/SearchKernel_V2_ValueObject" },
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "range_features", schema: "ref:#/definitions/SearchKernel_V2_ValueObject" },
+            ]),
+            "SearchKernel_V2_QueryRange" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "include_lower", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "include_upper", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "lower", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
+                FieldMetadata { name: "upper", schema: "ref:#/definitions/SearchKernel_V2_RangeBound" },
+            ]),
+            "SearchKernel_V2_QueryRank" => Some(&[
+                FieldMetadata { name: "match", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+                FieldMetadata { name: "rank", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QuerySameElement" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QuerySource" => Some(&[
+                FieldMetadata { name: "source", schema: "union" },
+                FieldMetadata { name: "source_type", schema: "ref:#/definitions/SearchKernel_V2_QuerySourceKind" },
+            ]),
+            "SearchKernel_V2_QueryText" => Some(&[
+                FieldMetadata { name: "text", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryTrue" => Some(&[
+            ]),
+            "SearchKernel_V2_QueryUserInput" => Some(&[
+                FieldMetadata { name: "value", schema: "string" },
+            ]),
+            "SearchKernel_V2_QueryUserQuery" => Some(&[
+            ]),
+            "SearchKernel_V2_QueryWand" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "items", schema: "array:ref:#/definitions/SearchKernel_V2_WeightedQueryItem" },
+            ]),
+            "SearchKernel_V2_QueryWeakAnd" => Some(&[
+                FieldMetadata { name: "clauses", schema: "array:ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_QueryWeightedSet" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_QueryFieldRef" },
+                FieldMetadata { name: "items", schema: "array:ref:#/definitions/SearchKernel_V2_WeightedQueryItem" },
+            ]),
+            "SearchKernel_V2_RangeBound" => Some(&[
+                FieldMetadata { name: "bound", schema: "union" },
+                FieldMetadata { name: "bound_type", schema: "ref:#/definitions/SearchKernel_V2_RangeBoundKind" },
+            ]),
+            "SearchKernel_V2_RankFeatureSortTarget" => Some(&[
+                FieldMetadata { name: "feature", schema: "string" },
+            ]),
+            "SearchKernel_V2_RankFunctionDefinition" => Some(&[
+                FieldMetadata { name: "arguments", schema: "array:string" },
+                FieldMetadata { name: "expression", schema: "string" },
+                FieldMetadata { name: "inline", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_RankPhaseDefinition" => Some(&[
+                FieldMetadata { name: "expression", schema: "string" },
+                FieldMetadata { name: "keep_rank_count", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "rank_score_drop_limit", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+                FieldMetadata { name: "rerank_count", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "total_keep_rank_count", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "total_rerank_count", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+            ]),
+            "SearchKernel_V2_RankProfileDefinition" => Some(&[
+                FieldMetadata { name: "constants", schema: "array:ref:#/definitions/SearchKernel_V2_ConstantDefinition" },
+                FieldMetadata { name: "first_phase", schema: "ref:#/definitions/SearchKernel_V2_RankPhaseDefinition" },
+                FieldMetadata { name: "functions", schema: "array:ref:#/definitions/SearchKernel_V2_RankFunctionDefinition" },
+                FieldMetadata { name: "global_phase", schema: "ref:#/definitions/SearchKernel_V2_RankPhaseDefinition" },
+                FieldMetadata { name: "inherits", schema: "array:string" },
+                FieldMetadata { name: "inputs", schema: "array:ref:#/definitions/SearchKernel_V2_RankProfileInput" },
+                FieldMetadata { name: "match_features", schema: "array:string" },
+                FieldMetadata { name: "name", schema: "string" },
+                FieldMetadata { name: "onnx_models", schema: "array:ref:#/definitions/SearchKernel_V2_OnnxModelDefinition" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "rank_features", schema: "array:string" },
+                FieldMetadata { name: "rank_properties", schema: "object" },
+                FieldMetadata { name: "second_phase", schema: "ref:#/definitions/SearchKernel_V2_RankPhaseDefinition" },
+                FieldMetadata { name: "sort_features", schema: "array:string" },
+                FieldMetadata { name: "strict", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "summary_features", schema: "array:string" },
+            ]),
+            "SearchKernel_V2_RankProfileInput" => Some(&[
+                FieldMetadata { name: "data_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "default_value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "name", schema: "string" },
             ]),
             "SearchKernel_V2_RankingRequest" => Some(&[
                 FieldMetadata { name: "profile", schema: "string" },
                 FieldMetadata { name: "properties", schema: "object" },
             ]),
-            "SearchKernel_V2_SearchField" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "weight",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble",
-                },
+            "SearchKernel_V2_RawGroupingSource" => Some(&[
+                FieldMetadata { name: "expression", schema: "string" },
             ]),
-            "SearchKernel_V2_SearchFieldSelection" => Some(&[FieldMetadata {
-                name: "fields",
-                schema: "array:ref:#/definitions/SearchKernel_V2_SearchField",
-            }]),
-            "SearchKernel_V2_DenseTensorValues" => Some(&[FieldMetadata {
-                name: "values",
-                schema: "array:number",
-            }]),
-            "SearchKernel_V2_MixedTensorBlocks" => Some(&[FieldMetadata {
-                name: "blocks",
-                schema: "array:ref:#/definitions/SearchKernel_V2_TensorBlock",
-            }]),
+            "SearchKernel_V2_RawSortTarget" => Some(&[
+                FieldMetadata { name: "expression", schema: "string" },
+            ]),
+            "SearchKernel_V2_ReferenceDataType" => Some(&[
+                FieldMetadata { name: "document_type", schema: "string" },
+            ]),
+            "SearchKernel_V2_Relevance" => Some(&[
+                FieldMetadata { name: "value", schema: "union" },
+                FieldMetadata { name: "value_type", schema: "ref:#/definitions/SearchKernel_V2_RelevanceKind" },
+            ]),
+            "SearchKernel_V2_RelevanceSortTarget" => Some(&[
+            ]),
+            "SearchKernel_V2_RemoveUpdate" => Some(&[
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_ResolvedGroupingRequest" => Some(&[
+                FieldMetadata { name: "continuations", schema: "array:string" },
+                FieldMetadata { name: "root", schema: "ref:#/definitions/SearchKernel_V2_GroupingAllOperation" },
+            ]),
+            "SearchKernel_V2_ResolvedSearchRequest" => Some(&[
+                FieldMetadata { name: "filters", schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr" },
+                FieldMetadata { name: "grouping", schema: "array:ref:#/definitions/SearchKernel_V2_ResolvedGroupingRequest" },
+                FieldMetadata { name: "inputs", schema: "array:ref:#/definitions/SearchKernel_V2_QueryInput" },
+                FieldMetadata { name: "limit", schema: "integer" },
+                FieldMetadata { name: "offset", schema: "integer" },
+                FieldMetadata { name: "presentation", schema: "ref:#/definitions/SearchKernel_V2_PresentationRequest" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "query", schema: "ref:#/definitions/SearchKernel_V2_QuerySource" },
+                FieldMetadata { name: "query_model", schema: "ref:#/definitions/SearchKernel_V2_QueryModel" },
+                FieldMetadata { name: "query_profile", schema: "string" },
+                FieldMetadata { name: "ranking", schema: "ref:#/definitions/SearchKernel_V2_RankingRequest" },
+                FieldMetadata { name: "search_chain", schema: "string" },
+                FieldMetadata { name: "search_fields", schema: "array:ref:#/definitions/SearchKernel_V2_SearchField" },
+                FieldMetadata { name: "sort", schema: "array:ref:#/definitions/SearchKernel_V2_ResolvedSortExpr" },
+                FieldMetadata { name: "timeout_ms", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt64" },
+            ]),
+            "SearchKernel_V2_ResolvedSortExpr" => Some(&[
+                FieldMetadata { name: "annotations", schema: "object" },
+                FieldMetadata { name: "direction", schema: "ref:#/definitions/SearchKernel_V2_SortDirection" },
+                FieldMetadata { name: "missing", schema: "ref:#/definitions/SearchKernel_V2_MissingPolicy" },
+                FieldMetadata { name: "target", schema: "ref:#/definitions/SearchKernel_V2_ResolvedSortTarget" },
+            ]),
+            "SearchKernel_V2_ResolvedSortTarget" => Some(&[
+                FieldMetadata { name: "target", schema: "union" },
+                FieldMetadata { name: "target_type", schema: "ref:#/definitions/SearchKernel_V2_ResolvedSortTargetKind" },
+            ]),
+            "SearchKernel_V2_ResultGroup" => Some(&[
+                FieldMetadata { name: "children", schema: "array:ref:#/definitions/SearchKernel_V2_ResultNode" },
+                FieldMetadata { name: "continuations", schema: "object" },
+                FieldMetadata { name: "fields", schema: "object" },
+                FieldMetadata { name: "id", schema: "string" },
+                FieldMetadata { name: "label", schema: "string" },
+                FieldMetadata { name: "limits", schema: "ref:#/definitions/SearchKernel_V2_ResultLimits" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "relevance", schema: "ref:#/definitions/SearchKernel_V2_Relevance" },
+                FieldMetadata { name: "source", schema: "string" },
+                FieldMetadata { name: "types", schema: "array:string" },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_ResultLimits" => Some(&[
+                FieldMetadata { name: "from", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "to", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_ResultNode" => Some(&[
+                FieldMetadata { name: "node", schema: "union" },
+                FieldMetadata { name: "node_type", schema: "ref:#/definitions/SearchKernel_V2_ResultNodeKind" },
+            ]),
+            "SearchKernel_V2_SearchField" => Some(&[
+                FieldMetadata { name: "field", schema: "string" },
+                FieldMetadata { name: "weight", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+            ]),
+            "SearchKernel_V2_SearchFieldSelection" => Some(&[
+                FieldMetadata { name: "fields", schema: "array:ref:#/definitions/SearchKernel_V2_SearchField" },
+            ]),
+            "SearchKernel_V2_SearchKernelTextQuery" => Some(&[
+                FieldMetadata { name: "text", schema: "string" },
+            ]),
+            "SearchKernel_V2_SearchOnlyFieldDefinition" => Some(&[
+                FieldMetadata { name: "field", schema: "ref:#/definitions/SearchKernel_V2_FieldDefinition" },
+            ]),
             "SearchKernel_V2_SearchRequest" => Some(&[
-                FieldMetadata {
-                    name: "grouping",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_GroupingRequest",
-                },
-                FieldMetadata {
-                    name: "filter",
-                    schema: "ref:#/definitions/SearchKernel_V2_FilterExpr",
-                },
-                FieldMetadata {
-                    name: "filters",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr",
-                },
-                FieldMetadata {
-                    name: "filter_parameters",
-                    schema: "object",
-                },
-                FieldMetadata {
-                    name: "filter_sources",
-                    schema: "array:string",
-                },
-                FieldMetadata {
-                    name: "highlighting",
-                    schema: "ref:#/definitions/SearchKernel_V2_HighlightRequest",
-                },
-                FieldMetadata {
-                    name: "inputs",
-                    schema: "object",
-                },
-                FieldMetadata {
-                    name: "language",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "limit",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32",
-                },
-                FieldMetadata {
-                    name: "offset",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32",
-                },
-                FieldMetadata {
-                    name: "projection",
-                    schema: "ref:#/definitions/SearchKernel_V2_FieldProjection",
-                },
-                FieldMetadata {
-                    name: "query",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "query_expr",
-                    schema: "ref:#/definitions/SearchKernel_V2_QueryExpr",
-                },
-                FieldMetadata {
-                    name: "query_model",
-                    schema: "object",
-                },
-                FieldMetadata {
-                    name: "query_profile",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "properties",
-                    schema: "object",
-                },
-                FieldMetadata {
-                    name: "ranking",
-                    schema: "ref:#/definitions/SearchKernel_V2_RankingRequest",
-                },
-                FieldMetadata {
-                    name: "search_chain",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "search_fields",
-                    schema: "ref:#/definitions/SearchKernel_V2_SearchFieldSelection",
-                },
-                FieldMetadata {
-                    name: "sort",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_SortExpr",
-                },
-                FieldMetadata {
-                    name: "summary",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "format",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "bolding",
-                    schema: "boolean",
-                },
-                FieldMetadata {
-                    name: "timing",
-                    schema: "boolean",
-                },
-                FieldMetadata {
-                    name: "timeout",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt64",
-                },
+                FieldMetadata { name: "filters", schema: "array:ref:#/definitions/SearchKernel_V2_FilterExpr" },
+                FieldMetadata { name: "grouping", schema: "array:ref:#/definitions/SearchKernel_V2_GroupingRequest" },
+                FieldMetadata { name: "inputs", schema: "array:ref:#/definitions/SearchKernel_V2_QueryInput" },
+                FieldMetadata { name: "limit", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "offset", schema: "ref:#/definitions/SearchKernel_V2_OptionalUInt32" },
+                FieldMetadata { name: "presentation", schema: "ref:#/definitions/SearchKernel_V2_PresentationRequest" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "query", schema: "string" },
+                FieldMetadata { name: "query_model", schema: "ref:#/definitions/SearchKernel_V2_QueryModel" },
+                FieldMetadata { name: "query_profile", schema: "string" },
+                FieldMetadata { name: "ranking", schema: "ref:#/definitions/SearchKernel_V2_RankingRequest" },
+                FieldMetadata { name: "search_chain", schema: "string" },
+                FieldMetadata { name: "search_fields", schema: "ref:#/definitions/SearchKernel_V2_SearchFieldSelection" },
+                FieldMetadata { name: "sort", schema: "array:ref:#/definitions/SearchKernel_V2_SortExpr" },
+                FieldMetadata { name: "timeout", schema: "integer" },
             ]),
             "SearchKernel_V2_SearchResult" => Some(&[
-                FieldMetadata {
-                    name: "facets",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_FacetResult",
-                },
-                FieldMetadata {
-                    name: "hits",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_Hit",
-                },
-                FieldMetadata {
-                    name: "total_hits",
-                    schema: "ref:#/definitions/SearchKernel_V2_TotalHits",
-                },
+                FieldMetadata { name: "coverage", schema: "ref:#/definitions/SearchKernel_V2_Coverage" },
+                FieldMetadata { name: "errors", schema: "array:ref:#/definitions/SearchKernel_V2_SearchResultError" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "root", schema: "ref:#/definitions/SearchKernel_V2_ResultNode" },
+                FieldMetadata { name: "timing", schema: "ref:#/definitions/SearchKernel_V2_SearchTiming" },
+                FieldMetadata { name: "total_hits", schema: "ref:#/definitions/SearchKernel_V2_TotalHits" },
+                FieldMetadata { name: "trace", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_SearchResultError" => Some(&[
+                FieldMetadata { name: "code", schema: "integer" },
+                FieldMetadata { name: "message", schema: "string" },
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "source", schema: "string" },
+                FieldMetadata { name: "stack_trace", schema: "string" },
+                FieldMetadata { name: "summary", schema: "string" },
+                FieldMetadata { name: "transient", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+            ]),
+            "SearchKernel_V2_SearchTiming" => Some(&[
+                FieldMetadata { name: "metadata", schema: "object" },
+                FieldMetadata { name: "query_time_seconds", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+                FieldMetadata { name: "search_time_seconds", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
+                FieldMetadata { name: "summary_fetch_time_seconds", schema: "ref:#/definitions/SearchKernel_V2_OptionalDouble" },
             ]),
             "SearchKernel_V2_SetField" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
+                FieldMetadata { name: "field", schema: "string" },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
             ]),
-            "SearchKernel_V2_SortDirection" => Some(&[]),
             "SearchKernel_V2_SortExpr" => Some(&[
-                FieldMetadata {
-                    name: "annotations",
-                    schema: "object",
-                },
-                FieldMetadata {
-                    name: "direction",
-                    schema: "ref:#/definitions/SearchKernel_V2_SortDirection",
-                },
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "missing",
-                    schema: "ref:#/definitions/SearchKernel_V2_OptionalMissingPlacement",
-                },
-                FieldMetadata {
-                    name: "target",
-                    schema: "object",
-                },
+                FieldMetadata { name: "annotations", schema: "object" },
+                FieldMetadata { name: "direction", schema: "ref:#/definitions/SearchKernel_V2_SortDirection" },
+                FieldMetadata { name: "missing", schema: "ref:#/definitions/SearchKernel_V2_MissingPolicy" },
+                FieldMetadata { name: "target", schema: "ref:#/definitions/SearchKernel_V2_SortTarget" },
+            ]),
+            "SearchKernel_V2_SortTarget" => Some(&[
+                FieldMetadata { name: "target", schema: "union" },
+                FieldMetadata { name: "target_type", schema: "ref:#/definitions/SearchKernel_V2_SortTargetKind" },
+            ]),
+            "SearchKernel_V2_SparseTensorCells" => Some(&[
+                FieldMetadata { name: "cells", schema: "array:ref:#/definitions/SearchKernel_V2_TensorCell" },
+            ]),
+            "SearchKernel_V2_StdDevAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
             ]),
             "SearchKernel_V2_StringEntry" => Some(&[
-                FieldMetadata {
-                    name: "key",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "string",
-                },
+                FieldMetadata { name: "key", schema: "string" },
+                FieldMetadata { name: "value", schema: "string" },
             ]),
-            "SearchKernel_V2_StringValue" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "string",
-            }]),
-            "SearchKernel_V2_SparseTensorCells" => Some(&[FieldMetadata {
-                name: "cells",
-                schema: "array:ref:#/definitions/SearchKernel_V2_TensorCell",
-            }]),
+            "SearchKernel_V2_StringValue" => Some(&[
+                FieldMetadata { name: "value", schema: "string" },
+            ]),
+            "SearchKernel_V2_StructDataType" => Some(&[
+                FieldMetadata { name: "fields", schema: "object" },
+            ]),
+            "SearchKernel_V2_StructFieldConfig" => Some(&[
+                FieldMetadata { name: "attribute", schema: "ref:#/definitions/SearchKernel_V2_AttributeConfig" },
+                FieldMetadata { name: "index", schema: "ref:#/definitions/SearchKernel_V2_IndexConfig" },
+                FieldMetadata { name: "indexing_script", schema: "string" },
+                FieldMetadata { name: "matching", schema: "ref:#/definitions/SearchKernel_V2_MatchingConfig" },
+                FieldMetadata { name: "path", schema: "string" },
+                FieldMetadata { name: "properties", schema: "object" },
+                FieldMetadata { name: "query_commands", schema: "array:string" },
+                FieldMetadata { name: "rank", schema: "string" },
+                FieldMetadata { name: "summary", schema: "ref:#/definitions/SearchKernel_V2_SummaryConfig" },
+            ]),
+            "SearchKernel_V2_StructFieldDefinition" => Some(&[
+                FieldMetadata { name: "data_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_StructReferenceDataType" => Some(&[
+                FieldMetadata { name: "name", schema: "string" },
+            ]),
+            "SearchKernel_V2_StructuredGroupingSource" => Some(&[
+                FieldMetadata { name: "root", schema: "ref:#/definitions/SearchKernel_V2_GroupingAllOperation" },
+            ]),
+            "SearchKernel_V2_SumAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_SummaryAggregation" => Some(&[
+                FieldMetadata { name: "summary", schema: "string" },
+            ]),
+            "SearchKernel_V2_SummaryConfig" => Some(&[
+                FieldMetadata { name: "enabled", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "options", schema: "object" },
+            ]),
             "SearchKernel_V2_TensorAddressEntry" => Some(&[
-                FieldMetadata {
-                    name: "dimension",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "label",
-                    schema: "string",
-                },
+                FieldMetadata { name: "dimension", schema: "string" },
+                FieldMetadata { name: "label", schema: "string" },
             ]),
             "SearchKernel_V2_TensorBlock" => Some(&[
-                FieldMetadata {
-                    name: "address",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_TensorAddressEntry",
-                },
-                FieldMetadata {
-                    name: "values",
-                    schema: "array:number",
-                },
+                FieldMetadata { name: "address", schema: "object" },
+                FieldMetadata { name: "values", schema: "array:number" },
             ]),
             "SearchKernel_V2_TensorCell" => Some(&[
-                FieldMetadata {
-                    name: "address",
-                    schema: "array:ref:#/definitions/SearchKernel_V2_TensorAddressEntry",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "number",
-                },
+                FieldMetadata { name: "address", schema: "object" },
+                FieldMetadata { name: "value", schema: "number" },
+            ]),
+            "SearchKernel_V2_TensorDataType" => Some(&[
+                FieldMetadata { name: "type_spec", schema: "string" },
+            ]),
+            "SearchKernel_V2_TensorModifyUpdate" => Some(&[
+                FieldMetadata { name: "create", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "operator", schema: "ref:#/definitions/SearchKernel_V2_TensorModifyOperator" },
+                FieldMetadata { name: "payload", schema: "union" },
+                FieldMetadata { name: "payload_type", schema: "ref:#/definitions/SearchKernel_V2_TensorModifyPayloadKind" },
             ]),
             "SearchKernel_V2_TensorValue" => Some(&[
-                FieldMetadata {
-                    name: "payload",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "type_spec",
-                    schema: "string",
-                },
+                FieldMetadata { name: "payload", schema: "union" },
+                FieldMetadata { name: "payload_type", schema: "ref:#/definitions/SearchKernel_V2_TensorPayloadKind" },
+                FieldMetadata { name: "type_spec", schema: "string" },
             ]),
             "SearchKernel_V2_TermQuery" => Some(&[
-                FieldMetadata {
-                    name: "field",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
             ]),
             "SearchKernel_V2_TotalHits" => Some(&[
-                FieldMetadata {
-                    name: "relation",
-                    schema: "ref:#/definitions/SearchKernel_V2_TotalHitsRelation",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "integer",
-                },
+                FieldMetadata { name: "relation", schema: "ref:#/definitions/SearchKernel_V2_TotalHitsRelation" },
+                FieldMetadata { name: "value", schema: "integer" },
             ]),
-            "SearchKernel_V2_TotalHitsRelation" => Some(&[]),
-            "SearchKernel_V2_UInt64Value" => Some(&[FieldMetadata {
-                name: "value",
-                schema: "integer",
-            }]),
-            "SearchKernel_V2_UnsetField" => Some(&[FieldMetadata {
-                name: "field",
-                schema: "string",
-            }]),
-            "SearchKernel_V2_UpsertRequest" => Some(&[FieldMetadata {
-                name: "document",
-                schema: "ref:#/definitions/SearchKernel_V2_Document",
-            }]),
-            "SearchKernel_V2_UpsertResult" => Some(&[FieldMetadata {
-                name: "id",
-                schema: "string",
-            }]),
+            "SearchKernel_V2_TypedQuery" => Some(&[
+                FieldMetadata { name: "query", schema: "ref:#/definitions/SearchKernel_V2_QueryExpr" },
+            ]),
+            "SearchKernel_V2_UInt64Value" => Some(&[
+                FieldMetadata { name: "value", schema: "integer" },
+            ]),
+            "SearchKernel_V2_UnboundedRangeBound" => Some(&[
+            ]),
+            "SearchKernel_V2_UnsetField" => Some(&[
+                FieldMetadata { name: "field", schema: "string" },
+            ]),
+            "SearchKernel_V2_UpdateOperation" => Some(&[
+                FieldMetadata { name: "operation", schema: "union" },
+                FieldMetadata { name: "operation_type", schema: "ref:#/definitions/SearchKernel_V2_UpdateOperationKind" },
+                FieldMetadata { name: "target", schema: "ref:#/definitions/SearchKernel_V2_FieldPath" },
+            ]),
+            "SearchKernel_V2_UpdateRequest" => Some(&[
+                FieldMetadata { name: "condition", schema: "string" },
+                FieldMetadata { name: "create", schema: "ref:#/definitions/SearchKernel_V2_OptionalBool" },
+                FieldMetadata { name: "id", schema: "string" },
+                FieldMetadata { name: "operations", schema: "array:ref:#/definitions/SearchKernel_V2_UpdateOperation" },
+            ]),
+            "SearchKernel_V2_UpdateResult" => Some(&[
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
+            "SearchKernel_V2_UpsertRequest" => Some(&[
+                FieldMetadata { name: "condition", schema: "string" },
+                FieldMetadata { name: "document", schema: "ref:#/definitions/SearchKernel_V2_Document" },
+            ]),
+            "SearchKernel_V2_UpsertResult" => Some(&[
+                FieldMetadata { name: "id", schema: "string" },
+            ]),
             "SearchKernel_V2_Value" => Some(&[
-                FieldMetadata {
-                    name: "kind",
-                    schema: "union",
-                },
-                FieldMetadata {
-                    name: "kind_type",
-                    schema: "ref:#/definitions/SearchKernel_V2_ValueKind",
-                },
+                FieldMetadata { name: "kind", schema: "union" },
+                FieldMetadata { name: "kind_type", schema: "ref:#/definitions/SearchKernel_V2_ValueKind" },
             ]),
             "SearchKernel_V2_ValueEntry" => Some(&[
-                FieldMetadata {
-                    name: "key",
-                    schema: "string",
-                },
-                FieldMetadata {
-                    name: "value",
-                    schema: "ref:#/definitions/SearchKernel_V2_Value",
-                },
+                FieldMetadata { name: "key", schema: "string" },
+                FieldMetadata { name: "value", schema: "ref:#/definitions/SearchKernel_V2_Value" },
             ]),
-            "SearchKernel_V2_ValueKind" => Some(&[]),
-            "SearchKernel_V2_ValueList" => Some(&[FieldMetadata {
-                name: "values",
-                schema: "array:ref:#/definitions/SearchKernel_V2_Value",
-            }]),
-            "SearchKernel_V2_ValueObject" => Some(&[FieldMetadata {
-                name: "fields",
-                schema: "array:ref:#/definitions/SearchKernel_V2_ValueEntry",
-            }]),
+            "SearchKernel_V2_ValueList" => Some(&[
+                FieldMetadata { name: "values", schema: "array:ref:#/definitions/SearchKernel_V2_Value" },
+            ]),
+            "SearchKernel_V2_ValueObject" => Some(&[
+                FieldMetadata { name: "fields", schema: "object" },
+            ]),
+            "SearchKernel_V2_WeightedQueryItem" => Some(&[
+                FieldMetadata { name: "key", schema: "ref:#/definitions/SearchKernel_V2_Value" },
+                FieldMetadata { name: "weight", schema: "integer" },
+            ]),
+            "SearchKernel_V2_WeightedSetDataType" => Some(&[
+                FieldMetadata { name: "element_type", schema: "ref:#/definitions/SearchKernel_V2_DataType" },
+            ]),
+            "SearchKernel_V2_XorAggregation" => Some(&[
+                FieldMetadata { name: "expression", schema: "ref:#/definitions/SearchKernel_V2_GroupingExpression" },
+            ]),
+            "SearchKernel_V2_YqlQuery" => Some(&[
+                FieldMetadata { name: "parameters", schema: "object" },
+                FieldMetadata { name: "source", schema: "string" },
+            ]),
             _ => None,
         }
     }
 
     pub(crate) fn enum_values(name: &str) -> Option<&'static [&'static str]> {
         match name {
-            "SearchKernel_FFI_V1_RequestPayload" => Some(&[
+            "SearchKernel_Protocol_V2_RequestPayload" => Some(&[
                 "NONE",
                 "SearchKernel_V2_InsertRequest",
                 "SearchKernel_V2_UpsertRequest",
@@ -2307,7 +2561,7 @@ pub(crate) mod schema {
                 "SearchKernel_V2_DescribeRequest",
                 "SearchKernel_V2_InspectQueryRequest",
             ]),
-            "SearchKernel_FFI_V1_ResponsePayload" => Some(&[
+            "SearchKernel_Protocol_V2_ResponsePayload" => Some(&[
                 "NONE",
                 "SearchKernel_V2_InsertResult",
                 "SearchKernel_V2_UpsertResult",
@@ -2320,10 +2574,66 @@ pub(crate) mod schema {
                 "SearchKernel_V2_DescribeResult",
                 "SearchKernel_V2_InspectQueryResult",
             ]),
-            "SearchKernel_V2_AnalyzeTarget" => Some(&["NONE", "Analyzer", "AnalyzeFieldTarget"]),
-            "SearchKernel_V2_ComparisonOp" => {
-                Some(&["Unspecified", "Eq", "Ne", "Lt", "Lte", "Gt", "Gte"])
-            }
+            "SearchKernel_V2_AggregationKind" => Some(&[
+                "NONE",
+                "CountAggregation",
+                "SumAggregation",
+                "AvgAggregation",
+                "MinAggregation",
+                "MaxAggregation",
+                "XorAggregation",
+                "StdDevAggregation",
+                "QuantilesAggregation",
+                "SummaryAggregation",
+            ]),
+            "SearchKernel_V2_AnalyzeTarget" => Some(&[
+                "NONE",
+                "Analyzer",
+                "AnalyzeFieldTarget",
+            ]),
+            "SearchKernel_V2_ArithmeticUpdateOperator" => Some(&[
+                "Unspecified",
+                "Increment",
+                "Decrement",
+                "Multiply",
+                "Divide",
+            ]),
+            "SearchKernel_V2_ComparisonOp" => Some(&[
+                "Unspecified",
+                "Eq",
+                "Ne",
+                "Lt",
+                "Lte",
+                "Gt",
+                "Gte",
+            ]),
+            "SearchKernel_V2_ConstantSourceKind" => Some(&[
+                "NONE",
+                "LiteralConstantSource",
+                "FileConstantSource",
+            ]),
+            "SearchKernel_V2_DataTypeKind" => Some(&[
+                "NONE",
+                "PrimitiveDataType",
+                "TensorDataType",
+                "ArrayDataType",
+                "MapDataType",
+                "WeightedSetDataType",
+                "StructDataType",
+                "StructReferenceDataType",
+                "PredicateDataType",
+                "PositionDataType",
+                "ReferenceDataType",
+            ]),
+            "SearchKernel_V2_DistanceMetric" => Some(&[
+                "Unspecified",
+                "Euclidean",
+                "Angular",
+                "DotProduct",
+                "PrenormalizedAngular",
+                "GeoDegrees",
+                "Hamming",
+            ]),
             "SearchKernel_V2_ErrorCode" => Some(&[
                 "Unspecified",
                 "InvalidArgument",
@@ -2337,17 +2647,6 @@ pub(crate) mod schema {
                 "Unavailable",
                 "DeadlineExceeded",
             ]),
-            "SearchKernel_V2_FacetSort" => Some(&[
-                "Unspecified",
-                "CountDesc",
-                "CountAsc",
-                "ValueAsc",
-                "ValueDesc",
-            ]),
-            "SearchKernel_V2_FieldCardinality" => Some(&["Unspecified", "Single", "Multi"]),
-            "SearchKernel_V2_FieldKind" => {
-                Some(&["Unspecified", "Text", "Keyword", "Int64", "Float64", "Bool"])
-            }
             "SearchKernel_V2_FilterExprKind" => Some(&[
                 "NONE",
                 "FilterAnd",
@@ -2358,25 +2657,226 @@ pub(crate) mod schema {
                 "FilterExists",
                 "FilterIn",
             ]),
-            "SearchKernel_V2_MissingPlacement" => Some(&["Unspecified", "First", "Last"]),
-            "SearchKernel_V2_NullValue" => Some(&["Unspecified", "Null"]),
-            "SearchKernel_V2_PatchOperationKind" => Some(&["NONE", "SetField", "UnsetField"]),
-            "SearchKernel_V2_QueryExprKind" => {
-                Some(&["NONE", "TermQuery", "QueryAnd", "QueryOr", "QueryNot"])
-            }
+            "SearchKernel_V2_GroupingBinaryOperator" => Some(&[
+                "Unspecified",
+                "Add",
+                "Subtract",
+                "Multiply",
+                "Divide",
+                "Modulo",
+            ]),
+            "SearchKernel_V2_GroupingExpressionKind" => Some(&[
+                "NONE",
+                "GroupingAttributeExpression",
+                "GroupingLiteralExpression",
+                "GroupingFunctionExpression",
+                "GroupingUnaryExpression",
+                "GroupingBinaryExpression",
+                "GroupingAliasReference",
+                "GroupingMemberExpression",
+                "GroupingMapLookupExpression",
+                "GroupingBucketExpression",
+                "GroupingAggregationExpression",
+            ]),
+            "SearchKernel_V2_GroupingFilterExprKind" => Some(&[
+                "NONE",
+                "GroupingFilterAnd",
+                "GroupingFilterOr",
+                "GroupingFilterNot",
+                "GroupingFilterRegex",
+                "GroupingFilterRange",
+                "GroupingFilterIsTrue",
+            ]),
+            "SearchKernel_V2_GroupingMaxKind" => Some(&[
+                "NONE",
+                "FiniteGroupingMax",
+                "InfiniteGroupingMax",
+            ]),
+            "SearchKernel_V2_GroupingOperationKind" => Some(&[
+                "NONE",
+                "GroupingAllOperation",
+                "GroupingEachOperation",
+                "GroupingGroupOperation",
+                "GroupingOutputOperation",
+                "GroupingMaxOperation",
+                "GroupingPrecisionOperation",
+                "GroupingOrderOperation",
+                "GroupingAliasOperation",
+                "GroupingFilterOperation",
+                "GroupingKeepOperation",
+                "GroupingWhereOperation",
+            ]),
+            "SearchKernel_V2_GroupingSourceKind" => Some(&[
+                "NONE",
+                "RawGroupingSource",
+                "StructuredGroupingSource",
+            ]),
+            "SearchKernel_V2_GroupingUnaryOperator" => Some(&[
+                "Unspecified",
+                "Positive",
+                "Negative",
+            ]),
+            "SearchKernel_V2_MatchedElementUpdateKind" => Some(&[
+                "NONE",
+                "AssignUpdate",
+                "ClearUpdate",
+                "ArithmeticUpdate",
+            ]),
+            "SearchKernel_V2_MatchingMode" => Some(&[
+                "Unspecified",
+                "Text",
+                "Word",
+                "Exact",
+                "Gram",
+            ]),
+            "SearchKernel_V2_MissingPolicyKind" => Some(&[
+                "NONE",
+                "MissingFirst",
+                "MissingLast",
+                "MissingAs",
+            ]),
+            "SearchKernel_V2_NonFiniteFloatKind" => Some(&[
+                "Unspecified",
+                "NaN",
+                "PositiveInfinity",
+                "NegativeInfinity",
+            ]),
+            "SearchKernel_V2_NullValue" => Some(&[
+                "Unspecified",
+                "Null",
+            ]),
+            "SearchKernel_V2_PatchOperationKind" => Some(&[
+                "NONE",
+                "SetField",
+                "UnsetField",
+            ]),
+            "SearchKernel_V2_PrimitiveDataTypeKind" => Some(&[
+                "Unspecified",
+                "String",
+                "Bool",
+                "Byte",
+                "Int32",
+                "Int64",
+                "Float32",
+                "Float64",
+                "Raw",
+            ]),
+            "SearchKernel_V2_QueryExprKind" => Some(&[
+                "NONE",
+                "TermQuery",
+                "QueryContains",
+                "QueryAnd",
+                "QueryOr",
+                "QueryNot",
+                "QueryTrue",
+                "QueryFalse",
+                "QueryComparison",
+                "QueryRange",
+                "QueryIn",
+                "QueryPhrase",
+                "QueryNear",
+                "QueryONear",
+                "QuerySameElement",
+                "QueryEquiv",
+                "QueryAlternatives",
+                "QueryFuzzy",
+                "QueryMatches",
+                "QueryText",
+                "QueryUserInput",
+                "QueryUserQuery",
+                "QueryDotProduct",
+                "QueryWeightedSet",
+                "QueryWand",
+                "QueryWeakAnd",
+                "QueryRank",
+                "QueryLabeled",
+                "QueryNonEmpty",
+                "QueryGeoLocation",
+                "QueryGeoBoundingBox",
+                "QueryNearestNeighbor",
+                "QueryPredicate",
+            ]),
+            "SearchKernel_V2_QueryInputKind" => Some(&[
+                "NONE",
+                "LiteralQueryInput",
+                "ExpressionQueryInput",
+            ]),
+            "SearchKernel_V2_QuerySourceKind" => Some(&[
+                "NONE",
+                "SearchKernelTextQuery",
+                "TypedQuery",
+                "YqlQuery",
+                "MatchAllQuery",
+            ]),
+            "SearchKernel_V2_RangeBoundKind" => Some(&[
+                "NONE",
+                "FiniteRangeBound",
+                "NegativeInfinityBound",
+                "PositiveInfinityBound",
+                "UnboundedRangeBound",
+            ]),
+            "SearchKernel_V2_RelevanceKind" => Some(&[
+                "NONE",
+                "FiniteRelevance",
+                "NegativeInfinityRelevance",
+                "PositiveInfinityRelevance",
+            ]),
+            "SearchKernel_V2_ResolvedSortTargetKind" => Some(&[
+                "NONE",
+                "FieldSortTarget",
+                "RelevanceSortTarget",
+                "RankFeatureSortTarget",
+            ]),
+            "SearchKernel_V2_ResultNodeKind" => Some(&[
+                "NONE",
+                "Hit",
+                "ResultGroup",
+            ]),
+            "SearchKernel_V2_SortDirection" => Some(&[
+                "Unspecified",
+                "Asc",
+                "Desc",
+            ]),
+            "SearchKernel_V2_SortTargetKind" => Some(&[
+                "NONE",
+                "FieldSortTarget",
+                "RelevanceSortTarget",
+                "RankFeatureSortTarget",
+                "RawSortTarget",
+            ]),
+            "SearchKernel_V2_TensorModifyOperator" => Some(&[
+                "Unspecified",
+                "Replace",
+                "Add",
+                "Multiply",
+            ]),
+            "SearchKernel_V2_TensorModifyPayloadKind" => Some(&[
+                "NONE",
+                "SparseTensorCells",
+                "MixedTensorBlocks",
+            ]),
             "SearchKernel_V2_TensorPayloadKind" => Some(&[
                 "NONE",
                 "DenseTensorValues",
                 "SparseTensorCells",
                 "MixedTensorBlocks",
             ]),
-            "SearchKernel_V2_SortDirection" => Some(&["Unspecified", "Asc", "Desc"]),
             "SearchKernel_V2_TotalHitsRelation" => Some(&[
                 "Unspecified",
                 "Exact",
                 "LowerBound",
                 "Approximate",
                 "Unknown",
+            ]),
+            "SearchKernel_V2_UpdateOperationKind" => Some(&[
+                "NONE",
+                "AssignUpdate",
+                "ClearUpdate",
+                "AddUpdate",
+                "RemoveUpdate",
+                "ArithmeticUpdate",
+                "MatchUpdate",
+                "TensorModifyUpdate",
             ]),
             "SearchKernel_V2_ValueKind" => Some(&[
                 "NONE",
@@ -2398,154 +2898,78 @@ pub(crate) mod schema {
 
     pub(crate) fn fields(name: &str) -> Option<&'static [&'static str]> {
         match name {
-            "SearchKernel_FFI_V1_RequestEnvelope" => {
-                Some(&["payload", "payload_type", "protocol_version"])
-            }
-            "SearchKernel_FFI_V1_RequestPayload" => Some(&[]),
-            "SearchKernel_FFI_V1_ResponseEnvelope" => {
-                Some(&["payload", "payload_type", "protocol_version"])
-            }
-            "SearchKernel_FFI_V1_ResponsePayload" => Some(&[]),
-            "SearchKernel_V2_AnalyzeFieldTarget" => Some(&["field"]),
-            "SearchKernel_V2_AnalyzeRequest" => {
-                Some(&["language", "target", "target_type", "text"])
-            }
-            "SearchKernel_V2_AnalyzeResult" => Some(&["tokens"]),
-            "SearchKernel_V2_AnalyzeTarget" => Some(&[]),
-            "SearchKernel_V2_AnalyzedToken" => {
-                Some(&["end_byte", "position", "start_byte", "surface", "term"])
-            }
-            "SearchKernel_V2_Analyzer" => Some(&["name", "options", "version"]),
-            "SearchKernel_V2_Bm25Ranking" => Some(&[]),
-            "SearchKernel_V2_BoolValue" => Some(&["value"]),
-            "SearchKernel_V2_BytesValue" => Some(&["value"]),
-            "SearchKernel_V2_ComparisonOp" => Some(&[]),
-            "SearchKernel_V2_DefaultRelevanceV1" => Some(&[]),
-            "SearchKernel_V2_DeleteRequest" => Some(&["condition", "id"]),
-            "SearchKernel_V2_DeleteResult" => Some(&["deleted", "id"]),
-            "SearchKernel_V2_DescribeRequest" => Some(&[]),
-            "SearchKernel_V2_DescribeResult" => Some(&["index"]),
-            "SearchKernel_V2_Document" => Some(&["fields", "id"]),
-            "SearchKernel_V2_Error" => Some(&["code", "details", "message", "retryable"]),
-            "SearchKernel_V2_ErrorCode" => Some(&[]),
-            "SearchKernel_V2_ErrorDetail" => Some(&["code", "message", "metadata", "path"]),
-            "SearchKernel_V2_FieldCardinality" => Some(&[]),
-            "SearchKernel_V2_FieldDefinition" => Some(&[
-                "analyzer",
-                "cardinality",
-                "facetable",
-                "filterable",
-                "kind",
+            "SearchKernel_Protocol_V2_RequestEnvelope" => Some(&[
+                "payload",
+                "payload_type",
+                "protocol_version",
+            ]),
+            "SearchKernel_Protocol_V2_ResponseEnvelope" => Some(&[
+                "payload",
+                "payload_type",
+                "protocol_version",
+            ]),
+            "SearchKernel_V2_AddUpdate" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_AnalyzeFieldTarget" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_AnalyzeRequest" => Some(&[
+                "language",
+                "target",
+                "target_type",
+                "text",
+            ]),
+            "SearchKernel_V2_AnalyzeResult" => Some(&[
+                "tokens",
+            ]),
+            "SearchKernel_V2_AnalyzedToken" => Some(&[
+                "end_byte",
+                "position",
+                "start_byte",
+                "surface",
+                "term",
+            ]),
+            "SearchKernel_V2_Analyzer" => Some(&[
                 "name",
-                "searchable",
-                "sortable",
-                "stored",
+                "options",
+                "version",
             ]),
-            "SearchKernel_V2_FieldKind" => Some(&[]),
-            "SearchKernel_V2_FieldProjection" => Some(&["fields"]),
-            "SearchKernel_V2_FilterAnd" => Some(&["clauses"]),
-            "SearchKernel_V2_FilterComparison" => Some(&["field", "op", "value"]),
-            "SearchKernel_V2_FilterExists" => Some(&["field"]),
-            "SearchKernel_V2_FilterIn" => Some(&["field", "values"]),
-            "SearchKernel_V2_FilterExpr" => Some(&["expr", "expr_type"]),
-            "SearchKernel_V2_FilterExprKind" => Some(&[]),
-            "SearchKernel_V2_FilterNot" => Some(&["clause"]),
-            "SearchKernel_V2_FilterOr" => Some(&["clauses"]),
-            "SearchKernel_V2_FilterRange" => {
-                Some(&["field", "include_lower", "include_upper", "lower", "upper"])
-            }
-            "SearchKernel_V2_Float64Value" => Some(&["value"]),
-            "SearchKernel_V2_GetRequest" => Some(&["id", "projection"]),
-            "SearchKernel_V2_GetResult" => Some(&["document"]),
-            "SearchKernel_V2_HighlightFragment" => Some(&["matches", "text"]),
-            "SearchKernel_V2_HighlightRequest" => Some(&["fields"]),
-            "SearchKernel_V2_HighlightResult" => Some(&["field", "fragments"]),
-            "SearchKernel_V2_HighlightSpan" => Some(&["end_byte", "start_byte"]),
-            "SearchKernel_V2_Hit" => Some(&[
-                "fields",
-                "highlights",
-                "id",
-                "match_features",
-                "rank_features",
-                "relevance",
-                "sort_values",
-                "source",
-                "summary_features",
-                "types",
+            "SearchKernel_V2_ArithmeticUpdate" => Some(&[
+                "operand",
+                "operator",
             ]),
-            "SearchKernel_V2_IndexDefinition" => Some(&["default_search_fields", "fields", "name"]),
-            "SearchKernel_V2_InsertRequest" => Some(&["document"]),
-            "SearchKernel_V2_InsertResult" => Some(&["id"]),
-            "SearchKernel_V2_InspectQueryRequest" => Some(&["request"]),
-            "SearchKernel_V2_InspectQueryResult" => Some(&["resolved_request"]),
-            "SearchKernel_V2_Int64Value" => Some(&["value"]),
-            "SearchKernel_V2_MissingPlacement" => Some(&[]),
-            "SearchKernel_V2_NullValue" => Some(&[]),
-            "SearchKernel_V2_NullValueValue" => Some(&["value"]),
-            "SearchKernel_V2_OptionalBool" => Some(&["value"]),
-            "SearchKernel_V2_OptionalDouble" => Some(&["value"]),
-            "SearchKernel_V2_OptionalMissingPlacement" => Some(&["value"]),
-            "SearchKernel_V2_OptionalUInt32" => Some(&["value"]),
-            "SearchKernel_V2_OptionalUInt64" => Some(&["value"]),
-            "SearchKernel_V2_PatchOperation" => Some(&["operation", "operation_type"]),
-            "SearchKernel_V2_PatchOperationKind" => Some(&[]),
-            "SearchKernel_V2_PatchRequest" => Some(&["id", "operations"]),
-            "SearchKernel_V2_PatchResult" => Some(&["id"]),
-            "SearchKernel_V2_QueryAnd" => Some(&["clauses"]),
-            "SearchKernel_V2_QueryExpr" => Some(&["expr", "expr_type"]),
-            "SearchKernel_V2_QueryExprKind" => Some(&[]),
-            "SearchKernel_V2_QueryNot" => Some(&["clause"]),
-            "SearchKernel_V2_QueryOr" => Some(&["clauses"]),
-            "SearchKernel_V2_QueryModel" => Some(&[
-                "query_string",
-                "default_index",
-                "encoding",
-                "filter",
-                "language",
-                "locale",
-                "type",
-                "sources",
-                "restrict",
-                "search_path",
-                "search_group",
+            "SearchKernel_V2_ArrayDataType" => Some(&[
+                "element_type",
             ]),
-            "SearchKernel_V2_QueryModelType" => Some(&[
-                "composite",
-                "tokenization",
-                "syntax",
-                "profile",
-                "is_yql_default",
+            "SearchKernel_V2_AssignUpdate" => Some(&[
+                "value",
             ]),
-            "SearchKernel_V2_RankingRequest" => Some(&["profile", "properties"]),
-            "SearchKernel_V2_SearchField" => Some(&["field", "weight"]),
-            "SearchKernel_V2_SearchFieldSelection" => Some(&["fields"]),
-            "SearchKernel_V2_SearchRequest" => Some(&[
-                "grouping",
-                "filter",
-                "filters",
-                "filter_parameters",
-                "filter_sources",
-                "highlighting",
-                "inputs",
-                "language",
-                "limit",
-                "offset",
-                "projection",
-                "query",
-                "query_expr",
-                "query_model",
-                "query_profile",
+            "SearchKernel_V2_AttributeConfig" => Some(&[
+                "distance_metric",
+                "enabled",
+                "fast_access",
+                "fast_search",
+                "options",
+            ]),
+            "SearchKernel_V2_AvgAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_BoolValue" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_BytesValue" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_ClearUpdate" => Some(&[]),
+            "SearchKernel_V2_ConstantDefinition" => Some(&[
+                "data_type",
+                "name",
                 "properties",
-                "ranking",
-                "search_chain",
-                "search_fields",
-                "sort",
-                "summary",
-                "format",
-                "bolding",
-                "timing",
-                "timeout",
+                "source",
+                "source_type",
             ]),
+            "SearchKernel_V2_CountAggregation" => Some(&[]),
             "SearchKernel_V2_Coverage" => Some(&[
                 "coverage_percent",
                 "degraded",
@@ -2564,10 +2988,708 @@ pub(crate) mod schema {
                 "non_ideal_state",
                 "timeout",
             ]),
-            "SearchKernel_V2_FiniteRelevance" => Some(&["value"]),
+            "SearchKernel_V2_DataType" => Some(&[
+                "kind",
+                "kind_type",
+            ]),
+            "SearchKernel_V2_DeleteRequest" => Some(&[
+                "condition",
+                "id",
+            ]),
+            "SearchKernel_V2_DeleteResult" => Some(&[
+                "deleted",
+                "id",
+            ]),
+            "SearchKernel_V2_DenseTensorValues" => Some(&[
+                "values",
+            ]),
+            "SearchKernel_V2_DescribeRequest" => Some(&[]),
+            "SearchKernel_V2_DescribeResult" => Some(&[
+                "index",
+            ]),
+            "SearchKernel_V2_Document" => Some(&[
+                "fields",
+                "id",
+            ]),
+            "SearchKernel_V2_DocumentSummaryDefinition" => Some(&[
+                "fields",
+                "from_disk",
+                "inherits",
+                "name",
+                "omit_summary_features",
+                "properties",
+            ]),
+            "SearchKernel_V2_DocumentSummaryFieldDefinition" => Some(&[
+                "data_type",
+                "name",
+                "properties",
+                "source",
+                "struct_fields",
+            ]),
+            "SearchKernel_V2_Error" => Some(&[
+                "code",
+                "details",
+                "message",
+                "retryable",
+            ]),
+            "SearchKernel_V2_ErrorDetail" => Some(&[
+                "code",
+                "message",
+                "metadata",
+                "path",
+            ]),
+            "SearchKernel_V2_ExpressionQueryInput" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_FieldDefinition" => Some(&[
+                "analyzer",
+                "attribute",
+                "data_type",
+                "facetable",
+                "filterable",
+                "index",
+                "indexing_script",
+                "matching",
+                "name",
+                "properties",
+                "searchable",
+                "sortable",
+                "stored",
+                "struct_fields",
+                "summary",
+            ]),
+            "SearchKernel_V2_FieldPath" => Some(&[
+                "path",
+            ]),
+            "SearchKernel_V2_FieldProjection" => Some(&[
+                "fields",
+            ]),
+            "SearchKernel_V2_FieldSetDefinition" => Some(&[
+                "fields",
+                "matching",
+                "name",
+                "properties",
+                "query_commands",
+            ]),
+            "SearchKernel_V2_FieldSortTarget" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_FileConstantSource" => Some(&[
+                "path",
+            ]),
+            "SearchKernel_V2_FilterAnd" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_FilterComparison" => Some(&[
+                "field",
+                "op",
+                "value",
+            ]),
+            "SearchKernel_V2_FilterExists" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_FilterExpr" => Some(&[
+                "expr",
+                "expr_type",
+            ]),
+            "SearchKernel_V2_FilterIn" => Some(&[
+                "field",
+                "values",
+            ]),
+            "SearchKernel_V2_FilterNot" => Some(&[
+                "clause",
+            ]),
+            "SearchKernel_V2_FilterOr" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_FilterRange" => Some(&[
+                "field",
+                "include_lower",
+                "include_upper",
+                "lower",
+                "upper",
+            ]),
+            "SearchKernel_V2_FilterRequest" => Some(&[
+                "parameters",
+                "sources",
+                "structured",
+            ]),
+            "SearchKernel_V2_FiniteGroupingMax" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_FiniteRangeBound" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_FiniteRelevance" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_Float64Value" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_GetRequest" => Some(&[
+                "id",
+                "projection",
+            ]),
+            "SearchKernel_V2_GetResult" => Some(&[
+                "document",
+            ]),
+            "SearchKernel_V2_GroupingAggregationExpression" => Some(&[
+                "aggregation",
+                "aggregation_type",
+            ]),
+            "SearchKernel_V2_GroupingAliasOperation" => Some(&[
+                "expression",
+                "name",
+            ]),
+            "SearchKernel_V2_GroupingAliasReference" => Some(&[
+                "name",
+            ]),
+            "SearchKernel_V2_GroupingAllOperation" => Some(&[
+                "label",
+                "operations",
+            ]),
+            "SearchKernel_V2_GroupingAttributeExpression" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_GroupingBinaryExpression" => Some(&[
+                "left",
+                "op",
+                "right",
+            ]),
+            "SearchKernel_V2_GroupingBucketExpression" => Some(&[
+                "include_lower",
+                "include_upper",
+                "lower",
+                "upper",
+            ]),
+            "SearchKernel_V2_GroupingEachOperation" => Some(&[
+                "label",
+                "operations",
+            ]),
+            "SearchKernel_V2_GroupingExpression" => Some(&[
+                "expr",
+                "expr_type",
+            ]),
+            "SearchKernel_V2_GroupingFilterAnd" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_GroupingFilterExpr" => Some(&[
+                "expr",
+                "expr_type",
+            ]),
+            "SearchKernel_V2_GroupingFilterIsTrue" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_GroupingFilterNot" => Some(&[
+                "clause",
+            ]),
+            "SearchKernel_V2_GroupingFilterOperation" => Some(&[
+                "filter",
+            ]),
+            "SearchKernel_V2_GroupingFilterOr" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_GroupingFilterRange" => Some(&[
+                "expression",
+                "include_lower",
+                "include_upper",
+                "lower",
+                "upper",
+            ]),
+            "SearchKernel_V2_GroupingFilterRegex" => Some(&[
+                "expression",
+                "pattern",
+            ]),
+            "SearchKernel_V2_GroupingFunctionExpression" => Some(&[
+                "arguments",
+                "name",
+            ]),
+            "SearchKernel_V2_GroupingGroupOperation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_GroupingKeepOperation" => Some(&[
+                "filter",
+            ]),
+            "SearchKernel_V2_GroupingLiteralExpression" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_GroupingMapLookupExpression" => Some(&[
+                "base",
+                "key",
+            ]),
+            "SearchKernel_V2_GroupingMaxOperation" => Some(&[
+                "value",
+                "value_type",
+            ]),
+            "SearchKernel_V2_GroupingMemberExpression" => Some(&[
+                "base",
+                "member",
+            ]),
+            "SearchKernel_V2_GroupingOperation" => Some(&[
+                "operation",
+                "operation_type",
+            ]),
+            "SearchKernel_V2_GroupingOrderExpr" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_GroupingOrderOperation" => Some(&[
+                "expressions",
+            ]),
+            "SearchKernel_V2_GroupingOutput" => Some(&[
+                "expression",
+                "label",
+            ]),
+            "SearchKernel_V2_GroupingOutputOperation" => Some(&[
+                "outputs",
+            ]),
+            "SearchKernel_V2_GroupingPrecisionOperation" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_GroupingRequest" => Some(&[
+                "continuations",
+                "source",
+                "source_type",
+            ]),
+            "SearchKernel_V2_GroupingUnaryExpression" => Some(&[
+                "expression",
+                "op",
+            ]),
+            "SearchKernel_V2_GroupingWhereOperation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_HighlightFragment" => Some(&[
+                "matches",
+                "text",
+            ]),
+            "SearchKernel_V2_HighlightRequest" => Some(&[
+                "fields",
+            ]),
+            "SearchKernel_V2_HighlightResult" => Some(&[
+                "field",
+                "fragments",
+            ]),
+            "SearchKernel_V2_HighlightSpan" => Some(&[
+                "end_byte",
+                "start_byte",
+            ]),
+            "SearchKernel_V2_Hit" => Some(&[
+                "fields",
+                "highlights",
+                "id",
+                "match_features",
+                "rank_features",
+                "relevance",
+                "sort_values",
+                "source",
+                "summary_features",
+                "types",
+            ]),
+            "SearchKernel_V2_HnswIndexConfig" => Some(&[
+                "max_links_per_node",
+                "neighbors_to_explore_at_insert",
+                "options",
+            ]),
+            "SearchKernel_V2_ImportedFieldDefinition" => Some(&[
+                "alias",
+                "properties",
+                "reference_field",
+                "target_field",
+            ]),
+            "SearchKernel_V2_IndexConfig" => Some(&[
+                "enabled",
+                "hnsw",
+                "options",
+            ]),
+            "SearchKernel_V2_IndexDefinition" => Some(&[
+                "constants",
+                "default_search_fields",
+                "document_inherits",
+                "document_summaries",
+                "document_type",
+                "fields",
+                "fieldsets",
+                "imported_fields",
+                "name",
+                "onnx_models",
+                "properties",
+                "rank_profiles",
+                "schema_fields",
+                "schema_inherits",
+                "structs",
+            ]),
+            "SearchKernel_V2_InfiniteGroupingMax" => Some(&[]),
+            "SearchKernel_V2_InsertRequest" => Some(&[
+                "document",
+            ]),
+            "SearchKernel_V2_InsertResult" => Some(&[
+                "id",
+            ]),
+            "SearchKernel_V2_InspectQueryRequest" => Some(&[
+                "request",
+            ]),
+            "SearchKernel_V2_InspectQueryResult" => Some(&[
+                "resolved_request",
+            ]),
+            "SearchKernel_V2_Int64Value" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_LiteralConstantSource" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_LiteralQueryInput" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_MapDataType" => Some(&[
+                "key_type",
+                "value_type",
+            ]),
+            "SearchKernel_V2_MatchAllQuery" => Some(&[]),
+            "SearchKernel_V2_MatchUpdate" => Some(&[
+                "element",
+                "update",
+            ]),
+            "SearchKernel_V2_MatchedElementUpdate" => Some(&[
+                "operation",
+                "operation_type",
+            ]),
+            "SearchKernel_V2_MatchingConfig" => Some(&[
+                "mode",
+                "options",
+            ]),
+            "SearchKernel_V2_MaxAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_MinAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_MissingAs" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_MissingFirst" => Some(&[]),
+            "SearchKernel_V2_MissingLast" => Some(&[]),
+            "SearchKernel_V2_MissingPolicy" => Some(&[
+                "policy",
+                "policy_type",
+            ]),
+            "SearchKernel_V2_MixedTensorBlocks" => Some(&[
+                "blocks",
+            ]),
+            "SearchKernel_V2_NamedStructDefinition" => Some(&[
+                "fields",
+                "name",
+                "properties",
+            ]),
+            "SearchKernel_V2_NegativeInfinityBound" => Some(&[]),
             "SearchKernel_V2_NegativeInfinityRelevance" => Some(&[]),
+            "SearchKernel_V2_NonFiniteFloatValue" => Some(&[
+                "kind",
+            ]),
+            "SearchKernel_V2_NullValueValue" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_OnnxModelDefinition" => Some(&[
+                "file",
+                "gpu_device",
+                "inputs",
+                "interop_threads",
+                "intraop_threads",
+                "name",
+                "outputs",
+                "properties",
+            ]),
+            "SearchKernel_V2_OptionalBool" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_OptionalDouble" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_OptionalUInt32" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_OptionalUInt64" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_PatchOperation" => Some(&[
+                "operation",
+                "operation_type",
+            ]),
+            "SearchKernel_V2_PatchRequest" => Some(&[
+                "id",
+                "operations",
+            ]),
+            "SearchKernel_V2_PatchResult" => Some(&[
+                "id",
+            ]),
+            "SearchKernel_V2_PositionDataType" => Some(&[]),
+            "SearchKernel_V2_PositiveInfinityBound" => Some(&[]),
             "SearchKernel_V2_PositiveInfinityRelevance" => Some(&[]),
-            "SearchKernel_V2_Relevance" => Some(&["value", "value_type"]),
+            "SearchKernel_V2_PredicateDataType" => Some(&[]),
+            "SearchKernel_V2_PresentationRequest" => Some(&[
+                "bolding",
+                "fields",
+                "format",
+                "highlighting",
+                "summary",
+                "timing",
+            ]),
+            "SearchKernel_V2_PrimitiveDataType" => Some(&[
+                "kind",
+            ]),
+            "SearchKernel_V2_QuantilesAggregation" => Some(&[
+                "expression",
+                "quantiles",
+            ]),
+            "SearchKernel_V2_QueryAlternative" => Some(&[
+                "exactness",
+                "query",
+            ]),
+            "SearchKernel_V2_QueryAlternatives" => Some(&[
+                "alternatives",
+            ]),
+            "SearchKernel_V2_QueryAnd" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_QueryComparison" => Some(&[
+                "field",
+                "op",
+                "value",
+            ]),
+            "SearchKernel_V2_QueryContains" => Some(&[
+                "field",
+                "item",
+            ]),
+            "SearchKernel_V2_QueryDotProduct" => Some(&[
+                "field",
+                "items",
+            ]),
+            "SearchKernel_V2_QueryEquiv" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_QueryExpr" => Some(&[
+                "annotations",
+                "expr",
+                "expr_type",
+            ]),
+            "SearchKernel_V2_QueryFalse" => Some(&[]),
+            "SearchKernel_V2_QueryFieldRef" => Some(&[
+                "element_index",
+                "path",
+            ]),
+            "SearchKernel_V2_QueryFuzzy" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_QueryGeoBoundingBox" => Some(&[
+                "east",
+                "field",
+                "north",
+                "south",
+                "west",
+            ]),
+            "SearchKernel_V2_QueryGeoLocation" => Some(&[
+                "field",
+                "latitude",
+                "longitude",
+                "radius",
+            ]),
+            "SearchKernel_V2_QueryIn" => Some(&[
+                "field",
+                "values",
+            ]),
+            "SearchKernel_V2_QueryInput" => Some(&[
+                "input",
+                "input_type",
+                "name",
+            ]),
+            "SearchKernel_V2_QueryLabeled" => Some(&[
+                "label",
+                "query",
+                "score",
+            ]),
+            "SearchKernel_V2_QueryMatches" => Some(&[
+                "field",
+                "pattern",
+            ]),
+            "SearchKernel_V2_QueryModel" => Some(&[
+                "default_index",
+                "encoding",
+                "filter",
+                "language",
+                "locale",
+                "query_string",
+                "restrict",
+                "search_group",
+                "search_path",
+                "sources",
+                "type",
+            ]),
+            "SearchKernel_V2_QueryModelType" => Some(&[
+                "composite",
+                "is_yql_default",
+                "profile",
+                "syntax",
+                "tokenization",
+            ]),
+            "SearchKernel_V2_QueryNear" => Some(&[
+                "terms",
+            ]),
+            "SearchKernel_V2_QueryNearestNeighbor" => Some(&[
+                "document_field",
+                "query_tensor",
+            ]),
+            "SearchKernel_V2_QueryNonEmpty" => Some(&[
+                "query",
+            ]),
+            "SearchKernel_V2_QueryNot" => Some(&[
+                "clause",
+            ]),
+            "SearchKernel_V2_QueryONear" => Some(&[
+                "terms",
+            ]),
+            "SearchKernel_V2_QueryOr" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_QueryPhrase" => Some(&[
+                "terms",
+            ]),
+            "SearchKernel_V2_QueryPredicate" => Some(&[
+                "features",
+                "field",
+                "range_features",
+            ]),
+            "SearchKernel_V2_QueryRange" => Some(&[
+                "field",
+                "include_lower",
+                "include_upper",
+                "lower",
+                "upper",
+            ]),
+            "SearchKernel_V2_QueryRank" => Some(&[
+                "match",
+                "rank",
+            ]),
+            "SearchKernel_V2_QuerySameElement" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_QuerySource" => Some(&[
+                "source",
+                "source_type",
+            ]),
+            "SearchKernel_V2_QueryText" => Some(&[
+                "text",
+            ]),
+            "SearchKernel_V2_QueryTrue" => Some(&[]),
+            "SearchKernel_V2_QueryUserInput" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_QueryUserQuery" => Some(&[]),
+            "SearchKernel_V2_QueryWand" => Some(&[
+                "field",
+                "items",
+            ]),
+            "SearchKernel_V2_QueryWeakAnd" => Some(&[
+                "clauses",
+            ]),
+            "SearchKernel_V2_QueryWeightedSet" => Some(&[
+                "field",
+                "items",
+            ]),
+            "SearchKernel_V2_RangeBound" => Some(&[
+                "bound",
+                "bound_type",
+            ]),
+            "SearchKernel_V2_RankFeatureSortTarget" => Some(&[
+                "feature",
+            ]),
+            "SearchKernel_V2_RankFunctionDefinition" => Some(&[
+                "arguments",
+                "expression",
+                "inline",
+                "name",
+            ]),
+            "SearchKernel_V2_RankPhaseDefinition" => Some(&[
+                "expression",
+                "keep_rank_count",
+                "properties",
+                "rank_score_drop_limit",
+                "rerank_count",
+                "total_keep_rank_count",
+                "total_rerank_count",
+            ]),
+            "SearchKernel_V2_RankProfileDefinition" => Some(&[
+                "constants",
+                "first_phase",
+                "functions",
+                "global_phase",
+                "inherits",
+                "inputs",
+                "match_features",
+                "name",
+                "onnx_models",
+                "properties",
+                "rank_features",
+                "rank_properties",
+                "second_phase",
+                "sort_features",
+                "strict",
+                "summary_features",
+            ]),
+            "SearchKernel_V2_RankProfileInput" => Some(&[
+                "data_type",
+                "default_value",
+                "name",
+            ]),
+            "SearchKernel_V2_RankingRequest" => Some(&[
+                "profile",
+                "properties",
+            ]),
+            "SearchKernel_V2_RawGroupingSource" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_RawSortTarget" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_ReferenceDataType" => Some(&[
+                "document_type",
+            ]),
+            "SearchKernel_V2_Relevance" => Some(&[
+                "value",
+                "value_type",
+            ]),
+            "SearchKernel_V2_RelevanceSortTarget" => Some(&[]),
+            "SearchKernel_V2_RemoveUpdate" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_ResolvedGroupingRequest" => Some(&[
+                "continuations",
+                "root",
+            ]),
+            "SearchKernel_V2_ResolvedSearchRequest" => Some(&[
+                "filters",
+                "grouping",
+                "inputs",
+                "limit",
+                "offset",
+                "presentation",
+                "properties",
+                "query",
+                "query_model",
+                "query_profile",
+                "ranking",
+                "search_chain",
+                "search_fields",
+                "sort",
+                "timeout_ms",
+            ]),
+            "SearchKernel_V2_ResolvedSortExpr" => Some(&[
+                "annotations",
+                "direction",
+                "missing",
+                "target",
+            ]),
+            "SearchKernel_V2_ResolvedSortTarget" => Some(&[
+                "target",
+                "target_type",
+            ]),
             "SearchKernel_V2_ResultGroup" => Some(&[
                 "children",
                 "continuations",
@@ -2581,7 +3703,55 @@ pub(crate) mod schema {
                 "types",
                 "value",
             ]),
-            "SearchKernel_V2_ResultLimits" => Some(&["from", "to"]),
+            "SearchKernel_V2_ResultLimits" => Some(&[
+                "from",
+                "to",
+            ]),
+            "SearchKernel_V2_ResultNode" => Some(&[
+                "node",
+                "node_type",
+            ]),
+            "SearchKernel_V2_SearchField" => Some(&[
+                "field",
+                "weight",
+            ]),
+            "SearchKernel_V2_SearchFieldSelection" => Some(&[
+                "fields",
+            ]),
+            "SearchKernel_V2_SearchKernelTextQuery" => Some(&[
+                "text",
+            ]),
+            "SearchKernel_V2_SearchOnlyFieldDefinition" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_SearchRequest" => Some(&[
+                "bolding",
+                "filter",
+                "filter_parameters",
+                "filter_sources",
+                "filters",
+                "format",
+                "grouping",
+                "highlighting",
+                "inputs",
+                "language",
+                "limit",
+                "offset",
+                "presentation",
+                "projection",
+                "properties",
+                "query",
+                "query_expr",
+                "query_model",
+                "query_profile",
+                "ranking",
+                "search_chain",
+                "search_fields",
+                "sort",
+                "summary",
+                "timeout",
+                "timing",
+            ]),
             "SearchKernel_V2_SearchResult" => Some(&[
                 "coverage",
                 "errors",
@@ -2606,33 +3776,160 @@ pub(crate) mod schema {
                 "search_time_seconds",
                 "summary_fetch_time_seconds",
             ]),
-            "SearchKernel_V2_ResultNode" => Some(&["node", "node_type"]),
-            "SearchKernel_V2_SetField" => Some(&["field", "value"]),
-            "SearchKernel_V2_SortDirection" => Some(&[]),
-            "SearchKernel_V2_SortExpr" => {
-                Some(&["annotations", "direction", "field", "missing", "target"])
-            }
-            "SearchKernel_V2_StringEntry" => Some(&["key", "value"]),
-            "SearchKernel_V2_StringValue" => Some(&["value"]),
-            "SearchKernel_V2_TermQuery" => Some(&["field", "value"]),
-            "SearchKernel_V2_TotalHits" => Some(&["relation", "value"]),
-            "SearchKernel_V2_TotalHitsRelation" => Some(&[]),
-            "SearchKernel_V2_UInt64Value" => Some(&["value"]),
-            "SearchKernel_V2_UnsetField" => Some(&["field"]),
-            "SearchKernel_V2_UpsertRequest" => Some(&["condition", "document"]),
-            "SearchKernel_V2_UpsertResult" => Some(&["id"]),
-            "SearchKernel_V2_Value" => Some(&["kind", "kind_type"]),
-            "SearchKernel_V2_ValueEntry" => Some(&["key", "value"]),
-            "SearchKernel_V2_ValueKind" => Some(&[]),
-            "SearchKernel_V2_ValueList" => Some(&["values"]),
-            "SearchKernel_V2_ValueObject" => Some(&["fields"]),
-            "SearchKernel_V2_DenseTensorValues" => Some(&["values"]),
-            "SearchKernel_V2_MixedTensorBlocks" => Some(&["blocks"]),
-            "SearchKernel_V2_SparseTensorCells" => Some(&["cells"]),
-            "SearchKernel_V2_TensorAddressEntry" => Some(&["dimension", "label"]),
-            "SearchKernel_V2_TensorBlock" => Some(&["address", "values"]),
-            "SearchKernel_V2_TensorCell" => Some(&["address", "value"]),
-            "SearchKernel_V2_TensorValue" => Some(&["payload", "type_spec"]),
+            "SearchKernel_V2_SetField" => Some(&[
+                "field",
+                "value",
+            ]),
+            "SearchKernel_V2_SortExpr" => Some(&[
+                "annotations",
+                "direction",
+                "field",
+                "missing",
+                "target",
+            ]),
+            "SearchKernel_V2_SortTarget" => Some(&[
+                "target",
+                "target_type",
+            ]),
+            "SearchKernel_V2_SparseTensorCells" => Some(&[
+                "cells",
+            ]),
+            "SearchKernel_V2_StdDevAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_StringEntry" => Some(&[
+                "key",
+                "value",
+            ]),
+            "SearchKernel_V2_StringValue" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_StructDataType" => Some(&[
+                "fields",
+            ]),
+            "SearchKernel_V2_StructFieldConfig" => Some(&[
+                "attribute",
+                "index",
+                "indexing_script",
+                "matching",
+                "path",
+                "properties",
+                "query_commands",
+                "rank",
+                "summary",
+            ]),
+            "SearchKernel_V2_StructFieldDefinition" => Some(&[
+                "data_type",
+                "name",
+            ]),
+            "SearchKernel_V2_StructReferenceDataType" => Some(&[
+                "name",
+            ]),
+            "SearchKernel_V2_StructuredGroupingSource" => Some(&[
+                "root",
+            ]),
+            "SearchKernel_V2_SumAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_SummaryAggregation" => Some(&[
+                "summary",
+            ]),
+            "SearchKernel_V2_SummaryConfig" => Some(&[
+                "enabled",
+                "options",
+            ]),
+            "SearchKernel_V2_TensorAddressEntry" => Some(&[
+                "dimension",
+                "label",
+            ]),
+            "SearchKernel_V2_TensorBlock" => Some(&[
+                "address",
+                "values",
+            ]),
+            "SearchKernel_V2_TensorCell" => Some(&[
+                "address",
+                "value",
+            ]),
+            "SearchKernel_V2_TensorDataType" => Some(&[
+                "type_spec",
+            ]),
+            "SearchKernel_V2_TensorModifyUpdate" => Some(&[
+                "create",
+                "operator",
+                "payload",
+                "payload_type",
+            ]),
+            "SearchKernel_V2_TensorValue" => Some(&[
+                "payload",
+                "payload_type",
+                "type_spec",
+            ]),
+            "SearchKernel_V2_TermQuery" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_TotalHits" => Some(&[
+                "relation",
+                "value",
+            ]),
+            "SearchKernel_V2_TypedQuery" => Some(&[
+                "query",
+            ]),
+            "SearchKernel_V2_UInt64Value" => Some(&[
+                "value",
+            ]),
+            "SearchKernel_V2_UnboundedRangeBound" => Some(&[]),
+            "SearchKernel_V2_UnsetField" => Some(&[
+                "field",
+            ]),
+            "SearchKernel_V2_UpdateOperation" => Some(&[
+                "operation",
+                "operation_type",
+                "target",
+            ]),
+            "SearchKernel_V2_UpdateRequest" => Some(&[
+                "condition",
+                "create",
+                "id",
+                "operations",
+            ]),
+            "SearchKernel_V2_UpdateResult" => Some(&[
+                "id",
+            ]),
+            "SearchKernel_V2_UpsertRequest" => Some(&[
+                "condition",
+                "document",
+            ]),
+            "SearchKernel_V2_UpsertResult" => Some(&[
+                "id",
+            ]),
+            "SearchKernel_V2_Value" => Some(&[
+                "kind",
+                "kind_type",
+            ]),
+            "SearchKernel_V2_ValueEntry" => Some(&[
+                "key",
+                "value",
+            ]),
+            "SearchKernel_V2_ValueList" => Some(&[
+                "values",
+            ]),
+            "SearchKernel_V2_ValueObject" => Some(&[
+                "fields",
+            ]),
+            "SearchKernel_V2_WeightedQueryItem" => Some(&[
+                "key",
+                "weight",
+            ]),
+            "SearchKernel_V2_WeightedSetDataType" => Some(&[
+                "element_type",
+            ]),
+            "SearchKernel_V2_XorAggregation" => Some(&[
+                "expression",
+            ]),
+            "SearchKernel_V2_YqlQuery" => Some(&[
+                "parameters",
+                "source",
+            ]),
             _ => None,
         }
     }
@@ -8072,6 +9369,203 @@ fn map_entries<'a>(
     Ok(entries)
 }
 
+fn tensor_numbers_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<Option<WIPOffset<flatbuffers::Vector<'a, f64>>>, JsonCodecError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let values = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| f64_value(value, &format!("{path}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(b.create_vector(&values)))
+}
+
+fn tensor_address_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: Option<&Value>,
+    path: &str,
+) -> Result<
+    Option<
+        WIPOffset<
+            flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<api::TensorAddressEntry<'a>>>,
+        >,
+    >,
+    JsonCodecError,
+> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let entries = array(value, path)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let path = format!("{path}[{index}]");
+            let object = object(value, &path)?;
+            check_keys(object, "SearchKernel_V2_TensorAddressEntry", &path)?;
+            let dimension = b.create_string(&string(
+                required(object, "dimension", &path)?,
+                &format!("{path}.dimension"),
+            )?);
+            let label =
+                optional_string(object, "label", &path)?.map(|value| b.create_string(&value));
+            Ok(api::TensorAddressEntry::create(
+                b,
+                &api::TensorAddressEntryArgs {
+                    dimension: Some(dimension),
+                    label,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, JsonCodecError>>()?;
+    Ok(Some(b.create_vector(&entries)))
+}
+
+fn tensor_cell_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorCell<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorCell", path)?;
+    let address =
+        tensor_address_from_json(b, field(object, "address"), &format!("{path}.address"))?;
+    let value = field(object, "value")
+        .map(|value| f64_value(value, &format!("{path}.value")))
+        .transpose()?
+        .unwrap_or(0.0);
+    Ok(api::TensorCell::create(
+        b,
+        &api::TensorCellArgs { address, value },
+    ))
+}
+
+fn tensor_block_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorBlock<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorBlock", path)?;
+    let address =
+        tensor_address_from_json(b, field(object, "address"), &format!("{path}.address"))?;
+    let values =
+        tensor_numbers_from_json(b, field(object, "values"), &format!("{path}.values"))?;
+    Ok(api::TensorBlock::create(
+        b,
+        &api::TensorBlockArgs { address, values },
+    ))
+}
+
+fn tensor_payload_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<
+    (
+        api::TensorPayloadKind,
+        Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
+    ),
+    JsonCodecError,
+> {
+    let (kind, payload) = one_key(value, path)?;
+    match kind {
+        "none" => {
+            if !payload.is_object() {
+                return Err(contract("tensor payload none must be an object"));
+            }
+            Ok((api::TensorPayloadKind::NONE, None))
+        }
+        "dense" => {
+            let path = format!("{path}.dense");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_DenseTensorValues", &path)?;
+            let values =
+                tensor_numbers_from_json(b, field(object, "values"), &format!("{path}.values"))?;
+            let payload =
+                api::DenseTensorValues::create(b, &api::DenseTensorValuesArgs { values });
+            Ok((
+                api::TensorPayloadKind::DenseTensorValues,
+                Some(payload.as_union_value()),
+            ))
+        }
+        "sparse" => {
+            let path = format!("{path}.sparse");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_SparseTensorCells", &path)?;
+            let cells = field(object, "cells")
+                .map(|value| {
+                    array(value, &format!("{path}.cells"))?
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            tensor_cell_from_json(b, value, &format!("{path}.cells[{index}]"))
+                        })
+                        .collect::<Result<Vec<_>, JsonCodecError>>()
+                })
+                .transpose()?
+                .map(|cells| b.create_vector(&cells));
+            let payload =
+                api::SparseTensorCells::create(b, &api::SparseTensorCellsArgs { cells });
+            Ok((
+                api::TensorPayloadKind::SparseTensorCells,
+                Some(payload.as_union_value()),
+            ))
+        }
+        "mixed" => {
+            let path = format!("{path}.mixed");
+            let object = object(payload, &path)?;
+            check_keys(object, "SearchKernel_V2_MixedTensorBlocks", &path)?;
+            let blocks = field(object, "blocks")
+                .map(|value| {
+                    array(value, &format!("{path}.blocks"))?
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            tensor_block_from_json(b, value, &format!("{path}.blocks[{index}]"))
+                        })
+                        .collect::<Result<Vec<_>, JsonCodecError>>()
+                })
+                .transpose()?
+                .map(|blocks| b.create_vector(&blocks));
+            let payload =
+                api::MixedTensorBlocks::create(b, &api::MixedTensorBlocksArgs { blocks });
+            Ok((
+                api::TensorPayloadKind::MixedTensorBlocks,
+                Some(payload.as_union_value()),
+            ))
+        }
+        _ => Err(contract(format!("unknown tensor payload variant {}", kind))),
+    }
+}
+
+fn tensor_value_from_json<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    value: &Value,
+    path: &str,
+) -> Result<WIPOffset<api::TensorValue<'a>>, JsonCodecError> {
+    let object = object(value, path)?;
+    check_keys(object, "SearchKernel_V2_TensorValue", path)?;
+    let type_spec = optional_string(object, "type_spec", path)?
+        .map(|value| b.create_string(&value));
+    let (payload_type, payload) = field(object, "payload")
+        .map(|value| tensor_payload_from_json(b, value, path))
+        .transpose()?
+        .unwrap_or((api::TensorPayloadKind::NONE, None));
+    Ok(api::TensorValue::create(
+        b,
+        &api::TensorValueArgs {
+            type_spec,
+            payload_type,
+            payload,
+        },
+    ))
+}
+
 fn value_from_json<'a>(
     b: &mut FlatBufferBuilder<'a>,
     input: &Value,
@@ -8207,6 +9701,10 @@ fn value_from_json<'a>(
             let payload = api::ValueObject::create(b, &api::ValueObjectArgs { fields: entries });
             (api::ValueKind::ValueObject, offset(payload))
         }
+        "tensor" => (
+            api::ValueKind::TensorValue,
+            offset(tensor_value_from_json(b, payload, "value.tensor")?),
+        ),
         _ => return Err(contract(format!("unknown value variant `{kind}`"))),
     };
     Ok(api::Value::create(
@@ -11024,626 +12522,3 @@ pub(crate) fn generated_response_payload_to_json<'a>(
         ))),
     }
 }
-
-// BFBS-derived schema inventory. Direct Rust FlatBuffers builders/readers are used above.
-// table SearchKernel.Protocol.V2.RequestEnvelope
-// field SearchKernel.Protocol.V2.RequestEnvelope.payload
-// field SearchKernel.Protocol.V2.RequestEnvelope.payload_type
-// field SearchKernel.Protocol.V2.RequestEnvelope.protocol_version
-// table SearchKernel.V2.AnalyzeFieldTarget
-// field SearchKernel.V2.AnalyzeFieldTarget.field
-// table SearchKernel.V2.AnalyzeRequest
-// field SearchKernel.V2.AnalyzeRequest.language
-// field SearchKernel.V2.AnalyzeRequest.target
-// field SearchKernel.V2.AnalyzeRequest.target_type
-// field SearchKernel.V2.AnalyzeRequest.text
-// table SearchKernel.V2.AnalyzeResult
-// field SearchKernel.V2.AnalyzeResult.tokens
-// table SearchKernel.V2.AnalyzedToken
-// field SearchKernel.V2.AnalyzedToken.end_byte
-// field SearchKernel.V2.AnalyzedToken.position
-// field SearchKernel.V2.AnalyzedToken.start_byte
-// field SearchKernel.V2.AnalyzedToken.surface
-// field SearchKernel.V2.AnalyzedToken.term
-// table SearchKernel.V2.Analyzer
-// field SearchKernel.V2.Analyzer.name
-// field SearchKernel.V2.Analyzer.options
-// field SearchKernel.V2.Analyzer.version
-// table SearchKernel.V2.Bm25Ranking
-// table SearchKernel.V2.BoolValue
-// field SearchKernel.V2.BoolValue.value
-// table SearchKernel.V2.BytesValue
-// field SearchKernel.V2.BytesValue.value
-// table SearchKernel.V2.DefaultRelevanceV1
-// table SearchKernel.V2.DeleteRequest
-// field SearchKernel.V2.DeleteRequest.id
-// table SearchKernel.V2.DeleteResult
-// field SearchKernel.V2.DeleteResult.deleted
-// field SearchKernel.V2.DeleteResult.id
-// table SearchKernel.V2.DescribeRequest
-// table SearchKernel.V2.DescribeResult
-// field SearchKernel.V2.DescribeResult.index
-// table SearchKernel.V2.Document
-// field SearchKernel.V2.Document.fields
-// field SearchKernel.V2.Document.id
-// table SearchKernel.V2.Error
-// field SearchKernel.V2.Error.code
-// field SearchKernel.V2.Error.details
-// field SearchKernel.V2.Error.message
-// field SearchKernel.V2.Error.retryable
-// table SearchKernel.V2.ErrorDetail
-// field SearchKernel.V2.ErrorDetail.code
-// field SearchKernel.V2.ErrorDetail.message
-// field SearchKernel.V2.ErrorDetail.metadata
-// field SearchKernel.V2.ErrorDetail.path
-// table SearchKernel.V2.FieldDefinition
-// field SearchKernel.V2.FieldDefinition.analyzer
-// field SearchKernel.V2.FieldDefinition.cardinality
-// field SearchKernel.V2.FieldDefinition.facetable
-// field SearchKernel.V2.FieldDefinition.filterable
-// field SearchKernel.V2.FieldDefinition.kind
-// field SearchKernel.V2.FieldDefinition.name
-// field SearchKernel.V2.FieldDefinition.searchable
-// field SearchKernel.V2.FieldDefinition.sortable
-// field SearchKernel.V2.FieldDefinition.stored
-// table SearchKernel.V2.FieldProjection
-// field SearchKernel.V2.FieldProjection.fields
-// table SearchKernel.V2.FilterAnd
-// field SearchKernel.V2.FilterAnd.clauses
-// table SearchKernel.V2.FilterComparison
-// field SearchKernel.V2.FilterComparison.field
-// field SearchKernel.V2.FilterComparison.op
-// field SearchKernel.V2.FilterComparison.value
-// table SearchKernel.V2.FilterExists
-// field SearchKernel.V2.FilterExists.field
-// table SearchKernel.V2.FilterIn
-// field SearchKernel.V2.FilterIn.field
-// field SearchKernel.V2.FilterIn.values
-// table SearchKernel.V2.FilterExpr
-// field SearchKernel.V2.FilterExpr.expr
-// field SearchKernel.V2.FilterExpr.expr_type
-// table SearchKernel.V2.FilterNot
-// field SearchKernel.V2.FilterNot.clause
-// table SearchKernel.V2.FilterOr
-// field SearchKernel.V2.FilterOr.clauses
-// table SearchKernel.V2.FilterRange
-// field SearchKernel.V2.FilterRange.field
-// field SearchKernel.V2.FilterRange.include_lower
-// field SearchKernel.V2.FilterRange.include_upper
-// field SearchKernel.V2.FilterRange.lower
-// field SearchKernel.V2.FilterRange.upper
-// table SearchKernel.V2.Float64Value
-// field SearchKernel.V2.Float64Value.value
-// table SearchKernel.V2.GetRequest
-// field SearchKernel.V2.GetRequest.id
-// field SearchKernel.V2.GetRequest.projection
-// table SearchKernel.V2.GetResult
-// field SearchKernel.V2.GetResult.document
-// table SearchKernel.V2.HighlightFragment
-// field SearchKernel.V2.HighlightFragment.matches
-// field SearchKernel.V2.HighlightFragment.text
-// table SearchKernel.V2.HighlightRequest
-// field SearchKernel.V2.HighlightRequest.fields
-// table SearchKernel.V2.HighlightResult
-// field SearchKernel.V2.HighlightResult.field
-// field SearchKernel.V2.HighlightResult.fragments
-// table SearchKernel.V2.HighlightSpan
-// field SearchKernel.V2.HighlightSpan.end_byte
-// field SearchKernel.V2.HighlightSpan.start_byte
-// table SearchKernel.V2.Hit
-// field SearchKernel.V2.Hit.fields
-// field SearchKernel.V2.Hit.highlights
-// field SearchKernel.V2.Hit.id
-// field SearchKernel.V2.Hit.score
-// table SearchKernel.V2.IndexDefinition
-// field SearchKernel.V2.IndexDefinition.default_search_fields
-// field SearchKernel.V2.IndexDefinition.fields
-// field SearchKernel.V2.IndexDefinition.name
-// table SearchKernel.V2.InsertRequest
-// field SearchKernel.V2.InsertRequest.document
-// table SearchKernel.V2.InsertResult
-// field SearchKernel.V2.InsertResult.id
-// table SearchKernel.V2.InspectQueryRequest
-// field SearchKernel.V2.InspectQueryRequest.request
-// table SearchKernel.V2.InspectQueryResult
-// field SearchKernel.V2.InspectQueryResult.resolved_request
-// table SearchKernel.V2.Int64Value
-// field SearchKernel.V2.Int64Value.value
-// table SearchKernel.V2.NullValueValue
-// field SearchKernel.V2.NullValueValue.value
-// table SearchKernel.V2.OptionalBool
-// field SearchKernel.V2.OptionalBool.value
-// table SearchKernel.V2.OptionalDouble
-// field SearchKernel.V2.OptionalDouble.value
-// table SearchKernel.V2.OptionalMissingPlacement
-// field SearchKernel.V2.OptionalMissingPlacement.value
-// table SearchKernel.V2.OptionalUInt32
-// field SearchKernel.V2.OptionalUInt32.value
-// table SearchKernel.V2.OptionalUInt64
-// field SearchKernel.V2.OptionalUInt64.value
-// table SearchKernel.V2.PatchOperation
-// field SearchKernel.V2.PatchOperation.operation
-// field SearchKernel.V2.PatchOperation.operation_type
-// table SearchKernel.V2.PatchRequest
-// field SearchKernel.V2.PatchRequest.id
-// field SearchKernel.V2.PatchRequest.operations
-// table SearchKernel.V2.PatchResult
-// field SearchKernel.V2.PatchResult.id
-// table SearchKernel.V2.QueryAnd
-// field SearchKernel.V2.QueryAnd.clauses
-// table SearchKernel.V2.QueryExpr
-// field SearchKernel.V2.QueryExpr.expr
-// field SearchKernel.V2.QueryExpr.expr_type
-// table SearchKernel.V2.QueryNot
-// field SearchKernel.V2.QueryNot.clause
-// table SearchKernel.V2.QueryOr
-// field SearchKernel.V2.QueryOr.clauses
-// table SearchKernel.V2.SearchField
-// field SearchKernel.V2.SearchField.field
-// field SearchKernel.V2.SearchField.weight
-// table SearchKernel.V2.SearchFieldSelection
-// field SearchKernel.V2.SearchFieldSelection.fields
-// table SearchKernel.V2.SearchRequest
-// field SearchKernel.V2.SearchRequest.filter
-// field SearchKernel.V2.SearchRequest.highlighting
-// field SearchKernel.V2.SearchRequest.language
-// field SearchKernel.V2.SearchRequest.limit
-// field SearchKernel.V2.SearchRequest.offset
-// field SearchKernel.V2.SearchRequest.projection
-// field SearchKernel.V2.SearchRequest.query
-// field SearchKernel.V2.SearchRequest.query_expr
-// field SearchKernel.V2.SearchRequest.ranking
-// field SearchKernel.V2.SearchRequest.search_fields
-// field SearchKernel.V2.SearchRequest.sort
-// field SearchKernel.V2.SearchRequest.timeout
-// table SearchKernel.V2.SearchResult
-// field SearchKernel.V2.SearchResult.facets
-// field SearchKernel.V2.SearchResult.hits
-// field SearchKernel.V2.SearchResult.total_hits
-// table SearchKernel.V2.SetField
-// field SearchKernel.V2.SetField.field
-// field SearchKernel.V2.SetField.value
-// table SearchKernel.V2.SortExpr
-// field SearchKernel.V2.SortExpr.direction
-// field SearchKernel.V2.SortExpr.field
-// field SearchKernel.V2.SortExpr.missing
-// table SearchKernel.V2.StringEntry
-// field SearchKernel.V2.StringEntry.key
-// field SearchKernel.V2.StringEntry.value
-// table SearchKernel.V2.StringValue
-// field SearchKernel.V2.StringValue.value
-// table SearchKernel.V2.TermQuery
-// field SearchKernel.V2.TermQuery.field
-// field SearchKernel.V2.TermQuery.value
-// table SearchKernel.V2.TotalHits
-// field SearchKernel.V2.TotalHits.relation
-// field SearchKernel.V2.TotalHits.value
-// table SearchKernel.V2.UInt64Value
-// field SearchKernel.V2.UInt64Value.value
-// table SearchKernel.V2.UnsetField
-// field SearchKernel.V2.UnsetField.field
-// table SearchKernel.V2.UpsertRequest
-// field SearchKernel.V2.UpsertRequest.document
-// table SearchKernel.V2.UpsertResult
-// field SearchKernel.V2.UpsertResult.id
-// table SearchKernel.V2.Value
-// field SearchKernel.V2.Value.kind
-// field SearchKernel.V2.Value.kind_type
-// table SearchKernel.V2.ValueEntry
-// field SearchKernel.V2.ValueEntry.key
-// field SearchKernel.V2.ValueEntry.value
-// table SearchKernel.V2.ValueList
-// field SearchKernel.V2.ValueList.values
-// table SearchKernel.V2.ValueObject
-// field SearchKernel.V2.ValueObject.fields
-// enum SearchKernel.Protocol.V2.RequestPayload
-// variant NONE=0
-// variant SearchKernel_V2_InsertRequest=1
-// variant SearchKernel_V2_UpsertRequest=2
-// variant SearchKernel_V2_PatchRequest=3
-// variant SearchKernel_V2_DeleteRequest=4
-// variant SearchKernel_V2_GetRequest=5
-// variant SearchKernel_V2_SearchRequest=6
-// variant SearchKernel_V2_AnalyzeRequest=7
-// variant SearchKernel_V2_DescribeRequest=8
-// variant SearchKernel_V2_InspectQueryRequest=9
-// enum SearchKernel.V2.AnalyzeTarget
-// variant NONE=0
-// variant Analyzer=1
-// variant AnalyzeFieldTarget=2
-// enum SearchKernel.V2.ComparisonOp
-// variant Unspecified=0
-// variant Eq=1
-// variant Ne=2
-// variant Lt=3
-// variant Lte=4
-// variant Gt=5
-// variant Gte=6
-// enum SearchKernel.V2.ErrorCode
-// variant Unspecified=0
-// variant InvalidArgument=1
-// variant NotFound=2
-// variant AlreadyExists=3
-// variant FailedPrecondition=4
-// variant Conflict=5
-// variant Unsupported=6
-// variant ResourceExhausted=7
-// variant Internal=8
-// variant Unavailable=9
-// variant DeadlineExceeded=10
-// enum SearchKernel.V2.FacetSort
-// variant Unspecified=0
-// variant CountDesc=1
-// variant CountAsc=2
-// variant ValueAsc=3
-// variant ValueDesc=4
-// enum SearchKernel.V2.FieldCardinality
-// variant Unspecified=0
-// variant Single=1
-// variant Multi=2
-// enum SearchKernel.V2.FieldKind
-// variant Unspecified=0
-// variant Text=1
-// variant Keyword=2
-// variant Int64=3
-// variant Float64=4
-// variant Bool=5
-// enum SearchKernel.V2.FilterExprKind
-// variant NONE=0
-// variant FilterAnd=1
-// variant FilterOr=2
-// variant FilterNot=3
-// variant FilterComparison=4
-// variant FilterRange=5
-// variant FilterExists=6
-// variant FilterIn=7
-// enum SearchKernel.V2.MissingPlacement
-// variant Unspecified=0
-// variant First=1
-// variant Last=2
-// enum SearchKernel.V2.NullValue
-// variant Unspecified=0
-// variant Null=1
-// enum SearchKernel.V2.PatchOperationKind
-// variant NONE=0
-// variant SetField=1
-// variant UnsetField=2
-// enum SearchKernel.V2.QueryExprKind
-// variant NONE=0
-// variant TermQuery=1
-// variant QueryAnd=2
-// variant QueryOr=3
-// variant QueryNot=4
-// enum SearchKernel.V2.SortDirection
-// variant Unspecified=0
-// variant Asc=1
-// variant Desc=2
-// enum SearchKernel.V2.TotalHitsRelation
-// variant Unspecified=0
-// variant Exact=1
-// variant LowerBound=2
-// enum SearchKernel.V2.ValueKind
-// variant NONE=0
-// variant NullValueValue=1
-// variant BoolValue=2
-// variant Int64Value=3
-// variant UInt64Value=4
-// variant Float64Value=5
-// variant StringValue=6
-// variant BytesValue=7
-// variant ValueList=8
-// variant ValueObject=9
-// table SearchKernel.Protocol.V2.ResponseEnvelope
-// field SearchKernel.Protocol.V2.ResponseEnvelope.payload
-// field SearchKernel.Protocol.V2.ResponseEnvelope.payload_type
-// field SearchKernel.Protocol.V2.ResponseEnvelope.protocol_version
-// table SearchKernel.V2.AnalyzeFieldTarget
-// field SearchKernel.V2.AnalyzeFieldTarget.field
-// table SearchKernel.V2.AnalyzeRequest
-// field SearchKernel.V2.AnalyzeRequest.language
-// field SearchKernel.V2.AnalyzeRequest.target
-// field SearchKernel.V2.AnalyzeRequest.target_type
-// field SearchKernel.V2.AnalyzeRequest.text
-// table SearchKernel.V2.AnalyzeResult
-// field SearchKernel.V2.AnalyzeResult.tokens
-// table SearchKernel.V2.AnalyzedToken
-// field SearchKernel.V2.AnalyzedToken.end_byte
-// field SearchKernel.V2.AnalyzedToken.position
-// field SearchKernel.V2.AnalyzedToken.start_byte
-// field SearchKernel.V2.AnalyzedToken.surface
-// field SearchKernel.V2.AnalyzedToken.term
-// table SearchKernel.V2.Analyzer
-// field SearchKernel.V2.Analyzer.name
-// field SearchKernel.V2.Analyzer.options
-// field SearchKernel.V2.Analyzer.version
-// table SearchKernel.V2.Bm25Ranking
-// table SearchKernel.V2.BoolValue
-// field SearchKernel.V2.BoolValue.value
-// table SearchKernel.V2.BytesValue
-// field SearchKernel.V2.BytesValue.value
-// table SearchKernel.V2.DefaultRelevanceV1
-// table SearchKernel.V2.DeleteRequest
-// field SearchKernel.V2.DeleteRequest.id
-// table SearchKernel.V2.DeleteResult
-// field SearchKernel.V2.DeleteResult.deleted
-// field SearchKernel.V2.DeleteResult.id
-// table SearchKernel.V2.DescribeRequest
-// table SearchKernel.V2.DescribeResult
-// field SearchKernel.V2.DescribeResult.index
-// table SearchKernel.V2.Document
-// field SearchKernel.V2.Document.fields
-// field SearchKernel.V2.Document.id
-// table SearchKernel.V2.Error
-// field SearchKernel.V2.Error.code
-// field SearchKernel.V2.Error.details
-// field SearchKernel.V2.Error.message
-// field SearchKernel.V2.Error.retryable
-// table SearchKernel.V2.ErrorDetail
-// field SearchKernel.V2.ErrorDetail.code
-// field SearchKernel.V2.ErrorDetail.message
-// field SearchKernel.V2.ErrorDetail.metadata
-// field SearchKernel.V2.ErrorDetail.path
-// table SearchKernel.V2.FacetResult
-// field SearchKernel.V2.FacetResult.field
-// field SearchKernel.V2.FacetResult.values
-// table SearchKernel.V2.FacetValue
-// field SearchKernel.V2.FacetValue.count
-// field SearchKernel.V2.FacetValue.value
-// table SearchKernel.V2.FieldDefinition
-// field SearchKernel.V2.FieldDefinition.analyzer
-// field SearchKernel.V2.FieldDefinition.cardinality
-// field SearchKernel.V2.FieldDefinition.facetable
-// field SearchKernel.V2.FieldDefinition.filterable
-// field SearchKernel.V2.FieldDefinition.kind
-// field SearchKernel.V2.FieldDefinition.name
-// field SearchKernel.V2.FieldDefinition.searchable
-// field SearchKernel.V2.FieldDefinition.sortable
-// field SearchKernel.V2.FieldDefinition.stored
-// table SearchKernel.V2.FieldProjection
-// field SearchKernel.V2.FieldProjection.fields
-// table SearchKernel.V2.FilterAnd
-// field SearchKernel.V2.FilterAnd.clauses
-// table SearchKernel.V2.FilterComparison
-// field SearchKernel.V2.FilterComparison.field
-// field SearchKernel.V2.FilterComparison.op
-// field SearchKernel.V2.FilterComparison.value
-// table SearchKernel.V2.FilterExists
-// field SearchKernel.V2.FilterExists.field
-// table SearchKernel.V2.FilterIn
-// field SearchKernel.V2.FilterIn.field
-// field SearchKernel.V2.FilterIn.values
-// table SearchKernel.V2.FilterExpr
-// field SearchKernel.V2.FilterExpr.expr
-// field SearchKernel.V2.FilterExpr.expr_type
-// table SearchKernel.V2.FilterNot
-// field SearchKernel.V2.FilterNot.clause
-// table SearchKernel.V2.FilterOr
-// field SearchKernel.V2.FilterOr.clauses
-// table SearchKernel.V2.FilterRange
-// field SearchKernel.V2.FilterRange.field
-// field SearchKernel.V2.FilterRange.include_lower
-// field SearchKernel.V2.FilterRange.include_upper
-// field SearchKernel.V2.FilterRange.lower
-// field SearchKernel.V2.FilterRange.upper
-// table SearchKernel.V2.Float64Value
-// field SearchKernel.V2.Float64Value.value
-// table SearchKernel.V2.GetRequest
-// field SearchKernel.V2.GetRequest.id
-// field SearchKernel.V2.GetRequest.projection
-// table SearchKernel.V2.GetResult
-// field SearchKernel.V2.GetResult.document
-// table SearchKernel.V2.HighlightFragment
-// field SearchKernel.V2.HighlightFragment.matches
-// field SearchKernel.V2.HighlightFragment.text
-// table SearchKernel.V2.HighlightRequest
-// field SearchKernel.V2.HighlightRequest.fields
-// table SearchKernel.V2.HighlightResult
-// field SearchKernel.V2.HighlightResult.field
-// field SearchKernel.V2.HighlightResult.fragments
-// table SearchKernel.V2.HighlightSpan
-// field SearchKernel.V2.HighlightSpan.end_byte
-// field SearchKernel.V2.HighlightSpan.start_byte
-// table SearchKernel.V2.Hit
-// field SearchKernel.V2.Hit.fields
-// field SearchKernel.V2.Hit.highlights
-// field SearchKernel.V2.Hit.id
-// field SearchKernel.V2.Hit.score
-// table SearchKernel.V2.IndexDefinition
-// field SearchKernel.V2.IndexDefinition.default_search_fields
-// field SearchKernel.V2.IndexDefinition.fields
-// field SearchKernel.V2.IndexDefinition.name
-// table SearchKernel.V2.InsertRequest
-// field SearchKernel.V2.InsertRequest.document
-// table SearchKernel.V2.InsertResult
-// field SearchKernel.V2.InsertResult.id
-// table SearchKernel.V2.InspectQueryRequest
-// field SearchKernel.V2.InspectQueryRequest.request
-// table SearchKernel.V2.InspectQueryResult
-// field SearchKernel.V2.InspectQueryResult.resolved_request
-// table SearchKernel.V2.Int64Value
-// field SearchKernel.V2.Int64Value.value
-// table SearchKernel.V2.NullValueValue
-// field SearchKernel.V2.NullValueValue.value
-// table SearchKernel.V2.OptionalBool
-// field SearchKernel.V2.OptionalBool.value
-// table SearchKernel.V2.OptionalDouble
-// field SearchKernel.V2.OptionalDouble.value
-// table SearchKernel.V2.OptionalMissingPlacement
-// field SearchKernel.V2.OptionalMissingPlacement.value
-// table SearchKernel.V2.OptionalUInt32
-// field SearchKernel.V2.OptionalUInt32.value
-// table SearchKernel.V2.OptionalUInt64
-// field SearchKernel.V2.OptionalUInt64.value
-// table SearchKernel.V2.PatchOperation
-// field SearchKernel.V2.PatchOperation.operation
-// field SearchKernel.V2.PatchOperation.operation_type
-// table SearchKernel.V2.PatchRequest
-// field SearchKernel.V2.PatchRequest.id
-// field SearchKernel.V2.PatchRequest.operations
-// table SearchKernel.V2.PatchResult
-// field SearchKernel.V2.PatchResult.id
-// table SearchKernel.V2.QueryAnd
-// field SearchKernel.V2.QueryAnd.clauses
-// table SearchKernel.V2.QueryExpr
-// field SearchKernel.V2.QueryExpr.expr
-// field SearchKernel.V2.QueryExpr.expr_type
-// table SearchKernel.V2.QueryNot
-// field SearchKernel.V2.QueryNot.clause
-// table SearchKernel.V2.QueryOr
-// field SearchKernel.V2.QueryOr.clauses
-// table SearchKernel.V2.SearchField
-// field SearchKernel.V2.SearchField.field
-// field SearchKernel.V2.SearchField.weight
-// table SearchKernel.V2.SearchFieldSelection
-// field SearchKernel.V2.SearchFieldSelection.fields
-// table SearchKernel.V2.SearchRequest
-// field SearchKernel.V2.SearchRequest.filter
-// field SearchKernel.V2.SearchRequest.highlighting
-// field SearchKernel.V2.SearchRequest.language
-// field SearchKernel.V2.SearchRequest.limit
-// field SearchKernel.V2.SearchRequest.offset
-// field SearchKernel.V2.SearchRequest.projection
-// field SearchKernel.V2.SearchRequest.query
-// field SearchKernel.V2.SearchRequest.query_expr
-// field SearchKernel.V2.SearchRequest.ranking
-// field SearchKernel.V2.SearchRequest.search_fields
-// field SearchKernel.V2.SearchRequest.sort
-// field SearchKernel.V2.SearchRequest.timeout
-// table SearchKernel.V2.SearchResult
-// field SearchKernel.V2.SearchResult.facets
-// field SearchKernel.V2.SearchResult.hits
-// field SearchKernel.V2.SearchResult.total_hits
-// table SearchKernel.V2.SetField
-// field SearchKernel.V2.SetField.field
-// field SearchKernel.V2.SetField.value
-// table SearchKernel.V2.SortExpr
-// field SearchKernel.V2.SortExpr.direction
-// field SearchKernel.V2.SortExpr.field
-// field SearchKernel.V2.SortExpr.missing
-// table SearchKernel.V2.StringEntry
-// field SearchKernel.V2.StringEntry.key
-// field SearchKernel.V2.StringEntry.value
-// table SearchKernel.V2.StringValue
-// field SearchKernel.V2.StringValue.value
-// table SearchKernel.V2.TermQuery
-// field SearchKernel.V2.TermQuery.field
-// field SearchKernel.V2.TermQuery.value
-// table SearchKernel.V2.TotalHits
-// field SearchKernel.V2.TotalHits.relation
-// field SearchKernel.V2.TotalHits.value
-// table SearchKernel.V2.UInt64Value
-// field SearchKernel.V2.UInt64Value.value
-// table SearchKernel.V2.UnsetField
-// field SearchKernel.V2.UnsetField.field
-// table SearchKernel.V2.UpsertRequest
-// field SearchKernel.V2.UpsertRequest.document
-// table SearchKernel.V2.UpsertResult
-// field SearchKernel.V2.UpsertResult.id
-// table SearchKernel.V2.Value
-// field SearchKernel.V2.Value.kind
-// field SearchKernel.V2.Value.kind_type
-// table SearchKernel.V2.ValueEntry
-// field SearchKernel.V2.ValueEntry.key
-// field SearchKernel.V2.ValueEntry.value
-// table SearchKernel.V2.ValueList
-// field SearchKernel.V2.ValueList.values
-// table SearchKernel.V2.ValueObject
-// field SearchKernel.V2.ValueObject.fields
-// enum SearchKernel.Protocol.V2.ResponsePayload
-// variant NONE=0
-// variant SearchKernel_V2_InsertResult=1
-// variant SearchKernel_V2_UpsertResult=2
-// variant SearchKernel_V2_PatchResult=3
-// variant SearchKernel_V2_DeleteResult=4
-// variant SearchKernel_V2_GetResult=5
-// variant SearchKernel_V2_SearchResult=6
-// variant SearchKernel_V2_AnalyzeResult=7
-// variant SearchKernel_V2_Error=8
-// variant SearchKernel_V2_DescribeResult=9
-// variant SearchKernel_V2_InspectQueryResult=10
-// enum SearchKernel.V2.AnalyzeTarget
-// variant NONE=0
-// variant Analyzer=1
-// variant AnalyzeFieldTarget=2
-// enum SearchKernel.V2.ComparisonOp
-// variant Unspecified=0
-// variant Eq=1
-// variant Ne=2
-// variant Lt=3
-// variant Lte=4
-// variant Gt=5
-// variant Gte=6
-// enum SearchKernel.V2.ErrorCode
-// variant Unspecified=0
-// variant InvalidArgument=1
-// variant NotFound=2
-// variant AlreadyExists=3
-// variant FailedPrecondition=4
-// variant Conflict=5
-// variant Unsupported=6
-// variant ResourceExhausted=7
-// variant Internal=8
-// variant Unavailable=9
-// variant DeadlineExceeded=10
-// enum SearchKernel.V2.FacetSort
-// variant Unspecified=0
-// variant CountDesc=1
-// variant CountAsc=2
-// variant ValueAsc=3
-// variant ValueDesc=4
-// enum SearchKernel.V2.FieldCardinality
-// variant Unspecified=0
-// variant Single=1
-// variant Multi=2
-// enum SearchKernel.V2.FieldKind
-// variant Unspecified=0
-// variant Text=1
-// variant Keyword=2
-// variant Int64=3
-// variant Float64=4
-// variant Bool=5
-// enum SearchKernel.V2.FilterExprKind
-// variant NONE=0
-// variant FilterAnd=1
-// variant FilterOr=2
-// variant FilterNot=3
-// variant FilterComparison=4
-// variant FilterRange=5
-// variant FilterExists=6
-// variant FilterIn=7
-// enum SearchKernel.V2.MissingPlacement
-// variant Unspecified=0
-// variant First=1
-// variant Last=2
-// enum SearchKernel.V2.NullValue
-// variant Unspecified=0
-// variant Null=1
-// enum SearchKernel.V2.PatchOperationKind
-// variant NONE=0
-// variant SetField=1
-// variant UnsetField=2
-// enum SearchKernel.V2.QueryExprKind
-// variant NONE=0
-// variant TermQuery=1
-// variant QueryAnd=2
-// variant QueryOr=3
-// variant QueryNot=4
-// enum SearchKernel.V2.SortDirection
-// variant Unspecified=0
-// variant Asc=1
-// variant Desc=2
-// enum SearchKernel.V2.TotalHitsRelation
-// variant Unspecified=0
-// variant Exact=1
-// variant LowerBound=2
-// enum SearchKernel.V2.ValueKind
-// variant NONE=0
-// variant NullValueValue=1
-// variant BoolValue=2
-// variant Int64Value=3
-// variant UInt64Value=4
-// variant Float64Value=5
-// variant StringValue=6
-// variant BytesValue=7
-// variant ValueList=8
-// variant ValueObject=9

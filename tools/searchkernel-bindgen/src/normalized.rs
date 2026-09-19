@@ -79,6 +79,11 @@ pub struct ClientPolicy {
     pub unit_union_variants: BTreeSet<String>,
     pub union_defaults: BTreeMap<String, String>,
     pub standalone_encoders: BTreeMap<String, String>,
+    pub json_field_dispositions: BTreeSet<String>,
+    pub json_variant_dispositions: BTreeSet<String>,
+    pub json_field_names: BTreeMap<String, String>,
+    pub json_field_schemas: BTreeMap<String, String>,
+    pub json_field_aliases: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -789,7 +794,82 @@ fn load_policy(
             return Err(format!("invalid standalone encoder {object}: {function}"));
         }
     }
+    validate_json_dispositions(objects, enums, &policy)?;
     Ok(policy)
+}
+
+fn validate_json_dispositions(
+    objects: &BTreeMap<String, NormalizedObject>,
+    enums: &BTreeMap<String, NormalizedEnum>,
+    policy: &ClientPolicy,
+) -> Result<(), String> {
+    let fields = objects
+        .values()
+        .flat_map(|object| {
+            object
+                .fields
+                .iter()
+                .map(|field| format!("{}.{}", object.name, field.name))
+        })
+        .collect::<BTreeSet<_>>();
+    require_exact_inventory(
+        "JSON field disposition",
+        &fields,
+        &policy.json_field_dispositions,
+    )?;
+    let variants = enums
+        .values()
+        .flat_map(|enumeration| {
+            enumeration
+                .variants
+                .iter()
+                .map(|variant| format!("{}.{}", enumeration.name, variant.name))
+        })
+        .collect::<BTreeSet<_>>();
+    require_exact_inventory(
+        "JSON enum/union variant disposition",
+        &variants,
+        &policy.json_variant_dispositions,
+    )?;
+    for (path, name) in &policy.json_field_names {
+        if !fields.contains(path) || name.is_empty() {
+            return Err(format!("invalid JSON field name policy {path}: {name}"));
+        }
+    }
+    for (path, schema) in &policy.json_field_schemas {
+        if !fields.contains(path) || schema.is_empty() {
+            return Err(format!("invalid JSON field schema policy {path}: {schema}"));
+        }
+    }
+    for (object, aliases) in &policy.json_field_aliases {
+        if !objects.contains_key(object) || aliases.iter().any(String::is_empty) {
+            return Err(format!("invalid JSON field aliases for {object}"));
+        }
+    }
+    Ok(())
+}
+
+fn require_exact_inventory(
+    kind: &str,
+    expected: &BTreeSet<String>,
+    actual: &BTreeSet<String>,
+) -> Result<(), String> {
+    let missing = expected.difference(actual).cloned().collect::<Vec<_>>();
+    let stale = actual.difference(expected).cloned().collect::<Vec<_>>();
+    if missing.is_empty() && stale.is_empty() {
+        return Ok(());
+    }
+    let mut details = Vec::new();
+    if !missing.is_empty() {
+        details.push(format!("missing: {}", missing.join(", ")));
+    }
+    if !stale.is_empty() {
+        details.push(format!("stale: {}", stale.join(", ")));
+    }
+    Err(format!(
+        "{kind} inventory diverges from BFBS ({})",
+        details.join("; ")
+    ))
 }
 
 fn validate_field_path<'a>(
@@ -1077,5 +1157,29 @@ mod tests {
         model.objects.remove("SearchKernel.V2.AnalyzedToken");
         let error = load_policy(&model.objects, &model.enums).unwrap_err();
         assert!(error.contains("AnalyzedToken"), "{error}");
+    }
+
+    #[test]
+    fn rejects_missing_or_stale_json_dispositions() {
+        let model = baseline_model();
+        let mut policy = model.policy.clone();
+        policy
+            .json_field_dispositions
+            .remove("SearchKernel.V2.Document.id");
+        let error = validate_json_dispositions(&model.objects, &model.enums, &policy).unwrap_err();
+        assert!(
+            error.contains("missing: SearchKernel.V2.Document.id"),
+            "{error}"
+        );
+
+        let mut policy = model.policy;
+        policy
+            .json_variant_dispositions
+            .insert("Synthetic.Future.NewVariant".to_owned());
+        let error = validate_json_dispositions(&model.objects, &model.enums, &policy).unwrap_err();
+        assert!(
+            error.contains("stale: Synthetic.Future.NewVariant"),
+            "{error}"
+        );
     }
 }
