@@ -92,6 +92,23 @@ fn lower_only_range_is_preserved() {
 }
 
 #[test]
+fn filter_in_round_trips_typed_values() {
+    let json = br#"{
+        "protocol_version": 2,
+        "request": {"search": {"filter": {"filter_in": {
+            "field": "brand",
+            "values": [{"string": "Sony"}, {"int64": "7"}]
+        }}}}
+    }"#;
+    let bytes = request_json_to_flatbuffer(json).expect("filter_in JSON");
+    let output = request_flatbuffer_to_json(&bytes).expect("filter_in JSON output");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap(),
+        serde_json::from_slice::<Value>(json).unwrap()
+    );
+}
+
+#[test]
 fn engine_timeout_is_preserved_in_canonical_json() {
     let json = br#"{
         "protocol_version": 2,

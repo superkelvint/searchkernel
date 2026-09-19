@@ -1638,6 +1638,16 @@ pub(crate) mod schema {
                 name: "field",
                 schema: "string",
             }]),
+            "SearchKernel_V2_FilterIn" => Some(&[
+                FieldMetadata {
+                    name: "field",
+                    schema: "string",
+                },
+                FieldMetadata {
+                    name: "values",
+                    schema: "array:ref:#/definitions/SearchKernel_V2_Value",
+                },
+            ]),
             "SearchKernel_V2_FilterExpr" => Some(&[
                 FieldMetadata {
                     name: "expr",
@@ -2145,6 +2155,7 @@ pub(crate) mod schema {
                 "FilterComparison",
                 "FilterRange",
                 "FilterExists",
+                "FilterIn",
             ]),
             "SearchKernel_V2_MissingPlacement" => Some(&[
                 "Unspecified",
@@ -2250,6 +2261,7 @@ pub(crate) mod schema {
             "SearchKernel_V2_FilterAnd" => Some(&["clauses"]),
             "SearchKernel_V2_FilterComparison" => Some(&["field", "op", "value"]),
             "SearchKernel_V2_FilterExists" => Some(&["field"]),
+            "SearchKernel_V2_FilterIn" => Some(&["field", "values"]),
             "SearchKernel_V2_FilterExpr" => Some(&["expr", "expr_type"]),
             "SearchKernel_V2_FilterExprKind" => Some(&[]),
             "SearchKernel_V2_FilterNot" => Some(&["clause"]),
@@ -2814,6 +2826,14 @@ pub(crate) mod json_types {
         #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
         pub field: Option<String>,
     }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    pub(crate) struct JsonSearchKernelV2FilterIn {
+        #[serde(rename = "field", default, skip_serializing_if = "Option::is_none")]
+        pub field: Option<String>,
+        #[serde(rename = "values", default, skip_serializing_if = "Option::is_none")]
+        pub values: Option<Vec<Box<JsonSearchKernelV2Value>>>,
+    }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(crate) struct JsonSearchKernelV2FilterExpr {
@@ -2839,6 +2859,8 @@ pub(crate) mod json_types {
         Filterrange,
         #[serde(rename = "FilterExists")]
         Filterexists,
+        #[serde(rename = "FilterIn")]
+        Filterin,
     }
     
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -5532,6 +5554,16 @@ fn filter_json(value: api::FilterExpr<'_>) -> Result<Value, JsonCodecError> {
                 serde_json::json!({"field": required_result(v.field(), "exists.field")?.path().unwrap_or_default()}),
             )
         }
+        api::FilterExprKind::FilterIn => {
+            let v = required_result(value.expr_as_filter_in(), "filter.in")?;
+            (
+                "filter_in",
+                serde_json::json!({
+                    "field": required_result(v.field(), "in.field")?.path().unwrap_or_default(),
+                    "values": v.values().map(|xs| xs.iter().map(value_json).collect::<Result<Vec<_>, _>>()).transpose()?.map(Value::Array).unwrap_or_else(absent_vector_json)
+                }),
+            )
+        }
         _ => {
             return Err(JsonCodecError::FlatBuffer(
                 "unknown filter discriminator".to_owned(),
@@ -6323,6 +6355,14 @@ fn filter<'a>(
                 &format!("{path}.exists"),
             )?),
         ),
+        "filter_in" => (
+            api::FilterExprKind::FilterIn,
+            offset(filter_in(
+                b,
+                object(payload, path)?,
+                &format!("{path}.in"),
+            )?),
+        ),
         _ => return Err(contract(format!("unknown filter variant `{path}.{kind}`"))),
     };
     Ok(api::FilterExpr::create(
@@ -6409,6 +6449,31 @@ fn exists<'a>(
     Ok(api::FilterExists::create(
         b,
         &api::FilterExistsArgs { field },
+    ))
+}
+
+fn filter_in<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    o: &Map<String, Value>,
+    path: &str,
+) -> Result<WIPOffset<api::FilterIn<'a>>, JsonCodecError> {
+    check_keys(o, "SearchKernel_V2_FilterIn", path)?;
+    let field_offset = optional_string(o, "field", path)?.map(|value| query_field_ref(b, &value));
+    let values = field(o, "values")
+        .map(|raw| {
+            array(raw, &format!("{path}.values"))?
+                .iter()
+                .map(|value| value_from_json(b, value))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| b.create_vector(&values))
+        })
+        .transpose()?;
+    Ok(api::FilterIn::create(
+        b,
+        &api::FilterInArgs {
+            field: field_offset,
+            values,
+        },
     ))
 }
 
@@ -6972,6 +7037,9 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.FilterComparison.value
 // table SearchKernel.V2.FilterExists
 // field SearchKernel.V2.FilterExists.field
+// table SearchKernel.V2.FilterIn
+// field SearchKernel.V2.FilterIn.field
+// field SearchKernel.V2.FilterIn.values
 // table SearchKernel.V2.FilterExpr
 // field SearchKernel.V2.FilterExpr.expr
 // field SearchKernel.V2.FilterExpr.expr_type
@@ -7175,6 +7243,7 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // variant FilterComparison=4
 // variant FilterRange=5
 // variant FilterExists=6
+// variant FilterIn=7
 // enum SearchKernel.V2.MissingPlacement
 // variant Unspecified=0
 // variant First=1
@@ -7295,6 +7364,9 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // field SearchKernel.V2.FilterComparison.value
 // table SearchKernel.V2.FilterExists
 // field SearchKernel.V2.FilterExists.field
+// table SearchKernel.V2.FilterIn
+// field SearchKernel.V2.FilterIn.field
+// field SearchKernel.V2.FilterIn.values
 // table SearchKernel.V2.FilterExpr
 // field SearchKernel.V2.FilterExpr.expr
 // field SearchKernel.V2.FilterExpr.expr_type
@@ -7499,6 +7571,7 @@ pub(crate) fn generated_response_payload_to_json<'a>(
 // variant FilterComparison=4
 // variant FilterRange=5
 // variant FilterExists=6
+// variant FilterIn=7
 // enum SearchKernel.V2.MissingPlacement
 // variant Unspecified=0
 // variant First=1
