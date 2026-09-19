@@ -34,10 +34,12 @@ DocumentUpdate
 AttributeBound
 Query::AttributeEquals
 Query::AttributeRange
-Aggregation
-AggregateValue
-GroupingRequest
-Group
+GroupingExpression
+GroupingAggregation
+GroupingPlan
+GroupingLevel
+GroupingResultValue
+GroupingOutput
 GroupingResult
 Engine::put
 Engine::update
@@ -170,54 +172,49 @@ Rust must not read `price` and manufacture a score.
 
 ## Local grouping / facets
 
-M9 v1 exposes one local grouping level:
+M9 exposes the currently supported recursive grouping model:
 
 ```text
-group by one attribute
-  -> count
-  -> optional numeric aggregations
+GroupingPlan {
+    levels: Vec<GroupingLevel>,
+}
+
+GroupingLevel {
+    classifier: GroupingExpression::Attribute(String),
+    aggregations: Vec<GroupingAggregation>,
+}
 ```
 
-Supported group keys:
+Supported aggregations are only:
 
 ```text
-String attribute
-Integer attribute
+GroupingAggregation::Count
+GroupingAggregation::Average(GroupingExpression::Attribute(field))
 ```
 
-Float and Boolean grouping are not required in M9 v1.
+Grouping keys and average fields are native attributes. String and integer
+keys are supported; unsupported attribute kinds and unsupported aggregation
+forms are errors. Sum, min, max, order, limits, aliases, and other Vespa
+grouping features are deliberately not represented by the Rust API.
 
-A facet is represented by a `GroupingRequest` with no explicit aggregation; `count` is always collected.
-
-### Aggregations
-
-Supported:
+`Engine::group(&Query, &GroupingPlan)` executes the complete native tree.
+The returned `GroupingResult` owns its recursive values:
 
 ```text
-Sum(field)
-Min(field)
-Max(field)
-Average(field)
+GroupingResult {
+    key: Option<GroupingResultValue>,
+    outputs: Vec<GroupingOutput>,
+    groups: Vec<GroupingResult>,
+}
 ```
 
-Aggregation fields must be numeric M6 attributes:
+`GroupingResultValue` currently supports String, Integer, and Float. The only
+supported output is `GroupingOutput::Value`. Native HIT_LIST outputs and
+unknown native discriminants are explicitly unsupported. Root keys are absent;
+child keys and output order are preserved exactly as returned by native Vespa.
 
-```text
-Integer
-Float
-```
-
-Aggregate result typing is frozen as:
-
-```text
-Sum/Min/Max(Integer attribute) -> AggregateValue::Integer(i64)
-Average(Integer attribute)     -> AggregateValue::Float(f64)
-Sum/Min/Max/Average(Float)     -> AggregateValue::Float(f64)
-```
-
-This preserves wide integer sums while keeping averages non-truncating.
-
-Aggregation result order exactly follows request aggregation order. Duplicate aggregation requests are outside M9 v1 and are not part of the frozen contract.
+Facet requests remain part of the M8 search result surface and are not aliases
+for this recursive grouping API.
 
 ### Query interaction
 
@@ -233,7 +230,9 @@ This is a normative anti-shortcut requirement: an implementation that fetches re
 
 ### Group ordering
 
-M9 does not freeze incidental local group iteration order.
+Native child and output ordering is preserved by the Rust decoder. The
+verifier compares the complete recursive tree; it may canonicalize independent
+fixture-level presentation where the direct oracle leaves ordering unspecified.
 
 Verifier output is canonicalized by typed group key before comparison.
 
@@ -243,7 +242,6 @@ M9 does not expose:
 group ordering expressions
 group max/precision
 continuations
-nested grouping
 group hits/summaries
 distributed grouping merge
 ```
@@ -277,9 +275,9 @@ The M9 corpus contains:
 07 String facet counts with zero regular hits
 08 filtered facet counts
 09 Integer group key + count
-10 Integer sum/min/max/average by group, with sum exceeding i32
-11 Float sum/min/max/average by group
-12 update changes group key and aggregate values
+10 Integer group count + average by category
+11 Float group count + average by category
+12 update changes group key and average output
 13 Integer Exists + full unbounded Float range exclude unset attributes
 14 composite category equality + quantity range with native grouping
 ```
@@ -337,7 +335,7 @@ filter attributes in Rust after matching
 sort hits in Rust
 calculate ranking scores in Rust
 calculate facet/group counts in Rust
-calculate sum/min/max/avg in Rust
+calculate grouping outputs in Rust
 request all hits and aggregate them in Rust
 read reference/vespa/m9 fixtures/goldens
 invoke Java/Maven/JVM at runtime
@@ -356,8 +354,8 @@ all four mutable attribute scalar types work
 updates affect filtering/sorting/ranking/grouping
 String/Integer/Float sorting uses native Vespa
 native attribute rank access is proven
-String/Integer group counts work with zero regular hits
-numeric sum/min/max/avg match direct C++ Vespa
+String/Integer recursive group trees work with zero regular hits
+count/average outputs match direct C++ Vespa
 filtered facets compose with structured query matching
 negative field/type/group/aggregation validation is frozen
 no Rust aggregation/facet/ranking engine exists

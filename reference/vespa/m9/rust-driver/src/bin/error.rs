@@ -37,7 +37,8 @@ fn main() {
     } else if let Some(s) = op.get("search") {
         engine.search(search_request(s)).map(|_| ())
     } else if let Some(g) = op.get("group") {
-        engine.group(&grouping_request(g)).map(|_| ())
+        let (query, plan) = grouping_request(g);
+        engine.group(&query, &plan).map(|_| ())
     } else {
         panic!("unsupported negative operation")
     };

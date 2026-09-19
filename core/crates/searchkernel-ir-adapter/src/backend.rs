@@ -15,8 +15,8 @@ use searchkernel_ir::{
     TotalHitsRelation, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_vespa_engine::{
-    DocumentUpdate, Engine, FieldValue, ScalarValue, TotalHitsRelation as VespaTotalHitsRelation,
-    Value as VespaValue,
+    DocumentUpdate, Engine, FieldValue, MatchFeatureValue, ScalarValue,
+    TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
 
@@ -206,7 +206,17 @@ impl Backend for VespaBackend {
                     match_features: hit
                         .match_features
                         .into_iter()
-                        .map(|(name, value)| (name, searchkernel_ir::Value::Float64(value)))
+                        .map(|(name, value)| {
+                            let value = match value {
+                                MatchFeatureValue::Double(value) => {
+                                    searchkernel_ir::Value::Float64(value)
+                                }
+                                MatchFeatureValue::Data(value) => {
+                                    searchkernel_ir::Value::Bytes(value)
+                                }
+                            };
+                            (name, value)
+                        })
                         .collect(),
                     summary_features: std::collections::BTreeMap::new(),
                     rank_features: std::collections::BTreeMap::new(),
@@ -228,17 +238,6 @@ impl Backend for VespaBackend {
                             "count".to_owned(),
                             searchkernel_ir::Value::UInt64(group.count),
                         );
-                        for (index, aggregation) in group.aggregations.into_iter().enumerate() {
-                            let value = match aggregation {
-                                searchkernel_vespa_engine::AggregateValue::Integer(value) => {
-                                    searchkernel_ir::Value::Int64(value)
-                                }
-                                searchkernel_vespa_engine::AggregateValue::Float(value) => {
-                                    searchkernel_ir::Value::Float64(value)
-                                }
-                            };
-                            fields.insert(format!("aggregation_{index}"), value);
-                        }
                         let value = match group.key {
                             VespaValue::String(value) => ScalarValue::String(value),
                             VespaValue::Integer(value) => ScalarValue::Integer(value),

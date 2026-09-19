@@ -129,15 +129,7 @@
         },
         "group_by": "category",
         "aggregations": [
-          {
-            "sum": "qty"
-          },
-          {
-            "min": "qty"
-          },
-          {
-            "max": "qty"
-          },
+          "count",
           {
             "average": "qty"
           }

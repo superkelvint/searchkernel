@@ -5,6 +5,7 @@ pub const SK_NATIVE_STATUS_INVALID_ARGUMENT: u32 = 1;
 pub const SK_NATIVE_STATUS_INTERNAL: u32 = 2;
 pub const SK_NATIVE_STATUS_OUT_OF_MEMORY: u32 = 3;
 pub const SK_NATIVE_STATUS_UNSUPPORTED: u32 = 4;
+pub const SK_NATIVE_STATUS_TYPE_ERROR: u32 = 6;
 pub const SK_TEXT_QUERY_TERM: u32 = 1;
 pub const SK_TEXT_QUERY_PHRASE: u32 = 2;
 pub const SK_QUERY_NODE_AND: u32 = 1;
@@ -48,6 +49,11 @@ pub const SK_AGGREGATION_SUM: u32 = 1;
 pub const SK_AGGREGATION_MIN: u32 = 2;
 pub const SK_AGGREGATION_MAX: u32 = 3;
 pub const SK_AGGREGATION_AVERAGE: u32 = 4;
+pub const SK_GROUPING_RESULT_VALUE_STRING: u32 = 1;
+pub const SK_GROUPING_RESULT_VALUE_INTEGER: u32 = 2;
+pub const SK_GROUPING_RESULT_VALUE_FLOAT: u32 = 3;
+pub const SK_GROUPING_TREE_OUTPUT_VALUE: u32 = 1;
+pub const SK_GROUPING_TREE_OUTPUT_HIT_LIST: u32 = 2;
 pub const SK_GROUP_ORDER_NONE: u32 = 0;
 pub const SK_GROUP_ORDER_COUNT_ASC: u32 = 1;
 pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
@@ -57,8 +63,11 @@ pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
 pub const SK_DEGRADATION_MATCH_PHASE: u32 = 1;
 pub const SK_DEGRADATION_TIMEOUT: u32 = 2;
 pub const SK_DEGRADATION_ANN_TIMEOUT: u32 = 4;
+pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
+pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
+pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 8;
+pub const SK_NATIVE_ABI_VERSION: u32 = 9;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -151,6 +160,51 @@ pub struct sk_generic_grouping_request {
 }
 pub type sk_generic_search_result = sk_local_search_result;
 pub type sk_generic_grouping_result = sk_local_grouping_result;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_feature_value {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_plan {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_level {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_expression {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_aggregation {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_result_value {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_tree_output {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_tree_result {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_grouping_tree_node {
+    _unused: [u8; 0],
+}
 unsafe extern "C" {
     pub fn sk_native_abi_version() -> u32;
 }
@@ -978,7 +1032,37 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_result_match_feature_value_ref(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        feature_index: u32,
+        out_value: *mut *const sk_feature_value,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_local_search_result_destroy(result: *mut sk_local_search_result);
+}
+unsafe extern "C" {
+    pub fn sk_feature_value_kind(value: *const sk_feature_value) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_feature_value_double(
+        value: *const sk_feature_value,
+        out_value: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_feature_value_data(
+        value: *const sk_feature_value,
+        out_data: *mut *const u8,
+        out_size: *mut usize,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
 }
 unsafe extern "C" {
     pub fn sk_generic_search_request_create(
@@ -1177,6 +1261,16 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_generic_search_result_match_feature_value_ref(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        feature_index: u32,
+        out_value: *mut *const sk_feature_value,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_result_grouping_count(result: *const sk_generic_search_result) -> u32;
 }
 unsafe extern "C" {
@@ -1370,6 +1464,170 @@ unsafe extern "C" {
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_plan_create(
+        out_plan: *mut *mut sk_grouping_plan,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_attribute(
+        field: *const ::std::os::raw::c_char,
+        out_expression: *mut *mut sk_grouping_expression,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_destroy(expression: *mut sk_grouping_expression);
+}
+unsafe extern "C" {
+    pub fn sk_grouping_aggregation_count(
+        out: *mut *mut sk_grouping_aggregation,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_aggregation_average(
+        expression: *const sk_grouping_expression,
+        out: *mut *mut sk_grouping_aggregation,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_aggregation_destroy(aggregation: *mut sk_grouping_aggregation);
+}
+unsafe extern "C" {
+    pub fn sk_grouping_plan_add_level(
+        plan: *mut sk_grouping_plan,
+        classifier: *const sk_grouping_expression,
+        out_level: *mut *mut sk_grouping_level,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_level_add_count(
+        level: *mut sk_grouping_level,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_level_add_aggregation(
+        level: *mut sk_grouping_level,
+        kind: u32,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_level_add_aggregation_handle(
+        level: *mut sk_grouping_level,
+        aggregation: *const sk_grouping_aggregation,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_plan_destroy(plan: *mut sk_grouping_plan);
+}
+unsafe extern "C" {
+    pub fn sk_engine_group_tree(
+        engine: *const sk_engine,
+        query: *const sk_query,
+        plan: *const sk_grouping_plan,
+        out_result: *mut *mut sk_grouping_tree_result,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_result_root(
+        result: *const sk_grouping_tree_result,
+        out_root: *mut *const sk_grouping_tree_node,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_node_group_count(node: *const sk_grouping_tree_node) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_node_group(
+        node: *const sk_grouping_tree_node,
+        group_index: u32,
+        out_group: *mut *const sk_grouping_tree_node,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_node_key(
+        node: *const sk_grouping_tree_node,
+        out_value: *mut *const sk_grouping_result_value,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_result_value_kind(value: *const sk_grouping_result_value) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_result_value_string(
+        value: *const sk_grouping_result_value,
+        out_string: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_result_value_integer(
+        value: *const sk_grouping_result_value,
+        out_integer: *mut i64,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_result_value_float(
+        value: *const sk_grouping_result_value,
+        out_float: *mut f64,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_node_output_count(node: *const sk_grouping_tree_node) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_node_output(
+        node: *const sk_grouping_tree_node,
+        output_index: u32,
+        out_output: *mut *const sk_grouping_tree_output,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_kind(output: *const sk_grouping_tree_output) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_value(
+        output: *const sk_grouping_tree_output,
+        out_value: *mut *const sk_grouping_result_value,
+        error: *mut ::std::os::raw::c_char,
+        error_capacity: usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_result_destroy(result: *mut sk_grouping_tree_result);
 }
 unsafe extern "C" {
     pub fn sk_local_grouping_request_create(

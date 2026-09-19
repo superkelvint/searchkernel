@@ -1,1 +1,1 @@
-{"id":"filtered-facet-counts","steps":[{"groups":[{"aggregations":[],"count":1,"key":{"type":"string","value":"books"}},{"aggregations":[],"count":2,"key":{"type":"string","value":"games"}}],"id":"groups","op":"group"}]}
+{"id":"filtered-facet-counts","steps":[{"id":"groups","op":"group","result":{"groups":[{"groups":[],"key":{"type":"string","value":"books"},"outputs":[{"type":"integer","value":1}]},{"groups":[],"key":{"type":"string","value":"games"},"outputs":[{"type":"integer","value":2}]}],"key":null,"outputs":[]}}]}

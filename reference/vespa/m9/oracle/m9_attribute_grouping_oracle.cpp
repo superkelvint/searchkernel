@@ -42,9 +42,6 @@
 #include <vespa/searchlib/aggregation/group.h>
 #include <vespa/searchlib/aggregation/grouping.h>
 #include <vespa/searchlib/aggregation/groupinglevel.h>
-#include <vespa/searchlib/aggregation/maxaggregationresult.h>
-#include <vespa/searchlib/aggregation/minaggregationresult.h>
-#include <vespa/searchlib/aggregation/sumaggregationresult.h>
 #include <vespa/searchlib/engine/docsumreply.h>
 #include <vespa/searchlib/engine/docsumrequest.h>
 #include <vespa/searchlib/engine/searchreply.h>
@@ -113,9 +110,6 @@ using search::aggregation::CountAggregationResult;
 using search::aggregation::Group;
 using search::aggregation::Grouping;
 using search::aggregation::GroupingLevel;
-using search::aggregation::MaxAggregationResult;
-using search::aggregation::MinAggregationResult;
-using search::aggregation::SumAggregationResult;
 using search::engine::DocsumReply;
 using search::engine::DocsumRequest;
 using search::engine::SearchReply;
@@ -583,10 +577,7 @@ void emit_aggregate(const AggregationResult& result) {
         if (node.getClass().inherits(Int64ResultNode::classId)) std::cout << "{\"type\":\"integer\",\"value\":" << node.getInteger() << '}';
         else std::cout << "{\"type\":\"float\",\"bits\":\"" << bits(node.getFloat()) << "\"}";
     };
-    if (result.getClass().inherits(CountAggregationResult::classId)) std::cout << "{\"type\":\"count\",\"value\":" << static_cast<const CountAggregationResult&>(result).getCount() << '}';
-    else if (result.getClass().inherits(SumAggregationResult::classId)) emit_node(static_cast<const SumAggregationResult&>(result).getSum());
-    else if (result.getClass().inherits(MinAggregationResult::classId)) emit_node(static_cast<const MinAggregationResult&>(result).getMin());
-    else if (result.getClass().inherits(MaxAggregationResult::classId)) emit_node(static_cast<const MaxAggregationResult&>(result).getMax());
+    if (result.getClass().inherits(CountAggregationResult::classId)) std::cout << "{\"type\":\"integer\",\"value\":" << static_cast<const CountAggregationResult&>(result).getCount() << '}';
     else if (result.getClass().inherits(AverageAggregationResult::classId)) emit_node(static_cast<const AverageAggregationResult&>(result).getAverage());
     else fail("unsupported native aggregation result");
 }
@@ -595,9 +586,13 @@ std::vector<AggregateSpec> aggregations(const Inspector& request) {
     const auto& values = field(request, "aggregations"); require(values.type() == vespalib::slime::ARRAY::instance, "aggregations must be an array");
     std::vector<AggregateSpec> result;
         for (size_t i = 0; i < values.children(); ++i) {
+            if (values[i].type() == vespalib::slime::STRING::instance && string_value(values[i], "count aggregation") == "count") {
+                result.push_back({"count", ""});
+                continue;
+            }
             require(values[i].type() == vespalib::slime::OBJECT::instance && values[i].fields() == 1, "aggregation must have one operation");
             bool recognized = false;
-            for (const std::string_view op : {"sum", "min", "max", "average"}) {
+            for (const std::string_view op : {"average"}) {
                 const auto& name = field(values[i], op);
                 if (present(name)) {
                     result.push_back({std::string(op), string_value(name, "aggregation field")});
@@ -610,30 +605,37 @@ std::vector<AggregateSpec> aggregations(const Inspector& request) {
     return result;
 }
 
-void emit_group(const std::string& id, const Inspector& request, const SearchReply& reply) {
-    require(reply.hits.empty(), "native zero-hit grouping returned ordinary hits"); require(!reply.groupResult.empty(), "native grouping result missing");
-    const auto specs = aggregations(request);
-    vespalib::nbostream buffer(reply.groupResult.data(), reply.groupResult.size()); vespalib::NBOSerializer input(buffer); uint32_t count = 0; input >> count; require(count == 1, "unexpected grouping result count");
-    Grouping result; result.deserialize(input);
-    const auto& root = result.getRoot();
-    std::cout << "{\"id\":" << json_escape(id) << ",\"op\":\"group\",\"groups\":[";
-    for (uint32_t i = 0; i < root.getChildrenSize(); ++i) {
-        if (i) std::cout << ',';
-        const auto& group = root.getChild(i);
-        std::cout << "{\"key\":{";
+void emit_group_node(const Group& group, bool include_key) {
+    std::cout << '{';
+    if (include_key) {
+        std::cout << "\"key\":{";
         const auto& key = group.getId();
         if (key.getClass().inherits(search::expression::StringResultNode::classId)) { HoldString value(key); std::cout << "\"type\":\"string\",\"value\":" << json_escape(std::string_view(value)); }
         else std::cout << "\"type\":\"integer\",\"value\":" << key.getInteger();
-        const auto& count_result = group.getAggregationResult(0);
-        require(count_result.getClass().inherits(CountAggregationResult::classId), "native grouping count missing");
-        std::cout << "},\"count\":" << static_cast<const CountAggregationResult&>(count_result).getCount() << ",\"aggregations\":[";
-        for (size_t n = 0; n < specs.size(); ++n) {
-            if (n) std::cout << ',';
-            emit_aggregate(group.getAggregationResult(n + 1));
-        }
-        std::cout << "]}";
+        std::cout << "},";
+    } else {
+        std::cout << "\"key\":null,";
     }
-    std::cout << "]}" << std::flush;
+    std::cout << "\"outputs\":[";
+    for (uint32_t n = 0; n < group.getAggrSize(); ++n) {
+        if (n) std::cout << ',';
+        emit_aggregate(group.getAggregationResult(n));
+    }
+    std::cout << "],\"groups\":[";
+    for (uint32_t n = 0; n < group.getChildrenSize(); ++n) {
+        if (n) std::cout << ',';
+        emit_group_node(group.getChild(n), true);
+    }
+    std::cout << "]}";
+}
+
+void emit_group(const std::string& id, const Inspector& request, const SearchReply& reply) {
+    require(reply.hits.empty(), "native zero-hit grouping returned ordinary hits"); require(!reply.groupResult.empty(), "native grouping result missing");
+    vespalib::nbostream buffer(reply.groupResult.data(), reply.groupResult.size()); vespalib::NBOSerializer input(buffer); uint32_t count = 0; input >> count; require(count == 1, "unexpected grouping result count");
+    Grouping result; result.deserialize(input);
+    std::cout << "{\"id\":" << json_escape(id) << ",\"op\":\"group\",\"result\":";
+    emit_group_node(result.getRoot(), false);
+    std::cout << '}' << std::flush;
 }
 
 std::string required_env(const char* name) { const auto* value = std::getenv(name); require(value && *value, std::string("missing environment variable ") + name); return value; }
@@ -644,12 +646,10 @@ void configure_grouping(SearchRequest& request, const Inspector& group_request, 
     auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_by));
     level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_by)));
     for (const auto& spec : aggregations(group_request)) {
+        if (spec.op == "count") continue;
         const auto& aggregate_field = spec_for(fixture.specs(), spec.field); require(aggregate_field.type == "integer" || aggregate_field.type == "float", "unsupported aggregation field");
         std::unique_ptr<AggregationResult> result;
-        if (spec.op == "sum") result = std::make_unique<SumAggregationResult>();
-        else if (spec.op == "min") result = std::make_unique<MinAggregationResult>();
-        else if (spec.op == "max") result = std::make_unique<MaxAggregationResult>();
-        else if (spec.op == "average") result = std::make_unique<AverageAggregationResult>();
+        if (spec.op == "average") result = std::make_unique<AverageAggregationResult>();
         else fail("unsupported aggregation");
         result->setExpression(std::make_unique<AttributeNode>(spec.field)); level.addResult(std::move(result));
     }

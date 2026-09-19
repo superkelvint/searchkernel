@@ -24,7 +24,7 @@ Output: one canonical JSON object with one output step per scenario step, preser
   "steps": [
     {"id":"before","op":"search", ...},
     {"id":"update","op":"update","ok":true},
-    {"id":"groups","op":"group","groups":[...]}
+    {"id":"groups","op":"group","result":{"key":null,"outputs":[],"groups":[...]}}
   ]
 }
 ```
@@ -97,9 +97,9 @@ For every `op=group` step:
 
 1. compile the scenario Query to the direct local Vespa query tree;
 2. set regular hit count to zero (`maxhits = 0`);
-3. construct one local grouping request over `group_by`;
-4. always request native `count()`;
-5. append the scenario aggregations in scenario order;
+3. construct one local grouping level over the attribute classifier;
+4. request native `count()` and any supported `average(attribute)` outputs;
+5. preserve aggregation order from the scenario plan;
 6. serialize the grouping request using the pinned Vespa object serialization used by `SearchRequest.groupSpec` (or use the pinned revision's direct equivalent);
 7. run the request through `DocumentDB::match`;
 8. deserialize `SearchReply.groupResult` with the matching pinned grouping classes;
@@ -114,16 +114,14 @@ Prefer direct C++ construction using the pinned searchlib aggregation/expression
 The intended conceptual request is:
 
 ```text
-all(
-  group(attribute(group_by))
-  each(
-    output(count())
-    output(sum(...), min(...), max(...), avg(...))
-  )
-)
+group(attribute(classifier))
+  each(output(count(), avg(attribute)))
 ```
 
-M9 freezes only a single group level. No nested groups, ordering, continuations, group hits, or distributed merge are required.
+The Rust Phase 7 model permits multiple recursive levels. The M9 legacy
+positive corpus exercises one level; the dedicated recursive ABI verifier
+exercises multiple levels. Sum, min, max, ordering, continuations, group hits,
+and distributed merge are not supported variants.
 
 If the pinned code makes group-spec serialization materially Java-owned and a direct C++ constructor would itself become a reimplementation, a verifier-only pinned Java helper may serialize the exact grouping object. If used:
 
@@ -137,15 +135,15 @@ If the pinned code makes group-spec serialization materially Java-owned and a di
 Native result mapping:
 
 ```text
-count                    -> u64
-sum/min/max Integer      -> {"type":"integer","value":i64}
-average Integer          -> {"type":"float","bits":"0x..."}
-sum/min/max/avg Float    -> {"type":"float","bits":"0x..."}
+count                    -> {"type":"integer","value":i64}
+average                  -> {"type":"float","bits":"0x..."}
 ```
 
 If the pinned engine returns an integer aggregate in a wider/different native wrapper, preserve the exact mathematical result so long as it fits frozen Rust `i64`; fail authoring if the pinned behavior cannot be represented losslessly.
 
-Group keys map to canonical `Value` JSON. M9 positive grouping cases use only String and Integer keys.
+Group keys map to `GroupingResultValue` JSON. M9 positive grouping cases use
+only String and Integer keys. The root key is null and every node has ordered
+`outputs` and recursive `groups` arrays.
 
 ## Canonical group order
 

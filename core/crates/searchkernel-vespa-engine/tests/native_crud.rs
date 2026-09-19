@@ -1,7 +1,8 @@
 use searchkernel_vespa_engine::{
-    Aggregation, ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType,
-    FieldValue, GroupingOrder, GroupingRequest, LinguisticsOptions, Query, QueryInput, RankProfile,
-    ScalarValue, Schema, SearchRequest, SortField, SummaryRequest, TensorValue, Value,
+    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
+    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingPlan,
+    LinguisticsOptions, Query, QueryInput, RankProfile, ScalarValue, Schema, SearchRequest,
+    SortField, SummaryRequest, TensorValue, Value,
 };
 use std::collections::BTreeSet;
 use std::fs;
@@ -268,11 +269,14 @@ fn native_local_search_and_attribute_operations_round_trip() {
 
     let grouped = engine
         .group(
-            &GroupingRequest::new(Query::True, "qty")
-                .aggregation(Aggregation::Sum("qty".to_owned()))
-                .aggregation(Aggregation::Min("qty".to_owned()))
-                .aggregation(Aggregation::Max("qty".to_owned()))
-                .aggregation(Aggregation::Average("qty".to_owned())),
+            &Query::True,
+            &GroupingPlan::new().level(
+                GroupingLevel::new(GroupingExpression::attribute("qty"))
+                    .aggregation(GroupingAggregation::Count)
+                    .aggregation(GroupingAggregation::Average(GroupingExpression::attribute(
+                        "qty",
+                    ))),
+            ),
         )
         .expect("execute local grouping");
     assert!(!grouped.groups.is_empty());
@@ -474,45 +478,6 @@ fn native_generic_search_and_grouping_honor_language_sort_limits_and_order() {
         searchkernel_vespa_engine::Value::Integer(20)
     );
 
-    let count_desc = engine
-        .group(
-            &GroupingRequest::new(Query::True, "category")
-                .max_groups(2)
-                .order(GroupingOrder::CountDescending),
-        )
-        .expect("execute count-desc grouping");
-    assert_eq!(count_desc.groups, faceted.facets[0].groups);
-
-    let limited = engine
-        .group(
-            &GroupingRequest::new(Query::True, "category")
-                .max_groups(1)
-                .order(GroupingOrder::CountDescending),
-        )
-        .expect("execute limited count-desc grouping");
-    assert_eq!(limited.groups.len(), 1);
-    assert_eq!(
-        limited.groups[0].key,
-        searchkernel_vespa_engine::Value::String("books".into())
-    );
-    assert_eq!(limited.groups[0].count, 2);
-
-    let value_asc = engine
-        .group(
-            &GroupingRequest::new(Query::True, "category")
-                .max_groups(2)
-                .order(GroupingOrder::ValueAscending),
-        )
-        .expect("execute value-asc grouping");
-    assert_eq!(
-        value_asc.groups[0].key,
-        searchkernel_vespa_engine::Value::String("books".into())
-    );
-    assert_eq!(
-        value_asc.groups[1].key,
-        searchkernel_vespa_engine::Value::String("games".into())
-    );
-
     engine.close().expect("close generic search engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
@@ -569,14 +534,16 @@ fn native_boolean_attributes_support_sorting_and_faceting() {
 }
 
 #[test]
-fn native_grouping_applies_requested_group_order_before_limit() {
+fn native_grouping_preserves_native_order_and_recursive_children() {
     let config = temporary_path("group-order-config");
     let data = temporary_path("group-order-data");
-    let schema = Schema::new("typea").field(
-        Field::new("category", FieldType::String)
-            .attribute()
-            .summary(),
-    );
+    let schema = Schema::new("typea")
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary());
     ConfigCompiler
         .compile_to(&schema, &config)
         .expect("compile group-order config");
@@ -588,30 +555,98 @@ fn native_grouping_applies_requested_group_order_before_limit() {
         ("group-order-3", "alpha"),
     ] {
         engine
-            .put(Document::new(id).field("category", category))
+            .put(
+                Document::new(id)
+                    .field("category", category)
+                    .field("qty", 1_i64),
+            )
             .expect("put group-order document");
     }
 
     let result = engine
         .group(
-            &GroupingRequest::new(Query::True, "category")
-                .max_groups(2)
-                .order(GroupingOrder::CountDescending),
+            &Query::True,
+            &GroupingPlan::new()
+                .level(
+                    GroupingLevel::new(GroupingExpression::attribute("category"))
+                        .aggregation(GroupingAggregation::Count),
+                )
+                .level(
+                    GroupingLevel::new(GroupingExpression::attribute("qty"))
+                        .aggregation(GroupingAggregation::Count),
+                ),
         )
         .expect("execute group-order grouping");
     assert_eq!(
         result
             .groups
             .iter()
-            .map(|group| (&group.key, group.count))
+            .map(|group| (&group.key, group.groups.len()))
             .collect::<Vec<_>>(),
         vec![
-            (&searchkernel_vespa_engine::Value::String("zulu".into()), 2),
-            (&searchkernel_vespa_engine::Value::String("alpha".into()), 1),
+            (
+                &Some(searchkernel_vespa_engine::GroupingResultValue::String(
+                    "alpha".into()
+                )),
+                1
+            ),
+            (
+                &Some(searchkernel_vespa_engine::GroupingResultValue::String(
+                    "zulu".into()
+                )),
+                1
+            ),
+        ]
+    );
+    assert_eq!(
+        result.groups[0].groups[0].key,
+        Some(searchkernel_vespa_engine::GroupingResultValue::Integer(1))
+    );
+    assert_eq!(result.groups[0].groups[0].outputs.len(), 1);
+
+    engine.close().expect("close group-order engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_supports_float_keys() {
+    let config = temporary_path("float-group-config");
+    let data = temporary_path("float-group-data");
+    let schema =
+        Schema::new("typea").field(Field::new("rating", FieldType::Float).attribute().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile float-group config");
+    let engine = Engine::open(&data, &config).expect("open float-group engine");
+    for (id, rating) in [("float-group-1", 1.5), ("float-group-2", 2.5)] {
+        engine
+            .put(Document::new(id).field("rating", rating))
+            .expect("put float-group document");
+    }
+
+    let result = engine
+        .group(
+            &Query::True,
+            &GroupingPlan::new().level(
+                GroupingLevel::new(GroupingExpression::attribute("rating"))
+                    .aggregation(GroupingAggregation::Count),
+            ),
+        )
+        .expect("execute float-key grouping");
+    assert_eq!(
+        result
+            .groups
+            .iter()
+            .map(|group| group.key.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(searchkernel_vespa_engine::GroupingResultValue::Float(1.5)),
+            Some(searchkernel_vespa_engine::GroupingResultValue::Float(2.5)),
         ]
     );
 
-    engine.close().expect("close group-order engine");
+    engine.close().expect("close float-group engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

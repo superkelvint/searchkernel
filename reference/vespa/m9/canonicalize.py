@@ -12,7 +12,9 @@ def walk(x):
  if isinstance(x,list): return [walk(v) for v in x]
  if not isinstance(x,dict): return x
  y={k:walk(v) for k,v in x.items()}
- if y.get('op')=='group' and isinstance(y.get('groups'),list): y['groups']=sorted(y['groups'],key=lambda g:key(g['key']))
+ if y.get('op')=='group' and isinstance(y.get('result'),dict):
+  result=y['result']
+  if isinstance(result.get('groups'),list): result['groups']=sorted(result['groups'],key=lambda g:key(g['key']))
  return y
 obj=walk(json.load(sys.stdin))
 print(json.dumps(obj,sort_keys=True,separators=(',',':')))

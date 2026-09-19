@@ -59,6 +59,7 @@ fn errors_preserve_codes_kinds_and_messages() {
     for (code, kind) in [
         (1, ErrorKind::InvalidArgument),
         (3, ErrorKind::ResourceExhausted),
+        (6, ErrorKind::Type),
         (77, ErrorKind::Internal),
     ] {
         let error = Error::native(code, None, "native failure");

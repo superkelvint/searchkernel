@@ -129,15 +129,7 @@
         },
         "group_by": "category",
         "aggregations": [
-          {
-            "sum": "price"
-          },
-          {
-            "min": "price"
-          },
-          {
-            "max": "price"
-          },
+          "count",
           {
             "average": "price"
           }

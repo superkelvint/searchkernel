@@ -16,6 +16,7 @@ pub enum ErrorKind {
     InvalidArgument,
     ResourceExhausted,
     Unsupported,
+    Type,
     DeadlineExceeded,
     Internal,
 }
@@ -40,6 +41,7 @@ impl Error {
                 1 => ErrorKind::InvalidArgument,
                 3 => ErrorKind::ResourceExhausted,
                 4 => ErrorKind::Unsupported,
+                6 => ErrorKind::Type,
                 5 => ErrorKind::DeadlineExceeded,
                 _ => ErrorKind::Internal,
             },
@@ -47,6 +49,10 @@ impl Error {
             detail_code,
             message: message.into(),
         }
+    }
+
+    pub(crate) fn unsupported(message: impl Into<String>) -> Self {
+        Self::native(4, None, message)
     }
 
     pub(crate) fn from_nul(error: NulError) -> Self {

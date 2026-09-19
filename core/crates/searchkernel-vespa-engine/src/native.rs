@@ -2,7 +2,10 @@ use crate::document::{FieldUpdate, FieldValue, ScalarValue};
 use crate::error::{check, cstring, Error, Result};
 use crate::linguistics::{DocumentAnalysis, QueryAnalysis};
 use crate::query::Value;
-use crate::search::{AggregateValue, Group, GroupingResult, Hit, SearchResult, TotalHitsRelation};
+use crate::search::{
+    FacetGroup, FacetResult, GroupingOutput, GroupingResult, GroupingResultValue, Hit,
+    MatchFeatureValue, SearchResult, TotalHitsRelation,
+};
 use crate::tensor::TensorValue;
 use searchkernel_vespa_bindings as sys;
 use std::collections::BTreeMap;
@@ -335,13 +338,351 @@ impl Drop for NativeGenericSearchRequest {
     }
 }
 
-pub(crate) struct NativeGenericGroupingRequest(
-    pub(crate) NonNull<sys::sk_generic_grouping_request>,
-);
-impl Drop for NativeGenericGroupingRequest {
+pub(crate) struct NativeGroupingPlan(pub(crate) NonNull<sys::sk_grouping_plan>);
+impl Drop for NativeGroupingPlan {
     fn drop(&mut self) {
-        unsafe { sys::sk_generic_grouping_request_destroy(self.0.as_ptr()) };
+        unsafe { sys::sk_grouping_plan_destroy(self.0.as_ptr()) };
     }
+}
+
+pub(crate) struct NativeGroupingExpression(pub(crate) NonNull<sys::sk_grouping_expression>);
+impl Drop for NativeGroupingExpression {
+    fn drop(&mut self) {
+        unsafe { sys::sk_grouping_expression_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) struct NativeGroupingAggregation(pub(crate) NonNull<sys::sk_grouping_aggregation>);
+impl Drop for NativeGroupingAggregation {
+    fn drop(&mut self) {
+        unsafe { sys::sk_grouping_aggregation_destroy(self.0.as_ptr()) };
+    }
+}
+
+struct NativeGroupingTreeResult(NonNull<sys::sk_grouping_tree_result>);
+impl Drop for NativeGroupingTreeResult {
+    fn drop(&mut self) {
+        unsafe { sys::sk_grouping_tree_result_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) fn grouping_plan_create() -> Result<NativeGroupingPlan, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status =
+        unsafe { sys::sk_grouping_plan_create(&mut pointer, error.as_mut_ptr(), error.capacity()) };
+    check(status, &error)?;
+    Ok(NativeGroupingPlan(require_ptr(pointer, "grouping plan")?))
+}
+
+pub(crate) fn grouping_expression_attribute(
+    field: &str,
+) -> Result<NativeGroupingExpression, Error> {
+    let field = cstring(field)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_expression_attribute(
+            field.as_ptr(),
+            &mut pointer,
+            error.as_mut_ptr().cast(),
+            error.capacity() as usize,
+        )
+    };
+    check(status, &error)?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+pub(crate) fn grouping_aggregation_count() -> Result<NativeGroupingAggregation, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_aggregation_count(
+            &mut pointer,
+            error.as_mut_ptr().cast(),
+            error.capacity() as usize,
+        )
+    };
+    check(status, &error)?;
+    Ok(NativeGroupingAggregation(require_ptr(
+        pointer,
+        "grouping aggregation",
+    )?))
+}
+
+pub(crate) fn grouping_aggregation_average(
+    expression: &NativeGroupingExpression,
+) -> Result<NativeGroupingAggregation, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_aggregation_average(
+            expression.0.as_ptr(),
+            &mut pointer,
+            error.as_mut_ptr().cast(),
+            error.capacity() as usize,
+        )
+    };
+    check(status, &error)?;
+    Ok(NativeGroupingAggregation(require_ptr(
+        pointer,
+        "grouping aggregation",
+    )?))
+}
+
+pub(crate) fn grouping_plan_add_level(
+    plan: &NativeGroupingPlan,
+    classifier: &NativeGroupingExpression,
+) -> Result<NonNull<sys::sk_grouping_level>, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_plan_add_level(
+            plan.0.as_ptr(),
+            classifier.0.as_ptr(),
+            &mut pointer,
+            error.as_mut_ptr().cast(),
+            error.capacity() as usize,
+        )
+    };
+    check(status, &error)?;
+    require_ptr(pointer, "grouping level")
+}
+
+pub(crate) fn grouping_level_add_aggregation(
+    level: NonNull<sys::sk_grouping_level>,
+    aggregation: &NativeGroupingAggregation,
+) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_level_add_aggregation_handle(
+            level.as_ptr(),
+            aggregation.0.as_ptr(),
+            error.as_mut_ptr().cast(),
+            error.capacity() as usize,
+        )
+    };
+    check(status, &error)
+}
+
+pub(crate) fn engine_group_tree(
+    engine: NonNull<sys::sk_engine>,
+    query: NonNull<sys::sk_query>,
+    plan: &NativeGroupingPlan,
+) -> Result<GroupingResult, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_engine_group_tree(
+            engine.as_ptr(),
+            query.as_ptr(),
+            plan.0.as_ptr(),
+            &mut pointer,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)?;
+    read_grouping_tree_result(require_ptr(pointer, "grouping tree result")?)
+}
+
+fn grouping_result_value(
+    pointer: *const sys::sk_grouping_result_value,
+) -> Result<GroupingResultValue, Error> {
+    let pointer = NonNull::new(pointer.cast_mut())
+        .ok_or_else(|| Error::message("native grouping returned a null result value"))?;
+    let value = pointer.as_ptr();
+    match unsafe { sys::sk_grouping_result_value_kind(value) } {
+        sys::SK_GROUPING_RESULT_VALUE_STRING => {
+            let mut string = ptr::null();
+            let mut length = 0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_grouping_result_value_string(
+                        value,
+                        &mut string,
+                        &mut length,
+                        error.as_mut_ptr().cast(),
+                        error.capacity() as usize,
+                    )
+                },
+                &error,
+            )?;
+            if length != 0 && string.is_null() {
+                return Err(Error::message(
+                    "native grouping returned a null string value",
+                ));
+            }
+            let bytes = if length == 0 {
+                &[][..]
+            } else {
+                unsafe { std::slice::from_raw_parts(string.cast::<u8>(), length as usize) }
+            };
+            Ok(GroupingResultValue::String(
+                String::from_utf8(bytes.to_vec())
+                    .map_err(|_| Error::message("native grouping returned invalid UTF-8"))?,
+            ))
+        }
+        sys::SK_GROUPING_RESULT_VALUE_INTEGER => {
+            let mut integer = 0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_grouping_result_value_integer(
+                        value,
+                        &mut integer,
+                        error.as_mut_ptr().cast(),
+                        error.capacity() as usize,
+                    )
+                },
+                &error,
+            )?;
+            Ok(GroupingResultValue::Integer(integer))
+        }
+        sys::SK_GROUPING_RESULT_VALUE_FLOAT => {
+            let mut floating = 0.0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_grouping_result_value_float(
+                        value,
+                        &mut floating,
+                        error.as_mut_ptr().cast(),
+                        error.capacity() as usize,
+                    )
+                },
+                &error,
+            )?;
+            Ok(GroupingResultValue::Float(floating))
+        }
+        kind => Err(Error::unsupported(format!(
+            "native grouping returned unknown result-value kind {kind}"
+        ))),
+    }
+}
+
+fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<GroupingOutput, Error> {
+    let pointer = NonNull::new(pointer.cast_mut())
+        .ok_or_else(|| Error::message("native grouping returned a null output"))?;
+    let output = pointer.as_ptr();
+    match unsafe { sys::sk_grouping_tree_output_kind(output) } {
+        sys::SK_GROUPING_TREE_OUTPUT_VALUE => {
+            let mut value = ptr::null();
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_grouping_tree_output_value(
+                        output,
+                        &mut value,
+                        error.as_mut_ptr().cast(),
+                        error.capacity() as usize,
+                    )
+                },
+                &error,
+            )?;
+            Ok(GroupingOutput::Value(grouping_result_value(value)?))
+        }
+        sys::SK_GROUPING_TREE_OUTPUT_HIT_LIST => Err(Error::unsupported(
+            "native grouping returned an unsupported HIT_LIST output",
+        )),
+        kind => Err(Error::unsupported(format!(
+            "native grouping returned unknown output kind {kind}"
+        ))),
+    }
+}
+
+fn grouping_tree_node(
+    node: *const sys::sk_grouping_tree_node,
+    include_key: bool,
+) -> Result<GroupingResult, Error> {
+    let node = NonNull::new(node.cast_mut())
+        .ok_or_else(|| Error::message("native grouping returned a null tree node"))?;
+    let node = node.as_ptr();
+    let key = if include_key {
+        let mut value = ptr::null();
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_grouping_tree_node_key(
+                    node,
+                    &mut value,
+                    error.as_mut_ptr().cast(),
+                    error.capacity() as usize,
+                )
+            },
+            &error,
+        )?;
+        Some(grouping_result_value(value)?)
+    } else {
+        None
+    };
+    let output_count = unsafe { sys::sk_grouping_tree_node_output_count(node) };
+    let mut outputs = Vec::with_capacity(output_count as usize);
+    for index in 0..output_count {
+        let mut output = ptr::null();
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_grouping_tree_node_output(
+                    node,
+                    index,
+                    &mut output,
+                    error.as_mut_ptr().cast(),
+                    error.capacity() as usize,
+                )
+            },
+            &error,
+        )?;
+        outputs.push(grouping_output(output)?);
+    }
+    let group_count = unsafe { sys::sk_grouping_tree_node_group_count(node) };
+    let mut groups = Vec::with_capacity(group_count as usize);
+    for index in 0..group_count {
+        let mut group = ptr::null();
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_grouping_tree_node_group(
+                    node,
+                    index,
+                    &mut group,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+        groups.push(grouping_tree_node(group, true)?);
+    }
+    Ok(GroupingResult {
+        key,
+        outputs,
+        groups,
+    })
+}
+
+fn read_grouping_tree_result(
+    pointer: NonNull<sys::sk_grouping_tree_result>,
+) -> Result<GroupingResult, Error> {
+    let result = NativeGroupingTreeResult(pointer);
+    let mut root = ptr::null();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_tree_result_root(
+                result.0.as_ptr(),
+                &mut root,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    grouping_tree_node(root, false)
 }
 
 pub(crate) fn read_generic_search_result(
@@ -523,19 +864,65 @@ pub(crate) fn read_generic_search_result(
         }
         let mut match_features = BTreeMap::new();
         for (feature_index, feature_name) in match_feature_names.iter().enumerate() {
-            let mut value = 0.0;
+            let mut native_value: *const sys::sk_feature_value = ptr::null();
             let mut error = NativeError::new();
             let status = unsafe {
-                sys::sk_generic_search_result_match_feature_value(
+                sys::sk_generic_search_result_match_feature_value_ref(
                     result.0.as_ptr(),
                     index as u32,
                     feature_index as u32,
-                    &mut value,
+                    &mut native_value,
                     error.as_mut_ptr(),
                     error.capacity(),
                 )
             };
             check(status, &error)?;
+            if native_value.is_null() {
+                return Err(Error::message("native match feature returned null value"));
+            }
+            let value = match unsafe { sys::sk_feature_value_kind(native_value) } {
+                sys::SK_FEATURE_VALUE_DOUBLE => {
+                    let mut value = 0.0;
+                    check(
+                        unsafe {
+                            sys::sk_feature_value_double(
+                                native_value,
+                                &mut value,
+                                error.as_mut_ptr(),
+                                error.capacity(),
+                            )
+                        },
+                        &error,
+                    )?;
+                    MatchFeatureValue::Double(value)
+                }
+                sys::SK_FEATURE_VALUE_DATA => {
+                    let mut data = ptr::null();
+                    let mut size = 0_usize;
+                    check(
+                        unsafe {
+                            sys::sk_feature_value_data(
+                                native_value,
+                                &mut data,
+                                &mut size,
+                                error.as_mut_ptr(),
+                                error.capacity(),
+                            )
+                        },
+                        &error,
+                    )?;
+                    if size != 0 && data.is_null() {
+                        return Err(Error::message("native match feature returned null data"));
+                    }
+                    let bytes = if size == 0 {
+                        &[][..]
+                    } else {
+                        unsafe { std::slice::from_raw_parts(data, size) }
+                    };
+                    MatchFeatureValue::Data(bytes.to_vec())
+                }
+                _ => return Err(Error::message("native match feature returned unknown kind")),
+            };
             match_features.insert(feature_name.clone(), value);
         }
         hits.push(Hit {
@@ -555,6 +942,10 @@ pub(crate) fn read_generic_search_result(
     }
     Ok(SearchResult {
         total_hits: total_hit_count,
+        // Phase 7 deliberately does not derive this relation from coverage,
+        // degradation, or issues. The current native ABI has no separate
+        // verifier-backed hit-count-accuracy signal; changing this mapping is
+        // a separately specified follow-up.
         total_hits_relation: TotalHitsRelation::Exact,
         hits,
         facets,
@@ -573,7 +964,7 @@ impl Drop for NativeGenericSearchResult {
 fn read_search_facet(
     result: *const sys::sk_generic_search_result,
     grouping_index: u32,
-) -> Result<GroupingResult, Error> {
+) -> Result<FacetResult, Error> {
     let group_count =
         unsafe { sys::sk_generic_search_result_group_count(result, grouping_index) } as usize;
     let mut groups = Vec::with_capacity(group_count);
@@ -620,107 +1011,7 @@ fn read_search_facet(
                 ))
             }
         };
-        groups.push(Group {
-            key,
-            count,
-            aggregations: Vec::new(),
-        });
+        groups.push(FacetGroup { key, count });
     }
-    Ok(GroupingResult { groups })
-}
-
-pub(crate) fn read_generic_grouping_result(
-    pointer: NonNull<sys::sk_generic_grouping_result>,
-) -> Result<GroupingResult, Error> {
-    let result = NativeGenericGroupingResult(pointer);
-    let group_count =
-        unsafe { sys::sk_generic_grouping_result_group_count(result.0.as_ptr()) } as usize;
-    let mut groups = Vec::with_capacity(group_count);
-    for group_index in 0..group_count {
-        let mut key_kind = 0;
-        let mut key_string = ptr::null();
-        let mut key_string_length = 0;
-        let mut key_integer = 0;
-        let mut count = 0;
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_generic_grouping_result_group(
-                result.0.as_ptr(),
-                group_index as u32,
-                &mut key_kind,
-                &mut key_string,
-                &mut key_string_length,
-                &mut key_integer,
-                &mut count,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let key = match key_kind {
-            sys::SK_VALUE_STRING => {
-                if key_string.is_null() {
-                    return Err(Error::message("native grouping returned null string key"));
-                }
-                let bytes = unsafe {
-                    std::slice::from_raw_parts(key_string.cast::<u8>(), key_string_length as usize)
-                };
-                Value::String(
-                    String::from_utf8(bytes.to_vec())
-                        .map_err(|_| Error::message("native grouping returned invalid UTF-8"))?,
-                )
-            }
-            sys::SK_VALUE_INTEGER => Value::Integer(key_integer),
-            _ => {
-                return Err(Error::message(
-                    "native grouping returned unsupported key kind",
-                ));
-            }
-        };
-        let aggregation_count = unsafe {
-            sys::sk_generic_grouping_result_aggregation_count(result.0.as_ptr(), group_index as u32)
-        } as usize;
-        let mut aggregations = Vec::with_capacity(aggregation_count);
-        for aggregation_index in 0..aggregation_count {
-            let mut kind = 0;
-            let mut integer = 0;
-            let mut float = 0.0;
-            let mut error = NativeError::new();
-            let status = unsafe {
-                sys::sk_generic_grouping_result_aggregation(
-                    result.0.as_ptr(),
-                    group_index as u32,
-                    aggregation_index as u32,
-                    &mut kind,
-                    &mut integer,
-                    &mut float,
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            };
-            check(status, &error)?;
-            aggregations.push(match kind {
-                sys::SK_VALUE_INTEGER => AggregateValue::Integer(integer),
-                sys::SK_VALUE_FLOAT => AggregateValue::Float(float),
-                _ => {
-                    return Err(Error::message(
-                        "native grouping returned unknown aggregate kind",
-                    ));
-                }
-            });
-        }
-        groups.push(Group {
-            key,
-            count,
-            aggregations,
-        });
-    }
-    Ok(GroupingResult { groups })
-}
-
-struct NativeGenericGroupingResult(NonNull<sys::sk_generic_grouping_result>);
-impl Drop for NativeGenericGroupingResult {
-    fn drop(&mut self) {
-        unsafe { sys::sk_generic_grouping_result_destroy(self.0.as_ptr()) };
-    }
+    Ok(FacetResult { groups })
 }

@@ -1,9 +1,10 @@
 #![cfg(all(feature = "hardening", searchkernel_hardening_sdk))]
 
 use searchkernel_vespa_engine::{
-    hardening, Aggregation, ConfigCompiler, Document, Engine, ErrorKind, FacetRequest, Field,
-    FieldType, FieldValue, GroupingOrder, GroupingRequest, Query, RankProfile, ScalarValue, Schema,
-    SearchRequest, SummaryRequest, Value,
+    hardening, ConfigCompiler, Document, Engine, ErrorKind, FacetRequest, Field, FieldType,
+    FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
+    GroupingResultValue, MatchFeatureValue, Query, RankProfile, ScalarValue, Schema, SearchRequest,
+    SummaryRequest, Value,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -81,12 +82,14 @@ fn identity_search_request() -> SearchRequest {
         .limit(10)
 }
 
-fn grouping_request() -> GroupingRequest {
-    GroupingRequest::new(Query::True, "category")
-        .aggregation(Aggregation::Sum("qty".to_owned()))
-        .aggregation(Aggregation::Min("qty".to_owned()))
-        .aggregation(Aggregation::Max("qty".to_owned()))
-        .aggregation(Aggregation::Average("qty".to_owned()))
+fn grouping_plan() -> GroupingPlan {
+    GroupingPlan::new().level(
+        GroupingLevel::new(GroupingExpression::attribute("category"))
+            .aggregation(GroupingAggregation::Count)
+            .aggregation(GroupingAggregation::Average(GroupingExpression::attribute(
+                "qty",
+            ))),
+    )
 }
 
 fn expected_error_kind(fault: hardening::ResultFault) -> ErrorKind {
@@ -117,23 +120,6 @@ fn assert_search_fault(engine: &Engine, fault: hardening::ResultFault) {
     );
 }
 
-fn assert_grouping_fault(engine: &Engine, fault: hardening::ResultFault) {
-    let before = hardening::result_destroy_count(engine).expect("read result destroy count");
-    hardening::set_result_fault(engine, fault).expect("set result fault");
-    let error = engine
-        .group(&grouping_request())
-        .expect_err("malformed grouping result unexpectedly decoded");
-    hardening::clear_result_fault(engine).expect("clear result fault");
-    assert!(!error.to_string().is_empty());
-    assert_eq!(error.kind(), expected_error_kind(fault));
-    let after = hardening::result_destroy_count(engine).expect("read result destroy count");
-    assert_eq!(
-        after,
-        before + 1,
-        "grouping result was not destroyed on error"
-    );
-}
-
 #[test]
 fn native_result_decoding_preserves_mixed_values_features_facets_and_grouping() {
     let (engine, config, data) = fixture();
@@ -159,6 +145,19 @@ fn native_result_decoding_preserves_mixed_values_features_facets_and_grouping() 
         FieldValue::Scalar(ScalarValue::Boolean(true))
     );
     assert_eq!(result.hits[0].match_features.len(), 2);
+    assert_eq!(
+        result.hits[0].match_features["query(test_feature)"],
+        MatchFeatureValue::Double(2.5)
+    );
+    assert_eq!(
+        result.hits[0].match_features["attribute(qty)"],
+        MatchFeatureValue::Double(7.0)
+    );
+    assert_eq!(result.coverage.active, 1);
+    assert_eq!(result.coverage.covered, 1);
+    assert_eq!(result.coverage.target_active, 1);
+    assert_eq!(result.coverage.degradation_flags, 0);
+    assert!(result.issues.is_empty());
     assert_eq!(result.facets.len(), 2);
     assert_eq!(
         result.facets[0].groups[0].key,
@@ -167,11 +166,22 @@ fn native_result_decoding_preserves_mixed_values_features_facets_and_grouping() 
     assert_eq!(result.facets[1].groups[0].key, Value::Integer(7));
 
     let grouping = engine
-        .group(&grouping_request())
+        .group(&Query::True, &grouping_plan())
         .expect("decode grouping result");
+    assert_eq!(grouping.key, None);
+    assert!(grouping.outputs.is_empty());
     assert_eq!(grouping.groups.len(), 1);
-    assert_eq!(grouping.groups[0].aggregations.len(), 4);
-    assert_eq!(grouping.groups[0].key, Value::String("books".into()));
+    assert_eq!(
+        grouping.groups[0].key,
+        Some(GroupingResultValue::String("books".into()))
+    );
+    assert_eq!(
+        grouping.groups[0].outputs,
+        vec![
+            searchkernel_vespa_engine::GroupingOutput::Value(GroupingResultValue::Integer(1)),
+            searchkernel_vespa_engine::GroupingOutput::Value(GroupingResultValue::Float(7.0)),
+        ]
+    );
 
     engine.close().expect("close result-decoding engine");
     let _ = fs::remove_dir_all(config);
@@ -232,30 +242,6 @@ fn native_result_decoding_rejects_malformed_search_values_and_releases_results()
         .search(search_request())
         .expect("healthy search after malformed results");
     engine.close().expect("close search result-decoding engine");
-    let _ = fs::remove_dir_all(config);
-    let _ = fs::remove_dir_all(data);
-}
-
-#[test]
-fn native_result_decoding_rejects_malformed_grouping_values_and_releases_results() {
-    let (engine, config, data) = fixture();
-    for fault in [
-        hardening::ResultFault::NullResult,
-        hardening::ResultFault::UnsupportedGroupKey,
-        hardening::ResultFault::InvalidGroupKey,
-        hardening::ResultFault::GroupAccessorError,
-        hardening::ResultFault::UnknownAggregationKind,
-        hardening::ResultFault::AggregationAccessorError,
-    ] {
-        assert_grouping_fault(&engine, fault);
-    }
-
-    engine
-        .group(&grouping_request())
-        .expect("healthy grouping after malformed results");
-    engine
-        .close()
-        .expect("close grouping result-decoding engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

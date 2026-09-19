@@ -35,13 +35,19 @@ for sp in scenarios:
             if x['total_hit_count']<len(x['hits']): raise SystemExit(f'{ep}: invalid total hit count')
             for i,h in enumerate(x['hits']): hit(h,f'{ep}: hit {i}')
         elif op=='group':
-            groups=x.get('groups')
-            if not isinstance(groups,list): raise SystemExit(f'{ep}: groups must be list')
-            for i,g in enumerate(groups):
-                if set(g)!={'key','count','aggregations'}: raise SystemExit(f'{ep}: group shape changed')
-                value(g['key'],f'{ep}: group {i} key')
-                if not isinstance(g['count'],int) or g['count']<0: raise SystemExit(f'{ep}: invalid group count')
-                if not isinstance(g['aggregations'],list): raise SystemExit(f'{ep}: aggregations must be list')
-                for j,v in enumerate(g['aggregations']): value(v,f'{ep}: group {i} aggregation {j}')
+            result=x.get('result')
+            if not isinstance(result,dict) or set(result)!={'key','outputs','groups'}: raise SystemExit(f'{ep}: recursive grouping result shape changed')
+            def grouping(node,where,root=False):
+                if root:
+                    if node['key'] is not None: raise SystemExit(f'{where}: root key must be null')
+                else:
+                    value(node['key'],f'{where}.key')
+                if not isinstance(node['outputs'],list): raise SystemExit(f'{where}: outputs must be list')
+                for j,v in enumerate(node['outputs']): value(v,f'{where}.output {j}')
+                if not isinstance(node['groups'],list): raise SystemExit(f'{where}: groups must be list')
+                for j,child in enumerate(node['groups']):
+                    if not isinstance(child,dict) or set(child)!={'key','outputs','groups'}: raise SystemExit(f'{where}.group {j}: invalid node')
+                    grouping(child,f'{where}.group {j}')
+            grouping(result,f'{ep}: result',True)
         else: raise SystemExit(f'{ep}: unknown output op {op!r}')
 print('M9 expected output valid')

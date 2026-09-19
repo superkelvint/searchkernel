@@ -17,7 +17,7 @@ cargo check --manifest-path reference/vespa/api-contract/Cargo.toml --bin m9
 cargo build --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bins
 require_native_driver "$CARGO_TARGET_DIR/debug/searchkernel-m9-driver" \
   sk_engine_open \
-  sk_engine_group_generic \
+  sk_engine_group_tree \
   sk_engine_update
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -42,5 +42,7 @@ while read -r id expected; do
   actual="$(cargo run --quiet --manifest-path "$SCRIPT_DIR/rust-driver/Cargo.toml" --bin searchkernel-m9-error -- "$ERRORS" "$id" "$cfg" "$data")"
   [[ "$actual" == "$expected" ]] || { echo "M9 error category mismatch $id: expected=$expected actual=$actual" >&2; exit 1; }
 done < "$TMP/error-jobs"
+
+reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh
 
 echo 'M9 verification passed'

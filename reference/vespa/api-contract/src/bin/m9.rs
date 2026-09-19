@@ -1,7 +1,7 @@
 use searchkernel_vespa_engine::{
-    AggregateValue, Aggregation, AttributeBound, Document, DocumentUpdate, Engine, Group,
-    GroupingRequest, GroupingResult, Query, Result, SearchRequest, SortField, SummaryRequest,
-    Value,
+    AttributeBound, Document, DocumentUpdate, Engine, GroupingAggregation, GroupingExpression,
+    GroupingLevel, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Query,
+    Result, SearchRequest, SortField, SummaryRequest, Value,
 };
 
 fn mutations(engine: &Engine) -> Result<()> {
@@ -62,40 +62,41 @@ fn search(engine: &Engine) -> Result<()> {
     Ok(())
 }
 
+fn visit_group(result: GroupingResult) {
+    let _: Option<GroupingResultValue> = result.key;
+    for output in result.outputs {
+        match output {
+            GroupingOutput::Value(GroupingResultValue::String(value)) => {
+                let _: String = value;
+            }
+            GroupingOutput::Value(GroupingResultValue::Integer(value)) => {
+                let _: i64 = value;
+            }
+            GroupingOutput::Value(GroupingResultValue::Float(value)) => {
+                let _: f64 = value;
+            }
+        }
+    }
+    for child in result.groups {
+        visit_group(child);
+    }
+}
+
 fn grouping(engine: &Engine) -> Result<()> {
-    let request = GroupingRequest::new(
-        Query::AttributeRange {
+    let plan = GroupingPlan::new().level(
+        GroupingLevel::new(GroupingExpression::attribute("category"))
+            .aggregation(GroupingAggregation::Count)
+            .aggregation(GroupingAggregation::Average(GroupingExpression::attribute("price"))),
+    );
+    let result = engine.group(
+        &Query::AttributeRange {
             field: "price".into(),
             lower: AttributeBound::Unbounded,
             upper: AttributeBound::Unbounded,
         },
-        "category",
-    )
-    .aggregation(Aggregation::Sum("qty".into()))
-    .aggregation(Aggregation::Min("price".into()))
-    .aggregation(Aggregation::Max("price".into()))
-    .aggregation(Aggregation::Average("price".into()));
-
-    let result: GroupingResult = engine.group(&request)?;
-    for group in result.groups {
-        let Group {
-            key,
-            count,
-            aggregations,
-        } = group;
-        let _: Value = key;
-        let _: u64 = count;
-        for value in aggregations {
-            match value {
-                AggregateValue::Integer(value) => {
-                    let _: i64 = value;
-                }
-                AggregateValue::Float(value) => {
-                    let _: f64 = value;
-                }
-            }
-        }
-    }
+        &plan,
+    )?;
+    visit_group(result);
     Ok(())
 }
 

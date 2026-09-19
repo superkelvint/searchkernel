@@ -2,15 +2,17 @@ use crate::document::{Document, DocumentUpdate, FieldUpdate, FieldValue, ScalarV
 use crate::error::{check, cstring, path_cstring, Error, Result};
 use crate::linguistics::{Linguistics, LinguisticsOptions};
 use crate::native::{
-    add_document_field, add_text_annotation, add_update_field, native_bytes,
-    read_generic_grouping_result, read_generic_search_result, require_ptr, NativeDocument,
-    NativeError, NativeGenericGroupingRequest, NativeGenericSearchRequest, NativeQuery,
-    NativeUpdate,
+    add_document_field, add_text_annotation, add_update_field, engine_group_tree,
+    grouping_aggregation_average, grouping_aggregation_count, grouping_expression_attribute,
+    grouping_level_add_aggregation, grouping_plan_add_level, grouping_plan_create, native_bytes,
+    read_generic_search_result, require_ptr, NativeDocument, NativeError,
+    NativeGenericSearchRequest, NativeQuery, NativeUpdate,
 };
 use crate::query::{self, lower_query, validate_query_fields, Query};
 use crate::search::{
-    validate_search_ranking_inputs, Aggregation, GroupingOrder, GroupingRequest, GroupingResult,
-    MissingPlacement, QueryInput, SearchRequest, SearchResult, SortOrder, Source, SummaryRequest,
+    validate_search_ranking_inputs, GroupingAggregation, GroupingExpression, GroupingOrder,
+    GroupingPlan, MissingPlacement, QueryInput, SearchRequest, SearchResult, SortOrder, Source,
+    SummaryRequest,
 };
 use searchkernel_vespa_bindings as sys;
 use std::fs;
@@ -483,66 +485,38 @@ impl Engine {
         read_generic_search_result(require_ptr(native_result, "generic search result")?)
     }
 
-    pub fn group(&self, request: &GroupingRequest) -> Result<GroupingResult, Error> {
-        query::validate_query(&request.query)?;
-        let native_query =
-            self.create_native_query(&request.query, LinguisticsOptions::default())?;
-        let group_field = cstring(&request.group_by)?;
-        let mut native_request = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_generic_grouping_request_create(
-                group_field.as_ptr(),
-                request.max_groups.unwrap_or(u32::MAX),
-                match request.order {
-                    GroupingOrder::None => sys::SK_GROUP_ORDER_NONE,
-                    GroupingOrder::CountAscending => sys::SK_GROUP_ORDER_COUNT_ASC,
-                    GroupingOrder::CountDescending => sys::SK_GROUP_ORDER_COUNT_DESC,
-                    GroupingOrder::ValueAscending => sys::SK_GROUP_ORDER_VALUE_ASC,
-                    GroupingOrder::ValueDescending => sys::SK_GROUP_ORDER_VALUE_DESC,
-                },
-                &mut native_request,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        let native_request =
-            NativeGenericGroupingRequest(require_ptr(native_request, "generic grouping request")?);
-        for aggregation in &request.aggregations {
-            let (kind, field) = match aggregation {
-                Aggregation::Sum(field) => (sys::SK_AGGREGATION_SUM, field),
-                Aggregation::Min(field) => (sys::SK_AGGREGATION_MIN, field),
-                Aggregation::Max(field) => (sys::SK_AGGREGATION_MAX, field),
-                Aggregation::Average(field) => (sys::SK_AGGREGATION_AVERAGE, field),
+    pub fn group(
+        &self,
+        query: &Query,
+        plan: &GroupingPlan,
+    ) -> Result<crate::GroupingResult, Error> {
+        query::validate_query(query)?;
+        let native_query = self.create_native_query(query, LinguisticsOptions::default())?;
+        let native_plan = grouping_plan_create()?;
+        for level in &plan.levels {
+            let classifier = match &level.classifier {
+                GroupingExpression::Attribute(field) => grouping_expression_attribute(field)?,
             };
-            let field = cstring(field)?;
-            let mut error = NativeError::new();
-            let status = unsafe {
-                sys::sk_generic_grouping_request_add_aggregation(
-                    native_request.0.as_ptr(),
-                    kind,
-                    field.as_ptr(),
-                    error.as_mut_ptr(),
-                    error.capacity(),
-                )
-            };
-            check(status, &error)?;
+            let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            for aggregation in &level.aggregations {
+                match aggregation {
+                    GroupingAggregation::Count => {
+                        let aggregation = grouping_aggregation_count()?;
+                        grouping_level_add_aggregation(native_level, &aggregation)?;
+                    }
+                    GroupingAggregation::Average(expression) => {
+                        let expression = match expression {
+                            GroupingExpression::Attribute(field) => {
+                                grouping_expression_attribute(field)?
+                            }
+                        };
+                        let aggregation = grouping_aggregation_average(&expression)?;
+                        grouping_level_add_aggregation(native_level, &aggregation)?;
+                    }
+                }
+            }
         }
-        let mut native_result = ptr::null_mut();
-        let mut error = NativeError::new();
-        let status = unsafe {
-            sys::sk_engine_group_generic(
-                self.handle.as_ptr(),
-                native_query.0.as_ptr(),
-                native_request.0.as_ptr(),
-                &mut native_result,
-                error.as_mut_ptr(),
-                error.capacity(),
-            )
-        };
-        check(status, &error)?;
-        read_generic_grouping_result(require_ptr(native_result, "generic grouping result")?)
+        engine_group_tree(self.handle, native_query.0, &native_plan)
     }
 
     fn create_native_query(

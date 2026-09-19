@@ -154,11 +154,11 @@ fn generate_bindings(header: &Path) -> bindgen::Bindings {
     bindgen::Builder::default()
         .header(header.to_string_lossy())
         .allowlist_type(
-            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result|generic_search_request|generic_search_result|generic_grouping_request|generic_grouping_result)",
+            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result|generic_search_request|generic_search_result|generic_grouping_request|generic_grouping_result|feature_value|grouping_plan|grouping_level|grouping_expression|grouping_aggregation|grouping_result_value|grouping_tree_output|grouping_tree_result|grouping_tree_node)",
         )
         .allowlist_function("sk_.*")
         .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|DEGRADATION_(MATCH_PHASE|TIMEOUT|ANN_TIMEOUT)|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE|NEAR|ONEAR|EQUIV|WEAK_AND|RANK)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE|TENSOR))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN|TENSOR)|SORT_(ASCENDING|DESCENDING|MISSING_DEFAULT|MISSING_FIRST|MISSING_LAST)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE)|GROUP_ORDER_(NONE|COUNT_ASC|COUNT_DESC|VALUE_ASC|VALUE_DESC))",
+            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|FEATURE_VALUE_(KIND_INVALID|DOUBLE|DATA)|DEGRADATION_(MATCH_PHASE|TIMEOUT|ANN_TIMEOUT)|GROUPING_(RESULT_VALUE_(STRING|INTEGER|FLOAT)|TREE_OUTPUT_(VALUE|HIT_LIST))|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE|NEAR|ONEAR|EQUIV|WEAK_AND|RANK)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE|TENSOR|ARRAY_STRING|POSITION|PREDICATE))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN|TENSOR)|SORT_(ASCENDING|DESCENDING|MISSING_DEFAULT|MISSING_FIRST|MISSING_LAST)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE)|GROUP_ORDER_(NONE|COUNT_ASC|COUNT_DESC|VALUE_ASC|VALUE_DESC))",
         )
         .layout_tests(true)
         .generate_comments(false)

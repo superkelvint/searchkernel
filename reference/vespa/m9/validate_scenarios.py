@@ -29,6 +29,9 @@ for p in files:
             r=step.get('request',{})
             if set(('query','group_by','aggregations'))-set(r): raise SystemExit(f'{p}: incomplete group request')
             if any(k in r for k in ('limit','hits','offset')): raise SystemExit(f'{p}: grouping must not request regular hits')
+            for aggregation in r['aggregations']:
+                if aggregation != 'count' and not (isinstance(aggregation,dict) and set(aggregation)=={'average'} and isinstance(aggregation['average'],str)):
+                    raise SystemExit(f'{p}: unsupported grouping aggregation {aggregation!r}')
         elif op=='search':
             r=step.get('request',{})
             if 'query' not in r: raise SystemExit(f'{p}: search query missing')
@@ -43,9 +46,8 @@ if update_count<3: raise SystemExit('M9 must retain update-before/after coverage
 facet=json.load(open(ROOT/'scenarios/07-string-facet-counts.json',encoding='utf-8'))
 if len(facet.get('documents',[])) < 25: raise SystemExit('M9 facet completeness trap must exceed ordinary 10-hit page')
 ints=json.load(open(ROOT/'scenarios/10-integer-aggregations-by-category.json',encoding='utf-8'))
-books=[d['fields']['qty']['integer'] for d in ints['documents'] if d['fields']['category']['string']=='books']
-if sum(books) <= 2_147_483_647:
-    raise SystemExit('M9 integer aggregation trap must prove i64 sum beyond i32')
+if 'count' not in ints['steps'][0]['request']['aggregations']:
+    raise SystemExit('M9 integer grouping fixture must request count explicitly')
 rank=json.load(open(ROOT/'scenarios/06-attribute-ranking-after-update.json',encoding='utf-8'))
 fixture=rank.get('fixture_rank_profile')
 if fixture!={'name':'attribute_price','expression':'attribute(price)'}:

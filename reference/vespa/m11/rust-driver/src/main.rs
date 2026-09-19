@@ -8,7 +8,8 @@ use searchkernel_ir_adapter::VespaBackend;
 use searchkernel_vespa_engine::{
     hardening::{self, Action},
     ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
-    Query, RankProfile, ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
+    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan, Query, RankProfile,
+    ScalarValue, Schema, SearchRequest, SortField, SortOrder, SummaryRequest,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -67,6 +68,13 @@ fn open(config: &Path, data: &Path) -> AnyResult<Engine> {
     prepare_config(config)?;
     fs::create_dir_all(data)?;
     Ok(Engine::open(data, config)?)
+}
+
+fn grouping_plan(field: &str) -> GroupingPlan {
+    GroupingPlan::new().level(
+        GroupingLevel::new(GroupingExpression::attribute(field))
+            .aggregation(GroupingAggregation::Count),
+    )
 }
 
 fn error_message(error: impl std::fmt::Display) -> String {
@@ -145,10 +153,10 @@ fn advanced_direct(config: &Path, data: &Path) -> AnyResult<()> {
     if facets.facets.is_empty() || facets.facets[0].groups.len() < 2 {
         return Err("M9 facet path returned no buckets".into());
     }
-    let grouped = engine.group(&searchkernel_vespa_engine::GroupingRequest::new(
-        Query::term("title", "wireless"),
-        "category",
-    ))?;
+    let grouped = engine.group(
+        &Query::term("title", "wireless"),
+        &grouping_plan("category"),
+    )?;
     if grouped.groups.is_empty() {
         return Err("M9 grouping path returned no groups".into());
     }
@@ -257,7 +265,6 @@ fn adapter_search() -> AnyResult<SearchRequestIr> {
             MissingPlacement::Last,
         )],
         vec![FacetIr::new(ir_field("category")?, 8, FacetSort::ValueAsc)],
-        RankingPolicyIr::DefaultRelevanceV1,
         10,
         0,
         ProjectionIr::new(vec![ir_field("title")?, ir_field("category")?]),
@@ -421,10 +428,7 @@ fn malformed(config: &Path, data: &Path) -> AnyResult<()> {
         panic!("unknown query field unexpectedly succeeded");
     }
     if engine
-        .group(&searchkernel_vespa_engine::GroupingRequest::new(
-            Query::term("title", "x"),
-            "missing",
-        ))
+        .group(&Query::term("title", "x"), &grouping_plan("missing"))
         .is_ok()
     {
         panic!("unknown grouping field unexpectedly succeeded");
@@ -555,20 +559,14 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
     }
     hardening::set(&engine, "group_before_match", 1, Action::StdException)?;
     if engine
-        .group(&searchkernel_vespa_engine::GroupingRequest::new(
-            failure_query.clone(),
-            "category",
-        ))
+        .group(&failure_query.clone(), &grouping_plan("category"))
         .is_ok()
     {
         panic!("group failure injection unexpectedly succeeded");
     }
     hardening::set(&engine, "group_after_match", 1, Action::UnknownException)?;
     if engine
-        .group(&searchkernel_vespa_engine::GroupingRequest::new(
-            failure_query.clone(),
-            "category",
-        ))
+        .group(&failure_query.clone(), &grouping_plan("category"))
         .is_ok()
     {
         panic!("post-match group failure injection unexpectedly succeeded");
@@ -617,28 +615,6 @@ fn failures(config: &Path, data: &Path) -> AnyResult<()> {
                     SearchRequest::new(Query::term("title", "wireless"))
                         .rank_profile("native_features")
                         .query_feature("boost", 1.0),
-                )
-                .map(|_| ())
-                .map_err(Into::into)
-        })?;
-    }
-    for fault in [
-        hardening::ResultFault::GroupAccessorError,
-        hardening::ResultFault::UnsupportedGroupKey,
-        hardening::ResultFault::InvalidGroupKey,
-        hardening::ResultFault::AggregationAccessorError,
-        hardening::ResultFault::UnknownAggregationKind,
-    ] {
-        expect_result_fault(&engine, fault, || {
-            engine
-                .group(
-                    &searchkernel_vespa_engine::GroupingRequest::new(
-                        Query::term("title", "wireless"),
-                        "category",
-                    )
-                    .aggregation(searchkernel_vespa_engine::Aggregation::Sum(
-                        "qty".to_owned(),
-                    )),
                 )
                 .map(|_| ())
                 .map_err(Into::into)
@@ -830,10 +806,10 @@ fn stress(config: &Path, data: &Path) -> AnyResult<()> {
             if advanced.hits.iter().any(|hit| !hit.score.is_finite()) {
                 panic!("seed={SEED} operation={operation} advanced result is non-finite");
             }
-            let _ = engine.group(&searchkernel_vespa_engine::GroupingRequest::new(
-                Query::term("title", "wireless"),
-                "category",
-            ))?;
+            let _ = engine.group(
+                &Query::term("title", "wireless"),
+                &grouping_plan("category"),
+            )?;
         }
     }
     println!(
@@ -924,10 +900,10 @@ fn concurrency(config: &Path, data: &Path) -> AnyResult<()> {
                             }
                         }
                     }
-                    let _ = engine.group(&searchkernel_vespa_engine::GroupingRequest::new(
-                        Query::term("title", "fox"),
-                        "category",
-                    ))?;
+                    let _ = engine.group(
+                        &Query::term("title", "fox"),
+                        &grouping_plan("category"),
+                    )?;
                 }
             }
             Ok(())

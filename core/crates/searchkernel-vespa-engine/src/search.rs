@@ -76,12 +76,43 @@ pub enum TotalHitsRelation {
     LowerBound,
 }
 
+/// A Vespa match feature is either a scalar number or an opaque native data
+/// payload. Tensor interpretation, when supported, belongs above this
+/// representation; the native Vespa boundary does not expose tensors here.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MatchFeatureValue {
+    Double(f64),
+    Data(Vec<u8>),
+}
+
+impl MatchFeatureValue {
+    pub fn as_double(&self) -> Option<f64> {
+        match self {
+            Self::Double(value) => Some(*value),
+            Self::Data(_) => None,
+        }
+    }
+
+    pub fn as_data(&self) -> Option<&[u8]> {
+        match self {
+            Self::Double(_) => None,
+            Self::Data(value) => Some(value),
+        }
+    }
+}
+
+impl PartialEq<f64> for MatchFeatureValue {
+    fn eq(&self, other: &f64) -> bool {
+        self.as_double() == Some(*other)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
     pub document_id: String,
     pub score: f64,
     pub fields: BTreeMap<String, FieldValue>,
-    pub match_features: BTreeMap<String, f64>,
+    pub match_features: BTreeMap<String, MatchFeatureValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,7 +120,7 @@ pub struct SearchResult {
     pub total_hits: u64,
     pub total_hits_relation: TotalHitsRelation,
     pub hits: Vec<Hit>,
-    pub facets: Vec<GroupingResult>,
+    pub facets: Vec<FacetResult>,
     pub coverage: SearchCoverage,
     pub issues: Vec<String>,
 }
@@ -264,14 +295,6 @@ impl FacetRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Aggregation {
-    Sum(String),
-    Min(String),
-    Max(String),
-    Average(String),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GroupingOrder {
     None,
@@ -281,58 +304,93 @@ pub enum GroupingOrder {
     ValueDescending,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct GroupingRequest {
-    pub query: Query,
-    pub group_by: String,
-    pub aggregations: Vec<Aggregation>,
-    pub max_groups: Option<u32>,
-    pub order: GroupingOrder,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupingExpression {
+    Attribute(String),
 }
 
-impl GroupingRequest {
-    pub fn new(query: Query, group_by: impl Into<String>) -> Self {
+impl GroupingExpression {
+    pub fn attribute(field: impl Into<String>) -> Self {
+        Self::Attribute(field.into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupingAggregation {
+    Count,
+    Average(GroupingExpression),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupingLevel {
+    pub classifier: GroupingExpression,
+    pub aggregations: Vec<GroupingAggregation>,
+}
+
+impl GroupingLevel {
+    pub fn new(classifier: GroupingExpression) -> Self {
         Self {
-            query,
-            group_by: group_by.into(),
+            classifier,
             aggregations: Vec::new(),
-            max_groups: None,
-            order: GroupingOrder::None,
         }
     }
 
-    pub fn aggregation(mut self, aggregation: Aggregation) -> Self {
+    pub fn aggregation(mut self, aggregation: GroupingAggregation) -> Self {
         self.aggregations.push(aggregation);
-        self
-    }
-
-    pub fn max_groups(mut self, max_groups: u32) -> Self {
-        self.max_groups = Some(max_groups);
-        self
-    }
-
-    pub fn order(mut self, order: GroupingOrder) -> Self {
-        self.order = order;
         self
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupingPlan {
+    pub levels: Vec<GroupingLevel>,
+}
+
+impl GroupingPlan {
+    pub fn new() -> Self {
+        Self { levels: Vec::new() }
+    }
+
+    pub fn level(mut self, level: GroupingLevel) -> Self {
+        self.levels.push(level);
+        self
+    }
+}
+
+impl Default for GroupingPlan {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum AggregateValue {
+pub enum GroupingResultValue {
+    String(String),
     Integer(i64),
     Float(f64),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Group {
-    pub key: Value,
-    pub count: u64,
-    pub aggregations: Vec<AggregateValue>,
+pub enum GroupingOutput {
+    Value(GroupingResultValue),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupingResult {
-    pub groups: Vec<Group>,
+    pub key: Option<GroupingResultValue>,
+    pub outputs: Vec<GroupingOutput>,
+    pub groups: Vec<GroupingResult>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FacetResult {
+    pub groups: Vec<FacetGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FacetGroup {
+    pub key: Value,
+    pub count: u64,
 }
 
 const RESERVED_RANK_PROPERTIES: &[&str] = &["vespa.matching.numthreadspersearch"];
@@ -400,4 +458,23 @@ pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MatchFeatureValue;
+
+    #[test]
+    fn match_feature_values_keep_the_feature_set_boundary() {
+        let scalar = MatchFeatureValue::Double(3.5);
+        assert_eq!(scalar.as_double(), Some(3.5));
+        assert_eq!(scalar.as_data(), None);
+        assert_eq!(scalar, 3.5);
+
+        let bytes = vec![0x00, 0x7f, 0xff];
+        let data = MatchFeatureValue::Data(bytes.clone());
+        assert_eq!(data.as_double(), None);
+        assert_eq!(data.as_data(), Some(bytes.as_slice()));
+        assert_ne!(data, 3.5);
+    }
 }
