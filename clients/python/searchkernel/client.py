@@ -69,8 +69,8 @@ class Client:
     def insert(self, document: models.Document) -> models.InsertResult:
         return self.execute("insert", models.InsertRequest(document=document))
 
-    def upsert(self, document: models.Document) -> models.UpsertResult:
-        return self.execute("upsert", models.UpsertRequest(document=document))
+    def upsert(self, document: models.Document, condition: str | None = None) -> models.UpsertResult:
+        return self.execute("upsert", models.UpsertRequest(document=document, condition=condition))
 
     def delete(self, identifier: str, condition: str | None = None) -> models.DeleteResult:
         return self.execute("delete", models.DeleteRequest(id=identifier, condition=condition))
@@ -111,11 +111,13 @@ class Index:
     def insert(self, identifier: str, fields: Mapping[str, Any]) -> models.InsertResult:
         return self.client.insert(_document(identifier, fields))
 
-    def upsert(self, identifier: str, fields: Mapping[str, Any]) -> models.UpsertResult:
-        return self.client.upsert(_document(identifier, fields))
+    def upsert(
+        self, identifier: str, fields: Mapping[str, Any], condition: str | None = None
+    ) -> models.UpsertResult:
+        return self.client.upsert(_document(identifier, fields), condition=condition)
 
-    def delete(self, identifier: str) -> models.DeleteResult:
-        return self.client.delete(identifier)
+    def delete(self, identifier: str, condition: str | None = None) -> models.DeleteResult:
+        return self.client.delete(identifier, condition=condition)
 
     def get(self, identifier: str, projection: Sequence[str] | None = None) -> models.GetResult:
         return self.client.get(identifier, projection)

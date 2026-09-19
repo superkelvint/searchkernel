@@ -78,6 +78,7 @@ async fn execute_uses_the_canonical_dispatcher_over_a_real_socket() {
         .into_inner()
         .payload;
 
+    assert_eq!(direct, remote, "gRPC must preserve the canonical response");
     let direct_envelope = root::<wire::ResponseEnvelope<'_>>(&direct).expect("direct response");
     let remote_envelope = root::<wire::ResponseEnvelope<'_>>(&remote).expect("remote response");
     assert_eq!(
@@ -118,6 +119,10 @@ async fn semantic_dispatch_errors_remain_canonical_error_payloads() {
         .expect("semantic errors are response payloads")
         .into_inner()
         .payload;
+    assert_eq!(
+        direct, remote,
+        "gRPC must preserve the canonical error response"
+    );
     let direct = root::<wire::ResponseEnvelope<'_>>(&direct).expect("direct response");
     let remote = root::<wire::ResponseEnvelope<'_>>(&remote).expect("remote response");
     assert_eq!(

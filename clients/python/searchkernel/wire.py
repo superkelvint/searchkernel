@@ -46,6 +46,7 @@ from SearchKernel.V2 import FilterComparison as FilterComparison  # noqa: E402
 from SearchKernel.V2 import FilterExists as FilterExists  # noqa: E402
 from SearchKernel.V2 import FilterExpr as FilterExpr  # noqa: E402
 from SearchKernel.V2 import FilterExprKind as FilterExprKind  # noqa: E402
+from SearchKernel.V2 import FilterIn as FilterIn  # noqa: E402
 from SearchKernel.V2 import FilterRequest as FilterRequest  # noqa: E402
 from SearchKernel.V2 import FilterNot as FilterNot  # noqa: E402
 from SearchKernel.V2 import FilterOr as FilterOr  # noqa: E402
@@ -88,6 +89,8 @@ from SearchKernel.V2 import PrimitiveDataTypeKind as PrimitiveDataTypeKind  # no
 from SearchKernel.V2 import QueryFieldRef as QueryFieldRef  # noqa: E402
 from SearchKernel.V2 import QuerySource as QuerySource  # noqa: E402
 from SearchKernel.V2 import QuerySourceKind as QuerySourceKind  # noqa: E402
+from SearchKernel.V2 import ResolvedSearchRequest as ResolvedSearchRequest  # noqa: E402
+from SearchKernel.V2 import ResolvedSortTargetKind as ResolvedSortTargetKind  # noqa: E402
 from SearchKernel.V2 import ResultGroup as ResultGroup  # noqa: E402
 from SearchKernel.V2 import ResultNode as ResultNode  # noqa: E402
 from SearchKernel.V2 import ResultNodeKind as ResultNodeKind  # noqa: E402
@@ -130,6 +133,8 @@ SortTargetKind = SortTargetKind.SortTargetKind
 TotalHitsRelation = TotalHitsRelation.TotalHitsRelation
 ValueKind = ValueKind.ValueKind
 MatchingMode = MatchingMode.MatchingMode
+SortDirection = SortDirection.SortDirection
+ResolvedSortTargetKind = ResolvedSortTargetKind.ResolvedSortTargetKind
 PROTOCOL_VERSION = 2
 
 
@@ -137,6 +142,16 @@ def _string(value: Any) -> str | None:
     if value is None:
         return None
     return value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else str(value)
+
+
+def _reject_populated(path: str, **fields: Any) -> None:
+    """Reject fields that this partial encoder cannot represent."""
+    for name, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, (str, bytes, bytearray, dict, list, tuple, set)) and not value:
+            continue
+        raise ValueError(f"unsupported populated field {path}.{name}")
 
 
 def _vector(builder: flatbuffers.Builder, offsets: list[int]) -> int | None:
@@ -167,6 +182,7 @@ def _entries(builder: flatbuffers.Builder, values: dict[str, Any]) -> int | None
 def _value(builder: flatbuffers.Builder, value: models.Value) -> int:
     if not isinstance(value, models.Value):
         raise TypeError("value must be a generated Value")
+    _reject_populated("value", payload=value.payload, type_spec=value.type_spec)
     if value.kind == "null":
         from SearchKernel.V2 import NullValueValue
 
@@ -241,16 +257,38 @@ def _document(builder: flatbuffers.Builder, value: models.Document | None) -> in
 
 
 def _field_ref(builder: flatbuffers.Builder, value: Any) -> int:
-    path = value.path if isinstance(value, models.QueryFieldRef) else str(value)
+    if isinstance(value, models.QueryFieldRef):
+        if value.path is None:
+            raise ValueError("query field reference path is required")
+        path = value.path
+        element_index = value.element_index
+    else:
+        path = str(value)
+        element_index = None
     path_offset = builder.CreateString(path)
     QueryFieldRef.Start(builder)
     QueryFieldRef.AddPath(builder, path_offset)
+    if element_index is not None:
+        QueryFieldRef.AddElementIndex(
+            builder, OptionalUInt32.CreateOptionalUint32(builder, element_index)
+        )
     return QueryFieldRef.End(builder)
 
 
 def _filter(builder: flatbuffers.Builder, value: models.FilterExpr) -> int:
     kind = value.kind
     if kind in {"and", "or"}:
+        _reject_populated(
+            f"filter.{kind}",
+            clause=value.clause,
+            field=value.field,
+            include_lower=value.include_lower,
+            lower=value.lower,
+            op=value.op,
+            upper=value.upper,
+            value=value.value,
+            values=value.values,
+        )
         module = FilterAnd if kind == "and" else FilterOr
         offsets = [_filter(builder, item) for item in value.clauses]
         vector = _vector(builder, offsets)
@@ -259,21 +297,55 @@ def _filter(builder: flatbuffers.Builder, value: models.FilterExpr) -> int:
         payload = module.End(builder)
         tag = FilterExprKind.FilterAnd if kind == "and" else FilterExprKind.FilterOr
     elif kind == "not":
+        _reject_populated(
+            "filter.not",
+            clauses=value.clauses,
+            field=value.field,
+            include_lower=value.include_lower,
+            lower=value.lower,
+            op=value.op,
+            upper=value.upper,
+            value=value.value,
+            values=value.values,
+        )
         clause = _filter(builder, value.clause)
         FilterNot.Start(builder)
         FilterNot.AddClause(builder, clause)
         payload, tag = FilterNot.End(builder), FilterExprKind.FilterNot
     elif kind == "exists":
+        _reject_populated(
+            "filter.exists",
+            clause=value.clause,
+            clauses=value.clauses,
+            include_lower=value.include_lower,
+            lower=value.lower,
+            op=value.op,
+            upper=value.upper,
+            value=value.value,
+            values=value.values,
+        )
         field = _field_ref(builder, value.field)
         FilterExists.Start(builder)
         FilterExists.AddField(builder, field)
         payload, tag = FilterExists.End(builder), FilterExprKind.FilterExists
     elif kind == "comparison":
+        _reject_populated(
+            "filter.comparison",
+            clause=value.clause,
+            clauses=value.clauses,
+            include_lower=value.include_lower,
+            lower=value.lower,
+            upper=value.upper,
+            values=value.values,
+        )
         field = _field_ref(builder, value.field)
         operand = _value(builder, value.value)
         FilterComparison.Start(builder)
         FilterComparison.AddField(builder, field)
-        op = {"unspecified": 0, "eq": 1, "ne": 2, "lt": 3, "lte": 4, "gt": 5, "gte": 6}[value.op]
+        try:
+            op = {"unspecified": 0, "eq": 1, "ne": 2, "lt": 3, "lte": 4, "gt": 5, "gte": 6}[value.op]
+        except KeyError as error:
+            raise ValueError(f"unsupported filter comparison operator {value.op!r}") from error
         FilterComparison.AddOp(builder, op)
         FilterComparison.AddValue(builder, operand)
         payload, tag = FilterComparison.End(builder), FilterExprKind.FilterComparison
@@ -289,11 +361,19 @@ def _query(builder: flatbuffers.Builder, value: models.QuerySource | None) -> in
     if value is None:
         return None
     if value.kind in {"text", "search_kernel_text"}:
+        _reject_populated("query", parameters=value.parameters, query=value.query, source=value.source)
         text = builder.CreateString(value.text or "")
         SearchKernelTextQuery.Start(builder)
         SearchKernelTextQuery.AddText(builder, text)
         source, tag = SearchKernelTextQuery.End(builder), QuerySourceKind.SearchKernelTextQuery
     elif value.kind in {"match_all", "all"}:
+        _reject_populated(
+            "query",
+            parameters=value.parameters,
+            query=value.query,
+            source=value.source,
+            text=value.text,
+        )
         from SearchKernel.V2 import MatchAllQuery
 
         MatchAllQuery.Start(builder)
@@ -328,10 +408,13 @@ def _search_field_selection(builder: flatbuffers.Builder, value: models.SearchFi
 
 def _sort(builder: flatbuffers.Builder, value: models.SortExpr) -> int:
     target = value.target
-    field = target.field if isinstance(target, models.SortTarget) and target.kind == "field" else None
-    if field is None and isinstance(target, models.SortTarget):
-        field = target.field
-    field_name = builder.CreateString(field or "")
+    if not isinstance(target, models.SortTarget) or target.kind != "field":
+        raise ValueError("unsupported populated field search.sort.target")
+    _reject_populated("search.sort.target", expression=target.expression, feature=target.feature)
+    _reject_populated("search.sort", missing=value.missing, annotations=value.annotations)
+    if not target.field:
+        raise ValueError("search.sort.target.field is required")
+    field_name = builder.CreateString(target.field)
     FieldSortTarget.Start(builder)
     FieldSortTarget.AddField(builder, field_name)
     field_target = FieldSortTarget.End(builder)
@@ -341,12 +424,33 @@ def _sort(builder: flatbuffers.Builder, value: models.SortExpr) -> int:
     sort_target = SortTarget.End(builder)
     SortExpr.Start(builder)
     SortExpr.AddTarget(builder, sort_target)
-    SortExpr.AddDirection(builder, {"unspecified": 0, "asc": 1, "desc": 2}[value.direction])
+    try:
+        direction = {"unspecified": 0, "asc": 1, "desc": 2}[value.direction]
+    except KeyError as error:
+        raise ValueError(f"unsupported sort direction {value.direction!r}") from error
+    SortExpr.AddDirection(builder, direction)
     return SortExpr.End(builder)
 
 
 def _grouping_expression(builder: flatbuffers.Builder, value: models.GroupingExpression) -> int:
     if value.kind == "attribute":
+        _reject_populated(
+            "grouping.expression.attribute",
+            aggregation=value.aggregation,
+            arguments=value.arguments,
+            base=value.base,
+            expression=value.expression,
+            include_lower=value.include_lower,
+            key=value.key,
+            left=value.left,
+            lower=value.lower,
+            member=value.member,
+            name=value.name,
+            op=value.op,
+            right=value.right,
+            upper=value.upper,
+            value=value.value,
+        )
         field = builder.CreateString(value.field or "")
         GroupingAttributeExpression.Start(builder)
         GroupingAttributeExpression.AddField(builder, field)
@@ -354,6 +458,27 @@ def _grouping_expression(builder: flatbuffers.Builder, value: models.GroupingExp
     elif value.kind == "aggregation":
         from SearchKernel.V2 import AggregationKind, CountAggregation
 
+        _reject_populated(
+            "grouping.expression.aggregation",
+            arguments=value.arguments,
+            base=value.base,
+            expression=value.expression,
+            field=value.field,
+            include_lower=value.include_lower,
+            key=value.key,
+            left=value.left,
+            lower=value.lower,
+            member=value.member,
+            name=value.name,
+            op=value.op,
+            right=value.right,
+            upper=value.upper,
+            value=value.value,
+        )
+        if value.aggregation is not None and (
+            value.aggregation.kind != "count" or value.aggregation.value is not None
+        ):
+            raise ValueError("unsupported populated field grouping.expression.aggregation")
         CountAggregation.Start(builder)
         aggregation = CountAggregation.End(builder)
         GroupingAggregationExpression.Start(builder)
@@ -362,6 +487,23 @@ def _grouping_expression(builder: flatbuffers.Builder, value: models.GroupingExp
         aggregation_expression = GroupingAggregationExpression.End(builder)
         expression, tag = aggregation_expression, 10
     elif value.kind == "negative":
+        _reject_populated(
+            "grouping.expression.negative",
+            aggregation=value.aggregation,
+            arguments=value.arguments,
+            base=value.base,
+            field=value.field,
+            include_lower=value.include_lower,
+            key=value.key,
+            left=value.left,
+            lower=value.lower,
+            member=value.member,
+            name=value.name,
+            op=value.op,
+            right=value.right,
+            upper=value.upper,
+            value=value.value,
+        )
         nested = _grouping_expression(builder, value.expression)
         GroupingUnaryExpression.Start(builder)
         GroupingUnaryExpression.AddOp(builder, GroupingUnaryOperator.Negative)
@@ -377,11 +519,31 @@ def _grouping_expression(builder: flatbuffers.Builder, value: models.GroupingExp
 
 def _grouping_operation(builder: flatbuffers.Builder, value: models.GroupingOperation) -> int:
     if value.kind == "group":
+        _reject_populated(
+            "grouping.operation.group",
+            expressions=value.expressions,
+            filter=value.filter,
+            label=value.label,
+            name=value.name,
+            operations=value.operations,
+            outputs=value.outputs,
+            value=value.value,
+        )
         expression = _grouping_expression(builder, value.expression)
         GroupingGroupOperation.Start(builder)
         GroupingGroupOperation.AddExpression(builder, expression)
         operation, tag = GroupingGroupOperation.End(builder), GroupingOperationKind.GroupingGroupOperation
     elif value.kind == "output":
+        _reject_populated(
+            "grouping.operation.output",
+            expression=value.expression,
+            expressions=value.expressions,
+            filter=value.filter,
+            label=value.label,
+            name=value.name,
+            operations=value.operations,
+            value=value.value,
+        )
         outputs = []
         for output in value.outputs:
             label = builder.CreateString(output.label) if output.label is not None else None
@@ -396,6 +558,15 @@ def _grouping_operation(builder: flatbuffers.Builder, value: models.GroupingOper
         GroupingOutputOperation.AddOutputs(builder, output_vector)
         operation, tag = GroupingOutputOperation.End(builder), GroupingOperationKind.GroupingOutputOperation
     elif value.kind == "each":
+        _reject_populated(
+            "grouping.operation.each",
+            expression=value.expression,
+            expressions=value.expressions,
+            filter=value.filter,
+            name=value.name,
+            outputs=value.outputs,
+            value=value.value,
+        )
         operations = _vector(builder, [_grouping_operation(builder, item) for item in value.operations])
         label = builder.CreateString(value.label) if value.label is not None else None
         GroupingEachOperation.Start(builder)
@@ -404,6 +575,16 @@ def _grouping_operation(builder: flatbuffers.Builder, value: models.GroupingOper
             GroupingEachOperation.AddLabel(builder, label)
         operation, tag = GroupingEachOperation.End(builder), GroupingOperationKind.GroupingEachOperation
     elif value.kind == "max":
+        _reject_populated(
+            "grouping.operation.max",
+            expression=value.expression,
+            expressions=value.expressions,
+            filter=value.filter,
+            label=value.label,
+            name=value.name,
+            operations=value.operations,
+            outputs=value.outputs,
+        )
         FiniteGroupingMax.Start(builder)
         FiniteGroupingMax.AddValue(builder, int(value.value if value.value is not None else 10))
         finite = FiniteGroupingMax.End(builder)
@@ -412,6 +593,16 @@ def _grouping_operation(builder: flatbuffers.Builder, value: models.GroupingOper
         GroupingMaxOperation.AddValue(builder, finite)
         operation, tag = GroupingMaxOperation.End(builder), GroupingOperationKind.GroupingMaxOperation
     elif value.kind == "order":
+        _reject_populated(
+            "grouping.operation.order",
+            expression=value.expression,
+            filter=value.filter,
+            label=value.label,
+            name=value.name,
+            operations=value.operations,
+            outputs=value.outputs,
+            value=value.value,
+        )
         expressions = []
         for item in value.expressions:
             expression = _grouping_expression(builder, item.expression)
@@ -455,9 +646,25 @@ def _grouping(builder: flatbuffers.Builder, value: models.GroupingRequest) -> in
 
 
 def _search(builder: flatbuffers.Builder, value: models.SearchRequest) -> int:
+    _reject_populated(
+        "search",
+        ranking=value.ranking,
+        inputs=value.inputs,
+        query_model=value.query_model,
+        presentation=value.presentation,
+        properties=value.properties,
+        query_profile=value.query_profile,
+        search_chain=value.search_chain,
+    )
     query = _query(builder, value.query)
     fields = _search_field_selection(builder, value.search_fields)
     filter_request = None
+    if value.filters is not None:
+        _reject_populated(
+            "search.filters",
+            sources=value.filters.sources,
+            parameters=value.filters.parameters,
+        )
     if value.filters is not None and value.filters.structured:
         filters = _vector(builder, [_filter(builder, item) for item in value.filters.structured])
         FilterRequest.Start(builder)
@@ -543,15 +750,21 @@ def _payload(builder: flatbuffers.Builder, operation: str, request: Any) -> tupl
     if operation in {"insert", "upsert"}:
         module = InsertRequest if operation == "insert" else UpsertRequest
         document = _document(builder, request.document)
+        condition = builder.CreateString(request.condition) if operation == "upsert" and request.condition else None
         module.Start(builder)
         if document is not None:
             module.AddDocument(builder, document)
+        if condition is not None:
+            module.AddCondition(builder, condition)
         payload = module.End(builder)
         tag = RequestPayload.SearchKernel_V2_InsertRequest if operation == "insert" else RequestPayload.SearchKernel_V2_UpsertRequest
     elif operation == "delete":
         identifier = builder.CreateString(request.id)
+        condition = builder.CreateString(request.condition) if request.condition else None
         DeleteRequest.Start(builder)
         DeleteRequest.AddId(builder, identifier)
+        if condition is not None:
+            DeleteRequest.AddCondition(builder, condition)
         payload, tag = DeleteRequest.End(builder), RequestPayload.SearchKernel_V2_DeleteRequest
     elif operation == "get":
         identifier = builder.CreateString(request.id)
@@ -627,6 +840,135 @@ def _union(payload: Any, cls: Any) -> Any:
     value = cls()
     value.Init(payload.Bytes, payload.Pos)
     return value
+
+
+def _optional_bool(value: Any) -> bool | None:
+    return value.Value() if value is not None else None
+
+
+def _read_field_ref(table: Any) -> models.QueryFieldRef | None:
+    if table is None:
+        return None
+    element = table.ElementIndex()
+    return models.QueryFieldRef(
+        path=_string(table.Path()),
+        element_index=element.Value() if element is not None else None,
+    )
+
+
+def _read_query_source(table: Any) -> models.QuerySource | None:
+    if table is None:
+        return None
+    payload = table.Source()
+    if payload is None:
+        return models.QuerySource()
+    tag = table.SourceType()
+    if tag == QuerySourceKind.SearchKernelTextQuery:
+        return models.QuerySource(kind="text", text=_string(_union(payload, SearchKernelTextQuery).Text()) or "")
+    if tag == QuerySourceKind.MatchAllQuery:
+        return models.QuerySource(kind="match_all")
+    if tag == QuerySourceKind.YqlQuery:
+        from SearchKernel.V2 import YqlQuery
+
+        return models.QuerySource(kind="yql", source=_string(_union(payload, YqlQuery).Source()))
+    if tag == QuerySourceKind.TypedQuery:
+        return models.QuerySource(kind="typed")
+    return models.QuerySource()
+
+
+def _read_filter_expr(table: Any) -> models.FilterExpr:
+    tag = table.ExprType()
+    payload = table.Expr()
+    if payload is None:
+        return models.FilterExpr()
+    if tag in (FilterExprKind.FilterAnd, FilterExprKind.FilterOr):
+        module = FilterAnd if tag == FilterExprKind.FilterAnd else FilterOr
+        item = _union(payload, module)
+        return models.FilterExpr(
+            kind="and" if tag == FilterExprKind.FilterAnd else "or",
+            clauses=[_read_filter_expr(item.Clauses(i)) for i in range(item.ClausesLength())],
+        )
+    if tag == FilterExprKind.FilterNot:
+        item = _union(payload, FilterNot)
+        return models.FilterExpr(kind="not", clause=_read_filter_expr(item.Clause()))
+    if tag == FilterExprKind.FilterExists:
+        item = _union(payload, FilterExists)
+        return models.FilterExpr(kind="exists", field=_read_field_ref(item.Field()))
+    if tag == FilterExprKind.FilterComparison:
+        item = _union(payload, FilterComparison)
+        operators = {0: "unspecified", 1: "eq", 2: "ne", 3: "lt", 4: "lte", 5: "gt", 6: "gte"}
+        return models.FilterExpr(
+            kind="comparison",
+            field=_read_field_ref(item.Field()),
+            op=operators.get(item.Op(), "unspecified"),
+            value=_read_value(item.Value()) if item.Value() is not None else None,
+        )
+    if tag == FilterExprKind.FilterIn:
+        item = _union(payload, FilterIn)
+        return models.FilterExpr(
+            kind="in",
+            field=_read_field_ref(item.Field()),
+            values=[_read_value(item.Values(i)) for i in range(item.ValuesLength())],
+        )
+    return models.FilterExpr()
+
+
+def _read_resolved_sort_target(table: Any) -> models.ResolvedSortTarget | None:
+    if table is None:
+        return None
+    payload = table.Target()
+    if payload is None:
+        return models.ResolvedSortTarget()
+    if table.TargetType() == ResolvedSortTargetKind.FieldSortTarget:
+        return models.ResolvedSortTarget(kind="field", field=_string(_union(payload, FieldSortTarget).Field()))
+    if table.TargetType() == ResolvedSortTargetKind.RankFeatureSortTarget:
+        from SearchKernel.V2 import RankFeatureSortTarget
+
+        return models.ResolvedSortTarget(kind="rank_feature", feature=_string(_union(payload, RankFeatureSortTarget).Feature()))
+    return models.ResolvedSortTarget()
+
+
+def _read_resolved_sort(table: Any) -> models.ResolvedSortExpr:
+    directions = {0: "unspecified", 1: "asc", 2: "desc"}
+    return models.ResolvedSortExpr(
+        target=_read_resolved_sort_target(table.Target()),
+        direction=directions.get(table.Direction(), "unspecified"),
+        annotations={
+            _string(entry.Key()) or "": _read_value(entry.Value())
+            for i in range(table.AnnotationsLength())
+            if (entry := table.Annotations(i)) is not None and entry.Value() is not None
+        },
+    )
+
+
+def _read_resolved_request(table: Any) -> models.ResolvedSearchRequest:
+    return models.ResolvedSearchRequest(
+        query=_read_query_source(table.Query()),
+        search_fields=[
+            models.SearchField(
+                field=_string(item.Field()) or "",
+                weight=item.Weight().Value() if item.Weight() is not None else None,
+            )
+            for i in range(table.SearchFieldsLength())
+            if (item := table.SearchFields(i)) is not None
+        ],
+        filters=[
+            _read_filter_expr(table.Filters(i))
+            for i in range(table.FiltersLength())
+            if table.Filters(i) is not None
+        ],
+        sort=[
+            _read_resolved_sort(table.Sort(i))
+            for i in range(table.SortLength())
+            if table.Sort(i) is not None
+        ],
+        limit=table.Limit(),
+        offset=table.Offset(),
+        timeout_ms=table.TimeoutMs().Value() if table.TimeoutMs() is not None else None,
+        properties=_read_entries(table) if table.PropertiesLength() else {},
+        query_profile=_string(table.QueryProfile()),
+        search_chain=_string(table.SearchChain()),
+    )
 
 
 def _read_value(value: Any) -> models.Value:
@@ -707,19 +1049,62 @@ def _read_index(table: Any) -> models.IndexDefinition:
         field = table.Fields(index)
         data = field.DataType()
         payload = _union(data.Kind(), PrimitiveDataType) if data is not None and data.Kind() is not None else None
-        kind = {PrimitiveDataTypeKind.String: "string", PrimitiveDataTypeKind.Bool: "bool",
-                PrimitiveDataTypeKind.Int64: "int64", PrimitiveDataTypeKind.Float64: "float64"}.get(
-                    payload.Kind() if payload is not None else None, "string")
+        kind = {
+            PrimitiveDataTypeKind.String: "string",
+            PrimitiveDataTypeKind.Bool: "bool",
+            PrimitiveDataTypeKind.Byte: "byte",
+            PrimitiveDataTypeKind.Int32: "int32",
+            PrimitiveDataTypeKind.Int64: "int64",
+            PrimitiveDataTypeKind.Float32: "float32",
+            PrimitiveDataTypeKind.Float64: "float64",
+            PrimitiveDataTypeKind.Raw: "raw",
+        }.get(payload.Kind() if payload is not None else None, "unspecified")
+        matching = field.Matching()
+        matching_modes = {
+            MatchingMode.Unspecified: "unspecified",
+            MatchingMode.Text: "text",
+            MatchingMode.Word: "word",
+            MatchingMode.Exact: "exact",
+            MatchingMode.Gram: "gram",
+        }
+        matching_mode = matching_modes.get(matching.Mode(), "unspecified") if matching is not None else "unspecified"
+        if kind == "string" and matching_mode == "exact":
+            kind = "keyword"
+        elif kind == "string" and matching_mode == "text":
+            kind = "text"
         fields.append(models.FieldDefinition(
             name=_string(field.Name()) or "",
             data_type=models.DataType(kind="primitive", payload_kind=kind),
-            stored=field.Stored().Value() if field.Stored() is not None else None,
-            searchable=field.Searchable().Value() if field.Searchable() is not None else None,
-            filterable=field.Filterable().Value() if field.Filterable() is not None else None,
-            sortable=field.Sortable().Value() if field.Sortable() is not None else None,
-            facetable=field.Facetable().Value() if field.Facetable() is not None else None,
+            stored=_optional_bool(field.Stored()),
+            searchable=_optional_bool(field.Searchable()),
+            filterable=_optional_bool(field.Filterable()),
+            sortable=_optional_bool(field.Sortable()),
+            facetable=_optional_bool(field.Facetable()),
+            matching=(models.MatchingConfig(mode=matching_mode)
+                      if matching is not None else None),
         ))
-    return models.IndexDefinition(name=_string(table.Name()), fields=fields, document_type=_string(table.DocumentType()))
+    default_fields = table.DefaultSearchFields()
+    defaults = None
+    if default_fields is not None:
+        defaults = models.SearchFieldSelection(
+            fields=[
+                models.SearchField(
+                    field=_string(item.Field()) or "",
+                    weight=item.Weight().Value() if item.Weight() is not None else None,
+                )
+                for i in range(default_fields.FieldsLength())
+                if (item := default_fields.Fields(i)) is not None
+            ]
+        )
+    return models.IndexDefinition(
+        name=_string(table.Name()),
+        fields=fields,
+        default_search_fields=defaults,
+        properties=_read_entries(table) if table.PropertiesLength() else {},
+        document_type=_string(table.DocumentType()),
+        schema_inherits=[_string(table.SchemaInherits(i)) or "" for i in range(table.SchemaInheritsLength())],
+        document_inherits=[_string(table.DocumentInherits(i)) or "" for i in range(table.DocumentInheritsLength())],
+    )
 
 
 def _read_response(data: bytes, operation: str) -> Any:
@@ -737,9 +1122,32 @@ def _read_response(data: bytes, operation: str) -> Any:
         details = []
         for index in range(error.DetailsLength()):
             detail = error.Details(index)
-        details.append(models.ErrorDetail(code=_string(detail.Code()) or "", path=_string(detail.Path()), message=_string(detail.Message()) or ""))
-        error_codes = {1: "invalid_argument", 2: "not_found", 3: "already_exists", 4: "failed_precondition",
-                       5: "unsupported", 6: "unavailable", 7: "internal", 8: "corrupt", 9: "timeout"}
+            if detail is not None:
+                details.append(
+                    models.ErrorDetail(
+                        code=_string(detail.Code()) or "",
+                        path=_string(detail.Path()),
+                        message=_string(detail.Message()) or "",
+                        metadata={
+                            _string(entry.Key()) or "": _string(entry.Value()) or ""
+                            for i in range(detail.MetadataLength())
+                            if (entry := detail.Metadata(i)) is not None
+                        },
+                    )
+                )
+        error_codes = {
+            0: "unspecified",
+            1: "invalid_argument",
+            2: "not_found",
+            3: "already_exists",
+            4: "failed_precondition",
+            5: "conflict",
+            6: "unsupported",
+            7: "resource_exhausted",
+            8: "internal",
+            9: "unavailable",
+            10: "deadline_exceeded",
+        }
         raise PortableResponseError(models.Error(code=error_codes.get(error.Code(), "unspecified"),
                                                   message=_string(error.Message()) or "", details=details,
                                                   retryable=error.Retryable()))
@@ -762,12 +1170,23 @@ def _read_response(data: bytes, operation: str) -> Any:
         index = item.Index()
         return models.DescribeResult(index=_read_index(index) if index is not None else None)
     if operation == "inspect_query":
-        return models.InspectQueryResult(resolved_request=models.ResolvedSearchRequest())
+        item = _union(payload, InspectQueryResult)
+        resolved = item.ResolvedRequest()
+        return models.InspectQueryResult(
+            resolved_request=_read_resolved_request(resolved) if resolved is not None else None
+        )
     if operation == "search":
         item = _union(payload, SearchResult)
         total = item.TotalHits()
+        relations = {
+            TotalHitsRelation.Unspecified: "unspecified",
+            TotalHitsRelation.Exact: "exact",
+            TotalHitsRelation.LowerBound: "lower_bound",
+            TotalHitsRelation.Approximate: "approximate",
+            TotalHitsRelation.Unknown: "unknown",
+        }
         return models.SearchResult(root=_read_result_node(item.Root()) if item.Root() is not None else None,
-                                   total_hits=models.TotalHits(value=total.Value(), relation=str(total.Relation())) if total else None)
+                                   total_hits=models.TotalHits(value=total.Value(), relation=relations.get(total.Relation(), "unspecified")) if total else None)
     raise ValueError(f"unexpected response operation {operation!r}")
 
 

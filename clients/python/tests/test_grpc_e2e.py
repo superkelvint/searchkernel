@@ -47,11 +47,15 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 data_type=generated.DataType(kind="primitive", payload_kind="text"),
                 stored=True,
                 searchable=True,
+                filterable=False,
+                sortable=False,
+                facetable=False,
             ),
             generated.FieldDefinition(
                 name="category",
                 data_type=generated.DataType(kind="primitive", payload_kind="keyword"),
                 stored=True,
+                searchable=False,
                 filterable=True,
                 sortable=True,
                 facetable=True,
@@ -60,12 +64,15 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                 name="price",
                 data_type=generated.DataType(kind="primitive", payload_kind="int64"),
                 stored=True,
+                searchable=False,
                 filterable=True,
                 sortable=True,
+                facetable=False,
             ),
         ]
+        self.definition = generated.IndexDefinition(name="python_e2e", fields=fields)
         self.definition_path.write_bytes(
-            encode_index_definition(generated.IndexDefinition(name="python_e2e", fields=fields))
+            encode_index_definition(self.definition)
         )
         self.process = None
         self.client = None
@@ -213,8 +220,33 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
         analysis = index.analyze("Hello world", field="title")
         self.assertEqual([token.term for token in analysis.tokens], ["hello", "world"])
-        self.assertEqual(index.describe().index.name, "python_e2e")
-        self.assertIsNotNone(index.inspect_query(self._search_request()).resolved_request)
+        self.assertEqual(result.total_hits.relation, "exact")
+
+        described = index.describe().index
+        self.assertIsNotNone(described)
+        self.assertEqual(described.name, self.definition.name)
+        actual_fields = {field.name: field for field in described.fields}
+        self.assertEqual(set(actual_fields), {"title", "category", "price"})
+        for expected in self.definition.fields:
+            actual = actual_fields[expected.name]
+            self.assertEqual(actual.data_type.payload_kind, expected.data_type.payload_kind)
+            for capability in ("stored", "searchable", "filterable", "sortable", "facetable"):
+                self.assertEqual(getattr(actual, capability), getattr(expected, capability), expected.name)
+        self.assertEqual(actual_fields["category"].matching.mode, "exact")
+
+        inspected = index.inspect_query(self._search_request()).resolved_request
+        self.assertIsNotNone(inspected)
+        self.assertEqual(inspected.query.kind, "text")
+        self.assertEqual(inspected.query.text, "hello")
+        self.assertEqual([field.field for field in inspected.search_fields], ["title"])
+        self.assertEqual(len(inspected.filters), 1)
+        self.assertEqual(inspected.filters[0].kind, "comparison")
+        self.assertEqual(inspected.filters[0].field.path, "price")
+        self.assertEqual(inspected.filters[0].op, "gte")
+        self.assertEqual(inspected.filters[0].value, generated.Value.int64(2))
+        self.assertEqual(inspected.sort[0].target.field, "price")
+        self.assertEqual(inspected.sort[0].direction, "desc")
+        self.assertEqual(inspected.limit, 10)
 
         index.delete("doc:2")
         self.assertIsNone(index.get("doc:2").document)
