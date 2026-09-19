@@ -10,6 +10,9 @@ from .rpc import searchkernel_pb2, searchkernel_pb2_grpc
 
 
 MAX_GRPC_MESSAGE_SIZE = 256 * 1024 * 1024
+# Ensure a wedged daemon cannot leave a synchronous client call blocked
+# forever.
+DEFAULT_GRPC_TIMEOUT_SECONDS = 60.0
 
 
 class GrpcTransportError(RuntimeError):
@@ -35,7 +38,10 @@ class GrpcTransport:
         if self._closed:
             raise GrpcTransportError("gRPC transport is closed")
         try:
-            response = self._stub.Execute(searchkernel_pb2.FlatBufferFrame(payload=bytes(payload)))
+            response = self._stub.Execute(
+                searchkernel_pb2.FlatBufferFrame(payload=bytes(payload)),
+                timeout=DEFAULT_GRPC_TIMEOUT_SECONDS,
+            )
         except grpc.RpcError as error:
             raise GrpcTransportError(
                 f"Search Kernel Execute failed ({error.code().name}): {error.details()}"
