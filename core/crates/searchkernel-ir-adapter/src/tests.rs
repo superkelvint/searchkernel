@@ -176,6 +176,26 @@ fn unsupported_grouping_ir_is_not_approximated() {
     let error = lower_groupings(&[request]).expect_err("average literal must remain unsupported");
     assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
     assert_eq!(error.details[0].code, "grouping_classifier_not_supported");
+
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Output(vec![GroupingOutputIr {
+                    label: None,
+                    expression: count_expression(),
+                }]),
+                GroupingOperationIr::Each(
+                    native_grouping(&[("category", vec![count_expression()])]).root,
+                ),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let error = lower_groupings(&[request])
+        .expect_err("outputs on a structural wrapper must not be dropped");
+    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    assert_eq!(error.details[0].code, "grouping_output_without_classifier");
 }
 
 #[test]

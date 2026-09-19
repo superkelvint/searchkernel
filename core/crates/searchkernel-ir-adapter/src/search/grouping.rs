@@ -162,11 +162,19 @@ fn lower_level(
             classifier,
             aggregations,
         });
-    } else if nested.is_none() {
-        return Err(unsupported_grouping(
-            "grouping_level_missing_classifier",
-            "a native grouping level requires an attribute classifier",
-        ));
+    } else {
+        if !aggregations.is_empty() {
+            return Err(unsupported_grouping(
+                "grouping_output_without_classifier",
+                "native grouping cannot preserve outputs on a structural grouping wrapper",
+            ));
+        }
+        if nested.is_none() {
+            return Err(unsupported_grouping(
+                "grouping_level_missing_classifier",
+                "a native grouping level requires an attribute classifier",
+            ));
+        }
     }
     if let Some(nested) = nested {
         lower_level(nested, levels)?;
