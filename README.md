@@ -87,9 +87,14 @@ Repository checks and generators are available through one root command:
 ./dev regen protocol
 ./dev verify m13
 ./dev verify integration
+./dev hooks install
 ./dev worktree create my-task
 ./dev doctor
 ```
+
+Run `./dev hooks install` once per checkout to enable the repository-managed
+pre-commit hook. When `docs/capabilities.json` is staged, it regenerates and
+stages `docs/CAPABILITIES.md` and `LIMITATIONS.md` in the same commit.
 
 `./dev doctor` is the first command to run when setup is uncertain. It reports
 the Cargo, FlatBuffers, generated protocol, native SDK/ABI, pinned Vespa,

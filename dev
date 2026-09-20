@@ -19,6 +19,7 @@ Search Kernel development commands
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Diagnose local build and verification prerequisites
 
@@ -270,6 +271,11 @@ doctor() {
     return "$status"
 }
 
+hooks_install() {
+    git config core.hooksPath .githooks
+    echo 'Installed repository-managed Git hooks at .githooks'
+}
+
 case "${1:-help}" in
     help|-h|--help)
         usage
@@ -305,6 +311,13 @@ case "${1:-help}" in
         ;;
     doctor)
         doctor
+        ;;
+    hooks)
+        [[ "${2:-}" == install ]] || {
+            echo 'usage: ./dev hooks install' >&2
+            exit 2
+        }
+        hooks_install
         ;;
     *)
         echo "unknown command: $1" >&2

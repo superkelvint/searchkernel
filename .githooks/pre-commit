@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+if git diff --cached --quiet -- docs/capabilities.json; then
+    exit 0
+fi
+
+# Do not generate from a worktree version that differs from the staged source;
+# otherwise the committed ledger and its generated views could describe
+# different capability sets.
+if ! git diff --quiet -- docs/capabilities.json; then
+    echo "pre-commit: stage all docs/capabilities.json changes before committing" >&2
+    exit 1
+fi
+
+python3 tools/check-capabilities.py --write
+git add docs/CAPABILITIES.md LIMITATIONS.md
