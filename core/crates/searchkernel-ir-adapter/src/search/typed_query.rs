@@ -1,5 +1,12 @@
 //! Lower typed query expressions into the Vespa query model.
 
+mod annotations;
+mod geo;
+mod nearest_neighbor;
+mod predicate;
+mod text;
+mod weighted;
+
 use super::filter::{integer_query_value, lower_attribute_value};
 use crate::unsupported;
 use searchkernel_ir::{
@@ -7,502 +14,17 @@ use searchkernel_ir::{
     RequestValueIr, Result, ScalarValueIr,
 };
 use searchkernel_vespa_engine::{
-    InQueryValue, NearestNeighborOptions, PredicateFeature, PredicateRangeFeature, Query,
-    QueryAlternative, Value as VespaValue, WandOptions, WeightedQueryItem,
+    InQueryValue, Query, QueryAlternative, SearchRequest, Value as VespaValue, WandOptions,
 };
 
+use annotations::annotation_u32_list;
+use geo::{lower_geo_bounding_box, lower_geo_location};
+use nearest_neighbor::lower_nearest_neighbor;
+use predicate::lower_predicate;
+use text::{lower_typed_phrase, lower_user_query, typed_term_text};
+use weighted::{lower_wand_options, lower_weighted_items};
+
 const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct UserQueryAtom {
-    field: Option<String>,
-    text: String,
-    phrase: bool,
-    negated: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum UserQueryToken {
-    Atom(UserQueryAtom),
-    And,
-    Or,
-    Open,
-    Close,
-}
-
-fn user_query_field(
-    selected: Option<&str>,
-    field_context: Option<&QueryFieldRefIr>,
-    default_index: Option<&str>,
-    path: &str,
-) -> Result<String> {
-    let field = selected
-        .or_else(|| field_context.map(|field| field.path.as_str()))
-        .or(default_index)
-        .filter(|field| !field.is_empty())
-        .ok_or_else(|| {
-            PortableError::invalid(
-                "user_query_default_index_missing",
-                Some(path),
-                "userInput/userQuery requires a containing field or defaultIndex",
-            )
-        })?;
-    Ok(field.to_owned())
-}
-
-fn tokenize_user_query(value: &str, path: &str) -> Result<Vec<UserQueryToken>> {
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    let mut output = Vec::new();
-    while index < bytes.len() {
-        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
-            index += 1;
-        }
-        if index == bytes.len() {
-            break;
-        }
-        match bytes[index] {
-            b'(' => {
-                output.push(UserQueryToken::Open);
-                index += 1;
-                continue;
-            }
-            b')' => {
-                output.push(UserQueryToken::Close);
-                index += 1;
-                continue;
-            }
-            _ => {}
-        }
-
-        let mut negated = false;
-        if bytes[index] == b'-' {
-            negated = true;
-            index += 1;
-            while index < bytes.len() && bytes[index].is_ascii_whitespace() {
-                index += 1;
-            }
-            if index == bytes.len() {
-                return Err(PortableError::invalid(
-                    "invalid_user_query",
-                    Some(path),
-                    "a negative user-query term requires a value",
-                ));
-            }
-        }
-
-        let start = index;
-        while index < bytes.len()
-            && !bytes[index].is_ascii_whitespace()
-            && bytes[index] != b'('
-            && bytes[index] != b')'
-            && bytes[index] != b'"'
-        {
-            index += 1;
-        }
-        let mut prefix = &value[start..index];
-        let mut phrase = false;
-        let text;
-        if index < bytes.len() && bytes[index] == b'"' {
-            if !prefix.is_empty() && !prefix.ends_with(':') {
-                return Err(PortableError::invalid(
-                    "invalid_user_query",
-                    Some(path),
-                    "a quoted term must begin a token or follow a field selector",
-                ));
-            }
-            if prefix.is_empty() {
-                prefix = "";
-            }
-            index += 1;
-            let quoted_start = index;
-            while index < bytes.len() && bytes[index] != b'"' {
-                index += 1;
-            }
-            if index == bytes.len() {
-                return Err(PortableError::invalid(
-                    "invalid_user_query",
-                    Some(path),
-                    "unterminated quoted user-query phrase",
-                ));
-            }
-            text = value[quoted_start..index].to_owned();
-            index += 1;
-            phrase = true;
-        } else {
-            text = prefix.to_owned();
-        }
-        if text.is_empty() {
-            return Err(PortableError::invalid(
-                "invalid_user_query",
-                Some(path),
-                "user-query terms must not be empty",
-            ));
-        }
-        let (field, text) = if let Some(separator) = prefix.find(':') {
-            let selected = &prefix[..separator];
-            if selected.is_empty()
-                || !selected
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.')
-            {
-                return Err(PortableError::invalid(
-                    "invalid_user_query",
-                    Some(path),
-                    "user-query field selectors must contain a valid field name",
-                ));
-            }
-            if phrase {
-                (Some(selected.to_owned()), text)
-            } else {
-                let selected_text = &prefix[separator + 1..];
-                if selected_text.is_empty() {
-                    return Err(PortableError::invalid(
-                        "invalid_user_query",
-                        Some(path),
-                        "user-query field selectors require a value",
-                    ));
-                }
-                (Some(selected.to_owned()), selected_text.to_owned())
-            }
-        } else {
-            (None, text)
-        };
-        let token = match text.as_str() {
-            "AND" if !phrase && !negated && field.is_none() => UserQueryToken::And,
-            "OR" if !phrase && !negated && field.is_none() => UserQueryToken::Or,
-            _ => UserQueryToken::Atom(UserQueryAtom {
-                field,
-                text,
-                phrase,
-                negated,
-            }),
-        };
-        output.push(token);
-    }
-    if output.is_empty() {
-        return Err(PortableError::invalid(
-            "empty_user_query",
-            Some(path),
-            "userInput/userQuery must contain a query",
-        ));
-    }
-    Ok(output)
-}
-
-struct UserQueryParser<'a> {
-    tokens: &'a [UserQueryToken],
-    index: usize,
-    field_context: Option<&'a QueryFieldRefIr>,
-    default_index: Option<&'a str>,
-    target_hits: u32,
-    path: &'a str,
-}
-
-impl<'a> UserQueryParser<'a> {
-    fn parse(mut self) -> Result<Query> {
-        let query = self.parse_or()?;
-        if self.index != self.tokens.len() {
-            return Err(PortableError::invalid(
-                "invalid_user_query",
-                Some(self.path),
-                "unexpected token in user query",
-            ));
-        }
-        Ok(query)
-    }
-
-    fn parse_or(&mut self) -> Result<Query> {
-        let mut children = vec![self.parse_and()?];
-        while matches!(self.tokens.get(self.index), Some(UserQueryToken::Or)) {
-            self.index += 1;
-            children.push(self.parse_and()?);
-        }
-        if children.len() == 1 {
-            Ok(children.remove(0))
-        } else {
-            Ok(Query::Or(children))
-        }
-    }
-
-    fn parse_and(&mut self) -> Result<Query> {
-        let mut children = vec![self.parse_primary()?];
-        let mut explicit = false;
-        loop {
-            if matches!(self.tokens.get(self.index), Some(UserQueryToken::And)) {
-                explicit = true;
-                self.index += 1;
-                children.push(self.parse_primary()?);
-            } else if matches!(
-                self.tokens.get(self.index),
-                Some(UserQueryToken::Atom(_)) | Some(UserQueryToken::Open)
-            ) {
-                children.push(self.parse_primary()?);
-            } else {
-                break;
-            }
-        }
-        if children.len() == 1 {
-            Ok(children.remove(0))
-        } else if explicit {
-            Ok(Query::And(children))
-        } else {
-            Ok(Query::WeakAnd {
-                children,
-                target_num_hits: self.target_hits,
-            })
-        }
-    }
-
-    fn parse_primary(&mut self) -> Result<Query> {
-        match self.tokens.get(self.index) {
-            Some(UserQueryToken::Atom(atom)) => {
-                self.index += 1;
-                let field = user_query_field(
-                    atom.field.as_deref(),
-                    self.field_context,
-                    self.default_index,
-                    self.path,
-                )?;
-                let query = if atom.phrase {
-                    Query::Phrase {
-                        field,
-                        text: atom.text.clone(),
-                    }
-                } else {
-                    Query::Term {
-                        field,
-                        text: atom.text.clone(),
-                    }
-                };
-                if atom.negated {
-                    Ok(Query::Not(Box::new(query)))
-                } else {
-                    Ok(query)
-                }
-            }
-            Some(UserQueryToken::Open) => {
-                self.index += 1;
-                let query = self.parse_or()?;
-                if !matches!(self.tokens.get(self.index), Some(UserQueryToken::Close)) {
-                    return Err(PortableError::invalid(
-                        "invalid_user_query",
-                        Some(self.path),
-                        "unterminated user-query group",
-                    ));
-                }
-                self.index += 1;
-                Ok(query)
-            }
-            Some(UserQueryToken::Close) => Err(PortableError::invalid(
-                "invalid_user_query",
-                Some(self.path),
-                "unexpected closing parenthesis in user query",
-            )),
-            Some(UserQueryToken::And | UserQueryToken::Or) | None => Err(PortableError::invalid(
-                "invalid_user_query",
-                Some(self.path),
-                "user-query operator requires a term",
-            )),
-        }
-    }
-}
-
-fn lower_user_query(
-    value: &str,
-    field_context: Option<&QueryFieldRefIr>,
-    default_index: Option<&str>,
-    target_hits: u32,
-    path: &str,
-) -> Result<Query> {
-    let tokens = tokenize_user_query(value, path)?;
-    UserQueryParser {
-        tokens: &tokens,
-        index: 0,
-        field_context,
-        default_index,
-        target_hits,
-        path,
-    }
-    .parse()
-}
-
-fn lower_wand_options(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    path: &str,
-) -> Result<WandOptions> {
-    reject_unknown_annotations(
-        annotations,
-        &[
-            "targetNumHits",
-            "totalTargetHits",
-            "scoreThreshold",
-            "thresholdBoostFactor",
-        ],
-        path,
-    )?;
-    let target_num_hits = match (
-        annotation_u32(annotations, "targetNumHits", path)?,
-        annotation_u32(annotations, "totalTargetHits", path)?,
-    ) {
-        (Some(_), Some(_)) => {
-            return Err(PortableError::invalid(
-                "invalid_typed_query_annotation",
-                Some(path),
-                "WAND may specify only one of targetNumHits and totalTargetHits",
-            ));
-        }
-        (Some(value), None) | (None, Some(value)) => value,
-        (None, None) => DEFAULT_WEAK_AND_TARGET_HITS,
-    };
-    Ok(WandOptions {
-        target_num_hits,
-        score_threshold: annotation_i64(annotations, "scoreThreshold", path)?.unwrap_or(0),
-        threshold_boost_factor: annotation_f64(annotations, "thresholdBoostFactor", path)?
-            .unwrap_or(1.0),
-    })
-}
-
-fn lower_nearest_neighbor_options(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    path: &str,
-) -> Result<NearestNeighborOptions> {
-    reject_unknown_annotations(
-        annotations,
-        &[
-            "targetNumHits",
-            "totalTargetHits",
-            "approximate",
-            "distanceThreshold",
-            "exploreAdditionalHits",
-        ],
-        path,
-    )?;
-    let target_num_hits = match (
-        annotation_u32(annotations, "targetNumHits", path)?,
-        annotation_u32(annotations, "totalTargetHits", path)?,
-    ) {
-        (Some(_), Some(_)) => {
-            return Err(PortableError::invalid(
-                "invalid_typed_query_annotation",
-                Some(path),
-                "nearest-neighbor may specify only one of targetNumHits and totalTargetHits",
-            ));
-        }
-        (Some(value), None) | (None, Some(value)) => value,
-        (None, None) => DEFAULT_WEAK_AND_TARGET_HITS,
-    };
-    Ok(NearestNeighborOptions {
-        target_num_hits,
-        approximate: annotation_bool(annotations, "approximate", path)?.unwrap_or(true),
-        distance_threshold: annotation_f64(annotations, "distanceThreshold", path)?,
-        explore_additional_hits: annotation_u32(annotations, "exploreAdditionalHits", path)?
-            .unwrap_or(0),
-    })
-}
-
-fn reject_unknown_annotations(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    supported: &[&str],
-    path: &str,
-) -> Result<()> {
-    if let Some(name) = annotations
-        .keys()
-        .find(|name| !supported.iter().any(|candidate| candidate == name))
-    {
-        return Err(PortableError::unsupported(
-            "typed_query_annotations_not_supported",
-            Some(format!("{path}.annotations.{name}")),
-            "this typed query node has no native lowering for the annotation",
-        ));
-    }
-    Ok(())
-}
-
-fn annotation_u32(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    name: &str,
-    path: &str,
-) -> Result<Option<u32>> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(None);
-    };
-    let value = match value {
-        RequestValueIr::UInt64(value) => u32::try_from(*value).ok(),
-        RequestValueIr::Int64(value) if *value >= 0 => u32::try_from(*value).ok(),
-        _ => None,
-    };
-    value.filter(|value| *value > 0).map(Some).ok_or_else(|| {
-        PortableError::invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a positive integer"),
-        )
-    })
-}
-
-fn annotation_i64(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    name: &str,
-    path: &str,
-) -> Result<Option<i64>> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(None);
-    };
-    let value = match value {
-        RequestValueIr::Int64(value) => Some(*value),
-        RequestValueIr::UInt64(value) => i64::try_from(*value).ok(),
-        _ => None,
-    };
-    value.map(Some).ok_or_else(|| {
-        PortableError::invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be an integer"),
-        )
-    })
-}
-
-fn annotation_f64(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    name: &str,
-    path: &str,
-) -> Result<Option<f64>> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(None);
-    };
-    let value = match value {
-        RequestValueIr::Float64(value) if value.is_finite() => Some(*value),
-        RequestValueIr::Int64(value) => Some(*value as f64),
-        RequestValueIr::UInt64(value) => Some(*value as f64),
-        _ => None,
-    };
-    value.map(Some).ok_or_else(|| {
-        PortableError::invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a finite number"),
-        )
-    })
-}
-
-fn annotation_bool(
-    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
-    name: &str,
-    path: &str,
-) -> Result<Option<bool>> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(None);
-    };
-    match value {
-        RequestValueIr::Bool(value) => Ok(Some(*value)),
-        _ => Err(PortableError::invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a boolean"),
-        )),
-    }
-}
 
 #[cfg(test)]
 pub(crate) fn lower_query(
@@ -602,11 +124,11 @@ pub(crate) fn lower_query_with_context(
             query_string,
             rank_properties,
         )?))),
-        QueryIr::Yql { .. } => Err(PortableError::unsupported(
-            "yql_not_supported",
-            Some("query"),
-            "the current native adapter does not expose a YQL execution path",
-        )),
+        QueryIr::Yql { source, .. } => SearchRequest::from_yql(source)
+            .map(|request| request.query)
+            .map_err(|error| {
+                PortableError::invalid("invalid_yql", Some("query"), error.to_string())
+            }),
         QueryIr::Typed(expression) => lower_typed_query(
             expression,
             None,
@@ -631,7 +153,9 @@ fn lower_typed_query(
     if !expression.annotations.is_empty()
         && !matches!(
             expression.kind,
-            QueryExprKindIr::Wand { .. } | QueryExprKindIr::NearestNeighbor { .. }
+            QueryExprKindIr::Wand { .. }
+                | QueryExprKindIr::NearestNeighbor { .. }
+                | QueryExprKindIr::SameElement(_)
         )
     {
         return Err(PortableError::unsupported(
@@ -647,10 +171,11 @@ fn lower_typed_query(
             Ok(Query::term(field, typed_term_text(value, path)?))
         }
         QueryExprKindIr::Contains { field, item } => {
-            typed_query_field(Some(field), &format!("{path}.contains.field"))?;
+            let field =
+                qualify_query_field(field, field_context, &format!("{path}.contains.field"))?;
             lower_typed_query(
                 item,
-                Some(field),
+                Some(&field),
                 language,
                 default_index,
                 query_string,
@@ -967,10 +492,11 @@ fn lower_typed_query(
                 rank_properties,
                 &format!("{path}.non_empty.query"),
             )?;
-            if matches!(
-                lowered,
-                Query::And(ref children) | Query::Or(ref children) if children.is_empty()
-            ) {
+            let is_empty = matches!(
+                &lowered,
+                Query::And(children) | Query::Or(children) if children.is_empty()
+            ) || matches!(&lowered, Query::Not(child) if child.as_ref() == &Query::True);
+            if is_empty {
                 return Err(PortableError::invalid(
                     "empty_typed_query",
                     Some(path),
@@ -980,6 +506,8 @@ fn lower_typed_query(
             Ok(lowered)
         }
         QueryExprKindIr::SameElement(children) => {
+            let element_filter =
+                annotation_u32_list(&expression.annotations, "elementFilter", path)?;
             let field = typed_query_field(field_context, path)?;
             let children = lower_typed_children(
                 children,
@@ -1001,84 +529,33 @@ fn lower_typed_query(
             Ok(Query::SameElement {
                 field: field.to_owned(),
                 children,
+                element_filter,
             })
         }
+
         QueryExprKindIr::GeoLocation {
             field,
             latitude,
             longitude,
             radius,
-        } => Ok(Query::GeoLocation {
-            field: typed_query_field(Some(field), &format!("{path}.geo_location.field"))?
-                .to_owned(),
-            latitude: *latitude,
-            longitude: *longitude,
-            radius: radius.clone(),
-        }),
+        } => lower_geo_location(field, *latitude, *longitude, radius, path),
         QueryExprKindIr::GeoBoundingBox {
             field,
             south,
             west,
             north,
             east,
-        } => Ok(Query::GeoBoundingBox {
-            field: typed_query_field(Some(field), &format!("{path}.geo_bounding_box.field"))?
-                .to_owned(),
-            south: *south,
-            west: *west,
-            north: *north,
-            east: *east,
-        }),
+        } => lower_geo_bounding_box(field, *south, *west, *north, *east, path),
         QueryExprKindIr::NearestNeighbor {
             document_field,
             query_tensor,
-        } => {
-            let document_field = typed_query_field(
-                Some(document_field),
-                &format!("{path}.nearest_neighbor.document_field"),
-            )?
-            .to_owned();
-            let options = lower_nearest_neighbor_options(&expression.annotations, path)?;
-            if options == NearestNeighborOptions::default() {
-                Ok(Query::NearestNeighbor {
-                    document_field,
-                    query_tensor: query_tensor.clone(),
-                    target_num_hits: options.target_num_hits,
-                    approximate: options.approximate,
-                })
-            } else {
-                Ok(Query::NearestNeighborWithOptions {
-                    document_field,
-                    query_tensor: query_tensor.clone(),
-                    options,
-                })
-            }
-        }
+        } => lower_nearest_neighbor(document_field, query_tensor, &expression.annotations, path),
         QueryExprKindIr::Predicate {
             field,
             features,
             range_features,
-        } => {
-            let field = typed_query_field(Some(field), &format!("{path}.predicate.field"))?;
-            let features =
-                lower_predicate_features(features, &format!("{path}.predicate.features"))?;
-            let range_features = lower_predicate_range_features(
-                range_features,
-                &format!("{path}.predicate.range_features"),
-            )?;
-            if features.is_empty() && range_features.is_empty() {
-                return Err(PortableError::invalid(
-                    "empty_typed_query",
-                    Some(path),
-                    "predicate query requires at least one feature",
-                ));
-            }
-            Ok(Query::Predicate {
-                field: field.to_owned(),
-                features,
-                range_features,
-            })
-        }
+        } => lower_predicate(field, features, range_features, path),
+
         QueryExprKindIr::UserInput {
             value,
             default_index: query_default_index,
@@ -1177,81 +654,10 @@ fn label_unique_id(
     Ok(value)
 }
 
-fn lower_weighted_items(
-    items: &[searchkernel_ir::WeightedQueryItemIr],
+pub(super) fn typed_query_field<'a>(
+    field: Option<&'a QueryFieldRefIr>,
     path: &str,
-) -> Result<Vec<WeightedQueryItem>> {
-    if items.is_empty() {
-        return Err(PortableError::invalid(
-            "empty_typed_query",
-            Some(path),
-            "weighted query requires at least one item",
-        ));
-    }
-    let mut lowered = Vec::with_capacity(items.len());
-    let mut string_keys = None;
-    for (index, item) in items.iter().enumerate() {
-        let item_path = format!("{path}[{index}]");
-        let (is_string, lowered_item) = match &item.key {
-            RequestValueIr::String(key) if !key.is_empty() => (
-                true,
-                WeightedQueryItem::String {
-                    key: key.clone(),
-                    weight: item.weight,
-                },
-            ),
-            RequestValueIr::Int64(key) => (
-                false,
-                WeightedQueryItem::Integer {
-                    key: integer_query_value(*key)?,
-                    weight: item.weight,
-                },
-            ),
-            RequestValueIr::UInt64(key) => {
-                let key = i64::try_from(*key).map_err(|_| {
-                    PortableError::unsupported(
-                        "typed_query_weighted_key_not_supported",
-                        Some(format!("{item_path}.key")),
-                        "unsigned weighted query keys above INT64_MAX are not representable by Vespa",
-                    )
-                })?;
-                (
-                    false,
-                    WeightedQueryItem::Integer {
-                        key: integer_query_value(key)?,
-                        weight: item.weight,
-                    },
-                )
-            }
-            RequestValueIr::String(_) => {
-                return Err(PortableError::invalid(
-                    "invalid_typed_query",
-                    Some(format!("{item_path}.key")),
-                    "weighted query string keys must not be empty",
-                ));
-            }
-            _ => {
-                return Err(PortableError::unsupported(
-                    "typed_query_weighted_key_not_supported",
-                    Some(format!("{item_path}.key")),
-                    "weighted query keys must be strings or signed integer values",
-                ));
-            }
-        };
-        if string_keys.is_some_and(|previous| previous != is_string) {
-            return Err(PortableError::unsupported(
-                "typed_query_weighted_key_not_supported",
-                Some(format!("{item_path}.key")),
-                "weighted query cannot mix string and integer keys",
-            ));
-        }
-        string_keys = Some(is_string);
-        lowered.push(lowered_item);
-    }
-    Ok(lowered)
-}
-
-fn typed_query_field<'a>(field: Option<&'a QueryFieldRefIr>, path: &str) -> Result<&'a str> {
+) -> Result<&'a str> {
     let Some(field) = field else {
         return Err(PortableError::invalid(
             "missing_field_context",
@@ -1269,170 +675,30 @@ fn typed_query_field<'a>(field: Option<&'a QueryFieldRefIr>, path: &str) -> Resu
     Ok(field.path.as_str())
 }
 
-const ALL_PREDICATE_SUB_QUERIES: u64 = u64::MAX;
-
-fn lower_predicate_features(
-    values: &std::collections::BTreeMap<String, RequestValueIr>,
+fn qualify_query_field(
+    field: &QueryFieldRefIr,
+    field_context: Option<&QueryFieldRefIr>,
     path: &str,
-) -> Result<Vec<PredicateFeature>> {
-    let mut lowered = Vec::new();
-    for (key, value) in values {
-        lower_predicate_feature_value(key, value, ALL_PREDICATE_SUB_QUERIES, &mut lowered, path)?;
+) -> Result<QueryFieldRefIr> {
+    if field.path.as_str().contains('.')
+        || field_context.is_none()
+        || field_context.is_some_and(|context| context.path == field.path)
+    {
+        typed_query_field(Some(field), path)?;
+        return Ok(field.clone());
     }
-    Ok(lowered)
-}
-
-fn lower_predicate_feature_value(
-    key: &str,
-    value: &RequestValueIr,
-    mask: u64,
-    output: &mut Vec<PredicateFeature>,
-    path: &str,
-) -> Result<()> {
-    match value {
-        RequestValueIr::String(value) if !key.is_empty() && !value.is_empty() => {
-            output.push(PredicateFeature {
-                key: key.to_owned(),
-                value: value.clone(),
-                sub_query_bitmask: mask,
-            });
-            Ok(())
-        }
-        RequestValueIr::List(values) => {
-            for (index, value) in values.iter().enumerate() {
-                lower_predicate_feature_value(
-                    key,
-                    value,
-                    mask,
-                    output,
-                    &format!("{path}.{key}[{index}]"),
-                )?;
-            }
-            Ok(())
-        }
-        RequestValueIr::Object(values) => {
-            let bitmap = parse_predicate_bitmap(key, path)?;
-            for (nested_key, nested_value) in values {
-                lower_predicate_feature_value(nested_key, nested_value, bitmap, output, path)?;
-            }
-            Ok(())
-        }
-        RequestValueIr::String(_) => Err(PortableError::invalid(
-            "invalid_predicate_value",
-            Some(format!("{path}.{key}")),
-            "predicate feature keys and values must not be empty",
-        )),
-        _ => Err(PortableError::unsupported(
-            "predicate_feature_value_not_supported",
-            Some(format!("{path}.{key}")),
-            "predicate features support non-empty strings, string lists, or bitmap-keyed objects",
-        )),
-    }
-}
-
-fn lower_predicate_range_features(
-    values: &std::collections::BTreeMap<String, RequestValueIr>,
-    path: &str,
-) -> Result<Vec<PredicateRangeFeature>> {
-    let mut lowered = Vec::new();
-    for (key, value) in values {
-        lower_predicate_range_value(key, value, ALL_PREDICATE_SUB_QUERIES, &mut lowered, path)?;
-    }
-    Ok(lowered)
-}
-
-fn lower_predicate_range_value(
-    key: &str,
-    value: &RequestValueIr,
-    mask: u64,
-    output: &mut Vec<PredicateRangeFeature>,
-    path: &str,
-) -> Result<()> {
-    match value {
-        RequestValueIr::UInt64(value) => {
-            if key.is_empty() {
-                return Err(PortableError::invalid(
-                    "invalid_predicate_value",
-                    Some(format!("{path}.{key}")),
-                    "predicate range feature keys must not be empty",
-                ));
-            }
-            output.push(PredicateRangeFeature {
-                key: key.to_owned(),
-                value: *value,
-                sub_query_bitmask: mask,
-            });
-            Ok(())
-        }
-        RequestValueIr::Int64(value) if *value >= 0 => {
-            if key.is_empty() {
-                return Err(PortableError::invalid(
-                    "invalid_predicate_value",
-                    Some(format!("{path}.{key}")),
-                    "predicate range feature keys must not be empty",
-                ));
-            }
-            output.push(PredicateRangeFeature {
-                key: key.to_owned(),
-                value: *value as u64,
-                sub_query_bitmask: mask,
-            });
-            Ok(())
-        }
-        RequestValueIr::List(values) => {
-            for (index, value) in values.iter().enumerate() {
-                lower_predicate_range_value(
-                    key,
-                    value,
-                    mask,
-                    output,
-                    &format!("{path}.{key}[{index}]"),
-                )?;
-            }
-            Ok(())
-        }
-        RequestValueIr::Object(values) => {
-            let bitmap = parse_predicate_bitmap(key, path)?;
-            for (nested_key, nested_value) in values {
-                lower_predicate_range_value(nested_key, nested_value, bitmap, output, path)?;
-            }
-            Ok(())
-        }
-        RequestValueIr::Int64(_) => Err(PortableError::unsupported(
-            "predicate_range_value_not_supported",
-            Some(format!("{path}.{key}")),
-            "predicate range features require non-negative integer values",
-        )),
-        _ => Err(PortableError::unsupported(
-            "predicate_range_value_not_supported",
-            Some(format!("{path}.{key}")),
-            "predicate range features support unsigned or non-negative integer values, integer lists, or bitmap-keyed objects",
-        )),
-    }
-}
-
-fn parse_predicate_bitmap(value: &str, path: &str) -> Result<u64> {
-    let (digits, radix) = value
-        .strip_prefix("0x")
-        .map_or((value, 10), |value| (value, 16));
-    u64::from_str_radix(digits, radix).map_err(|_| {
-        PortableError::invalid(
-            "invalid_predicate_sub_query_bitmap",
-            Some(format!("{path}.{value}")),
-            "predicate bitmap object keys must be decimal or 0x-prefixed hexadecimal uint64 values",
-        )
-    })
-}
-
-fn typed_term_text(value: &RequestValueIr, path: &str) -> Result<String> {
-    match value {
-        RequestValueIr::String(value) if !value.is_empty() => Ok(value.clone()),
-        _ => Err(PortableError::unsupported(
-            "typed_query_value_not_supported",
-            Some(format!("{path}.term.value")),
-            "typed term values must be non-empty strings",
-        )),
-    }
+    let context = field_context.expect("checked above");
+    let path = searchkernel_ir::FieldName::parse_query_path(format!(
+        "{}.{}",
+        context.path.as_str(),
+        field.path.as_str()
+    ))?;
+    let qualified = QueryFieldRefIr {
+        path: path.clone(),
+        element_index: field.element_index,
+    };
+    typed_query_field(Some(&qualified), qualified.path.as_str())?;
+    Ok(qualified)
 }
 
 fn typed_scalar(value: &RequestValueIr, path: &str) -> Result<ScalarValueIr> {
@@ -1575,89 +841,4 @@ fn typed_range_bound(
             })
         }
     }
-}
-
-fn lower_typed_phrase(
-    children: &[QueryExprIr],
-    field_context: Option<&QueryFieldRefIr>,
-    language: searchkernel_vespa_engine::LinguisticsOptions,
-    path: &str,
-) -> Result<Query> {
-    let field = typed_query_field(field_context, path)?;
-    let mut terms = Vec::new();
-    for (index, child) in children.iter().enumerate() {
-        collect_typed_phrase_terms(
-            child,
-            field_context,
-            &mut terms,
-            &format!("{path}.phrase[{index}]"),
-        )?;
-    }
-    if terms.is_empty() {
-        return Err(PortableError::invalid(
-            "empty_typed_query",
-            Some(format!("{path}.phrase")),
-            "phrase query requires at least one term",
-        ));
-    }
-    let text = terms.join(" ");
-    let analyzed = searchkernel_vespa_engine::Linguistics
-        .analyze_query(&text, language)
-        .terms
-        .len();
-    if analyzed == 0 {
-        return Err(PortableError::invalid(
-            "empty_typed_query",
-            Some(format!("{path}.phrase")),
-            "phrase query must analyze to at least one term",
-        ));
-    }
-    Ok(Query::phrase(field, text))
-}
-
-fn collect_typed_phrase_terms(
-    expression: &QueryExprIr,
-    field_context: Option<&QueryFieldRefIr>,
-    terms: &mut Vec<String>,
-    path: &str,
-) -> Result<()> {
-    if !expression.annotations.is_empty() {
-        return Err(PortableError::unsupported(
-            "typed_query_annotations_not_supported",
-            Some(format!("{path}.annotations")),
-            "typed query annotations are outside the Typed Query A execution subset",
-        ));
-    }
-    match &expression.kind {
-        QueryExprKindIr::Term { value } => terms.push(typed_term_text(value, path)?),
-        QueryExprKindIr::Contains { field, item } => {
-            typed_query_field(Some(field), &format!("{path}.contains.field"))?;
-            if field_context.is_some_and(|context| context.path != field.path) {
-                return Err(PortableError::unsupported(
-                    "typed_query_phrase_field_mismatch",
-                    Some(path),
-                    "all phrase terms must target the same field",
-                ));
-            }
-            collect_typed_phrase_terms(item, Some(field), terms, &format!("{path}.contains.item"))?;
-        }
-        QueryExprKindIr::Phrase(children) => {
-            for (index, child) in children.iter().enumerate() {
-                collect_typed_phrase_terms(
-                    child,
-                    field_context,
-                    terms,
-                    &format!("{path}.phrase[{index}]"),
-                )?;
-            }
-        }
-        _ => {
-            return Err(PortableError::unsupported(
-                "typed_query_phrase_child_not_supported",
-                Some(path),
-                "phrase children must be term, contains, or phrase nodes",
-            ));
-        }
-    }
-    Ok(())
 }
