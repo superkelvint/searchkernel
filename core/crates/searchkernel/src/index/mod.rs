@@ -627,7 +627,10 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         }
         let capabilities = field.capabilities();
         value = value
-            .stored(capabilities.stored())
+            .stored(
+                capabilities.stored()
+                    && !matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position),
+            )
             .searchable(capabilities.searchable())
             .filterable(capabilities.filterable())
             .sortable(capabilities.sortable())

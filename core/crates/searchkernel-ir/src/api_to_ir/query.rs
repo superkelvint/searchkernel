@@ -9,19 +9,23 @@ const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
 const DEFAULT_FUZZY_PREFIX_LENGTH: u32 = 0;
 const DEFAULT_FUZZY_PREFIX: bool = false;
 
-const TYPED_QUERY_WAND_ANNOTATIONS: &[&str] = &[
-    "targetNumHits",
-    "totalTargetHits",
-    "scoreThreshold",
-    "thresholdBoostFactor",
-];
-const TYPED_QUERY_NEAREST_NEIGHBOR_ANNOTATIONS: &[&str] = &[
-    "targetNumHits",
-    "totalTargetHits",
-    "approximate",
-    "distanceThreshold",
-    "exploreAdditionalHits",
-];
+fn reject_unknown_typed_annotations(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    supported: &[&str],
+    path: &str,
+) -> Result<()> {
+    if let Some(name) = annotations
+        .keys()
+        .find(|name| !supported.iter().any(|candidate| candidate == name))
+    {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations.{name}")),
+            "this typed query node has no portable meaning for the annotation",
+        ));
+    }
+    Ok(())
+}
 
 fn resolve_typed_query_annotations(
     kind: &mut QueryExprKindIr,
@@ -49,12 +53,6 @@ fn resolve_typed_query_annotations(
                 .unwrap_or(DEFAULT_FUZZY_PREFIX_LENGTH);
             *prefix = annotation_bool(annotations, "prefix", path)?.unwrap_or(DEFAULT_FUZZY_PREFIX);
         }
-        QueryExprKindIr::Wand { .. } => {
-            normalize_wand_annotations(annotations, path)?;
-        }
-        QueryExprKindIr::NearestNeighbor { .. } => {
-            normalize_nearest_neighbor_annotations(annotations, path)?;
-        }
         QueryExprKindIr::UserInput {
             default_index,
             target_hits,
@@ -67,192 +65,224 @@ fn resolve_typed_query_annotations(
             *default_index = annotation_string(annotations, "defaultIndex", path)?;
             *target_hits = DEFAULT_WEAK_AND_TARGET_HITS;
         }
+        QueryExprKindIr::Wand { .. } => {
+            reject_unknown_typed_annotations(
+                annotations,
+                &[
+                    "targetNumHits",
+                    "totalTargetHits",
+                    "scoreThreshold",
+                    "thresholdBoostFactor",
+                ],
+                path,
+            )?;
+            let target_num_hits = resolve_target_hits(annotations, path, "WAND")?
+                .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
+            let score_threshold = annotation_i64(annotations, "scoreThreshold", path)?.unwrap_or(0);
+            let threshold_boost_factor =
+                annotation_f64(annotations, "thresholdBoostFactor", path)?.unwrap_or(1.0);
+            annotations.insert(
+                "targetNumHits".to_owned(),
+                RequestValueIr::UInt64(u64::from(target_num_hits)),
+            );
+            annotations.insert(
+                "scoreThreshold".to_owned(),
+                RequestValueIr::Int64(score_threshold),
+            );
+            annotations.insert(
+                "thresholdBoostFactor".to_owned(),
+                RequestValueIr::Float64(threshold_boost_factor),
+            );
+        }
+        QueryExprKindIr::NearestNeighbor { .. } => {
+            reject_unknown_typed_annotations(
+                annotations,
+                &[
+                    "targetNumHits",
+                    "totalTargetHits",
+                    "approximate",
+                    "distanceThreshold",
+                    "exploreAdditionalHits",
+                ],
+                path,
+            )?;
+            let target_num_hits = resolve_target_hits(annotations, path, "nearest-neighbor")?
+                .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
+            let approximate = annotation_bool(annotations, "approximate", path)?.unwrap_or(true);
+            let distance_threshold = annotation_f64(annotations, "distanceThreshold", path)?;
+            if distance_threshold.is_some_and(|value| value < 0.0) {
+                return Err(invalid(
+                    "invalid_typed_query_annotation",
+                    Some(format!("{path}.annotations.distanceThreshold")),
+                    "distanceThreshold must be non-negative",
+                ));
+            }
+            let explore_additional_hits =
+                annotation_nonnegative_u32(annotations, "exploreAdditionalHits", path)?
+                    .unwrap_or(0);
+            annotations.insert(
+                "targetNumHits".to_owned(),
+                RequestValueIr::UInt64(u64::from(target_num_hits)),
+            );
+            annotations.insert("approximate".to_owned(), RequestValueIr::Bool(approximate));
+            annotations.insert(
+                "exploreAdditionalHits".to_owned(),
+                RequestValueIr::UInt64(u64::from(explore_additional_hits)),
+            );
+            if let Some(distance_threshold) = distance_threshold {
+                annotations.insert(
+                    "distanceThreshold".to_owned(),
+                    RequestValueIr::Float64(distance_threshold),
+                );
+            }
+        }
+        QueryExprKindIr::SameElement(_) => {
+            reject_unknown_typed_annotations(annotations, &["elementFilter"], path)?;
+            if let Some(element_filter) = annotation_u32_list(annotations, "elementFilter", path)? {
+                annotations.insert(
+                    "elementFilter".to_owned(),
+                    RequestValueIr::List(
+                        element_filter
+                            .into_iter()
+                            .map(u64::from)
+                            .map(RequestValueIr::UInt64)
+                            .collect(),
+                    ),
+                );
+            }
+        }
         _ => {}
     }
     Ok(())
 }
 
-fn normalize_wand_annotations(
+fn resolve_target_hits(
     annotations: &mut BTreeMap<String, RequestValueIr>,
     path: &str,
-) -> Result<()> {
-    reject_typed_query_annotations(annotations, TYPED_QUERY_WAND_ANNOTATIONS, path)?;
-    let target_num_hits = validate_positive_annotation_u32(annotations, "targetNumHits", path)?;
-    let total_target_hits = validate_positive_annotation_u32(annotations, "totalTargetHits", path)?;
+    query_name: &str,
+) -> Result<Option<u32>> {
+    let target_num_hits = annotation_u32(annotations, "targetNumHits", path, 1)?;
+    let total_target_hits = annotation_u32(annotations, "totalTargetHits", path, 1)?;
     if target_num_hits.is_some() && total_target_hits.is_some() {
         return Err(invalid(
             "invalid_typed_query_annotation",
-            Some(path),
-            "WAND may specify only one of targetNumHits and totalTargetHits",
+            Some(path.to_owned()),
+            format!("{query_name} may specify only one of targetNumHits and totalTargetHits"),
         ));
     }
-    if target_num_hits.is_none() && total_target_hits.is_none() {
-        annotations.insert(
-            "targetNumHits".to_owned(),
-            RequestValueIr::UInt64(u64::from(DEFAULT_WEAK_AND_TARGET_HITS)),
-        );
-    }
-    validate_integer_annotation(annotations, "scoreThreshold", path)?;
-    validate_finite_number_annotation(annotations, "thresholdBoostFactor", path)?;
-    if !annotations.contains_key("scoreThreshold") {
-        annotations.insert("scoreThreshold".to_owned(), RequestValueIr::Int64(0));
-    }
-    if !annotations.contains_key("thresholdBoostFactor") {
-        annotations.insert(
-            "thresholdBoostFactor".to_owned(),
-            RequestValueIr::Float64(1.0),
-        );
-    }
-    Ok(())
+    Ok(target_num_hits.or(total_target_hits))
 }
 
-fn normalize_nearest_neighbor_annotations(
+fn annotation_i64(
     annotations: &mut BTreeMap<String, RequestValueIr>,
-    path: &str,
-) -> Result<()> {
-    reject_typed_query_annotations(annotations, TYPED_QUERY_NEAREST_NEIGHBOR_ANNOTATIONS, path)?;
-    let target_num_hits = validate_positive_annotation_u32(annotations, "targetNumHits", path)?;
-    let total_target_hits = validate_positive_annotation_u32(annotations, "totalTargetHits", path)?;
-    if target_num_hits.is_some() && total_target_hits.is_some() {
-        return Err(invalid(
-            "invalid_typed_query_annotation",
-            Some(path),
-            "nearest-neighbor may specify only one of targetNumHits and totalTargetHits",
-        ));
-    }
-    if target_num_hits.is_none() && total_target_hits.is_none() {
-        annotations.insert(
-            "targetNumHits".to_owned(),
-            RequestValueIr::UInt64(u64::from(DEFAULT_WEAK_AND_TARGET_HITS)),
-        );
-    }
-    if !annotations.contains_key("approximate") {
-        annotations.insert("approximate".to_owned(), RequestValueIr::Bool(true));
-    } else if !matches!(
-        annotations.get("approximate"),
-        Some(RequestValueIr::Bool(_))
-    ) {
-        return Err(invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.approximate")),
-            "approximate must be a boolean",
-        ));
-    }
-    validate_finite_number_annotation(annotations, "distanceThreshold", path)?;
-    validate_nonnegative_annotation_u32(annotations, "exploreAdditionalHits", path)?;
-    Ok(())
-}
-
-fn reject_typed_query_annotations(
-    annotations: &BTreeMap<String, RequestValueIr>,
-    supported: &[&str],
-    path: &str,
-) -> Result<()> {
-    if let Some(name) = annotations
-        .keys()
-        .find(|name| !supported.iter().any(|candidate| candidate == name))
-    {
-        return Err(PortableError::unsupported(
-            "typed_query_annotations_not_supported",
-            Some(format!("{path}.annotations.{name}")),
-            "this typed query node has no native lowering for the annotation",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_positive_annotation_u32(
-    annotations: &BTreeMap<String, RequestValueIr>,
     name: &str,
     path: &str,
-) -> Result<Option<u32>> {
-    let Some(value) = annotations.get(name) else {
+) -> Result<Option<i64>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
+    };
+    match value {
+        RequestValueIr::Int64(value) => Ok(Some(value)),
+        RequestValueIr::UInt64(value) => i64::try_from(value).map(Some).map_err(|_| {
+            invalid(
+                "invalid_typed_query_annotation",
+                Some(format!("{path}.annotations.{name}")),
+                format!("{name} must be an integer in the supported range"),
+            )
+        }),
+        _ => Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be an integer"),
+        )),
+    }
+}
+
+fn annotation_f64(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<f64>> {
+    let Some(value) = annotations.remove(name) else {
         return Ok(None);
     };
     let value = match value {
-        RequestValueIr::UInt64(value) => u32::try_from(*value).ok(),
-        RequestValueIr::Int64(value) if *value > 0 => u32::try_from(*value).ok(),
+        RequestValueIr::Float64(value) if value.is_finite() => Some(value),
+        RequestValueIr::Int64(value) => Some(value as f64),
+        RequestValueIr::UInt64(value) => Some(value as f64),
         _ => None,
     };
-    value.filter(|value| *value > 0).map(Some).ok_or_else(|| {
+    value.map(Some).ok_or_else(|| {
         invalid(
             "invalid_typed_query_annotation",
             Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a positive integer"),
+            format!("{name} must be a finite number"),
         )
     })
 }
 
-fn validate_nonnegative_annotation_u32(
-    annotations: &BTreeMap<String, RequestValueIr>,
+fn annotation_nonnegative_u32(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
     name: &str,
     path: &str,
-) -> Result<()> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(());
+) -> Result<Option<u32>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
     };
-    let valid = match value {
-        RequestValueIr::UInt64(value) => u32::try_from(*value).is_ok(),
-        RequestValueIr::Int64(value) => *value >= 0 && u32::try_from(*value).is_ok(),
-        _ => false,
+    let value = match value {
+        RequestValueIr::UInt64(value) => u32::try_from(value).ok(),
+        RequestValueIr::Int64(value) if value >= 0 => u32::try_from(value).ok(),
+        _ => None,
     };
-    if valid {
-        Ok(())
-    } else {
-        Err(invalid(
+    value.map(Some).ok_or_else(|| {
+        invalid(
             "invalid_typed_query_annotation",
             Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a non-negative integer"),
-        ))
-    }
+            format!("{name} must be a non-negative integer in the supported range"),
+        )
+    })
 }
 
-fn validate_integer_annotation(
-    annotations: &BTreeMap<String, RequestValueIr>,
+fn annotation_u32_list(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
     name: &str,
     path: &str,
-) -> Result<()> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(());
+) -> Result<Option<Vec<u32>>> {
+    let Some(value) = annotations.remove(name) else {
+        return Ok(None);
     };
-    let valid = match value {
-        RequestValueIr::Int64(_) => true,
-        RequestValueIr::UInt64(value) => *value <= i64::MAX as u64,
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(invalid(
+    let RequestValueIr::List(values) = value else {
+        return Err(invalid(
             "invalid_typed_query_annotation",
             Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be an integer"),
-        ))
-    }
-}
-
-fn validate_finite_number_annotation(
-    annotations: &BTreeMap<String, RequestValueIr>,
-    name: &str,
-    path: &str,
-) -> Result<()> {
-    let Some(value) = annotations.get(name) else {
-        return Ok(());
+            format!("{name} must be a list of non-negative integers"),
+        ));
     };
-    let valid = match value {
-        RequestValueIr::Float64(value) => value.is_finite(),
-        RequestValueIr::Int64(_) | RequestValueIr::UInt64(_) => true,
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(invalid(
-            "invalid_typed_query_annotation",
-            Some(format!("{path}.annotations.{name}")),
-            format!("{name} must be a finite number"),
-        ))
-    }
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let value = match value {
+                RequestValueIr::UInt64(value) => value,
+                RequestValueIr::Int64(value) if value >= 0 => value as u64,
+                _ => {
+                    return Err(invalid(
+                        "invalid_typed_query_annotation",
+                        Some(format!("{path}.annotations.{name}[{index}]")),
+                        format!("{name} must contain only non-negative integers"),
+                    ));
+                }
+            };
+            u32::try_from(value).map_err(|_| {
+                invalid(
+                    "invalid_typed_query_annotation",
+                    Some(format!("{path}.annotations.{name}[{index}]")),
+                    format!("{name} values must fit in an unsigned 32-bit integer"),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Some)
 }
 
 fn annotation_u32(
@@ -360,13 +390,6 @@ impl IndexContext {
                     field_name.path().unwrap_or_default(),
                     format!("{path}.contains.field.path"),
                 )?;
-                if !field.capabilities.searchable {
-                    return Err(invalid(
-                        "field_not_searchable",
-                        Some(format!("{path}.contains.field")),
-                        "query term requires a searchable field",
-                    ));
-                }
                 let item = contains.item().ok_or_else(|| {
                     invalid(
                         "missing_query_item",
@@ -374,6 +397,16 @@ impl IndexContext {
                         "query contains requires an item",
                     )
                 })?;
+                let fuzzy_on_string_attribute = item.expr_type() == api::QueryExprKind::QueryFuzzy
+                    && field.kind() == FieldKind::Keyword
+                    && field.capabilities().filterable();
+                if !field.capabilities().searchable() && !fuzzy_on_string_attribute {
+                    return Err(invalid(
+                        "field_not_searchable",
+                        Some(format!("{path}.contains.field")),
+                        "query term requires a searchable field",
+                    ));
+                }
                 let Some(term) = item.expr_as_term_query() else {
                     return self.typed_query_to_ir(expression, path, default_index);
                 };
@@ -804,13 +837,34 @@ impl IndexContext {
                 field,
                 latitude,
                 longitude,
-                ..
+                radius,
             } => {
                 if !latitude.is_finite() || !longitude.is_finite() {
                     return Err(invalid(
                         "non_finite_number",
                         Some(format!("{path}.geo_location")),
                         "geo coordinates must be finite",
+                    ));
+                }
+                if !(-90.0..=90.0).contains(latitude) {
+                    return Err(invalid(
+                        "invalid_geo_coordinate",
+                        Some(format!("{path}.geo_location.latitude")),
+                        "latitude must be between -90 and 90",
+                    ));
+                }
+                if !(-180.0..=180.0).contains(longitude) {
+                    return Err(invalid(
+                        "invalid_geo_coordinate",
+                        Some(format!("{path}.geo_location.longitude")),
+                        "longitude must be between -180 and 180",
+                    ));
+                }
+                if radius.is_empty() {
+                    return Err(invalid(
+                        "invalid_geo_radius",
+                        Some(format!("{path}.geo_location.radius")),
+                        "geo radius must not be empty",
                     ));
                 }
                 let schema_field = self.validate_query_field_reference(field, path)?;
@@ -840,6 +894,34 @@ impl IndexContext {
                         "geo coordinates must be finite",
                     ));
                 }
+                if !(-90.0..=90.0).contains(south) || !(-90.0..=90.0).contains(north) {
+                    return Err(invalid(
+                        "invalid_geo_coordinate",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "south and north must be between -90 and 90",
+                    ));
+                }
+                if !(-180.0..=180.0).contains(west) || !(-180.0..=180.0).contains(east) {
+                    return Err(invalid(
+                        "invalid_geo_coordinate",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "west and east must be between -180 and 180",
+                    ));
+                }
+                if south > north {
+                    return Err(invalid(
+                        "invalid_geo_bounding_box",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "south must not be greater than north",
+                    ));
+                }
+                if west > east {
+                    return Err(invalid(
+                        "invalid_geo_bounding_box",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "west must not be greater than east",
+                    ));
+                }
                 let schema_field = self.validate_query_field_reference(field, path)?;
                 if !matches!(schema_field.data_type(), DataTypeIr::Position) {
                     return Err(invalid(
@@ -866,6 +948,13 @@ impl IndexContext {
             | QueryExprKindIr::ONear { children, .. }
             | QueryExprKindIr::SameElement(children) => {
                 require_field_context("phrase/proximity")?;
+                if matches!(&query.kind, QueryExprKindIr::SameElement(_)) && children.len() < 2 {
+                    return Err(invalid(
+                        "invalid_query_children",
+                        Some(child_path("same_element")),
+                        "sameElement requires at least two children",
+                    ));
+                }
                 validate_proximity_children(
                     children,
                     match &query.kind {
@@ -965,23 +1054,19 @@ impl IndexContext {
                         "predicate queries require a predicate field",
                     ));
                 }
+                if features.is_empty() && range_features.is_empty() {
+                    return Err(invalid(
+                        "empty_typed_query",
+                        Some(path.to_owned()),
+                        "predicate query requires a feature or range feature",
+                    ));
+                }
                 validate_predicate_features(features, &child_path("predicate.features"))?;
                 validate_predicate_range_features(
                     range_features,
                     &child_path("predicate.range_features"),
                 )
             }
-        }
-    }
-
-    fn validate_typed_term_value(value: &RequestValueIr, path: &str) -> Result<()> {
-        match value {
-            RequestValueIr::String(value) if !value.is_empty() => Ok(()),
-            _ => Err(PortableError::unsupported(
-                "typed_query_value_not_supported",
-                Some(path.to_owned()),
-                "typed term values must be non-empty strings",
-            )),
         }
     }
 
@@ -995,6 +1080,17 @@ impl IndexContext {
             ));
         }
         Ok(())
+    }
+
+    fn validate_typed_term_value(value: &RequestValueIr, path: &str) -> Result<()> {
+        match value {
+            RequestValueIr::String(value) if !value.is_empty() => Ok(()),
+            _ => Err(PortableError::unsupported(
+                "typed_query_value_not_supported",
+                Some(path.to_owned()),
+                "typed term values must be non-empty strings",
+            )),
+        }
     }
 
     fn validate_fuzzy_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
@@ -1025,7 +1121,7 @@ impl IndexContext {
         Ok(())
     }
 
-    fn resolve_searchable_query_field(
+    pub(crate) fn resolve_searchable_query_field(
         &self,
         field: &QueryFieldRefIr,
         field_context: Option<&QueryFieldRefIr>,

@@ -140,12 +140,6 @@ fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
 }
 
 fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpressionIr> {
-    if expression.0.is_empty() {
-        return Err(Error::search(
-            crate::ErrorCode::InvalidArgument,
-            "grouping attribute must not be empty",
-        ));
-    }
     Ok(GroupingExpressionIr::Attribute(expression.0))
 }
 

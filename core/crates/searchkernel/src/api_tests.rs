@@ -1,5 +1,5 @@
 use super::*;
-use crate::{field, Analyzer, Filter, Query, Ranking, SearchBuilder, Sort, Tensor};
+use crate::{field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor};
 use searchkernel_ir::{IndexContext, OperationIr};
 use searchkernel_protocol::v2 as api;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
@@ -101,6 +101,20 @@ fn portable_value_int64<'a>(
     )
 }
 
+fn portable_value_bool<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    value: bool,
+) -> searchkernel_ir::__flatbuffers::WIPOffset<api::Value<'a>> {
+    let boolean = api::BoolValue::create(builder, &api::BoolValueArgs { value });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::BoolValue,
+            kind: Some(boolean.as_union_value()),
+        },
+    )
+}
+
 fn portable_field<'a>(
     builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
     path: &str,
@@ -145,46 +159,46 @@ fn finish_portable_typed_request<'a>(
 
 fn portable_typed_contains_request(field_name: &str) -> Vec<u8> {
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
-    let value = portable_value_string(&mut builder, "value");
-    let term = api::TermQuery::create(&mut builder, &api::TermQueryArgs { value: Some(value) });
+    let expression = portable_typed_contains_expression(&mut builder, field_name);
+    finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_typed_contains_expression<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    field_name: &str,
+) -> searchkernel_ir::__flatbuffers::WIPOffset<api::QueryExpr<'a>> {
+    let value = portable_value_string(builder, "value");
+    let term = api::TermQuery::create(builder, &api::TermQueryArgs { value: Some(value) });
     let term = api::QueryExpr::create(
-        &mut builder,
+        builder,
         &api::QueryExprArgs {
             expr_type: api::QueryExprKind::TermQuery,
             expr: Some(term.as_union_value()),
             annotations: None,
         },
     );
-    let field = portable_field(&mut builder, field_name);
+    let field = portable_field(builder, field_name);
     let contains = api::QueryContains::create(
-        &mut builder,
+        builder,
         &api::QueryContainsArgs {
             field: Some(field),
             item: Some(term),
         },
     );
     let expression = api::QueryExpr::create(
-        &mut builder,
+        builder,
         &api::QueryExprArgs {
             expr_type: api::QueryExprKind::QueryContains,
             expr: Some(contains.as_union_value()),
             annotations: None,
         },
     );
-    finish_portable_typed_request(&mut builder, expression)
+    expression
 }
 
-fn portable_weak_and_zero_request() -> Vec<u8> {
+fn portable_weak_and_request(target_hits: u32) -> Vec<u8> {
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
-    let child = api::QueryTrue::create(&mut builder, &api::QueryTrueArgs {});
-    let child = api::QueryExpr::create(
-        &mut builder,
-        &api::QueryExprArgs {
-            expr_type: api::QueryExprKind::QueryTrue,
-            expr: Some(child.as_union_value()),
-            annotations: None,
-        },
-    );
+    let child = portable_typed_contains_expression(&mut builder, "title");
     let clauses = builder.create_vector(&[child]);
     let weak_and = api::QueryWeakAnd::create(
         &mut builder,
@@ -193,7 +207,7 @@ fn portable_weak_and_zero_request() -> Vec<u8> {
         },
     );
     let key = builder.create_string("totalTargetHits");
-    let annotation_value = portable_value_int64(&mut builder, 0);
+    let annotation_value = portable_value_int64(&mut builder, i64::from(target_hits));
     let annotation = api::ValueEntry::create(
         &mut builder,
         &api::ValueEntryArgs {
@@ -211,6 +225,220 @@ fn portable_weak_and_zero_request() -> Vec<u8> {
         },
     );
     finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_fuzzy_request(max_edit_distance: u32, prefix_length: u32, prefix: bool) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let value = portable_value_string(&mut builder, "fone");
+    let max_key = builder.create_string("maxEditDistance");
+    let max_value = portable_value_int64(&mut builder, i64::from(max_edit_distance));
+    let max_annotation = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(max_key),
+            value: Some(max_value),
+        },
+    );
+    let prefix_length_key = builder.create_string("prefixLength");
+    let prefix_length_value = portable_value_int64(&mut builder, i64::from(prefix_length));
+    let prefix_length_annotation = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(prefix_length_key),
+            value: Some(prefix_length_value),
+        },
+    );
+    let prefix_key = builder.create_string("prefix");
+    let prefix_value = portable_value_bool(&mut builder, prefix);
+    let prefix_annotation = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(prefix_key),
+            value: Some(prefix_value),
+        },
+    );
+    let annotations =
+        builder.create_vector(&[max_annotation, prefix_length_annotation, prefix_annotation]);
+    let fuzzy = api::QueryFuzzy::create(&mut builder, &api::QueryFuzzyArgs { value: Some(value) });
+    let fuzzy = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryFuzzy,
+            expr: Some(fuzzy.as_union_value()),
+            annotations: Some(annotations),
+        },
+    );
+    let field = portable_field(&mut builder, "title");
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(fuzzy),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_near_request(distance: u32) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let child = portable_typed_contains_expression(&mut builder, "title");
+    let children = builder.create_vector(&[child]);
+    let near = api::QueryNear::create(
+        &mut builder,
+        &api::QueryNearArgs {
+            terms: Some(children),
+        },
+    );
+    let key = builder.create_string("distance");
+    let value = portable_value_int64(&mut builder, i64::from(distance));
+    let annotation = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key),
+            value: Some(value),
+        },
+    );
+    let annotations = builder.create_vector(&[annotation]);
+    let near = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryNear,
+            expr: Some(near.as_union_value()),
+            annotations: Some(annotations),
+        },
+    );
+    let field = portable_field(&mut builder, "title");
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(near),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_text_request(text: Option<&str>) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let text = text.map(|value| builder.create_string(value));
+    let text_query =
+        api::SearchKernelTextQuery::create(&mut builder, &api::SearchKernelTextQueryArgs { text });
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(text_query.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn portable_grouping_request(attribute: &str) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let attribute = builder.create_string(attribute);
+    let attribute = api::GroupingAttributeExpression::create(
+        &mut builder,
+        &api::GroupingAttributeExpressionArgs {
+            field: Some(attribute),
+        },
+    );
+    let expression = api::GroupingExpression::create(
+        &mut builder,
+        &api::GroupingExpressionArgs {
+            expr_type: api::GroupingExpressionKind::GroupingAttributeExpression,
+            expr: Some(attribute.as_union_value()),
+        },
+    );
+    let group = api::GroupingGroupOperation::create(
+        &mut builder,
+        &api::GroupingGroupOperationArgs {
+            expression: Some(expression),
+        },
+    );
+    let group = api::GroupingOperation::create(
+        &mut builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingGroupOperation,
+            operation: Some(group.as_union_value()),
+        },
+    );
+    let each = api::GroupingEachOperation::create(
+        &mut builder,
+        &api::GroupingEachOperationArgs {
+            operations: None,
+            label: None,
+        },
+    );
+    let each = api::GroupingOperation::create(
+        &mut builder,
+        &api::GroupingOperationArgs {
+            operation_type: api::GroupingOperationKind::GroupingEachOperation,
+            operation: Some(each.as_union_value()),
+        },
+    );
+    let operations = builder.create_vector(&[group, each]);
+    let root = api::GroupingAllOperation::create(
+        &mut builder,
+        &api::GroupingAllOperationArgs {
+            operations: Some(operations),
+            label: None,
+        },
+    );
+    let structured = api::StructuredGroupingSource::create(
+        &mut builder,
+        &api::StructuredGroupingSourceArgs { root: Some(root) },
+    );
+    let grouping = api::GroupingRequest::create(
+        &mut builder,
+        &api::GroupingRequestArgs {
+            source_type: api::GroupingSourceKind::StructuredGroupingSource,
+            source: Some(structured.as_union_value()),
+            continuations: None,
+        },
+    );
+    let grouping = builder.create_vector(&[grouping]);
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            grouping: Some(grouping),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
 }
 
 fn portable_geo_nan_request() -> Vec<u8> {
@@ -591,7 +819,7 @@ fn public_rust_typed_query_errors_match_independent_portable_requests() {
         (
             "weak_and_zero",
             Query::weak_and([Query::term("title", "value")], 0),
-            portable_weak_and_zero_request(),
+            portable_weak_and_request(0),
         ),
         (
             "geo_nan",
@@ -773,6 +1001,156 @@ fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn public_rust_typed_query_values_survive_canonical_normalization() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+
+    let cases = [
+        (
+            Query::weak_and([Query::term("title", "value")], 37),
+            portable_weak_and_request(37),
+        ),
+        (
+            Query::Fuzzy {
+                field: "title".to_owned(),
+                value: "fone".into(),
+                max_edit_distance: 4,
+                prefix_length: 3,
+                prefix: true,
+            },
+            portable_fuzzy_request(4, 3, true),
+        ),
+        (
+            Query::Near {
+                field: "title".to_owned(),
+                children: vec![Query::term("title", "value")],
+                distance: 7,
+            },
+            portable_near_request(7),
+        ),
+    ];
+
+    for (query, bytes) in cases {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording.clone());
+        assert!(index
+            .search("typed")
+            .typed_query(query)
+            .execute::<serde_json::Value>()
+            .is_err());
+        let OperationIr::Search(rust_request) = recording.last_call().unwrap() else {
+            panic!("typed query should reach the recording backend");
+        };
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let portable_request = context.search_to_ir(request).unwrap();
+        assert_eq!(rust_request, portable_request);
+
+        let searchkernel_ir::QueryIr::Typed(query) = rust_request.query() else {
+            panic!("expected a typed query");
+        };
+        match &query.kind {
+            searchkernel_ir::QueryExprKindIr::WeakAnd { target_hits, .. } => {
+                assert_eq!(*target_hits, 37)
+            }
+            searchkernel_ir::QueryExprKindIr::Contains { item, .. } => match &item.kind {
+                searchkernel_ir::QueryExprKindIr::Fuzzy {
+                    max_edit_distance,
+                    prefix_length,
+                    prefix,
+                    ..
+                } => assert_eq!((*max_edit_distance, *prefix_length, *prefix), (4, 3, true)),
+                searchkernel_ir::QueryExprKindIr::Near { distance, .. } => {
+                    assert_eq!(*distance, 7)
+                }
+                other => panic!("unexpected contained query kind: {other:?}"),
+            },
+            other => panic!("unexpected typed query kind: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+
+    for text in ["", "   "] {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording);
+        let rust_error = index
+            .search(text)
+            .execute::<serde_json::Value>()
+            .unwrap_err();
+        let bytes = portable_text_request(Some(text));
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let portable_error = context.search_to_ir(request).unwrap_err();
+        assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
+        assert_eq!(
+            portable_error.code,
+            searchkernel_ir::ErrorCode::InvalidArgument
+        );
+        assert_eq!(rust_error.details()[0].code, portable_error.details[0].code);
+        assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
+    }
+
+    let bytes = portable_text_request(None);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let missing_text_error = context.search_to_ir(request).unwrap_err();
+    assert_eq!(
+        missing_text_error.code,
+        searchkernel_ir::ErrorCode::InvalidArgument
+    );
+
+    let bytes = portable_match_all_request(false);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let match_all = context.search_to_ir(request).unwrap();
+    assert!(matches!(
+        match_all.query(),
+        searchkernel_ir::QueryIr::MatchAll
+    ));
+}
+
+#[test]
+fn structured_grouping_validation_is_shared_between_ingresses() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+    let grouping = || GroupingPlan::new().level(GroupingPlan::by("brand"));
+
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition.clone(), recording.clone());
+    assert!(index
+        .browse()
+        .grouping(grouping())
+        .execute::<serde_json::Value>()
+        .is_err());
+    let OperationIr::Search(rust_request) = recording.last_call().unwrap() else {
+        panic!("valid grouping should reach the recording backend");
+    };
+    let bytes = portable_grouping_request("brand");
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_request = context.search_to_ir(request).unwrap();
+    assert_eq!(rust_request, portable_request);
+
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition.clone(), recording);
+    let rust_error = index
+        .browse()
+        .grouping(GroupingPlan::new().level(GroupingPlan::by("")))
+        .execute::<serde_json::Value>()
+        .unwrap_err();
+    let bytes = portable_grouping_request("");
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_error = context.search_to_ir(request).unwrap_err();
+    assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
+    assert_eq!(
+        portable_error.code,
+        searchkernel_ir::ErrorCode::InvalidArgument
+    );
+    assert_eq!(rust_error.details()[0].code, portable_error.details[0].code);
+    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
 }
 
 #[test]

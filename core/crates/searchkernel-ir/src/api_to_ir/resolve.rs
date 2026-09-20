@@ -8,13 +8,13 @@ use crate::filter_expression::{bind_parsed_filter, FilterBindings};
 use crate::model::{
     AnalyzeRequestIr, AnalyzerIr, DeleteRequestIr, DocumentId, DocumentIr, FieldCardinality,
     FieldKind, FieldName, FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr,
-    GroupingAllIr, GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
-    HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr,
-    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr, QueryExprKindIr,
-    QueryInputIr, QueryIr, QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr,
-    SearchFieldIr, SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr,
-    TypoPolicy, UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpdateTargetIr,
-    UpsertRequestIr,
+    GroupingAllIr, GroupingExpressionIr, GroupingFilterIr, GroupingOperationIr, GroupingOutputIr,
+    GroupingRequestIr, HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement,
+    PatchOperationIr, PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr,
+    QueryExprKindIr, QueryInputIr, QueryIr, QueryModelIr, RankingRequestIr, RequestValueIr,
+    ScalarValueIr, SearchFieldIr, SearchFieldWeight, SearchRequestIr, SortDirection, SortIr,
+    SortTargetIr, TypoPolicy, UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr,
+    UpdateTargetIr, UpsertRequestIr,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -417,7 +417,11 @@ pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<Sear
 
 fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<QueryIr> {
     match &input.query {
-        QuerySourceInput::Text(text) if text.trim().is_empty() => Ok(QueryIr::MatchAll),
+        QuerySourceInput::Text(text) if text.trim().is_empty() => Err(invalid(
+            "invalid_query",
+            Some("query"),
+            "text query must not be empty or whitespace-only; use MatchAllQuery for browse searches",
+        )),
         QuerySourceInput::Text(text) => Ok(QueryIr::Text(text.clone())),
         QuerySourceInput::MatchAll => Ok(QueryIr::MatchAll),
         QuerySourceInput::Typed(query) => {
@@ -512,14 +516,12 @@ fn resolve_search_fields_for_query(
     input: &SearchInput,
 ) -> Result<Vec<SearchFieldIr>> {
     match (&input.query, input.search_fields.as_deref()) {
-        (QuerySourceInput::Text(text), None) if !text.trim().is_empty() => {
+        (QuerySourceInput::Text(_), None) => {
             Ok(context.definition().default_search_fields().to_vec())
         }
-        (QuerySourceInput::Text(text), None) if text.trim().is_empty() => Ok(Vec::new()),
         (QuerySourceInput::Text(_), Some(fields)) => resolve_search_fields(context, fields),
         (QuerySourceInput::MatchAll, None) | (QuerySourceInput::Yql { .. }, None) => Ok(Vec::new()),
         (QuerySourceInput::Typed(_), None) => Ok(Vec::new()),
-        (QuerySourceInput::Text(_), None) => Ok(Vec::new()),
         (_, Some(_)) => Err(invalid(
             "search_fields_not_supported",
             Some("search_fields"),
@@ -571,7 +573,10 @@ fn resolve_grouping(input: &[GroupingInput]) -> Result<Vec<GroupingRequestIr>> {
         .enumerate()
         .map(|(index, value)| match value {
             GroupingInput::Facet(value) => resolve_facet(value),
-            GroupingInput::Structured(value) => Ok(value.clone()),
+            GroupingInput::Structured(value) => {
+                validate_grouping_request(value, &format!("grouping[{index}]"))?;
+                Ok(value.clone())
+            }
             GroupingInput::Raw(_) => Err(PortableError::unsupported(
                 "raw_grouping_not_supported",
                 Some(format!("grouping[{index}].source")),
@@ -579,6 +584,140 @@ fn resolve_grouping(input: &[GroupingInput]) -> Result<Vec<GroupingRequestIr>> {
             )),
         })
         .collect()
+}
+
+fn validate_grouping_request(value: &GroupingRequestIr, path: &str) -> Result<()> {
+    validate_grouping_all(&value.root, &format!("{path}.root"))
+}
+
+fn validate_grouping_all(value: &GroupingAllIr, path: &str) -> Result<()> {
+    for (index, operation) in value.operations.iter().enumerate() {
+        let operation_path = format!("{path}.operations[{index}]");
+        match operation {
+            GroupingOperationIr::All(value) | GroupingOperationIr::Each(value) => {
+                validate_grouping_all(value, &operation_path)?;
+            }
+            GroupingOperationIr::Group(expression) | GroupingOperationIr::Where(expression) => {
+                validate_grouping_expression(expression, &format!("{operation_path}.expression"))?;
+            }
+            GroupingOperationIr::Output(outputs) => {
+                for (index, output) in outputs.iter().enumerate() {
+                    validate_grouping_expression(
+                        &output.expression,
+                        &format!("{operation_path}.outputs[{index}].expression"),
+                    )?;
+                }
+            }
+            GroupingOperationIr::Order(expressions) => {
+                for (index, expression) in expressions.iter().enumerate() {
+                    validate_grouping_expression(
+                        expression,
+                        &format!("{operation_path}.expressions[{index}]"),
+                    )?;
+                }
+            }
+            GroupingOperationIr::Alias { name, expression } => {
+                validate_non_empty_grouping_name(name, &format!("{operation_path}.name"), "alias")?;
+                validate_grouping_expression(expression, &format!("{operation_path}.expression"))?;
+            }
+            GroupingOperationIr::Filter(filter) | GroupingOperationIr::Keep(filter) => {
+                validate_grouping_filter(filter, &operation_path)?;
+            }
+            GroupingOperationIr::Max(_) | GroupingOperationIr::Precision(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_grouping_expression(value: &GroupingExpressionIr, path: &str) -> Result<()> {
+    match value {
+        GroupingExpressionIr::Attribute(name) => {
+            validate_non_empty_grouping_name(name, path, "attribute")
+        }
+        GroupingExpressionIr::Literal(_) | GroupingExpressionIr::Bucket(_) => Ok(()),
+        GroupingExpressionIr::Function { name, arguments } => {
+            validate_non_empty_grouping_name(name, &format!("{path}.name"), "function")?;
+            for (index, argument) in arguments.iter().enumerate() {
+                validate_grouping_expression(argument, &format!("{path}.arguments[{index}]"))?;
+            }
+            Ok(())
+        }
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))
+        }
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            validate_grouping_aggregation(aggregation, &format!("{path}.aggregation"))
+        }
+        GroupingExpressionIr::Binary { left, right, .. } => {
+            validate_grouping_expression(left, &format!("{path}.left"))?;
+            validate_grouping_expression(right, &format!("{path}.right"))
+        }
+        GroupingExpressionIr::Alias(name) => validate_non_empty_grouping_name(name, path, "alias"),
+        GroupingExpressionIr::Member { base, member } => {
+            validate_grouping_expression(base, &format!("{path}.base"))?;
+            validate_non_empty_grouping_name(member, &format!("{path}.member"), "member")
+        }
+        GroupingExpressionIr::MapLookup { base, key } => {
+            validate_grouping_expression(base, &format!("{path}.base"))?;
+            validate_grouping_expression(key, &format!("{path}.key"))
+        }
+    }
+}
+
+fn validate_grouping_aggregation(value: &GroupingAggregationIr, path: &str) -> Result<()> {
+    match value {
+        GroupingAggregationIr::Count | GroupingAggregationIr::Summary(_) => Ok(()),
+        GroupingAggregationIr::Sum(expression)
+        | GroupingAggregationIr::Avg(expression)
+        | GroupingAggregationIr::Min(expression)
+        | GroupingAggregationIr::Max(expression)
+        | GroupingAggregationIr::Xor(expression)
+        | GroupingAggregationIr::StdDev(expression) => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))
+        }
+        GroupingAggregationIr::Quantiles { expression, .. } => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))
+        }
+    }
+}
+
+fn validate_grouping_filter(value: &GroupingFilterIr, path: &str) -> Result<()> {
+    match value {
+        GroupingFilterIr::And(values) | GroupingFilterIr::Or(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_grouping_filter(value, &format!("{path}.filters[{index}]"))?;
+            }
+            Ok(())
+        }
+        GroupingFilterIr::Not(value) => validate_grouping_filter(value, &format!("{path}.filter")),
+        GroupingFilterIr::Regex { expression, .. } => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))
+        }
+        GroupingFilterIr::Range {
+            expression,
+            lower,
+            upper,
+            ..
+        } => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))?;
+            validate_grouping_expression(lower, &format!("{path}.lower"))?;
+            validate_grouping_expression(upper, &format!("{path}.upper"))
+        }
+        GroupingFilterIr::IsTrue(expression) => {
+            validate_grouping_expression(expression, &format!("{path}.expression"))
+        }
+    }
+}
+
+fn validate_non_empty_grouping_name(value: &str, path: &str, kind: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(invalid(
+            "invalid_grouping",
+            Some(path),
+            format!("grouping {kind} must not be empty"),
+        ));
+    }
+    Ok(())
 }
 
 fn resolve_query_model(input: QueryModelInput, language: Option<LanguageHint>) -> QueryModelIr {
@@ -1711,7 +1850,8 @@ fn resolve_projection_inner(
                         && (allow_tensor
                             || !matches!(
                                 field.data_type(),
-                                crate::model::DataTypeIr::Tensor { .. }
+                                crate::model::DataTypeIr::Position
+                                    | crate::model::DataTypeIr::Tensor { .. }
                             ))
                 })
                 .map(|field| field.name().clone()),

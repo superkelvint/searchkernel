@@ -91,7 +91,11 @@ impl IndexContext {
                 }
                 self.query_expr_to_ir(expression, "query_expr")
             }
-            None if text.trim().is_empty() => Ok(QueryIr::MatchAll),
+            None if text.trim().is_empty() => Err(invalid(
+                "invalid_query",
+                Some("query"),
+                "text query must not be empty or whitespace-only; use MatchAllQuery for browse searches",
+            )),
             None => Ok(QueryIr::Text(text.to_owned())),
         }
     }
@@ -108,22 +112,28 @@ impl IndexContext {
             )
         })?;
         match source.source_type() {
-            api::QuerySourceKind::SearchKernelTextQuery => self
-                .query_to_ir(
-                    source
-                        .source_as_search_kernel_text_query()
-                        .and_then(|query| query.text())
-                        .unwrap_or_default(),
-                    None,
-                )
-                .map(|query| match query {
-                    QueryIr::MatchAll => {
-                        crate::api_to_ir::resolve::QuerySourceInput::Text(String::new())
-                    }
-                    QueryIr::Text(value) => {
-                        crate::api_to_ir::resolve::QuerySourceInput::Text(value)
-                    }
-                    _ => unreachable!("text query conversion returned a non-text query"),
+            api::QuerySourceKind::SearchKernelTextQuery => source
+                .source_as_search_kernel_text_query()
+                .ok_or_else(|| {
+                    invalid(
+                        "missing_query",
+                        Some("query"),
+                        "text query payload is missing",
+                    )
+                })
+                .and_then(|query| {
+                    query
+                        .text()
+                        .map(|text| {
+                            crate::api_to_ir::resolve::QuerySourceInput::Text(text.to_owned())
+                        })
+                        .ok_or_else(|| {
+                            invalid(
+                                "missing_query",
+                                Some("query.text"),
+                                "text query requires text",
+                            )
+                        })
                 }),
             api::QuerySourceKind::TypedQuery => {
                 let query = source

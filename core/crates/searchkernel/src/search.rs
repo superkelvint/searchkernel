@@ -493,12 +493,6 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         })
         .collect();
     let query = match &request.query_source {
-        QuerySource::Text(text) if text.trim().is_empty() => {
-            return Err(crate::Error::search(
-                crate::ErrorCode::InvalidArgument,
-                "search text must not be empty or whitespace-only; use browse() for match-all searches",
-            ));
-        }
         QuerySource::Text(text) => searchkernel_ir::QuerySourceInput::Text(text.clone()),
         QuerySource::MatchAll => searchkernel_ir::QuerySourceInput::MatchAll,
         QuerySource::Typed(query) => {

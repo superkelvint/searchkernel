@@ -1,9 +1,10 @@
 use searchkernel_vespa_engine::{
-    ArithmeticOperator, AttributeDocument, AttributeUpdate, ConfigCompiler, Document,
+    ArithmeticOperator, ArrayValue, AttributeDocument, AttributeUpdate, ConfigCompiler, Document,
     DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue, GroupingAggregation,
     GroupingExpression, GroupingFilter, GroupingLevel, GroupingOrder, GroupingPlan, InQueryValue,
     LinguisticsOptions, NearestNeighborOptions, Query, QueryInput, RankProfile, ScalarValue,
-    Schema, SearchRequest, SortField, SummaryRequest, TensorValue, Value,
+    Schema, SearchRequest, SortField, StructField, StructFieldType, SummaryRequest, TensorValue,
+    Value,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
