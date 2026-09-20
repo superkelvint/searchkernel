@@ -390,6 +390,10 @@ Browser transport is a separate edge concern. The dashboard may use a small HTTP
 
 ## Capability stages
 
+Use the [change recipes](change-recipes.md) when implementing a capability.
+They turn these stages into concrete propagation paths and identify the tests
+and boundary checks required at each step.
+
 To keep contract expansion manageable, support is tracked in four independent stages:
 
 ```text
