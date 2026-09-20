@@ -19,7 +19,7 @@ Search Kernel development commands
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
-  ./dev worktree create <task-name> Create a sibling task worktree and agent branch
+  ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Diagnose local build and verification prerequisites
 
 Environment overrides used by the underlying tools, including FLATC_PATH,
@@ -93,7 +93,7 @@ verify_target() {
 
 worktree_create() {
     local task_name=${1:-}
-    local worktree_root repo_name branch path
+    local worktree_root repo_name branch path common_git_dir
 
     if [[ $# -ne 1 || ! "$task_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
         echo 'usage: ./dev worktree create <task-name>' >&2
@@ -101,8 +101,13 @@ worktree_create() {
         return 2
     fi
 
-    repo_name=$(basename "$ROOT")
-    worktree_root=${DEV_WORKTREE_ROOT:-$(dirname "$ROOT")}
+    common_git_dir=$(git rev-parse --git-common-dir)
+    if [[ "$common_git_dir" != /* ]]; then
+        common_git_dir="$ROOT/$common_git_dir"
+    fi
+    common_git_dir=$(cd -- "$(dirname "$common_git_dir")" && pwd)
+    repo_name=$(basename "$common_git_dir")
+    worktree_root=${DEV_WORKTREE_ROOT:-/tmp}
     branch="agent/$task_name"
     path="$worktree_root/$repo_name-$task_name"
 

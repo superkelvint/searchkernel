@@ -124,7 +124,7 @@ Use `./dev --help` for the supported command list. Keep direct underlying
 scripts for focused debugging or when a contract explicitly names one.
 
 For isolated implementation work, use `./dev worktree create <task-name>`.
-It creates a sibling worktree at `../<repository>-<task-name>` on the
+It creates a temporary worktree at `/tmp/<repository>-<task-name>` on the
 `agent/<task-name>` branch from the current `HEAD`; it does not copy
 uncommitted changes from the current checkout.
 
