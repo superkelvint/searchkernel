@@ -11,6 +11,7 @@ import tempfile
 import time
 import weakref
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from SearchKernel.V2.DataTypeKind import DataTypeKind
 from SearchKernel.V2.DeleteRequest import DeleteRequestT
 from SearchKernel.V2.DescribeRequest import DescribeRequestT
 from SearchKernel.V2.Document import DocumentT
+from SearchKernel.V2.ErrorCode import ErrorCode
 from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
 from SearchKernel.V2.Float64Value import Float64ValueT
@@ -39,6 +41,9 @@ from SearchKernel.V2.MatchingMode import MatchingMode
 from SearchKernel.V2.OptionalBool import OptionalBoolT
 from SearchKernel.V2.PatchRequest import PatchRequestT
 from SearchKernel.V2.StringValue import StringValueT
+from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT
+from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind
+from SearchKernel.V2.TensorValue import TensorValueT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
 from SearchKernel.V2.UpsertRequest import UpsertRequestT
 from SearchKernel.V2.UpdateRequest import UpdateRequestT
@@ -48,6 +53,28 @@ from SearchKernel.V2.ValueKind import ValueKind
 from SearchKernel.V2.ValueList import ValueListT
 from SearchKernel.V2.ValueObject import ValueObjectT
 from SearchKernel.V2.InspectQueryRequest import InspectQueryRequestT
+
+
+@dataclass(frozen=True)
+class Tensor:
+    """A portable dense tensor value for documents and query inputs."""
+
+    type_spec: str
+    values: tuple[float, ...]
+
+    @classmethod
+    def dense(cls, type_spec: str, values: Sequence[float]) -> "Tensor":
+        if not isinstance(type_spec, str) or not type_spec.strip():
+            raise ValueError("tensor type spec must be a non-empty string")
+        converted = []
+        for item in values:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise TypeError("dense tensor cells must be numeric")
+            cell = float(item)
+            if not math.isfinite(cell):
+                raise ValueError("tensor cells must be finite")
+            converted.append(cell)
+        return cls(type_spec=type_spec, values=tuple(converted))
 
 
 def value(item: Any) -> ValueT:
@@ -68,10 +95,19 @@ def value(item: Any) -> ValueT:
         return ValueT(kindType=ValueKind.StringValue, kind=StringValueT(value=item))
     if isinstance(item, bytes):
         return ValueT(kindType=ValueKind.BytesValue, kind=BytesValueT(value=item))
+    if isinstance(item, Tensor):
+        return ValueT(
+            kindType=ValueKind.TensorValue,
+            kind=TensorValueT(
+                typeSpec=item.type_spec,
+                payloadType=TensorPayloadKind.DenseTensorValues,
+                payload=DenseTensorValuesT(values=list(item.values)),
+            ),
+        )
     if isinstance(item, Mapping):
         return ValueT(
             kindType=ValueKind.ValueObject,
-            kind=ValueObjectT(fields=[ValueEntryT(key=str(k), value=value(v)) for k, v in item.items()]),
+            kind=ValueObjectT(fields=[ValueEntryT(key=str(k), value=value(v)) for k, v in sorted(item.items())]),
         )
     if isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
         return ValueT(kindType=ValueKind.ValueList, kind=ValueListT(values=[value(v) for v in item]))
@@ -83,7 +119,7 @@ def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
         raise ValueError("document id must be a non-empty string")
     return DocumentT(
         id=identifier,
-        fields=[ValueEntryT(key=str(name), value=value(item)) for name, item in fields.items()],
+        fields=[ValueEntryT(key=str(name), value=value(item)) for name, item in sorted(fields.items())],
     )
 
 
@@ -108,6 +144,16 @@ def _python_value(item: ValueT | None) -> Any:
             for entry in (payload.fields if payload else [])
             if entry is not None
         }
+    if item.kindType == ValueKind.TensorValue:
+        payload = item.kind
+        dense = getattr(payload, "payload", None) if payload else None
+        cells = getattr(dense, "values", None) if dense else None
+        return {
+            "$searchkernel_tensor": {
+                "type_spec": getattr(payload, "typeSpec", None) if payload else None,
+                "dense": list(cells or []),
+            }
+        }
     return getattr(item.kind, "value", None)
 
 
@@ -122,12 +168,19 @@ class ClientError(RuntimeError):
     @property
     def code(self) -> str:
         names = {
-            0: "unspecified", 1: "invalid_argument", 2: "not_found",
-            3: "already_exists", 4: "failed_precondition", 5: "conflict",
-            6: "unsupported", 7: "resource_exhausted", 8: "internal",
-            9: "unavailable", 10: "deadline_exceeded",
+            ErrorCode.Unspecified: "unspecified",
+            ErrorCode.InvalidArgument: "invalid_argument",
+            ErrorCode.NotFound: "not_found",
+            ErrorCode.AlreadyExists: "already_exists",
+            ErrorCode.FailedPrecondition: "failed_precondition",
+            ErrorCode.Conflict: "conflict",
+            ErrorCode.Unsupported: "unsupported",
+            ErrorCode.ResourceExhausted: "resource_exhausted",
+            ErrorCode.Internal: "internal",
+            ErrorCode.Unavailable: "unavailable",
+            ErrorCode.DeadlineExceeded: "deadline_exceeded",
         }
-        return names.get(getattr(self.error, "code", 8), "internal")
+        return names.get(getattr(self.error, "code", ErrorCode.Internal), "internal")
 
     @property
     def message(self) -> str:
@@ -379,8 +432,11 @@ class Index:
         path: str | os.PathLike[str],
         *,
         fields: Mapping[str, Any] | IndexDefinitionT,
+        rank_profiles: Sequence[Any] | None = None,
     ) -> "Index":
-        owner = _ManagedLocalHost(Path(path), pack_object(_index_definition(fields)))
+        owner = _ManagedLocalHost(
+            Path(path), pack_object(_index_definition(fields, rank_profiles))
+        )
         return cls(Client(GrpcTransport(owner.endpoint)), owner, ergonomic=True)
 
     @classmethod
@@ -490,8 +546,13 @@ class Index:
         self.close()
 
 
-def _index_definition(value_: Mapping[str, Any] | IndexDefinitionT) -> IndexDefinitionT:
+def _index_definition(
+    value_: Mapping[str, Any] | IndexDefinitionT,
+    rank_profiles: Sequence[Any] | None = None,
+) -> IndexDefinitionT:
     if isinstance(value_, IndexDefinitionT):
+        if rank_profiles is not None:
+            raise TypeError("rank_profiles cannot accompany an IndexDefinitionT")
         return value_
     fields = []
     for name, specification in value_.items():
@@ -501,7 +562,11 @@ def _index_definition(value_: Mapping[str, Any] | IndexDefinitionT) -> IndexDefi
             fields.append(specification)
         else:
             raise TypeError(f"unsupported field specification for {name!r}")
-    return IndexDefinitionT(name="index", fields=fields)
+    profiles = [
+        profile.definition() if hasattr(profile, "definition") else profile
+        for profile in (rank_profiles or [])
+    ]
+    return IndexDefinitionT(name="index", fields=fields, rankProfiles=profiles or None)
 
 
-__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "value"]
+__all__ = ["Client", "ClientError", "Index", "SearchKernelError", "Tensor", "value"]

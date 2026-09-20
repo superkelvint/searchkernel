@@ -11,6 +11,11 @@ from SearchKernel.V2.CountAggregation import CountAggregationT
 from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.DataType import DataTypeT
 from SearchKernel.V2.DataTypeKind import DataTypeKind
+from SearchKernel.V2.TensorDataType import TensorDataTypeT
+from SearchKernel.V2.RankPhaseDefinition import RankPhaseDefinitionT
+from SearchKernel.V2.RankProfileDefinition import RankProfileDefinitionT
+from SearchKernel.V2.RankProfileInput import RankProfileInputT
+from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator
 from SearchKernel.V2.FilterClause import FilterClauseT
 from SearchKernel.V2.FilterRequest import FilterRequestT
 from SearchKernel.V2.GroupingAggregationExpression import GroupingAggregationExpressionT
@@ -55,6 +60,7 @@ from SearchKernel.V2.QueryContains import QueryContainsT
 from SearchKernel.V2.QueryExpr import QueryExprT
 from SearchKernel.V2.QueryExprKind import QueryExprKind
 from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
+from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
 from SearchKernel.V2.QueryInput import QueryInputT
 from SearchKernel.V2.QueryInputKind import QueryInputKind
 from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT
@@ -83,9 +89,18 @@ from SearchKernel.V2.UnsetField import UnsetFieldT
 from SearchKernel.V2.PatchOperation import PatchOperationT
 from SearchKernel.V2.PatchOperationKind import PatchOperationKind
 from SearchKernel.V2.PatchRequest import PatchRequestT
+from SearchKernel.V2.ArithmeticUpdate import ArithmeticUpdateT
+from SearchKernel.V2.ArithmeticUpdateOperator import ArithmeticUpdateOperator
+from SearchKernel.V2.AssignUpdate import AssignUpdateT
+from SearchKernel.V2.ClearUpdate import ClearUpdateT
+from SearchKernel.V2.FieldPath import FieldPathT
+from SearchKernel.V2.OptionalBool import OptionalBoolT
+from SearchKernel.V2.UpdateOperation import UpdateOperationT
+from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
+from SearchKernel.V2.UpdateRequest import UpdateRequestT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
 
-from .client import _python_value, value
+from .client import Tensor, _python_value, value
 
 
 class _FieldSpec:
@@ -98,7 +113,12 @@ class _FieldSpec:
 
     def definition(self, name: str) -> FieldDefinitionT:
         primitive = {
-            "string": 1, "text": 1, "keyword": 1, "int64": 5, "float64": 7, "bool": 2
+            "string": PrimitiveDataTypeKind.String,
+            "text": PrimitiveDataTypeKind.String,
+            "keyword": PrimitiveDataTypeKind.String,
+            "int64": PrimitiveDataTypeKind.Int64,
+            "float64": PrimitiveDataTypeKind.Float64,
+            "bool": PrimitiveDataTypeKind.Bool,
         }[self.kind]
         optional = lambda setting: None if setting is None else __import__(
             "SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]
@@ -113,9 +133,13 @@ class _FieldSpec:
             facetable=optional(self.facetable),
             matching=(
                 __import__("SearchKernel.V2.MatchingConfig", fromlist=["MatchingConfigT"]).MatchingConfigT(
-                    mode={"unspecified": 0, "text": 1, "exact": 3}.get(self.matching, 0)
+                    mode={
+                        "unspecified": MatchingMode.Unspecified,
+                        "text": MatchingMode.Text,
+                        "exact": MatchingMode.Exact,
+                    }.get(self.matching, MatchingMode.Unspecified)
                 )
-                if primitive == 1
+                if primitive == PrimitiveDataTypeKind.String
                 else None
             ),
         )
@@ -141,6 +165,81 @@ class Boolean(_FieldSpec):
     kind = "bool"
 
 
+class TensorField(_FieldSpec):
+    kind = "tensor"
+
+    def __init__(self, type_spec: str, **kwargs):
+        super().__init__(**kwargs)
+        self.type_spec = type_spec
+
+    def definition(self, name: str) -> FieldDefinitionT:
+        if not isinstance(self.type_spec, str) or not self.type_spec.strip():
+            raise ValueError("tensor type spec must be a non-empty string")
+        optional = lambda setting: None if setting is None else __import__(
+            "SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]
+        ).OptionalBoolT(value=setting)
+        return FieldDefinitionT(
+            name=name,
+            dataType=DataTypeT(
+                kindType=DataTypeKind.TensorDataType,
+                kind=TensorDataTypeT(typeSpec=self.type_spec),
+            ),
+            stored=optional(self.stored),
+            searchable=optional(self.searchable),
+            filterable=optional(self.filterable),
+            sortable=optional(self.sortable),
+            facetable=optional(self.facetable),
+        )
+
+
+class RankProfile:
+    """Small ergonomic builder for the rank-profile fields used by the client."""
+
+    def __init__(self, name: str):
+        if not name:
+            raise ValueError("rank profile name must not be empty")
+        self.name = name
+        self._first_phase = None
+        self._match_features = []
+        self._query_inputs = {}
+
+    def first_phase(self, expression: str) -> "RankProfile":
+        self._first_phase = expression
+        return self
+
+    def match_feature(self, expression: str) -> "RankProfile":
+        self._match_features.append(expression)
+        return self
+
+    def query_input(self, name: str, type_spec: str) -> "RankProfile":
+        self._query_inputs[name] = type_spec
+        return self
+
+    def definition(self) -> RankProfileDefinitionT:
+        inputs = [
+            RankProfileInputT(
+                name=name,
+                dataType=DataTypeT(
+                    kindType=DataTypeKind.TensorDataType,
+                    kind=TensorDataTypeT(typeSpec=type_spec),
+                ),
+                defaultValue=value(Tensor.dense(type_spec, [])),
+            )
+            for name, type_spec in sorted(self._query_inputs.items())
+        ]
+        first_phase = (
+            RankPhaseDefinitionT(expression=self._first_phase)
+            if self._first_phase is not None
+            else None
+        )
+        return RankProfileDefinitionT(
+            name=self.name,
+            inputs=inputs or None,
+            firstPhase=first_phase,
+            matchFeatures=list(self._match_features) or None,
+        )
+
+
 def _expr_union(tag: int, payload: Any) -> GroupingExpressionT:
     return GroupingExpressionT(exprType=tag, expr=payload)
 
@@ -162,10 +261,10 @@ class _GroupingExpr:
     def __neg__(self):
         return _GroupingExpr(_expr_union(GroupingExpressionKind.GroupingUnaryExpression, GroupingUnaryExpressionT(op=GroupingUnaryOperator.Negative, expression=self.model)))
 
-    def __add__(self, other): return _binary(1, self, other)
-    def __sub__(self, other): return _binary(2, self, other)
-    def __mul__(self, other): return _binary(3, self, other)
-    def __truediv__(self, other): return _binary(4, self, other)
+    def __add__(self, other): return _binary(GroupingBinaryOperator.Add, self, other)
+    def __sub__(self, other): return _binary(GroupingBinaryOperator.Subtract, self, other)
+    def __mul__(self, other): return _binary(GroupingBinaryOperator.Multiply, self, other)
+    def __truediv__(self, other): return _binary(GroupingBinaryOperator.Divide, self, other)
 
 
 @dataclass(frozen=True)
@@ -263,6 +362,21 @@ class _QueryNamespace:
         contains = QueryExprT(exprType=QueryExprKind.QueryContains, expr=QueryContainsT(field=QueryFieldRefT(path=field), item=term))
         return QuerySourceT(sourceType=QuerySourceKind.TypedQuery, source=__import__("SearchKernel.V2.TypedQuery", fromlist=["TypedQueryT"]).TypedQueryT(query=contains))
 
+    def nearest_neighbor(self, document_field: str, query_tensor: str) -> QuerySourceT:
+        nearest = QueryExprT(
+            exprType=QueryExprKind.QueryNearestNeighbor,
+            expr=QueryNearestNeighborT(
+                documentField=QueryFieldRefT(path=document_field),
+                queryTensor=query_tensor,
+            ),
+        )
+        return QuerySourceT(
+            sourceType=QuerySourceKind.TypedQuery,
+            source=__import__("SearchKernel.V2.TypedQuery", fromlist=["TypedQueryT"]).TypedQueryT(
+                query=nearest
+            ),
+        )
+
 
 q = _QueryNamespace()
 
@@ -287,9 +401,14 @@ class Group:
     def keep(self, expression): self._keep = expression; return self
     def filter(self, expression): self._filter = expression; return self
 
-    def _operations(self):
-        operations = [GroupingOperationT(operationType=GroupingOperationKind.GroupingGroupOperation, operation=GroupingGroupOperationT(expression=self.expression.model))]
-        operations += [GroupingOperationT(operationType=GroupingOperationKind.GroupingAliasOperation, operation=GroupingAliasOperationT(name=n, expression=e.model)) for n, e in self._aliases]
+    def _body_operations(self):
+        operations = [
+            GroupingOperationT(
+                operationType=GroupingOperationKind.GroupingAliasOperation,
+                operation=GroupingAliasOperationT(name=n, expression=e.model),
+            )
+            for n, e in self._aliases
+        ]
         if self._limit is not None:
             operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingMaxOperation, operation=GroupingMaxOperationT(valueType=GroupingMaxKind.FiniteGroupingMax, value=FiniteGroupingMaxT(value=self._limit))))
         if self._precision is not None:
@@ -303,8 +422,23 @@ class Group:
         if self._outputs:
             operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingOutputOperation, operation=GroupingOutputOperationT(outputs=[GroupingOutputT(label=o.label or None, expression=o.expression.model) for o in self._outputs])))
         for subgroup in self._subgroups:
-            operations.append(GroupingOperationT(operationType=GroupingOperationKind.GroupingEachOperation, operation=GroupingEachOperationT(operations=subgroup._operations())))
+            operations.append(GroupingOperationT(
+                operationType=GroupingOperationKind.GroupingAllOperation,
+                operation=GroupingAllOperationT(operations=subgroup._operations()),
+            ))
         return operations
+
+    def _operations(self):
+        return [
+            GroupingOperationT(
+                operationType=GroupingOperationKind.GroupingGroupOperation,
+                operation=GroupingGroupOperationT(expression=self.expression.model),
+            ),
+            GroupingOperationT(
+                operationType=GroupingOperationKind.GroupingEachOperation,
+                operation=GroupingEachOperationT(operations=self._body_operations()),
+            ),
+        ]
 
     def to_request(self):
         root = GroupingAllOperationT(operations=self._operations())
@@ -346,6 +480,21 @@ def _facet_request(field: str, limit: int, ordering: str | None):
             operation=GroupingGroupOperationT(expression=g.field(field).model),
         ),
         GroupingOperationT(operationType=GroupingOperationKind.GroupingEachOperation, operation=each),
+    ])
+    return GroupingRequestT(
+        sourceType=GroupingSourceTags.StructuredGroupingSource,
+        source=StructuredGroupingSourceT(root=root),
+    )
+
+
+def _root_aggregation_request(outputs):
+    root = GroupingAllOperationT(operations=[
+        GroupingOperationT(
+            operationType=GroupingOperationKind.GroupingOutputOperation,
+            operation=GroupingOutputOperationT(
+                outputs=[GroupingOutputT(label=o.label or None, expression=o.expression.model) for o in outputs]
+            ),
+        )
     ])
     return GroupingRequestT(
         sourceType=GroupingSourceTags.StructuredGroupingSource,
@@ -402,14 +551,14 @@ class SearchBuilder:
         for field, name, limit, _sort in self._facets:
             groups.append(_facet_request(field, limit or 10, _sort))
         if self._aggregates:
-            groups.append(Group.by(g.value(0)).output(*self._aggregates).to_request())
+            groups.append(_root_aggregation_request(self._aggregates))
         query = self.query
         if query is None: query = QuerySourceT(sourceType=QuerySourceKind.MatchAllQuery, source=MatchAllQueryT())
         elif isinstance(query, str): query = QuerySourceT(sourceType=QuerySourceKind.SearchKernelTextQuery, source=SearchKernelTextQueryT(text=query))
         inputs = [QueryInputT(name=name, inputType=QueryInputKind.LiteralQueryInput, input=LiteralQueryInputT(value=value(item))) for name, item in sorted(self._inputs.items())]
         ranking = RankingRequestT(profile=self._ranking or "default", properties=[StringEntryT(key=k, value=v) for k, v in sorted(self._rank_properties.items())]) if self._ranking is not None or self._rank_properties else None
         presentation = PresentationRequestT(fields=FieldProjectionT(fields=self._fields)) if self._fields is not None else None
-        request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in self._properties.items()])
+        request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
         results = SearchResults(self.index.client.search(request))
         for field, name, _limit, _sort in self._facets:
             if name != field and field in results.facets:
@@ -494,11 +643,65 @@ class UpdateBuilder:
         return self.index.client.update(request)
 
 
+def _value_entries(entries) -> dict[str, Any]:
+    return {
+        entry.key: _python_value(entry.value)
+        for entry in (entries or [])
+        if entry is not None and entry.key is not None
+    }
+
+
+def _feature_entries(entries) -> dict[str, Any]:
+    converted = _value_entries(entries)
+    for name, item in converted.items():
+        if isinstance(item, list) and all(
+            isinstance(cell, int) and 0 <= cell <= 255 for cell in item
+        ):
+            converted[name] = bytes(item)
+    return converted
+
+
+def _optional_value(item):
+    return getattr(item, "value", None) if item is not None else None
+
+
+class CoverageDegraded:
+    def __init__(self, node):
+        self.match_phase = _optional_value(getattr(node, "matchPhase", None))
+        self.timeout = _optional_value(getattr(node, "timeout", None))
+        self.adaptive_timeout = _optional_value(getattr(node, "adaptiveTimeout", None))
+        self.ann_timeout = _optional_value(getattr(node, "annTimeout", None))
+        self.non_ideal_state = _optional_value(getattr(node, "nonIdealState", None))
+        self.metadata = _value_entries(getattr(node, "metadata", None))
+
+
+class Coverage:
+    def __init__(self, node):
+        self.coverage_percent = _optional_value(getattr(node, "coveragePercent", None))
+        self.documents = _optional_value(getattr(node, "documents", None))
+        self.full = _optional_value(getattr(node, "full", None))
+        self.nodes = _optional_value(getattr(node, "nodes", None))
+        self.results = _optional_value(getattr(node, "results", None))
+        self.results_full = _optional_value(getattr(node, "resultsFull", None))
+        degraded = getattr(node, "degraded", None)
+        self.degraded = CoverageDegraded(degraded) if degraded is not None else None
+        self.metadata = _value_entries(getattr(node, "metadata", None))
+
+
 class Hit(dict):
     def __init__(self, node):
-        super().__init__({entry.key: _python_value(entry.value) for entry in (node.fields or [])})
+        super().__init__(_value_entries(node.fields))
         self.id, self.fields = node.id or "", self
-        self.relevance = node.relevance.value if node.relevance is not None else None
+        relevance = node.relevance.value if node.relevance is not None else None
+        self.relevance = getattr(relevance, "value", relevance)
+        self.score = self.relevance
+        self.match_features = _feature_entries(getattr(node, "matchFeatures", None))
+        self.summary_features = _feature_entries(getattr(node, "summaryFeatures", None))
+        self.rank_features = _feature_entries(getattr(node, "rankFeatures", None))
+        self.features = self.match_features
+        self.sort_values = [
+            _python_value(item) for item in (getattr(node, "sortValues", None) or [])
+        ]
 
 
 class ResultGroup(dict):
@@ -522,15 +725,41 @@ class SearchResults:
         self.root = _node(result.root) if result.root is not None else None
         children = self.root.children if isinstance(self.root, ResultGroup) else []
         self.hits = [child for child in children if isinstance(child, Hit)]
-        self.groups = [child for child in children if isinstance(child, ResultGroup)]
+        self.groups = []
+        for child in children:
+            if (
+                isinstance(child, ResultGroup)
+                and child.value is None
+                and child.label is None
+                and child.groups
+            ):
+                # The canonical result keeps a grouping node beneath the
+                # search root. The ergonomic grouping projection exposes its
+                # buckets directly while retaining the canonical tree on
+                # `root`.
+                self.groups.extend(child.groups)
+            elif isinstance(child, ResultGroup):
+                self.groups.append(child)
         self.total_hits = result.totalHits.value if result.totalHits is not None else 0
         self.total_hits_relation = result.totalHits.relation if result.totalHits is not None else "unknown"
+        coverage = getattr(result, "coverage", None)
+        self.coverage = Coverage(coverage) if coverage is not None else None
+        self.issues = list(getattr(result, "errors", None) or [])
         self.aggregations = dict(self.root) if isinstance(self.root, ResultGroup) else {}
+        self.continuations = list(getattr(self.root, "continuations", []) or []) if self.root else []
         self.facets = {}
         for group in self.groups:
-            for child in group.groups or [group]:
-                name = child.label or group.label or ""
-                self.facets.setdefault(name, []).append({"value": child.value, "count": child.get(name, child.get("count", 0))})
+            if group.value is not None or not group.label or not group.groups:
+                continue
+            for child in group.groups:
+                self.facets.setdefault(group.label, []).append(
+                    {"value": child.value, "count": child.get("count", 0)}
+                )
 
 
-__all__ = ["Boolean", "Float", "Group", "Hit", "Integer", "Keyword", "PatchBuilder", "ResultGroup", "SearchBuilder", "SearchResults", "Text", "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf", "q"]
+__all__ = [
+    "Boolean", "Coverage", "CoverageDegraded", "Float", "Group", "Hit",
+    "Integer", "Keyword", "PatchBuilder", "RankProfile", "ResultGroup",
+    "SearchBuilder", "SearchResults", "Tensor", "TensorField", "Text",
+    "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf", "q",
+]
