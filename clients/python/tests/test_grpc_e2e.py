@@ -186,6 +186,36 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         ))
         self.assertEqual(surviving.totalHits.value, 1)
 
+    def test_focused_updates_survive_restart_and_change_search_visibility(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert("doc:1", {"title": "quick fox", "price": 10})
+
+        index.update("doc:1").set("title", "slow hare").execute()
+        index.update("doc:1").increment("price", 5).execute()
+
+        self.assertEqual(index.get("doc:1")["price"], 15)
+        self.assertEqual(
+            {hit.id for hit in index.search("hare").execute().hits},
+            {"doc:1"},
+        )
+        self.assertEqual(index.search("quick").execute().hits, [])
+
+        self.client.close()
+        self.client = None
+        self._stop_server()
+
+        endpoint = self._start_server(definition=False)
+        self.client = Client(GrpcTransport(endpoint))
+        reopened = Index(self.client)
+        self.assertEqual(reopened.get("doc:1")["price"], 15)
+        self.assertEqual(
+            {hit.id for hit in reopened.search("hare").execute().hits},
+            {"doc:1"},
+        )
+        self.assertEqual(reopened.search("quick").execute().hits, [])
+
     def test_python_grpc_handles_frames_larger_than_default_limit(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))
