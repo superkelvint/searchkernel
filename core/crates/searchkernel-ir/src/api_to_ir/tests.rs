@@ -2643,4 +2643,65 @@ fn typed_query_validation_enforces_field_capabilities_and_types() {
         ),
         "invalid_predicate_value"
     );
+
+    let mut relative_definition = context().definition.clone();
+    let searchable_string = || FieldCapabilities::new(true, true, true, false, false);
+    relative_definition.fields.extend([
+        FieldIr::new(
+            FieldName::parse("name").unwrap(),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            None,
+            searchable_string(),
+        ),
+        FieldIr::new(
+            FieldName::parse("foo").unwrap(),
+            DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+            None,
+            searchable_string(),
+        ),
+        FieldIr::new(
+            FieldName::parse("items").unwrap(),
+            DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                fields: vec![
+                    StructFieldIr {
+                        name: "name".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    },
+                    StructFieldIr {
+                        name: "color".to_owned(),
+                        data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    },
+                ],
+            })),
+            None,
+            searchable_string(),
+        ),
+    ]);
+    let relative = IndexContext::from_definition_ir(relative_definition);
+    let same_element = |child_field: &str| {
+        expression(QueryExprKindIr::Contains {
+            field: field("items"),
+            item: Box::new(expression(QueryExprKindIr::SameElement(vec![
+                expression(QueryExprKindIr::Contains {
+                    field: field(child_field),
+                    item: Box::new(expression(QueryExprKindIr::Term {
+                        value: RequestValueIr::String("value".to_owned()),
+                    })),
+                }),
+                expression(QueryExprKindIr::Contains {
+                    field: field("color"),
+                    item: Box::new(expression(QueryExprKindIr::Term {
+                        value: RequestValueIr::String("blue".to_owned()),
+                    })),
+                }),
+            ]))),
+        })
+    };
+    relative
+        .validate_typed_query(&same_element("name"), None, None, "query")
+        .expect("sameElement member name resolves relative to items before top-level name");
+    let missing_member = relative
+        .validate_typed_query(&same_element("foo"), None, None, "query")
+        .expect_err("top-level foo must not mask missing items.foo");
+    assert_eq!(missing_member.details[0].code, "unknown_field");
 }

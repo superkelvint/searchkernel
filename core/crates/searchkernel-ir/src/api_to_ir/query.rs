@@ -775,6 +775,21 @@ impl IndexContext {
         field_context: Option<&QueryFieldRefIr>,
         path: &str,
     ) -> Result<QueryFieldRefIr> {
+        if let Some(context) = field_context {
+            if !field.path.as_str().contains('.') && context.path != field.path {
+                let qualified = FieldName::parse_query_path(format!(
+                    "{}.{}",
+                    context.path.as_str(),
+                    field.path.as_str()
+                ))?;
+                let qualified_ref = QueryFieldRefIr {
+                    path: qualified,
+                    element_index: field.element_index,
+                };
+                self.validate_searchable_query_field(&qualified_ref, path)?;
+                return Ok(qualified_ref);
+            }
+        }
         if self
             .query_field(field.path.as_str(), format!("{path}.path"))
             .is_ok()
