@@ -86,6 +86,10 @@ approximated.
 
 ## Search
 
+### Field sorting (`search.sorting`)
+
+- The native hit ABI supports executing field sorts but does not expose Vespa sort values, so public Hit.sort_values is not populated by the real backend.
+
 ### First/last missing-value sort placement (`search.sort_missing_placement`)
 
 - Rust exposes missing-first and missing-last. The portable/native path also has a missing-as-value form, but it is not exposed by the Rust convenience type. Python's high-level sort() currently has no missing-value option.

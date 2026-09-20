@@ -13,7 +13,7 @@ the individual milestone directories.
 | Status | Lane | Start here | Acceptance command | Relationship |
 | --- | --- | --- | --- | --- |
 | **ACTIVE BASELINE** | M13 | [`m13/CONTRACT.md`](m13/CONTRACT.md) | `./reference/vespa/verify-through.sh m13` | Latest cumulative native milestone; includes M0–M12. |
-| **ACTIVE INTEGRATION GATE** | I-series | [`i/CONTRACT.md`](i/CONTRACT.md) | `./reference/vespa/verify-through.sh i` | Product-path release gate; currently composes M10 and Phase 10. |
+| **ACTIVE INTEGRATION GATE** | I-series | [`i/CONTRACT.md`](i/CONTRACT.md) | `./reference/vespa/verify-through.sh i` | Product-path release gate; currently composes the cumulative M13 baseline and Phase 10. |
 | **ACTIVE INTEGRATION SCENARIO** | Phase 10 | [`phase10/verify-phase10.sh`](phase10/verify-phase10.sh) | `./reference/vespa/phase10/verify-phase10.sh` | Canonical public Rust API / real-engine E2E used by the I-series gate. |
 | **ACTIVE SPECIALIZED** | Phase 9 | [`phase9/CONTRACT.md`](phase9/CONTRACT.md) | `./reference/vespa/phase9/verify-phase9.sh` | Additive native ABI coverage; not a numbered cumulative M milestone. |
 | **ACTIVE SPECIALIZED** | SearchReply | [`searchreply/CONTRACT.md`](searchreply/CONTRACT.md) | `./reference/vespa/verify-through.sh searchreply` | Generic result coverage, degradation, and native metadata behavior. |

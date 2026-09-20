@@ -10,10 +10,10 @@ require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
 python3 "$SCRIPT_DIR/validate.py"
 
-# I-series is only meaningful when the native M-series foundation remains
-# green. verify-through's highest frozen cumulative M target is the baseline
-# for this repository; keep that policy in one existing verifier.
-"$ROOT/reference/vespa/verify-through.sh" m10
+# I-series is only meaningful when the latest frozen cumulative native
+# baseline remains green. M13 is the current baseline; it transitively
+# preserves M0-M12 before the public Phase 10 product-path check runs.
+"$ROOT/reference/vespa/verify-through.sh" m13
 "$ROOT/reference/vespa/verify-through.sh" phase10
 
 if rg -n 'searchkernel-(ir-adapter|vespa-engine|vespa-bindings)|searchkernel_ir|searchkernel_vespa|RecordingBackend|ScriptedBackend' \

@@ -658,14 +658,51 @@ pub(crate) fn validate_query_input_references_in_expr(
             children.push((matching, path.to_owned()));
             children.extend(ranking.iter().map(|value| (value, path.to_owned())));
         }
-        QueryExprKindIr::NearestNeighbor { query_tensor, .. }
-            if !inputs.contains_key(query_tensor) =>
-        {
-            return Err(invalid(
-                "unknown_query_input",
-                Some(format!("{path}.nearest_neighbor.query_tensor")),
-                format!("query tensor input {query_tensor} is not defined"),
-            ));
+        QueryExprKindIr::NearestNeighbor { query_tensor, .. } => {
+            let Some(input) = inputs.get(query_tensor) else {
+                return Err(invalid(
+                    "unknown_query_input",
+                    Some(format!("{path}.nearest_neighbor.query_tensor")),
+                    format!("query tensor input {query_tensor} is not defined"),
+                ));
+            };
+            match input {
+                // Expressions are intentionally left for the execution
+                // backend: their runtime tensor type is not statically
+                // inspectable at the IR boundary.
+                QueryInputIr::Expression(_) => {}
+                QueryInputIr::Literal(RequestValueIr::Tensor(tensor))
+                    if matches!(tensor.payload, RequestTensorPayloadIr::Dense(_)) =>
+                {
+                    if tensor.type_spec.trim().is_empty()
+                        || matches!(
+                            &tensor.payload,
+                            RequestTensorPayloadIr::Dense(values)
+                                if values.iter().any(|value| !value.is_finite())
+                        )
+                    {
+                        return Err(invalid(
+                            "invalid_query_input",
+                            Some(format!("{path}.nearest_neighbor.query_tensor")),
+                            "nearest-neighbor tensor inputs require a non-empty type spec and finite dense values",
+                        ));
+                    }
+                }
+                QueryInputIr::Literal(RequestValueIr::Tensor(_)) => {
+                    return Err(PortableError::unsupported(
+                        "nearest_neighbor_tensor_not_supported",
+                        Some(format!("{path}.nearest_neighbor.query_tensor")),
+                        "nearest-neighbor execution currently supports dense tensor query inputs only",
+                    ));
+                }
+                QueryInputIr::Literal(_) => {
+                    return Err(invalid(
+                        "nearest_neighbor_tensor_required",
+                        Some(format!("{path}.nearest_neighbor.query_tensor")),
+                        "nearest-neighbor execution requires a literal dense tensor query input",
+                    ));
+                }
+            }
         }
         _ => {}
     }

@@ -86,6 +86,7 @@ Capabilities with known constraints are collected in the generated
 - `query.user_input_user_query` — The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. Neither high-level facade currently exposes userInput/userQuery constructors.
 - `filter.structured` — The Python high-level facade currently uses textual filters; it does not expose a typed structured-filter helper namespace.
 - `filter.textual` — The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR. The Rust SearchBuilder currently accepts typed Filter values only; it has no public textual-filter overload.
+- `search.sorting` — The native hit ABI supports executing field sorts but does not expose Vespa sort values, so public Hit.sort_values is not populated by the real backend.
 - `search.sort_missing_placement` — Rust exposes missing-first and missing-last. The portable/native path also has a missing-as-value form, but it is not exposed by the Rust convenience type. Python's high-level sort() currently has no missing-value option.
 - `search.pagination` — Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper.
 - `search.search_fields` — Field selection executes, but non-default per-field weights are rejected by the current native adapter. The Python high-level SearchBuilder does not yet expose search_field/search_fields.

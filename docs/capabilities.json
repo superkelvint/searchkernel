@@ -295,7 +295,9 @@
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
-      "limitations": []
+      "limitations": [
+        "The native hit ABI supports executing field sorts but does not expose Vespa sort values, so public Hit.sort_values is not populated by the real backend."
+      ]
     },
     {
       "id": "search.sort_missing_placement",

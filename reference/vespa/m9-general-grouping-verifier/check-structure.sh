@@ -75,8 +75,18 @@ if grep -Eq 'sk_grouping_(all|each)' "$HEADER" "$MAP"; then
 fi
 
 # The new low-level native layer must stay independent of the C-series IR.
-if grep -R --line-number --include='*.cpp' --include='*.h' 'searchkernel-ir\|GroupingRequestIr' \
-    "$ROOT/core/native/vespa" >/dev/null; then
+NATIVE_CPP="${SK_GROUPING_NATIVE_CPP:-$ROOT/core/native/vespa/engine.cc:$ROOT/core/native/vespa/grouping.cc}"
+
+native_firewall_paths=("$ROOT/core/native/vespa")
+if [[ -n "${SK_GROUPING_NATIVE_CPP:-}" ]]; then
+  IFS=: read -r -a native_override_paths <<< "$SK_GROUPING_NATIVE_CPP"
+  native_firewall_paths+=("${native_override_paths[@]}")
+fi
+
+if grep -R --line-number \
+    --include='*.cc' --include='*.cpp' --include='*.h' --include='*.hpp' \
+    'searchkernel-ir\|GroupingRequestIr' \
+    "${native_firewall_paths[@]}" >/dev/null; then
   echo "native grouping implementation depends on C-series IR terminology" >&2
   exit 1
 fi
@@ -85,7 +95,6 @@ fi
 # helpers and the recursive result decoders. Extract those concrete bodies and
 # inspect only executable source: comments and string literals are masked before
 # matching so documentation cannot satisfy this anti-shortcut verifier.
-NATIVE_CPP="${SK_GROUPING_NATIVE_CPP:-$ROOT/core/native/vespa/engine.cc:$ROOT/core/native/vespa/grouping.cc}"
 python3 - "$NATIVE_CPP" <<'PY'
 from pathlib import Path
 import re

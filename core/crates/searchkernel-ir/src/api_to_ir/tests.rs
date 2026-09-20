@@ -1775,8 +1775,21 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         }
     }
     fn annotated(kind: QueryExprKindIr) -> QueryIr {
-        let mut annotations = BTreeMap::new();
-        annotations.insert("label".to_owned(), RequestValueIr::String("v2".to_owned()));
+        let annotations = match &kind {
+            QueryExprKindIr::Wand { .. } => BTreeMap::from([
+                ("targetNumHits".to_owned(), RequestValueIr::UInt64(100)),
+                ("scoreThreshold".to_owned(), RequestValueIr::Int64(0)),
+                (
+                    "thresholdBoostFactor".to_owned(),
+                    RequestValueIr::Float64(1.0),
+                ),
+            ]),
+            QueryExprKindIr::NearestNeighbor { .. } => BTreeMap::from([
+                ("targetNumHits".to_owned(), RequestValueIr::UInt64(100)),
+                ("approximate".to_owned(), RequestValueIr::Bool(true)),
+            ]),
+            _ => BTreeMap::from([("label".to_owned(), RequestValueIr::String("v2".to_owned()))]),
+        };
         QueryIr::Typed(Box::new(QueryExprIr { kind, annotations }))
     }
     fn request(query: QueryIr) -> SearchRequestIr {
@@ -1795,7 +1808,10 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         );
         request.inputs.insert(
             "q".to_owned(),
-            QueryInputIr::Literal(RequestValueIr::String("tensor".to_owned())),
+            QueryInputIr::Literal(RequestValueIr::Tensor(RequestTensorIr {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+                payload: RequestTensorPayloadIr::Dense(vec![1.0, 0.0]),
+            })),
         );
         request
     }

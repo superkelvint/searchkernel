@@ -1,5 +1,5 @@
 use super::*;
-use crate::{field, Analyzer, Filter, Query, Ranking, SearchBuilder, Sort};
+use crate::{field, Analyzer, Filter, Query, Ranking, SearchBuilder, Sort, Tensor};
 use searchkernel_ir::{IndexContext, OperationIr};
 use searchkernel_protocol::v2 as api;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
@@ -261,6 +261,50 @@ fn expected_search(
         crate::search::to_resolver_input(request).expect("valid search intent"),
     )
     .expect("valid search request IR")
+}
+
+fn portable_typed_request(
+    query: searchkernel_ir::QueryExprIr,
+    inputs: BTreeMap<String, searchkernel_ir::QueryInputIr>,
+) -> Vec<u8> {
+    let request = searchkernel_ir::SearchRequestIr::new(
+        searchkernel_ir::QueryIr::Typed(Box::new(query)),
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        searchkernel_ir::HighlightingIr::Disabled,
+        None,
+        searchkernel_ir::PrefixPolicy::Disabled,
+        searchkernel_ir::TypoPolicy::Disabled,
+    )
+    .with_inputs(inputs);
+    searchkernel_ir::search_request_ir_to_api(&request)
+}
+
+fn typed_field(path: &str) -> searchkernel_ir::QueryFieldRefIr {
+    searchkernel_ir::QueryFieldRefIr {
+        path: searchkernel_ir::FieldName::parse(path.to_owned()).expect("valid test field"),
+        element_index: None,
+    }
+}
+
+fn typed_contains(
+    field: &str,
+    item: searchkernel_ir::QueryExprKindIr,
+) -> searchkernel_ir::QueryExprIr {
+    searchkernel_ir::QueryExprIr {
+        kind: searchkernel_ir::QueryExprKindIr::Contains {
+            field: typed_field(field),
+            item: Box::new(searchkernel_ir::QueryExprIr {
+                kind: item,
+                annotations: BTreeMap::new(),
+            }),
+        },
+        annotations: BTreeMap::new(),
+    }
 }
 
 fn expected_analyze(
@@ -583,6 +627,141 @@ fn public_rust_typed_query_errors_match_independent_portable_requests() {
             searchkernel_ir::ErrorCode::InvalidArgument,
             "{name}"
         );
+        assert_eq!(
+            rust_error.details()[0].code,
+            portable_error.details[0].code,
+            "{name}"
+        );
+        assert_eq!(
+            rust_error.details()[0].path,
+            portable_error.details[0].path,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").searchable(true))
+        .field(Field::tensor("embedding", "tensor<float>(x[2])").stored(true))
+        .field(Field::int64("price").filterable(true));
+    let context = context_for(&definition);
+    let tensor_input = || {
+        searchkernel_ir::QueryInputIr::Literal(searchkernel_ir::RequestValueIr::Tensor(
+            searchkernel_ir::RequestTensorIr {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(vec![1.0, 0.0]),
+            },
+        ))
+    };
+    let cases = [
+        (
+            "nn_non_tensor_field",
+            Query::nearest_neighbor("title", "q"),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::NearestNeighbor {
+                    document_field: typed_field("title"),
+                    query_tensor: "q".to_owned(),
+                },
+                annotations: BTreeMap::new(),
+            },
+            BTreeMap::from([("q".to_owned(), tensor_input())]),
+        ),
+        (
+            "nn_scalar_query_input",
+            Query::nearest_neighbor("embedding", "q"),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::NearestNeighbor {
+                    document_field: typed_field("embedding"),
+                    query_tensor: "q".to_owned(),
+                },
+                annotations: BTreeMap::new(),
+            },
+            BTreeMap::from([(
+                "q".to_owned(),
+                searchkernel_ir::QueryInputIr::Literal(searchkernel_ir::RequestValueIr::Float64(
+                    1.0,
+                )),
+            )]),
+        ),
+        (
+            "term_value_type",
+            Query::term("title", 42_i64),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Term {
+                    value: searchkernel_ir::RequestValueIr::Int64(42),
+                },
+            ),
+            BTreeMap::new(),
+        ),
+        (
+            "fuzzy_value_type",
+            Query::fuzzy("title", 42_i64),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Fuzzy {
+                    value: searchkernel_ir::RequestValueIr::Int64(42),
+                    max_edit_distance: 2,
+                    prefix_length: 0,
+                    prefix: false,
+                },
+            ),
+            BTreeMap::new(),
+        ),
+        (
+            "weighted_key_type",
+            Query::weighted_set("price", [crate::WeightedQueryItem::new("bad", 1)]),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::WeightedSet {
+                    field: typed_field("price"),
+                    items: vec![searchkernel_ir::WeightedQueryItemIr {
+                        key: searchkernel_ir::RequestValueIr::String("bad".to_owned()),
+                        weight: 1,
+                    }],
+                },
+                annotations: BTreeMap::new(),
+            },
+            BTreeMap::new(),
+        ),
+    ];
+
+    for (name, rust_query, portable_query, inputs) in cases {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording);
+        let mut builder = index.search("").typed_query(rust_query);
+        for (input_name, input) in &inputs {
+            builder = match input {
+                searchkernel_ir::QueryInputIr::Literal(
+                    searchkernel_ir::RequestValueIr::Float64(value),
+                ) => builder.query_input(input_name.clone(), *value),
+                searchkernel_ir::QueryInputIr::Literal(
+                    searchkernel_ir::RequestValueIr::Tensor(tensor),
+                ) => {
+                    let searchkernel_ir::RequestTensorPayloadIr::Dense(values) = &tensor.payload
+                    else {
+                        panic!("test input must be dense")
+                    };
+                    builder.query_input(
+                        input_name.clone(),
+                        Tensor::dense(tensor.type_spec.clone(), values.clone()),
+                    )
+                }
+                other => panic!("unexpected test query input: {other:?}"),
+            };
+        }
+        let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
+        let bytes = portable_typed_request(portable_query, inputs);
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let portable_error = context.search_to_ir(request).unwrap_err();
+
+        let portable_code = match portable_error.code {
+            searchkernel_ir::ErrorCode::InvalidArgument => crate::ErrorCode::InvalidArgument,
+            searchkernel_ir::ErrorCode::Unsupported => crate::ErrorCode::Unsupported,
+            other => panic!("unexpected portable error code for {name}: {other:?}"),
+        };
+        assert_eq!(rust_error.code(), portable_code, "{name}");
         assert_eq!(
             rust_error.details()[0].code,
             portable_error.details[0].code,

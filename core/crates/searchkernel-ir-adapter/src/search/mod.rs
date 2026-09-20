@@ -319,7 +319,6 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
-    validate_nearest_neighbor_inputs(request)?;
     validate_yql_controls(request)?;
     if !request.properties().is_empty() && !matches!(request.query(), QueryIr::Yql { .. }) {
         return Err(PortableError::unsupported(
@@ -418,89 +417,6 @@ fn validate_yql_controls(request: &SearchRequestIr) -> Result<()> {
             Some("query_model"),
             "YQL cannot be combined with typed query-model controls",
         ));
-    }
-    Ok(())
-}
-
-fn validate_nearest_neighbor_inputs(request: &SearchRequestIr) -> Result<()> {
-    let QueryIr::Typed(expression) = request.query() else {
-        return Ok(());
-    };
-    validate_nearest_neighbor_expression(expression, request.inputs(), "query")
-}
-
-fn validate_nearest_neighbor_expression(
-    expression: &searchkernel_ir::QueryExprIr,
-    inputs: &std::collections::BTreeMap<String, QueryInputIr>,
-    path: &str,
-) -> Result<()> {
-    use searchkernel_ir::QueryExprKindIr;
-
-    let children: Vec<(&searchkernel_ir::QueryExprIr, String)> = match &expression.kind {
-        QueryExprKindIr::Contains { item, .. } => vec![(item, format!("{path}.contains.item"))],
-        QueryExprKindIr::And(children)
-        | QueryExprKindIr::Or(children)
-        | QueryExprKindIr::Phrase(children)
-        | QueryExprKindIr::Near { children, .. }
-        | QueryExprKindIr::ONear { children, .. }
-        | QueryExprKindIr::SameElement(children)
-        | QueryExprKindIr::Equiv(children)
-        | QueryExprKindIr::WeakAnd { children, .. } => children
-            .iter()
-            .enumerate()
-            .map(|(index, child)| (child, format!("{path}.children[{index}]")))
-            .collect(),
-        QueryExprKindIr::Alternatives(values) => values
-            .iter()
-            .enumerate()
-            .map(|(index, value)| (&value.query, format!("{path}.alternatives[{index}]")))
-            .collect(),
-        QueryExprKindIr::Not(child) | QueryExprKindIr::NonEmpty(child) => {
-            vec![(child, format!("{path}.child"))]
-        }
-        QueryExprKindIr::Rank { matching, ranking } => {
-            let mut children = vec![(matching.as_ref(), format!("{path}.rank.match"))];
-            children.extend(
-                ranking
-                    .iter()
-                    .enumerate()
-                    .map(|(index, child)| (child, format!("{path}.rank.ranking[{index}]"))),
-            );
-            children
-        }
-        QueryExprKindIr::Labeled { query, .. } => vec![(query, format!("{path}.labeled.query"))],
-        _ => Vec::new(),
-    };
-
-    if let QueryExprKindIr::NearestNeighbor { query_tensor, .. } = &expression.kind {
-        let Some(input) = inputs.get(query_tensor) else {
-            return Err(PortableError::invalid(
-                "missing_query_input",
-                Some(format!("{path}.nearest_neighbor.query_tensor")),
-                format!("nearest-neighbor query input {query_tensor} is missing"),
-            ));
-        };
-        match input {
-            QueryInputIr::Literal(RequestValueIr::Tensor(tensor))
-                if matches!(tensor.payload, RequestTensorPayloadIr::Dense(_)) => {}
-            QueryInputIr::Literal(RequestValueIr::Tensor(_)) => {
-                return Err(PortableError::unsupported(
-                    "nearest_neighbor_tensor_not_supported",
-                    Some(format!("{path}.nearest_neighbor.query_tensor")),
-                    "nearest-neighbor execution currently supports dense tensor query inputs only",
-                ));
-            }
-            _ => {
-                return Err(PortableError::invalid(
-                    "nearest_neighbor_tensor_required",
-                    Some(format!("{path}.nearest_neighbor.query_tensor")),
-                    "nearest-neighbor execution requires a literal dense tensor query input",
-                ));
-            }
-        }
-    }
-    for (child, child_path) in children {
-        validate_nearest_neighbor_expression(child, inputs, &child_path)?;
     }
     Ok(())
 }

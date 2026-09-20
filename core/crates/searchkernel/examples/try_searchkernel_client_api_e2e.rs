@@ -26,8 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod showcase {
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
-        GroupingAggregation, GroupingPlan, Index, IndexDefinition, Patch, Query, QueryBound,
-        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, WeightedQueryItem,
+        GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
+        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, TotalHitsRelation,
+        WandOptions, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -96,6 +97,11 @@ mod showcase {
                     .first_phase("closeness(embedding)")
                     .query_input("query_embedding", "tensor<float>(x[2])"),
             );
+        let definition = definition.rank_profile(
+            RankProfile::new("operator")
+                .first_phase("nativeRank")
+                .match_feature("nativeRank"),
+        );
 
         let index = Index::create(&path, definition)?;
         println!("created: {}", path.display());
@@ -240,6 +246,7 @@ mod showcase {
         print_results(&results);
         assert_id_set(&results, ["shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5"]);
         assert_eq!(results.total_hits.value, 5);
+        assert_eq!(results.total_hits.relation, TotalHitsRelation::Unknown);
 
         heading("6. STEMMING: 'jump' -> 'Jumped'");
 
@@ -329,10 +336,16 @@ mod showcase {
 
         let fuzzy = index
             .search("")
-            .typed_query(Query::fuzzy("title", "running"))
+            .typed_query(Query::fuzzy("brand", "Acmx"))
             .limit(20)
             .execute::<Value>()?;
-        assert_id_set(&fuzzy, ["shoe-1", "shoe-2", "bag-1"]);
+        let exact_misspelling = index
+            .search("")
+            .typed_query(Query::term("title", "runnng"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert!(exact_misspelling.hits.is_empty());
+        assert_id_set(&fuzzy, ["shoe-1", "shoe-4", "bag-1"]);
 
         let weighted_items = [
             WeightedQueryItem::new("Acme", 10),
@@ -340,35 +353,57 @@ mod showcase {
         ];
         let wand = index
             .search("")
-            .typed_query(Query::wand("brand", weighted_items.iter().cloned()))
+            .ranking(Ranking::named("operator"))
+            .typed_query(Query::Wand {
+                field: "brand".to_owned(),
+                items: weighted_items.to_vec(),
+                options: WandOptions {
+                    target_hits: 100,
+                    score_threshold: 9,
+                    threshold_boost_factor: 1.0,
+                },
+            })
             .limit(20)
             .execute::<Value>()?;
         let weighted_set = index
             .search("")
+            .ranking(Ranking::named("operator"))
             .typed_query(Query::weighted_set("brand", weighted_items.iter().cloned()))
             .limit(20)
             .execute::<Value>()?;
         let dot_product = index
             .search("")
+            .ranking(Ranking::named("operator"))
             .typed_query(Query::dot_product("brand", weighted_items.iter().cloned()))
             .limit(20)
             .execute::<Value>()?;
-        let expected_weighted_ids = ["shoe-1", "shoe-2", "shoe-4", "shoe-5", "bag-1"];
+        assert_id_set(&wand, ["shoe-1", "shoe-4", "bag-1"]);
+        assert_ids(
+            &weighted_set,
+            ["shoe-1", "shoe-4", "bag-1", "shoe-2", "shoe-5"],
+        );
+        assert_ids(
+            &dot_product,
+            ["shoe-1", "shoe-2", "shoe-4", "shoe-5", "bag-1"],
+        );
         for results in [&wand, &weighted_set, &dot_product] {
-            assert_id_set(results, expected_weighted_ids);
             assert!(
                 results.hits.iter().all(|hit| hit.score.is_some()),
                 "weighted query must expose Vespa scores"
             );
         }
-        let scores = |results: &SearchResult<Value>| {
-            results.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()
+        let native_rank = |hit: &Hit<Value>| match hit.features.get("nativeRank") {
+            Some(FeatureSet::Value(FeatureValue::Double(value))) => *value,
+            other => panic!("operator query did not expose nativeRank: {other:?}"),
         };
-        println!(
-            "WAND scores: {:?}; weighted-set scores: {:?}; dot-product scores: {:?}",
-            scores(&wand),
-            scores(&weighted_set),
-            scores(&dot_product)
+        assert!(native_rank(&weighted_set.hits[0]) > native_rank(&weighted_set.hits[3]));
+        assert!(
+            native_rank(&dot_product.hits[0]) == native_rank(&dot_product.hits[1])
+                && native_rank(&dot_product.hits[1]) == native_rank(&dot_product.hits[4])
+        );
+        assert_ne!(
+            native_rank(&weighted_set.hits[0]),
+            native_rank(&dot_product.hits[0])
         );
 
         let prefix = index
@@ -505,6 +540,8 @@ mod showcase {
             .collect();
         assert_eq!(ids(&window), expected_window);
         assert_eq!(window.total_hits, all_sorted.total_hits);
+        assert_eq!(all_sorted.total_hits.relation, TotalHitsRelation::Unknown);
+        assert_eq!(window.total_hits.relation, TotalHitsRelation::Unknown);
 
         // Rust's builder takes u32 for limit/offset, so negative values are
         // rejected by the type system rather than by a runtime check.
@@ -518,6 +555,29 @@ mod showcase {
             .limit(20)
             .execute::<Value>()?;
         print_results(&results);
+
+        let brand_facet = results
+            .facets
+            .iter()
+            .find(|facet| facet.field == "brand")
+            .expect("brand facet should be present");
+        let ordered_brand_values: Vec<_> = brand_facet
+            .values
+            .iter()
+            .map(|value| {
+                (
+                    value
+                        .value
+                        .as_str()
+                        .expect("brand facet value should be a string"),
+                    value.count,
+                )
+            })
+            .collect();
+        assert_eq!(
+            ordered_brand_values,
+            [("Acme", 2), ("TrailCo", 2), ("Budget", 1)]
+        );
 
         assert_eq!(
             facet_counts(&results, "brand"),
@@ -707,9 +767,9 @@ mod showcase {
             .search("shoes")
             .sort(Sort::asc("title"))
             .execute::<Value>()
-            .expect_err("sorting on a non-attribute field should be a hard search failure");
+            .expect_err("sorting on a non-attribute field should be a hard semantic failure");
         assert_eq!(hard_failure.code(), ErrorCode::InvalidArgument);
-        println!("genuine invalid native request remains a hard error PASS");
+        println!("invalid semantic request remains a hard operation error PASS");
 
         heading("20. ANALYZE / LINGUISTICS");
 
@@ -1015,13 +1075,13 @@ Successfully demonstrated through the public Rust facade:
 
   RESULTS
   ✓ stored fields and tensor readback
-  ✓ scores, scalar query/rank features, and sort values
+  ✓ scores, scalar query/rank features
   ✓ facet convenience
   ✓ facet ordering request
   ✓ filtered facets
   ✓ nested grouping keys, counts, averages, and nested children
   ✓ coverage and valid match-phase degradation metadata
-  ✓ genuine invalid native request remains an error
+  ✓ invalid semantic request remains a hard operation error
 
   RANKING / TENSORS
   ✓ named rank profile and profile selection
@@ -1036,6 +1096,7 @@ Successfully demonstrated through the public Rust facade:
 EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
 
   - highlight result generation (the public native path reports Unsupported)
+  - sort-value readback (`Hit.sort_values`) is not exposed by the current native ABI
   - typed sameElement requires a public array-of-struct field definition, which
     is not currently public
   - typed geo and predicate require public geo/predicate field definitions,

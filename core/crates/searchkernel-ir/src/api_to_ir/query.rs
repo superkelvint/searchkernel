@@ -9,6 +9,20 @@ const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
 const DEFAULT_FUZZY_PREFIX_LENGTH: u32 = 0;
 const DEFAULT_FUZZY_PREFIX: bool = false;
 
+const TYPED_QUERY_WAND_ANNOTATIONS: &[&str] = &[
+    "targetNumHits",
+    "totalTargetHits",
+    "scoreThreshold",
+    "thresholdBoostFactor",
+];
+const TYPED_QUERY_NEAREST_NEIGHBOR_ANNOTATIONS: &[&str] = &[
+    "targetNumHits",
+    "totalTargetHits",
+    "approximate",
+    "distanceThreshold",
+    "exploreAdditionalHits",
+];
+
 fn resolve_typed_query_annotations(
     kind: &mut QueryExprKindIr,
     annotations: &mut BTreeMap<String, RequestValueIr>,
@@ -35,6 +49,12 @@ fn resolve_typed_query_annotations(
                 .unwrap_or(DEFAULT_FUZZY_PREFIX_LENGTH);
             *prefix = annotation_bool(annotations, "prefix", path)?.unwrap_or(DEFAULT_FUZZY_PREFIX);
         }
+        QueryExprKindIr::Wand { .. } => {
+            normalize_wand_annotations(annotations, path)?;
+        }
+        QueryExprKindIr::NearestNeighbor { .. } => {
+            normalize_nearest_neighbor_annotations(annotations, path)?;
+        }
         QueryExprKindIr::UserInput {
             default_index,
             target_hits,
@@ -50,6 +70,189 @@ fn resolve_typed_query_annotations(
         _ => {}
     }
     Ok(())
+}
+
+fn normalize_wand_annotations(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<()> {
+    reject_typed_query_annotations(annotations, TYPED_QUERY_WAND_ANNOTATIONS, path)?;
+    let target_num_hits = validate_positive_annotation_u32(annotations, "targetNumHits", path)?;
+    let total_target_hits = validate_positive_annotation_u32(annotations, "totalTargetHits", path)?;
+    if target_num_hits.is_some() && total_target_hits.is_some() {
+        return Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(path),
+            "WAND may specify only one of targetNumHits and totalTargetHits",
+        ));
+    }
+    if target_num_hits.is_none() && total_target_hits.is_none() {
+        annotations.insert(
+            "targetNumHits".to_owned(),
+            RequestValueIr::UInt64(u64::from(DEFAULT_WEAK_AND_TARGET_HITS)),
+        );
+    }
+    validate_integer_annotation(annotations, "scoreThreshold", path)?;
+    validate_finite_number_annotation(annotations, "thresholdBoostFactor", path)?;
+    if !annotations.contains_key("scoreThreshold") {
+        annotations.insert("scoreThreshold".to_owned(), RequestValueIr::Int64(0));
+    }
+    if !annotations.contains_key("thresholdBoostFactor") {
+        annotations.insert(
+            "thresholdBoostFactor".to_owned(),
+            RequestValueIr::Float64(1.0),
+        );
+    }
+    Ok(())
+}
+
+fn normalize_nearest_neighbor_annotations(
+    annotations: &mut BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<()> {
+    reject_typed_query_annotations(annotations, TYPED_QUERY_NEAREST_NEIGHBOR_ANNOTATIONS, path)?;
+    let target_num_hits = validate_positive_annotation_u32(annotations, "targetNumHits", path)?;
+    let total_target_hits = validate_positive_annotation_u32(annotations, "totalTargetHits", path)?;
+    if target_num_hits.is_some() && total_target_hits.is_some() {
+        return Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(path),
+            "nearest-neighbor may specify only one of targetNumHits and totalTargetHits",
+        ));
+    }
+    if target_num_hits.is_none() && total_target_hits.is_none() {
+        annotations.insert(
+            "targetNumHits".to_owned(),
+            RequestValueIr::UInt64(u64::from(DEFAULT_WEAK_AND_TARGET_HITS)),
+        );
+    }
+    if !annotations.contains_key("approximate") {
+        annotations.insert("approximate".to_owned(), RequestValueIr::Bool(true));
+    } else if !matches!(
+        annotations.get("approximate"),
+        Some(RequestValueIr::Bool(_))
+    ) {
+        return Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.approximate")),
+            "approximate must be a boolean",
+        ));
+    }
+    validate_finite_number_annotation(annotations, "distanceThreshold", path)?;
+    validate_nonnegative_annotation_u32(annotations, "exploreAdditionalHits", path)?;
+    Ok(())
+}
+
+fn reject_typed_query_annotations(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    supported: &[&str],
+    path: &str,
+) -> Result<()> {
+    if let Some(name) = annotations
+        .keys()
+        .find(|name| !supported.iter().any(|candidate| candidate == name))
+    {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations.{name}")),
+            "this typed query node has no native lowering for the annotation",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_positive_annotation_u32(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<u32>> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(None);
+    };
+    let value = match value {
+        RequestValueIr::UInt64(value) => u32::try_from(*value).ok(),
+        RequestValueIr::Int64(value) if *value > 0 => u32::try_from(*value).ok(),
+        _ => None,
+    };
+    value.filter(|value| *value > 0).map(Some).ok_or_else(|| {
+        invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a positive integer"),
+        )
+    })
+}
+
+fn validate_nonnegative_annotation_u32(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<()> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(());
+    };
+    let valid = match value {
+        RequestValueIr::UInt64(value) => u32::try_from(*value).is_ok(),
+        RequestValueIr::Int64(value) => *value >= 0 && u32::try_from(*value).is_ok(),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a non-negative integer"),
+        ))
+    }
+}
+
+fn validate_integer_annotation(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<()> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(());
+    };
+    let valid = match value {
+        RequestValueIr::Int64(_) => true,
+        RequestValueIr::UInt64(value) => *value <= i64::MAX as u64,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be an integer"),
+        ))
+    }
+}
+
+fn validate_finite_number_annotation(
+    annotations: &BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<()> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(());
+    };
+    let valid = match value {
+        RequestValueIr::Float64(value) => value.is_finite(),
+        RequestValueIr::Int64(_) | RequestValueIr::UInt64(_) => true,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a finite number"),
+        ))
+    }
 }
 
 fn annotation_u32(
@@ -362,9 +565,29 @@ impl IndexContext {
         };
 
         match &query.kind {
-            QueryExprKindIr::Term { .. }
-            | QueryExprKindIr::Fuzzy { .. }
-            | QueryExprKindIr::Text { .. } => {
+            QueryExprKindIr::Term { value } => {
+                let field = field_context.ok_or_else(|| {
+                    invalid(
+                        "missing_field_context",
+                        Some(path.to_owned()),
+                        "term-like query requires a containing field context",
+                    )
+                })?;
+                self.validate_searchable_query_field(field, path)?;
+                Self::validate_typed_term_value(value, &format!("{path}.term.value"))
+            }
+            QueryExprKindIr::Fuzzy { value, .. } => {
+                let field = field_context.ok_or_else(|| {
+                    invalid(
+                        "missing_field_context",
+                        Some(path.to_owned()),
+                        "term-like query requires a containing field context",
+                    )
+                })?;
+                self.validate_fuzzy_query_field(field, path)?;
+                Self::validate_typed_term_value(value, &format!("{path}.fuzzy.value"))
+            }
+            QueryExprKindIr::Text { .. } => {
                 let field = field_context.ok_or_else(|| {
                     invalid(
                         "missing_field_context",
@@ -388,11 +611,19 @@ impl IndexContext {
                 }
             }
             QueryExprKindIr::Contains { field, item } => {
-                let field = self.resolve_searchable_query_field(
-                    field,
-                    field_context,
-                    &child_path("contains.field"),
-                )?;
+                let field = if matches!(item.kind, QueryExprKindIr::Fuzzy { .. }) {
+                    self.resolve_fuzzy_query_field(
+                        field,
+                        field_context,
+                        &child_path("contains.field"),
+                    )?
+                } else {
+                    self.resolve_searchable_query_field(
+                        field,
+                        field_context,
+                        &child_path("contains.field"),
+                    )?
+                };
                 self.validate_typed_query(
                     item,
                     Some(&field),
@@ -743,6 +974,17 @@ impl IndexContext {
         }
     }
 
+    fn validate_typed_term_value(value: &RequestValueIr, path: &str) -> Result<()> {
+        match value {
+            RequestValueIr::String(value) if !value.is_empty() => Ok(()),
+            _ => Err(PortableError::unsupported(
+                "typed_query_value_not_supported",
+                Some(path.to_owned()),
+                "typed term values must be non-empty strings",
+            )),
+        }
+    }
+
     fn validate_searchable_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
         let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
         if !schema_field.capabilities().searchable() {
@@ -750,6 +992,20 @@ impl IndexContext {
                 "field_not_searchable",
                 Some(path.to_owned()),
                 "query term requires a searchable field",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_fuzzy_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
+        let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
+        let string_attribute =
+            schema_field.kind() == FieldKind::Keyword && schema_field.capabilities().filterable();
+        if !schema_field.capabilities().searchable() && !string_attribute {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(path.to_owned()),
+                "fuzzy query requires a searchable text field or filterable keyword field",
             ));
         }
         Ok(())
@@ -820,6 +1076,56 @@ impl IndexContext {
             element_index: field.element_index,
         };
         self.validate_searchable_query_field(&qualified_ref, path)?;
+        Ok(qualified_ref)
+    }
+
+    fn resolve_fuzzy_query_field(
+        &self,
+        field: &QueryFieldRefIr,
+        field_context: Option<&QueryFieldRefIr>,
+        path: &str,
+    ) -> Result<QueryFieldRefIr> {
+        if let Some(context) = field_context {
+            if !field.path.as_str().contains('.') && context.path != field.path {
+                let qualified = FieldName::parse_query_path(format!(
+                    "{}.{}",
+                    context.path.as_str(),
+                    field.path.as_str()
+                ))?;
+                let qualified_ref = QueryFieldRefIr {
+                    path: qualified,
+                    element_index: field.element_index,
+                };
+                self.validate_fuzzy_query_field(&qualified_ref, path)?;
+                return Ok(qualified_ref);
+            }
+        }
+        if let Ok(schema_field) = self.query_field(field.path.as_str(), format!("{path}.path")) {
+            if schema_field.capabilities().searchable()
+                || (schema_field.kind() == FieldKind::Keyword
+                    && schema_field.capabilities().filterable())
+            {
+                return Ok(field.clone());
+            }
+        }
+        let Some(context) = field_context else {
+            self.validate_fuzzy_query_field(field, path)?;
+            return Ok(field.clone());
+        };
+        if field.path.as_str().contains('.') {
+            self.validate_fuzzy_query_field(field, path)?;
+            return Ok(field.clone());
+        }
+        let qualified = FieldName::parse_query_path(format!(
+            "{}.{}",
+            context.path.as_str(),
+            field.path.as_str()
+        ))?;
+        let qualified_ref = QueryFieldRefIr {
+            path: qualified,
+            element_index: field.element_index,
+        };
+        self.validate_fuzzy_query_field(&qualified_ref, path)?;
         Ok(qualified_ref)
     }
 

@@ -3963,22 +3963,7 @@ fn nearest_neighbor_allows_zero_explore_additional_hits() {
 }
 
 #[test]
-fn specialized_query_inputs_reject_unsupported_shapes_explicitly() {
-    let nearest = typed_expression(QueryExprKindIr::NearestNeighbor {
-        document_field: typed_field("embedding"),
-        query_tensor: "query_embedding".to_owned(),
-    });
-    let missing = request(Vec::new(), Vec::new(), None).with_query(nearest.clone());
-    let error = validate_search_request(&missing).unwrap_err();
-    assert_eq!(error.details[0].code, "missing_query_input");
-
-    let scalar = missing.with_inputs(std::collections::BTreeMap::from([(
-        "query_embedding".to_owned(),
-        QueryInputIr::Literal(RequestValueIr::Float64(1.0)),
-    )]));
-    let error = validate_search_request(&scalar).unwrap_err();
-    assert_eq!(error.details[0].code, "nearest_neighbor_tensor_required");
-
+fn specialized_query_lowering_rejects_unsupported_values_explicitly() {
     let predicate = typed_expression(QueryExprKindIr::Predicate {
         field: typed_field("access"),
         features: std::collections::BTreeMap::from([(

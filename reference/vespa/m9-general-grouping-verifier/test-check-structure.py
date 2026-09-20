@@ -122,7 +122,7 @@ def main():
         )
 
     with tempfile.TemporaryDirectory() as directory:
-        candidate = Path(directory) / "comment-only-grouping.cpp"
+        candidate = Path(directory) / "comment-only-grouping.cc"
         candidate.write_text(mutated, encoding="utf-8")
         environment = os.environ.copy()
         environment["SK_GROUPING_NATIVE_CPP"] = str(candidate)
@@ -140,7 +140,29 @@ def main():
                 "by a comment containing the expected Vespa tokens"
             )
 
-    print("check-structure comment-only regression passed")
+        forbidden = Path(directory) / "forbidden-grouping.cc"
+        forbidden.write_text(
+            source[:opening + 1]
+            + "\n    GroupingRequestIr forbidden_reference;\n"
+            + source[opening + 1:],
+            encoding="utf-8",
+        )
+        environment["SK_GROUPING_NATIVE_CPP"] = str(forbidden)
+        result = subprocess.run(
+            [str(CHECKER)],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            raise SystemExit(
+                "check-structure.sh accepted a .cc grouping implementation "
+                "depending on C-series IR terminology"
+            )
+
+    print("check-structure source-extension and comment-only regressions passed")
 
 
 if __name__ == "__main__":
