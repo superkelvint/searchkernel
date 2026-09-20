@@ -123,6 +123,131 @@ fn update_resolution_preserves_operations_create_and_condition() {
     assert_eq!(request.create(), Some(true));
 }
 
+#[test]
+fn update_resolution_enforces_target_value_and_arithmetic_policy() {
+    fn detail_code(id: &str, operations: &[UpdateOperationInput]) -> String {
+        resolve_update(&context(), id, operations, None, None)
+            .expect_err("update should be rejected")
+            .details[0]
+            .code
+            .clone()
+    }
+
+    assert_eq!(detail_code("doc:1", &[]), "empty_update");
+    assert_eq!(
+        detail_code(
+            "",
+            &[UpdateOperationInput::Clear {
+                target: "price".to_owned(),
+            }],
+        ),
+        "invalid_document_id"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Assign {
+                target: String::new(),
+                value: RequestValueIr::Int64(1),
+            }],
+        ),
+        "invalid_update_target"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Assign {
+                target: "price.value".to_owned(),
+                value: RequestValueIr::Int64(1),
+            }],
+        ),
+        "update_field_path_not_supported"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Assign {
+                target: "missing".to_owned(),
+                value: RequestValueIr::Int64(1),
+            }],
+        ),
+        "unknown_field"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Assign {
+                target: "price".to_owned(),
+                value: RequestValueIr::String("not an integer".to_owned()),
+            }],
+        ),
+        "type_mismatch"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Arithmetic {
+                target: "brand".to_owned(),
+                operator: UpdateArithmeticOperatorIr::Increment,
+                operand: RequestValueIr::Int64(1),
+            }],
+        ),
+        "arithmetic_requires_numeric_field"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[UpdateOperationInput::Arithmetic {
+                target: "rating".to_owned(),
+                operator: UpdateArithmeticOperatorIr::Divide,
+                operand: RequestValueIr::Float64(f64::NAN),
+            }],
+        ),
+        "arithmetic_operand_type"
+    );
+    assert_eq!(
+        detail_code(
+            "doc:1",
+            &[
+                UpdateOperationInput::Assign {
+                    target: "price".to_owned(),
+                    value: RequestValueIr::Int64(1),
+                },
+                UpdateOperationInput::Clear {
+                    target: "price".to_owned(),
+                },
+            ],
+        ),
+        "duplicate_update_target"
+    );
+
+    for operator in [
+        UpdateArithmeticOperatorIr::Increment,
+        UpdateArithmeticOperatorIr::Decrement,
+        UpdateArithmeticOperatorIr::Multiply,
+        UpdateArithmeticOperatorIr::Divide,
+    ] {
+        let request = resolve_update(
+            &context(),
+            "doc:1",
+            &[UpdateOperationInput::Arithmetic {
+                target: "rating".to_owned(),
+                operator,
+                operand: RequestValueIr::Float64(2.0),
+            }],
+            None,
+            None,
+        )
+        .expect("finite arithmetic update resolves");
+        assert_eq!(request.operations().len(), 1);
+        assert!(matches!(
+            request.operations()[0],
+            UpdateOperationIr::Arithmetic { operator: actual, operand, .. }
+                if actual == operator && operand == 2.0
+        ));
+    }
+}
+
 fn string_value(
     builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
     value: &str,
@@ -1832,7 +1957,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         (
             "QueryGeoLocation",
             QueryExprKindIr::GeoLocation {
-                field: field("brand"),
+                field: field("position"),
                 latitude: 59.9,
                 longitude: 10.7,
                 radius: "10 km".to_owned(),
@@ -1841,7 +1966,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         (
             "QueryGeoBoundingBox",
             QueryExprKindIr::GeoBoundingBox {
-                field: field("brand"),
+                field: field("position"),
                 south: 59.0,
                 west: 10.0,
                 north: 60.0,
@@ -1851,14 +1976,14 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         (
             "QueryNearestNeighbor",
             QueryExprKindIr::NearestNeighbor {
-                document_field: field("brand"),
+                document_field: field("embedding"),
                 query_tensor: "q".to_owned(),
             },
         ),
         (
             "QueryPredicate",
             QueryExprKindIr::Predicate {
-                field: field("brand"),
+                field: field("access"),
                 features: BTreeMap::from([(
                     String::from("hobby"),
                     RequestValueIr::String("ski".to_owned()),
@@ -1869,8 +1994,31 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
     ];
     assert_eq!(cases.len(), 32);
 
-    let mut query_context = context();
-    query_context.definition.fields[0].capabilities.searchable = true;
+    let mut definition = context().definition.clone();
+    definition.fields[0].capabilities.searchable = true;
+    definition.fields.extend([
+        FieldIr::new(
+            FieldName::parse("position").unwrap(),
+            DataTypeIr::Position,
+            None,
+            FieldCapabilities::new(false, true, true, false, false),
+        ),
+        FieldIr::new(
+            FieldName::parse("embedding").unwrap(),
+            DataTypeIr::Tensor {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+            },
+            None,
+            FieldCapabilities::new(false, true, true, false, false),
+        ),
+        FieldIr::new(
+            FieldName::parse("access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            FieldCapabilities::new(false, true, true, false, false),
+        ),
+    ]);
+    let query_context = IndexContext::from_definition_ir(definition);
     for (name, kind) in cases {
         let expected = annotated(kind);
         let expected = if matches!(
@@ -2390,5 +2538,102 @@ fn typed_query_validation_enforces_field_capabilities_and_types() {
             .details[0]
             .code,
         "invalid_query_children"
+    );
+
+    let mut special_definition = context().definition.clone();
+    let special_capabilities = FieldCapabilities::new(false, true, true, false, false);
+    special_definition.fields.extend([
+        FieldIr::new(
+            FieldName::parse("position").unwrap(),
+            DataTypeIr::Position,
+            None,
+            special_capabilities,
+        ),
+        FieldIr::new(
+            FieldName::parse("embedding").unwrap(),
+            DataTypeIr::Tensor {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+            },
+            None,
+            special_capabilities,
+        ),
+        FieldIr::new(
+            FieldName::parse("access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            special_capabilities,
+        ),
+    ]);
+    let special = IndexContext::from_definition_ir(special_definition);
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::GeoLocation {
+                field: field("price"),
+                latitude: 1.0,
+                longitude: 2.0,
+                radius: "1 km".to_owned(),
+            }),
+        ),
+        "type_mismatch"
+    );
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::NearestNeighbor {
+                document_field: field("price"),
+                query_tensor: "q".to_owned(),
+            }),
+        ),
+        "type_mismatch"
+    );
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::WeightedSet {
+                field: field("embedding"),
+                items: vec![WeightedQueryItemIr {
+                    key: RequestValueIr::String("x".to_owned()),
+                    weight: 1,
+                }],
+            }),
+        ),
+        "type_mismatch"
+    );
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::Predicate {
+                field: field("price"),
+                features: BTreeMap::from([(
+                    "hobby".to_owned(),
+                    RequestValueIr::String("music".to_owned()),
+                )]),
+                range_features: BTreeMap::new(),
+            }),
+        ),
+        "type_mismatch"
+    );
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::Predicate {
+                field: field("access"),
+                features: BTreeMap::from([("hobby".to_owned(), RequestValueIr::Int64(1))]),
+                range_features: BTreeMap::new(),
+            }),
+        ),
+        "invalid_predicate_value"
+    );
+    assert_eq!(
+        error_code(
+            &special,
+            expression(QueryExprKindIr::Predicate {
+                field: field("access"),
+                features: BTreeMap::new(),
+                range_features: BTreeMap::from([("age".to_owned(), RequestValueIr::Int64(-1))]),
+            }),
+        ),
+        "invalid_predicate_value"
     );
 }

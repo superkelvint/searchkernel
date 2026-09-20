@@ -1077,6 +1077,15 @@ with Index.create(
 
     assert updated["inventory"] == 25
 
+    index.update("shoe-1").decrement("inventory", 3).execute()
+    assert index.get("shoe-1")["inventory"] == 22
+
+    index.update("shoe-1").multiply("inventory", 2).execute()
+    assert index.get("shoe-1")["inventory"] == 44
+
+    index.update("shoe-1").divide("inventory", 4).execute()
+    assert index.get("shoe-1")["inventory"] == 11
+
     index.update("shoe-created").set("inventory", 7).create().execute()
     assert index.get("shoe-created")["inventory"] == 7
 
@@ -1170,7 +1179,7 @@ with Index.open(INDEX_PATH) as index:
 
     assert shoe1["price"] == 79.0
     assert shoe1["rating"] == 4
-    assert shoe1["inventory"] == 25
+    assert shoe1["inventory"] == 11
     assert shoe1["title"] == "Fast Marathon Shoes"
     assert "shoe-1" in {hit.id for hit in index.search("marathon").execute().hits}
     assert "shoe-1" not in {hit.id for hit in index.search("jumped").execute().hits}
@@ -1270,7 +1279,7 @@ Successfully demonstrated through the public Python facade:
   ✓ get
   ✓ delete + duplicate delete
   ✓ PatchBuilder set/unset
-  ✓ UpdateBuilder set / unset / increment / create
+  ✓ UpdateBuilder set / unset / increment / decrement / multiply / divide / create
   ✓ persistence across reopen
 
   SEARCH / FILTERING

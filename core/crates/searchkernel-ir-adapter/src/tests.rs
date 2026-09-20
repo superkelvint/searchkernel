@@ -3181,6 +3181,80 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
         .expect("compile same-element schema");
     let backend = VespaBackend::open(&data, &config).expect("open same-element backend");
 
+    // Build the same relative-member query through the canonical portable
+    // FlatBuffers -> *_to_ir() path. The direct-IR test below cannot detect a
+    // field resolver that eagerly looks up `name` and `color` as top-level
+    // fields before the `items` context is available.
+    let portable_query = {
+        let relative = |name: &str, value: &str| QueryExprIr {
+            kind: QueryExprKindIr::Contains {
+                field: typed_field(name),
+                item: Box::new(typed_term(value)),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        };
+        let query = QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Contains {
+                field: typed_field("items"),
+                item: Box::new(QueryExprIr {
+                    kind: QueryExprKindIr::SameElement(vec![
+                        relative("name", "bob"),
+                        relative("color", "blue"),
+                    ]),
+                    annotations: std::collections::BTreeMap::new(),
+                }),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        }));
+        let definition = IndexDefinitionIr::new(
+            None,
+            vec![FieldIr::new(
+                field("items"),
+                DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                    fields: vec![
+                        StructFieldIr {
+                            name: "name".to_owned(),
+                            data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                        },
+                        StructFieldIr {
+                            name: "color".to_owned(),
+                            data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                        },
+                    ],
+                })),
+                None,
+                FieldCapabilities::new(true, true, true, false, false),
+            )],
+            Vec::new(),
+            RankingPolicyIr::DefaultRelevanceV1,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+        .expect("portable same-element definition");
+        let request = SearchRequestIr::new(
+            query,
+            Vec::new(),
+            None,
+            Vec::new(),
+            10,
+            0,
+            ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        );
+        let bytes = searchkernel_ir::search_request_ir_to_api(&request);
+        let api_request =
+            searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::SearchRequest>(&bytes)
+                .expect("portable same-element request");
+        IndexContext::from_definition_ir(definition)
+            .search_to_ir(api_request)
+            .expect("relative portable fields resolve after parent context")
+            .query()
+            .clone()
+    };
+
     let document = |id: &str, tags: Vec<&str>, items: [(&str, &str); 2]| {
         DocumentIr::new(
             DocumentId::parse(id).unwrap(),
@@ -3263,6 +3337,12 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
         ids(backend
             .search(request(tags_query))
             .expect("array<string> sameElement")),
+        vec!["doc:same"]
+    );
+    assert_eq!(
+        ids(backend
+            .search(request(portable_query))
+            .expect("portable relative-member sameElement")),
         vec!["doc:same"]
     );
 
@@ -3541,7 +3621,28 @@ fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
             )]),
         )))
         .expect("insert range predicate expression document");
-
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:or").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":2,"children":[{"type":4,"key":"hobby","feature_set":["music"]},{"type":4,"key":"hobby","feature_set":["sports"]}]}"#.to_owned(),
+                },
+            )]),
+        )))
+        .expect("insert disjunction predicate expression document");
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:not").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":3,"children":[{"type":5,"key":"age","range_min":18,"range_max":30}]}"#.to_owned(),
+                },
+            )]),
+        )))
+        .expect("insert negation predicate expression document");
     let search = |kind| {
         backend
             .search(SearchRequestIr::new(
@@ -3573,20 +3674,35 @@ fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
             .collect::<Vec<_>>()
     };
 
-    assert_eq!(
-        ids(search(QueryIr::Typed(Box::new(QueryExprIr {
-            kind: QueryExprKindIr::Predicate {
-                field: typed_field("access"),
-                features: std::collections::BTreeMap::from([(
-                    "hobby".to_owned(),
-                    RequestValueIr::String("music".to_owned()),
-                )]),
-                range_features: std::collections::BTreeMap::new(),
-            },
-            annotations: std::collections::BTreeMap::new(),
-        })))),
-        vec!["doc:legacy-feature"]
-    );
+    let music = search(QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Predicate {
+            field: typed_field("access"),
+            features: std::collections::BTreeMap::from([(
+                "hobby".to_owned(),
+                RequestValueIr::String("music".to_owned()),
+            )]),
+            range_features: std::collections::BTreeMap::new(),
+        },
+        annotations: std::collections::BTreeMap::new(),
+    })));
+    let mut music_ids = ids(music);
+    music_ids.sort();
+    assert_eq!(music_ids, vec!["doc:legacy-feature", "doc:not", "doc:or"]);
+
+    let sports = search(QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Predicate {
+            field: typed_field("access"),
+            features: std::collections::BTreeMap::from([(
+                "hobby".to_owned(),
+                RequestValueIr::String("sports".to_owned()),
+            )]),
+            range_features: std::collections::BTreeMap::new(),
+        },
+        annotations: std::collections::BTreeMap::new(),
+    })));
+    let mut sports_ids = ids(sports);
+    sports_ids.sort();
+    assert_eq!(sports_ids, vec!["doc:not", "doc:or"]);
 
     assert_eq!(
         ids(search(QueryIr::Typed(Box::new(QueryExprIr {
@@ -3618,13 +3734,171 @@ fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
             },
             annotations: std::collections::BTreeMap::new(),
         })))),
-        vec!["doc:legacy-feature", "doc:composed", "doc:range"]
+        vec!["doc:legacy-feature", "doc:composed", "doc:range", "doc:or"]
     );
 
     backend
         .engine
         .close()
         .expect("close specialized-query backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn predicate_assignment_updates_old_and_new_values_across_reopen() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-predicate-update-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("predicate_update").field(
+        Field::new("access", FieldType::Predicate)
+            .attribute()
+            .predicate_arity(8),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile predicate update schema");
+    let backend = VespaBackend::open(&data, &config).expect("open predicate update backend");
+
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:update-features").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::Predicate {
+                    features: std::collections::BTreeMap::from([(
+                        "hobby".to_owned(),
+                        "stale".to_owned(),
+                    )]),
+                },
+            )]),
+        )))
+        .expect("insert predicate feature update document");
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:update-expression").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":4,"key":"hobby","feature_set":["stale"]}"#.to_owned(),
+                },
+            )]),
+        )))
+        .expect("insert predicate expression update document");
+
+    let predicate = |value: &str| {
+        QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Predicate {
+                field: typed_field("access"),
+                features: std::collections::BTreeMap::from([(
+                    "hobby".to_owned(),
+                    RequestValueIr::String(value.to_owned()),
+                )]),
+                range_features: std::collections::BTreeMap::new(),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        }))
+    };
+    let request = |value: &str| {
+        SearchRequestIr::new(
+            predicate(value),
+            Vec::new(),
+            None,
+            Vec::new(),
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        let mut ids = group
+            .children
+            .into_iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    };
+
+    assert_eq!(
+        ids(backend
+            .search(request("stale"))
+            .expect("search stale predicate")),
+        vec!["doc:update-expression", "doc:update-features"]
+    );
+    backend
+        .update(UpdateRequestIr::new(
+            DocumentId::parse("doc:update-features").unwrap(),
+            vec![UpdateOperationIr::Assign {
+                target: UpdateTargetIr::parse("access").unwrap(),
+                value: FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":4,"key":"hobby","feature_set":["fresh"]}"#.to_owned(),
+                },
+            }],
+        ))
+        .expect("update feature predicate with expression");
+    backend
+        .update(UpdateRequestIr::new(
+            DocumentId::parse("doc:update-expression").unwrap(),
+            vec![UpdateOperationIr::Assign {
+                target: UpdateTargetIr::parse("access").unwrap(),
+                value: FieldValueIr::Predicate {
+                    features: std::collections::BTreeMap::from([(
+                        "hobby".to_owned(),
+                        "fresh".to_owned(),
+                    )]),
+                },
+            }],
+        ))
+        .expect("update expression predicate with features");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    assert!(ids(backend
+        .search(request("stale"))
+        .expect("search stale predicate after update"))
+    .is_empty());
+    assert_eq!(
+        ids(backend
+            .search(request("fresh"))
+            .expect("search fresh predicate after update")),
+        vec!["doc:update-expression", "doc:update-features"]
+    );
+
+    backend
+        .engine
+        .close()
+        .expect("close predicate update backend");
+    let reopened = VespaBackend::open(&data, &config).expect("reopen predicate update backend");
+    assert!(ids(reopened
+        .search(request("stale"))
+        .expect("search stale predicate after reopen"))
+    .is_empty());
+    assert_eq!(
+        ids(reopened
+            .search(request("fresh"))
+            .expect("search fresh predicate after reopen")),
+        vec!["doc:update-expression", "doc:update-features"]
+    );
+    reopened
+        .engine
+        .close()
+        .expect("close reopened predicate update backend");
     let _ = std::fs::remove_dir_all(root);
 }
 
