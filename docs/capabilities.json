@@ -1,0 +1,646 @@
+{
+  "version": 1,
+  "snapshot": "2026-09-20",
+  "capabilities": [
+    {
+      "id": "query.boolean",
+      "title": "Boolean query operators",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m7/verify-m7.sh"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "query.phrase_near",
+      "title": "Phrase and proximity queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m7/verify-m7.sh"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "query.same_element",
+      "title": "sameElement query",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/QUERY_SOURCE_TRACE.md",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model."
+      ]
+    },
+    {
+      "id": "query.fuzzy",
+      "title": "Fuzzy query",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m7/CONTRACT.md",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path."
+      ]
+    },
+    {
+      "id": "query.prefix_suffix_substring",
+      "title": "Prefix, suffix, and substring queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "core/crates/searchkernel/src/query.rs",
+        "reference/vespa/m7/CONTRACT.md",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "These typed helpers are not part of the reduced textual userInput/userQuery grammar."
+      ]
+    },
+    {
+      "id": "query.alternatives",
+      "title": "Alternatives and equivalence queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "alternatives currently accepts term children only; more general alternatives are rejected."
+      ]
+    },
+    {
+      "id": "query.nearest_neighbor",
+      "title": "Nearest-neighbor vector search",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m12/verify-m12.sh",
+        "clients/python/tests/test_flatbuffers_objects.py"
+      ],
+      "limitations": [
+        "The proven slice uses dense tensors and does not expose the full Vespa HNSW tuning surface."
+      ]
+    },
+    {
+      "id": "query.geo",
+      "title": "Geo-location and bounding-box queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Geo matching is delegated to Vespa and is not implemented in Rust; verified bounding-box edges are inclusive."
+      ]
+    },
+    {
+      "id": "query.predicate",
+      "title": "Predicate queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Only the supported signed-integer range representation and documented predicate expression shapes are lowered."
+      ]
+    },
+    {
+      "id": "query.weighted_and_wand",
+      "title": "Weighted-set, dot-product, weak-and, and WAND queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/query.rs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped."
+      ]
+    },
+    {
+      "id": "query.user_input_user_query",
+      "title": "userInput and userQuery text parsing",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites."
+      ]
+    },
+    {
+      "id": "filter.structured",
+      "title": "Structured filters",
+      "area": "filter",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m7/verify-m7.sh",
+        "core/crates/searchkernel/src/filter.rs"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "filter.textual",
+      "title": "Textual filter expressions",
+      "area": "filter",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "docs/filter-expression-language.md",
+        "core/crates/searchkernel-ir/src/filter_expression.rs"
+      ],
+      "limitations": [
+        "The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR."
+      ]
+    },
+    {
+      "id": "search.sorting",
+      "title": "Sorting and missing-value placement",
+      "area": "search",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m8/verify-m8.sh",
+        "core/crates/searchkernel/src/search.rs"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "search.pagination",
+      "title": "Limit and offset pagination",
+      "area": "search",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m8/verify-m8.sh"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "result.summaries",
+      "title": "Document summaries and stored-field projection",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m8/verify-m8.sh",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Grouped-hit/docsum ownership and external document-id fidelity are not proven for every summary class."
+      ]
+    },
+    {
+      "id": "result.highlighting",
+      "title": "Highlighting",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/client-api-spec.md"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "result.tensor_readback",
+      "title": "Tensor feature and result readback",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Tensor decoding is a higher-layer capability and is not implied by the opaque Vespa feature container."
+      ]
+    },
+    {
+      "id": "grouping.structured",
+      "title": "Structured grouping and faceting",
+      "area": "grouping",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m9/verify-m9.sh",
+        "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh"
+      ],
+      "limitations": [
+        "Parallel grouping branches are not representable by the current linear native grouping plan."
+      ]
+    },
+    {
+      "id": "grouping.functions",
+      "title": "Grouping expressions and functions",
+      "area": "grouping",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Member, MapLookup, Bucket, and some validated Vespa function names still require dedicated native constructors."
+      ]
+    },
+    {
+      "id": "grouping.aggregations",
+      "title": "Grouping aggregations",
+      "area": "grouping",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m9/verify-m9.sh",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "The executable expression subset is documented by the native adapter; unsupported forms fail before execution."
+      ]
+    },
+    {
+      "id": "grouping.summary_aggregation",
+      "title": "Summary aggregation",
+      "area": "grouping",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Grouped summary result fidelity remains a known real-Vespa verification gap for some summary classes."
+      ]
+    },
+    {
+      "id": "grouping.continuations",
+      "title": "Grouping continuations",
+      "area": "grouping",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Continuation tokens are not currently represented end-to-end in the linear grouping plan, native ABI, and portable result."
+      ]
+    },
+    {
+      "id": "grouping.raw_source",
+      "title": "Raw grouping source",
+      "area": "grouping",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Raw grouping text requires a parser and normalization step before it can enter canonical IR."
+      ]
+    },
+    {
+      "id": "update.document_crud",
+      "title": "Document insert, upsert, patch, delete, and get",
+      "area": "update",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/i/verify-i.sh",
+        "docs/status.md"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "update.arithmetic",
+      "title": "Arithmetic document updates",
+      "area": "update",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Arithmetic update nodes are represented in the portable contract but are not yet proven through the complete native product path."
+      ]
+    },
+    {
+      "id": "update.conditional",
+      "title": "Conditional and matched-element updates",
+      "area": "update",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "The portable update model represents conditional forms, but the public ergonomic and native execution paths are not complete."
+      ]
+    },
+    {
+      "id": "update.tensor_modify",
+      "title": "Tensor modify updates",
+      "area": "update",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Tensor modify operations are represented but not exposed as a complete ergonomic and verified product capability."
+      ]
+    },
+    {
+      "id": "tensor.dense_document_crud",
+      "title": "Dense tensor document values",
+      "area": "tensor",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m13/verify-m13.sh",
+        "core/crates/searchkernel/src/tensor.rs"
+      ],
+      "limitations": [
+        "Sparse and mixed tensors remain unsupported in the current document and query-input paths."
+      ]
+    },
+    {
+      "id": "query.yql",
+      "title": "YQL query source",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the wrapper."
+      ]
+    },
+    {
+      "id": "query.text_weak_and",
+      "title": "Analyzed text and WeakAnd queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m7/verify-m7.sh",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "text(...) is plain analyzed text with Vespa's default WeakAnd semantics; it is not a phrase."
+      ]
+    },
+    {
+      "id": "query.in_term",
+      "title": "Native in-term queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "String and integer values use Vespa's native InTerm node rather than an OR of equality terms."
+      ]
+    },
+    {
+      "id": "query.non_empty",
+      "title": "NonEmpty query wrapper",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker."
+      ]
+    },
+    {
+      "id": "query.labels",
+      "title": "Labeled query rank properties",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties."
+      ]
+    },
+    {
+      "id": "schema.array_struct_fields",
+      "title": "Array-of-struct document fields",
+      "area": "schema",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "Member queries are relative to the parent element and do not form a general nested struct or map model."
+      ]
+    },
+    {
+      "id": "schema.position_geo_fields",
+      "title": "Position fields and derived geo attributes",
+      "area": "schema",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "docs/architecture.md"
+      ],
+      "limitations": [
+        "The native adapter publishes Vespa-compatible derived zcurve data; Search Kernel does not implement geo matching independently."
+      ]
+    },
+    {
+      "id": "result.match_features",
+      "title": "Match-feature and summary-feature readback",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/searchreply/CONTRACT.md"
+      ],
+      "limitations": [
+        "Match features cross the Vespa boundary as doubles or borrowed opaque data; tensor decoding is tracked separately."
+      ]
+    },
+    {
+      "id": "result.grouping_tree",
+      "title": "Recursive grouping result trees",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/m9/verify-m9.sh"
+      ],
+      "limitations": [
+        "The implemented plan exposes recursive groups, keys, aggregation values, and the canonical root, not Vespa's complete result-tree surface."
+      ]
+    },
+    {
+      "id": "result.degradation_metadata",
+      "title": "Coverage, timeout, and issue metadata",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {"rust": true, "python": true},
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "reference/vespa/searchreply/CONTRACT.md"
+      ],
+      "limitations": [
+        "Deterministic acceptance relies on real match-phase degradation; the frozen verifier does not fabricate a Vespa issue."
+      ]
+    },
+    {
+      "id": "platform.embedded_vespa_scope",
+      "title": "Embedded single-node Vespa scope",
+      "area": "platform",
+      "represented": false,
+      "semantic": false,
+      "executable": false,
+      "ergonomic": {"rust": false, "python": false},
+      "verified_by": [
+        "docs/architecture.md",
+        "docs/status.md"
+      ],
+      "limitations": [
+        "Distributed routing, configuration services, schema deployment, federation, and other container-level Vespa facilities are outside this wrapper."
+      ]
+    }
+  ]
+}

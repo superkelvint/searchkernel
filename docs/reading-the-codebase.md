@@ -32,17 +32,18 @@ Read these files in this order:
 
 1. [README.md](../README.md) — what the project is for.
 2. [docs/status.md](status.md) — what is present in the current tree.
-3. [docs/architecture.md](architecture.md) — the architectural boundaries.
-4. [docs/roadmap.md](roadmap.md) — intended sequencing, not live status.
-5. [api/README.md](../api/README.md) — the language-neutral data contract.
-6. [core/crates/README.md](../core/crates/README.md) — the Rust crate map.
-7. [core/crates/searchkernel/README.md](../core/crates/searchkernel/README.md) — the API
+3. [docs/CAPABILITIES.md](CAPABILITIES.md) — current cross-layer feature status.
+4. [docs/architecture.md](architecture.md) — the architectural boundaries.
+5. [docs/roadmap.md](roadmap.md) — intended sequencing, not live status.
+6. [api/README.md](../api/README.md) — the language-neutral data contract.
+7. [core/crates/README.md](../core/crates/README.md) — the Rust crate map.
+8. [core/crates/searchkernel/README.md](../core/crates/searchkernel/README.md) — the API
    an application uses.
-8. [core/crates/searchkernel-ir/README.md](../core/crates/searchkernel-ir/README.md)
+9. [core/crates/searchkernel-ir/README.md](../core/crates/searchkernel-ir/README.md)
    — the semantic center.
-9. [core/crates/searchkernel-vespa-engine/README.md](../core/crates/searchkernel-vespa-engine/README.md)
+10. [core/crates/searchkernel-vespa-engine/README.md](../core/crates/searchkernel-vespa-engine/README.md)
    — the Vespa-specific adapter.
-10. [core/native/vespa/README.md](../core/native/vespa/README.md) — the C++ boundary.
+11. [core/native/vespa/README.md](../core/native/vespa/README.md) — the C++ boundary.
 
 Then trace one complete operation. Search is the best first example because it
 passes through every important layer.

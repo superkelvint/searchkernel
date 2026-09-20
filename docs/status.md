@@ -18,6 +18,7 @@ verifier when a milestone must be declared accepted.
 | What must always be true? | [Architecture](architecture.md) |
 | What do we intend to build? | [Roadmap](roadmap.md) |
 | What is true in the current tree? | **Current status** |
+| Does the current tree support a capability? | [Capability ledger](CAPABILITIES.md) |
 | Why are old paths and artifacts still here? | [History](history.md) |
 
 ## Current architecture
