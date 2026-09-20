@@ -3161,6 +3161,12 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
                 .summary(),
         )
         .field(
+            Field::new("name", FieldType::Text)
+                .indexed()
+                .attribute()
+                .summary(),
+        )
+        .field(
             Field::new(
                 "items",
                 FieldType::ArrayStruct(vec![
@@ -3208,23 +3214,31 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
         }));
         let definition = IndexDefinitionIr::new(
             None,
-            vec![FieldIr::new(
-                field("items"),
-                DataTypeIr::Array(Box::new(DataTypeIr::Struct {
-                    fields: vec![
-                        StructFieldIr {
-                            name: "name".to_owned(),
-                            data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-                        },
-                        StructFieldIr {
-                            name: "color".to_owned(),
-                            data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
-                        },
-                    ],
-                })),
-                None,
-                FieldCapabilities::new(true, true, true, false, false),
-            )],
+            vec![
+                FieldIr::new(
+                    field("name"),
+                    DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                    None,
+                    FieldCapabilities::new(true, true, true, false, false),
+                ),
+                FieldIr::new(
+                    field("items"),
+                    DataTypeIr::Array(Box::new(DataTypeIr::Struct {
+                        fields: vec![
+                            StructFieldIr {
+                                name: "name".to_owned(),
+                                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                            },
+                            StructFieldIr {
+                                name: "color".to_owned(),
+                                data_type: DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                            },
+                        ],
+                    })),
+                    None,
+                    FieldCapabilities::new(true, true, true, false, false),
+                ),
+            ],
             Vec::new(),
             RankingPolicyIr::DefaultRelevanceV1,
             PrefixPolicy::Disabled,

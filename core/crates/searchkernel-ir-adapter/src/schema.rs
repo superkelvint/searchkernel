@@ -91,7 +91,7 @@ pub fn compile_index_definition(
         if capabilities.stored()
             && !matches!(
                 field.data_type(),
-                searchkernel_ir::DataTypeIr::Tensor { .. }
+                searchkernel_ir::DataTypeIr::Position | searchkernel_ir::DataTypeIr::Tensor { .. }
             )
         {
             native = native.summary();
@@ -309,6 +309,7 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
             | searchkernel_ir::DataTypeIr::Primitive(
                 searchkernel_ir::PrimitiveDataTypeIr::Float64,
             )
+            | searchkernel_ir::DataTypeIr::Position
             | searchkernel_ir::DataTypeIr::Tensor { .. } => {}
             searchkernel_ir::DataTypeIr::Array(element)
                 if matches!(

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::filter::MAX_FILTER_BINDINGS;
+use super::query::normalize_typed_query;
 
 fn context() -> IndexContext {
     let field = |name, kind| {
@@ -1775,8 +1776,26 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         }
     }
     fn annotated(kind: QueryExprKindIr) -> QueryIr {
-        let mut annotations = BTreeMap::new();
-        annotations.insert("label".to_owned(), RequestValueIr::String("v2".to_owned()));
+        let annotations = match &kind {
+            QueryExprKindIr::Wand { .. } => BTreeMap::from([
+                ("targetNumHits".to_owned(), RequestValueIr::UInt64(100)),
+                ("scoreThreshold".to_owned(), RequestValueIr::Int64(0)),
+                (
+                    "thresholdBoostFactor".to_owned(),
+                    RequestValueIr::Float64(1.0),
+                ),
+            ]),
+            QueryExprKindIr::NearestNeighbor { .. } => BTreeMap::from([
+                ("targetNumHits".to_owned(), RequestValueIr::UInt64(100)),
+                ("approximate".to_owned(), RequestValueIr::Bool(true)),
+                (
+                    "exploreAdditionalHits".to_owned(),
+                    RequestValueIr::UInt64(0),
+                ),
+            ]),
+            QueryExprKindIr::SameElement(_) => BTreeMap::new(),
+            _ => BTreeMap::from([("label".to_owned(), RequestValueIr::String("v2".to_owned()))]),
+        };
         QueryIr::Typed(Box::new(QueryExprIr { kind, annotations }))
     }
     fn request(query: QueryIr) -> SearchRequestIr {
@@ -1861,7 +1880,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
         ),
         (
             "QuerySameElement",
-            QueryExprKindIr::SameElement(vec![term()]),
+            QueryExprKindIr::SameElement(vec![term(), term()]),
         ),
         ("QueryEquiv", QueryExprKindIr::Equiv(vec![term(), term()])),
         (
@@ -2704,4 +2723,232 @@ fn typed_query_validation_enforces_field_capabilities_and_types() {
         .validate_typed_query(&same_element("foo"), None, None, "query")
         .expect_err("top-level foo must not mask missing items.foo");
     assert_eq!(missing_member.details[0].code, "unknown_field");
+
+    let resolved = relative
+        .resolve_searchable_query_field(
+            &field("name"),
+            Some(&field("items")),
+            "query.same_element.name",
+        )
+        .expect("relative member resolves");
+    assert_eq!(resolved.path.as_str(), "items.name");
+}
+
+#[test]
+fn typed_query_special_annotations_are_resolved_and_validated_in_ir() {
+    fn expression(
+        kind: QueryExprKindIr,
+        annotations: BTreeMap<String, RequestValueIr>,
+    ) -> QueryExprIr {
+        QueryExprIr { kind, annotations }
+    }
+
+    let wand = QueryExprKindIr::Wand {
+        field: QueryFieldRefIr {
+            path: FieldName::parse("brand").unwrap(),
+            element_index: None,
+        },
+        items: vec![WeightedQueryItemIr {
+            key: RequestValueIr::String("acme".to_owned()),
+            weight: 1,
+        }],
+    };
+    let mut normalized = expression(wand.clone(), BTreeMap::new());
+    normalize_typed_query(&mut normalized, "query").expect("WAND defaults are portable");
+    assert_eq!(
+        normalized.annotations.get("targetNumHits"),
+        Some(&RequestValueIr::UInt64(100))
+    );
+    assert_eq!(
+        normalized.annotations.get("scoreThreshold"),
+        Some(&RequestValueIr::Int64(0))
+    );
+    assert_eq!(
+        normalized.annotations.get("thresholdBoostFactor"),
+        Some(&RequestValueIr::Float64(1.0))
+    );
+
+    let mut conflicting_wand = expression(
+        wand.clone(),
+        BTreeMap::from([
+            ("targetNumHits".to_owned(), RequestValueIr::UInt64(10)),
+            ("totalTargetHits".to_owned(), RequestValueIr::UInt64(10)),
+        ]),
+    );
+    assert_eq!(
+        normalize_typed_query(&mut conflicting_wand, "query")
+            .unwrap_err()
+            .details[0]
+            .code,
+        "invalid_typed_query_annotation"
+    );
+
+    for annotations in [
+        BTreeMap::from([("targetNumHits".to_owned(), RequestValueIr::UInt64(0))]),
+        BTreeMap::from([("unknownWandOption".to_owned(), RequestValueIr::Bool(true))]),
+    ] {
+        let mut query = expression(wand.clone(), annotations);
+        assert!(normalize_typed_query(&mut query, "query").is_err());
+    }
+
+    let nearest_neighbor = || QueryExprKindIr::NearestNeighbor {
+        document_field: QueryFieldRefIr {
+            path: FieldName::parse("embedding").unwrap(),
+            element_index: None,
+        },
+        query_tensor: "q".to_owned(),
+    };
+    let mut normalized = expression(nearest_neighbor(), BTreeMap::new());
+    normalize_typed_query(&mut normalized, "query").expect("NN defaults are portable");
+    assert_eq!(
+        normalized.annotations.get("targetNumHits"),
+        Some(&RequestValueIr::UInt64(100))
+    );
+    assert_eq!(
+        normalized.annotations.get("approximate"),
+        Some(&RequestValueIr::Bool(true))
+    );
+    assert_eq!(
+        normalized.annotations.get("exploreAdditionalHits"),
+        Some(&RequestValueIr::UInt64(0))
+    );
+
+    for annotations in [
+        BTreeMap::from([("targetNumHits".to_owned(), RequestValueIr::UInt64(0))]),
+        BTreeMap::from([
+            ("targetNumHits".to_owned(), RequestValueIr::UInt64(10)),
+            ("totalTargetHits".to_owned(), RequestValueIr::UInt64(10)),
+        ]),
+        BTreeMap::from([(
+            "distanceThreshold".to_owned(),
+            RequestValueIr::Float64(-1.0),
+        )]),
+        BTreeMap::from([(
+            "distanceThreshold".to_owned(),
+            RequestValueIr::NonFiniteFloat(RequestNonFiniteFloatIr::NaN),
+        )]),
+        BTreeMap::from([("unknownNnOption".to_owned(), RequestValueIr::Bool(true))]),
+    ] {
+        let mut query = expression(nearest_neighbor(), annotations);
+        assert!(normalize_typed_query(&mut query, "query").is_err());
+    }
+    let mut valid = expression(
+        nearest_neighbor(),
+        BTreeMap::from([
+            (
+                "distanceThreshold".to_owned(),
+                RequestValueIr::Float64(0.25),
+            ),
+            (
+                "exploreAdditionalHits".to_owned(),
+                RequestValueIr::UInt64(50),
+            ),
+        ]),
+    );
+    normalize_typed_query(&mut valid, "query").expect("valid NN options");
+    assert_eq!(
+        valid.annotations.get("distanceThreshold"),
+        Some(&RequestValueIr::Float64(0.25))
+    );
+    assert_eq!(
+        valid.annotations.get("exploreAdditionalHits"),
+        Some(&RequestValueIr::UInt64(50))
+    );
+
+    let same_element = QueryExprKindIr::SameElement(Vec::new());
+    for annotations in [
+        BTreeMap::from([("elementFilter".to_owned(), RequestValueIr::Bool(true))]),
+        BTreeMap::from([(
+            "unknownSameElementOption".to_owned(),
+            RequestValueIr::Bool(true),
+        )]),
+    ] {
+        let mut query = expression(same_element.clone(), annotations);
+        assert!(normalize_typed_query(&mut query, "query").is_err());
+    }
+}
+
+#[test]
+fn typed_query_geo_and_predicate_validity_is_rejected_in_ir() {
+    fn field(name: &str) -> QueryFieldRefIr {
+        QueryFieldRefIr {
+            path: FieldName::parse(name).unwrap(),
+            element_index: None,
+        }
+    }
+    fn expression(kind: QueryExprKindIr) -> QueryExprIr {
+        QueryExprIr {
+            kind,
+            annotations: BTreeMap::new(),
+        }
+    }
+    fn error_code(context: &IndexContext, query: QueryExprIr) -> String {
+        context
+            .validate_typed_query(&query, None, None, "query")
+            .unwrap_err()
+            .details[0]
+            .code
+            .clone()
+    }
+
+    let mut definition = context().definition.clone();
+    definition.fields.extend([
+        FieldIr::new(
+            FieldName::parse("position").unwrap(),
+            DataTypeIr::Position,
+            None,
+            FieldCapabilities::new(false, true, true, false, false),
+        ),
+        FieldIr::new(
+            FieldName::parse("access").unwrap(),
+            DataTypeIr::Predicate,
+            None,
+            FieldCapabilities::new(false, true, true, false, false),
+        ),
+    ]);
+    let context = IndexContext::from_definition_ir(definition);
+    for (latitude, longitude) in [(91.0, 0.0), (-91.0, 0.0), (0.0, 181.0), (f64::NAN, 0.0)] {
+        assert_eq!(
+            error_code(
+                &context,
+                expression(QueryExprKindIr::GeoLocation {
+                    field: field("position"),
+                    latitude,
+                    longitude,
+                    radius: "1 km".to_owned(),
+                }),
+            ),
+            if latitude.is_nan() {
+                "non_finite_number"
+            } else {
+                "invalid_geo_coordinate"
+            }
+        );
+    }
+    for (south, west, north, east) in [(2.0, 0.0, 1.0, 1.0), (0.0, 2.0, 1.0, 1.0)] {
+        assert_eq!(
+            error_code(
+                &context,
+                expression(QueryExprKindIr::GeoBoundingBox {
+                    field: field("position"),
+                    south,
+                    west,
+                    north,
+                    east,
+                }),
+            ),
+            "invalid_geo_bounding_box"
+        );
+    }
+    assert_eq!(
+        error_code(
+            &context,
+            expression(QueryExprKindIr::Predicate {
+                field: field("access"),
+                features: BTreeMap::new(),
+                range_features: BTreeMap::new(),
+            }),
+        ),
+        "empty_typed_query"
+    );
 }

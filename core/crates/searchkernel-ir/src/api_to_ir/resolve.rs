@@ -1850,7 +1850,8 @@ fn resolve_projection_inner(
                         && (allow_tensor
                             || !matches!(
                                 field.data_type(),
-                                crate::model::DataTypeIr::Tensor { .. }
+                                crate::model::DataTypeIr::Position
+                                    | crate::model::DataTypeIr::Tensor { .. }
                             ))
                 })
                 .map(|field| field.name().clone()),
