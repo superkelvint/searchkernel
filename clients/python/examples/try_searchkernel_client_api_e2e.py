@@ -29,6 +29,21 @@ from searchkernel import (
 
 WORKSPACE_PATH = Path(tempfile.mkdtemp(prefix="searchkernel-client-api-e2e-"))
 INDEX_PATH = WORKSPACE_PATH / "showcase-index"
+VECTOR_TYPE = "tensor<float>(x[8])"
+
+
+def embedding(*values: float) -> Tensor:
+    if len(values) != 8:
+        raise ValueError("the E2E corpus uses eight-dimensional embeddings")
+    return Tensor.dense(VECTOR_TYPE, values)
+
+
+SHOE_1_VECTOR = (0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78)
+SHOE_2_VECTOR = (0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64)
+SHOE_3_VECTOR = (0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16)
+SHOE_4_VECTOR = (0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88)
+SHOE_5_VECTOR = (0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62)
+BAG_1_VECTOR = (0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55)
 
 
 def cleanup_workspace() -> None:
@@ -193,7 +208,7 @@ with Index.create(
             stored=True,
             filterable=True,
         ),
-        "embedding": TensorField("tensor<float>(x[2])", stored=True),
+        "embedding": TensorField(VECTOR_TYPE, stored=True),
     },
     rank_profiles=[
         RankProfile("boosted")
@@ -201,7 +216,13 @@ with Index.create(
         .match_feature("query(boost)"),
         RankProfile("semantic")
         .first_phase("closeness(embedding)")
-        .query_input("query_embedding", "tensor<float>(x[2])")
+        .query_input("query_embedding", VECTOR_TYPE)
+        .match_feature("query(query_embedding)"),
+        RankProfile("hybrid")
+        .first_phase("bm25(title) + 10 * closeness(embedding)")
+        .query_input("query_embedding", VECTOR_TYPE)
+        .match_feature("bm25(title)")
+        .match_feature("closeness(embedding)")
         .match_feature("query(query_embedding)"),
     ],
 ) as index:
@@ -224,7 +245,7 @@ with Index.create(
             "rating": 5,
             "inventory": 10,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [1.0, 0.0]),
+            "embedding": embedding(*SHOE_1_VECTOR),
         },
         {
             "_id": "shoe-2",
@@ -235,7 +256,7 @@ with Index.create(
             "rating": 5,
             "inventory": 4,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.8, 0.2]),
+            "embedding": embedding(*SHOE_2_VECTOR),
         },
         {
             "_id": "shoe-3",
@@ -246,7 +267,7 @@ with Index.create(
             "rating": 3,
             "inventory": 25,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.0, 1.0]),
+            "embedding": embedding(*SHOE_3_VECTOR),
         },
         {
             "_id": "shoe-4",
@@ -257,7 +278,7 @@ with Index.create(
             "rating": 4,
             "inventory": 0,
             "in_stock": False,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.7, 0.3]),
+            "embedding": embedding(*SHOE_4_VECTOR),
         },
         {
             "_id": "shoe-5",
@@ -268,7 +289,7 @@ with Index.create(
             "rating": 4,
             "inventory": 8,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.9, 0.1]),
+            "embedding": embedding(*SHOE_5_VECTOR),
         },
         {
             "_id": "bag-1",
@@ -279,7 +300,7 @@ with Index.create(
             "rating": 4,
             "inventory": 12,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.6, 0.4]),
+            "embedding": embedding(*BAG_1_VECTOR),
         },
     ]
 
@@ -297,7 +318,7 @@ with Index.create(
                 "rating": 1,
                 "inventory": 18,
                 "in_stock": True,
-                "embedding": Tensor.dense("tensor<float>(x[2])", [0.0, 1.0]),
+                "embedding": embedding(*SHOE_3_VECTOR),
             }
         )
     print("inserted 200 deterministic coverage probe documents")
@@ -314,12 +335,13 @@ with Index.create(
     assert doc is not None
     assert doc["_id"] == "shoe-1"
     assert doc["price"] == 89.0
-    assert doc["embedding"] == {
-        "$searchkernel_tensor": {
-            "type_spec": "tensor<float>(x[2])",
-            "dense": [1.0, 0.0],
-        }
-    }
+    stored_embedding = doc["embedding"]["$searchkernel_tensor"]
+    assert stored_embedding["type_spec"] == VECTOR_TYPE
+    assert len(stored_embedding["dense"]) == len(SHOE_1_VECTOR)
+    assert all(
+        isclose(actual, expected, rel_tol=1e-6, abs_tol=1e-6)
+        for actual, expected in zip(stored_embedding["dense"], SHOE_1_VECTOR)
+    )
 
     # -----------------------------------------------------------------------
     # Full-text search.
@@ -853,34 +875,65 @@ with Index.create(
     nearest = (
         index.query(q.nearest_neighbor("embedding", "query_embedding"))
         .ranking("semantic")
-        .input("query_embedding", Tensor.dense("tensor<float>(x[2])", [1.0, 0.0]))
+        .input("query_embedding", embedding(*SHOE_1_VECTOR))
         .limit(3)
         .execute()
     )
     assert nearest.hits[0].id == "shoe-1"
+    assert nearest.hits[0].score > nearest.hits[1].score
     assert nearest.coverage is not None
     opaque_feature = nearest.hits[0].features["query(query_embedding)"]
     assert isinstance(opaque_feature, bytes)
-    print("tensor query input, native nearest-neighbor search, and opaque feature PASS")
+    print("8D tensor query input and native nearest-neighbor search PASS")
 
     heading("HYBRID TEXT + VECTOR SEARCH")
 
+    lexical = (
+        index.query(q.contains("title", "shoes"))
+        .limit(20)
+        .execute()
+    )
+    assert "bag-1" not in {hit.id for hit in lexical.hits}
+
+    # OR is intentional: AND would only test the intersection and could hide
+    # a broken vector candidate path. The rank profile then combines both
+    # branches into one score.
     hybrid = (
         index.query(
-            q.all_of(
+            q.any_of(
                 q.contains("title", "shoes"),
                 q.nearest_neighbor("embedding", "query_embedding"),
             )
         )
-        .ranking("semantic")
-        .input("query_embedding", Tensor.dense("tensor<float>(x[2])", [1.0, 0.0]))
-        .limit(3)
+        .ranking("hybrid")
+        .input("query_embedding", embedding(*BAG_1_VECTOR))
+        .limit(20)
         .execute()
     )
-    assert hybrid.hits[0].id == "shoe-1"
-    assert "shoe-1" in {hit.id for hit in hybrid.hits}
-    assert "bag-1" not in {hit.id for hit in hybrid.hits}
-    print("text-and-vector hybrid search PASS")
+    hybrid_ids = {hit.id for hit in hybrid.hits}
+    assert "bag-1" in hybrid_ids, "vector-only candidate disappeared from hybrid search"
+    assert {"shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5"}.issubset(hybrid_ids)
+    assert hybrid.hits[0].id == "bag-1"
+
+    top = hybrid.hits[0]
+    assert isclose(top.features["bm25(title)"], 0.0)
+    assert top.features["closeness(embedding)"] > 0.99
+    assert isclose(
+        top.score,
+        top.features["bm25(title)"] + 10 * top.features["closeness(embedding)"],
+        rel_tol=1e-5,
+        abs_tol=1e-5,
+    )
+    lexical_hit = next(hit for hit in hybrid.hits if hit.id == "shoe-1")
+    assert lexical_hit.features["bm25(title)"] > 0
+    assert isclose(
+        lexical_hit.score,
+        lexical_hit.features["bm25(title)"]
+        + 10 * lexical_hit.features["closeness(embedding)"],
+        rel_tol=1e-5,
+        abs_tol=1e-5,
+    )
+    print("lexical + 8D vector candidate union and hybrid rank score PASS")
 
     heading("COVERAGE AND DEGRADATION")
 
@@ -1143,7 +1196,7 @@ with Index.create(
             "rating": 5,
             "inventory": 4,
             "in_stock": True,
-            "embedding": Tensor.dense("tensor<float>(x[2])", [0.8, 0.2]),
+            "embedding": embedding(*SHOE_2_VECTOR),
         }
     )
 
@@ -1185,12 +1238,13 @@ with Index.open(INDEX_PATH) as index:
     assert "shoe-1" not in {hit.id for hit in index.search("jumped").execute().hits}
     assert index.get("shoe-created")["inventory"] == 7
     assert "sale_price" not in shoe1
-    assert shoe1["embedding"] == {
-        "$searchkernel_tensor": {
-            "type_spec": "tensor<float>(x[2])",
-            "dense": [1.0, 0.0],
-        }
-    }
+    reopened_embedding = shoe1["embedding"]["$searchkernel_tensor"]
+    assert reopened_embedding["type_spec"] == VECTOR_TYPE
+    assert len(reopened_embedding["dense"]) == len(SHOE_1_VECTOR)
+    assert all(
+        isclose(actual, expected, rel_tol=1e-6, abs_tol=1e-6)
+        for actual, expected in zip(reopened_embedding["dense"], SHOE_1_VECTOR)
+    )
 
     # Upsert replacement survives.
     shoe2 = index.get("shoe-2")
@@ -1226,7 +1280,7 @@ with Index.open(INDEX_PATH) as index:
     reopened_nearest = (
         index.query(q.nearest_neighbor("embedding", "query_embedding"))
         .ranking("semantic")
-        .input("query_embedding", Tensor.dense("tensor<float>(x[2])", [1.0, 0.0]))
+        .input("query_embedding", embedding(*SHOE_1_VECTOR))
         .limit(3)
         .execute()
     )
@@ -1327,8 +1381,8 @@ Successfully demonstrated through the public Python facade:
   ✓ dense tensor document readback and persistence
   ✓ scalar and opaque match-feature results
   ✓ structured coverage and degradation metadata
-  ✓ tensor query input and native nearest-neighbor search
-  ✓ text-and-vector hybrid search
+  ✓ 8D tensor query input and native nearest-neighbor search
+  ✓ lexical + 8D vector candidate union and hybrid rank score
   ✓ canonical recursive grouping result shape
   ✓ convenience hits/groups/facets/aggregations projections
 """
