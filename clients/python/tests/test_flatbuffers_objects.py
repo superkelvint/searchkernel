@@ -214,6 +214,18 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(query.expr.documentField.path, "embedding")
         self.assertEqual(query.expr.queryTensor, "query_embedding")
 
+    def test_hybrid_query_combines_text_and_nearest_neighbor(self):
+        query = q.and_(
+            q.contains("title", "shoes"),
+            q.nearest_neighbor("embedding", "query_embedding"),
+        )
+
+        self.assertEqual(query.source.query.exprType, QueryExprKind.QueryAnd)
+        self.assertEqual(
+            [clause.exprType for clause in query.source.query.expr.clauses],
+            [QueryExprKind.QueryContains, QueryExprKind.QueryNearestNeighbor],
+        )
+
     def test_hit_preserves_scalar_and_opaque_features(self):
         from types import SimpleNamespace
 

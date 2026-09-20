@@ -56,6 +56,7 @@ from SearchKernel.V2.FiniteGroupingMax import FiniteGroupingMaxT
 from SearchKernel.V2.StructuredGroupingSource import StructuredGroupingSourceT
 from SearchKernel.V2.PresentationRequest import PresentationRequestT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
+from SearchKernel.V2.QueryAnd import QueryAndT
 from SearchKernel.V2.QueryContains import QueryContainsT
 from SearchKernel.V2.QueryExpr import QueryExprT
 from SearchKernel.V2.QueryExprKind import QueryExprKind
@@ -74,6 +75,7 @@ from SearchKernel.V2.SearchFieldSelection import SearchFieldSelectionT
 from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT
 from SearchKernel.V2.YqlQuery import YqlQueryT
+from SearchKernel.V2.TypedQuery import TypedQueryT
 from SearchKernel.V2.RankingRequest import RankingRequestT
 from SearchKernel.V2.SearchRequest import SearchRequestT
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
@@ -357,10 +359,33 @@ gf = _GroupingFilterNamespace()
 
 
 class _QueryNamespace:
+    @staticmethod
+    def _typed(expression: QueryExprT) -> QuerySourceT:
+        return QuerySourceT(
+            sourceType=QuerySourceKind.TypedQuery,
+            source=TypedQueryT(query=expression),
+        )
+
+    @staticmethod
+    def _expression(source: QuerySourceT) -> QueryExprT:
+        if source.sourceType != QuerySourceKind.TypedQuery or source.source is None:
+            raise TypeError("typed query clauses must come from q helpers")
+        return source.source.query
+
     def contains(self, field: str, text: str) -> QuerySourceT:
         term = QueryExprT(exprType=QueryExprKind.TermQuery, expr=__import__("SearchKernel.V2.TermQuery", fromlist=["TermQueryT"]).TermQueryT(value=value(text)))
         contains = QueryExprT(exprType=QueryExprKind.QueryContains, expr=QueryContainsT(field=QueryFieldRefT(path=field), item=term))
-        return QuerySourceT(sourceType=QuerySourceKind.TypedQuery, source=__import__("SearchKernel.V2.TypedQuery", fromlist=["TypedQueryT"]).TypedQueryT(query=contains))
+        return self._typed(contains)
+
+    def and_(self, *clauses: QuerySourceT) -> QuerySourceT:
+        if not clauses:
+            raise ValueError("q.and_ requires at least one clause")
+        return self._typed(
+            QueryExprT(
+                exprType=QueryExprKind.QueryAnd,
+                expr=QueryAndT(clauses=[self._expression(clause) for clause in clauses]),
+            )
+        )
 
     def nearest_neighbor(self, document_field: str, query_tensor: str) -> QuerySourceT:
         nearest = QueryExprT(
@@ -370,12 +395,7 @@ class _QueryNamespace:
                 queryTensor=query_tensor,
             ),
         )
-        return QuerySourceT(
-            sourceType=QuerySourceKind.TypedQuery,
-            source=__import__("SearchKernel.V2.TypedQuery", fromlist=["TypedQueryT"]).TypedQueryT(
-                query=nearest
-            ),
-        )
+        return self._typed(nearest)
 
 
 q = _QueryNamespace()

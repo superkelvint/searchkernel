@@ -863,6 +863,25 @@ with Index.create(
     assert isinstance(opaque_feature, bytes)
     print("tensor query input, native nearest-neighbor search, and opaque feature PASS")
 
+    heading("HYBRID TEXT + VECTOR SEARCH")
+
+    hybrid = (
+        index.query(
+            q.and_(
+                q.contains("title", "shoes"),
+                q.nearest_neighbor("embedding", "query_embedding"),
+            )
+        )
+        .ranking("semantic")
+        .input("query_embedding", Tensor.dense("tensor<float>(x[2])", [1.0, 0.0]))
+        .limit(3)
+        .execute()
+    )
+    assert hybrid.hits[0].id == "shoe-1"
+    assert "shoe-1" in {hit.id for hit in hybrid.hits}
+    assert "bag-1" not in {hit.id for hit in hybrid.hits}
+    print("text-and-vector hybrid search PASS")
+
     heading("COVERAGE AND DEGRADATION")
 
     normal = index.search("shoes").limit(20).execute()
@@ -1300,6 +1319,7 @@ Successfully demonstrated through the public Python facade:
   ✓ scalar and opaque match-feature results
   ✓ structured coverage and degradation metadata
   ✓ tensor query input and native nearest-neighbor search
+  ✓ text-and-vector hybrid search
   ✓ canonical recursive grouping result shape
   ✓ convenience hits/groups/facets/aggregations projections
 """
