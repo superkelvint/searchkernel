@@ -338,25 +338,38 @@ mod showcase {
             WeightedQueryItem::new("Acme", 10),
             WeightedQueryItem::new("TrailCo", 5),
         ];
-        for (name, query) in [
-            ("WAND", Query::wand("brand", weighted_items.iter().cloned())),
-            (
-                "weighted-set",
-                Query::weighted_set("brand", weighted_items.iter().cloned()),
-            ),
-            (
-                "dot-product",
-                Query::dot_product("brand", weighted_items.iter().cloned()),
-            ),
-        ] {
-            let results = index
-                .search("")
-                .typed_query(query)
-                .limit(20)
-                .execute::<Value>()?;
-            println!("{name} IDs: {:?}", ids(&results));
-            assert_id_set(&results, ["shoe-1", "shoe-2", "shoe-4", "shoe-5", "bag-1"]);
+        let wand = index
+            .search("")
+            .typed_query(Query::wand("brand", weighted_items.iter().cloned()))
+            .limit(20)
+            .execute::<Value>()?;
+        let weighted_set = index
+            .search("")
+            .typed_query(Query::weighted_set("brand", weighted_items.iter().cloned()))
+            .limit(20)
+            .execute::<Value>()?;
+        let dot_product = index
+            .search("")
+            .typed_query(Query::dot_product("brand", weighted_items.iter().cloned()))
+            .limit(20)
+            .execute::<Value>()?;
+        let expected_weighted_ids = ["shoe-1", "shoe-2", "shoe-4", "shoe-5", "bag-1"];
+        for results in [&wand, &weighted_set, &dot_product] {
+            assert_id_set(results, expected_weighted_ids);
+            assert!(
+                results.hits.iter().all(|hit| hit.score.is_some()),
+                "weighted query must expose Vespa scores"
+            );
         }
+        let scores = |results: &SearchResult<Value>| {
+            results.hits.iter().map(|hit| hit.score).collect::<Vec<_>>()
+        };
+        println!(
+            "WAND scores: {:?}; weighted-set scores: {:?}; dot-product scores: {:?}",
+            scores(&wand),
+            scores(&weighted_set),
+            scores(&dot_product)
+        );
 
         let prefix = index
             .search("")
@@ -722,7 +735,10 @@ mod showcase {
         assert_eq!(error.code(), ErrorCode::InvalidArgument);
         assert!(!error.details().is_empty());
         assert_eq!(error.details()[0].code, "unknown_field");
-        assert_eq!(error.details()[0].path.as_deref(), Some("filter.field"));
+        assert_eq!(
+            error.details()[0].path.as_deref(),
+            Some("filters.structured[0].field")
+        );
 
         heading("22. PATCH SET / UNSET");
 
