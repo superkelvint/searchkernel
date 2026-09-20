@@ -12,6 +12,7 @@
 /venv/
 /lib64/
 /clients/python/build/
+**/*.egg-info/
 **/node_modules/*
 **/dist/**
 **/*.pyi
