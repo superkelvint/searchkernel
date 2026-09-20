@@ -9,13 +9,13 @@ include!("bindings.rs");
 #[cfg(feature = "hardening")]
 pub mod hardening;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 unsafe extern "C" {
     fn searchkernel_schema_identity_fd_reuse_regression() -> i32;
     fn searchkernel_transport_destructor_regression() -> i32;
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod native_regression_tests {
     use super::{
         searchkernel_schema_identity_fd_reuse_regression,
@@ -41,7 +41,7 @@ mod native_regression_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod text_soa_abi_regression_tests {
     use super::*;
     use std::ffi::CString;

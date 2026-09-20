@@ -1,3 +1,5 @@
+#![cfg(feature = "native")]
+
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, Engine, Field, FieldType, Query, RangeBound, RankProfile, Schema,
     SearchRequest,

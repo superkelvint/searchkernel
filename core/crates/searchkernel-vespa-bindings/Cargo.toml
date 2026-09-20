@@ -7,7 +7,9 @@ links = "searchkernel_vespa"
 build = "build.rs"
 
 [features]
-hardening = []
+default = ["native"]
+native = []
+hardening = ["native"]
 
 [lib]
 name = "searchkernel_vespa_bindings"

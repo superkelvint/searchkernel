@@ -4,6 +4,11 @@
 //! This crate is the only translation boundary between portable IR and the
 //! Vespa-facing engine wrapper. It contains no fallback or in-memory engine.
 
+// This optional native adapter is still compiled as a workspace member when
+// default features are disabled; its implementation is only reachable from
+// searchkernel's native feature in that configuration.
+#![cfg_attr(not(feature = "native"), allow(dead_code, unused_imports))]
+
 mod backend;
 mod schema;
 mod search;
@@ -15,7 +20,7 @@ use searchkernel_ir::{
 use searchkernel_vespa_engine::{Document, FieldValue, PositionValue, PredicateValue, ScalarValue};
 use std::collections::BTreeMap;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests;
 
 #[cfg(test)]

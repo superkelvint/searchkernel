@@ -11,7 +11,7 @@ mod schema;
 mod search;
 mod tensor;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests;
 
 pub use document::{

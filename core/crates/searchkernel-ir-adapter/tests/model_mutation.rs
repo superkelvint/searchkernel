@@ -1,3 +1,5 @@
+#![cfg(feature = "native")]
+
 use searchkernel_ir::{
     Backend, DeleteRequestIr, DocumentId, DocumentIr, FieldName, FieldValueIr, GetRequestIr,
     GetResult, InsertRequestIr, PatchOperationIr, PatchRequestIr, ProjectionIr, ScalarValueIr,

@@ -3,6 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
+        // The workspace's no-default-features lane still builds this member,
+        // but must not require the optional Vespa SDK just to compile the
+        // generated ABI declarations.
+        return;
+    }
+
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let default_sdk = manifest_dir.join("../../native/sdk/linux-x86_64");
     let sdk = env::var_os("SK_NATIVE_SDK")

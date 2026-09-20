@@ -1,3 +1,5 @@
+#![cfg(feature = "native")]
+
 use searchkernel_vespa_engine::{
     ArithmeticOperator, ArrayValue, AttributeDocument, AttributeUpdate, ConfigCompiler, Document,
     DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue, GroupingAggregation,
