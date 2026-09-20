@@ -9,7 +9,7 @@ vespa-engine/vespa@2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
 Search Kernel adapter:
 
 ```text
-core/native/vespa/searchkernel_vespa.cpp
+core/native/vespa/engine.cc
   EmbeddedEngine constructor: data/config paths, DocumentDB startup, bucket activation
   EmbeddedEngine destructor: handler removal, DocumentDB close, transport shutdown
   EmbeddedEngine::put/update/remove: PersistenceEngine operations and timestamps

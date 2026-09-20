@@ -2,7 +2,7 @@
 
 The native lifetime and concurrency checks trace to the `EmbeddedEngine`
 resource members, `DocumentDB` startup/close path, persistence handler setup,
-and the feed/reopen behavior in `core/native/vespa/searchkernel_vespa.cpp`.
+and the feed/reopen behavior in `core/native/vespa/engine.cc`.
 
 The public ABI source is `core/native/vespa/searchkernel_vespa.h`. The Rust raw
 declarations are generated from that header and the hardening controls are

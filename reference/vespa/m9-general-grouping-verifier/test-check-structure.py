@@ -10,7 +10,10 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "reference/vespa/m9-general-grouping-verifier/check-structure.sh"
-NATIVE_CPP = ROOT / "core/native/vespa/searchkernel_vespa.cpp"
+NATIVE_SOURCES = (
+    ROOT / "core/native/vespa/engine.cc",
+    ROOT / "core/native/vespa/grouping.cc",
+)
 
 
 def mask_comments_and_literals(text):
@@ -90,7 +93,7 @@ def body_bounds(source, signature):
 
 
 def main():
-    source = NATIVE_CPP.read_text(encoding="utf-8")
+    source = "\n".join(path.read_text(encoding="utf-8") for path in NATIVE_SOURCES)
     signature = (
         r"\bsk_grouping_tree_result\s+group_tree\s*\(\s*"
         r"const\s+NativeQueryState\s*&\s*query\s*,\s*"

@@ -32,7 +32,7 @@ native error buffer.
 The Search Kernel mapping is implemented in:
 
 ```text
-core/native/vespa/searchkernel_vespa.cpp
+core/native/vespa/search.cc
 ```
 
 `EmbeddedEngine::search_local` copies the three coverage counters, maps the

@@ -85,13 +85,15 @@ fi
 # helpers and the recursive result decoders. Extract those concrete bodies and
 # inspect only executable source: comments and string literals are masked before
 # matching so documentation cannot satisfy this anti-shortcut verifier.
-NATIVE_CPP="${SK_GROUPING_NATIVE_CPP:-$ROOT/core/native/vespa/searchkernel_vespa.cpp}"
+NATIVE_CPP="${SK_GROUPING_NATIVE_CPP:-$ROOT/core/native/vespa/engine.cc:$ROOT/core/native/vespa/grouping.cc}"
 python3 - "$NATIVE_CPP" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = "\n".join(
+    Path(path).read_text(encoding="utf-8") for path in sys.argv[1].split(":")
+)
 
 
 def mask_comments_and_literals(text):
@@ -212,7 +214,7 @@ result_value = function_body(
 require(make_grouping, r"\bGrouping\s+grouping\s*;", "Grouping construction")
 require(make_grouping, r"\bGroupingLevel\s*\(", "GroupingLevel construction")
 require(make_grouping, r"auto\s+level\s*=\s*GroupingLevel\s*\(\)\.setExpression\s*\(", "level classifier lowering")
-require(make_grouping, r"dynamic_cast\s*<\s*const\s+AttributeNode\s*\*", "attribute classifier/expression lowering")
+require(make_grouping, r"level_state->classifier->clone\s*\(\s*\)", "attribute classifier/expression lowering")
 require(make_grouping, r"std::make_unique\s*<\s*CountAggregationResult\s*>", "count aggregation lowering")
 require(make_grouping, r"std::make_unique\s*<\s*AverageAggregationResult\s*>", "average aggregation lowering")
 require(make_grouping, r"count\s*->\s*setExpression\s*\(", "count classifier expression lowering")

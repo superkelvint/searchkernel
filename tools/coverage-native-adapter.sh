@@ -79,21 +79,43 @@ REPORT="$TARGET/gcov.txt"
     gcov -b -c "$NATIVE_BUILD/searchkernel_vespa.o"
 ) >"$REPORT"
 
-SOURCE="$ROOT/core/native/vespa/searchkernel_vespa.cpp"
-SOURCE_REPORT=$(awk -v source="$SOURCE" '
-    $0 == "File '''" source "'''" { in_source = 1; next }
-    in_source && /^File / { exit }
-    in_source { print }
-' "$REPORT")
-if [[ -z "$SOURCE_REPORT" ]]; then
-    echo "gcov did not report $SOURCE" >&2
-    cat "$REPORT" >&2
-    exit 1
-fi
+read -r LINE_RATE BRANCH_RATE FUNCTION_RATE < <(
+    python3 - "$REPORT" <<'PY'
+import re
+import sys
 
-LINE_RATE=$(sed -n 's/^Lines executed:\([0-9.]*\)%.*/\1/p' <<<"$SOURCE_REPORT" | head -n1)
-BRANCH_RATE=$(sed -n 's/^Branches executed:\([0-9.]*\)%.*/\1/p' <<<"$SOURCE_REPORT" | head -n1)
-FUNCTION_RATE=$(sed -n 's/^Functions executed:\([0-9.]*\)%.*/\1/p' <<<"$SOURCE_REPORT" | head -n1)
+report = open(sys.argv[1], encoding="utf-8").read()
+sources = {
+    "abi.cc", "engine.cc", "document.cc", "update.cc", "query.cc",
+    "search.cc", "grouping.cc", "tensor.cc", "errors.cc", "hardening.cc",
+}
+sections = re.split(r"(?m)^File ['\"]", report)[1:]
+line_rates = []
+branch_rates = []
+function_rates = []
+for section in sections:
+    name, _, body = section.partition("'\n")
+    if name.rsplit("/", 1)[-1] not in sources:
+        continue
+    lines = re.search(r"Lines executed:([0-9.]+)% of ([0-9]+)", body)
+    branches = re.search(r"Branches executed:([0-9.]+)% of ([0-9]+)", body)
+    functions = re.search(r"Functions executed:([0-9.]+)% of ([0-9]+)", body)
+    if lines:
+        line_rates.append((float(lines.group(1)), int(lines.group(2))))
+    if branches:
+        branch_rates.append((float(branches.group(1)), int(branches.group(2))))
+    if functions:
+        function_rates.append((float(functions.group(1)), int(functions.group(2))))
+if not line_rates:
+    raise SystemExit("gcov did not report the split native adapter sources")
+def average(values):
+    if not values:
+        return "unknown"
+    rate, total = zip(*values)
+    return f"{sum(value * count for value, count in values) / sum(total):.2f}"
+print(average(line_rates), average(branch_rates), average(function_rates))
+PY
+)
 
 printf 'native adapter coverage: lines=%s%% branches=%s%% functions=%s%%\n' \
     "${LINE_RATE:-unknown}" "${BRANCH_RATE:-unknown}" "${FUNCTION_RATE:-unknown}"

@@ -1,7 +1,7 @@
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Rank      2
    Area      Native C++ adapter
-   Evidence  core/native/vespa/searchkernel_vespa.cpp:3526 is ~5,300 lines with no C++ unit-test target or native line coverage.
+   Evidence  The native adapter was historically concentrated in one ~5,300-line C++ file with no C++ unit-test target or native line coverage; it is now split by responsibility under core/native/vespa/.
    Risk      Highest consequence: ABI corruption, leaks, exception escape, invalid result pointers, malformed UTF-8, and concurrency bugs.
              M11 has strong stress/sanitizer scenarios, but they are not fine-grained unit tests.
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

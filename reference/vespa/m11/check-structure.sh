@@ -37,12 +37,13 @@ if rg -n 'reference/vespa/m11|expected/|scenarios/' \
   fail "production implementation refers to M11 verifier artifacts"
 fi
 
-if rg -n '_operation_mutex|std::mutex[[:space:]]+_.*engine' "$ROOT/core/native/vespa/searchkernel_vespa.cpp"; then
+if rg -n '_operation_mutex|std::mutex[[:space:]]+_.*engine' \
+    --glob '*.cc' --glob '*.h' "$ROOT/core/native/vespa"; then
   fail "process-wide or whole-engine operation mutex remains"
 fi
 
 if ! rg -n 'std::shared_mutex|std::shared_lock|std::unique_lock' \
-    "$ROOT/core/native/vespa/searchkernel_vespa.cpp" >/dev/null; then
+    --glob '*.cc' --glob '*.h' "$ROOT/core/native/vespa" >/dev/null; then
   fail "native lifecycle gate is missing"
 fi
 
