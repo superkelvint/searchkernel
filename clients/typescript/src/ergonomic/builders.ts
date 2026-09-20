@@ -160,8 +160,9 @@ export class SearchBuilder {
       throw new RangeError("invalid page() combination");
     }
     const checkedSize = assertUInt32(size, "page size");
+    const pageEnd = BigInt(number) * BigInt(checkedSize);
+    if (pageEnd > BigInt(UINT32_MAX)) throw new RangeError("page range exceeds uint32 range");
     const offset = BigInt(number - 1) * BigInt(checkedSize);
-    if (offset > BigInt(UINT32_MAX)) throw new RangeError("page offset exceeds uint32 range");
     this.paged = true;
     this.offsetValue = Number(offset);
     this.limitValue = checkedSize;

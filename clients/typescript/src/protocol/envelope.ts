@@ -1,4 +1,4 @@
-import { Builder, ByteBuffer, type IGeneratedObject } from "flatbuffers";
+import { Builder, ByteBuffer, Encoding, type IGeneratedObject } from "flatbuffers";
 import { RequestEnvelope, RequestEnvelopeT } from "../generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
 import { RequestPayload } from "../generated/flatbuffers/search-kernel/protocol/v2/request-payload.js";
 import { ResponseEnvelope } from "../generated/flatbuffers/search-kernel/protocol/v2/response-envelope.js";
@@ -77,9 +77,64 @@ export interface DecodedResponse { payloadType: ResponsePayload; payload: unknow
 
 export function expectedResponseType(operation: Operation): ResponsePayload { return responseTypes[operation]; }
 
+/**
+ * The JavaScript FlatBuffers accessors are intentionally permissive: missing
+ * bytes can become `undefined` or an empty subarray instead of an exception.
+ * Responses cross a trust boundary, so make reads fail closed while unpacking
+ * the envelope and its generated payload object graph.
+ */
+class CheckedByteBuffer extends ByteBuffer {
+  private assertRange(offset: number, length: number): void {
+    if (
+      !Number.isSafeInteger(offset)
+      || !Number.isSafeInteger(length)
+      || offset < 0
+      || length < 0
+      || offset > this.capacity() - length
+    ) {
+      throw new RangeError("FlatBuffer access exceeds response bounds");
+    }
+  }
+
+  override readUint8(offset: number): number {
+    this.assertRange(offset, 1);
+    return super.readUint8(offset);
+  }
+
+  override __offset(bbPos: number, vtableOffset: number): number {
+    this.assertRange(bbPos, 4);
+    const vtable = bbPos - super.readInt32(bbPos);
+    this.assertRange(vtable, 4);
+    if (vtable > bbPos) throw new RangeError("FlatBuffer vtable is out of order");
+
+    const vtableLength = super.readUint16(vtable);
+    const objectLength = super.readUint16(vtable + 2);
+    if (vtableLength < 4 || objectLength < 4) {
+      throw new RangeError("FlatBuffer table has an invalid header");
+    }
+    this.assertRange(vtable, vtableLength);
+    this.assertRange(bbPos, objectLength);
+
+    const fieldOffset = super.__offset(bbPos, vtableOffset);
+    if (fieldOffset && fieldOffset >= objectLength) {
+      throw new RangeError("FlatBuffer field is outside its table");
+    }
+    return fieldOffset;
+  }
+
+  override __string(offset: number, optionalEncoding?: Encoding): string | Uint8Array {
+    const stringData = offset + super.readInt32(offset);
+    const length = super.readInt32(stringData);
+    const stringStart = stringData + 4;
+    // FlatBuffers strings carry a trailing NUL, which must also be present.
+    this.assertRange(stringStart, length + 1);
+    return super.__string(offset, optionalEncoding);
+  }
+}
+
 export function unpackResponse(bytes: Uint8Array, operation: Operation): DecodedResponse {
   try {
-    const bb = new ByteBuffer(bytes);
+    const bb = new CheckedByteBuffer(bytes);
     if (!ResponseEnvelope.bufferHasIdentifier(bb)) {
       throw new ProtocolError("response is not a Search Kernel V2 envelope");
     }
