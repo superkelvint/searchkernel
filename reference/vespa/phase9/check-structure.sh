@@ -6,15 +6,9 @@ SDK="${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}"
 HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h"
 MAP="$ROOT/core/native/vespa/searchkernel_vespa.map"
 BINDINGS="$ROOT/core/crates/searchkernel-vespa-bindings/src/bindings.rs"
-ABI_VERSION="$(sed -n 's/^#define SK_NATIVE_ABI_VERSION \([0-9][0-9]*\)U$/\1/p' "$HEADER")"
-
-if [[ -z "$ABI_VERSION" ]]; then
-  echo 'unable to determine native ABI version from the source header' >&2
-  exit 1
-fi
 
 cmp -s "$HEADER" "$SDK/include/searchkernel_vespa.h"
-grep -qx "#define SK_NATIVE_ABI_VERSION ${ABI_VERSION}U" "$HEADER"
+grep -qx '#define SK_NATIVE_ABI_VERSION 10U' "$HEADER"
 for symbol in \
   sk_nearest_neighbor_options_create \
   sk_nearest_neighbor_options_destroy \
