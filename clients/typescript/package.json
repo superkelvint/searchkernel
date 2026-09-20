@@ -1,0 +1,49 @@
+{
+  "name": "@searchkernel/client",
+  "version": "0.1.0",
+  "description": "Browser-capable TypeScript client for Search Kernel",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./low-level": {
+      "types": "./dist/low-level.d.ts",
+      "require": "./dist/low-level.js",
+      "default": "./dist/low-level.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/generated"
+  ],
+  "scripts": {
+    "generate:flatbuffers": "../../tools/generate-typescript-flatbuffers.sh",
+    "generate:grpc-web": "../../tools/generate-typescript-grpc-web.sh",
+    "generate": "npm run generate:flatbuffers && npm run generate:grpc-web",
+    "check:generated": "npm run generate && git diff --exit-code -- src/generated",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.all.json",
+    "test": "vitest run",
+    "test:package": "npm run build && node scripts/verify-package.cjs",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "flatbuffers": "25.9.23",
+    "google-protobuf": "3.21.4",
+    "grpc-web": "1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.19",
+    "flatc-wasm": "25.12.19",
+    "grpc-tools": "1.13.1",
+    "protoc-gen-grpc-web": "1.5.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

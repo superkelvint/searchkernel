@@ -1,0 +1,107 @@
+import { Builder, ByteBuffer, type IGeneratedObject } from "flatbuffers";
+import { RequestEnvelope, RequestEnvelopeT } from "../generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
+import { RequestPayload } from "../generated/flatbuffers/search-kernel/protocol/v2/request-payload.js";
+import { ResponseEnvelope } from "../generated/flatbuffers/search-kernel/protocol/v2/response-envelope.js";
+import { ResponsePayload } from "../generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
+import { AnalyzeRequestT } from "../generated/flatbuffers/search-kernel/v2/analyze-request.js";
+import { DeleteRequestT } from "../generated/flatbuffers/search-kernel/v2/delete-request.js";
+import { DescribeRequestT } from "../generated/flatbuffers/search-kernel/v2/describe-request.js";
+import { GetRequestT } from "../generated/flatbuffers/search-kernel/v2/get-request.js";
+import { InsertRequestT } from "../generated/flatbuffers/search-kernel/v2/insert-request.js";
+import { InspectQueryRequestT } from "../generated/flatbuffers/search-kernel/v2/inspect-query-request.js";
+import { PatchRequestT } from "../generated/flatbuffers/search-kernel/v2/patch-request.js";
+import { SearchRequestT } from "../generated/flatbuffers/search-kernel/v2/search-request.js";
+import { UpdateRequestT } from "../generated/flatbuffers/search-kernel/v2/update-request.js";
+import { UpsertRequestT } from "../generated/flatbuffers/search-kernel/v2/upsert-request.js";
+
+export const PROTOCOL_VERSION = 2;
+export const REQUEST_IDENTIFIER = "SKRQ";
+export const RESPONSE_IDENTIFIER = "SKRS";
+
+export type Operation = "insert" | "upsert" | "patch" | "update" | "delete" | "get" | "search" | "analyze" | "describe" | "inspectQuery";
+
+export interface OperationRequestMap {
+  insert: InsertRequestT;
+  upsert: UpsertRequestT;
+  patch: PatchRequestT;
+  update: UpdateRequestT;
+  delete: DeleteRequestT;
+  get: GetRequestT;
+  search: SearchRequestT;
+  analyze: AnalyzeRequestT;
+  describe: DescribeRequestT;
+  inspectQuery: InspectQueryRequestT;
+}
+
+const requestTypes: Record<Operation, RequestPayload> = {
+  insert: RequestPayload.SearchKernel_V2_InsertRequest,
+  upsert: RequestPayload.SearchKernel_V2_UpsertRequest,
+  patch: RequestPayload.SearchKernel_V2_PatchRequest,
+  update: RequestPayload.SearchKernel_V2_UpdateRequest,
+  delete: RequestPayload.SearchKernel_V2_DeleteRequest,
+  get: RequestPayload.SearchKernel_V2_GetRequest,
+  search: RequestPayload.SearchKernel_V2_SearchRequest,
+  analyze: RequestPayload.SearchKernel_V2_AnalyzeRequest,
+  describe: RequestPayload.SearchKernel_V2_DescribeRequest,
+  inspectQuery: RequestPayload.SearchKernel_V2_InspectQueryRequest,
+};
+
+const responseTypes: Record<Operation, ResponsePayload> = {
+  insert: ResponsePayload.SearchKernel_V2_InsertResult,
+  upsert: ResponsePayload.SearchKernel_V2_UpsertResult,
+  patch: ResponsePayload.SearchKernel_V2_PatchResult,
+  update: ResponsePayload.SearchKernel_V2_UpdateResult,
+  delete: ResponsePayload.SearchKernel_V2_DeleteResult,
+  get: ResponsePayload.SearchKernel_V2_GetResult,
+  search: ResponsePayload.SearchKernel_V2_SearchResult,
+  analyze: ResponsePayload.SearchKernel_V2_AnalyzeResult,
+  describe: ResponsePayload.SearchKernel_V2_DescribeResult,
+  inspectQuery: ResponsePayload.SearchKernel_V2_InspectQueryResult,
+};
+
+export class ProtocolError extends Error { override name = "ProtocolError"; }
+
+export function packObject(object: IGeneratedObject, identifier?: string): Uint8Array {
+  const builder = new Builder(1024);
+  const offset = object.pack(builder);
+  builder.finish(offset, identifier);
+  return builder.asUint8Array();
+}
+
+export function packRequest<K extends Operation>(operation: K, payload: OperationRequestMap[K]): Uint8Array {
+  const envelope = new RequestEnvelopeT(PROTOCOL_VERSION, requestTypes[operation], payload as never);
+  return packObject(envelope, REQUEST_IDENTIFIER);
+}
+
+export interface DecodedResponse { payloadType: ResponsePayload; payload: unknown; }
+
+export function expectedResponseType(operation: Operation): ResponsePayload { return responseTypes[operation]; }
+
+export function unpackResponse(bytes: Uint8Array, operation: Operation): DecodedResponse {
+  try {
+    const bb = new ByteBuffer(bytes);
+    if (!ResponseEnvelope.bufferHasIdentifier(bb)) {
+      throw new ProtocolError("response is not a Search Kernel V2 envelope");
+    }
+
+    const envelope = ResponseEnvelope.getRootAsResponseEnvelope(bb);
+    if (envelope.protocolVersion() !== PROTOCOL_VERSION) {
+      throw new ProtocolError(`unsupported Search Kernel protocol version: ${envelope.protocolVersion()}`);
+    }
+
+    const type = envelope.payloadType();
+    const expected = responseTypes[operation];
+    if (type !== expected && type !== ResponsePayload.SearchKernel_V2_Error) {
+      throw new ProtocolError(`unexpected response payload type ${type} for ${operation}`);
+    }
+
+    const unpacked = envelope.unpack();
+    if (unpacked.payload === null) {
+      throw new ProtocolError("response envelope has no payload");
+    }
+    return { payloadType: type, payload: unpacked.payload };
+  } catch (error) {
+    if (error instanceof ProtocolError) throw error;
+    throw new ProtocolError("malformed Search Kernel response envelope");
+  }
+}

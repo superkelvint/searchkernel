@@ -1,0 +1,459 @@
+import { AggregationKind } from "../generated/flatbuffers/search-kernel/v2/aggregation-kind.js";
+import { assertUInt32 } from "../internal/scalars.js";
+import { AvgAggregationT } from "../generated/flatbuffers/search-kernel/v2/avg-aggregation.js";
+import { CountAggregationT } from "../generated/flatbuffers/search-kernel/v2/count-aggregation.js";
+import { FiniteGroupingMaxT } from "../generated/flatbuffers/search-kernel/v2/finite-grouping-max.js";
+import { GroupingAggregationExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-aggregation-expression.js";
+import { GroupingAliasOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-alias-operation.js";
+import { GroupingAliasReferenceT } from "../generated/flatbuffers/search-kernel/v2/grouping-alias-reference.js";
+import { GroupingAllOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-all-operation.js";
+import { GroupingAttributeExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-attribute-expression.js";
+import { GroupingBinaryExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-binary-expression.js";
+import { GroupingBinaryOperator } from "../generated/flatbuffers/search-kernel/v2/grouping-binary-operator.js";
+import { GroupingEachOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-each-operation.js";
+import { GroupingExpressionKind } from "../generated/flatbuffers/search-kernel/v2/grouping-expression-kind.js";
+import { GroupingExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-expression.js";
+import { GroupingFilterAndT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-and.js";
+import { GroupingFilterExprKind } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-expr-kind.js";
+import { GroupingFilterExprT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-expr.js";
+import { GroupingFilterIsTrueT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-is-true.js";
+import { GroupingFilterNotT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-not.js";
+import { GroupingFilterOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-operation.js";
+import { GroupingFilterOrT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-or.js";
+import { GroupingFilterRegexT } from "../generated/flatbuffers/search-kernel/v2/grouping-filter-regex.js";
+import { GroupingFunctionExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-function-expression.js";
+import { GroupingGroupOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-group-operation.js";
+import { GroupingKeepOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-keep-operation.js";
+import { GroupingLiteralExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-literal-expression.js";
+import { GroupingMapLookupExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-map-lookup-expression.js";
+import { GroupingMaxKind } from "../generated/flatbuffers/search-kernel/v2/grouping-max-kind.js";
+import { GroupingMaxOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-max-operation.js";
+import { GroupingMemberExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-member-expression.js";
+import { GroupingOperationKind } from "../generated/flatbuffers/search-kernel/v2/grouping-operation-kind.js";
+import { GroupingOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-operation.js";
+import { GroupingOrderExprT } from "../generated/flatbuffers/search-kernel/v2/grouping-order-expr.js";
+import { GroupingOrderOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-order-operation.js";
+import { GroupingOutputOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-output-operation.js";
+import { GroupingOutputT } from "../generated/flatbuffers/search-kernel/v2/grouping-output.js";
+import { GroupingPrecisionOperationT } from "../generated/flatbuffers/search-kernel/v2/grouping-precision-operation.js";
+import { GroupingRequestT } from "../generated/flatbuffers/search-kernel/v2/grouping-request.js";
+import { GroupingSourceKind } from "../generated/flatbuffers/search-kernel/v2/grouping-source-kind.js";
+import { GroupingUnaryExpressionT } from "../generated/flatbuffers/search-kernel/v2/grouping-unary-expression.js";
+import { GroupingUnaryOperator } from "../generated/flatbuffers/search-kernel/v2/grouping-unary-operator.js";
+import { MaxAggregationT } from "../generated/flatbuffers/search-kernel/v2/max-aggregation.js";
+import { MinAggregationT } from "../generated/flatbuffers/search-kernel/v2/min-aggregation.js";
+import { StdDevAggregationT } from "../generated/flatbuffers/search-kernel/v2/std-dev-aggregation.js";
+import { StructuredGroupingSourceT } from "../generated/flatbuffers/search-kernel/v2/structured-grouping-source.js";
+import { SumAggregationT } from "../generated/flatbuffers/search-kernel/v2/sum-aggregation.js";
+import { SummaryAggregationT } from "../generated/flatbuffers/search-kernel/v2/summary-aggregation.js";
+import { value, type ValueInput } from "../client/values.js";
+
+function expr(kind: GroupingExpressionKind, payload: GroupingExpressionT["expr"]): GroupingExpressionT {
+  return new GroupingExpressionT(kind, payload);
+}
+
+export class GroupingExpr {
+  constructor(readonly model: GroupingExpressionT) {}
+
+  as(label: string): GroupingOutput {
+    return new GroupingOutput(this, label);
+  }
+
+  as_(label: string): GroupingOutput {
+    return this.as(label);
+  }
+
+  neg(): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingUnaryExpression,
+        new GroupingUnaryExpressionT(GroupingUnaryOperator.Negative, this.model),
+      ),
+    );
+  }
+
+  add(other: GroupingInput): GroupingExpr { return binary(GroupingBinaryOperator.Add, this, other); }
+  sub(other: GroupingInput): GroupingExpr { return binary(GroupingBinaryOperator.Subtract, this, other); }
+  mul(other: GroupingInput): GroupingExpr { return binary(GroupingBinaryOperator.Multiply, this, other); }
+  div(other: GroupingInput): GroupingExpr { return binary(GroupingBinaryOperator.Divide, this, other); }
+}
+
+export class GroupingOutput {
+  constructor(readonly expression: GroupingExpr, readonly label: string) {}
+}
+
+export class GroupingOrder {
+  constructor(readonly expression: GroupingExpr) {}
+}
+
+export type GroupingInput = GroupingExpr | ValueInput;
+
+function asExpr(input: GroupingInput): GroupingExpr {
+  return input instanceof GroupingExpr ? input : g.value(input);
+}
+
+function binary(operator: GroupingBinaryOperator, left: GroupingInput, right: GroupingInput): GroupingExpr {
+  return new GroupingExpr(
+    expr(
+      GroupingExpressionKind.GroupingBinaryExpression,
+      new GroupingBinaryExpressionT(operator, asExpr(left).model, asExpr(right).model),
+    ),
+  );
+}
+
+export const g = {
+  field(name: string): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingAttributeExpression,
+        new GroupingAttributeExpressionT(name),
+      ),
+    );
+  },
+
+  value(input: ValueInput): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingLiteralExpression,
+        new GroupingLiteralExpressionT(value(input)),
+      ),
+    );
+  },
+
+  fn(name: string, ...arguments_: GroupingInput[]): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingFunctionExpression,
+        new GroupingFunctionExpressionT(name, arguments_.map((argument) => asExpr(argument).model)),
+      ),
+    );
+  },
+
+  aliasRef(name: string): GroupingExpr {
+    return new GroupingExpr(
+      expr(GroupingExpressionKind.GroupingAliasReference, new GroupingAliasReferenceT(name)),
+    );
+  },
+
+  member(base: GroupingInput, name: string): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingMemberExpression,
+        new GroupingMemberExpressionT(asExpr(base).model, name),
+      ),
+    );
+  },
+
+  lookup(base: GroupingInput, key: GroupingInput): GroupingExpr {
+    return new GroupingExpr(
+      expr(
+        GroupingExpressionKind.GroupingMapLookupExpression,
+        new GroupingMapLookupExpressionT(asExpr(base).model, asExpr(key).model),
+      ),
+    );
+  },
+};
+
+function aggregation(kind: AggregationKind, payload: GroupingAggregationExpressionT["aggregation"]): GroupingExpr {
+  return new GroupingExpr(
+    expr(
+      GroupingExpressionKind.GroupingAggregationExpression,
+      new GroupingAggregationExpressionT(kind, payload),
+    ),
+  );
+}
+
+export const agg = {
+  count(): GroupingExpr {
+    return aggregation(AggregationKind.CountAggregation, new CountAggregationT());
+  },
+  sum(field: string): GroupingExpr {
+    return aggregation(AggregationKind.SumAggregation, new SumAggregationT(g.field(field).model));
+  },
+  avg(field: string): GroupingExpr {
+    return aggregation(AggregationKind.AvgAggregation, new AvgAggregationT(g.field(field).model));
+  },
+  min(field: string): GroupingExpr {
+    return aggregation(AggregationKind.MinAggregation, new MinAggregationT(g.field(field).model));
+  },
+  max(field: string): GroupingExpr {
+    return aggregation(AggregationKind.MaxAggregation, new MaxAggregationT(g.field(field).model));
+  },
+  stddev(field: string): GroupingExpr {
+    return aggregation(AggregationKind.StdDevAggregation, new StdDevAggregationT(g.field(field).model));
+  },
+  summary(name?: string): GroupingExpr {
+    return aggregation(AggregationKind.SummaryAggregation, new SummaryAggregationT(name ?? null));
+  },
+};
+
+export function asc(input: GroupingInput): GroupingOrder {
+  return new GroupingOrder(asExpr(input));
+}
+
+export function desc(input: GroupingInput): GroupingOrder {
+  return new GroupingOrder(asExpr(input).neg());
+}
+
+export const gf = {
+  regex(input: GroupingInput, pattern: string): GroupingFilterExprT {
+    return new GroupingFilterExprT(
+      GroupingFilterExprKind.GroupingFilterRegex,
+      new GroupingFilterRegexT(asExpr(input).model, pattern),
+    );
+  },
+
+  isTrue(input: GroupingInput): GroupingFilterExprT {
+    return new GroupingFilterExprT(
+      GroupingFilterExprKind.GroupingFilterIsTrue,
+      new GroupingFilterIsTrueT(asExpr(input).model),
+    );
+  },
+
+  allOf(...clauses: GroupingFilterExprT[]): GroupingFilterExprT {
+    return new GroupingFilterExprT(
+      GroupingFilterExprKind.GroupingFilterAnd,
+      new GroupingFilterAndT(clauses),
+    );
+  },
+
+  anyOf(...clauses: GroupingFilterExprT[]): GroupingFilterExprT {
+    return new GroupingFilterExprT(
+      GroupingFilterExprKind.GroupingFilterOr,
+      new GroupingFilterOrT(clauses),
+    );
+  },
+
+  not(clause: GroupingFilterExprT): GroupingFilterExprT {
+    return new GroupingFilterExprT(
+      GroupingFilterExprKind.GroupingFilterNot,
+      new GroupingFilterNotT(clause),
+    );
+  },
+};
+
+export class Group {
+  readonly expression: GroupingExpr;
+  private limitValue?: number;
+  private precisionValue?: number;
+  private readonly orders: GroupingOrder[] = [];
+  private readonly outputs: GroupingOutput[] = [];
+  private readonly subgroups: Group[] = [];
+  private readonly aliases: Array<[string, GroupingExpr]> = [];
+  private filterValue?: GroupingFilterExprT;
+  private keepValue?: GroupingFilterExprT;
+
+  constructor(field: string | GroupingExpr) {
+    this.expression = typeof field === "string" ? g.field(field) : field;
+  }
+
+  static by(field: string | GroupingExpr): Group {
+    return new Group(field);
+  }
+
+  limit(value_: number): this {
+    this.limitValue = assertUInt32(value_, "group limit");
+    return this;
+  }
+
+  unlimited(): this {
+    this.limitValue = undefined;
+    return this;
+  }
+
+  precision(value_: number): this {
+    this.precisionValue = assertUInt32(value_, "group precision");
+    return this;
+  }
+
+  orderBy(...expressions: GroupingOrder[]): this {
+    this.orders.push(...expressions);
+    return this;
+  }
+
+  output(...expressions: Array<GroupingOutput | GroupingExpr>): this {
+    this.outputs.push(
+      ...expressions.map((entry) => entry instanceof GroupingOutput ? entry : entry.as("")),
+    );
+    return this;
+  }
+
+  subgroup(group: Group): this {
+    this.subgroups.push(group);
+    return this;
+  }
+
+  alias(name: string, expression: GroupingExpr): this {
+    if (!name) throw new TypeError("group alias name must be non-empty");
+    if (this.aliases.some(([existing]) => existing === name)) throw new TypeError(`duplicate group alias: ${name}`);
+    this.aliases.push([name, expression]);
+    return this;
+  }
+
+  filter(expression: GroupingFilterExprT): this {
+    this.filterValue = expression;
+    return this;
+  }
+
+  keep(expression: GroupingFilterExprT): this {
+    this.keepValue = expression;
+    return this;
+  }
+
+  private bodyOperations(): GroupingOperationT[] {
+    const operations: GroupingOperationT[] = this.aliases.map(
+      ([name, expression]) => new GroupingOperationT(
+        GroupingOperationKind.GroupingAliasOperation,
+        new GroupingAliasOperationT(name, expression.model),
+      ),
+    );
+
+    if (this.limitValue !== undefined) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingMaxOperation,
+          new GroupingMaxOperationT(
+            GroupingMaxKind.FiniteGroupingMax,
+            new FiniteGroupingMaxT(this.limitValue),
+          ),
+        ),
+      );
+    }
+    if (this.precisionValue !== undefined) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingPrecisionOperation,
+          new GroupingPrecisionOperationT(this.precisionValue),
+        ),
+      );
+    }
+    if (this.orders.length) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingOrderOperation,
+          new GroupingOrderOperationT(
+            this.orders.map((order) => new GroupingOrderExprT(order.expression.model)),
+          ),
+        ),
+      );
+    }
+    if (this.filterValue) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingFilterOperation,
+          new GroupingFilterOperationT(this.filterValue),
+        ),
+      );
+    }
+    if (this.keepValue) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingKeepOperation,
+          new GroupingKeepOperationT(this.keepValue),
+        ),
+      );
+    }
+    if (this.outputs.length) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingOutputOperation,
+          new GroupingOutputOperationT(
+            this.outputs.map(
+              (output) => new GroupingOutputT(output.label || null, output.expression.model),
+            ),
+          ),
+        ),
+      );
+    }
+    for (const subgroup of this.subgroups) {
+      operations.push(
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingAllOperation,
+          new GroupingAllOperationT(subgroup.operations()),
+        ),
+      );
+    }
+    return operations;
+  }
+
+  private operations(): GroupingOperationT[] {
+    return [
+      new GroupingOperationT(
+        GroupingOperationKind.GroupingGroupOperation,
+        new GroupingGroupOperationT(this.expression.model),
+      ),
+      new GroupingOperationT(
+        GroupingOperationKind.GroupingEachOperation,
+        new GroupingEachOperationT(this.bodyOperations()),
+      ),
+    ];
+  }
+
+  toRequest(): GroupingRequestT {
+    return new GroupingRequestT(
+      GroupingSourceKind.StructuredGroupingSource,
+      new StructuredGroupingSourceT(new GroupingAllOperationT(this.operations())),
+    );
+  }
+}
+
+export type FacetSort = "count_desc" | "count_asc" | "value_asc" | "value_desc";
+
+export function facetRequest(field: string, limit = 10, ordering: FacetSort = "count_desc"): GroupingRequestT {
+  limit = assertUInt32(limit, "facet limit");
+  let order: GroupingExpr;
+  switch (ordering) {
+    case "count_desc": order = agg.count().neg(); break;
+    case "count_asc": order = agg.count(); break;
+    case "value_desc": order = g.field(field).neg(); break;
+    case "value_asc": order = g.field(field); break;
+    default: throw new TypeError("facet sort must be count_desc, count_asc, value_asc, or value_desc");
+  }
+
+  const root = new GroupingAllOperationT([
+    new GroupingOperationT(
+      GroupingOperationKind.GroupingGroupOperation,
+      new GroupingGroupOperationT(g.field(field).model),
+    ),
+    new GroupingOperationT(
+      GroupingOperationKind.GroupingEachOperation,
+      new GroupingEachOperationT([
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingMaxOperation,
+          new GroupingMaxOperationT(
+            GroupingMaxKind.FiniteGroupingMax,
+            new FiniteGroupingMaxT(limit),
+          ),
+        ),
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingOrderOperation,
+          new GroupingOrderOperationT([new GroupingOrderExprT(order.model)]),
+        ),
+        new GroupingOperationT(
+          GroupingOperationKind.GroupingOutputOperation,
+          new GroupingOutputOperationT([new GroupingOutputT(null, agg.count().model)]),
+        ),
+      ]),
+    ),
+  ]);
+
+  return new GroupingRequestT(
+    GroupingSourceKind.StructuredGroupingSource,
+    new StructuredGroupingSourceT(root),
+  );
+}
+
+export function rootAggregationRequest(outputs: GroupingOutput[]): GroupingRequestT {
+  const root = new GroupingAllOperationT([
+    new GroupingOperationT(
+      GroupingOperationKind.GroupingOutputOperation,
+      new GroupingOutputOperationT(
+        outputs.map((output) => new GroupingOutputT(output.label || null, output.expression.model)),
+      ),
+    ),
+  ]);
+  return new GroupingRequestT(
+    GroupingSourceKind.StructuredGroupingSource,
+    new StructuredGroupingSourceT(root),
+  );
+}

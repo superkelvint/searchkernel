@@ -1,0 +1,282 @@
+import { CoverageDegradedT } from "../generated/flatbuffers/search-kernel/v2/coverage-degraded.js";
+import { CoverageT } from "../generated/flatbuffers/search-kernel/v2/coverage.js";
+import { FiniteRelevanceT } from "../generated/flatbuffers/search-kernel/v2/finite-relevance.js";
+import { HitT } from "../generated/flatbuffers/search-kernel/v2/hit.js";
+import { RelevanceKind } from "../generated/flatbuffers/search-kernel/v2/relevance-kind.js";
+import { NegativeInfinityRelevanceT } from "../generated/flatbuffers/search-kernel/v2/negative-infinity-relevance.js";
+import { PositiveInfinityRelevanceT } from "../generated/flatbuffers/search-kernel/v2/positive-infinity-relevance.js";
+import { RelevanceT } from "../generated/flatbuffers/search-kernel/v2/relevance.js";
+import { ResultGroupT } from "../generated/flatbuffers/search-kernel/v2/result-group.js";
+import { ResultNodeKind } from "../generated/flatbuffers/search-kernel/v2/result-node-kind.js";
+import { ResultNodeT } from "../generated/flatbuffers/search-kernel/v2/result-node.js";
+import { SearchResultErrorT } from "../generated/flatbuffers/search-kernel/v2/search-result-error.js";
+import { SearchResultT } from "../generated/flatbuffers/search-kernel/v2/search-result.js";
+import { SearchTimingT } from "../generated/flatbuffers/search-kernel/v2/search-timing.js";
+import { TotalHitsRelation } from "../generated/flatbuffers/search-kernel/v2/total-hits-relation.js";
+import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
+import { fromValue } from "./values.js";
+
+export class ResultDecodeError extends Error {
+  override name = "ResultDecodeError";
+}
+
+function text(value: string | Uint8Array | null | undefined): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  return new TextDecoder().decode(value);
+}
+
+function entries(values: readonly ValueEntryT[] | null | undefined): Record<string, unknown> {
+  const decoded: Record<string, unknown> = {};
+  const seen = new Set<string>();
+  for (const entry of values ?? []) {
+    const key = text(entry.key);
+    if (key === null) throw new ResultDecodeError("result map entry has no key");
+    if (seen.has(key)) throw new ResultDecodeError(`duplicate result map key: ${key}`);
+    seen.add(key);
+    decoded[key] = fromValue(entry.value);
+  }
+  return decoded;
+}
+
+function optionalValue<T>(value: { value: T } | null | undefined): T | null {
+  return value?.value ?? null;
+}
+
+function relevanceValue(relevance: RelevanceT | null | undefined): number | null {
+  if (!relevance || relevance.valueType === RelevanceKind.NONE) return null;
+  switch (relevance.valueType) {
+    case RelevanceKind.FiniteRelevance:
+      if (!(relevance.value instanceof FiniteRelevanceT)) {
+        throw new ResultDecodeError("finite relevance has a missing or mismatched payload");
+      }
+      return relevance.value.value;
+    case RelevanceKind.PositiveInfinityRelevance:
+      if (!(relevance.value instanceof PositiveInfinityRelevanceT)) {
+        throw new ResultDecodeError("positive-infinity relevance has a missing or mismatched payload");
+      }
+      return Number.POSITIVE_INFINITY;
+    case RelevanceKind.NegativeInfinityRelevance:
+      if (!(relevance.value instanceof NegativeInfinityRelevanceT)) {
+        throw new ResultDecodeError("negative-infinity relevance has a missing or mismatched payload");
+      }
+      return Number.NEGATIVE_INFINITY;
+    default:
+      throw new ResultDecodeError(`unsupported relevance kind: ${relevance.valueType}`);
+  }
+}
+
+export class CoverageDegraded {
+  readonly matchPhase: boolean | null;
+  readonly timeout: boolean | null;
+  readonly adaptiveTimeout: boolean | null;
+  readonly annTimeout: boolean | null;
+  readonly nonIdealState: boolean | null;
+  readonly metadata: Record<string, unknown>;
+
+  constructor(node: CoverageDegradedT) {
+    this.matchPhase = optionalValue(node.matchPhase);
+    this.timeout = optionalValue(node.timeout);
+    this.adaptiveTimeout = optionalValue(node.adaptiveTimeout);
+    this.annTimeout = optionalValue(node.annTimeout);
+    this.nonIdealState = optionalValue(node.nonIdealState);
+    this.metadata = entries(node.metadata);
+  }
+}
+
+export class Coverage {
+  readonly coveragePercent: number | null;
+  readonly documents: bigint | null;
+  readonly full: boolean | null;
+  readonly nodes: number | null;
+  readonly results: bigint | null;
+  readonly resultsFull: bigint | null;
+  readonly degraded: CoverageDegraded | null;
+  readonly metadata: Record<string, unknown>;
+
+  constructor(node: CoverageT) {
+    this.coveragePercent = optionalValue(node.coveragePercent);
+    this.documents = optionalValue(node.documents);
+    this.full = optionalValue(node.full);
+    this.nodes = optionalValue(node.nodes);
+    this.results = optionalValue(node.results);
+    this.resultsFull = optionalValue(node.resultsFull);
+    this.degraded = node.degraded ? new CoverageDegraded(node.degraded) : null;
+    this.metadata = entries(node.metadata);
+  }
+}
+
+export class Hit {
+  readonly id: string;
+  readonly relevance: number | null;
+  readonly score: number | null;
+  readonly fields: Record<string, unknown>;
+  readonly highlights: readonly unknown[];
+  readonly source: string | null;
+  readonly types: readonly string[];
+  readonly matchFeatures: Record<string, unknown>;
+  readonly summaryFeatures: Record<string, unknown>;
+  readonly rankFeatures: Record<string, unknown>;
+  readonly features: Record<string, unknown>;
+  readonly sortValues: readonly unknown[];
+
+  constructor(node: HitT) {
+    this.id = text(node.id) ?? "";
+    this.relevance = relevanceValue(node.relevance);
+    this.score = this.relevance;
+    this.fields = entries(node.fields);
+    this.highlights = node.highlights ?? [];
+    this.source = text(node.source);
+    this.types = (node.types ?? []).map((item) => text(item) ?? "");
+    this.matchFeatures = entries(node.matchFeatures);
+    this.summaryFeatures = entries(node.summaryFeatures);
+    this.rankFeatures = entries(node.rankFeatures);
+    this.features = this.matchFeatures;
+    this.sortValues = (node.sortValues ?? []).map(fromValue);
+  }
+
+  get(name: string): unknown {
+    return this.fields[name];
+  }
+}
+
+export type ResultChild = Hit | ResultGroup;
+
+export class ResultGroup {
+  readonly id: string | null;
+  readonly label: string | null;
+  readonly value: unknown;
+  readonly fields: Record<string, unknown>;
+  readonly children: readonly ResultChild[];
+  readonly groups: readonly ResultGroup[];
+  readonly hits: readonly Hit[];
+  readonly continuations: readonly string[];
+  readonly source: string | null;
+  readonly types: readonly string[];
+  readonly relevance: number | null;
+  readonly limits: unknown;
+  readonly metadata: Record<string, unknown>;
+
+  constructor(node: ResultGroupT) {
+    this.id = text(node.id);
+    this.label = text(node.label);
+    this.value = fromValue(node.value);
+    this.fields = entries(node.fields);
+    this.children = (node.children ?? []).map(wrapNode);
+    this.groups = this.children.filter((child): child is ResultGroup => child instanceof ResultGroup);
+    this.hits = this.children.filter((child): child is Hit => child instanceof Hit);
+    this.continuations = (node.continuations ?? [])
+      .map((entry) => text(entry.value))
+      .filter((entry): entry is string => entry !== null);
+    this.source = text(node.source);
+    this.types = (node.types ?? []).map((item) => text(item) ?? "");
+    this.relevance = relevanceValue(node.relevance);
+    this.limits = node.limits;
+    this.metadata = entries(node.metadata);
+  }
+
+  get(name: string): unknown {
+    return this.fields[name];
+  }
+}
+
+function wrapNode(node: ResultNodeT): ResultChild {
+  if (node.nodeType === ResultNodeKind.ResultGroup) {
+    if (!(node.node instanceof ResultGroupT)) {
+      throw new ResultDecodeError("result-group node has a missing or mismatched payload");
+    }
+    return new ResultGroup(node.node);
+  }
+  if (node.nodeType === ResultNodeKind.Hit) {
+    if (!(node.node instanceof HitT)) {
+      throw new ResultDecodeError("hit node has a missing or mismatched payload");
+    }
+    return new Hit(node.node);
+  }
+  throw new ResultDecodeError(`unsupported result node kind: ${node.nodeType}`);
+}
+
+export type TotalHitsRelationName = "unspecified" | "exact" | "lower_bound" | "approximate" | "unknown";
+
+function totalHitsRelationName(relation: TotalHitsRelation | undefined): TotalHitsRelationName {
+  switch (relation) {
+    case TotalHitsRelation.Exact: return "exact";
+    case TotalHitsRelation.LowerBound: return "lower_bound";
+    case TotalHitsRelation.Approximate: return "approximate";
+    case TotalHitsRelation.Unknown: return "unknown";
+    default: return "unspecified";
+  }
+}
+
+export interface FacetBucket {
+  value: unknown;
+  count: unknown;
+}
+
+export class SearchResults {
+  readonly raw: SearchResultT;
+  readonly root: ResultChild | null;
+  readonly hits: readonly Hit[];
+  readonly groups: readonly ResultGroup[];
+  readonly totalHits: bigint;
+  readonly totalHitsRelation: TotalHitsRelationName;
+  readonly coverage: Coverage | null;
+  readonly timing: SearchTimingT | null;
+  readonly issues: readonly SearchResultErrorT[];
+  readonly errors: readonly SearchResultErrorT[];
+  readonly aggregations: Record<string, unknown>;
+  readonly continuations: readonly string[];
+  readonly metadata: Record<string, unknown>;
+  readonly trace: unknown;
+  readonly facets: Record<string, FacetBucket[]>;
+
+  constructor(result: SearchResultT) {
+    this.raw = result;
+    this.root = result.root ? wrapNode(result.root) : null;
+
+    const rootChildren = this.root instanceof ResultGroup ? this.root.children : [];
+    this.hits = rootChildren.filter((child): child is Hit => child instanceof Hit);
+
+    const projectedGroups: ResultGroup[] = [];
+    for (const child of rootChildren) {
+      if (
+        child instanceof ResultGroup
+        && child.value == null
+        && child.label == null
+        && child.groups.length
+      ) {
+        projectedGroups.push(...child.groups);
+      } else if (child instanceof ResultGroup) {
+        projectedGroups.push(child);
+      }
+    }
+    this.groups = projectedGroups;
+
+    this.totalHits = result.totalHits?.value ?? 0n;
+    this.totalHitsRelation = totalHitsRelationName(result.totalHits?.relation);
+    this.coverage = result.coverage ? new Coverage(result.coverage) : null;
+    this.timing = result.timing ?? null;
+    this.issues = result.errors ?? [];
+    this.errors = this.issues;
+    this.aggregations = this.root instanceof ResultGroup ? { ...this.root.fields } : {};
+    this.continuations = this.root instanceof ResultGroup ? [...this.root.continuations] : [];
+    this.metadata = entries(result.metadata);
+    this.trace = fromValue(result.trace);
+
+    const facets: Record<string, FacetBucket[]> = {};
+    for (const group of this.groups) {
+      if (group.value != null || !group.label || !group.groups.length) continue;
+      facets[group.label] = group.groups.map((child) => ({
+        value: child.value,
+        count: child.get("count") ?? 0,
+      }));
+    }
+    this.facets = facets;
+  }
+
+  /** Used by the facet convenience to preserve an explicit caller-supplied facet name. */
+  renameFacet(source: string, target: string): void {
+    if (source === target || !(source in this.facets)) return;
+    this.facets[target] = this.facets[source]!;
+  }
+}
