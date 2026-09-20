@@ -1046,7 +1046,10 @@ impl Engine {
             let field = self.attribute_field(&sort.field)?;
             if !matches!(
                 field.field_type,
-                ManifestFieldType::String | ManifestFieldType::Integer | ManifestFieldType::Float
+                ManifestFieldType::String
+                    | ManifestFieldType::Integer
+                    | ManifestFieldType::Float
+                    | ManifestFieldType::Boolean
             ) {
                 return Err(Error::message(format!(
                     "unsupported sort field type: {}",
