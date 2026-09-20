@@ -100,6 +100,24 @@ void invalid_argument_surface() {
     expect_invalid(sk_document_annotate_text(nullptr, TITLE_FIELD, nullptr, 0, nullptr, nullptr,
                                              nullptr, 0, error.data(), ERROR_CAPACITY),
                    "document annotate null");
+    const uint8_t array_value_bytes[] = {'x'};
+    const uint32_t array_value_lengths[] = {1};
+    const uint32_t array_term_lengths[] = {1};
+    const uint32_t array_byte_starts[] = {0};
+    const uint32_t array_byte_lengths[] = {1};
+    const uint32_t array_element_offsets[] = {0, 1};
+    expect_ok(sk_document_create_empty("array-doc", &document, error.data(), ERROR_CAPACITY),
+              "document array annotation setup");
+    expect_ok(sk_document_add_string_array(document, "tags", array_value_bytes,
+                                           array_value_lengths, 1, error.data(), ERROR_CAPACITY),
+              "document array annotation value setup");
+    expect_invalid(sk_document_annotate_string_array(
+                       document, "tags", nullptr, 1, array_term_lengths, array_byte_starts,
+                       array_byte_lengths, array_element_offsets, 1, 1, error.data(),
+                       ERROR_CAPACITY),
+                   "document array annotation null term bytes");
+    sk_document_destroy(document);
+    document = nullptr;
     sk_document_destroy(nullptr);
 
     expect_invalid(sk_document_update_create(nullptr, "qty", 1, &update, error.data(), ERROR_CAPACITY),
@@ -126,6 +144,20 @@ void invalid_argument_surface() {
                        nullptr, TITLE_FIELD, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                        error.data(), ERROR_CAPACITY),
                    "update annotate array null");
+    expect_ok(sk_document_update_create_empty("array-update", &update, error.data(),
+                                              ERROR_CAPACITY),
+              "update array annotation setup");
+    expect_ok(sk_document_update_assign_string_array(update, "tags", array_value_bytes,
+                                                     array_value_lengths, 1, error.data(),
+                                                     ERROR_CAPACITY),
+              "update array annotation value setup");
+    expect_invalid(sk_document_update_annotate_string_array(
+                       update, "tags", nullptr, 1, array_term_lengths, array_byte_starts,
+                       array_byte_lengths, array_element_offsets, 1, 1, error.data(),
+                       ERROR_CAPACITY),
+                   "update array annotation null term bytes");
+    sk_document_update_destroy(update);
+    update = nullptr;
     sk_document_update_destroy(nullptr);
 
     expect_invalid(sk_search_request_create(nullptr, 1, 1, &request, error.data(), ERROR_CAPACITY),

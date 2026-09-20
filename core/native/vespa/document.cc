@@ -166,6 +166,76 @@ void append_text_occurrences(TextDocument &document, const uint8_t *term_bytes,
     document.occurrences_added = true;
 }
 
+std::vector<std::vector<TextOccurrence>> decode_text_array_occurrences(
+    const std::vector<std::string> &values, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    const uint32_t *element_offsets, uint32_t element_count,
+    uint32_t occurrence_count) {
+    if (element_count != values.size()) {
+        throw std::invalid_argument("array annotation element count does not match array");
+    }
+    if (!element_offsets || element_offsets[0] != 0 ||
+        element_offsets[element_count] != occurrence_count) {
+        throw std::invalid_argument("array annotation offsets are invalid");
+    }
+    if (occurrence_count != 0 && (!term_lengths || !byte_starts || !byte_lengths)) {
+        throw std::invalid_argument("array annotation occurrence arrays are invalid");
+    }
+    if (term_bytes_length != 0 && !term_bytes) {
+        throw std::invalid_argument("array annotation term bytes must not be null");
+    }
+
+    std::vector<std::vector<TextOccurrence>> result(element_count);
+    for (uint32_t element = 0; element < element_count; ++element) {
+        const auto begin = element_offsets[element];
+        const auto end = element_offsets[element + 1];
+        if (begin > end || end > occurrence_count) {
+            throw std::invalid_argument("array annotation offsets are invalid");
+        }
+        std::vector<uint32_t> lengths;
+        std::vector<uint32_t> starts;
+        std::vector<uint32_t> byte_lengths_for_element;
+        if (begin != end) {
+            lengths.assign(term_lengths + begin, term_lengths + end);
+            starts.assign(byte_starts + begin, byte_starts + end);
+            byte_lengths_for_element.assign(byte_lengths + begin, byte_lengths + end);
+        }
+        size_t term_offset = 0;
+        for (uint32_t prior = 0; prior < begin; ++prior) {
+            const auto length = term_lengths[prior];
+            if (length == 0) {
+                throw std::invalid_argument("array annotation term must not be empty");
+            }
+            if (term_offset > term_bytes_length || length > term_bytes_length - term_offset) {
+                throw std::invalid_argument("array annotation term bytes are invalid");
+            }
+            term_offset += length;
+        }
+        std::vector<uint8_t> element_term_bytes;
+        for (uint32_t occurrence = begin; occurrence < end; ++occurrence) {
+            const auto length = term_lengths[occurrence];
+            if (length == 0) {
+                throw std::invalid_argument("array annotation term must not be empty");
+            }
+            if (term_offset > term_bytes_length || length > term_bytes_length - term_offset) {
+                throw std::invalid_argument("array annotation term bytes are invalid");
+            }
+            element_term_bytes.insert(element_term_bytes.end(),
+                                       term_bytes + term_offset,
+                                       term_bytes + term_offset + length);
+            term_offset += length;
+        }
+        TextDocument analyzed;
+        analyzed.text = values[element];
+        append_text_occurrences(analyzed, element_term_bytes.data(),
+                                static_cast<uint32_t>(element_term_bytes.size()), lengths.data(),
+                                starts.data(), byte_lengths_for_element.data(), end - begin);
+        result[element] = std::move(analyzed.occurrences);
+    }
+    return result;
+}
+
 void initialize_text_request(TextRequest &request, uint32_t kind, const char *field,
                              const char *rank_profile) {
     validate_field_name(field);

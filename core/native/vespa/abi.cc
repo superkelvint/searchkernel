@@ -18,6 +18,9 @@ void copy_search_reply_metadata(const SearchReply &reply, LocalSearchResultState
 void append_text_occurrences(TextDocument &, const uint8_t *, uint32_t,
                              const uint32_t *, const uint32_t *, const uint32_t *,
                              uint32_t);
+std::vector<std::vector<TextOccurrence>> decode_text_array_occurrences(
+    const std::vector<std::string> &, const uint8_t *, uint32_t, const uint32_t *,
+    const uint32_t *, const uint32_t *, const uint32_t *, uint32_t, uint32_t);
 std::unique_ptr<sk_grouping_tree_node> grouping_tree_node(
     const Group &group, bool include_key);
 }
@@ -484,56 +487,9 @@ extern "C" SK_API int32_t sk_document_annotate_string_array(
         if (element_count != existing->value.strings.size()) {
             throw std::invalid_argument("array annotation element count does not match array");
         }
-        if (!element_offsets || element_offsets[0] != 0 ||
-            element_offsets[element_count] != occurrence_count) {
-            throw std::invalid_argument("array annotation offsets are invalid");
-        }
-        if (occurrence_count != 0 && (!term_lengths || !byte_starts || !byte_lengths)) {
-            throw std::invalid_argument("array annotation occurrence arrays are invalid");
-        }
-        existing->array_occurrences.clear();
-        existing->array_occurrences.resize(element_count);
-        for (uint32_t element = 0; element < element_count; ++element) {
-            const auto begin = element_offsets[element];
-            const auto end = element_offsets[element + 1];
-            if (begin > end || end > occurrence_count) {
-                throw std::invalid_argument("array annotation offsets are invalid");
-            }
-            std::vector<uint32_t> lengths;
-            std::vector<uint32_t> starts;
-            std::vector<uint32_t> byte_lengths_for_element;
-            if (begin != end) {
-                lengths.assign(term_lengths + begin, term_lengths + end);
-                starts.assign(byte_starts + begin, byte_starts + end);
-                byte_lengths_for_element.assign(byte_lengths + begin, byte_lengths + end);
-            }
-            size_t byte_offset = 0;
-            for (const auto length : lengths) {
-                if (byte_offset > term_bytes_length ||
-                    length > term_bytes_length - byte_offset) {
-                    throw std::invalid_argument("array annotation term bytes are invalid");
-                }
-                byte_offset += length;
-            }
-            // Rebuild each element's term-byte slice because Vespa's span-tree
-            // representation keeps one independent string value per element.
-            size_t term_offset = 0;
-            for (uint32_t prior = 0; prior < begin; ++prior) term_offset += term_lengths[prior];
-            std::vector<uint8_t> element_term_bytes;
-            for (uint32_t occurrence = begin; occurrence < end; ++occurrence) {
-                element_term_bytes.insert(element_term_bytes.end(),
-                                           term_bytes + term_offset,
-                                           term_bytes + term_offset + term_lengths[occurrence]);
-                term_offset += term_lengths[occurrence];
-            }
-            TextDocument analyzed;
-            analyzed.text = existing->value.strings[element];
-            append_text_occurrences(analyzed, element_term_bytes.data(),
-                                    static_cast<uint32_t>(element_term_bytes.size()),
-                                    lengths.data(), starts.data(), byte_lengths_for_element.data(),
-                                    end - begin);
-            existing->array_occurrences[element] = std::move(analyzed.occurrences);
-        }
+        existing->array_occurrences = decode_text_array_occurrences(
+            existing->value.strings, term_bytes, term_bytes_length, term_lengths, byte_starts,
+            byte_lengths, element_offsets, element_count, occurrence_count);
     });
 }
 
@@ -779,52 +735,9 @@ extern "C" SK_API int32_t sk_document_update_annotate_string_array(
         if (element_count != existing->second->strings.size()) {
             throw std::invalid_argument("array annotation element count does not match array");
         }
-        if (!element_offsets || element_offsets[0] != 0 ||
-            element_offsets[element_count] != occurrence_count) {
-            throw std::invalid_argument("array annotation offsets are invalid");
-        }
-        if (occurrence_count != 0 && (!term_lengths || !byte_starts || !byte_lengths)) {
-            throw std::invalid_argument("array annotation occurrence arrays are invalid");
-        }
-
-        std::vector<std::vector<TextOccurrence>> analyzed_elements(element_count);
-        for (uint32_t element = 0; element < element_count; ++element) {
-            const auto begin = element_offsets[element];
-            const auto end = element_offsets[element + 1];
-            if (begin > end || end > occurrence_count) {
-                throw std::invalid_argument("array annotation offsets are invalid");
-            }
-            std::vector<uint32_t> lengths;
-            std::vector<uint32_t> starts;
-            std::vector<uint32_t> byte_lengths_for_element;
-            if (begin != end) {
-                lengths.assign(term_lengths + begin, term_lengths + end);
-                starts.assign(byte_starts + begin, byte_starts + end);
-                byte_lengths_for_element.assign(byte_lengths + begin, byte_lengths + end);
-            }
-            size_t term_offset = 0;
-            for (uint32_t prior = 0; prior < begin; ++prior) {
-                term_offset += term_lengths[prior];
-            }
-            std::vector<uint8_t> element_term_bytes;
-            for (uint32_t occurrence = begin; occurrence < end; ++occurrence) {
-                const auto length = term_lengths[occurrence];
-                if (term_offset > term_bytes_length || length > term_bytes_length - term_offset) {
-                    throw std::invalid_argument("array annotation term bytes are invalid");
-                }
-                element_term_bytes.insert(element_term_bytes.end(),
-                                           term_bytes + term_offset,
-                                           term_bytes + term_offset + length);
-                term_offset += length;
-            }
-            TextDocument analyzed;
-            analyzed.text = existing->second->strings[element];
-            append_text_occurrences(analyzed, element_term_bytes.data(),
-                                    static_cast<uint32_t>(element_term_bytes.size()),
-                                    lengths.data(), starts.data(),
-                                    byte_lengths_for_element.data(), end - begin);
-            analyzed_elements[element] = std::move(analyzed.occurrences);
-        }
+        auto analyzed_elements = decode_text_array_occurrences(
+            existing->second->strings, term_bytes, term_bytes_length, term_lengths, byte_starts,
+            byte_lengths, element_offsets, element_count, occurrence_count);
         auto annotated = std::find_if(update->annotated_array_fields.begin(),
                                       update->annotated_array_fields.end(),
                                       [field](const auto &entry) { return entry.first == field; });
