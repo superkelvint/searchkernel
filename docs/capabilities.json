@@ -23,10 +23,11 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/verify-m7.sh"
+        "reference/vespa/m7/verify-m7.sh",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": []
     },
@@ -37,11 +38,12 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
         "reference/vespa/QUERY_SOURCE_TRACE.md",
-        "docs/architecture.md"
+        "docs/architecture.md",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
         "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model."
@@ -54,11 +56,12 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
         "reference/vespa/m7/CONTRACT.md",
-        "docs/architecture.md"
+        "docs/architecture.md",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
         "The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path."
@@ -121,10 +124,11 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {"rust": false, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "docs/architecture.md",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
         "Geo matching is delegated to Vespa and is not implemented in Rust; verified bounding-box edges are inclusive."
@@ -153,11 +157,12 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
-        "docs/architecture.md"
+        "docs/architecture.md",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
         "Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped."

@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Client, GrpcTransport, Index  # noqa: E402
+from searchkernel import Client, ClientError, GrpcTransport, Index, q  # noqa: E402
 from searchkernel.client import value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
@@ -23,6 +23,9 @@ from SearchKernel.V2.AnalyzeTarget import AnalyzeTarget  # noqa: E402
 from SearchKernel.V2.DataType import DataTypeT  # noqa: E402
 from SearchKernel.V2.DataTypeKind import DataTypeKind  # noqa: E402
 from SearchKernel.V2.FieldDefinition import FieldDefinitionT  # noqa: E402
+from SearchKernel.V2.ArrayDataType import ArrayDataTypeT  # noqa: E402
+from SearchKernel.V2.StructDataType import StructDataTypeT  # noqa: E402
+from SearchKernel.V2.StructFieldDefinition import StructFieldDefinitionT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.MatchingConfig import MatchingConfigT  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
@@ -41,6 +44,10 @@ from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T  # noqa: E402
 from SearchKernel.V2.StringEntry import StringEntryT  # noqa: E402
+from SearchKernel.V2.PositionDataType import PositionDataTypeT  # noqa: E402
+from SearchKernel.V2.PresentationRequest import PresentationRequestT  # noqa: E402
+from SearchKernel.V2.FieldProjection import FieldProjectionT  # noqa: E402
+from SearchKernel.V2.HighlightRequest import HighlightRequestT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -304,6 +311,174 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             )
         )
         self.assertEqual(surviving.root.node.children[0].node.id, "d1")
+
+    def test_typed_query_families_reach_vespa(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert("d1", {"title": "quick brown fox", "category": "a", "price": 5})
+        index.upsert("d2", {"title": "brown quick fox", "category": "b", "price": 2})
+        index.upsert("d3", {"title": "quick fox", "category": "a", "price": 8})
+        index.upsert("d4", {"title": "fox", "category": "b", "price": 1})
+
+        def ids(query):
+            result = index.search(SearchRequestT(query=query, limit=OptionalUInt32T(value=10)))
+            return [child.node.id for child in result.root.node.children]
+
+        self.assertEqual(ids(q.contains("title", q.phrase("quick", "brown"))), ["d1"])
+        self.assertEqual(set(ids(q.contains("title", q.near("quick", "brown")))), {"d1", "d2"})
+        self.assertEqual(ids(q.contains("title", q.onear("quick", "brown"))), ["d1"])
+        self.assertEqual(set(ids(q.contains("title", q.fuzzy("foxx")))), {"d1", "d2", "d3", "d4"})
+        self.assertEqual(
+            set(ids(q.rank(q.contains("title", "fox"), q.contains("title", "quick")))),
+            {"d1", "d2", "d3", "d4"},
+        )
+        self.assertEqual(
+            set(ids(q.wand("title", {"quick": 10, "fox": 1}))),
+            {"d1", "d2", "d3", "d4"},
+        )
+
+    def test_same_element_query_reaches_vespa(self):
+        self.definition = IndexDefinitionT(
+            name="same_element_e2e",
+            fields=[
+                FieldDefinitionT(
+                    name="people",
+                    dataType=DataTypeT(
+                        kindType=DataTypeKind.ArrayDataType,
+                        kind=ArrayDataTypeT(
+                            elementType=DataTypeT(
+                                kindType=DataTypeKind.StructDataType,
+                                kind=StructDataTypeT(
+                                    fields=[
+                                        StructFieldDefinitionT(
+                                            name="first",
+                                            dataType=DataTypeT(
+                                                kindType=DataTypeKind.PrimitiveDataType,
+                                                kind=PrimitiveDataTypeT(kind=1),
+                                            ),
+                                        ),
+                                        StructFieldDefinitionT(
+                                            name="last",
+                                            dataType=DataTypeT(
+                                                kindType=DataTypeKind.PrimitiveDataType,
+                                                kind=PrimitiveDataTypeT(kind=1),
+                                            ),
+                                        ),
+                                    ]
+                                ),
+                            )
+                        ),
+                    ),
+                    stored=OptionalBoolT(True),
+                    searchable=OptionalBoolT(True),
+                )
+            ],
+        )
+        self.definition_path.write_bytes(pack_object(self.definition))
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert(
+            "d1",
+            {
+                "people": [
+                    {"first": "Ada", "last": "Lovelace"},
+                    {"first": "Grace", "last": "Hopper"},
+                ]
+            },
+        )
+        index.upsert("d2", {"people": [{"first": "Ada", "last": "Hopper"}]})
+        result = index.search(
+            SearchRequestT(
+                query=q.contains(
+                    "people",
+                    q.same_element(
+                        q.contains("first", "Ada"),
+                        q.contains("last", "Lovelace"),
+                    ),
+                ),
+                limit=OptionalUInt32T(value=10),
+            )
+        )
+        self.assertEqual([child.node.id for child in result.root.node.children], ["d1"])
+
+    def test_geo_queries_reach_vespa(self):
+        self.definition = IndexDefinitionT(
+            name="geo_e2e",
+            fields=[
+                FieldDefinitionT(
+                    name="location",
+                    dataType=DataTypeT(
+                        kindType=DataTypeKind.PositionDataType,
+                        kind=PositionDataTypeT(),
+                    ),
+                    stored=OptionalBoolT(False),
+                )
+            ],
+        )
+        self.definition_path.write_bytes(pack_object(self.definition))
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert("inside", {"location": {"latitude": 37.3, "longitude": -121.9}})
+        index.upsert("outside", {"location": {"latitude": 40.7, "longitude": -74.0}})
+
+        location = index.search(
+            SearchRequestT(
+                query=q.geo_location(
+                    "location", lat=37.3, lon=-121.9, radius="10km"
+                ),
+                limit=OptionalUInt32T(value=10),
+            )
+        )
+        box = index.search(
+            SearchRequestT(
+                query=q.geo_box(
+                    "location", south=37.0, west=-122.2, north=37.6, east=-121.5
+                ),
+                limit=OptionalUInt32T(value=10),
+            )
+        )
+        self.assertEqual([child.node.id for child in location.root.node.children], ["inside"])
+        self.assertEqual([child.node.id for child in box.root.node.children], ["inside"])
+
+    def test_docsums_are_returned_and_highlighting_remains_explicitly_unsupported(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client)
+        index.upsert("d1", {"title": "highlight me", "category": "a", "price": 5})
+        result = index.search(
+            SearchRequestT(
+                query=QuerySourceT(
+                    sourceType=QuerySourceKind.MatchAllQuery,
+                    source=MatchAllQueryT(),
+                ),
+                presentation=PresentationRequestT(
+                    fields=FieldProjectionT(fields=["title", "category"])
+                ),
+                limit=OptionalUInt32T(value=10),
+            )
+        )
+        fields = {
+            entry.key: entry.value.kind.value
+            for entry in result.root.node.children[0].node.fields
+        }
+        self.assertEqual(fields, {"title": "highlight me", "category": "a"})
+
+        with self.assertRaises(ClientError) as error:
+            index.search(
+                SearchRequestT(
+                    query=QuerySourceT(
+                        sourceType=QuerySourceKind.MatchAllQuery,
+                        source=MatchAllQueryT(),
+                    ),
+                    presentation=PresentationRequestT(
+                        highlighting=HighlightRequestT(fields=["title"])
+                    ),
+                )
+            )
+        self.assertEqual(error.exception.code, "unsupported")
 
 
 if __name__ == "__main__":

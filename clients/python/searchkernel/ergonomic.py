@@ -60,10 +60,18 @@ from SearchKernel.V2.QueryAnd import QueryAndT
 from SearchKernel.V2.QueryContains import QueryContainsT
 from SearchKernel.V2.QueryExpr import QueryExprT
 from SearchKernel.V2.QueryExprKind import QueryExprKind
+from SearchKernel.V2.QueryFuzzy import QueryFuzzyT
+from SearchKernel.V2.QueryGeoBoundingBox import QueryGeoBoundingBoxT
+from SearchKernel.V2.QueryGeoLocation import QueryGeoLocationT
 from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
+from SearchKernel.V2.QueryNear import QueryNearT
 from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
 from SearchKernel.V2.QueryNot import QueryNotT
+from SearchKernel.V2.QueryONear import QueryONearT
 from SearchKernel.V2.QueryOr import QueryOrT
+from SearchKernel.V2.QueryPhrase import QueryPhraseT
+from SearchKernel.V2.QueryRank import QueryRankT
+from SearchKernel.V2.QuerySameElement import QuerySameElementT
 from SearchKernel.V2.QueryInput import QueryInputT
 from SearchKernel.V2.QueryInputKind import QueryInputKind
 from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT
@@ -78,6 +86,9 @@ from SearchKernel.V2.SearchKernelTextQuery import SearchKernelTextQueryT
 from SearchKernel.V2.MatchAllQuery import MatchAllQueryT
 from SearchKernel.V2.YqlQuery import YqlQueryT
 from SearchKernel.V2.TypedQuery import TypedQueryT
+from SearchKernel.V2.QueryWand import QueryWandT
+from SearchKernel.V2.QueryWeakAnd import QueryWeakAndT
+from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
 from SearchKernel.V2.RankingRequest import RankingRequestT
 from SearchKernel.V2.SearchRequest import SearchRequestT
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
@@ -88,6 +99,7 @@ from SearchKernel.V2.SortTargetKind import SortTargetKind
 from SearchKernel.V2.FieldSortTarget import FieldSortTargetT
 from SearchKernel.V2.StringEntry import StringEntryT
 from SearchKernel.V2.ValueEntry import ValueEntryT
+from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.SetField import SetFieldT
 from SearchKernel.V2.UnsetField import UnsetFieldT
 from SearchKernel.V2.PatchOperation import PatchOperationT
@@ -370,14 +382,74 @@ class _QueryNamespace:
 
     @staticmethod
     def _expression(source: QuerySourceT) -> QueryExprT:
+        if isinstance(source, QueryExprT):
+            return source
         if source.sourceType != QuerySourceKind.TypedQuery or source.source is None:
             raise TypeError("typed query clauses must come from q helpers")
         return source.source.query
 
-    def contains(self, field: str, text: str) -> QuerySourceT:
-        term = QueryExprT(exprType=QueryExprKind.TermQuery, expr=__import__("SearchKernel.V2.TermQuery", fromlist=["TermQueryT"]).TermQueryT(value=value(text)))
-        contains = QueryExprT(exprType=QueryExprKind.QueryContains, expr=QueryContainsT(field=QueryFieldRefT(path=field), item=term))
+    @staticmethod
+    def _term(item: Any) -> QueryExprT:
+        if isinstance(item, str):
+            item = value(item)
+        return QueryExprT(
+            exprType=QueryExprKind.TermQuery,
+            expr=__import__("SearchKernel.V2.TermQuery", fromlist=["TermQueryT"]).TermQueryT(
+                value=item if isinstance(item, ValueT) else value(item)
+            ),
+        )
+
+    def term(self, item: Any) -> QueryExprT:
+        return self._term(item)
+
+    def contains(self, field: str, item: Any) -> QuerySourceT:
+        if isinstance(item, str):
+            item = self._term(item)
+        contains = QueryExprT(
+            exprType=QueryExprKind.QueryContains,
+            expr=QueryContainsT(
+                field=QueryFieldRefT(path=field),
+                item=self._expression(item),
+            ),
+        )
         return self._typed(contains)
+
+    def _children(self, items: tuple[Any, ...]) -> list[QueryExprT]:
+        if not items:
+            raise ValueError("query operator requires at least one item")
+        return [self._expression(item if not isinstance(item, str) else self._term(item)) for item in items]
+
+    def phrase(self, *items: Any) -> QueryExprT:
+        return QueryExprT(
+            exprType=QueryExprKind.QueryPhrase,
+            expr=QueryPhraseT(terms=self._children(items)),
+        )
+
+    def near(self, *items: Any) -> QueryExprT:
+        return QueryExprT(
+            exprType=QueryExprKind.QueryNear,
+            expr=QueryNearT(terms=self._children(items)),
+        )
+
+    def onear(self, *items: Any) -> QueryExprT:
+        return QueryExprT(
+            exprType=QueryExprKind.QueryONear,
+            expr=QueryONearT(terms=self._children(items)),
+        )
+
+    def same_element(self, *clauses: Any) -> QuerySourceT:
+        # The containing q.contains("array_field", ...) supplies the parent
+        # field context used to qualify relative struct-member clauses.
+        return self._combine(
+            QueryExprKind.QuerySameElement,
+            QuerySameElementT(clauses=self._children(clauses)),
+        )
+
+    def fuzzy(self, item: Any) -> QueryExprT:
+        return QueryExprT(
+            exprType=QueryExprKind.QueryFuzzy,
+            expr=QueryFuzzyT(value=item if isinstance(item, ValueT) else value(item)),
+        )
 
     def _combine(self, expression_type: int, expression: QueryExprT) -> QuerySourceT:
         return self._typed(QueryExprT(exprType=expression_type, expr=expression))
@@ -402,6 +474,66 @@ class _QueryNamespace:
         return self._combine(
             QueryExprKind.QueryNot,
             QueryNotT(clause=self._expression(clause)),
+        )
+
+    def weak_and(self, *clauses: QuerySourceT) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryWeakAnd,
+            QueryWeakAndT(clauses=self._children(clauses)),
+        )
+
+    def wand(self, field: str, items: Mapping[Any, int]) -> QuerySourceT:
+        if not items:
+            raise ValueError("q.wand requires at least one weighted item")
+        weighted = [
+            WeightedQueryItemT(key=value(key), weight=weight)
+            for key, weight in sorted(items.items(), key=lambda item: str(item[0]))
+        ]
+        return self._combine(
+            QueryExprKind.QueryWand,
+            QueryWandT(field=QueryFieldRefT(path=field), items=weighted),
+        )
+
+    def rank(self, match: QuerySourceT, *ranking: QuerySourceT) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryRank,
+            QueryRankT(
+                match=self._expression(match),
+                rank=self._children(ranking),
+            ),
+        )
+
+    def geo_location(
+        self, field: str, *, lat: float, lon: float, radius: str
+    ) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryGeoLocation,
+            QueryGeoLocationT(
+                field=QueryFieldRefT(path=field),
+                latitude=lat,
+                longitude=lon,
+                radius=radius,
+            ),
+        )
+
+    def geo_box(
+        self,
+        field: str,
+        *,
+        south: float,
+        west: float,
+        north: float,
+        east: float,
+    ) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryGeoBoundingBox,
+            QueryGeoBoundingBoxT(
+                field=QueryFieldRefT(path=field),
+                south=south,
+                west=west,
+                north=north,
+                east=east,
+            ),
         )
 
     def nearest_neighbor(self, document_field: str, query_tensor: str) -> QuerySourceT:
@@ -738,6 +870,22 @@ class Hit(dict):
         self.features = self.match_features
         self.sort_values = [
             _python_value(item) for item in (getattr(node, "sortValues", None) or [])
+        ]
+        self.highlights = [
+            {
+                "field": highlight.field or "",
+                "fragments": [
+                    {
+                        "text": fragment.text or "",
+                        "matches": [
+                            (match.startByte, match.endByte)
+                            for match in (fragment.matches or [])
+                        ],
+                    }
+                    for fragment in (highlight.fragments or [])
+                ],
+            }
+            for highlight in (getattr(node, "highlights", None) or [])
         ]
 
 

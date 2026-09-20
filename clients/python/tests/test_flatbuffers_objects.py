@@ -227,6 +227,37 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             [QueryExprKind.QueryContains, QueryExprKind.QueryNearestNeighbor],
         )
 
+    def test_typed_query_helpers_lower_to_generated_objects(self):
+        queries = [
+            q.contains("title", q.phrase("quick", "fox")),
+            q.contains("title", q.near("quick", "fox")),
+            q.contains("title", q.onear("quick", "fox")),
+            q.contains("title", q.fuzzy("foxx")),
+            q.same_element(q.contains("first", "Ada"), q.contains("last", "Lovelace")),
+            q.wand("title", {"fox": 1, "quick": 10}),
+            q.rank(q.contains("title", "fox"), q.contains("title", "quick")),
+            q.geo_location("location", lat=37.3, lon=-121.9, radius="10km"),
+            q.geo_box("location", south=37.0, west=-122.0, north=38.0, east=-121.0),
+        ]
+        self.assertEqual(
+            [query.source.query.exprType for query in queries],
+            [
+                QueryExprKind.QueryContains,
+                QueryExprKind.QueryContains,
+                QueryExprKind.QueryContains,
+                QueryExprKind.QueryContains,
+                QueryExprKind.QuerySameElement,
+                QueryExprKind.QueryWand,
+                QueryExprKind.QueryRank,
+                QueryExprKind.QueryGeoLocation,
+                QueryExprKind.QueryGeoBoundingBox,
+            ],
+        )
+        self.assertEqual(
+            queries[5].source.query.expr.items[0].key.kind.value,
+            "fox",
+        )
+
     def test_grouping_filter_boolean_helpers_have_readable_names(self):
         clause = gf.is_true(g.field("in_stock"))
 
@@ -266,6 +297,34 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(hit.features["scalar"], 3.5)
         self.assertEqual(hit.features["opaque"], b"native-data")
         self.assertEqual(hit.sort_values, [7])
+
+    def test_hit_preserves_structured_highlights(self):
+        from types import SimpleNamespace
+
+        node = SimpleNamespace(
+            id="doc:1",
+            fields=[],
+            relevance=None,
+            matchFeatures=[],
+            summaryFeatures=[],
+            rankFeatures=[],
+            sortValues=[],
+            highlights=[
+                SimpleNamespace(
+                    field="title",
+                    fragments=[
+                        SimpleNamespace(
+                            text="quick fox",
+                            matches=[SimpleNamespace(startByte=6, endByte=9)],
+                        )
+                    ],
+                )
+            ],
+        )
+        self.assertEqual(
+            Hit(node).highlights,
+            [{"field": "title", "fragments": [{"text": "quick fox", "matches": [(6, 9)]}] }],
+        )
 
     def test_textual_filter_clauses_preserve_local_bindings(self):
         request = SearchRequestT(
