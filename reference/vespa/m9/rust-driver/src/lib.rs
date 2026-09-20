@@ -43,7 +43,7 @@ pub fn compile_schema(root: &Json, config_dir: &Path) {
         schema = schema.field(field);
     }
     fs::create_dir_all(config_dir).unwrap();
-    ConfigCompiler::default()
+    ConfigCompiler
         .compile_to(&schema, config_dir)
         .unwrap();
     if let Some(profile) = root.get("fixture_rank_profile") {
@@ -232,6 +232,7 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
         GroupingResultValue::String(x) => json!({"type":"string","value":x}),
         GroupingResultValue::Integer(x) => json!({"type":"integer","value":x}),
         GroupingResultValue::Float(x) => json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())}),
+        GroupingResultValue::Boolean(x) => json!({"type":"boolean","value":x}),
         GroupingResultValue::Quantiles(values) => {
             json!({"type":"quantiles","values":values})
         }
