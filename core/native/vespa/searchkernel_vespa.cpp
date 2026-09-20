@@ -88,6 +88,8 @@
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
 #include <vespa/searchlib/query/tree/weighted_integer_term_vector.h>
 #include <vespa/searchlib/query/tree/weighted_string_term_vector.h>
+#include <vespa/searchlib/query/tree/string_term_vector.h>
+#include <vespa/searchlib/query/tree/integer_term_vector.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
@@ -197,6 +199,44 @@ struct sk_feature_value {
     vespalib::FeatureSet::Value value;
 };
 
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+class ResultFaultController {
+    mutable std::mutex _mutex;
+    uint32_t _fault = 0;
+    bool _armed = false;
+
+    static bool known(uint32_t fault) noexcept {
+        return fault >= SK_TEST_RESULT_FAULT_NULL_RESULT &&
+               fault <= SK_TEST_RESULT_FAULT_ISSUE_MESSAGE;
+    }
+
+public:
+    void set(uint32_t fault) {
+        if (!known(fault)) {
+            throw std::invalid_argument("unknown native result fault");
+        }
+        std::lock_guard<std::mutex> guard(_mutex);
+        _fault = fault;
+        _armed = true;
+    }
+
+    void clear() noexcept {
+        std::lock_guard<std::mutex> guard(_mutex);
+        _armed = false;
+    }
+
+    bool take(uint32_t fault) const noexcept {
+        auto *self = const_cast<ResultFaultController *>(this);
+        std::lock_guard<std::mutex> guard(self->_mutex);
+        if (!self->_armed || self->_fault != fault) {
+            return false;
+        }
+        self->_armed = false;
+        return true;
+    }
+};
+#endif
+
 enum class GroupingAggregationKind : uint32_t {
     COUNT,
     AVERAGE,
@@ -225,27 +265,57 @@ struct sk_grouping_result_value {
     std::string string;
     int64_t integer = 0;
     double floating = 0.0;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    std::shared_ptr<const ResultFaultController> result_faults;
+#endif
 };
 
 struct sk_grouping_tree_output {
     uint32_t kind = SK_GROUPING_TREE_OUTPUT_VALUE;
     std::unique_ptr<sk_grouping_result_value> value;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    std::shared_ptr<const ResultFaultController> result_faults;
+#endif
 };
 
 struct sk_grouping_tree_node {
     std::unique_ptr<sk_grouping_result_value> key;
     std::vector<std::unique_ptr<sk_grouping_tree_output>> outputs;
     std::vector<std::unique_ptr<sk_grouping_tree_node>> groups;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    std::shared_ptr<const ResultFaultController> result_faults;
+#endif
 };
 
 struct sk_grouping_tree_result {
     std::unique_ptr<sk_grouping_tree_node> root;
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    std::shared_ptr<const ResultFaultController> result_faults;
+    std::shared_ptr<std::atomic<uint64_t>> result_destroyed;
+
+    sk_grouping_tree_result() = default;
+    sk_grouping_tree_result(const sk_grouping_tree_result &) = delete;
+    sk_grouping_tree_result &operator=(const sk_grouping_tree_result &) = delete;
+    sk_grouping_tree_result(sk_grouping_tree_result &&) = default;
+    sk_grouping_tree_result &operator=(sk_grouping_tree_result &&) = default;
+    ~sk_grouping_tree_result() {
+        if (result_destroyed) {
+            result_destroyed->fetch_add(1);
+        }
+    }
+#endif
 };
 
 namespace {
 
 std::unique_ptr<sk_grouping_tree_node> grouping_tree_node(
     const Group &group, bool include_key);
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+void attach_grouping_faults(
+    sk_grouping_tree_node &node,
+    const std::shared_ptr<const ResultFaultController> &faults);
+#endif
 
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 class FailpointController {
@@ -356,42 +426,6 @@ public:
         default:
             throw std::invalid_argument("unsupported hardening failpoint action");
         }
-    }
-};
-
-class ResultFaultController {
-    mutable std::mutex _mutex;
-    uint32_t _fault = 0;
-    bool _armed = false;
-
-    static bool known(uint32_t fault) noexcept {
-        return fault >= SK_TEST_RESULT_FAULT_NULL_RESULT &&
-               fault <= SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR;
-    }
-
-public:
-    void set(uint32_t fault) {
-        if (!known(fault)) {
-            throw std::invalid_argument("unknown native result fault");
-        }
-        std::lock_guard<std::mutex> guard(_mutex);
-        _fault = fault;
-        _armed = true;
-    }
-
-    void clear() noexcept {
-        std::lock_guard<std::mutex> guard(_mutex);
-        _armed = false;
-    }
-
-    bool take(uint32_t fault) const noexcept {
-        auto *self = const_cast<ResultFaultController *>(this);
-        std::lock_guard<std::mutex> guard(self->_mutex);
-        if (!self->_armed || self->_fault != fault) {
-            return false;
-        }
-        self->_armed = false;
-        return true;
     }
 };
 
@@ -1135,6 +1169,27 @@ struct LocalSearchResultState {
     std::shared_ptr<std::atomic<uint64_t>> result_destroyed;
 #endif
 };
+
+void copy_search_reply_metadata(const SearchReply &reply, LocalSearchResultState &result) {
+    result.total_hit_count = reply.totalHitCount;
+    result.coverage_active = reply.coverage.getActive();
+    result.coverage_covered = reply.coverage.getCovered();
+    result.coverage_target_active = reply.coverage.getTargetActive();
+    if (reply.coverage.wasDegradedByMatchPhase()) {
+        result.degradation_flags |= SK_DEGRADATION_MATCH_PHASE;
+    }
+    if (reply.coverage.wasDegradedByTimeout()) {
+        result.degradation_flags |= SK_DEGRADATION_TIMEOUT;
+    }
+    if (reply.coverage.was_degraded_by_ann_timeout()) {
+        result.degradation_flags |= SK_DEGRADATION_ANN_TIMEOUT;
+    }
+    if (reply.my_issues) {
+        reply.my_issues->for_each_message([&result](const std::string &message) {
+            result.issues.push_back(message);
+        });
+    }
+}
 
 class UnsupportedNativeError final : public std::runtime_error {
     const char *_detail_code;
@@ -3524,24 +3579,7 @@ public:
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
         LocalSearchResultState result;
-        result.total_hit_count = reply->totalHitCount;
-        result.coverage_active = reply->coverage.getActive();
-        result.coverage_covered = reply->coverage.getCovered();
-        result.coverage_target_active = reply->coverage.getTargetActive();
-        if (reply->coverage.wasDegradedByMatchPhase()) {
-            result.degradation_flags |= SK_DEGRADATION_MATCH_PHASE;
-        }
-        if (reply->coverage.wasDegradedByTimeout()) {
-            result.degradation_flags |= SK_DEGRADATION_TIMEOUT;
-        }
-        if (reply->coverage.was_degraded_by_ann_timeout()) {
-            result.degradation_flags |= SK_DEGRADATION_ANN_TIMEOUT;
-        }
-        if (reply->my_issues) {
-            reply->my_issues->for_each_message([&result](const std::string &message) {
-                result.issues.push_back(message);
-            });
-        }
+        copy_search_reply_metadata(*reply, result);
         const auto &features = reply->match_features;
         if (features.values.size() != features.names.size() * reply->hits.size()) {
             throw std::runtime_error("native match-feature matrix shape mismatch");
@@ -3654,16 +3692,37 @@ public:
 
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
                                        const sk_grouping_plan &plan) const {
+        LocalSearchRequestState options;
+        options.rank_profile = "default";
+        return group_tree(query, plan, options);
+    }
+
+    sk_grouping_tree_result group_tree(const NativeQueryState &query,
+                                       const sk_grouping_plan &plan,
+                                       const LocalSearchRequestState &options) const {
         std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
         std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
         require_open();
 
         SearchRequest request;
-        request.setTimeout(60s);
-        request.ranking = "default";
+        request.setTimeout(std::chrono::milliseconds(options.timeout_millis));
+        validate_rank_profile(options.rank_profile.c_str());
+        request.ranking = options.rank_profile;
         request.maxhits = 0;
-        request.propertiesMap.lookupCreate(search::MapNames::RANK)
-            .add("vespa.matching.numthreadspersearch", "1");
+        auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
+        rank_properties.add("vespa.matching.numthreadspersearch", "1");
+        for (const auto &[name, value] : options.query_features) {
+            std::ostringstream encoded;
+            encoded.imbue(std::locale::classic());
+            encoded << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+            rank_properties.add(name, encoded.str());
+        }
+        for (const auto &[name, value] : options.query_tensors) {
+            rank_properties.add("query(" + name + ")", value);
+        }
+        for (const auto &[name, value] : options.rank_properties) {
+            rank_properties.add(name, value);
+        }
         request.setSerializedQueryTree(
             SerializedQueryTree::fromStackDump(query.serialized_stack_dump()));
 
@@ -3946,6 +4005,26 @@ std::unique_ptr<sk_grouping_tree_node> grouping_tree_node(
     }
     return node;
 }
+
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+void attach_grouping_faults(
+    sk_grouping_tree_node &node,
+    const std::shared_ptr<const ResultFaultController> &faults) {
+    node.result_faults = faults;
+    if (node.key) {
+        node.key->result_faults = faults;
+    }
+    for (auto &output : node.outputs) {
+        output->result_faults = faults;
+        if (output->value) {
+            output->value->result_faults = faults;
+        }
+    }
+    for (auto &group : node.groups) {
+        attach_grouping_faults(*group, faults);
+    }
+}
+#endif
 
 void attach_grouping_aggregation(sk_grouping_level &level,
                                   const sk_grouping_aggregation &aggregation) {
@@ -4230,7 +4309,9 @@ void validate_weighted_query_inputs(const uint8_t *key_bytes, uint32_t key_bytes
 void add_weighted_query_strings(NativeQueryState &query, uint32_t kind, const char *field,
                                 const uint8_t *key_bytes, uint32_t key_bytes_length,
                                 const uint32_t *key_lengths, const int64_t *weights,
-                                uint32_t item_count) {
+                                uint32_t item_count, uint32_t wand_target_num_hits = 100,
+                                int64_t wand_score_threshold = 0,
+                                double wand_threshold_boost_factor = 1.0) {
     validate_query_multi_field(query, field);
     validate_weighted_query_inputs(key_bytes, key_bytes_length, key_lengths, weights, item_count);
     auto terms = std::make_unique<search::query::WeightedStringTermVector>(item_count);
@@ -4244,7 +4325,8 @@ void add_weighted_query_strings(NativeQueryState &query, uint32_t kind, const ch
     const auto type = search::query::MultiTerm::Type::WEIGHTED_STRING;
     if (kind == 1) {
         query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
-                                  100, 0, 1.0);
+                                  wand_target_num_hits, wand_score_threshold,
+                                  wand_threshold_boost_factor);
     } else if (kind == 2) {
         query.builder.addDotProduct(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     } else {
@@ -4254,7 +4336,9 @@ void add_weighted_query_strings(NativeQueryState &query, uint32_t kind, const ch
 
 void add_weighted_query_integers(NativeQueryState &query, uint32_t kind, const char *field,
                                  const int64_t *keys, const int64_t *weights,
-                                 uint32_t item_count) {
+                                 uint32_t item_count, uint32_t wand_target_num_hits = 100,
+                                 int64_t wand_score_threshold = 0,
+                                 double wand_threshold_boost_factor = 1.0) {
     validate_query_multi_field(query, field);
     if (item_count == 0) {
         throw std::invalid_argument("weighted query requires at least one item");
@@ -4272,7 +4356,8 @@ void add_weighted_query_integers(NativeQueryState &query, uint32_t kind, const c
     const auto type = search::query::MultiTerm::Type::WEIGHTED_INTEGER;
     if (kind == 1) {
         query.builder.addWandTerm(std::move(terms), type, field, query.allocate_term_id(), Weight(100),
-                                  100, 0, 1.0);
+                                  wand_target_num_hits, wand_score_threshold,
+                                  wand_threshold_boost_factor);
     } else if (kind == 2) {
         query.builder.addDotProduct(std::move(terms), type, field, query.allocate_term_id(), Weight(100));
     } else {
@@ -4368,6 +4453,11 @@ void add_query_feature(LocalSearchRequestState &request, const char *name, doubl
         request.rank_properties.end()) {
         throw std::invalid_argument("rank property collision");
     }
+    if (std::find_if(request.query_tensors.begin(), request.query_tensors.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.query_tensors.end()) {
+        throw std::invalid_argument("query tensor collision");
+    }
     request.query_features.emplace_back(name, value);
 }
 
@@ -4388,6 +4478,11 @@ void add_rank_property(LocalSearchRequestState &request, const char *name, const
                      [name](const auto &entry) { return entry.first == name; }) !=
         request.query_features.end()) {
         throw std::invalid_argument("rank property collision");
+    }
+    if (std::find_if(request.query_tensors.begin(), request.query_tensors.end(),
+                     [name](const auto &entry) { return entry.first == name; }) !=
+        request.query_tensors.end()) {
+        throw std::invalid_argument("query tensor collision");
     }
     request.rank_properties.emplace_back(name, value);
 }
@@ -4614,7 +4709,7 @@ extern "C" SK_API int32_t sk_document_add_string(sk_document *document, const ch
                                  "document string value must not be null");
     return add_document_value(document, field, error, error_capacity, [&] {
         OwnedValue result; result.kind = SK_VALUE_STRING; result.string = value; return result;
-    });
+});
 }
 
 extern "C" SK_API int32_t sk_document_add_integer(sk_document *document, const char *field,
@@ -5145,6 +5240,18 @@ extern "C" int32_t sk_engine_search_local(
         result->failpoints = engine->impl->failpoints();
         result->result_faults = engine->impl->result_faults();
         result->result_destroyed = engine->impl->result_destroyed_counter();
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_MATCH_PHASE)) {
+            result->degradation_flags |= SK_DEGRADATION_MATCH_PHASE;
+        }
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_TIMEOUT)) {
+            result->degradation_flags |= SK_DEGRADATION_TIMEOUT;
+        }
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_ANN_TIMEOUT)) {
+            result->degradation_flags |= SK_DEGRADATION_ANN_TIMEOUT;
+        }
+        if (result->result_faults->take(SK_TEST_RESULT_FAULT_ISSUE_MESSAGE)) {
+            result->issues.emplace_back("native test issue");
+        }
         for (auto &grouping : result->groupings) {
             grouping.failpoints = result->failpoints;
             grouping.result_faults = result->result_faults;
@@ -5585,6 +5692,38 @@ extern "C" int32_t sk_engine_group_tree(
     return invoke(error, error_capacity, [&] {
         auto result = std::make_unique<sk_grouping_tree_result>(
             engine->impl->group_tree(*query, *plan));
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        result->result_faults = engine->impl->result_faults();
+        result->result_destroyed = engine->impl->result_destroyed_counter();
+        if (result->root) {
+            attach_grouping_faults(*result->root, result->result_faults);
+        }
+#endif
+        *out_result = result.release();
+    });
+}
+
+extern "C" int32_t sk_engine_group_tree_with_request(
+    const sk_engine *engine, const sk_query *query,
+    const sk_generic_search_request *request, const sk_grouping_plan *plan,
+    sk_grouping_tree_result **out_result, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_result) *out_result = nullptr;
+    if (!engine || !engine->impl || !query || !request || !plan || !out_result) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "general grouping request arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto result = std::make_unique<sk_grouping_tree_result>(
+            engine->impl->group_tree(*query, *plan,
+                                     static_cast<const LocalSearchRequestState &>(*request)));
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        result->result_faults = engine->impl->result_faults();
+        result->result_destroyed = engine->impl->result_destroyed_counter();
+        if (result->root) {
+            attach_grouping_faults(*result->root, result->result_faults);
+        }
+#endif
         *out_result = result.release();
     });
 }
@@ -5598,6 +5737,14 @@ extern "C" int32_t sk_grouping_tree_result_root(
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "grouping result root arguments are invalid");
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (result->result_faults &&
+        result->result_faults->take(SK_TEST_RESULT_FAULT_GROUPING_TREE_ROOT_ACCESSOR_ERROR)) {
+        return invoke(error, error_capacity, [] {
+            throw std::runtime_error("injected grouping tree root accessor failure");
+        });
+    }
+#endif
     *out_root = result->root.get();
     return SK_NATIVE_STATUS_OK;
 }
@@ -5616,6 +5763,18 @@ extern "C" int32_t sk_grouping_tree_node_group(
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
                          "grouping child arguments are invalid");
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_GROUPING_TREE_GROUP_ACCESSOR_ERROR)) {
+        return invoke(error, error_capacity, [] {
+            throw std::runtime_error("injected grouping tree child accessor failure");
+        });
+    }
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_NULL_GROUPING_CHILD)) {
+        return SK_NATIVE_STATUS_OK;
+    }
+#endif
     *out_group = node->groups[group_index].get();
     return SK_NATIVE_STATUS_OK;
 }
@@ -5630,12 +5789,30 @@ extern "C" int32_t sk_grouping_tree_node_key(
             throw std::invalid_argument("grouping node key arguments are invalid");
         });
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_GROUPING_TREE_KEY_ACCESSOR_ERROR)) {
+        return invoke(error, error_capacity, [] {
+            throw std::runtime_error("injected grouping tree key accessor failure");
+        });
+    }
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE)) {
+        return SK_NATIVE_STATUS_OK;
+    }
+#endif
     *out_value = node->key.get();
     return SK_NATIVE_STATUS_OK;
 }
 
 extern "C" uint32_t sk_grouping_result_value_kind(
     const sk_grouping_result_value *value) SK_NOEXCEPT {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (value && value->result_faults &&
+        value->result_faults->take(SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_VALUE_KIND)) {
+        return 99;
+    }
+#endif
     return value ? value->kind : 0;
 }
 
@@ -5653,6 +5830,15 @@ extern "C" int32_t sk_grouping_result_value_string(
         if (value->kind != SK_GROUPING_RESULT_VALUE_STRING) {
             throw std::invalid_argument("grouping result value is not a string");
         }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+        if (value->result_faults &&
+            value->result_faults->take(SK_TEST_RESULT_FAULT_INVALID_GROUPING_STRING)) {
+            static const char invalid_utf8[] = {static_cast<char>(0xff)};
+            *out_string = invalid_utf8;
+            *out_length = sizeof(invalid_utf8);
+            return;
+        }
+#endif
         if (value->string.size() > std::numeric_limits<uint32_t>::max()) {
             throw std::runtime_error("grouping string value is too large");
         }
@@ -5710,12 +5896,34 @@ extern "C" int32_t sk_grouping_tree_node_output(
             throw std::invalid_argument("grouping output arguments are invalid");
         });
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_GROUPING_TREE_OUTPUT_ACCESSOR_ERROR)) {
+        return invoke(error, error_capacity, [] {
+            throw std::runtime_error("injected grouping tree output accessor failure");
+        });
+    }
+    if (node->result_faults &&
+        node->result_faults->take(SK_TEST_RESULT_FAULT_NULL_GROUPING_OUTPUT)) {
+        return SK_NATIVE_STATUS_OK;
+    }
+#endif
     *out_output = node->outputs[output_index].get();
     return SK_NATIVE_STATUS_OK;
 }
 
 extern "C" uint32_t sk_grouping_tree_output_kind(
     const sk_grouping_tree_output *output) SK_NOEXCEPT {
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (output && output->result_faults &&
+        output->result_faults->take(SK_TEST_RESULT_FAULT_HIT_LIST_GROUPING_OUTPUT)) {
+        return SK_GROUPING_TREE_OUTPUT_HIT_LIST;
+    }
+    if (output && output->result_faults &&
+        output->result_faults->take(SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_OUTPUT_KIND)) {
+        return 99;
+    }
+#endif
     return output ? output->kind : 0;
 }
 
@@ -5734,6 +5942,18 @@ extern "C" int32_t sk_grouping_tree_output_value(
             throw std::invalid_argument("grouping output is not a value");
         });
     }
+#ifdef SK_ENABLE_HARDENING_FAILPOINTS
+    if (output->result_faults &&
+        output->result_faults->take(SK_TEST_RESULT_FAULT_GROUPING_OUTPUT_VALUE_ACCESSOR_ERROR)) {
+        return invoke(error, error_capacity, [] {
+            throw std::runtime_error("injected grouping output value accessor failure");
+        });
+    }
+    if (output->result_faults &&
+        output->result_faults->take(SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE)) {
+        return SK_NATIVE_STATUS_OK;
+    }
+#endif
     *out_value = output->value.get();
     return SK_NATIVE_STATUS_OK;
 }
@@ -6676,6 +6896,70 @@ extern "C" int32_t sk_query_add_text(sk_query *query, uint32_t kind,
     });
 }
 
+extern "C" int32_t sk_query_add_in_strings(
+    sk_query *query, const char *field, const uint8_t *value_bytes,
+    uint32_t value_bytes_length, const uint32_t *value_lengths,
+    uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "in query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_STRING, field);
+        if (value_count == 0 || value_count > MAX_TEXT_TERMS || !value_lengths ||
+            (!value_bytes && value_bytes_length != 0)) {
+            throw std::invalid_argument("in query string values are invalid");
+        }
+        size_t total_bytes = 0;
+        for (uint32_t index = 0; index < value_count; ++index) {
+            const auto length = value_lengths[index];
+            if (length == 0 || length > MAX_TEXT_TERM_BYTES ||
+                length > MAX_TOTAL_TEXT_TERM_BYTES - total_bytes) {
+                throw std::invalid_argument("in query string value is too large or empty");
+            }
+            total_bytes += length;
+        }
+        if (total_bytes != value_bytes_length) {
+            throw std::invalid_argument("in query string lengths do not match value bytes");
+        }
+        auto terms = std::make_unique<search::query::StringTermVector>(value_count);
+        size_t offset = 0;
+        for (uint32_t index = 0; index < value_count; ++index) {
+            const auto length = value_lengths[index];
+            terms->addTerm(std::string_view(reinterpret_cast<const char *>(value_bytes + offset), length));
+            offset += length;
+        }
+        query->builder.add_in_term(std::move(terms), search::query::MultiTerm::Type::STRING,
+                                   field, query->allocate_term_id(), Weight(1));
+    });
+}
+
+extern "C" int32_t sk_query_add_in_integers(
+    sk_query *query, const char *field, const int64_t *values,
+    uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "in query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_query_field(*query, SK_QUERY_FIELD_INTEGER, field);
+        if (!values || value_count == 0 || value_count > MAX_TEXT_TERMS) {
+            throw std::invalid_argument("in query integer values are invalid");
+        }
+        auto terms = std::make_unique<search::query::IntegerTermVector>(value_count);
+        for (uint32_t index = 0; index < value_count; ++index) {
+            if (values[index] == std::numeric_limits<int64_t>::min()) {
+                throw std::invalid_argument("in query integer value INT64_MIN is reserved");
+            }
+            terms->addTerm(values[index]);
+        }
+        query->builder.add_in_term(std::move(terms), search::query::MultiTerm::Type::INTEGER,
+                                   field, query->allocate_term_id(), Weight(1));
+    });
+}
+
 extern "C" int32_t sk_query_add_proximity(
     sk_query *query, uint8_t ordered, const char *field, uint32_t child_count,
     uint32_t distance, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -6918,6 +7202,47 @@ extern "C" int32_t sk_query_add_wand_integers(
     });
 }
 
+extern "C" int32_t sk_query_add_wand_strings_with_options(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint32_t target_num_hits,
+    int64_t score_threshold, double threshold_boost_factor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "wand query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (target_num_hits == 0 || !std::isfinite(threshold_boost_factor) ||
+            threshold_boost_factor <= 0.0) {
+            throw std::invalid_argument("wand query options are invalid");
+        }
+        add_weighted_query_strings(*query, 1, field, key_bytes, key_bytes_length,
+                                   key_lengths, weights, item_count, target_num_hits,
+                                   score_threshold, threshold_boost_factor);
+    });
+}
+
+extern "C" int32_t sk_query_add_wand_integers_with_options(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint32_t target_num_hits,
+    int64_t score_threshold, double threshold_boost_factor, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "wand query arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (target_num_hits == 0 || !std::isfinite(threshold_boost_factor) ||
+            threshold_boost_factor <= 0.0) {
+            throw std::invalid_argument("wand query options are invalid");
+        }
+        add_weighted_query_integers(*query, 1, field, keys, weights, item_count,
+                                    target_num_hits, score_threshold,
+                                    threshold_boost_factor);
+    });
+}
+
 extern "C" int32_t sk_query_add_equals(sk_query *query, const char *field,
                                         int64_t value, uint8_t *error,
                                         uint32_t error_capacity) SK_NOEXCEPT {
@@ -6980,6 +7305,36 @@ extern "C" int32_t sk_query_add_nearest_neighbor(
         query->builder.add_nearest_neighbor_term(
             query_tensor, document_field, query->allocate_term_id(), Weight(1),
             target_num_hits, allow_approximate != 0);
+    });
+}
+
+extern "C" int32_t sk_query_add_nearest_neighbor_with_options(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate,
+    double distance_threshold, uint32_t explore_additional_hits,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !document_field || !query_tensor) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "nearest-neighbor arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(query_tensor);
+        if (*query_tensor == '\0' || target_num_hits == 0 ||
+            (!std::isfinite(distance_threshold) && !std::isinf(distance_threshold)) ||
+            distance_threshold < 0.0) {
+            throw std::invalid_argument("nearest-neighbor options are invalid");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_TENSOR, document_field);
+        search::query::NearestNeighborTerm::HnswParams params;
+        if (std::isfinite(distance_threshold)) {
+            params.distance_threshold = distance_threshold;
+        }
+        if (explore_additional_hits != 0) {
+            params.explore_additional_hits = explore_additional_hits;
+        }
+        query->builder.add_nearest_neighbor_term(
+            query_tensor, document_field, query->allocate_term_id(), Weight(1),
+            target_num_hits, allow_approximate != 0, std::move(params));
     });
 }
 
@@ -7381,6 +7736,47 @@ extern "C" SK_API int32_t sk_test_result_fault_clear(sk_engine *engine, uint8_t 
     }
     return invoke(error, error_capacity,
                   [&] { engine->impl->clear_result_fault(); });
+}
+
+extern "C" SK_API int32_t sk_test_search_reply_metadata(
+    uint32_t degradation_flags, const char *const *issue_messages,
+    uint32_t issue_count, sk_generic_search_result **out_result,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_result) {
+        *out_result = nullptr;
+    }
+    if (!out_result || (issue_count != 0 && !issue_messages) ||
+        (degradation_flags &
+         ~(SK_DEGRADATION_MATCH_PHASE | SK_DEGRADATION_TIMEOUT |
+           SK_DEGRADATION_ANN_TIMEOUT))) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "SearchReply metadata test arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        search::engine::SearchReply reply;
+        reply.coverage.setActive(17).setCovered(11).setTargetActive(19);
+        if (degradation_flags & SK_DEGRADATION_MATCH_PHASE) {
+            reply.coverage.degradeMatchPhase();
+        }
+        if (degradation_flags & SK_DEGRADATION_TIMEOUT) {
+            reply.coverage.degradeTimeout();
+        }
+        if (degradation_flags & SK_DEGRADATION_ANN_TIMEOUT) {
+            reply.coverage.degrade_ann_timeout();
+        }
+        if (issue_count != 0) {
+            reply.my_issues = std::make_unique<search::UniqueIssues>();
+            for (uint32_t index = 0; index < issue_count; ++index) {
+                if (!issue_messages[index]) {
+                    throw std::invalid_argument("SearchReply issue message is null");
+                }
+                reply.my_issues->handle(vespalib::Issue(issue_messages[index]));
+            }
+        }
+        auto result = std::make_unique<sk_local_search_result>();
+        copy_search_reply_metadata(reply, *result);
+        *out_result = result.release();
+    });
 }
 
 extern "C" SK_API int32_t sk_test_result_destroy_count(const sk_engine *engine,

@@ -12,6 +12,7 @@ use searchkernel_ir::{
 use searchkernel_vespa_engine::{
     Query, SearchRequest, SortField, SortOrder, SummaryRequest, TensorValue,
 };
+use std::collections::{BTreeMap, BTreeSet};
 
 use typed_query::lower_query_with_context;
 
@@ -19,13 +20,14 @@ pub(crate) fn lower_search_query(
     request: &SearchRequestIr,
     language: searchkernel_vespa_engine::LinguisticsOptions,
 ) -> Result<Query> {
+    let rank_properties = effective_rank_properties(request)?;
     let mut clauses = vec![lower_query_with_context(
         request.query(),
         request.search_fields(),
         language,
         request.query_model().default_index.as_deref(),
         request.query_model().query_string.as_deref(),
-        &request.ranking_request().properties,
+        &rank_properties,
     )?];
     if let Some(filter) = request.filter() {
         clauses.push(filter::lower_filter(filter)?);
@@ -42,6 +44,7 @@ pub(crate) fn lower_search_options(
     query: Query,
     language: searchkernel_vespa_engine::LinguisticsOptions,
 ) -> Result<SearchRequest> {
+    let rank_properties = effective_rank_properties(request)?;
     let mut m_request = SearchRequest::new(query)
         .limit(request.limit())
         .offset(request.offset())
@@ -57,7 +60,7 @@ pub(crate) fn lower_search_options(
             }
         }
     }
-    for (name, value) in &request.ranking_request().properties {
+    for (name, value) in &rank_properties {
         m_request = m_request.rank_property(name, value);
     }
     if let Some(timeout) = request.timeout() {
@@ -77,6 +80,75 @@ pub(crate) fn lower_search_options(
         m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
     }
     Ok(m_request)
+}
+
+fn effective_rank_properties(request: &SearchRequestIr) -> Result<BTreeMap<String, String>> {
+    let mut properties = request.ranking_request().properties.clone();
+    let labels = match request.query() {
+        QueryIr::Typed(expression) => {
+            let mut labels = BTreeSet::new();
+            collect_label_names(expression, &mut labels);
+            labels
+        }
+        _ => BTreeSet::new(),
+    };
+    for property in properties.keys() {
+        if property.starts_with("vespa.label.") && property.ends_with(".id") {
+            return Err(PortableError::invalid(
+                "reserved_rank_property",
+                Some("ranking.properties"),
+                "vespa.label.*.id is allocated internally for labeled queries",
+            ));
+        }
+    }
+    for (index, label) in labels.into_iter().enumerate() {
+        let id = i32::try_from(index + 1).map_err(|_| {
+            PortableError::invalid(
+                "too_many_labels",
+                Some("query"),
+                "labeled query ID allocation exceeded the native range",
+            )
+        })?;
+        properties.insert(format!("vespa.label.{label}.id"), id.to_string());
+    }
+    Ok(properties)
+}
+
+fn collect_label_names(expression: &searchkernel_ir::QueryExprIr, labels: &mut BTreeSet<String>) {
+    use searchkernel_ir::QueryExprKindIr;
+    match &expression.kind {
+        QueryExprKindIr::Contains { item, .. }
+        | QueryExprKindIr::Not(item)
+        | QueryExprKindIr::NonEmpty(item) => collect_label_names(item, labels),
+        QueryExprKindIr::And(children)
+        | QueryExprKindIr::Or(children)
+        | QueryExprKindIr::Phrase(children)
+        | QueryExprKindIr::Near { children, .. }
+        | QueryExprKindIr::ONear { children, .. }
+        | QueryExprKindIr::SameElement(children)
+        | QueryExprKindIr::Equiv(children)
+        | QueryExprKindIr::WeakAnd { children, .. } => {
+            for child in children {
+                collect_label_names(child, labels);
+            }
+        }
+        QueryExprKindIr::Alternatives(values) => {
+            for value in values {
+                collect_label_names(&value.query, labels);
+            }
+        }
+        QueryExprKindIr::Rank { matching, ranking } => {
+            collect_label_names(matching, labels);
+            for child in ranking {
+                collect_label_names(child, labels);
+            }
+        }
+        QueryExprKindIr::Labeled { query, label, .. } => {
+            labels.insert(label.clone());
+            collect_label_names(query, labels);
+        }
+        _ => {}
+    }
 }
 
 pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {

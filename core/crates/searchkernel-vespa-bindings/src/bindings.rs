@@ -651,6 +651,28 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_query_add_in_strings(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        value_bytes: *const u8,
+        value_bytes_length: u32,
+        value_lengths: *const u32,
+        value_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_in_integers(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        values: *const i64,
+        value_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_query_add_proximity(
         query: *mut sk_query,
         ordered: u8,
@@ -803,6 +825,36 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_query_add_wand_strings_with_options(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        key_bytes: *const u8,
+        key_bytes_length: u32,
+        key_lengths: *const u32,
+        weights: *const i64,
+        item_count: u32,
+        target_num_hits: u32,
+        score_threshold: i64,
+        threshold_boost_factor: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_wand_integers_with_options(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        keys: *const i64,
+        weights: *const i64,
+        item_count: u32,
+        target_num_hits: u32,
+        score_threshold: i64,
+        threshold_boost_factor: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_query_add_equals(
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
@@ -830,6 +882,19 @@ unsafe extern "C" {
         query_tensor: *const ::std::os::raw::c_char,
         target_num_hits: u32,
         allow_approximate: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_nearest_neighbor_with_options(
+        query: *mut sk_query,
+        document_field: *const ::std::os::raw::c_char,
+        query_tensor: *const ::std::os::raw::c_char,
+        target_num_hits: u32,
+        allow_approximate: u8,
+        distance_threshold: f64,
+        explore_additional_hits: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -1541,6 +1606,17 @@ unsafe extern "C" {
     pub fn sk_engine_group_tree(
         engine: *const sk_engine,
         query: *const sk_query,
+        plan: *const sk_grouping_plan,
+        out_result: *mut *mut sk_grouping_tree_result,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_engine_group_tree_with_request(
+        engine: *const sk_engine,
+        query: *const sk_query,
+        request: *const sk_generic_search_request,
         plan: *const sk_grouping_plan,
         out_result: *mut *mut sk_grouping_tree_result,
         out_error: *mut u8,

@@ -375,6 +375,16 @@ SK_API int32_t sk_query_add_text(sk_query *query, uint32_t kind,
                                  const uint32_t *term_lengths,
                                  uint32_t term_count, uint8_t *out_error,
                                  uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Add Vespa's native InTerm node. Values are copied by the adapter. */
+SK_API int32_t sk_query_add_in_strings(
+    sk_query *query, const char *field, const uint8_t *value_bytes,
+    uint32_t value_bytes_length, const uint32_t *value_lengths,
+    uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_in_integers(
+    sk_query *query, const char *field, const int64_t *values,
+    uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_proximity(
     sk_query *query, uint8_t ordered, const char *field, uint32_t child_count,
     uint32_t distance, uint8_t *out_error,
@@ -432,6 +442,17 @@ SK_API int32_t sk_query_add_wand_integers(
     sk_query *query, const char *field, const int64_t *keys,
     const int64_t *weights, uint32_t item_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_wand_strings_with_options(
+    sk_query *query, const char *field, const uint8_t *key_bytes,
+    uint32_t key_bytes_length, const uint32_t *key_lengths,
+    const int64_t *weights, uint32_t item_count, uint32_t target_num_hits,
+    int64_t score_threshold, double threshold_boost_factor,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_wand_integers_with_options(
+    sk_query *query, const char *field, const int64_t *keys,
+    const int64_t *weights, uint32_t item_count, uint32_t target_num_hits,
+    int64_t score_threshold, double threshold_boost_factor,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_equals(sk_query *query, const char *field,
                                    int64_t value, uint8_t *out_error,
                                    uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -443,6 +464,11 @@ SK_API int32_t sk_query_add_range(sk_query *query, const char *field,
 SK_API int32_t sk_query_add_nearest_neighbor(
     sk_query *query, const char *document_field, const char *query_tensor,
     uint32_t target_num_hits, uint8_t allow_approximate,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_nearest_neighbor_with_options(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate,
+    double distance_threshold, uint32_t explore_additional_hits,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_same_element(
     sk_query *query, const char *field, uint32_t child_count,
@@ -738,6 +764,14 @@ SK_API int32_t sk_grouping_level_add_aggregation_handle(
 SK_API void sk_grouping_plan_destroy(sk_grouping_plan *plan) SK_NOEXCEPT;
 SK_API int32_t sk_engine_group_tree(
     const sk_engine *engine, const sk_query *query,
+    const sk_grouping_plan *plan, sk_grouping_tree_result **out_result,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Executes grouping with the typed generic search request context. The
+ * request supplies rank profile, query inputs, tensors, rank properties, and
+ * timeout; grouping still uses the plan above and returns the same tree. */
+SK_API int32_t sk_engine_group_tree_with_request(
+    const sk_engine *engine, const sk_query *query,
+    const sk_generic_search_request *request,
     const sk_grouping_plan *plan, sk_grouping_tree_result **out_result,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_tree_result_root(

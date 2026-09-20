@@ -37,6 +37,8 @@ SEARCHKERNEL_2 {
         sk_query_validate_field;
         sk_query_add_true;
         sk_query_add_text;
+        sk_query_add_in_strings;
+        sk_query_add_in_integers;
         sk_query_add_proximity;
         sk_query_add_equiv;
         sk_query_add_weak_and;
@@ -51,9 +53,12 @@ SEARCHKERNEL_2 {
         sk_query_add_dot_product_integers;
         sk_query_add_wand_strings;
         sk_query_add_wand_integers;
+        sk_query_add_wand_strings_with_options;
+        sk_query_add_wand_integers_with_options;
         sk_query_add_equals;
         sk_query_add_range;
         sk_query_add_nearest_neighbor;
+        sk_query_add_nearest_neighbor_with_options;
         sk_query_add_same_element;
         sk_query_add_geo_location;
         sk_query_add_geo_bounding_box;
@@ -160,6 +165,7 @@ SEARCHKERNEL_2 {
         sk_grouping_level_add_aggregation_handle;
         sk_grouping_plan_destroy;
         sk_engine_group_tree;
+        sk_engine_group_tree_with_request;
         sk_grouping_tree_result_root;
         sk_grouping_tree_node_group_count;
         sk_grouping_tree_node_group;

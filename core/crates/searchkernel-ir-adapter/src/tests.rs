@@ -1,7 +1,8 @@
 use super::*;
 use searchkernel_ir::*;
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Engine, Field, FieldType, Query, Schema, SortField, Value as VespaValue,
+    ConfigCompiler, Engine, Field, FieldType, GroupingExpression, Query, Schema, SortField,
+    Value as VespaValue,
 };
 
 fn field(name: &str) -> FieldName {
@@ -73,26 +74,29 @@ fn facet_grouping(
 fn native_grouping(levels: &[(&str, Vec<GroupingExpressionIr>)]) -> GroupingRequestIr {
     let mut nested = None;
     for (field, outputs) in levels.iter().rev() {
-        let mut operations = vec![GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
-            (*field).to_owned(),
-        ))];
-        if !outputs.is_empty() {
-            operations.push(GroupingOperationIr::Output(
-                outputs
-                    .iter()
-                    .cloned()
-                    .map(|expression| GroupingOutputIr {
-                        label: None,
-                        expression,
-                    })
-                    .collect(),
-            ));
-        }
+        let output = GroupingOperationIr::Output(
+            outputs
+                .iter()
+                .cloned()
+                .map(|expression| GroupingOutputIr {
+                    label: None,
+                    expression,
+                })
+                .collect(),
+        );
+        let mut each_operations = vec![output];
         if let Some(child) = nested {
-            operations.push(GroupingOperationIr::Each(child));
+            each_operations.push(GroupingOperationIr::All(child));
         }
+        let each = GroupingAllIr {
+            operations: each_operations,
+            label: None,
+        };
         nested = Some(GroupingAllIr {
-            operations,
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute((*field).to_owned())),
+                GroupingOperationIr::Each(each),
+            ],
             label: None,
         });
     }
@@ -113,7 +117,25 @@ fn average_expression(field: &str) -> GroupingExpressionIr {
 }
 
 #[test]
-fn native_grouping_ir_lowers_to_linear_attribute_plan() {
+fn canonical_one_level_grouping_lowers_to_linear_attribute_plan() {
+    let request = native_grouping(&[(
+        "category",
+        vec![count_expression(), average_expression("price")],
+    )]);
+    let lowered = lower_groupings(&[request]).expect("native grouping should lower");
+    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
+        panic!("expected a native grouping lowering");
+    };
+    assert_eq!(native.plan.levels.len(), 1);
+    assert_eq!(
+        native.plan.levels[0].classifier,
+        GroupingExpression::attribute("category")
+    );
+    assert_eq!(native.plan.levels[0].aggregations.len(), 2);
+}
+
+#[test]
+fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
     let request = native_grouping(&[
         (
             "category",
@@ -151,6 +173,141 @@ fn native_grouping_ir_lowers_to_linear_attribute_plan() {
                 ),
             )
     );
+}
+
+#[test]
+fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![native_grouping(&[
+        (
+            "category",
+            vec![count_expression(), average_expression("price")],
+        ),
+        ("qty", vec![count_expression(), average_expression("price")]),
+    ])]);
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![
+            FieldIr::new(
+                field("category"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, false, true, true, true),
+            ),
+            FieldIr::new(
+                field("qty"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(true, false, true, true, true),
+            ),
+            FieldIr::new(
+                field("price"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
+                None,
+                FieldCapabilities::new(true, false, true, true, true),
+            ),
+        ],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .expect("grouping test definition");
+    let bytes = searchkernel_ir::search_request_ir_to_api(&request);
+    let api_request =
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::SearchRequest>(&bytes)
+            .expect("encoded search request");
+    let round_tripped = IndexContext::from_definition_ir(definition)
+        .search_to_ir(api_request)
+        .expect("FlatBuffers request should resolve to IR");
+    let lowered = lower_groupings(round_tripped.grouping()).expect("grouping should lower");
+    assert!(matches!(
+        lowered.as_slice(),
+        [crate::search::GroupingLowering::Native(_)]
+    ));
+}
+
+#[test]
+fn output_on_parent_all_is_rejected_instead_of_moved_to_group() {
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".into())),
+                GroupingOperationIr::Output(vec![GroupingOutputIr {
+                    label: None,
+                    expression: count_expression(),
+                }]),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: Vec::new(),
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let error = lower_groupings(&[request]).expect_err("parent all output must be rejected");
+    assert_eq!(error.details[0].code, "grouping_output_before_each");
+}
+
+#[test]
+fn all_does_not_substitute_for_each() {
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".into())),
+                GroupingOperationIr::All(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: None,
+                        expression: count_expression(),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let error = lower_groupings(&[request]).expect_err("all must not materialize a level");
+    assert_eq!(error.details[0].code, "grouping_all_topology_not_supported");
+}
+
+#[test]
+fn parallel_grouping_branches_are_rejected() {
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".into())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::All(
+                            native_grouping(&[("qty", vec![count_expression()])]).root,
+                        ),
+                        GroupingOperationIr::All(
+                            native_grouping(&[("price", vec![count_expression()])]).root,
+                        ),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let error = lower_groupings(&[request]).expect_err("parallel grouping must be rejected");
+    assert_eq!(error.details[0].code, "parallel_grouping_not_supported");
 }
 
 #[test]
@@ -195,11 +352,11 @@ fn unsupported_grouping_ir_is_not_approximated() {
     let error = lower_groupings(&[request])
         .expect_err("outputs on a structural wrapper must not be dropped");
     assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-    assert_eq!(error.details[0].code, "grouping_output_without_classifier");
+    assert_eq!(error.details[0].code, "grouping_output_before_each");
 }
 
 #[test]
-fn analyzed_multi_term_text_lowers_to_a_phrase() {
+fn text_lowers_to_vespa_default_weak_and() {
     let search_field = || {
         vec![SearchFieldIr::new(
             field("title"),
@@ -208,11 +365,25 @@ fn analyzed_multi_term_text_lowers_to_a_phrase() {
     };
     for text in ["wireless headphones", "foo-bar", "can't"] {
         let query = lower_query(&QueryIr::Text(text.into()), &search_field()).unwrap();
-        assert_eq!(query, Query::phrase("title", text));
+        assert_eq!(
+            query,
+            Query::Text {
+                field: "title".into(),
+                text: text.into(),
+                target_num_hits: 100,
+            }
+        );
     }
 
     let query = lower_query(&QueryIr::Text("headphones".into()), &search_field()).unwrap();
-    assert_eq!(query, Query::term("title", "headphones"));
+    assert_eq!(
+        query,
+        Query::Text {
+            field: "title".into(),
+            text: "headphones".into(),
+            target_num_hits: 100,
+        }
+    );
 }
 
 fn typed_field(name: &str) -> QueryFieldRefIr {
@@ -303,7 +474,11 @@ fn typed_query_a_lowers_to_existing_native_query_nodes() {
             )],
         )
         .unwrap(),
-        Query::phrase("title", "wireless headphones")
+        Query::Text {
+            field: "title".into(),
+            text: "wireless headphones".into(),
+            target_num_hits: 100,
+        }
     );
 
     assert_eq!(
@@ -378,16 +553,13 @@ fn typed_query_a_lowers_to_existing_native_query_nodes() {
             &[],
         )
         .unwrap(),
-        Query::Or(vec![
-            Query::AttributeEquals {
-                field: "brand".to_owned(),
-                value: VespaValue::String("a".to_owned()),
-            },
-            Query::AttributeEquals {
-                field: "brand".to_owned(),
-                value: VespaValue::String("b".to_owned()),
-            },
-        ])
+        Query::In {
+            field: "brand".to_owned(),
+            values: vec![
+                searchkernel_vespa_engine::InQueryValue::String("a".to_owned()),
+                searchkernel_vespa_engine::InQueryValue::String("b".to_owned()),
+            ],
+        }
     );
 }
 
@@ -838,10 +1010,7 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
         }
     );
 
-    let labeled_request = request(Vec::new(), Vec::new(), None).with_ranking_request(
-        "default",
-        std::collections::BTreeMap::from([("vespa.label.candidate.id".to_owned(), "7".to_owned())]),
-    );
+    let labeled_request = request(Vec::new(), Vec::new(), None);
     let labeled_request = labeled_request.with_query(typed_contains(
         "title",
         QueryExprKindIr::Labeled {
@@ -858,42 +1027,35 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
         .unwrap(),
         Query::Labeled {
             query: Box::new(Query::term("title", "wireless")),
-            unique_id: 7,
+            unique_id: 1,
             score: 2.5,
         }
     );
 
+    let non_empty_error = lower_query(
+        &typed_contains(
+            "title",
+            QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
+        ),
+        &[],
+    )
+    .expect_err("NonEmpty must not be silently erased");
+    assert_eq!(non_empty_error.details[0].code, "non_empty_not_supported");
+    let user_input_error = lower_query(
+        &typed_contains(
+            "title",
+            QueryExprKindIr::UserInput {
+                value: "wireless headphones".to_owned(),
+                default_index: None,
+                target_hits: 100,
+            },
+        ),
+        &[],
+    )
+    .expect_err("userInput must not be approximated");
     assert_eq!(
-        lower_query(
-            &typed_contains(
-                "title",
-                QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless")))
-            ),
-            &[],
-        )
-        .unwrap(),
-        Query::term("title", "wireless")
-    );
-    assert_eq!(
-        lower_query(
-            &typed_contains(
-                "title",
-                QueryExprKindIr::UserInput {
-                    value: "wireless headphones".to_owned(),
-                    default_index: None,
-                    target_hits: 100,
-                },
-            ),
-            &[],
-        )
-        .unwrap(),
-        Query::WeakAnd {
-            children: vec![
-                Query::term("title", "wireless"),
-                Query::term("title", "headphone"),
-            ],
-            target_num_hits: 100,
-        }
+        user_input_error.details[0].code,
+        "user_query_parser_not_supported"
     );
 
     let user_query_request = request(Vec::new(), Vec::new(), None)
@@ -906,17 +1068,15 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
             default_index: Some("title".to_owned()),
             ..QueryModelIr::default()
         });
-    assert!(matches!(
-        lower_search_query(
-            &user_query_request,
-            searchkernel_vespa_engine::LinguisticsOptions::default(),
-        )
-        .unwrap(),
-        Query::WeakAnd { children, .. }
-            if children
-                .iter()
-                .all(|query| matches!(query, Query::Term { field, .. } if field == "title"))
-    ));
+    let user_query_error = lower_search_query(
+        &user_query_request,
+        searchkernel_vespa_engine::LinguisticsOptions::default(),
+    )
+    .expect_err("userQuery must not be approximated");
+    assert_eq!(
+        user_query_error.details[0].code,
+        "user_query_parser_not_supported"
+    );
 }
 
 #[test]
@@ -934,6 +1094,18 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let schema = Schema::new("typed_query_a")
         .field(Field::new("title", FieldType::Text).indexed().summary())
         .field(
+            Field::new("sku", FieldType::String)
+                .attribute()
+                .fast_search()
+                .summary(),
+        )
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary())
+        .field(
             Field::new("price", FieldType::Integer)
                 .attribute()
                 .summary(),
@@ -943,9 +1115,9 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
         .expect("compile typed-query schema");
     let backend = VespaBackend::open(&data, &config).expect("open Vespa backend");
 
-    for (id, title, price) in [
-        ("doc:wireless", "wireless headphones", 20),
-        ("doc:wired", "wired headphones", 5),
+    for (id, title, sku, category, qty, price) in [
+        ("doc:wireless", "wireless headphones", "A", "audio", 1, 20),
+        ("doc:wired", "wired headphones", "B", "audio", 2, 5),
     ] {
         backend
             .insert(InsertRequestIr::new(DocumentIr::new(
@@ -958,6 +1130,18 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
                     (
                         field("price"),
                         FieldValueIr::Single(ScalarValueIr::Int64(price)),
+                    ),
+                    (
+                        field("sku"),
+                        FieldValueIr::Single(ScalarValueIr::String(sku.to_owned())),
+                    ),
+                    (
+                        field("category"),
+                        FieldValueIr::Single(ScalarValueIr::String(category.to_owned())),
+                    ),
+                    (
+                        field("qty"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(qty)),
                     ),
                 ]),
             )))
@@ -1001,6 +1185,55 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
         vec!["doc:wireless"]
     );
 
+    let in_query = SearchRequestIr::new(
+        typed_expression(QueryExprKindIr::In {
+            field: typed_field("sku"),
+            values: vec![
+                RequestValueIr::String("A".to_owned()),
+                RequestValueIr::String("B".to_owned()),
+            ],
+        }),
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let result = backend.search(in_query).expect("execute typed InTerm");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    assert_eq!(group.children.len(), 2);
+
+    let text_query = SearchRequestIr::new(
+        typed_contains(
+            "title",
+            QueryExprKindIr::Text {
+                text: "wireless headphones".to_owned(),
+            },
+        ),
+        Vec::new(),
+        None,
+        Vec::new(),
+        10,
+        0,
+        searchkernel_ir::ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let result = backend.search(text_query).expect("execute typed text");
+    let ResultNode::Group(group) = result.root else {
+        panic!("search root must be a group");
+    };
+    assert_eq!(group.children.len(), 2);
+
     let comparison = SearchRequestIr::new(
         typed_expression(QueryExprKindIr::Comparison {
             field: typed_field("price"),
@@ -1030,24 +1263,44 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
         ResultNode::Hit(hit) if hit.id == "doc:wireless"
     ));
 
-    let grouped = comparison.with_grouping(vec![native_grouping(&[(
-        "price",
-        vec![count_expression(), average_expression("price")],
-    )])]);
+    let grouped = comparison
+        .with_query(QueryIr::MatchAll)
+        .with_grouping(vec![native_grouping(&[
+            (
+                "category",
+                vec![count_expression(), average_expression("price")],
+            ),
+            ("qty", vec![count_expression(), average_expression("price")]),
+        ])]);
     let result = backend.search(grouped).expect("execute native grouping");
     let ResultNode::Group(group) = result.root else {
         panic!("search root must be a group");
     };
-    let [ResultNode::Hit(_), ResultNode::Group(grouping)] = group.children.as_slice() else {
+    let [ResultNode::Hit(_), ResultNode::Hit(_), ResultNode::Group(grouping)] =
+        group.children.as_slice()
+    else {
         panic!("expected the hit and native grouping result");
     };
     assert_eq!(grouping.children.len(), 1);
     let ResultNode::Group(bucket) = &grouping.children[0] else {
         panic!("grouping result child must be a group");
     };
-    assert_eq!(bucket.value, Some(Value::Int64(20)));
-    assert_eq!(bucket.fields["count"], Value::Int64(1));
-    assert_eq!(bucket.fields["average(price)"], Value::Float64(20.0));
+    assert_eq!(bucket.value, Some(Value::String("audio".into())));
+    assert_eq!(bucket.fields["count"], Value::Int64(2));
+    assert_eq!(bucket.fields["average(price)"], Value::Float64(12.5));
+    assert_eq!(bucket.children.len(), 2);
+    let ResultNode::Group(qty_one) = &bucket.children[0] else {
+        panic!("first nested grouping result child must be a group");
+    };
+    let ResultNode::Group(qty_two) = &bucket.children[1] else {
+        panic!("second nested grouping result child must be a group");
+    };
+    assert_eq!(qty_one.value, Some(Value::Int64(1)));
+    assert_eq!(qty_one.fields["count"], Value::Int64(1));
+    assert_eq!(qty_one.fields["average(price)"], Value::Float64(20.0));
+    assert_eq!(qty_two.value, Some(Value::Int64(2)));
+    assert_eq!(qty_two.fields["count"], Value::Int64(1));
+    assert_eq!(qty_two.fields["average(price)"], Value::Float64(5.0));
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");
@@ -1302,7 +1555,7 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
         .expect("execute dot-product query"));
     assert!(dot_product_ids.contains(&"doc:ordered".to_owned()));
 
-    let user_input_ids = ids(backend
+    let user_input_error = backend
         .search(request(typed_contains(
             "title",
             QueryExprKindIr::UserInput {
@@ -1311,10 +1564,13 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
                 target_hits: 100,
             },
         )))
-        .expect("execute user-input query"));
-    assert!(user_input_ids.contains(&"doc:ordered".to_owned()));
+        .expect_err("userInput must not be approximated");
+    assert_eq!(
+        user_input_error.details[0].code,
+        "user_query_parser_not_supported"
+    );
 
-    let user_query_ids = ids(backend
+    let user_query_error = backend
         .search(
             request(typed_expression(QueryExprKindIr::UserQuery {
                 default_index: None,
@@ -1326,37 +1582,31 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
                 ..QueryModelIr::default()
             }),
         )
-        .expect("execute user-query query"));
-    assert!(user_query_ids.contains(&"doc:ordered".to_owned()));
+        .expect_err("userQuery must not be approximated");
+    assert_eq!(
+        user_query_error.details[0].code,
+        "user_query_parser_not_supported"
+    );
 
     let labeled_ids = ids(backend
-        .search(
-            request(typed_contains(
-                "title",
-                QueryExprKindIr::Labeled {
-                    query: Box::new(typed_term("wireless")),
-                    label: "candidate".to_owned(),
-                    score: 2.5,
-                },
-            ))
-            .with_ranking_request(
-                "default",
-                std::collections::BTreeMap::from([(
-                    "vespa.label.candidate.id".to_owned(),
-                    "7".to_owned(),
-                )]),
-            ),
-        )
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::Labeled {
+                query: Box::new(typed_term("wireless")),
+                label: "candidate".to_owned(),
+                score: 2.5,
+            },
+        )))
         .expect("execute labeled query"));
     assert!(labeled_ids.contains(&"doc:ordered".to_owned()));
 
-    let non_empty_ids = ids(backend
+    let non_empty_error = backend
         .search(request(typed_contains(
             "title",
             QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
         )))
-        .expect("execute non-empty query"));
-    assert!(non_empty_ids.contains(&"doc:ordered".to_owned()));
+        .expect_err("NonEmpty must not be silently erased");
+    assert_eq!(non_empty_error.details[0].code, "non_empty_not_supported");
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");
@@ -1760,7 +2010,11 @@ fn query_and_filter_lowering_covers_supported_variants() {
             )]
         )
         .unwrap(),
-        Query::term("title", "fox")
+        Query::Text {
+            field: "title".into(),
+            text: "fox".into(),
+            target_num_hits: 100,
+        }
     );
     assert_eq!(
         lower_query(
@@ -1772,8 +2026,16 @@ fn query_and_filter_lowering_covers_supported_variants() {
         )
         .unwrap(),
         Query::Or(vec![
-            Query::phrase("title", "fox hound"),
-            Query::phrase("body", "fox hound"),
+            Query::Text {
+                field: "title".into(),
+                text: "fox hound".into(),
+                target_num_hits: 100,
+            },
+            Query::Text {
+                field: "body".into(),
+                text: "fox hound".into(),
+                target_num_hits: 100,
+            },
         ])
     );
     assert!(lower_query(&QueryIr::Text("fox".into()), &[]).is_err());

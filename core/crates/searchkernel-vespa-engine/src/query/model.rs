@@ -28,6 +28,49 @@ pub enum WeightedQueryItem {
     Integer { key: i64, weight: i64 },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A value in Vespa's native InTerm query node.
+pub enum InQueryValue {
+    String(String),
+    Integer(i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WandOptions {
+    pub target_num_hits: u32,
+    pub score_threshold: i64,
+    pub threshold_boost_factor: f64,
+}
+
+impl Default for WandOptions {
+    fn default() -> Self {
+        Self {
+            target_num_hits: 100,
+            score_threshold: 0,
+            threshold_boost_factor: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NearestNeighborOptions {
+    pub target_num_hits: u32,
+    pub approximate: bool,
+    pub distance_threshold: Option<f64>,
+    pub explore_additional_hits: u32,
+}
+
+impl Default for NearestNeighborOptions {
+    fn default() -> Self {
+        Self {
+            target_num_hits: 100,
+            approximate: true,
+            distance_threshold: None,
+            explore_additional_hits: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryAlternative {
     pub text: String,
@@ -52,6 +95,12 @@ pub struct PredicateRangeFeature {
 /// A low-level query which is lowered directly to Vespa query nodes.
 pub enum Query {
     True,
+    /// Plain text with Vespa's default WeakAnd semantics.
+    Text {
+        field: String,
+        text: String,
+        target_num_hits: u32,
+    },
     Term {
         field: String,
         text: String,
@@ -109,6 +158,15 @@ pub enum Query {
         field: String,
         items: Vec<WeightedQueryItem>,
     },
+    WandWithOptions {
+        field: String,
+        items: Vec<WeightedQueryItem>,
+        options: WandOptions,
+    },
+    In {
+        field: String,
+        values: Vec<InQueryValue>,
+    },
     Labeled {
         query: Box<Query>,
         unique_id: i32,
@@ -140,6 +198,11 @@ pub enum Query {
         query_tensor: String,
         target_num_hits: u32,
         approximate: bool,
+    },
+    NearestNeighborWithOptions {
+        document_field: String,
+        query_tensor: String,
+        options: NearestNeighborOptions,
     },
     SameElement {
         field: String,

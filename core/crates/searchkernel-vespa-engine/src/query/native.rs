@@ -1,8 +1,9 @@
 //! Native query lowering and field validation.
 
 use super::{
-    invalid_query, AttributeBound, PredicateFeature, PredicateRangeFeature, Query,
-    QueryAlternative, RangeBound, Value, WeightedQueryItem,
+    invalid_query, AttributeBound, InQueryValue, NearestNeighborOptions, PredicateFeature,
+    PredicateRangeFeature, Query, QueryAlternative, RangeBound, Value, WandOptions,
+    WeightedQueryItem,
 };
 use crate::error::{check, cstring};
 use crate::linguistics::{Linguistics, LinguisticsOptions};
@@ -24,6 +25,32 @@ pub(crate) fn lower_query(
                 sys::sk_query_add_true(native.0.as_ptr(), error.as_mut_ptr(), error.capacity())
             };
             check(status, &error)
+        }
+        Query::Text {
+            field,
+            text,
+            target_num_hits,
+        } => {
+            let analysis = Linguistics.analyze_query(text, language);
+            let terms = text_query_terms(&analysis)?;
+            if terms.term_lengths.is_empty() {
+                return Err(invalid_query("text must analyze to at least one term"));
+            }
+            add_native_weak_and(native, terms.term_lengths.len(), *target_num_hits)?;
+            let mut offset = 0usize;
+            for term_length in terms.term_lengths.iter().copied() {
+                let end = offset
+                    + usize::try_from(term_length).map_err(|_| {
+                        Error::message("text query term length cannot be represented")
+                    })?;
+                let single = NativeQueryTerms {
+                    term_bytes: terms.term_bytes[offset..end].to_vec(),
+                    term_lengths: vec![term_length],
+                };
+                add_native_text(native, sys::SK_QUERY_TEXT_TERM, field, &single)?;
+                offset = end;
+            }
+            Ok(())
         }
         Query::Term { field, text } => {
             let analysis = Linguistics.analyze_query(text, language);
@@ -130,6 +157,12 @@ pub(crate) fn lower_query(
         Query::WeightedSet { field, items } => add_native_weighted(native, 0, field, items),
         Query::DotProduct { field, items } => add_native_weighted(native, 2, field, items),
         Query::Wand { field, items } => add_native_weighted(native, 1, field, items),
+        Query::WandWithOptions {
+            field,
+            items,
+            options,
+        } => add_native_weighted_with_options(native, field, items, *options),
+        Query::In { field, values } => add_native_in(native, field, values),
         Query::Labeled {
             query,
             unique_id,
@@ -280,6 +313,13 @@ pub(crate) fn lower_query(
             };
             check(status, &error)
         }
+        Query::NearestNeighborWithOptions {
+            document_field,
+            query_tensor,
+            options,
+        } => {
+            add_native_nearest_neighbor_with_options(native, document_field, query_tensor, options)
+        }
         Query::SameElement { field, children } => {
             add_native_same_element(native, field, children.len())?;
             for child in children {
@@ -311,6 +351,7 @@ pub(crate) fn lower_query(
 pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Result<(), Error> {
     match query {
         Query::True => Ok(()),
+        Query::Text { field, .. } => validate_native_text_field(native, field),
         Query::Term { field, .. } | Query::Phrase { field, .. } => {
             validate_native_text_field(native, field)
         }
@@ -361,7 +402,8 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
             .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field)),
         Query::WeightedSet { field, .. }
         | Query::DotProduct { field, .. }
-        | Query::Wand { field, .. } => {
+        | Query::Wand { field, .. }
+        | Query::WandWithOptions { field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
                 .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field))
         }
@@ -400,7 +442,17 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
                 validate_native_field(native, sys::SK_QUERY_FIELD_ATTRIBUTE, field)
             }
         }
-        Query::NearestNeighbor { document_field, .. } => {
+        Query::In { field, values } => match values.first() {
+            Some(InQueryValue::String(_)) => {
+                validate_native_field(native, sys::SK_QUERY_FIELD_STRING, field)
+            }
+            Some(InQueryValue::Integer(_)) => {
+                validate_native_field(native, sys::SK_QUERY_FIELD_INTEGER, field)
+            }
+            None => Err(invalid_query("in query requires at least one value")),
+        },
+        Query::NearestNeighbor { document_field, .. }
+        | Query::NearestNeighborWithOptions { document_field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_TENSOR, document_field)
         }
         Query::SameElement { field, children } => {
@@ -420,8 +472,17 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
 }
 
 fn validate_native_text_field(native: &NativeQuery, field: &str) -> Result<(), Error> {
-    validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field)
-        .or_else(|_| validate_native_field(native, sys::SK_QUERY_FIELD_ARRAY_STRING, field))
+    match validate_native_field(native, sys::SK_QUERY_FIELD_TEXT, field) {
+        Ok(()) => Ok(()),
+        Err(text_error) if text_error.to_string().contains("unknown") => Err(text_error),
+        Err(_) => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_ARRAY_STRING, field).map_err(|_| {
+                invalid_query(format!(
+                    "text operation requires an indexed text field: {field}"
+                ))
+            })
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -737,6 +798,26 @@ fn add_native_weighted(
     items: &[WeightedQueryItem],
 ) -> Result<(), Error> {
     let field = cstring(field)?;
+    add_native_weighted_impl(native, kind, &field, items, None)
+}
+
+fn add_native_weighted_with_options(
+    native: &NativeQuery,
+    field: &str,
+    items: &[WeightedQueryItem],
+    options: WandOptions,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    add_native_weighted_impl(native, 1, &field, items, Some(options))
+}
+
+fn add_native_weighted_impl(
+    native: &NativeQuery,
+    kind: u32,
+    field: &std::ffi::CString,
+    items: &[WeightedQueryItem],
+    wand_options: Option<WandOptions>,
+) -> Result<(), Error> {
     let mut error = NativeError::new();
     let status = match items.first() {
         Some(WeightedQueryItem::String { .. }) => {
@@ -756,17 +837,34 @@ fn add_native_weighted(
             let item_count = length_u32(items.len(), "weighted query item")?;
             unsafe {
                 if kind == 1 {
-                    sys::sk_query_add_wand_strings(
-                        native.0.as_ptr(),
-                        field.as_ptr(),
-                        key_bytes.as_ptr(),
-                        length_u32(key_bytes.len(), "weighted query key bytes")?,
-                        key_lengths.as_ptr(),
-                        weights.as_ptr(),
-                        item_count,
-                        error.as_mut_ptr(),
-                        error.capacity(),
-                    )
+                    if let Some(options) = wand_options {
+                        sys::sk_query_add_wand_strings_with_options(
+                            native.0.as_ptr(),
+                            field.as_ptr(),
+                            key_bytes.as_ptr(),
+                            length_u32(key_bytes.len(), "weighted query key bytes")?,
+                            key_lengths.as_ptr(),
+                            weights.as_ptr(),
+                            item_count,
+                            options.target_num_hits,
+                            options.score_threshold,
+                            options.threshold_boost_factor,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    } else {
+                        sys::sk_query_add_wand_strings(
+                            native.0.as_ptr(),
+                            field.as_ptr(),
+                            key_bytes.as_ptr(),
+                            length_u32(key_bytes.len(), "weighted query key bytes")?,
+                            key_lengths.as_ptr(),
+                            weights.as_ptr(),
+                            item_count,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    }
                 } else if kind == 2 {
                     sys::sk_query_add_dot_product_strings(
                         native.0.as_ptr(),
@@ -809,15 +907,30 @@ fn add_native_weighted(
             let item_count = length_u32(items.len(), "weighted query item")?;
             unsafe {
                 if kind == 1 {
-                    sys::sk_query_add_wand_integers(
-                        native.0.as_ptr(),
-                        field.as_ptr(),
-                        keys.as_ptr(),
-                        weights.as_ptr(),
-                        item_count,
-                        error.as_mut_ptr(),
-                        error.capacity(),
-                    )
+                    if let Some(options) = wand_options {
+                        sys::sk_query_add_wand_integers_with_options(
+                            native.0.as_ptr(),
+                            field.as_ptr(),
+                            keys.as_ptr(),
+                            weights.as_ptr(),
+                            item_count,
+                            options.target_num_hits,
+                            options.score_threshold,
+                            options.threshold_boost_factor,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    } else {
+                        sys::sk_query_add_wand_integers(
+                            native.0.as_ptr(),
+                            field.as_ptr(),
+                            keys.as_ptr(),
+                            weights.as_ptr(),
+                            item_count,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    }
                 } else if kind == 2 {
                     sys::sk_query_add_dot_product_integers(
                         native.0.as_ptr(),
@@ -863,6 +976,86 @@ fn add_native_text(
             length_u32(terms.term_bytes.len(), "query text term bytes")?,
             terms.term_lengths.as_ptr(),
             length_u32(terms.term_lengths.len(), "query text term")?,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+fn add_native_in(native: &NativeQuery, field: &str, values: &[InQueryValue]) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = match values.first() {
+        Some(InQueryValue::String(_)) => {
+            let mut bytes = Vec::new();
+            let mut lengths = Vec::with_capacity(values.len());
+            for value in values {
+                let InQueryValue::String(value) = value else {
+                    return Err(invalid_query(
+                        "in query cannot mix string and integer values",
+                    ));
+                };
+                lengths.push(length_u32(value.len(), "in query value")?);
+                bytes.extend_from_slice(value.as_bytes());
+            }
+            unsafe {
+                sys::sk_query_add_in_strings(
+                    native.0.as_ptr(),
+                    field.as_ptr(),
+                    bytes.as_ptr(),
+                    length_u32(bytes.len(), "in query value bytes")?,
+                    lengths.as_ptr(),
+                    length_u32(values.len(), "in query value")?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
+        Some(InQueryValue::Integer(_)) => {
+            let mut integers = Vec::with_capacity(values.len());
+            for value in values {
+                let InQueryValue::Integer(value) = value else {
+                    return Err(invalid_query(
+                        "in query cannot mix string and integer values",
+                    ));
+                };
+                integers.push(*value);
+            }
+            unsafe {
+                sys::sk_query_add_in_integers(
+                    native.0.as_ptr(),
+                    field.as_ptr(),
+                    integers.as_ptr(),
+                    length_u32(integers.len(), "in query value")?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
+        None => return Err(invalid_query("in query requires at least one value")),
+    };
+    check(status, &error)
+}
+
+fn add_native_nearest_neighbor_with_options(
+    native: &NativeQuery,
+    document_field: &str,
+    query_tensor: &str,
+    options: &NearestNeighborOptions,
+) -> Result<(), Error> {
+    let document_field = cstring(document_field)?;
+    let query_tensor = cstring(query_tensor)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_query_add_nearest_neighbor_with_options(
+            native.0.as_ptr(),
+            document_field.as_ptr(),
+            query_tensor.as_ptr(),
+            options.target_num_hits,
+            u8::from(options.approximate),
+            options.distance_threshold.unwrap_or(f64::INFINITY),
+            options.explore_additional_hits,
             error.as_mut_ptr(),
             error.capacity(),
         )

@@ -1,6 +1,6 @@
 //! Structural validation for typed query trees.
 
-use super::{Query, Value, WeightedQueryItem, MAX_QUERY_DEPTH, MAX_QUERY_NODES};
+use super::{InQueryValue, Query, Value, WeightedQueryItem, MAX_QUERY_DEPTH, MAX_QUERY_NODES};
 use crate::{Error, Result};
 
 pub(crate) fn validate_query(query: &Query) -> Result<()> {
@@ -24,6 +24,18 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
     }
     match query {
         Query::True => {}
+        Query::Text {
+            field,
+            text,
+            target_num_hits,
+        } => {
+            if field.is_empty() || text.is_empty() {
+                return Err(invalid_query("text query field and text must not be empty"));
+            }
+            if *target_num_hits == 0 {
+                return Err(invalid_query("text query target hits must be positive"));
+            }
+        }
         Query::Term { field, text } | Query::Phrase { field, text } => {
             if field.is_empty() || text.is_empty() {
                 return Err(invalid_query("text query field and text must not be empty"));
@@ -158,6 +170,29 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 ));
             }
         }
+        Query::WandWithOptions {
+            field,
+            items,
+            options,
+        } => {
+            if field.is_empty() || items.is_empty() {
+                return Err(invalid_query("weighted query field and items are invalid"));
+            }
+            if items.iter().any(|item| {
+                matches!(item, WeightedQueryItem::String { .. })
+                    != matches!(items.first(), Some(WeightedQueryItem::String { .. }))
+            }) {
+                return Err(invalid_query(
+                    "weighted query cannot mix string and integer keys",
+                ));
+            }
+            if options.target_num_hits == 0
+                || !options.threshold_boost_factor.is_finite()
+                || options.threshold_boost_factor <= 0.0
+            {
+                return Err(invalid_query("wand query options are invalid"));
+            }
+        }
         Query::Labeled { query, score, .. } => {
             if !score.is_finite() {
                 return Err(invalid_query("labeled query score must be finite"));
@@ -194,6 +229,38 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
             if *target_num_hits == 0 {
                 return Err(invalid_query(
                     "nearest-neighbor target hits must be positive",
+                ));
+            }
+        }
+        Query::NearestNeighborWithOptions {
+            document_field,
+            query_tensor,
+            options,
+        } => {
+            if document_field.is_empty() || query_tensor.is_empty() {
+                return Err(invalid_query(
+                    "nearest-neighbor field and query tensor must not be empty",
+                ));
+            }
+            if options.target_num_hits == 0
+                || options
+                    .distance_threshold
+                    .is_some_and(|value| !value.is_finite() || value < 0.0)
+            {
+                return Err(invalid_query("nearest-neighbor options are invalid"));
+            }
+        }
+        Query::In { field, values } => {
+            if field.is_empty() || values.is_empty() {
+                return Err(invalid_query("in query field and values must not be empty"));
+            }
+            let string_values = matches!(values.first(), Some(InQueryValue::String(_)));
+            if values
+                .iter()
+                .any(|value| matches!(value, InQueryValue::String(_)) != string_values)
+            {
+                return Err(invalid_query(
+                    "in query cannot mix string and integer values",
                 ));
             }
         }

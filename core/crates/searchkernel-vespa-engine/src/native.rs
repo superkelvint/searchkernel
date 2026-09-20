@@ -489,6 +489,29 @@ pub(crate) fn engine_group_tree(
     read_grouping_tree_result(require_ptr(pointer, "grouping tree result")?)
 }
 
+pub(crate) fn engine_group_tree_with_request(
+    engine: NonNull<sys::sk_engine>,
+    query: NonNull<sys::sk_query>,
+    request: NonNull<sys::sk_generic_search_request>,
+    plan: &NativeGroupingPlan,
+) -> Result<GroupingResult, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_engine_group_tree_with_request(
+            engine.as_ptr(),
+            query.as_ptr(),
+            request.as_ptr(),
+            plan.0.as_ptr(),
+            &mut pointer,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)?;
+    read_grouping_tree_result(require_ptr(pointer, "grouping tree result")?)
+}
+
 fn grouping_result_value(
     pointer: *const sys::sk_grouping_result_value,
 ) -> Result<GroupingResultValue, Error> {
@@ -942,11 +965,12 @@ pub(crate) fn read_generic_search_result(
     }
     Ok(SearchResult {
         total_hits: total_hit_count,
-        // Phase 7 deliberately does not derive this relation from coverage,
-        // degradation, or issues. The current native ABI has no separate
-        // verifier-backed hit-count-accuracy signal; changing this mapping is
-        // a separately specified follow-up.
-        total_hits_relation: TotalHitsRelation::Exact,
+        // SearchReply exposes no result-side hit-count accuracy bit.  Coverage
+        // and degradation describe how much of the corpus was searched, but
+        // do not prove that totalHitCount is exact.  Keep the uncertainty
+        // explicit rather than fabricating Exact or misclassifying it as a
+        // LowerBound.
+        total_hits_relation: TotalHitsRelation::Unknown,
         hits,
         facets,
         coverage,

@@ -25,8 +25,8 @@ pub use linguistics::{
     QueryTerm, StemMode,
 };
 pub use query::{
-    AttributeBound, PredicateFeature, PredicateRangeFeature, Query, QueryAlternative, RangeBound,
-    Value, WeightedQueryItem,
+    AttributeBound, InQueryValue, NearestNeighborOptions, PredicateFeature, PredicateRangeFeature,
+    Query, QueryAlternative, RangeBound, Value, WandOptions, WeightedQueryItem,
 };
 pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 pub use search::{

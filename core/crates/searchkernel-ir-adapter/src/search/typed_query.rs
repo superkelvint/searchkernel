@@ -7,9 +7,188 @@ use searchkernel_ir::{
     RequestValueIr, Result, ScalarValueIr,
 };
 use searchkernel_vespa_engine::{
-    PredicateFeature, PredicateRangeFeature, Query, QueryAlternative, Value as VespaValue,
-    WeightedQueryItem,
+    InQueryValue, NearestNeighborOptions, PredicateFeature, PredicateRangeFeature, Query,
+    QueryAlternative, Value as VespaValue, WandOptions, WeightedQueryItem,
 };
+
+const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
+
+fn lower_wand_options(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<WandOptions> {
+    reject_unknown_annotations(
+        annotations,
+        &[
+            "targetNumHits",
+            "totalTargetHits",
+            "scoreThreshold",
+            "thresholdBoostFactor",
+        ],
+        path,
+    )?;
+    let target_num_hits = match (
+        annotation_u32(annotations, "targetNumHits", path)?,
+        annotation_u32(annotations, "totalTargetHits", path)?,
+    ) {
+        (Some(_), Some(_)) => {
+            return Err(PortableError::invalid(
+                "invalid_typed_query_annotation",
+                Some(path),
+                "WAND may specify only one of targetNumHits and totalTargetHits",
+            ));
+        }
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => DEFAULT_WEAK_AND_TARGET_HITS,
+    };
+    Ok(WandOptions {
+        target_num_hits,
+        score_threshold: annotation_i64(annotations, "scoreThreshold", path)?.unwrap_or(0),
+        threshold_boost_factor: annotation_f64(annotations, "thresholdBoostFactor", path)?
+            .unwrap_or(1.0),
+    })
+}
+
+fn lower_nearest_neighbor_options(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<NearestNeighborOptions> {
+    reject_unknown_annotations(
+        annotations,
+        &[
+            "targetNumHits",
+            "totalTargetHits",
+            "approximate",
+            "distanceThreshold",
+            "exploreAdditionalHits",
+        ],
+        path,
+    )?;
+    let target_num_hits = match (
+        annotation_u32(annotations, "targetNumHits", path)?,
+        annotation_u32(annotations, "totalTargetHits", path)?,
+    ) {
+        (Some(_), Some(_)) => {
+            return Err(PortableError::invalid(
+                "invalid_typed_query_annotation",
+                Some(path),
+                "nearest-neighbor may specify only one of targetNumHits and totalTargetHits",
+            ));
+        }
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => DEFAULT_WEAK_AND_TARGET_HITS,
+    };
+    Ok(NearestNeighborOptions {
+        target_num_hits,
+        approximate: annotation_bool(annotations, "approximate", path)?.unwrap_or(true),
+        distance_threshold: annotation_f64(annotations, "distanceThreshold", path)?,
+        explore_additional_hits: annotation_u32(annotations, "exploreAdditionalHits", path)?
+            .unwrap_or(0),
+    })
+}
+
+fn reject_unknown_annotations(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    supported: &[&str],
+    path: &str,
+) -> Result<()> {
+    if let Some(name) = annotations
+        .keys()
+        .find(|name| !supported.iter().any(|candidate| candidate == name))
+    {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations.{name}")),
+            "this typed query node has no native lowering for the annotation",
+        ));
+    }
+    Ok(())
+}
+
+fn annotation_u32(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<u32>> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(None);
+    };
+    let value = match value {
+        RequestValueIr::UInt64(value) => u32::try_from(*value).ok(),
+        RequestValueIr::Int64(value) if *value >= 0 => u32::try_from(*value).ok(),
+        _ => None,
+    };
+    value.filter(|value| *value > 0).map(Some).ok_or_else(|| {
+        PortableError::invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a positive integer"),
+        )
+    })
+}
+
+fn annotation_i64(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<i64>> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(None);
+    };
+    let value = match value {
+        RequestValueIr::Int64(value) => Some(*value),
+        RequestValueIr::UInt64(value) => i64::try_from(*value).ok(),
+        _ => None,
+    };
+    value.map(Some).ok_or_else(|| {
+        PortableError::invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be an integer"),
+        )
+    })
+}
+
+fn annotation_f64(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<f64>> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(None);
+    };
+    let value = match value {
+        RequestValueIr::Float64(value) if value.is_finite() => Some(*value),
+        RequestValueIr::Int64(value) => Some(*value as f64),
+        RequestValueIr::UInt64(value) => Some(*value as f64),
+        _ => None,
+    };
+    value.map(Some).ok_or_else(|| {
+        PortableError::invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a finite number"),
+        )
+    })
+}
+
+fn annotation_bool(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<Option<bool>> {
+    let Some(value) = annotations.get(name) else {
+        return Ok(None);
+    };
+    match value {
+        RequestValueIr::Bool(value) => Ok(Some(*value)),
+        _ => Err(PortableError::invalid(
+            "invalid_typed_query_annotation",
+            Some(format!("{path}.annotations.{name}")),
+            format!("{name} must be a boolean"),
+        )),
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn lower_query(
@@ -50,18 +229,12 @@ pub(crate) fn lower_query_with_context(
     match query {
         QueryIr::MatchAll => Ok(Query::True),
         QueryIr::Text(text) => {
-            let term_count = searchkernel_vespa_engine::Linguistics
-                .analyze_query(text, language)
-                .terms
-                .len();
             let clauses = fields
                 .iter()
-                .map(|field| {
-                    if term_count > 1 {
-                        Query::phrase(field.field().as_str(), text)
-                    } else {
-                        Query::term(field.field().as_str(), text)
-                    }
+                .map(|field| Query::Text {
+                    field: field.field().to_string(),
+                    text: text.clone(),
+                    target_num_hits: DEFAULT_WEAK_AND_TARGET_HITS,
                 })
                 .collect::<Vec<_>>();
             match clauses.as_slice() {
@@ -141,7 +314,12 @@ fn lower_typed_query(
     rank_properties: &std::collections::BTreeMap<String, String>,
     path: &str,
 ) -> Result<Query> {
-    if !expression.annotations.is_empty() {
+    if !expression.annotations.is_empty()
+        && !matches!(
+            expression.kind,
+            QueryExprKindIr::Wand { .. } | QueryExprKindIr::NearestNeighbor { .. }
+        )
+    {
         return Err(PortableError::unsupported(
             "typed_query_annotations_not_supported",
             Some(format!("{path}.annotations")),
@@ -239,36 +417,38 @@ fn lower_typed_query(
                 ));
             }
             let field = typed_query_field(Some(field), &format!("{path}.in.field"))?;
-            Ok(Query::Or(
-                values
-                    .iter()
-                    .enumerate()
-                    .map(|(index, value)| {
-                        Ok(Query::AttributeEquals {
-                            field: field.to_owned(),
-                            value: lower_attribute_value(&typed_scalar(
-                                value,
-                                &format!("{path}.in.values[{index}]"),
-                            )?)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            ))
+            let values = values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let value = lower_attribute_value(&typed_scalar(
+                        value,
+                        &format!("{path}.in.values[{index}]"),
+                    )?)?;
+                    match value {
+                        VespaValue::String(value) => Ok(InQueryValue::String(value)),
+                        VespaValue::Integer(value) => Ok(InQueryValue::Integer(value)),
+                        _ => Err(unsupported(
+                            "in query supports only string and integer values",
+                        )),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Query::In {
+                field: field.to_owned(),
+                values,
+            })
         }
         QueryExprKindIr::Phrase(children) => {
             lower_typed_phrase(children, field_context, language, path)
         }
         QueryExprKindIr::Text { text } => {
             let field = typed_query_field(field_context, path)?;
-            let terms = searchkernel_vespa_engine::Linguistics
-                .analyze_query(text, language)
-                .terms
-                .len();
-            if terms > 1 {
-                Ok(Query::phrase(field, text))
-            } else {
-                Ok(Query::term(field, text))
-            }
+            Ok(Query::Text {
+                field: field.to_owned(),
+                text: text.clone(),
+                target_num_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+            })
         }
         QueryExprKindIr::Near { children, distance }
         | QueryExprKindIr::ONear { children, distance } => {
@@ -387,10 +567,20 @@ fn lower_typed_query(
                 .to_owned(),
             items: lower_weighted_items(items, &format!("{path}.weighted_set.items"))?,
         }),
-        QueryExprKindIr::Wand { field, items } => Ok(Query::Wand {
-            field: typed_query_field(Some(field), &format!("{path}.wand.field"))?.to_owned(),
-            items: lower_weighted_items(items, &format!("{path}.wand.items"))?,
-        }),
+        QueryExprKindIr::Wand { field, items } => {
+            let field = typed_query_field(Some(field), &format!("{path}.wand.field"))?.to_owned();
+            let items = lower_weighted_items(items, &format!("{path}.wand.items"))?;
+            let options = lower_wand_options(&expression.annotations, path)?;
+            if options == WandOptions::default() {
+                Ok(Query::Wand { field, items })
+            } else {
+                Ok(Query::WandWithOptions {
+                    field,
+                    items,
+                    options,
+                })
+            }
+        }
         QueryExprKindIr::Alternatives(values) => {
             let field = typed_query_field(field_context, path)?;
             let alternatives = values
@@ -453,15 +643,11 @@ fn lower_typed_query(
                 score: *score,
             })
         }
-        QueryExprKindIr::NonEmpty(child) => lower_typed_query(
-            child,
-            field_context,
-            language,
-            default_index,
-            query_string,
-            rank_properties,
-            &format!("{path}.non_empty.query"),
-        ),
+        QueryExprKindIr::NonEmpty(_) => Err(PortableError::unsupported(
+            "non_empty_not_supported",
+            Some(path),
+            "NonEmpty requires Vespa parser/null-marker semantics not established by this adapter",
+        )),
         QueryExprKindIr::SameElement(children) => {
             let field = typed_query_field(field_context, path)?;
             let children = lower_typed_children(
@@ -515,16 +701,28 @@ fn lower_typed_query(
         QueryExprKindIr::NearestNeighbor {
             document_field,
             query_tensor,
-        } => Ok(Query::NearestNeighbor {
-            document_field: typed_query_field(
+        } => {
+            let document_field = typed_query_field(
                 Some(document_field),
                 &format!("{path}.nearest_neighbor.document_field"),
             )?
-            .to_owned(),
-            query_tensor: query_tensor.clone(),
-            target_num_hits: 100,
-            approximate: true,
-        }),
+            .to_owned();
+            let options = lower_nearest_neighbor_options(&expression.annotations, path)?;
+            if options == NearestNeighborOptions::default() {
+                Ok(Query::NearestNeighbor {
+                    document_field,
+                    query_tensor: query_tensor.clone(),
+                    target_num_hits: options.target_num_hits,
+                    approximate: options.approximate,
+                })
+            } else {
+                Ok(Query::NearestNeighborWithOptions {
+                    document_field,
+                    query_tensor: query_tensor.clone(),
+                    options,
+                })
+            }
+        }
         QueryExprKindIr::Predicate {
             field,
             features,
@@ -550,37 +748,12 @@ fn lower_typed_query(
                 range_features,
             })
         }
-        QueryExprKindIr::UserInput {
-            value,
-            default_index: query_default_index,
-            target_hits,
-        } => lower_user_input(
-            value,
-            field_context,
-            query_default_index.as_deref().or(default_index),
-            *target_hits,
-            language,
-            path,
-        ),
-        QueryExprKindIr::UserQuery {
-            default_index: query_default_index,
-            target_hits,
-        } => {
-            let Some(value) = query_string else {
-                return Err(PortableError::invalid(
-                    "user_query_context_missing",
-                    Some(path),
-                    "userQuery requires query_model.query_string",
-                ));
-            };
-            lower_user_input(
-                value,
-                field_context,
-                query_default_index.as_deref().or(default_index),
-                *target_hits,
-                language,
-                path,
-            )
+        QueryExprKindIr::UserInput { .. } | QueryExprKindIr::UserQuery { .. } => {
+            Err(PortableError::unsupported(
+                "user_query_parser_not_supported",
+                Some(path),
+                "userInput/userQuery parsing is not approximated by a WeakAnd lowering",
+            ))
         }
     }
 }
@@ -648,45 +821,6 @@ fn label_unique_id(
         ));
     }
     Ok(value)
-}
-
-fn lower_user_input(
-    value: &str,
-    field_context: Option<&QueryFieldRefIr>,
-    default_index: Option<&str>,
-    target_hits: u32,
-    language: searchkernel_vespa_engine::LinguisticsOptions,
-    path: &str,
-) -> Result<Query> {
-    let field = match field_context {
-        Some(field) => typed_query_field(Some(field), path)?,
-        None => default_index.ok_or_else(|| {
-            PortableError::invalid(
-                "missing_field_context",
-                Some(path),
-                "userInput/userQuery requires a containing field or defaultIndex",
-            )
-        })?,
-    };
-    let terms = searchkernel_vespa_engine::Linguistics
-        .analyze_query(value, language)
-        .terms
-        .into_iter()
-        .filter_map(|term| term.stems.into_iter().next())
-        .filter(|term| !term.is_empty())
-        .map(|term| Query::term(field, term))
-        .collect::<Vec<_>>();
-    if terms.is_empty() {
-        return Err(PortableError::invalid(
-            "empty_typed_query",
-            Some(path),
-            "userInput/userQuery must contain at least one searchable term",
-        ));
-    }
-    Ok(Query::WeakAnd {
-        children: terms,
-        target_num_hits: target_hits,
-    })
 }
 
 fn lower_weighted_items(
