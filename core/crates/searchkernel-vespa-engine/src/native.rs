@@ -6,8 +6,8 @@ use crate::error::{check, cstring, Error, Result};
 use crate::linguistics::{DocumentAnalysis, QueryAnalysis};
 use crate::query::Value;
 use crate::search::{
-    FacetGroup, FacetResult, GroupingOutput, GroupingResult, GroupingResultValue, Hit,
-    MatchFeatureValue, SearchResult, TotalHitsRelation,
+    FacetGroup, FacetResult, GroupingBinaryOperator, GroupingOutput, GroupingResult,
+    GroupingResultValue, Hit, MatchFeatureValue, SearchResult, TotalHitsRelation,
 };
 use crate::tensor::TensorValue;
 use searchkernel_vespa_bindings as sys;
@@ -41,6 +41,172 @@ pub(crate) struct NativeUpdate(pub(crate) NonNull<sys::sk_document_update>);
 impl Drop for NativeUpdate {
     fn drop(&mut self) {
         unsafe { sys::sk_document_update_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) struct NativeAttributeDocument(pub(crate) NonNull<sys::sk_attribute_document>);
+impl Drop for NativeAttributeDocument {
+    fn drop(&mut self) {
+        unsafe { sys::sk_attribute_document_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) struct NativeAttributeUpdate(pub(crate) NonNull<sys::sk_attribute_update>);
+impl Drop for NativeAttributeUpdate {
+    fn drop(&mut self) {
+        unsafe { sys::sk_attribute_update_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) fn attribute_document_create(id: &str) -> Result<NativeAttributeDocument, Error> {
+    let id = cstring(id)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_attribute_document_create(
+                id.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeAttributeDocument(require_ptr(
+        pointer,
+        "attribute document",
+    )?))
+}
+
+pub(crate) fn attribute_update_create(id: &str) -> Result<NativeAttributeUpdate, Error> {
+    let id = cstring(id)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_attribute_update_create(
+                id.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeAttributeUpdate(require_ptr(
+        pointer,
+        "attribute update",
+    )?))
+}
+
+pub(crate) fn add_attribute_document_value(
+    document: *mut sys::sk_attribute_document,
+    field: &str,
+    value: &Value,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = match value {
+        Value::String(value) => {
+            let value = cstring(value)?;
+            unsafe {
+                sys::sk_attribute_document_add_string(
+                    document,
+                    field.as_ptr(),
+                    value.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
+        Value::Integer(value) => unsafe {
+            sys::sk_attribute_document_add_integer(
+                document,
+                field.as_ptr(),
+                *value,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        Value::Float(value) => unsafe {
+            sys::sk_attribute_document_add_float(
+                document,
+                field.as_ptr(),
+                *value,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        Value::Boolean(value) => unsafe {
+            sys::sk_attribute_document_add_boolean(
+                document,
+                field.as_ptr(),
+                u8::from(*value),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+    };
+    check(status, &error)
+}
+
+pub(crate) fn add_attribute_update_value(
+    update: *mut sys::sk_attribute_update,
+    field: &str,
+    value: &Value,
+) -> Result<(), Error> {
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = match value {
+        Value::String(value) => {
+            let value = cstring(value)?;
+            unsafe {
+                sys::sk_attribute_update_add_string(
+                    update,
+                    field.as_ptr(),
+                    value.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
+        Value::Integer(value) => unsafe {
+            sys::sk_attribute_update_add_integer(
+                update,
+                field.as_ptr(),
+                *value,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        Value::Float(value) => unsafe {
+            sys::sk_attribute_update_add_float(
+                update,
+                field.as_ptr(),
+                *value,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        Value::Boolean(value) => unsafe {
+            sys::sk_attribute_update_add_boolean(
+                update,
+                field.as_ptr(),
+                u8::from(*value),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+    };
+    check(status, &error)
+}
+
+struct NativeStructArray(NonNull<sys::sk_struct_array>);
+
+impl Drop for NativeStructArray {
+    fn drop(&mut self) {
+        unsafe { sys::sk_struct_array_destroy(self.0.as_ptr()) };
     }
 }
 
@@ -500,6 +666,36 @@ pub(crate) fn add_text_annotation<T>(
     check(status, &error)
 }
 
+pub(crate) fn add_text_array_annotation<T>(
+    handle: *mut T,
+    field: &str,
+    analyses: &[crate::linguistics::DocumentAnalysis],
+) -> Result<(), Error> {
+    let mut occurrences = NativeArrayOccurrences::new();
+    for analysis in analyses {
+        occurrences.push(analysis)?;
+    }
+    let field = cstring(field)?;
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_document_annotate_string_array(
+            handle.cast(),
+            field.as_ptr(),
+            occurrences.term_bytes.as_ptr(),
+            length_u32(occurrences.term_bytes.len(), "array term bytes")?,
+            occurrences.term_lengths.as_ptr(),
+            occurrences.byte_starts.as_ptr(),
+            occurrences.byte_lengths.as_ptr(),
+            occurrences.element_offsets.as_ptr(),
+            length_u32(occurrences.element_offsets.len() - 1, "array element")?,
+            length_u32(occurrences.term_lengths.len(), "array occurrence")?,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
 pub(crate) fn length_u32(length: usize, what: &str) -> Result<u32, Error> {
     u32::try_from(length)
         .map_err(|_| Error::message(format!("{what} count exceeds native ABI capacity")))
@@ -510,6 +706,41 @@ pub(crate) struct NativeOccurrences {
     pub(crate) term_lengths: Vec<u32>,
     pub(crate) byte_starts: Vec<u32>,
     pub(crate) byte_lengths: Vec<u32>,
+}
+
+pub(crate) struct NativeArrayOccurrences {
+    pub(crate) term_bytes: Vec<u8>,
+    pub(crate) term_lengths: Vec<u32>,
+    pub(crate) byte_starts: Vec<u32>,
+    pub(crate) byte_lengths: Vec<u32>,
+    pub(crate) element_offsets: Vec<u32>,
+}
+
+impl NativeArrayOccurrences {
+    fn new() -> Self {
+        Self {
+            term_bytes: Vec::new(),
+            term_lengths: Vec::new(),
+            byte_starts: Vec::new(),
+            byte_lengths: Vec::new(),
+            element_offsets: vec![0],
+        }
+    }
+
+    fn push(&mut self, analysis: &DocumentAnalysis) -> Result<(), Error> {
+        for term in &analysis.terms {
+            self.term_lengths
+                .push(length_u32(term.term.len(), "array text term")?);
+            self.term_bytes.extend_from_slice(term.term.as_bytes());
+            self.byte_starts
+                .push(length_u32(term.byte_start, "array text span")?);
+            self.byte_lengths
+                .push(length_u32(term.byte_len, "array text span")?);
+        }
+        self.element_offsets
+            .push(length_u32(self.term_lengths.len(), "array occurrence")?);
+        Ok(())
+    }
 }
 
 pub(crate) fn text_occurrences(analysis: &DocumentAnalysis) -> Result<NativeOccurrences, Error> {
@@ -721,6 +952,21 @@ pub(crate) fn grouping_plan_create() -> Result<NativeGroupingPlan, Error> {
     Ok(NativeGroupingPlan(require_ptr(pointer, "grouping plan")?))
 }
 
+pub(crate) fn grouping_plan_set_all(plan: &NativeGroupingPlan, all: bool) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_plan_set_all(
+                plan.0.as_ptr(),
+                u8::from(all),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )
+}
+
 pub(crate) fn grouping_expression_attribute(
     field: &str,
 ) -> Result<NativeGroupingExpression, Error> {
@@ -736,6 +982,157 @@ pub(crate) fn grouping_expression_attribute(
         )
     };
     check(status, &error)?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+fn grouping_literal_expression(
+    status: impl FnOnce(*mut *mut sys::sk_grouping_expression, *mut u8, u32) -> i32,
+) -> Result<NativeGroupingExpression, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        status(&mut pointer, error.as_mut_ptr(), error.capacity()),
+        &error,
+    )?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+pub(crate) fn grouping_expression_string(value: &str) -> Result<NativeGroupingExpression, Error> {
+    let value = cstring(value)?;
+    grouping_literal_expression(|pointer, error, capacity| unsafe {
+        sys::sk_grouping_expression_string(value.as_ptr(), pointer, error, capacity)
+    })
+}
+
+pub(crate) fn grouping_expression_integer(value: i64) -> Result<NativeGroupingExpression, Error> {
+    grouping_literal_expression(|pointer, error, capacity| unsafe {
+        sys::sk_grouping_expression_integer(value, pointer, error, capacity)
+    })
+}
+
+pub(crate) fn grouping_expression_float(value: f64) -> Result<NativeGroupingExpression, Error> {
+    grouping_literal_expression(|pointer, error, capacity| unsafe {
+        sys::sk_grouping_expression_float(value, pointer, error, capacity)
+    })
+}
+
+pub(crate) fn grouping_expression_boolean(value: bool) -> Result<NativeGroupingExpression, Error> {
+    grouping_literal_expression(|pointer, error, capacity| unsafe {
+        sys::sk_grouping_expression_boolean(u8::from(value), pointer, error, capacity)
+    })
+}
+
+pub(crate) fn grouping_expression_negative(
+    input: &NativeGroupingExpression,
+) -> Result<NativeGroupingExpression, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_expression_negative(
+                input.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+pub(crate) fn grouping_expression_binary(
+    left: &NativeGroupingExpression,
+    right: &NativeGroupingExpression,
+    operator: GroupingBinaryOperator,
+) -> Result<NativeGroupingExpression, Error> {
+    let operator = match operator {
+        GroupingBinaryOperator::Add => sys::SK_GROUPING_BINARY_ADD,
+        GroupingBinaryOperator::Subtract => sys::SK_GROUPING_BINARY_SUBTRACT,
+        GroupingBinaryOperator::Multiply => sys::SK_GROUPING_BINARY_MULTIPLY,
+        GroupingBinaryOperator::Divide => sys::SK_GROUPING_BINARY_DIVIDE,
+        GroupingBinaryOperator::Modulo => sys::SK_GROUPING_BINARY_MODULO,
+    };
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_expression_binary(
+                operator,
+                left.0.as_ptr(),
+                right.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+pub(crate) fn grouping_expression_function(
+    name: &str,
+    arguments: &[NativeGroupingExpression],
+) -> Result<NativeGroupingExpression, Error> {
+    let name = cstring(name)?;
+    let arguments = arguments
+        .iter()
+        .map(|argument| argument.0.as_ptr().cast_const())
+        .collect::<Vec<_>>();
+    let argument_count = u32::try_from(arguments.len())
+        .map_err(|_| Error::message("too many grouping function arguments"))?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_expression_function(
+                name.as_ptr(),
+                arguments.as_ptr(),
+                argument_count,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingExpression(require_ptr(
+        pointer,
+        "grouping expression",
+    )?))
+}
+
+pub(crate) fn grouping_expression_aggregation_reference(
+    index: usize,
+) -> Result<NativeGroupingExpression, Error> {
+    let index = u32::try_from(index)
+        .map_err(|_| Error::message("grouping aggregation reference is too large"))?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_expression_aggregation_reference(
+                index,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
     Ok(NativeGroupingExpression(require_ptr(
         pointer,
         "grouping expression",
@@ -998,6 +1395,143 @@ pub(crate) fn grouping_filter_regex(
     )?))
 }
 
+pub(crate) fn grouping_filter_regex_expression(
+    pattern: &str,
+    expression: &NativeGroupingExpression,
+) -> Result<NativeGroupingFilter, Error> {
+    let pattern = cstring(pattern)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_filter_regex_expression(
+                pattern.as_ptr(),
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
+pub(crate) fn grouping_filter_multi(
+    filters: &[NativeGroupingFilter],
+    and: bool,
+) -> Result<NativeGroupingFilter, Error> {
+    let filters = filters
+        .iter()
+        .map(|filter| filter.0.as_ptr().cast_const())
+        .collect::<Vec<_>>();
+    let count = u32::try_from(filters.len())
+        .map_err(|_| Error::message("too many grouping filter clauses"))?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        if and {
+            sys::sk_grouping_filter_and(
+                filters.as_ptr(),
+                count,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        } else {
+            sys::sk_grouping_filter_or(
+                filters.as_ptr(),
+                count,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        }
+    };
+    check(status, &error)?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
+pub(crate) fn grouping_filter_not(
+    filter: &NativeGroupingFilter,
+) -> Result<NativeGroupingFilter, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_filter_not(
+                filter.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
+pub(crate) fn grouping_filter_range(
+    expression: &NativeGroupingExpression,
+    lower: f64,
+    upper: f64,
+    include_lower: bool,
+    include_upper: bool,
+) -> Result<NativeGroupingFilter, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_filter_range(
+                lower,
+                upper,
+                expression.0.as_ptr(),
+                u8::from(include_lower),
+                u8::from(include_upper),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
+pub(crate) fn grouping_filter_is_true(
+    expression: &NativeGroupingExpression,
+) -> Result<NativeGroupingFilter, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_filter_is_true(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
 pub(crate) fn grouping_level_set_filter(
     level: NonNull<sys::sk_grouping_level>,
     filter: &NativeGroupingFilter,
@@ -1026,6 +1560,22 @@ pub(crate) fn grouping_level_add_aggregation(
             level.as_ptr(),
             aggregation.0.as_ptr(),
             error.as_mut_ptr().cast(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)
+}
+
+pub(crate) fn grouping_plan_add_root_aggregation(
+    plan: &NativeGroupingPlan,
+    aggregation: &NativeGroupingAggregation,
+) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    let status = unsafe {
+        sys::sk_grouping_plan_add_root_aggregation_handle(
+            plan.0.as_ptr(),
+            aggregation.0.as_ptr(),
+            error.as_mut_ptr(),
             error.capacity(),
         )
     };
@@ -1197,7 +1747,35 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
             )?;
             Ok(GroupingOutput::Value(grouping_result_value(value)?))
         }
-        sys::SK_GROUPING_TREE_OUTPUT_HIT_LIST => Ok(GroupingOutput::HitList(Vec::new())),
+        sys::SK_GROUPING_TREE_OUTPUT_HIT_LIST => {
+            let count = unsafe { sys::sk_grouping_tree_output_hit_count(output) };
+            let mut hits = Vec::with_capacity(count as usize);
+            for index in 0..count {
+                let mut id = ptr::null();
+                let mut id_length = 0;
+                let mut error = NativeError::new();
+                check(
+                    unsafe {
+                        sys::sk_grouping_tree_output_hit_id(
+                            output,
+                            index,
+                            &mut id,
+                            &mut id_length,
+                            error.as_mut_ptr().cast(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                )?;
+                let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
+                hits.push(
+                    String::from_utf8(id.to_vec()).map_err(|_| {
+                        Error::message("native grouping returned a non-UTF-8 hit ID")
+                    })?,
+                );
+            }
+            Ok(GroupingOutput::HitList(hits))
+        }
         kind => Err(Error::unsupported(format!(
             "native grouping returned unknown output kind {kind}"
         ))),

@@ -11,6 +11,7 @@ searchkernel-vespa-bindings = { path = "../searchkernel-vespa-bindings" }
 # compatibility authority if this independently pinned table ever diverges.
 unicode-general-category = "=1.1.0"
 unicode-normalization = "0.1.25"
+serde_json = "1"
 
 [features]
 hardening = ["searchkernel-vespa-bindings/hardening"]

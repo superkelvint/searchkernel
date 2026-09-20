@@ -15,8 +15,9 @@ mod tensor;
 mod tests;
 
 pub use document::{
-    ArithmeticOperator, ArrayValue, Document, DocumentUpdate, FieldUpdate, FieldValue,
-    IntoFieldValue, IntoScalarValue, PositionValue, PredicateValue, ScalarValue,
+    ArithmeticOperator, ArrayValue, AttributeDocument, AttributeUpdate, Document, DocumentUpdate,
+    FieldUpdate, FieldValue, IntoFieldValue, IntoScalarValue, PositionValue, PredicateValue,
+    ScalarValue,
 };
 pub use engine::Engine;
 pub use error::{Error, ErrorKind, Result};
@@ -28,12 +29,15 @@ pub use query::{
     AttributeBound, InQueryValue, NearestNeighborOptions, PredicateFeature, PredicateRangeFeature,
     Query, QueryAlternative, RangeBound, Value, WandOptions, WeightedQueryItem,
 };
-pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
+pub use schema::{
+    ConfigCompiler, Field, FieldType, RankProfile, Schema, StructField, StructFieldType,
+};
 pub use search::{
-    FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingExpression, GroupingFilter,
-    GroupingLevel, GroupingOrder, GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult,
-    GroupingResultValue, Hit, MatchFeatureValue, MissingPlacement, QueryInput, SearchCoverage,
-    SearchRequest, SearchResult, SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
+    FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingBinaryOperator,
+    GroupingExpression, GroupingFilter, GroupingLevel, GroupingLiteral, GroupingOrder,
+    GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Hit,
+    MatchFeatureValue, MissingPlacement, QueryInput, SearchCoverage, SearchRequest, SearchResult,
+    SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 
