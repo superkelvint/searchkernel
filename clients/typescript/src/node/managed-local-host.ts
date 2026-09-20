@@ -135,7 +135,9 @@ export class ManagedLocalHost {
 
     try {
       await mkdir(dirname(resolve(indexPath)), { recursive: true });
-      if (definitionPath !== null) await writeFile(definitionPath, definition);
+      if (definitionPath !== null && definition !== null) {
+        await writeFile(definitionPath, definition);
+      }
       host.spawn();
       await host.waitUntilReady();
       return host;
