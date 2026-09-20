@@ -1153,6 +1153,8 @@ with Index.open(INDEX_PATH) as index:
     assert shoe1["rating"] == 4
     assert shoe1["inventory"] == 25
     assert shoe1["title"] == "Fast Marathon Shoes"
+    assert "shoe-1" in {hit.id for hit in index.search("marathon").execute().hits}
+    assert "shoe-1" not in {hit.id for hit in index.search("jumped").execute().hits}
     assert index.get("shoe-created")["inventory"] == 7
     assert "sale_price" not in shoe1
     assert shoe1["embedding"] == {
