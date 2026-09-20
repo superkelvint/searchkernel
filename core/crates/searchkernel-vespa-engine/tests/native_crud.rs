@@ -1103,6 +1103,52 @@ fn native_grouping_supports_float_keys() {
 }
 
 #[test]
+fn native_grouping_supports_boolean_keys() {
+    let config = temporary_path("boolean-group-config");
+    let data = temporary_path("boolean-group-data");
+    let schema = Schema::new("typea").field(
+        Field::new("active", FieldType::Boolean)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile boolean-group config");
+    let engine = Engine::open(&data, &config).expect("open boolean-group engine");
+    for (id, active) in [("boolean-group-false", false), ("boolean-group-true", true)] {
+        engine
+            .put(Document::new(id).field("active", active))
+            .expect("put boolean-group document");
+    }
+
+    let result = engine
+        .group(
+            &Query::True,
+            &GroupingPlan::new().level(
+                GroupingLevel::new(GroupingExpression::Literal(
+                    searchkernel_vespa_engine::GroupingLiteral::Boolean(true),
+                ))
+                .aggregation(GroupingAggregation::Count),
+            ),
+        )
+        .expect("execute boolean-key grouping");
+    assert_eq!(
+        result
+            .groups
+            .iter()
+            .map(|group| group.key.clone())
+            .collect::<Vec<_>>(),
+        vec![Some(
+            searchkernel_vespa_engine::GroupingResultValue::Boolean(true)
+        )]
+    );
+
+    engine.close().expect("close boolean-group engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_raw_sort_spec_is_available_through_the_safe_request_wrapper() {
     let config = temporary_path("raw-sort-config");
     let data = temporary_path("raw-sort-data");

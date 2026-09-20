@@ -135,6 +135,43 @@ fn canonical_one_level_grouping_lowers_to_linear_attribute_plan() {
 }
 
 #[test]
+fn grouping_max_bounds_portable_summary_hit_collection() {
+    let summary = GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Summary(
+        Some("default".to_owned()),
+    )));
+    let request = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Max(Some(3)),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: Some("hits".to_owned()),
+                            expression: summary,
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let lowered = lower_groupings(&[request]).expect("summary grouping should lower");
+    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
+        panic!("expected a native grouping lowering");
+    };
+    assert_eq!(
+        native.plan.levels[0].aggregations,
+        vec![searchkernel_vespa_engine::GroupingAggregation::Summary {
+            summary_class: "default".to_owned(),
+            max_hits: 3,
+        }]
+    );
+}
+
+#[test]
 fn duplicate_count_grouping_output_is_rejected() {
     let request = native_grouping(&[("category", vec![count_expression(), count_expression()])]);
     let error = lower_groupings(&[request]).expect_err("duplicate count outputs must be rejected");

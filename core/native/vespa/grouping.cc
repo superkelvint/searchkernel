@@ -15,6 +15,9 @@ std::unique_ptr<sk_grouping_result_value> grouping_result_value(
     } else if (node.getClass().inherits(FloatResultNode::classId)) {
         value->kind = SK_GROUPING_RESULT_VALUE_FLOAT;
         value->floating = static_cast<const FloatResultNode &>(node).getFloat();
+    } else if (node.getClass().inherits(BoolResultNode::classId)) {
+        value->kind = SK_GROUPING_RESULT_VALUE_BOOLEAN;
+        value->boolean = static_cast<const BoolResultNode &>(node).getBool();
     } else {
         throw UnsupportedNativeError(
             "grouping_result_value_kind",

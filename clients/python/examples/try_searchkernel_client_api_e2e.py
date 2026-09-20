@@ -1281,8 +1281,8 @@ Successfully demonstrated through the public Python facade:
   ✓ recursive ResultGroup decoding
   ✓ aliases + output
   ✓ grouping keep/filter representative
-  ✓ summary aggregation -> Hit children
-  ✓ grouping continuation preservation
+  — summary aggregation -> Hit children [BLOCKED: native docsum payloads are not decoded]
+  — grouping continuation preservation [DEFERRED: continuation tokens are not sent through the native grouping ABI]
 
   QUERY / RANKING / YQL
   ✓ typed query DSL representative

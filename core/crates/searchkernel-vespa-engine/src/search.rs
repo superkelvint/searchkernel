@@ -554,6 +554,7 @@ pub enum GroupingResultValue {
     String(String),
     Integer(i64),
     Float(f64),
+    Boolean(bool),
     Quantiles(Vec<(f64, f64)>),
 }
 

@@ -348,6 +348,7 @@ fn grouping_value_to_ir(value: GroupingResultValue) -> searchkernel_ir::Value {
         GroupingResultValue::String(value) => searchkernel_ir::Value::String(value),
         GroupingResultValue::Integer(value) => searchkernel_ir::Value::Int64(value),
         GroupingResultValue::Float(value) => searchkernel_ir::Value::Float64(value),
+        GroupingResultValue::Boolean(value) => searchkernel_ir::Value::Bool(value),
         GroupingResultValue::Quantiles(values) => searchkernel_ir::Value::List(
             values
                 .into_iter()

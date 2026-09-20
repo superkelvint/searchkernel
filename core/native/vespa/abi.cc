@@ -2244,6 +2244,23 @@ extern "C" int32_t sk_grouping_result_value_float(
     });
 }
 
+extern "C" int32_t sk_grouping_result_value_boolean(
+    const sk_grouping_result_value *value, uint8_t *out_boolean,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_boolean) *out_boolean = 0;
+    if (!value || !out_boolean) {
+        return invoke(error, error_capacity, [] {
+            throw std::invalid_argument("grouping boolean value arguments are invalid");
+        });
+    }
+    return invoke(error, error_capacity, [&] {
+        if (value->kind != SK_GROUPING_RESULT_VALUE_BOOLEAN) {
+            throw std::invalid_argument("grouping result value is not a boolean");
+        }
+        *out_boolean = value->boolean ? 1 : 0;
+    });
+}
+
 extern "C" uint32_t sk_grouping_result_value_quantile_count(
     const sk_grouping_result_value *value) SK_NOEXCEPT {
     return value && value->kind == SK_GROUPING_RESULT_VALUE_QUANTILES

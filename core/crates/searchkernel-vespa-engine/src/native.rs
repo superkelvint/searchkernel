@@ -1714,6 +1714,22 @@ fn grouping_result_value(
             )?;
             Ok(GroupingResultValue::Float(floating))
         }
+        sys::SK_GROUPING_RESULT_VALUE_BOOLEAN => {
+            let mut boolean = 0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_grouping_result_value_boolean(
+                        value,
+                        &mut boolean,
+                        error.as_mut_ptr().cast(),
+                        error.capacity(),
+                    )
+                },
+                &error,
+            )?;
+            Ok(GroupingResultValue::Boolean(boolean != 0))
+        }
         sys::SK_GROUPING_RESULT_VALUE_QUANTILES => {
             let count = unsafe { sys::sk_grouping_result_value_quantile_count(value) };
             let mut values = Vec::with_capacity(count as usize);

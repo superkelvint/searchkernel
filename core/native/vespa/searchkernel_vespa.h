@@ -90,6 +90,7 @@ extern "C" {
 #define SK_GROUPING_RESULT_VALUE_FLOAT 3U
 #define SK_GROUPING_RESULT_VALUE_QUANTILES 4U
 #define SK_GROUPING_RESULT_VALUE_HIT_LIST 5U
+#define SK_GROUPING_RESULT_VALUE_BOOLEAN 6U
 #define SK_GROUPING_TREE_OUTPUT_VALUE 1U
 #define SK_GROUPING_TREE_OUTPUT_HIT_LIST 2U
 #define SK_GROUP_ORDER_NONE 0U
@@ -1021,6 +1022,9 @@ SK_API int32_t sk_grouping_result_value_integer(
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_result_value_float(
     const sk_grouping_result_value *value, double *out_float,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_result_value_boolean(
+    const sk_grouping_result_value *value, uint8_t *out_boolean,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_grouping_result_value_quantile_count(
     const sk_grouping_result_value *value) SK_NOEXCEPT;

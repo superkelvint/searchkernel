@@ -230,9 +230,10 @@ SEARCHKERNEL_2 {
         sk_grouping_result_value_kind;
         sk_grouping_result_value_string;
         sk_grouping_result_value_integer;
-    sk_grouping_result_value_float;
-    sk_grouping_result_value_quantile_count;
-    sk_grouping_result_value_quantile;
+        sk_grouping_result_value_float;
+        sk_grouping_result_value_boolean;
+        sk_grouping_result_value_quantile_count;
+        sk_grouping_result_value_quantile;
         sk_grouping_tree_node_output_count;
         sk_grouping_tree_node_output;
         sk_grouping_tree_output_kind;

@@ -76,7 +76,7 @@ approximated.
 
 ### Document summaries and stored-field projection (`result.summaries`)
 
-- Grouped-hit/docsum ownership and external document-id fidelity are not proven for every summary class.
+- Vespa capability: grouped summary hits carry the selected docsum payload and remain beneath their owning group. Search Kernel limitation: the native seam currently forwards only grouped hit IDs and the adapter creates default/empty Hit values. User-visible impact: summary aggregation does not yet provide promised docsum fields and is not an executable public semantic capability. Reason/status: the native summary generator and typed grouped-hit payload are not implemented; blocked pending a faithful Vespa-backed result seam.
 
 ### Tensor feature and result readback (`result.tensor_readback`)
 
@@ -102,7 +102,7 @@ approximated.
 
 ### Grouping expressions and functions (`grouping.functions`)
 
-- Member, MapLookup, Bucket, and some validated Vespa function names still require dedicated native constructors.
+- Vespa capability: grouping supports the full expression/function family accepted by the grouping parser. Search Kernel limitation: the embedded native adapter currently supports attributes, literals, arithmetic, aggregation references, and the verified function subset only; Member, MapLookup, and Bucket remain rejected. User-visible impact: valid portable requests using those forms fail with a structured unsupported error. Reason/status: the current linear ABI has no typed constructors for those Vespa expression nodes; arithmetic/literal/function lowering is implemented but needs dedicated real-engine acceptance coverage.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
@@ -110,11 +110,11 @@ approximated.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
-- Grouped summary result fidelity remains a known real-Vespa verification gap for some summary classes.
+- Vespa capability: summary() collects grouped hits using the surrounding max/default-hit policy and the requested summary class. Search Kernel limitation: finite max propagation is now retained where the linear plan has a grouping max, but grouped docsum payloads do not cross the native ABI. User-visible impact: callers cannot receive faithful summary fields from grouped Hit children. Reason/status: native summary generation and typed grouped-hit/docsum transfer remain unfinished; status is blocked, not a passing implementation.
 
 ### Grouping continuations (`grouping.continuations`)
 
-- Continuation tokens are not currently represented end-to-end in the linear grouping plan, native ABI, and portable result.
+- Vespa capability: grouping requests and responses carry opaque continuation tokens for paged group lists. Search Kernel limitation: tokens are rejected before native execution and are not represented in GroupingPlan or GroupingResult. User-visible impact: grouping pagination cannot be requested or resumed through V2. Reason/status: the current linear native ABI has no typed continuation input/output seam; implementation remains deferred.
 
 ### Raw grouping source (`grouping.raw_source`)
 

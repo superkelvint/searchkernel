@@ -63,6 +63,7 @@ pub const SK_GROUPING_RESULT_VALUE_INTEGER: u32 = 2;
 pub const SK_GROUPING_RESULT_VALUE_FLOAT: u32 = 3;
 pub const SK_GROUPING_RESULT_VALUE_QUANTILES: u32 = 4;
 pub const SK_GROUPING_RESULT_VALUE_HIT_LIST: u32 = 5;
+pub const SK_GROUPING_RESULT_VALUE_BOOLEAN: u32 = 6;
 pub const SK_GROUPING_TREE_OUTPUT_VALUE: u32 = 1;
 pub const SK_GROUPING_TREE_OUTPUT_HIT_LIST: u32 = 2;
 pub const SK_GROUP_ORDER_NONE: u32 = 0;
@@ -2223,6 +2224,14 @@ unsafe extern "C" {
     pub fn sk_grouping_result_value_float(
         value: *const sk_grouping_result_value,
         out_float: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_result_value_boolean(
+        value: *const sk_grouping_result_value,
+        out_boolean: *mut u8,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

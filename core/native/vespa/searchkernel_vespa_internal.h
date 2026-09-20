@@ -318,6 +318,7 @@ struct sk_grouping_result_value {
     std::string string;
     int64_t integer = 0;
     double floating = 0.0;
+    bool boolean = false;
     std::vector<std::pair<double, double>> quantiles;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     std::shared_ptr<const ResultFaultController> result_faults;
