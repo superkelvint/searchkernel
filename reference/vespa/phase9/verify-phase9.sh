@@ -42,7 +42,10 @@ PY
 
 # These executable vertical slices cover the Phase 9 semantics that cannot be
 # established by the ABI probe alone: real Vespa arithmetic persistence,
-# grouping result decoding/filter serialization, and typed-query execution.
+# grouping result decoding/filter serialization, and selected typed-query
+# execution. The broader adapter `typed_query` test filter currently contains
+# thirteen tests; this cumulative verifier intentionally selects the five
+# real-engine slices required by the Phase 9 contract.
 cargo test -p searchkernel-vespa-engine --test native_crud \
   native_arithmetic_updates_survive_read_and_reopen
 cargo test -p searchkernel-vespa-engine --test native_crud \

@@ -1622,39 +1622,113 @@ pub(crate) fn query_children(
     Ok(converted)
 }
 
-pub(crate) fn validate_predicate_values(
+fn validate_predicate_features(
     values: &BTreeMap<String, RequestValueIr>,
     path: &str,
 ) -> Result<()> {
     for (key, value) in values {
-        validate_predicate_value(value, &format!("{path}.{key}"))?;
+        validate_predicate_feature_value(key, value, path)?;
     }
     Ok(())
 }
 
-fn validate_predicate_value(value: &RequestValueIr, path: &str) -> Result<()> {
+fn validate_predicate_feature_value(key: &str, value: &RequestValueIr, path: &str) -> Result<()> {
     match value {
-        RequestValueIr::Null
-        | RequestValueIr::Bytes(_)
-        | RequestValueIr::Tensor(_)
-        | RequestValueIr::NonFiniteFloat(_) => Err(invalid(
-            "invalid_predicate_value",
-            Some(path.to_owned()),
-            "predicate values must be finite scalar values, lists, or objects",
-        )),
+        RequestValueIr::String(value) if !key.is_empty() && !value.is_empty() => Ok(()),
         RequestValueIr::List(values) => {
             for (index, value) in values.iter().enumerate() {
-                validate_predicate_value(value, &format!("{path}[{index}]"))?;
+                validate_predicate_feature_value(key, value, &format!("{path}.{key}[{index}]"))?;
             }
             Ok(())
         }
-        RequestValueIr::Object(values) => validate_predicate_values(values, path),
-        RequestValueIr::Bool(_)
-        | RequestValueIr::Int64(_)
-        | RequestValueIr::UInt64(_)
-        | RequestValueIr::Float64(_)
-        | RequestValueIr::String(_) => Ok(()),
+        RequestValueIr::Object(values) => {
+            parse_predicate_bitmap(key, path)?;
+            for (nested_key, nested_value) in values {
+                validate_predicate_feature_value(nested_key, nested_value, path)?;
+            }
+            Ok(())
+        }
+        RequestValueIr::String(_) => Err(invalid(
+            "invalid_predicate_value",
+            Some(format!("{path}.{key}")),
+            "predicate feature keys and values must not be empty",
+        )),
+        _ => Err(invalid(
+            "invalid_predicate_value",
+            Some(format!("{path}.{key}")),
+            "predicate features support non-empty strings, string lists, or bitmap-keyed objects",
+        )),
     }
+}
+
+fn validate_predicate_range_features(
+    values: &BTreeMap<String, RequestValueIr>,
+    path: &str,
+) -> Result<()> {
+    for (key, value) in values {
+        validate_predicate_range_value(key, value, path)?;
+    }
+    Ok(())
+}
+
+fn validate_predicate_range_value(key: &str, value: &RequestValueIr, path: &str) -> Result<()> {
+    match value {
+        RequestValueIr::UInt64(_) => {
+            if key.is_empty() {
+                return Err(invalid(
+                    "invalid_predicate_value",
+                    Some(format!("{path}.{key}")),
+                    "predicate range feature keys must not be empty",
+                ));
+            }
+            Ok(())
+        }
+        RequestValueIr::Int64(value) if *value >= 0 => {
+            if key.is_empty() {
+                return Err(invalid(
+                    "invalid_predicate_value",
+                    Some(format!("{path}.{key}")),
+                    "predicate range feature keys must not be empty",
+                ));
+            }
+            Ok(())
+        }
+        RequestValueIr::List(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_predicate_range_value(
+                    key,
+                    value,
+                    &format!("{path}.{key}[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        RequestValueIr::Object(values) => {
+            parse_predicate_bitmap(key, path)?;
+            for (nested_key, nested_value) in values {
+                validate_predicate_range_value(nested_key, nested_value, path)?;
+            }
+            Ok(())
+        }
+        _ => Err(invalid(
+            "invalid_predicate_value",
+            Some(format!("{path}.{key}")),
+            "predicate range features require unsigned or non-negative integer values, integer lists, or bitmap-keyed objects",
+        )),
+    }
+}
+
+fn parse_predicate_bitmap(value: &str, path: &str) -> Result<u64> {
+    let (digits, radix) = value
+        .strip_prefix("0x")
+        .map_or((value, 10), |value| (value, 16));
+    u64::from_str_radix(digits, radix).map_err(|_| {
+        invalid(
+            "invalid_predicate_sub_query_bitmap",
+            Some(format!("{path}.{value}")),
+            "predicate bitmap object keys must be decimal or 0x-prefixed hexadecimal uint64 values",
+        )
+    })
 }
 
 pub(crate) fn query_ir_is_typed(value: &QueryIr) -> bool {

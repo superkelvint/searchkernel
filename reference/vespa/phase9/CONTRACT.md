@@ -29,6 +29,13 @@ and suffix query operators are not part of the portable query IR. Collection
 forms outside the supported arrays, sparse or mixed tensors, unsupported
 field-path forms, and unrepresented update forms remain deferred.
 
+The Phase 9 script is cumulative: it first runs the earlier milestone
+verifiers, then runs five selected real-engine `typed_query_*` adapter slices
+and the specialized native-query checks listed in the script. The independent
+adapter test filter contains thirteen typed-query tests; that count is not a
+claim that the cumulative Phase 9 verifier is green when an earlier milestone
+gate fails.
+
 The native boundary uses opaque handles and primitive arguments only. Text is
 copied by the adapter, options and filters have exactly-once destruction, and
 all operational failures are returned through the existing error buffer.
