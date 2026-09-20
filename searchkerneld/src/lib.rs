@@ -16,13 +16,14 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
-    sync::{oneshot, Semaphore},
+    sync::{watch, Semaphore},
     task::JoinHandle,
 };
 #[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::{wrappers::TcpListenerStream, Stream};
 use tonic::{Request, Response, Status};
+use tonic_web::GrpcWebLayer;
 
 /// Rust bindings generated from the public Search Kernel gRPC protocol.
 #[allow(clippy::result_large_err)]
@@ -65,6 +66,13 @@ pub struct ServerConfig {
     /// Address on which the gRPC listener is bound. A TCP port of zero requests
     /// an ephemeral port and is useful for tests.
     pub listen_addr: ListenAddress,
+    /// Optional TCP address on which the HTTP/1 gRPC-Web listener is bound.
+    ///
+    /// The browser listener is separate from [`Self::listen_addr`] so local
+    /// SDKs can continue to use the Unix-domain socket without changing
+    /// transports. Both listeners share the same dispatcher and execution
+    /// limit when enabled.
+    pub web_listen_addr: Option<SocketAddr>,
     /// Maximum number of blocking dispatcher calls that may execute at once.
     ///
     /// Requests above this limit wait asynchronously for admission instead of
@@ -77,6 +85,7 @@ impl ServerConfig {
     pub const fn new(listen_addr: SocketAddr) -> Self {
         Self {
             listen_addr: ListenAddress::Tcp(listen_addr),
+            web_listen_addr: None,
             execution_limit: DEFAULT_EXECUTION_LIMIT,
         }
     }
@@ -86,6 +95,7 @@ impl ServerConfig {
     pub fn unix(path: impl Into<PathBuf>) -> Self {
         Self {
             listen_addr: ListenAddress::Unix(path.into()),
+            web_listen_addr: None,
             execution_limit: DEFAULT_EXECUTION_LIMIT,
         }
     }
@@ -100,6 +110,12 @@ impl ServerConfig {
     /// concurrently. A value of zero is rejected by [`start`].
     pub const fn with_execution_limit(mut self, execution_limit: usize) -> Self {
         self.execution_limit = execution_limit;
+        self
+    }
+
+    /// Enables the HTTP/1 gRPC-Web listener at the supplied TCP address.
+    pub const fn with_web_listen_addr(mut self, web_listen_addr: SocketAddr) -> Self {
+        self.web_listen_addr = Some(web_listen_addr);
         self
     }
 }
@@ -239,17 +255,22 @@ impl std::error::Error for ServerError {}
 /// A running gRPC server and its controlled shutdown handle.
 pub struct RunningServer {
     local_addr: ListenAddress,
-    shutdown: Option<oneshot::Sender<()>>,
+    web_local_addr: Option<SocketAddr>,
+    shutdown: Option<watch::Sender<bool>>,
     task: JoinHandle<Result<(), tonic::transport::Error>>,
+    web_task: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
 }
 
 impl fmt::Debug for RunningServer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let task_finished =
+            self.task.is_finished() || self.web_task.as_ref().is_some_and(JoinHandle::is_finished);
         formatter
             .debug_struct("RunningServer")
             .field("local_addr", &self.local_addr)
+            .field("web_local_addr", &self.web_local_addr)
             .field("shutdown_requested", &self.shutdown.is_none())
-            .field("task_finished", &self.task.is_finished())
+            .field("task_finished", &task_finished)
             .finish()
     }
 }
@@ -270,6 +291,12 @@ impl RunningServer {
         }
     }
 
+    /// Returns the bound browser TCP address, if the gRPC-Web listener is
+    /// enabled.
+    pub fn web_tcp_addr(&self) -> Option<SocketAddr> {
+        self.web_local_addr
+    }
+
     /// Returns the configured Unix-domain socket path, if this server uses UDS.
     #[cfg(unix)]
     pub fn unix_path(&self) -> Option<&Path> {
@@ -284,10 +311,17 @@ impl RunningServer {
     /// This is useful to let a daemon react immediately if its serving task
     /// exits before an external shutdown signal arrives.
     pub async fn wait(&mut self) -> Result<(), ServerError> {
-        let result = (&mut self.task)
-            .await
-            .map_err(ServerError::Join)?
-            .map_err(ServerError::Serve);
+        let result = if let Some(web_task) = self.web_task.as_mut() {
+            tokio::select! {
+                result = &mut self.task => result,
+                result = web_task => result,
+            }
+        } else {
+            (&mut self.task).await
+        }
+        .map_err(ServerError::Join)?
+        .map_err(ServerError::Serve);
+        self.abort_remaining_tasks();
         self.cleanup_socket()?;
         result
     }
@@ -295,15 +329,36 @@ impl RunningServer {
     /// Requests graceful shutdown and waits for the serving task to finish.
     pub async fn shutdown(mut self) -> Result<(), ServerError> {
         if let Some(shutdown) = self.shutdown.take() {
-            let _ = shutdown.send(());
+            let _ = shutdown.send(true);
         }
 
         let result = (&mut self.task)
             .await
             .map_err(ServerError::Join)?
             .map_err(ServerError::Serve);
+        let web_result = if let Some(web_task) = &mut self.web_task {
+            Some(
+                web_task
+                    .await
+                    .map_err(ServerError::Join)?
+                    .map_err(ServerError::Serve),
+            )
+        } else {
+            None
+        };
         self.cleanup_socket()?;
-        result
+        result.and(web_result.unwrap_or(Ok(())))
+    }
+
+    fn abort_remaining_tasks(&mut self) {
+        if !self.task.is_finished() {
+            self.task.abort();
+        }
+        if let Some(web_task) = self.web_task.as_mut() {
+            if !web_task.is_finished() {
+                web_task.abort();
+            }
+        }
     }
 
     fn cleanup_socket(&self) -> Result<(), ServerError> {
@@ -321,7 +376,7 @@ impl RunningServer {
 
 impl Drop for RunningServer {
     fn drop(&mut self) {
-        self.task.abort();
+        self.abort_remaining_tasks();
         #[cfg(unix)]
         if let ListenAddress::Unix(path) = &self.local_addr {
             let _ = std::fs::remove_file(path);
@@ -348,7 +403,20 @@ async fn start_with_service(
     config: ServerConfig,
     service: SearchKernelTransport,
 ) -> Result<RunningServer, ServerError> {
-    let (shutdown, shutdown_requested) = oneshot::channel();
+    let (shutdown, _) = watch::channel(false);
+
+    // Bind every requested listener before starting any serving task. If a
+    // browser port is unavailable, this prevents the already-bound local
+    // listener from being left running after `start` returns an error.
+    let web_listener = match config.web_listen_addr {
+        Some(web_listen_addr) => {
+            let listener = TcpListener::bind(web_listen_addr)
+                .await
+                .map_err(ServerError::Bind)?;
+            Some((listener.local_addr().map_err(ServerError::Bind)?, listener))
+        }
+        None => None,
+    };
 
     let (local_addr, task) = match config.listen_addr {
         ListenAddress::Tcp(listen_addr) => {
@@ -357,29 +425,41 @@ async fn start_with_service(
                 .map_err(ServerError::Bind)?;
             let local_addr = listener.local_addr().map_err(ServerError::Bind)?;
             let incoming = TcpListenerStream::new(listener);
-            let task = serve(incoming, service, shutdown_requested);
+            let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
             (ListenAddress::Tcp(local_addr), task)
         }
         #[cfg(unix)]
         ListenAddress::Unix(path) => {
             let listener = bind_unix_listener(&path).await?;
             let incoming = UnixListenerStream::new(listener);
-            let task = serve(incoming, service, shutdown_requested);
+            let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
             (ListenAddress::Unix(path), task)
         }
     };
 
+    let (web_local_addr, web_task) = match web_listener {
+        Some((web_local_addr, listener)) => {
+            let incoming = TcpListenerStream::new(listener);
+            let web_task = serve(incoming, service, shutdown.subscribe(), true);
+            (Some(web_local_addr), Some(web_task))
+        }
+        None => (None, None),
+    };
+
     Ok(RunningServer {
         local_addr,
+        web_local_addr,
         shutdown: Some(shutdown),
         task,
+        web_task,
     })
 }
 
 fn serve<I, IO>(
     incoming: I,
     service: SearchKernelTransport,
-    shutdown_requested: oneshot::Receiver<()>,
+    mut shutdown_requested: watch::Receiver<bool>,
+    grpc_web: bool,
 ) -> JoinHandle<Result<(), tonic::transport::Error>>
 where
     I: Stream<Item = Result<IO, std::io::Error>> + Send + 'static,
@@ -387,16 +467,30 @@ where
     IO::ConnectInfo: Clone + Send + Sync + 'static,
 {
     tokio::spawn(async move {
-        tonic::transport::Server::builder()
-            .add_service(
-                SearchKernelServer::new(service)
-                    .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
-                    .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE),
-            )
-            .serve_with_incoming_shutdown(incoming, async move {
-                let _ = shutdown_requested.await;
-            })
-            .await
+        let shutdown = async move {
+            let _ = shutdown_requested.wait_for(|shutdown| *shutdown).await;
+        };
+        if grpc_web {
+            tonic::transport::Server::builder()
+                .accept_http1(true)
+                .layer(GrpcWebLayer::new())
+                .add_service(
+                    SearchKernelServer::new(service)
+                        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+                        .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE),
+                )
+                .serve_with_incoming_shutdown(incoming, shutdown)
+                .await
+        } else {
+            tonic::transport::Server::builder()
+                .add_service(
+                    SearchKernelServer::new(service)
+                        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+                        .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE),
+                )
+                .serve_with_incoming_shutdown(incoming, shutdown)
+                .await
+        }
     })
 }
 

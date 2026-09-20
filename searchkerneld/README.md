@@ -14,6 +14,20 @@ that option is only used during creation. On Unix, omitting `--listen` uses
 `/tmp/searchkerneld.sock`. TCP addresses are also supported, for example
 `--listen 127.0.0.1:50051`.
 
+To expose the same service to browser gRPC-Web clients, add an explicit HTTP/1
+listener, for example:
+
+```text
+searchkerneld --index /path/to/index \
+  --listen unix:///tmp/searchkerneld.sock \
+  --web-listen 127.0.0.1:50052
+```
+
+The browser listener is optional and separate from the local listener. Both
+listeners share the same dispatcher and bounded execution limit. The
+`SEARCHKERNEL_GRPC_WEB_ADDR` environment variable is equivalent to
+`--web-listen` when the flag is omitted.
+
 If a Unix socket path already exists, startup first probes it. A live server
 causes startup to fail; an unreachable stale socket is removed before binding.
 
@@ -78,10 +92,11 @@ the latter connects the Rust engine wrapper to Vespa.
 
 ## Responsibilities
 
-`searchkerneld` owns gRPC server lifecycle, TCP and Unix-domain-socket
-listening, request/response framing, connection handling, transport-level
-errors, and server configuration. UDS is preferred for local same-host SDK
-use where supported; TCP remains available for other deployments.
+`searchkerneld` owns gRPC and gRPC-Web server lifecycle, TCP and
+Unix-domain-socket listening, request/response framing, connection handling,
+transport-level errors, and server configuration. UDS is preferred for local
+same-host SDK use where supported; the optional HTTP/1 TCP listener is for
+browser gRPC-Web clients.
 
 It does not independently implement query semantics, ranking semantics, filter
 semantics, schema defaults, request validation, or operation-specific business

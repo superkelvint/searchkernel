@@ -1,8 +1,12 @@
 use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use flatbuffers::root;
+use http_body_util::{BodyExt, Full};
+use hyper::{body::Bytes, Request as HttpRequest};
 #[cfg(unix)]
 use hyper_util::rt::TokioIo;
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use prost::Message;
 use searchkernel::{Field, Index, IndexDefinition};
 use searchkernel_dispatch::{Dispatcher, PROTOCOL_VERSION};
 use searchkernel_protocol::protocol::v2 as wire;
@@ -92,6 +96,54 @@ async fn connect_client(
     rpc::search_kernel_client::SearchKernelClient::connect(format!("http://{address}"))
         .await
         .expect("connect generated gRPC client")
+}
+
+async fn execute_grpc_web(address: SocketAddr, payload: Vec<u8>) -> Vec<u8> {
+    let frame = rpc::FlatBufferFrame { payload }.encode_to_vec();
+    let mut grpc_frame = Vec::with_capacity(5 + frame.len());
+    grpc_frame.push(0);
+    grpc_frame.extend_from_slice(&(frame.len() as u32).to_be_bytes());
+    grpc_frame.extend_from_slice(&frame);
+
+    let request = HttpRequest::builder()
+        .method("POST")
+        .uri(format!(
+            "http://{address}/searchkernel.rpc.v1.SearchKernel/Execute"
+        ))
+        .header("content-type", "application/grpc-web+proto")
+        .header("x-grpc-web", "1")
+        .body(Full::new(Bytes::from(grpc_frame)))
+        .expect("build grpc-web request");
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let response = client.request(request).await.expect("grpc-web request");
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.starts_with("application/grpc-web")),
+        Some(true)
+    );
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("read grpc-web response")
+        .to_bytes();
+    assert!(
+        body.len() >= 5,
+        "grpc-web response must contain a data frame"
+    );
+    assert_eq!(
+        body[0], 0,
+        "first grpc-web frame must contain response data"
+    );
+    let frame_len = u32::from_be_bytes(body[1..5].try_into().expect("frame length")) as usize;
+    assert!(body.len() >= 5 + frame_len);
+    rpc::FlatBufferFrame::decode(&body[5..5 + frame_len])
+        .expect("decode grpc-web response frame")
+        .payload
 }
 
 #[cfg(unix)]
@@ -218,6 +270,40 @@ async fn execute_accepts_frames_larger_than_tonic_default_limit() {
 
     assert!(!response.payload.is_empty());
     server.shutdown().await.expect("shutdown server");
+    index.close().expect("close test index");
+}
+
+#[tokio::test]
+async fn grpc_web_listener_shares_the_canonical_service_with_grpc() {
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let direct = dispatcher
+        .dispatch(&describe_request(PROTOCOL_VERSION))
+        .expect("direct dispatch");
+    let server = start(
+        ServerConfig::new(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .with_web_listen_addr(SocketAddr::from(([127, 0, 0, 1], 0))),
+        dispatcher,
+    )
+    .await
+    .expect("start gRPC and grpc-web listeners");
+    let grpc_address = server.tcp_addr().expect("gRPC listener address");
+    let web_address = server.web_tcp_addr().expect("grpc-web listener address");
+
+    let mut grpc_client = connect_client(grpc_address).await;
+    let grpc_response = grpc_client
+        .execute(Request::new(rpc::FlatBufferFrame {
+            payload: describe_request(PROTOCOL_VERSION),
+        }))
+        .await
+        .expect("gRPC Execute")
+        .into_inner()
+        .payload;
+    let web_response = execute_grpc_web(web_address, describe_request(PROTOCOL_VERSION)).await;
+
+    assert_eq!(direct, grpc_response);
+    assert_eq!(direct, web_response);
+    server.shutdown().await.expect("shutdown both listeners");
     index.close().expect("close test index");
 }
 

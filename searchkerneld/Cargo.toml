@@ -12,6 +12,7 @@ searchkernel-dispatch = { path = "../core/crates/searchkernel-dispatch" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }
+tonic-web = "0.12"
 
 [build-dependencies]
 protoc-bin-vendored = "3"
@@ -19,6 +20,8 @@ tonic-build = "0.12"
 
 [dev-dependencies]
 flatbuffers = "=25.12.19"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 searchkernel = { path = "../core/crates/searchkernel", features = ["native", "internal-api"] }
 searchkernel-protocol = { path = "../core/crates/searchkernel-protocol" }

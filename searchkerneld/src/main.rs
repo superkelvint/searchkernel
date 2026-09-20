@@ -18,6 +18,7 @@ fn config() -> Result<Config, Box<dyn Error>> {
     let mut index_path = None;
     let mut definition_path = None;
     let mut listen = None;
+    let mut web_listen = None;
     let mut execution_limit = None;
 
     while let Some(argument) = args.next() {
@@ -47,6 +48,9 @@ fn config() -> Result<Config, Box<dyn Error>> {
             "--listen" => {
                 listen = Some(args.next().ok_or("--listen requires an address")?);
             }
+            "--web-listen" => {
+                web_listen = Some(args.next().ok_or("--web-listen requires an address")?);
+            }
             value => return Err(format!("unknown argument {value}").into()),
         }
     }
@@ -64,6 +68,14 @@ fn config() -> Result<Config, Box<dyn Error>> {
             Err(error) => return Err(ServerError::Environment(error).into()),
         },
     };
+    let web_listen_addr = match web_listen {
+        Some(value) => Some(parse_web_listen_address(&value.to_string_lossy())?),
+        None => match env::var("SEARCHKERNEL_GRPC_WEB_ADDR") {
+            Ok(value) => Some(parse_web_listen_address(&value)?),
+            Err(env::VarError::NotPresent) => None,
+            Err(error) => return Err(ServerError::Environment(error).into()),
+        },
+    };
     let execution_limit = match execution_limit {
         Some(value) => value,
         None => match env::var("SEARCHKERNEL_EXECUTION_LIMIT") {
@@ -71,6 +83,12 @@ fn config() -> Result<Config, Box<dyn Error>> {
             Err(env::VarError::NotPresent) => server.execution_limit,
             Err(error) => return Err(error.into()),
         },
+    };
+
+    let server = if let Some(web_listen_addr) = web_listen_addr {
+        server.with_web_listen_addr(web_listen_addr)
+    } else {
+        server
     };
 
     Ok(Config {
@@ -129,6 +147,10 @@ fn config_from_address(value: Option<&str>) -> Result<ServerConfig, ServerError>
         .transpose()
         .map(|address| address.map_or_else(ServerConfig::default, ServerConfig::new))
         .map_err(ServerError::InvalidListenAddress)
+}
+
+fn parse_web_listen_address(value: &str) -> Result<std::net::SocketAddr, ServerError> {
+    value.parse().map_err(ServerError::InvalidListenAddress)
 }
 
 #[tokio::main]
