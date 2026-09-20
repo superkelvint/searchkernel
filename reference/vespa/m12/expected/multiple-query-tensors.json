@@ -1,0 +1,1 @@
+{"id":"multiple-query-tensors","steps":[{"hits":["id:ns:typea::y","id:ns:typea::mid","id:ns:typea::x"],"id":"select-second-tensor"}]}

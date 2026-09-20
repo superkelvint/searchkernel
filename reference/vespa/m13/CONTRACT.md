@@ -1,26 +1,34 @@
-# M13 contract: rank-feature values
+# M13 contract: dense tensor document CRUD
 
-M13 is an additional focused smoke/regression verifier for rank-feature value
-transport. The authoritative oracle-backed Phase 5 contract is
-`reference/vespa/m10/feature-values/verify-feature-values.sh`, which compares
-the native and Rust paths with a frozen direct pinned-Vespa golden. M13 does
-not define a second normative DOUBLE/DATA result.
+M13 freezes whole-value dense tensor document lifecycle behavior through the
+real Vespa document and update paths. The supported document type is a dense
+tensor with one indexed dimension, no mapped dimensions, finite cells, and a
+cell count matching its type specification.
 
-At the Vespa boundary, `FeatureSet::Value` has exactly two representations:
+The acceptance corpus proves, through both the low-level Rust engine API and
+the canonical FlatBuffers dispatcher:
 
-* `DOUBLE`, carrying one `double`;
-* `DATA`, carrying an opaque byte payload.
+- insert and upsert replacement;
+- GET/readback of the canonical tensor type specification and every cell;
+- whole-field assignment and generic unset/reassign;
+- close/reopen persistence;
+- delete and not-found behavior;
+- nearest-neighbor ordering after a document tensor update.
 
-The Search Kernel native ABI exposes that boundary through the opaque,
-feature-specific `sk_feature_value` handle. A DATA view is borrowed from the
-search result and remains valid until that result is destroyed. Tensor
-recognition or decoding is a higher-layer concern and is not part of this
-contract.
+The positive corpus is independently cross-checked against
+`oracle/m13_tensor_oracle.cpp`, which uses the pinned Vespa document,
+`TensorFieldValue`, `DocumentUpdate`, assign, and clear APIs directly. The
+portable driver creates its first backend by lowering the portable
+`IndexDefinition` through `compile_index_definition()`; it does not reuse the
+low-level Rust schema helper.
 
-The legacy scalar getter remains supported. It succeeds for DOUBLE and returns
-the stable native type status for DATA; DATA must never be reinterpreted as a
-double.
+M13 does not add tensor algebra, cell-level updates, sparse/mixed/mapped
+document tensors, or a parallel Search Kernel document store. Tensor values
+are constructed and validated by the native Vespa adapter and read back as
+the existing `TensorValue::Dense` representation.
 
-The verifier uses a real rank profile that emits one scalar feature and one
-data-backed feature, and checks exact scalar/data preservation through the raw
-ABI and the safe Rust wrapper.
+`scenarios/errors.json` freezes deterministic categories through both paths for
+scalar/tensor type mismatches, malformed or unsupported tensor shapes,
+cell-count mismatch, non-finite cells, sparse/mixed values, and incompatible
+patch values. The error driver compares native detail codes or portable error
+detail codes, not merely non-empty diagnostics.

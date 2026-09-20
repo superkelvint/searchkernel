@@ -133,6 +133,7 @@ fn canon(q: &Query) -> Value {
         Query::AttributeEquals { .. } | Query::AttributeRange { .. } => {
             panic!("attribute queries are not part of M7")
         }
+        _ => panic!("query variant is not part of M7"),
     }
 }
 fn populate(engine: &mut Engine, s: &Scenario) {

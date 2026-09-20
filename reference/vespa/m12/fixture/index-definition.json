@@ -1,0 +1,22 @@
+{
+  "name":"m12",
+  "document_type":"typea",
+  "fields":[
+    {
+      "name":"embedding",
+      "data_type":{"kind_type":"TensorDataType","kind":{"type_spec":"tensor<float>(x[3])"}},
+      "stored":{"value":false},
+      "searchable":{"value":false},
+      "filterable":{"value":false},
+      "sortable":{"value":false},
+      "facetable":{"value":false},
+      "attribute":{"enabled":{"value":true},"distance_metric":"Euclidean"}
+    },
+    {
+      "name":"ordinal",
+      "data_type":{"kind_type":"PrimitiveDataType","kind":{"kind":"Int64"}},
+      "stored":{"value":true},
+      "attribute":{"enabled":{"value":true}}
+    }
+  ]
+}

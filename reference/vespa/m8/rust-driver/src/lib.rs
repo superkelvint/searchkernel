@@ -164,7 +164,10 @@ fn value(v: &FieldValue) -> Json {
             json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())})
         }
         FieldValue::Scalar(ScalarValue::Boolean(x)) => json!({"type":"boolean","value":x}),
-        FieldValue::Array(_) => panic!("M8 summaries do not contain arrays"),
+        FieldValue::Array(_)
+        | FieldValue::Position(_)
+        | FieldValue::Predicate(_)
+        | FieldValue::Tensor(_) => panic!("M8 summaries do not contain complex values"),
     }
 }
 

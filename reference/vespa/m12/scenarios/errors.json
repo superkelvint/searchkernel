@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"empty-tensor-name","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"tensor_name":""}},
+    {"id":"duplicate-tensor-name","path":"low_level","expected_error":"duplicate_query_tensor","mutation":{"duplicate_tensor_name":true}},
+    {"id":"scalar-tensor-collision","path":"low_level","expected_error":"query_input_collision","mutation":{"scalar_tensor_collision":true}},
+    {"id":"rank-property-tensor-collision","path":"low_level","expected_error":"query_input_collision","mutation":{"rank_property_tensor_collision":true}},
+    {"id":"malformed-type-spec","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"type_spec":"not-a-tensor"}},
+    {"id":"two-indexed-dimensions","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"type_spec":"tensor<float>(x[3],y[2])","values":[1,0,0,0,0,0]}},
+    {"id":"mapped-dimension","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"type_spec":"tensor<float>(m{},x[3])","values":[1,0,0]}},
+    {"id":"too-few-cells","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"values":[1,0]}},
+    {"id":"too-many-cells","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"values":[1,0,0,0]}},
+    {"id":"nan-cell","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"non_finite":"nan"}},
+    {"id":"positive-infinity-cell","path":"low_level","expected_error":"invalid_query_tensor","mutation":{"non_finite":"positive_infinity"}},
+    {"id":"missing-query-input","path":"portable","expected_error":"query_tensor_missing","mutation":{"omit_referenced_input":true}},
+    {"id":"portable-non-finite","path":"portable","expected_error":"non_finite_tensor_cell","mutation":{"portable_non_finite":true}},
+    {"id":"expression-input","path":"portable","expected_error":"expression_query_input_not_supported","mutation":{"expression_input":"embed(model,@query)"}},
+    {"id":"sparse-input","path":"portable","expected_error":"sparse_query_tensor_not_supported","mutation":{"sparse_tensor":true}},
+    {"id":"mixed-input","path":"portable","expected_error":"mixed_query_tensor_not_supported","mutation":{"mixed_tensor":true}},
+    {"id":"unknown-document-field","path":"low_level","expected_error":"query_tensor_field_invalid","mutation":{"document_field":"missing_embedding"}},
+    {"id":"non-tensor-document-field","path":"low_level","expected_error":"query_tensor_field_invalid","mutation":{"document_field":"ordinal"}},
+    {"id":"tensor-type-mismatch","path":"low_level","expected_error":"query_tensor_type_mismatch","mutation":{"type_spec":"tensor<float>(x[4])","values":[1,0,0,0]}}
+  ]
+}

@@ -1,29 +1,26 @@
 # M13 source trace
 
-Pinned Vespa revision:
+The pinned Vespa source remains authoritative for the underlying behavior:
 
-```text
-2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
-```
+- `upstream/vespa/document/src/vespa/document/fieldvalue/tensorfieldvalue.h`
+  defines `document::TensorFieldValue`, which owns document tensor values and
+  exposes the evaluated tensor through `getAsTensorPtr()`;
+- `upstream/vespa/eval/src/vespa/eval/eval/value.h` and
+  `upstream/vespa/eval/src/vespa/eval/eval/typed_cells.h` expose
+  `vespalib::eval::Value`, its `ValueType`, and its typed cell buffer;
+- `upstream/vespa/document/src/vespa/document/update/assignvalueupdate.h` and
+  `clearvalueupdate.h` define whole-field assignment and clear semantics;
+- `upstream/vespa/document/src/tests/documentupdatetestcase.cpp` covers the
+  Vespa tensor assign/clear update behavior used by the direct M13 oracle;
+- `reference/vespa/m13/oracle/m13_tensor_oracle.cpp` exercises those Vespa
+  document and update classes independently of Search Kernel;
+- Search Kernel's C++ adapter decodes/encodes those Vespa values and copies
+  dense cells into Search Kernel-owned primitive storage for the ABI lifetime;
+- document PUT, update assignment, clear, retrieval, persistence, and vector
+  matching remain Vespa operations.
 
-The source-level boundary is defined in:
-
-```text
-upstream/vespa/vespalib/src/vespa/vespalib/util/featureset.h
-```
-
-`FeatureSet::Value` stores either a `double` or a byte vector. Its
-`is_double()`, `is_data()`, `as_double()`, and `as_data()` operations establish
-the DOUBLE/DATA distinction used by this milestone.
-
-The reply carries those values through `FeatureValues` in:
-
-```text
-upstream/vespa/searchlib/src/vespa/searchlib/engine/searchreply.h
-```
-
-M13 therefore freezes opaque DATA transport at the Search Kernel boundary. It
-does not treat Vespa's feature value as a tensor and does not require tensor
-decoding to establish the ABI contract. The oracle-backed normative verifier
-for this boundary is the M10 feature-values verifier; M13 is supplemental
-smoke/regression coverage only.
+Search Kernel-owned additions are limited to the ABI accessors
+`sk_document_field_tensor_dense` and
+`sk_document_update_assign_tensor_dense`. Rust reconstructs the existing
+`TensorValue::Dense`; the portable adapter maps it to the existing V2 tensor
+IR and FlatBuffers response representation.

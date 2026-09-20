@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"malformed_type_spec_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x[","values":[1.0,0.0],"expected":"tensor_type_spec_invalid"},
+    {"id":"malformed_type_spec_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x[","values":[1.0,0.0],"expected":"tensor_type_spec_invalid"},
+    {"id":"zero_indexed_dimension_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x[0])","values":[],"expected":"tensor_type_spec_invalid"},
+    {"id":"zero_indexed_dimension_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x[0])","values":[],"expected":"tensor_type_spec_invalid"},
+    {"id":"multiple_indexed_dimensions_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x[2],y[1])","values":[1.0,0.0],"expected":"tensor_shape_unsupported"},
+    {"id":"multiple_indexed_dimensions_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x[2],y[1])","values":[1.0,0.0],"expected":"tensor_shape_unsupported"},
+    {"id":"mapped_dimension_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x{},y[2])","values":[1.0,0.0],"expected":"tensor_shape_unsupported"},
+    {"id":"mapped_dimension_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x{},y[2])","values":[1.0,0.0],"expected":"tensor_shape_unsupported"},
+    {"id":"cell_count_mismatch_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x[3])","values":[1.0,0.0],"expected":"tensor_cell_count_mismatch"},
+    {"id":"cell_count_mismatch_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x[3])","values":[1.0,0.0],"expected":"tensor_cell_count_mismatch"},
+    {"id":"non_finite_cell_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x[2])","values":["nan",0.0],"expected":"tensor_non_finite_cell"},
+    {"id":"non_finite_cell_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x[2])","values":[1.0,0.0],"portable_non_finite":true,"expected":"non_finite_tensor_cell"},
+    {"id":"sparse_tensor_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x{})","payload":"sparse","expected":"tensor_value_not_supported"},
+    {"id":"sparse_tensor_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x{})","payload":"sparse","expected":"tensor_value_not_supported"},
+    {"id":"mixed_tensor_low","path":"low_level","operation":"put","field":"embedding","type_spec":"tensor<float>(x{},y[2])","payload":"mixed","expected":"tensor_value_not_supported"},
+    {"id":"mixed_tensor_portable","path":"portable","operation":"put","field":"embedding","type_spec":"tensor<float>(x{},y[2])","payload":"mixed","expected":"tensor_value_not_supported"},
+    {"id":"scalar_to_tensor_low","path":"low_level","operation":"put","field":"embedding","scalar":1.0,"expected":"tensor_field_type_mismatch"},
+    {"id":"scalar_to_tensor_portable","path":"portable","operation":"put","field":"embedding","scalar":1.0,"expected":"type_mismatch"},
+    {"id":"tensor_to_scalar_low","path":"low_level","operation":"put","field":"score","type_spec":"tensor<float>(x[2])","values":[1.0,0.0],"expected":"tensor_field_type_mismatch"},
+    {"id":"tensor_to_scalar_portable","path":"portable","operation":"put","field":"score","type_spec":"tensor<float>(x[2])","values":[1.0,0.0],"expected":"type_mismatch"},
+    {"id":"patch_incompatible_type_low","path":"low_level","operation":"patch","field":"embedding","type_spec":"tensor<double>(x[2])","values":[1.0,0.0],"expected":"tensor_field_type_mismatch"},
+    {"id":"patch_incompatible_type_portable","path":"portable","operation":"patch","field":"embedding","type_spec":"tensor<double>(x[2])","values":[1.0,0.0],"expected":"tensor_field_type_mismatch"},
+    {"id":"patch_incompatible_dimension_low","path":"low_level","operation":"patch","field":"embedding","type_spec":"tensor<float>(x[3])","values":[1.0,0.0,0.0],"expected":"tensor_field_type_mismatch"},
+    {"id":"patch_incompatible_dimension_portable","path":"portable","operation":"patch","field":"embedding","type_spec":"tensor<float>(x[3])","values":[1.0,0.0,0.0],"expected":"tensor_field_type_mismatch"}
+  ]
+}

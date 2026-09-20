@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "dense-crud",
+  "document_type": "typea",
+  "tensor_field": {"name": "embedding", "type_spec": "tensor<float>(x[2])"},
+  "tensors": {
+    "a": [1.0, 0.0],
+    "b": [0.0, 1.0],
+    "replacement": [0.0, 2.0],
+    "reassign": [0.1, 0.3],
+    "query": [1.0, 0.0]
+  }
+}

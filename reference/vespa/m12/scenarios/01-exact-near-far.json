@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "exact-near-far",
+  "fixture": {
+    "document_type": "typea",
+    "tensor_field": {
+      "name": "embedding",
+      "type_spec": "tensor<float>(x[3])",
+      "distance_metric": "euclidean",
+      "hnsw": false
+    },
+    "documents": [
+      {"id": "id:ns:typea::x", "values": [1.0, 0.0, 0.0]},
+      {"id": "id:ns:typea::mid", "values": [0.8, 0.2, 0.0]},
+      {"id": "id:ns:typea::y", "values": [0.0, 1.0, 0.0]}
+    ]
+  },
+  "steps": [
+    {
+      "id": "toward-x",
+      "document_field": "embedding",
+      "query_tensor": "q_embedding",
+      "inputs": [
+        {
+          "name": "q_embedding",
+          "kind": "dense",
+          "type_spec": "tensor<float>(x[3])",
+          "values": [1.0, 0.0, 0.0]
+        }
+      ],
+      "scalar_query_features": [],
+      "rank_properties": [],
+      "limit": 3
+    }
+  ]
+}

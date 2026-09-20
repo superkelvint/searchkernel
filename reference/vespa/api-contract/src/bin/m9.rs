@@ -75,6 +75,12 @@ fn visit_group(result: GroupingResult) {
             GroupingOutput::Value(GroupingResultValue::Float(value)) => {
                 let _: f64 = value;
             }
+            GroupingOutput::Value(GroupingResultValue::Quantiles(values)) => {
+                let _: Vec<(f64, f64)> = values;
+            }
+            GroupingOutput::HitList(hits) => {
+                let _: Vec<String> = hits;
+            }
         }
     }
     for child in result.groups {

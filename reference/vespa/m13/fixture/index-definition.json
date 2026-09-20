@@ -1,0 +1,35 @@
+{
+  "name":"m13",
+  "document_type":"typea",
+  "fields":[
+    {
+      "name":"embedding",
+      "data_type":{"kind_type":"TensorDataType","kind":{"type_spec":"tensor<float>(x[2])"}},
+      "stored":{"value":true},
+      "searchable":{"value":false},
+      "filterable":{"value":false},
+      "sortable":{"value":false},
+      "facetable":{"value":false},
+      "attribute":{"enabled":{"value":true}}
+    },
+    {
+      "name":"score",
+      "data_type":{"kind_type":"PrimitiveDataType","kind":{"kind":"Float64"}},
+      "stored":{"value":true},
+      "attribute":{"enabled":{"value":true}}
+    }
+  ],
+  "rank_profiles":[
+    {
+      "name":"semantic",
+      "inputs":[
+        {
+          "name":"query_embedding",
+          "data_type":{"kind_type":"TensorDataType","kind":{"type_spec":"tensor<float>(x[2])"}},
+          "default_value":{"kind_type":"TensorValue","kind":{"type_spec":"tensor<float>(x[2])","payload_type":"DenseTensorValues","payload":{"values":[0.0,0.0]}}}
+        }
+      ],
+      "first_phase":{"expression":"closeness(embedding)"}
+    }
+  ]
+}

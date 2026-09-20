@@ -1,0 +1,28 @@
+{
+  "id": "m13-grouping-yql",
+  "version": 1,
+  "execution": "real-vespa",
+  "cases": [
+    {
+      "id": "recursive-grouping",
+      "coverage": "recursive groups, count, average, typed native ABI",
+      "verifier": "reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh"
+    },
+    {
+      "id": "root-labels-order-max-precision-aliases-filters",
+      "coverage": "root aggregations, labels, ordering, max, precision, aliases, keep/filter",
+      "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py"
+    },
+    {
+      "id": "yql-properties-order-and-grouping",
+      "coverage": "YQL text(@property), ORDER BY, typed properties, and grouping composition",
+      "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py"
+    },
+    {
+      "id": "grouped-summary-and-continuation",
+      "coverage": "grouped summary hits and opaque continuation round-trip",
+      "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+      "status": "blocked-until-native-support"
+    }
+  ]
+}

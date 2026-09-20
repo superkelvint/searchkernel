@@ -30,6 +30,8 @@ fn classify(s: &str) -> &'static str {
         || x.contains("unsupported query source")
     {
         "unsupported_yql"
+    } else if x.contains("field is not an attribute") {
+        "unsupported_yql"
     } else if x.contains("yql") || x.contains("parse") {
         "invalid_yql"
     } else {

@@ -232,11 +232,15 @@ fn grouping_result_value(v: &GroupingResultValue) -> Json {
         GroupingResultValue::String(x) => json!({"type":"string","value":x}),
         GroupingResultValue::Integer(x) => json!({"type":"integer","value":x}),
         GroupingResultValue::Float(x) => json!({"type":"float","bits":format!("0x{:016x}",x.to_bits())}),
+        GroupingResultValue::Quantiles(values) => {
+            json!({"type":"quantiles","values":values})
+        }
     }
 }
 fn grouping_output(v: &GroupingOutput) -> Json {
     match v {
         GroupingOutput::Value(value) => grouping_result_value(value),
+        GroupingOutput::HitList(hits) => json!({"type":"hit_list","values":hits}),
     }
 }
 fn grouping_result(result: GroupingResult) -> Json {
@@ -258,6 +262,10 @@ fn hit(h: searchkernel_vespa_engine::Hit) -> Json {
                 }
                 searchkernel_vespa_engine::FieldValue::Tensor(_) => {
                     panic!("M9 summaries do not contain tensors")
+                }
+                searchkernel_vespa_engine::FieldValue::Position(_)
+                | searchkernel_vespa_engine::FieldValue::Predicate(_) => {
+                    panic!("M9 summaries do not contain position or predicate values")
                 }
             };
             (k.clone(), output_value(value))
