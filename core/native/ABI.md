@@ -9,6 +9,61 @@ therefore adds `-O2 -g` explicitly and does not strip the adapter library.
 Debug information is required because the ABI check compares the types
 reachable from exported functions, not only their symbol names.
 
+## Compatibility contract
+
+This section is normative for the Search Kernel native ABI.
+
+- Existing exported functions never change signature or semantics
+  incompatibly.
+- Existing exported functions are never removed.
+- All non-trivial native objects remain opaque handles. Their definitions stay
+  private to the native adapter; the public header exposes only forward
+  declarations and handle pointers.
+- New capabilities normally arrive as additive:
+  - new constructors;
+  - new typed setters;
+  - new accessors; or
+  - new domain-specific opaque handles.
+- Borrowed handles have an explicit parent lifetime. A function that returns or
+  accepts a borrowed handle must document which parent keeps it valid and when
+  the borrow ends.
+- No STL or other C++ object layout crosses the ABI. Public arguments and
+  results use opaque handles, fixed-width primitive values, and primitive
+  arrays or byte ranges as appropriate.
+- A universal type/property registry is not introduced merely to anticipate
+  future capabilities.
+- Native abstractions correspond to actual Vespa/searchlib/document concepts;
+  the ABI does not add generic abstractions without a concrete native
+  capability to wrap.
+- Convenience functions may remain permanently, even after a more expressive
+  underlying primitive exists. A newer primitive does not require removing or
+  repurposing an older convenience function.
+- Match-feature values follow Vespa's `FeatureSet::Value` boundary: the native
+  representation is `DOUBLE` or opaque `DATA`, never `TENSOR`. Data returned
+  through `sk_feature_value_data` is borrowed from its parent search result.
+  Tensor recognition or decoding, if added later, belongs above this raw
+  feature-value layer. The legacy scalar getter remains available and returns
+  the dedicated type-error status when used on a DATA feature.
+- Every new native capability requires both a pinned-Vespa source trace and a
+  real verifier exercising the native path. Documentation or a symbol-only
+  check is not sufficient evidence of support.
+
+The following existing opaque handles are deliberately stable and must not be
+redesigned as part of additive capability work:
+
+```text
+sk_engine
+sk_document
+sk_document_update
+sk_query
+sk_generic_search_request
+sk_generic_search_result
+```
+
+Their opaque nature is already sufficient for future additive evolution. A
+new capability should extend the surface around them or introduce another
+domain-specific opaque handle when the underlying Vespa concept requires one.
+
 ## Release baseline
 
 Do not commit `.so` files to the source repository. For each ABI freeze,

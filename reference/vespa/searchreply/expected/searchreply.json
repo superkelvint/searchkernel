@@ -1,0 +1,1 @@
+{"normal":{"usable":true,"total_hit_count":1,"hit_count":1,"coverage":{"active":1,"covered":1,"target_active":1},"degradation_flags":0,"issues":[]},"degraded":{"usable":true,"total_hit_count":201,"hit_count":10,"coverage":{"active":201,"covered":201,"target_active":201},"degradation_flags":1,"issues":[]}}

@@ -914,6 +914,16 @@ fn resolve_field_value(
     value: RequestValueIr,
     path: String,
 ) -> Result<FieldValueIr> {
+    if matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. }) {
+        return match value {
+            RequestValueIr::Tensor(value) => Ok(FieldValueIr::Tensor(value)),
+            _ => Err(invalid(
+                "type_mismatch",
+                Some(path),
+                "tensor fields require tensor values",
+            )),
+        };
+    }
     let list = match (&field.cardinality(), value) {
         (FieldCardinality::Single, RequestValueIr::List(_)) => {
             return Err(invalid(

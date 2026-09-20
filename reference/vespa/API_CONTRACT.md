@@ -205,7 +205,7 @@ RankProfile::match_feature(feature)
 Schema::rank_profile(profile)
 SearchRequest::query_feature(name, finite_f64)
 SearchRequest::rank_property(name, value)
-Hit::match_features: BTreeMap<String, f64>
+Hit::match_features: BTreeMap<String, MatchFeatureValue>
 ```
 
 The expression and feature strings are Vespa ranking syntax. The Rust wrapper
@@ -225,6 +225,13 @@ namespace and callers must not set it through either `query_feature` or
 `rank_property`; doing so is an `invalid_query_feature` or
 `invalid_rank_property` error, respectively.
 
-Feature inspection returns scalar native match features. A non-scalar/data
-feature is an explicit unsupported-value error in M10 v1; it is never coerced
-or fabricated.
+`MatchFeatureValue` preserves the native Vespa feature boundary:
+
+```text
+Double(f64) | Data(Vec<u8>)
+```
+
+The native `DATA` bytes are opaque and copied out of the result by the safe
+wrapper. Tensor recognition or decoding, if supported later, belongs above
+this representation; the Vespa feature container itself is not a
+double-or-tensor container.

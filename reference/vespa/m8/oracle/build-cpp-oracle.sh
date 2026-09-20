@@ -6,9 +6,9 @@ M8="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$M8/../../.." && pwd)"
 
 VESPA="$ROOT/upstream/vespa"
-ORACLE="$M8/oracle/m8_local_oracle.cpp"
-TARGET_DIR="$M8/oracle/target"
-OUT="$TARGET_DIR/m8_cpp_oracle"
+ORACLE="${M8_DIRECT_ORACLE:-$M8/oracle/m8_local_oracle.cpp}"
+TARGET_DIR="${M8_DIRECT_TARGET_DIR:-$M8/oracle/target}"
+OUT="${M8_DIRECT_OUT:-$TARGET_DIR/m8_cpp_oracle}"
 COMPILE_DB="$VESPA/compile_commands.json"
 LINK_TXT="$VESPA/searchcore/src/tests/proton/documentdb/CMakeFiles/searchcore_documentdb_test_app.dir/link.txt"
 
@@ -49,6 +49,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -58,6 +59,27 @@ obj = Path(os.environ["M8_DIRECT_OBJ"])
 out = Path(os.environ["M8_DIRECT_OUT"])
 compile_db = Path(os.environ["M8_DIRECT_COMPILE_DB"])
 link_txt = Path(os.environ["M8_DIRECT_LINK_TXT"])
+sdk_lib = vespa.parent.parent / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
+
+def localize_path(value):
+    # The Vespa build image records this checkout as /work. Acceptance may run
+    # with the same checkout mounted elsewhere, so resolve generated absolute
+    # paths against the current repository root.
+    value = value.replace("/work", str(vespa.parent.parent))
+    return value.replace("/opt/vespa-deps", str(vespa.parent.parent / "vespa-deps"))
+
+def localize_command(args):
+    localized = [localize_path(arg) for arg in args]
+    if localized and Path(localized[0]).name == "ccache" and len(localized) > 1:
+        if not Path(localized[0]).exists():
+            localized.pop(0)
+    while localized and not Path(localized[0]).exists():
+        replacement = shutil.which(Path(localized[0]).name)
+        if replacement:
+            localized[0] = replacement
+            break
+        break
+    return localized
 
 db = json.loads(compile_db.read_text())
 
@@ -78,13 +100,14 @@ if "arguments" in entry:
     compile_args = list(entry["arguments"])
 else:
     compile_args = shlex.split(entry["command"])
+compile_args = localize_command(compile_args)
 
 # Vespa's test target enables -Winline, which reports non-actionable STL
 # inlining decisions in otherwise clean oracle translation units. The native
 # SDK build uses the same override; keep the direct oracle build quiet too.
 compile_args.append("-Wno-inline")
 
-old_source = str(entry["file"])
+old_source = localize_path(str(entry["file"]))
 replaced_source = False
 for i, arg in enumerate(compile_args):
     if arg == old_source:
@@ -105,11 +128,12 @@ compile_args[out_i + 1] = str(obj)
 print("Compiling M8 direct Vespa oracle translation unit", file=sys.stderr)
 subprocess.run(
     compile_args,
-    cwd=entry["directory"],
+    cwd=localize_path(entry["directory"]),
     check=True,
 )
 
 link_args = shlex.split(link_txt.read_text().strip())
+link_args = localize_command(link_args)
 old_obj_suffix = (
     "CMakeFiles/searchcore_documentdb_test_app.dir/documentdb_test.cpp.o"
 )
@@ -133,7 +157,7 @@ link_args[out_i + 1] = str(out)
 
 # CMake's generated link.txt is relative to the documentdb build directory:
 #   .../documentdb/CMakeFiles/<target>.dir/link.txt
-link_cwd = link_txt.parents[2]
+link_cwd = Path(localize_path(str(link_txt.parents[2])))
 
 print("Linking M8 oracle against pinned Vespa build artifacts", file=sys.stderr)
 subprocess.run(

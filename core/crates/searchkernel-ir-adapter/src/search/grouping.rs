@@ -91,8 +91,9 @@ fn grouping_plan(value: &searchkernel_ir::GroupingRequestIr) -> Result<GroupingP
             "native grouping plans do not support continuations",
         ));
     }
-    let mut levels = Vec::new();
-    lower_level(&value.root, &mut levels)?;
+    let mut compiler = GroupingCompiler { levels: Vec::new() };
+    compiler.lower_root(&value.root)?;
+    let levels = compiler.levels;
     if levels.is_empty() {
         return Err(unsupported_grouping(
             "grouping_level_missing_classifier",
@@ -102,85 +103,173 @@ fn grouping_plan(value: &searchkernel_ir::GroupingRequestIr) -> Result<GroupingP
     Ok(GroupingPlan { levels })
 }
 
-fn lower_level(
-    value: &searchkernel_ir::GroupingAllIr,
-    levels: &mut Vec<GroupingLevel>,
-) -> Result<()> {
-    if value.label.is_some() {
-        return Err(unsupported_grouping(
-            "grouping_labels_not_supported",
-            "native grouping plans do not expose grouping labels",
-        ));
+struct GroupingCompiler {
+    levels: Vec<GroupingLevel>,
+}
+
+impl GroupingCompiler {
+    /// Lower the small linear shape that RequestBuilder can represent as one
+    /// backend Grouping: the root/all scope records a classifier and the
+    /// following each scope materializes it. Nested all scopes are structural
+    /// and must contain the next group/each pair.
+    fn lower_root(&mut self, value: &searchkernel_ir::GroupingAllIr) -> Result<()> {
+        self.lower_grouping_scope(value)
     }
 
-    let mut classifier = None;
-    let mut aggregations = Vec::new();
-    let mut nested = None;
-    for operation in &value.operations {
-        match operation {
-            searchkernel_ir::GroupingOperationIr::Group(expression) => {
-                if classifier.is_some() {
-                    return Err(unsupported_grouping(
-                        "multiple_group_classifiers",
-                        "a native grouping level has exactly one attribute classifier",
-                    ));
-                }
-                classifier = Some(lower_classifier(expression)?);
-            }
-            searchkernel_ir::GroupingOperationIr::Output(outputs) => {
-                for output in outputs {
-                    if output.label.is_some() {
+    fn lower_grouping_scope(&mut self, value: &searchkernel_ir::GroupingAllIr) -> Result<()> {
+        if value.label.is_some() {
+            return Err(unsupported_grouping(
+                "grouping_labels_not_supported",
+                "native grouping plans do not expose grouping labels",
+            ));
+        }
+
+        let mut classifier = None;
+        let mut each = None;
+        for operation in &value.operations {
+            match operation {
+                searchkernel_ir::GroupingOperationIr::Group(expression) => {
+                    if each.is_some() {
                         return Err(unsupported_grouping(
-                            "grouping_output_labels_not_supported",
-                            "native grouping outputs do not expose aliases or labels",
+                            "grouping_group_after_each_not_supported",
+                            "group must establish pending state before each materializes it",
                         ));
                     }
-                    aggregations.push(lower_aggregation(&output.expression)?);
+                    if classifier.is_some() {
+                        return Err(unsupported_grouping(
+                            "multiple_group_classifiers",
+                            "a native grouping level has exactly one attribute classifier",
+                        ));
+                    }
+                    classifier = Some(lower_classifier(expression)?);
                 }
-            }
-            searchkernel_ir::GroupingOperationIr::All(child)
-            | searchkernel_ir::GroupingOperationIr::Each(child) => {
-                if nested.is_some() {
+                searchkernel_ir::GroupingOperationIr::Each(child) => {
+                    if classifier.is_none() {
+                        return Err(unsupported_grouping(
+                            "grouping_each_without_group",
+                            "each cannot materialize a grouping level without pending group-by state",
+                        ));
+                    }
+                    if each.is_some() {
+                        return Err(unsupported_grouping(
+                            "parallel_grouping_not_supported",
+                            "native grouping plans support one linear each branch",
+                        ));
+                    }
+                    each = Some(child);
+                }
+                searchkernel_ir::GroupingOperationIr::Output(_) => {
                     return Err(unsupported_grouping(
-                        "branching_grouping_not_supported",
-                        "native grouping plans support only linear nested levels",
+                        "grouping_output_before_each",
+                        "grouping output is attached only after each materializes its pending group-by",
                     ));
                 }
-                nested = Some(child);
-            }
-            _ => {
-                return Err(unsupported_grouping(
-                    "grouping_operation_not_supported",
-                    "the native grouping plan does not support this grouping operation",
-                ));
+                searchkernel_ir::GroupingOperationIr::All(_) => {
+                    return Err(unsupported_grouping(
+                        "grouping_all_topology_not_supported",
+                        "all does not materialize pending group-by state; the supported topology requires each",
+                    ));
+                }
+                _ => {
+                    return Err(unsupported_grouping(
+                        "grouping_operation_not_supported",
+                        "the native grouping plan does not support this grouping operation",
+                    ));
+                }
             }
         }
-    }
 
-    if let Some(classifier) = classifier {
-        levels.push(GroupingLevel {
-            classifier,
-            aggregations,
-        });
-    } else {
-        if !aggregations.is_empty() {
-            return Err(unsupported_grouping(
-                "grouping_output_without_classifier",
-                "native grouping cannot preserve outputs on a structural grouping wrapper",
-            ));
-        }
-        if nested.is_none() {
-            return Err(unsupported_grouping(
+        let classifier = classifier.ok_or_else(|| {
+            unsupported_grouping(
                 "grouping_level_missing_classifier",
                 "a native grouping level requires an attribute classifier",
+            )
+        })?;
+        let each = each.ok_or_else(|| {
+            unsupported_grouping(
+                "grouping_each_required",
+                "each is required to materialize pending group-by state",
+            )
+        })?;
+        let level = self.levels.len();
+        self.levels.push(GroupingLevel {
+            classifier,
+            aggregations: Vec::new(),
+        });
+        self.lower_each_body(each, level)
+    }
+
+    fn lower_each_body(
+        &mut self,
+        value: &searchkernel_ir::GroupingAllIr,
+        level: usize,
+    ) -> Result<()> {
+        if value.label.is_some() {
+            return Err(unsupported_grouping(
+                "grouping_labels_not_supported",
+                "native grouping plans do not expose grouping labels",
             ));
         }
+
+        let mut nested = None;
+        for operation in &value.operations {
+            match operation {
+                searchkernel_ir::GroupingOperationIr::Output(outputs) => {
+                    for output in outputs {
+                        if output.label.is_some() {
+                            return Err(unsupported_grouping(
+                                "grouping_output_labels_not_supported",
+                                "native grouping outputs do not expose aliases or labels",
+                            ));
+                        }
+                        self.levels[level]
+                            .aggregations
+                            .push(lower_aggregation(&output.expression)?);
+                    }
+                }
+                searchkernel_ir::GroupingOperationIr::All(child) => {
+                    if nested.is_some() {
+                        return Err(unsupported_grouping(
+                            "parallel_grouping_not_supported",
+                            "native grouping plans support one linear nested branch",
+                        ));
+                    }
+                    nested = Some(child);
+                }
+                searchkernel_ir::GroupingOperationIr::Each(_) => {
+                    return Err(unsupported_grouping(
+                        "grouping_each_topology_not_supported",
+                        "each cannot materialize another level without a structural all scope",
+                    ));
+                }
+                searchkernel_ir::GroupingOperationIr::Group(_) => {
+                    return Err(unsupported_grouping(
+                        "grouping_group_scope_not_supported",
+                        "group must be processed inside an all scope before each",
+                    ));
+                }
+                _ => {
+                    return Err(unsupported_grouping(
+                        "grouping_operation_not_supported",
+                        "the native grouping plan does not support this grouping operation",
+                    ));
+                }
+            }
+        }
+
+        if let Some(nested) = nested {
+            self.lower_grouping_scope(nested)?;
+        }
+        Ok(())
     }
-    if let Some(nested) = nested {
-        lower_level(nested, levels)?;
-    }
-    Ok(())
 }
+
+/*
+ * Keep this comment beside the compiler: an output on an all node is not an
+ * output for the group that a later each creates. RequestBuilder attaches it
+ * to the current Group immediately, so collapsing all/each would change the
+ * result scope. The compiler therefore rejects it rather than relocating it.
+ */
 
 fn lower_classifier(
     expression: &searchkernel_ir::GroupingExpressionIr,

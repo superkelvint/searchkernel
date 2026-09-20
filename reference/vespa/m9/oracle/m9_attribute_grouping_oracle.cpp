@@ -611,6 +611,7 @@ void emit_group_node(const Group& group, bool include_key) {
         std::cout << "\"key\":{";
         const auto& key = group.getId();
         if (key.getClass().inherits(search::expression::StringResultNode::classId)) { HoldString value(key); std::cout << "\"type\":\"string\",\"value\":" << json_escape(std::string_view(value)); }
+        else if (key.getClass().inherits(search::expression::FloatResultNode::classId)) { std::cout << "\"type\":\"float\",\"bits\":\"" << bits(static_cast<const FloatResultNode &>(key).getFloat()) << "\""; }
         else std::cout << "\"type\":\"integer\",\"value\":" << key.getInteger();
         std::cout << "},";
     } else {
@@ -630,6 +631,7 @@ void emit_group_node(const Group& group, bool include_key) {
 }
 
 void emit_group(const std::string& id, const Inspector& request, const SearchReply& reply) {
+    (void)request;
     require(reply.hits.empty(), "native zero-hit grouping returned ordinary hits"); require(!reply.groupResult.empty(), "native grouping result missing");
     vespalib::nbostream buffer(reply.groupResult.data(), reply.groupResult.size()); vespalib::NBOSerializer input(buffer); uint32_t count = 0; input >> count; require(count == 1, "unexpected grouping result count");
     Grouping result; result.deserialize(input);
@@ -642,7 +644,7 @@ std::string required_env(const char* name) { const auto* value = std::getenv(nam
 
 void configure_grouping(SearchRequest& request, const Inspector& group_request, const Fixture& fixture) {
     const auto group_by = string_value(field(group_request, "group_by"), "group_by");
-    const auto& group_spec = spec_for(fixture.specs(), group_by); require(group_spec.type == "string" || group_spec.type == "integer", "unsupported group key");
+    const auto& group_spec = spec_for(fixture.specs(), group_by); require(group_spec.type == "string" || group_spec.type == "integer" || group_spec.type == "float", "unsupported group key");
     auto level = GroupingLevel().setExpression(std::make_unique<AttributeNode>(group_by));
     level.addResult(CountAggregationResult().setExpression(std::make_unique<AttributeNode>(group_by)));
     for (const auto& spec : aggregations(group_request)) {

@@ -1,6 +1,15 @@
 #!/bin/sh
 set -eu
 
+# Do not let an application/runtime preload leak into the build tools. In
+# particular, preloading libvespalib.so into find, sh, or cp can make those
+# unrelated processes segfault while the SDK is being assembled.
+if [ -n "${LD_PRELOAD:-}" ]; then
+    echo "ignoring LD_PRELOAD during SDK build: $LD_PRELOAD" >&2
+    unset LD_PRELOAD
+    exec "$0" "$@"
+fi
+
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 VESPA_ROOT=${VESPA_ROOT:-$ROOT/upstream/vespa}
 SDK=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
@@ -137,7 +146,10 @@ LINK_ARGS=$(printf '%s\n' "$LINK_ARGS" | sed -E \
 cd "$(dirname "$(dirname "$(dirname "$LINK_FILE")")")"
 eval "$CXX $LINK_ARGS"
 
-ln -sf libsearchkernel_vespa.so.2 "$SDK/lib/libsearchkernel_vespa.so"
+# rust-lld does not resolve a -lNAME request through a symlink named
+# libNAME.so in this SDK layout. Keep the unversioned linker name as a real
+# file while retaining the versioned SONAME artifact for runtime loading.
+cp -f "$SDK/lib/libsearchkernel_vespa.so.2" "$SDK/lib/libsearchkernel_vespa.so"
 
 UNEXPECTED_SYMBOLS=$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.2" |
     awk '$2 ~ /^[A-Z]$/ { name = $3; sub(/@@.*/, "", name); if (name != "SEARCHKERNEL_2" && name !~ /^sk_/) print name }')
@@ -152,13 +164,22 @@ if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
 fi
 cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
-python3 - "$SDK/manifest.json" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
+python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
+import re
 import sys
 
-path, failpoints, sanitizer = sys.argv[1:]
+path, source_header, failpoints, sanitizer = sys.argv[1:]
+with open(source_header, encoding="utf-8") as stream:
+    header = stream.read()
+matches = re.findall(r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", header, re.MULTILINE)
+if len(matches) != 1:
+    raise SystemExit(
+        f"expected exactly one SK_NATIVE_ABI_VERSION in {source_header}, found {len(matches)}"
+    )
 with open(path, encoding="utf-8") as stream:
     manifest = json.load(stream)
+manifest["native_abi_version"] = int(matches[0])
 manifest["hardening_failpoints"] = failpoints == "1"
 manifest["sanitizer"] = sanitizer
 with open(path, "w", encoding="utf-8") as stream:
@@ -172,7 +193,8 @@ cp "$ROOT/core/native/vespa/embedded_crud_cfg/"* "$SDK/share/embedded_crud_cfg/"
 # The adapter's private RPATH makes the SDK independent of the build paths.
 find "$VESPA_ROOT" -name '*.so*' -exec cp -a -t "$SDK/lib" {} +
 find "$DEPS_LIB_DIR" -maxdepth 1 -name '*.so*' \
-    ! -name 'libsearchkernel_vespa.so*' -exec cp -a -t "$SDK/lib" {} +
+    ! -name 'libsearchkernel_vespa.so*' ! -name 'libffi.so.6' \
+    -exec cp -a -t "$SDK/lib" {} +
 if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
     if [ "$(readlink -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1")" != \
          "$(readlink -f "$SDK/lib/libLLVM.so.21.1" 2>/dev/null || true)" ]; then
@@ -187,7 +209,9 @@ else
     AWS_LIB_DIR=$ROOT/target/native-sdk-package/lib
 fi
 if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
-    cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+    if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
+        cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+    fi
 fi
 
 # Keep the checked-in Rust declarations synchronized with the public native

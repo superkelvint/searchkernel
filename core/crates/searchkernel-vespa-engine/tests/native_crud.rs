@@ -1,8 +1,8 @@
 use searchkernel_vespa_engine::{
     ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
     GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingPlan,
-    LinguisticsOptions, Query, QueryInput, RankProfile, ScalarValue, Schema, SearchRequest,
-    SortField, SummaryRequest, TensorValue, Value,
+    InQueryValue, LinguisticsOptions, Query, QueryInput, RankProfile, ScalarValue, Schema,
+    SearchRequest, SortField, SummaryRequest, TensorValue, Value,
 };
 use std::collections::BTreeSet;
 use std::fs;
@@ -157,10 +157,329 @@ fn native_nearest_neighbor_uses_a_tensor_query_input_and_rank_profile() {
         )
         .expect("execute nearest-neighbor search");
     assert_eq!(result.total_hits, 2);
+    assert_eq!(
+        result.total_hits_relation,
+        searchkernel_vespa_engine::TotalHitsRelation::Unknown
+    );
     assert_eq!(result.hits[0].document_id, "near");
     assert!(result.hits[0].score > result.hits[1].score);
 
     engine.close().expect("close nearest-neighbor engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_dense_tensor_document_crud_persists_and_updates_nearest_neighbor() {
+    let config = temporary_path("tensor-crud-config");
+    let data = temporary_path("tensor-crud-data");
+    let tensor_type = "tensor<float>(x[2])";
+    let schema = Schema::new("typea")
+        .field(Field::new("embedding", FieldType::Tensor(tensor_type.to_owned())).attribute())
+        .rank_profile(
+            RankProfile::new("semantic")
+                .query_input("query_embedding", tensor_type)
+                .first_phase("closeness(embedding)"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile tensor CRUD config");
+
+    let tensor_a = TensorValue::dense(tensor_type, [1.0, 0.0]);
+    let tensor_b = TensorValue::dense(tensor_type, [0.0, 1.0]);
+    let tensor_replacement = TensorValue::dense(tensor_type, [0.0, 2.0]);
+    let tensor_c = TensorValue::dense(tensor_type, [0.25, 0.75]);
+    let engine = Engine::open(&data, &config).expect("open tensor CRUD engine");
+    engine
+        .put(Document::new("doc-a").field("embedding", tensor_a.clone()))
+        .expect("insert tensor document");
+    engine
+        .put(Document::new("doc-b").field("embedding", tensor_b.clone()))
+        .expect("insert second tensor document");
+
+    let assert_tensor = |document: &Document, expected: &TensorValue| {
+        assert_eq!(
+            document.fields().get("embedding"),
+            Some(&FieldValue::Tensor(expected.clone()))
+        );
+    };
+    assert_tensor(
+        &engine
+            .get("doc-a")
+            .expect("get inserted tensor")
+            .expect("inserted tensor exists"),
+        &tensor_a,
+    );
+
+    // A second complete put is the low-level upsert operation and must replace
+    // the whole Vespa document value.
+    engine
+        .put(Document::new("doc-a").field("embedding", tensor_b.clone()))
+        .expect("upsert replacement tensor");
+    assert_tensor(
+        &engine
+            .get("doc-a")
+            .expect("get upserted tensor")
+            .expect("upserted tensor exists"),
+        &tensor_b,
+    );
+
+    engine
+        .update(DocumentUpdate::new("doc-a").assign("embedding", tensor_a.clone()))
+        .expect("assign whole tensor");
+    assert_tensor(
+        &engine
+            .get("doc-a")
+            .expect("get assigned tensor")
+            .expect("assigned tensor exists"),
+        &tensor_a,
+    );
+
+    let initial = engine
+        .search(
+            SearchRequest::new(Query::nearest_neighbor("embedding", "query_embedding"))
+                .rank_profile("semantic")
+                .input(
+                    "query_embedding",
+                    QueryInput::Literal(TensorValue::dense(tensor_type, [1.0, 0.0])),
+                )
+                .limit(2),
+        )
+        .expect("search before tensor replacement");
+    assert_eq!(initial.hits[0].document_id, "doc-a");
+    assert_eq!(initial.hits[1].document_id, "doc-b");
+
+    engine
+        .update(DocumentUpdate::new("doc-a").assign("embedding", tensor_replacement.clone()))
+        .expect("replace tensor used by nearest-neighbor search");
+    let replaced = engine
+        .search(
+            SearchRequest::new(Query::nearest_neighbor("embedding", "query_embedding"))
+                .rank_profile("semantic")
+                .input(
+                    "query_embedding",
+                    QueryInput::Literal(TensorValue::dense(tensor_type, [1.0, 0.0])),
+                )
+                .limit(2),
+        )
+        .expect("search after tensor replacement");
+    assert_eq!(replaced.hits[0].document_id, "doc-b");
+    assert_eq!(replaced.hits[1].document_id, "doc-a");
+
+    engine
+        .update(DocumentUpdate::new("doc-a").clear("embedding"))
+        .expect("unset tensor field");
+    let cleared = engine
+        .get("doc-a")
+        .expect("get document after tensor unset")
+        .expect("document remains after tensor unset");
+    assert!(!cleared.fields().contains_key("embedding"));
+
+    engine
+        .update(DocumentUpdate::new("doc-a").assign("embedding", tensor_c.clone()))
+        .expect("reassign tensor after unset");
+    assert_tensor(
+        &engine
+            .get("doc-a")
+            .expect("get reassigned tensor")
+            .expect("reassigned tensor exists"),
+        &tensor_c,
+    );
+    engine.close().expect("close tensor CRUD engine");
+
+    let reopened = Engine::open(&data, &config).expect("reopen tensor CRUD engine");
+    assert_tensor(
+        &reopened
+            .get("doc-a")
+            .expect("get persisted tensor")
+            .expect("persisted tensor exists"),
+        &tensor_c,
+    );
+    assert!(reopened.delete("doc-a").expect("delete tensor document"));
+    assert!(reopened
+        .get("doc-a")
+        .expect("get deleted tensor document")
+        .is_none());
+    reopened.close().expect("close reopened tensor CRUD engine");
+
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_dense_tensor_document_validation_is_shared_by_put_and_patch() {
+    let config = temporary_path("tensor-errors-config");
+    let data = temporary_path("tensor-errors-data");
+    let tensor_type = "tensor<float>(x[2])";
+    let schema = Schema::new("typea")
+        .field(Field::new("embedding", FieldType::Tensor(tensor_type.to_owned())).attribute())
+        .field(Field::new("qty", FieldType::Integer).attribute());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile tensor validation config");
+    let engine = Engine::open(&data, &config).expect("open tensor validation engine");
+
+    let assert_put_error = |value: FieldValue, label: &str| {
+        let error = engine
+            .put(Document::new(format!("invalid-{label}")).field("embedding", value))
+            .expect_err("invalid tensor put unexpectedly succeeded");
+        assert!(
+            !error.to_string().is_empty(),
+            "{label} returned no diagnostic"
+        );
+    };
+    assert_put_error(
+        FieldValue::Scalar(ScalarValue::Integer(1)),
+        "scalar-for-tensor",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("not-a-tensor", [1.0, 0.0])),
+        "malformed-type-spec",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("tensor<float>(x[0])", [])),
+        "zero-indexed-dimension",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("tensor<float>(x[2],y[2])", [1.0; 4])),
+        "multiple-indexed-dimensions",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("tensor<float>(m{},x[2])", [1.0, 0.0])),
+        "mapped-dimension",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("tensor<float>(x[2])", [1.0])),
+        "cell-count-mismatch",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::dense("tensor<float>(x[2])", [f64::NAN, 0.0])),
+        "non-finite-cell",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::Sparse {
+            type_spec: "tensor<float>(m{},x[2])".to_owned(),
+            cells: Vec::new(),
+        }),
+        "sparse",
+    );
+    assert_put_error(
+        FieldValue::Tensor(TensorValue::Mixed {
+            type_spec: "tensor<float>(m{},x[2])".to_owned(),
+            blocks: Vec::new(),
+        }),
+        "mixed",
+    );
+
+    let scalar_error = engine
+        .put(
+            Document::new("invalid-scalar-for-tensor")
+                .field("qty", TensorValue::dense(tensor_type, [1.0, 0.0])),
+        )
+        .expect_err("tensor value supplied to scalar field unexpectedly succeeded");
+    assert!(!scalar_error.to_string().is_empty());
+
+    engine
+        .put(
+            Document::new("patch-errors")
+                .field("embedding", TensorValue::dense(tensor_type, [1.0, 0.0])),
+        )
+        .expect("insert patch validation document");
+    for (label, value) in [
+        (
+            "incompatible-type",
+            TensorValue::dense("tensor<double>(x[2])", [1.0, 0.0]),
+        ),
+        (
+            "incompatible-dimension",
+            TensorValue::dense("tensor<float>(x[3])", [1.0, 0.0, 0.0]),
+        ),
+    ] {
+        let error = engine
+            .update(DocumentUpdate::new("patch-errors").assign("embedding", value))
+            .expect_err("incompatible tensor patch unexpectedly succeeded");
+        assert!(
+            !error.to_string().is_empty(),
+            "{label} returned no diagnostic"
+        );
+    }
+
+    engine.close().expect("close tensor validation engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_in_supports_string_and_integer_values_without_approximating_invalid_input() {
+    let config = temporary_path("in-config");
+    let data = temporary_path("in-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("code", FieldType::String).attribute())
+        .field(Field::new("qty", FieldType::Integer).attribute());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile in-query config");
+    let engine = Engine::open(&data, &config).expect("open in-query engine");
+    for (id, code, qty) in [
+        ("in-a", "alpha", 1_i64),
+        ("in-b", "beta", 2),
+        ("in-c", "gamma", 3),
+    ] {
+        engine
+            .put(Document::new(id).field("code", code).field("qty", qty))
+            .expect("put in-query document");
+    }
+
+    let strings = engine
+        .search(SearchRequest::new(Query::In {
+            field: "code".into(),
+            values: vec![
+                InQueryValue::String("alpha".into()),
+                InQueryValue::String("gamma".into()),
+            ],
+        }))
+        .expect("execute string in query");
+    let mut string_ids: Vec<_> = strings
+        .hits
+        .iter()
+        .map(|hit| hit.document_id.as_str())
+        .collect();
+    string_ids.sort_unstable();
+    assert_eq!(string_ids, ["in-a", "in-c"]);
+
+    let integers = engine
+        .search(SearchRequest::new(Query::In {
+            field: "qty".into(),
+            values: vec![InQueryValue::Integer(2), InQueryValue::Integer(99)],
+        }))
+        .expect("execute integer in query");
+    assert_eq!(
+        integers
+            .hits
+            .iter()
+            .map(|hit| hit.document_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["in-b"]
+    );
+
+    for values in [
+        Vec::new(),
+        vec![
+            InQueryValue::String("alpha".into()),
+            InQueryValue::Integer(1),
+        ],
+        vec![InQueryValue::Integer(i64::MIN)],
+    ] {
+        let error = engine
+            .search(SearchRequest::new(Query::In {
+                field: "code".into(),
+                values,
+            }))
+            .expect_err("invalid in query unexpectedly executed");
+        assert!(!error.to_string().is_empty());
+    }
+
+    engine.close().expect("close in-query engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
@@ -647,6 +966,44 @@ fn native_grouping_supports_float_keys() {
     );
 
     engine.close().expect("close float-group engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_decodes_a_valid_empty_root() {
+    let config = temporary_path("empty-group-config");
+    let data = temporary_path("empty-group-data");
+    let schema = Schema::new("typea").field(
+        Field::new("category", FieldType::String)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile empty-group config");
+    let engine = Engine::open(&data, &config).expect("open empty-group engine");
+    engine
+        .put(Document::new("empty-group-1").field("category", "present"))
+        .expect("put empty-group document");
+
+    let result = engine
+        .group(
+            &Query::AttributeEquals {
+                field: "category".into(),
+                value: Value::String("absent".into()),
+            },
+            &GroupingPlan::new().level(
+                GroupingLevel::new(GroupingExpression::attribute("category"))
+                    .aggregation(GroupingAggregation::Count),
+            ),
+        )
+        .expect("execute empty grouping");
+    assert_eq!(result.key, None);
+    assert!(result.outputs.is_empty());
+    assert!(result.groups.is_empty());
+
+    engine.close().expect("close empty-group engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

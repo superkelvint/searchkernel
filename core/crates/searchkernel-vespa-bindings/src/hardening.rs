@@ -31,6 +31,18 @@ pub const SK_TEST_RESULT_FAULT_INVALID_GROUP_KEY: u32 = 20;
 pub const SK_TEST_RESULT_FAULT_GROUP_ACCESSOR_ERROR: u32 = 21;
 pub const SK_TEST_RESULT_FAULT_UNKNOWN_AGGREGATION_KIND: u32 = 22;
 pub const SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR: u32 = 23;
+pub const SK_TEST_RESULT_FAULT_INVALID_GROUPING_STRING: u32 = 24;
+pub const SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_VALUE_KIND: u32 = 25;
+pub const SK_TEST_RESULT_FAULT_HIT_LIST_GROUPING_OUTPUT: u32 = 26;
+pub const SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_OUTPUT_KIND: u32 = 27;
+pub const SK_TEST_RESULT_FAULT_GROUPING_TREE_GROUP_ACCESSOR_ERROR: u32 = 28;
+pub const SK_TEST_RESULT_FAULT_GROUPING_TREE_ROOT_ACCESSOR_ERROR: u32 = 29;
+pub const SK_TEST_RESULT_FAULT_GROUPING_TREE_KEY_ACCESSOR_ERROR: u32 = 30;
+pub const SK_TEST_RESULT_FAULT_GROUPING_TREE_OUTPUT_ACCESSOR_ERROR: u32 = 31;
+pub const SK_TEST_RESULT_FAULT_GROUPING_OUTPUT_VALUE_ACCESSOR_ERROR: u32 = 32;
+pub const SK_TEST_RESULT_FAULT_NULL_GROUPING_CHILD: u32 = 33;
+pub const SK_TEST_RESULT_FAULT_NULL_GROUPING_OUTPUT: u32 = 34;
+pub const SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE: u32 = 35;
 
 // SAFETY: these declarations mirror the private test-only C ABI. The safe
 // hardening wrapper validates strings and retains Engine ownership while each
@@ -89,6 +101,14 @@ unsafe extern "C" {
     pub fn sk_test_result_destroy_count(
         engine: *const sk_engine,
         out_count: *mut u64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+    pub fn sk_test_search_reply_metadata(
+        degradation_flags: u32,
+        issue_messages: *const *const ::std::os::raw::c_char,
+        issue_count: u32,
+        out_result: *mut *mut super::sk_generic_search_result,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

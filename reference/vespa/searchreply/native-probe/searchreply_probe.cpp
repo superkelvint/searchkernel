@@ -84,6 +84,20 @@ void assert_issue_bounds(sk_generic_search_result *result, ErrorBuffer &error) {
     assert(error.bytes[0] != 0);
 }
 
+void emit_result(const char *name, sk_generic_search_result *result) {
+    std::cout << '"' << name << R"(":{"usable":true,"total_hit_count":)"
+              << sk_generic_search_result_total_hit_count(result)
+              << R"(,"hit_count":)" << sk_generic_search_result_hit_count(result)
+              << R"(,"coverage":{"active":)"
+              << sk_generic_search_result_coverage_active(result)
+              << R"(,"covered":)" << sk_generic_search_result_coverage_covered(result)
+              << R"(,"target_active":)"
+              << sk_generic_search_result_coverage_target_active(result)
+              << R"(},"degradation_flags":)"
+              << sk_generic_search_result_degradation_flags(result)
+              << ",\"issues\":[]}";
+}
+
 void verify_normal_result(sk_engine *engine, ErrorBuffer &error) {
     sk_query *query = make_query(engine, error);
     sk_generic_search_request *request = make_request("default", error);
@@ -101,6 +115,7 @@ void verify_normal_result(sk_engine *engine, ErrorBuffer &error) {
            sk_generic_search_result_coverage_active(result));
     assert(sk_generic_search_result_degradation_flags(result) == 0);
     assert_issue_bounds(result, error);
+    emit_result("normal", result);
     sk_generic_search_result_destroy(result);
     sk_generic_search_request_destroy(request);
     sk_query_destroy(query);
@@ -143,6 +158,7 @@ void verify_degraded_result(sk_engine *engine, ErrorBuffer &error) {
     assert(target > 0);
     assert((flags & SK_DEGRADATION_MATCH_PHASE) != 0);
     assert_issue_bounds(result, error);
+    emit_result("degraded", result);
     sk_generic_search_result_destroy(result);
     sk_generic_search_request_destroy(request);
     sk_query_destroy(query);
@@ -179,10 +195,13 @@ int main(int argc, char **argv) {
     expect_ok(sk_engine_open(argv[1], argv[2], &engine, error.data(), ERROR_CAPACITY),
               "engine open");
     put_document(engine, "id:test:typea::normal", 18, error);
+    std::cout << "{";
     verify_normal_result(engine, error);
+    std::cout << ',';
     verify_degraded_result(engine, error);
+    std::cout << "}\n";
     verify_hard_failure(engine, error);
     expect_ok(sk_engine_close(engine, error.data(), ERROR_CAPACITY), "engine close");
     sk_engine_destroy(engine);
-    std::cout << "SearchReply semantics verifier passed\n";
+    std::cerr << "SearchReply semantics verifier passed\n";
 }

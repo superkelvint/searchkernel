@@ -3,10 +3,10 @@ use crate::error::{check, cstring, path_cstring, Error, Result};
 use crate::linguistics::{Linguistics, LinguisticsOptions};
 use crate::native::{
     add_document_field, add_text_annotation, add_update_field, engine_group_tree,
-    grouping_aggregation_average, grouping_aggregation_count, grouping_expression_attribute,
-    grouping_level_add_aggregation, grouping_plan_add_level, grouping_plan_create, native_bytes,
-    read_generic_search_result, require_ptr, NativeDocument, NativeError,
-    NativeGenericSearchRequest, NativeQuery, NativeUpdate,
+    engine_group_tree_with_request, grouping_aggregation_average, grouping_aggregation_count,
+    grouping_expression_attribute, grouping_level_add_aggregation, grouping_plan_add_level,
+    grouping_plan_create, native_bytes, native_f64s, read_generic_search_result, require_ptr,
+    NativeDocument, NativeError, NativeGenericSearchRequest, NativeQuery, NativeUpdate,
 };
 use crate::query::{self, lower_query, validate_query_fields, Query};
 use crate::search::{
@@ -14,6 +14,7 @@ use crate::search::{
     GroupingPlan, MissingPlacement, QueryInput, SearchRequest, SearchResult, SortOrder, Source,
     SummaryRequest,
 };
+use crate::tensor::TensorValue;
 use searchkernel_vespa_bindings as sys;
 use std::fs;
 use std::path::Path;
@@ -283,6 +284,42 @@ impl Engine {
                 sys::SK_VALUE_INTEGER => FieldValue::Scalar(ScalarValue::Integer(integer)),
                 sys::SK_VALUE_FLOAT => FieldValue::Scalar(ScalarValue::Float(floating)),
                 sys::SK_VALUE_BOOLEAN => FieldValue::Scalar(ScalarValue::Boolean(boolean != 0)),
+                sys::SK_VALUE_TENSOR => {
+                    let mut type_spec = ptr::null();
+                    let mut type_spec_length = 0;
+                    let mut cells = ptr::null();
+                    let mut cell_count = 0;
+                    let mut error = NativeError::new();
+                    let status = unsafe {
+                        sys::sk_document_field_tensor_dense(
+                            native.0.as_ptr(),
+                            index,
+                            &mut type_spec,
+                            &mut type_spec_length,
+                            &mut cells,
+                            &mut cell_count,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    };
+                    check(status, &error)?;
+                    let type_spec = native_bytes(
+                        &native,
+                        type_spec,
+                        type_spec_length,
+                        "document tensor type spec",
+                    )?;
+                    let type_spec = std::str::from_utf8(type_spec).map_err(|_| {
+                        Error::message("native document tensor type spec is invalid UTF-8")
+                    })?;
+                    let cells = native_f64s(&native, cells, cell_count, "document tensor cells")?;
+                    if cells.iter().any(|value| !value.is_finite()) {
+                        return Err(Error::message(
+                            "native document tensor contains a non-finite cell",
+                        ));
+                    }
+                    FieldValue::Tensor(TensorValue::dense(type_spec, cells.to_vec()))
+                }
                 _ => {
                     return Err(Error::message(
                         "native document returned an unknown value kind",
@@ -312,17 +349,10 @@ impl Engine {
         Ok(was_found != 0)
     }
 
-    fn execute_search(&self, request: &SearchRequest) -> Result<SearchResult, Error> {
-        validate_search_ranking_inputs(request)?;
-        query::validate_query(&request.query)?;
-        if let Source::Named(source) = &request.source {
-            if source != &self.document_type {
-                return Err(Error::message(format!(
-                    "unsupported query source: {source}"
-                )));
-            }
-        }
-        let native_query = self.create_native_query(&request.query, request.language)?;
+    fn create_native_search_request(
+        &self,
+        request: &SearchRequest,
+    ) -> Result<NativeGenericSearchRequest, Error> {
         let rank_profile = cstring(&request.rank_profile)?;
         let summary_kind = match request.summary {
             SummaryRequest::None => sys::SK_SUMMARY_NONE,
@@ -469,6 +499,21 @@ impl Engine {
             };
             check(status, &error)?;
         }
+        Ok(native_request)
+    }
+
+    fn execute_search(&self, request: &SearchRequest) -> Result<SearchResult, Error> {
+        validate_search_ranking_inputs(request)?;
+        query::validate_query(&request.query)?;
+        if let Source::Named(source) = &request.source {
+            if source != &self.document_type {
+                return Err(Error::message(format!(
+                    "unsupported query source: {source}"
+                )));
+            }
+        }
+        let native_query = self.create_native_query(&request.query, request.language)?;
+        let native_request = self.create_native_search_request(request)?;
         let mut native_result = ptr::null_mut();
         let mut error = NativeError::new();
         let status = unsafe {
@@ -517,6 +562,53 @@ impl Engine {
             }
         }
         engine_group_tree(self.handle, native_query.0, &native_plan)
+    }
+
+    /// Execute general grouping with the same rank profile, inputs, rank
+    /// properties, and timeout as the corresponding search request. The
+    /// legacy [`Engine::group`] surface remains available for callers that
+    /// intentionally need its query-only compatibility behavior.
+    pub fn group_with_request(
+        &self,
+        request: &SearchRequest,
+        plan: &GroupingPlan,
+    ) -> Result<crate::GroupingResult, Error> {
+        validate_search_ranking_inputs(request)?;
+        query::validate_query(&request.query)?;
+        if let Source::Named(source) = &request.source {
+            if source != &self.document_type {
+                return Err(Error::message(format!(
+                    "unsupported query source: {source}"
+                )));
+            }
+        }
+        let native_query = self.create_native_query(&request.query, request.language)?;
+        let native_request = self.create_native_search_request(request)?;
+        let native_plan = grouping_plan_create()?;
+        for level in &plan.levels {
+            let classifier = match &level.classifier {
+                GroupingExpression::Attribute(field) => grouping_expression_attribute(field)?,
+            };
+            let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            for aggregation in &level.aggregations {
+                match aggregation {
+                    GroupingAggregation::Count => {
+                        let aggregation = grouping_aggregation_count()?;
+                        grouping_level_add_aggregation(native_level, &aggregation)?;
+                    }
+                    GroupingAggregation::Average(expression) => {
+                        let expression = match expression {
+                            GroupingExpression::Attribute(field) => {
+                                grouping_expression_attribute(field)?
+                            }
+                        };
+                        let aggregation = grouping_aggregation_average(&expression)?;
+                        grouping_level_add_aggregation(native_level, &aggregation)?;
+                    }
+                }
+            }
+        }
+        engine_group_tree_with_request(self.handle, native_query.0, native_request.0, &native_plan)
     }
 
     fn create_native_query(

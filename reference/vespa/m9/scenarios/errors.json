@@ -688,57 +688,6 @@
       "expected_error": "wrong_field_capability"
     },
     {
-      "id": "group-float-unsupported",
-      "schema": {
-        "document_type": "typea",
-        "fields": [
-          {
-            "name": "category",
-            "type": "string",
-            "attribute": true,
-            "summary": true
-          },
-          {
-            "name": "qty",
-            "type": "integer",
-            "attribute": true,
-            "summary": true
-          },
-          {
-            "name": "price",
-            "type": "float",
-            "attribute": true,
-            "summary": true
-          },
-          {
-            "name": "active",
-            "type": "boolean",
-            "attribute": true,
-            "summary": true
-          },
-          {
-            "name": "title",
-            "type": "text",
-            "index": true,
-            "attribute": false,
-            "summary": true
-          }
-        ]
-      },
-      "operation": {
-        "group": {
-          "query": {
-            "exists": {
-              "field": "qty"
-            }
-          },
-          "group_by": "price",
-          "aggregations": []
-        }
-      },
-      "expected_error": "unsupported_field_type"
-    },
-    {
       "id": "aggregate-unknown-field",
       "schema": {
         "document_type": "typea",

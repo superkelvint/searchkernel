@@ -192,9 +192,9 @@ GroupingAggregation::Count
 GroupingAggregation::Average(GroupingExpression::Attribute(field))
 ```
 
-Grouping keys and average fields are native attributes. String and integer
-keys are supported; unsupported attribute kinds and unsupported aggregation
-forms are errors. Sum, min, max, order, limits, aliases, and other Vespa
+Grouping keys and average fields are native attributes. String, integer, and
+float keys are supported; Boolean keys, unsupported attribute kinds, and
+unsupported aggregation forms are errors. Sum, min, max, order, limits, aliases, and other Vespa
 grouping features are deliberately not represented by the Rust API.
 
 `Engine::group(&Query, &GroupingPlan)` executes the complete native tree.
@@ -302,7 +302,7 @@ sort on Boolean
 sort on non-attribute field
 group by unknown field
 group by non-attribute field
-group by unsupported Float or Boolean field
+group by unsupported Boolean field
 aggregate unknown field
 aggregate non-attribute field
 aggregate non-numeric field

@@ -67,7 +67,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 9;
+pub const SK_NATIVE_ABI_VERSION: u32 = 10;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -367,6 +367,17 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_document_update_assign_tensor_dense(
+        update: *mut sk_document_update,
+        field: *const ::std::os::raw::c_char,
+        type_spec: *const ::std::os::raw::c_char,
+        values: *const f64,
+        value_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_document_update_clear(
         update: *mut sk_document_update,
         field: *const ::std::os::raw::c_char,
@@ -446,6 +457,18 @@ unsafe extern "C" {
         out_integer: *mut i64,
         out_float: *mut f64,
         out_boolean: *mut u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_field_tensor_dense(
+        document: *const sk_document,
+        index: u32,
+        out_type_spec: *mut *const ::std::os::raw::c_char,
+        out_type_spec_length: *mut u32,
+        out_cells: *mut *const f64,
+        out_cell_count: *mut u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

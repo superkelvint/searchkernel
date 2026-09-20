@@ -2,15 +2,24 @@
 #define SEARCHKERNEL_NATIVE_ABI_CONTRACT_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ABI v5 uses only opaque handles and fixed-width primitive arguments. */
+/* ABI v10 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 5U
+#define SK_NATIVE_ABI_VERSION 10U
+#define SK_NATIVE_STATUS_TYPE_ERROR 6
+
+/* Vespa FeatureSet::Value is DOUBLE or DATA. DATA is an opaque borrowed byte
+ * view; tensor interpretation is a layer above this raw feature boundary. */
+typedef struct sk_feature_value sk_feature_value;
+#define SK_FEATURE_VALUE_KIND_INVALID 0U
+#define SK_FEATURE_VALUE_DOUBLE 1U
+#define SK_FEATURE_VALUE_DATA 2U
 
 uint32_t sk_native_abi_version(void);
 
@@ -55,6 +64,39 @@ int32_t sk_engine_search(
     const sk_engine *engine,
     const sk_search_request *request,
     sk_search_result **out_result,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+typedef struct sk_generic_search_result sk_generic_search_result;
+
+int32_t sk_generic_search_result_match_feature_value(
+    const sk_generic_search_result *result,
+    uint32_t hit_index,
+    uint32_t feature_index,
+    double *out_value,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+int32_t sk_generic_search_result_match_feature_value_ref(
+    const sk_generic_search_result *result,
+    uint32_t hit_index,
+    uint32_t feature_index,
+    const sk_feature_value **out_value,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+uint32_t sk_feature_value_kind(const sk_feature_value *value);
+
+int32_t sk_feature_value_double(
+    const sk_feature_value *value,
+    double *out_value,
+    uint8_t *out_error,
+    uint32_t out_error_capacity);
+
+int32_t sk_feature_value_data(
+    const sk_feature_value *value,
+    const uint8_t **out_data,
+    size_t *out_size,
     uint8_t *out_error,
     uint32_t out_error_capacity);
 

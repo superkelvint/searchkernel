@@ -71,9 +71,15 @@ pub enum Source {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The accuracy relation for Vespa's reported total hit count.
+///
+/// Vespa's low-level `SearchReply` carries the count and coverage metadata,
+/// but no result-side exactness bit.  `Unknown` is therefore the only honest
+/// value until the adapter has evidence that a particular count is exact.
 pub enum TotalHitsRelation {
     Exact,
     LowerBound,
+    Unknown,
 }
 
 /// A Vespa match feature is either a scalar number or an opaque native data
@@ -424,6 +430,11 @@ pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<
         if !query_input_names.insert(name) {
             return Err(Error::message("duplicate query input"));
         }
+        if query_feature_names.contains(name) {
+            return Err(Error::message(format!(
+                "query input collision for key '{name}'"
+            )));
+        }
         match input {
             QueryInput::Literal(tensor) => tensor.validate().map_err(Error::message)?,
             QueryInput::Expression(expression) if expression.trim().is_empty() => {
@@ -451,7 +462,7 @@ pub(crate) fn validate_search_ranking_inputs(request: &SearchRequest) -> Result<
         if !rank_property_names.insert(name) {
             return Err(Error::message(format!("duplicate rank property '{name}'")));
         }
-        if query_feature_names.contains(name) {
+        if query_feature_names.contains(name) || query_input_names.contains(name) {
             return Err(Error::message(format!(
                 "rank property collision for key '{name}'"
             )));

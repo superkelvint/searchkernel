@@ -37,6 +37,18 @@ extern "C" {
 #define SK_TEST_RESULT_FAULT_GROUP_ACCESSOR_ERROR 21U
 #define SK_TEST_RESULT_FAULT_UNKNOWN_AGGREGATION_KIND 22U
 #define SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR 23U
+#define SK_TEST_RESULT_FAULT_INVALID_GROUPING_STRING 24U
+#define SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_VALUE_KIND 25U
+#define SK_TEST_RESULT_FAULT_HIT_LIST_GROUPING_OUTPUT 26U
+#define SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_OUTPUT_KIND 27U
+#define SK_TEST_RESULT_FAULT_GROUPING_TREE_GROUP_ACCESSOR_ERROR 28U
+#define SK_TEST_RESULT_FAULT_GROUPING_TREE_ROOT_ACCESSOR_ERROR 29U
+#define SK_TEST_RESULT_FAULT_GROUPING_TREE_KEY_ACCESSOR_ERROR 30U
+#define SK_TEST_RESULT_FAULT_GROUPING_TREE_OUTPUT_ACCESSOR_ERROR 31U
+#define SK_TEST_RESULT_FAULT_GROUPING_OUTPUT_VALUE_ACCESSOR_ERROR 32U
+#define SK_TEST_RESULT_FAULT_NULL_GROUPING_CHILD 33U
+#define SK_TEST_RESULT_FAULT_NULL_GROUPING_OUTPUT 34U
+#define SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE 35U
 
 /* These declarations are linked only by the hardening SDK. */
 SK_API int32_t sk_test_failpoint_set(sk_engine *engine, const char *name,
@@ -64,6 +76,12 @@ SK_API int32_t sk_test_result_fault_set(sk_engine *engine, uint32_t fault,
                                         uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_test_result_fault_clear(sk_engine *engine, uint8_t *out_error,
                                           uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Construct a test-only generic result by copying metadata from a real Vespa
+   SearchReply. This is not part of the production ABI. */
+SK_API int32_t sk_test_search_reply_metadata(
+    uint32_t degradation_flags, const char *const *issue_messages,
+    uint32_t issue_count, sk_generic_search_result **out_result,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_test_result_destroy_count(const sk_engine *engine,
                                             uint64_t *out_count,
                                             uint8_t *out_error,

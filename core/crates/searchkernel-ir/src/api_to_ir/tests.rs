@@ -703,6 +703,61 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
 }
 
 #[test]
+fn tensor_patch_resolution_preserves_tensor_values_and_rejects_scalars() {
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![FieldIr::new(
+            FieldName::parse("embedding").unwrap(),
+            DataTypeIr::Tensor {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+            },
+            None,
+            FieldCapabilities::new(false, false, true, false, false),
+        )],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    let context = IndexContext::from_definition_ir(definition);
+    let tensor = RequestValueIr::Tensor(RequestTensorIr {
+        type_spec: "tensor<float>(x[2])".to_owned(),
+        payload: RequestTensorPayloadIr::Dense(vec![1.0, 0.0]),
+    });
+    let patch = resolve_patch(
+        &context,
+        "doc-1",
+        &[PatchOperationInput::Set {
+            field: "embedding".to_owned(),
+            value: tensor.clone(),
+        }],
+    )
+    .expect("dense tensor patch resolves");
+    assert_eq!(
+        patch.operations(),
+        &[PatchOperationIr::Set {
+            field: FieldName::parse("embedding").unwrap(),
+            value: FieldValueIr::Tensor(match tensor {
+                RequestValueIr::Tensor(value) => value,
+                _ => unreachable!(),
+            }),
+        }]
+    );
+
+    let error = resolve_patch(
+        &context,
+        "doc-1",
+        &[PatchOperationInput::Set {
+            field: "embedding".to_owned(),
+            value: RequestValueIr::Float64(1.0),
+        }],
+    )
+    .expect_err("scalar tensor patch unexpectedly resolved");
+    assert_eq!(error.details[0].code, "type_mismatch");
+}
+
+#[test]
 fn schema_only_fields_are_query_visible_but_not_feedable() {
     let mut definition = IndexDefinitionIr::new(
         None,

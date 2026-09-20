@@ -74,7 +74,16 @@ pub fn compile_index_definition(
         if fast_search {
             native = native.fast_search();
         }
-        if capabilities.stored() {
+        // Vespa cannot expose tensor fields through the default document
+        // summary, but its document retriever still returns the complete
+        // TensorFieldValue used by portable GET. Keep the portable stored
+        // capability without manufacturing an invalid tensor summary field.
+        if capabilities.stored()
+            && !matches!(
+                field.data_type(),
+                searchkernel_ir::DataTypeIr::Tensor { .. }
+            )
+        {
             native = native.summary();
         }
         schema = schema.field(native);
@@ -311,12 +320,6 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
             "rank-profile inheritance is not representable by the native schema model",
         );
     }
-    if !profile.inputs.is_empty() {
-        return unsupported(
-            "inputs",
-            "declared rank-profile inputs are not representable by the native schema model",
-        );
-    }
     if !profile.functions.is_empty() {
         return unsupported(
             "functions",
@@ -401,6 +404,24 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
 
     let mut native = RankProfile::new(profile.name.clone())
         .first_phase(first_phase.expression.as_deref().unwrap_or_default());
+    for input in &profile.inputs {
+        let searchkernel_ir::DataTypeIr::Tensor { type_spec } = &input.data_type else {
+            return unsupported(
+                "inputs",
+                "only dense tensor rank-profile inputs are representable by the native schema model",
+            );
+        };
+        if !matches!(
+            input.default_value,
+            searchkernel_ir::RequestValueIr::Tensor(_)
+        ) {
+            return unsupported(
+                "inputs",
+                "tensor rank-profile inputs require tensor default values",
+            );
+        }
+        native = native.query_input(input.name.clone(), type_spec.clone());
+    }
     for feature in &profile.match_features {
         native = native.match_feature(feature);
     }

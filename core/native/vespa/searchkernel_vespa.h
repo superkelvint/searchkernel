@@ -147,9 +147,9 @@ typedef struct sk_grouping_tree_node sk_grouping_tree_node;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* This ABI revision adds Typed Query B nodes on top of tensor values and
-   nearest-neighbor query support from the previous revision. */
-#define SK_NATIVE_ABI_VERSION 9U
+/* This ABI revision adds dense tensor document assignment and primitive
+   readback on top of the previous tensor query/document insertion surface. */
+#define SK_NATIVE_ABI_VERSION 10U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -221,6 +221,10 @@ SK_API int32_t sk_document_update_assign_boolean(sk_document_update *update,
                                                  const char *field, uint8_t value,
                                                  uint8_t *out_error,
                                                  uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_assign_tensor_dense(
+    sk_document_update *update, const char *field, const char *type_spec,
+    const double *values, uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                         uint8_t *out_error,
                                         uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -257,6 +261,14 @@ SK_API int32_t sk_document_field(const sk_document *document, uint32_t index,
                                  uint32_t *out_string_length, int64_t *out_integer,
                                  double *out_float, uint8_t *out_boolean,
                                  uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+/* Returns borrowed dense tensor metadata owned by document. The pointers
+ * remain valid until document destruction. This accessor is valid only for a
+ * SK_VALUE_TENSOR field and exposes Search Kernel-owned primitive values. */
+SK_API int32_t sk_document_field_tensor_dense(
+    const sk_document *document, uint32_t index,
+    const char **out_type_spec, uint32_t *out_type_spec_length,
+    const double **out_cells, uint32_t *out_cell_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_engine_remove(sk_engine *engine, const char *document_id,
                                 int32_t *out_was_found, uint8_t *out_error,
                                 uint32_t out_error_capacity) SK_NOEXCEPT;

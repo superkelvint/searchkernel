@@ -464,7 +464,18 @@ public:
         auto native = std::make_shared<SearchRequest>();
         native->setTimeout(60s);
         native->ranking = present(object_field(request, "rank_profile")) ? string_value(object_field(request, "rank_profile"), "rank_profile") : "default";
-        native->propertiesMap.lookupCreate(search::MapNames::RANK).add("vespa.matching.numthreadspersearch", "1");
+        auto &rank = native->propertiesMap.lookupCreate(search::MapNames::RANK);
+        rank.add("vespa.matching.numthreadspersearch", "1");
+        const auto &rank_properties = object_field(request, "rank_properties");
+        if (present(rank_properties)) {
+            require(rank_properties.type() == vespalib::slime::ARRAY::instance,
+                    "rank_properties must be an array");
+            for (size_t i = 0; i < rank_properties.children(); ++i) {
+                const auto &item = rank_properties[i];
+                rank.add(string_value(object_field(item, "name"), "rank property name"),
+                         string_value(object_field(item, "value"), "rank property value"));
+            }
+        }
         native->maxhits = present(object_field(request, "limit")) ? nonnegative_u32(object_field(request, "limit"), "limit") : 10;
         native->offset = present(object_field(request, "offset")) ? nonnegative_u32(object_field(request, "offset"), "offset") : 0;
         native->sortSpec = sort_spec(request);

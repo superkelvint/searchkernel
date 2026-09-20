@@ -9,7 +9,8 @@ mod schema;
 mod search;
 
 use searchkernel_ir::{
-    DocumentIr, FieldValueIr, PortableError, RequestTensorPayloadIr, Result, ScalarValueIr, Value,
+    DocumentIr, FieldValueIr, PortableError, RequestTensorIr, RequestTensorPayloadIr, Result,
+    ScalarValueIr, Value,
 };
 use searchkernel_vespa_engine::{Document, FieldValue, ScalarValue};
 use std::collections::BTreeMap;
@@ -20,6 +21,8 @@ mod tests;
 #[cfg(test)]
 pub(crate) use backend::MutationProbe;
 pub use backend::VespaBackend;
+#[cfg(test)]
+pub(crate) use backend::{portable_coverage, portable_errors_from_native_issues};
 pub use schema::{compile_index_definition, validate_index_definition};
 #[cfg(test)]
 pub(crate) use search::filter::{lower_comparison, lower_filter};
@@ -197,19 +200,59 @@ fn value_to_ir(value: &FieldValue) -> Value {
         FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Booleans(values)) => {
             Value::List(values.iter().copied().map(Value::Bool).collect())
         }
-        // The current native document ABI rejects tensor writes, so a tensor
-        // cannot reach result conversion. Keep this arm explicit as the
-        // engine's value enum evolves without adding a portable tensor path.
-        FieldValue::Tensor(_) => Value::Null,
+        FieldValue::Tensor(tensor) => Value::Tensor(tensor_to_ir(tensor)),
+    }
+}
+
+fn tensor_to_ir(tensor: &searchkernel_vespa_engine::TensorValue) -> RequestTensorIr {
+    match tensor {
+        searchkernel_vespa_engine::TensorValue::Dense { type_spec, values } => RequestTensorIr {
+            type_spec: type_spec.clone(),
+            payload: RequestTensorPayloadIr::Dense(values.clone()),
+        },
+        searchkernel_vespa_engine::TensorValue::Sparse { type_spec, cells } => RequestTensorIr {
+            type_spec: type_spec.clone(),
+            payload: RequestTensorPayloadIr::Sparse(
+                cells
+                    .iter()
+                    .map(|cell| searchkernel_ir::RequestTensorCellIr {
+                        address: cell
+                            .address
+                            .iter()
+                            .map(|entry| (entry.dimension.clone(), entry.label.clone()))
+                            .collect(),
+                        value: cell.value,
+                    })
+                    .collect(),
+            ),
+        },
+        searchkernel_vespa_engine::TensorValue::Mixed { type_spec, blocks } => RequestTensorIr {
+            type_spec: type_spec.clone(),
+            payload: RequestTensorPayloadIr::Mixed(
+                blocks
+                    .iter()
+                    .map(|block| searchkernel_ir::RequestTensorBlockIr {
+                        address: block
+                            .address
+                            .iter()
+                            .map(|entry| (entry.dimension.clone(), entry.label.clone()))
+                            .collect(),
+                        values: block.values.clone(),
+                    })
+                    .collect(),
+            ),
+        },
     }
 }
 
 fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
     let message = error.to_string();
     match error.kind() {
-        searchkernel_vespa_engine::ErrorKind::InvalidArgument => {
-            PortableError::invalid("backend_request", None::<String>, message)
-        }
+        searchkernel_vespa_engine::ErrorKind::InvalidArgument => PortableError::invalid(
+            error.detail_code().unwrap_or("backend_request"),
+            None::<String>,
+            message,
+        ),
         searchkernel_vespa_engine::ErrorKind::ResourceExhausted => {
             PortableError::new(searchkernel_ir::ErrorCode::ResourceExhausted, message)
         }
@@ -220,6 +263,9 @@ fn native_error(error: searchkernel_vespa_engine::Error) -> PortableError {
             None::<String>,
             message,
         ),
+        searchkernel_vespa_engine::ErrorKind::Type => {
+            PortableError::invalid("backend_value_type", None::<String>, message)
+        }
         searchkernel_vespa_engine::ErrorKind::Internal => {
             PortableError::new(searchkernel_ir::ErrorCode::Internal, message)
         }

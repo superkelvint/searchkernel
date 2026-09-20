@@ -2,9 +2,9 @@
 
 use searchkernel_vespa_engine::{
     hardening, ConfigCompiler, Document, Engine, ErrorKind, FacetRequest, Field, FieldType,
-    FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
-    GroupingResultValue, MatchFeatureValue, Query, RankProfile, ScalarValue, Schema, SearchRequest,
-    SummaryRequest, Value,
+    FieldValue, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder,
+    GroupingPlan, GroupingResultValue, MatchFeatureValue, Query, RankProfile, ScalarValue, Schema,
+    SearchRequest, SummaryRequest, TensorValue, Value,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -46,6 +46,12 @@ fn fixture() -> (Engine, PathBuf, PathBuf) {
                 .first_phase("attribute(qty)")
                 .match_feature("query(test_feature)")
                 .match_feature("attribute(qty)"),
+        )
+        .rank_profile(
+            RankProfile::new("data_features")
+                .query_input("embedding", "tensor<float>(x[2])")
+                .first_phase("attribute(qty)")
+                .match_feature("query(embedding)"),
         );
     ConfigCompiler
         .compile_to(&schema, &config)
@@ -80,6 +86,15 @@ fn identity_search_request() -> SearchRequest {
             "stored_verification_id".to_owned()
         ]))
         .limit(10)
+}
+
+fn data_feature_search_request() -> SearchRequest {
+    SearchRequest::new(Query::True)
+        .rank_profile("data_features")
+        .query_tensor(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[2])", [1.25, -2.5]),
+        )
 }
 
 fn grouping_plan() -> GroupingPlan {
@@ -126,6 +141,10 @@ fn native_result_decoding_preserves_mixed_values_features_facets_and_grouping() 
     let result = engine
         .search(search_request())
         .expect("decode mixed search result");
+    assert_eq!(
+        result.total_hits_relation,
+        searchkernel_vespa_engine::TotalHitsRelation::Unknown
+    );
     assert_eq!(result.hits.len(), 1);
     assert_eq!(result.hits[0].document_id, "decode-1");
     assert_eq!(
@@ -189,6 +208,25 @@ fn native_result_decoding_preserves_mixed_values_features_facets_and_grouping() 
 }
 
 #[test]
+fn native_result_decoding_preserves_opaque_match_feature_bytes() {
+    let (engine, config, data) = fixture();
+    let result = engine
+        .search(data_feature_search_request())
+        .expect("decode opaque data match feature");
+    assert_eq!(result.hits.len(), 1);
+    assert_eq!(
+        result.hits[0].match_features["query(embedding)"],
+        MatchFeatureValue::Data(vec![
+            0x06, 0x01, 0x01, 0x01, 0x78, 0x02, 0x3f, 0xa0, 0x00, 0x00, 0xc0, 0x20, 0x00, 0x00,
+        ])
+    );
+
+    engine.close().expect("close data feature engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_result_decoding_rejects_malformed_document_values() {
     let (engine, config, data) = fixture();
     for fault in [
@@ -242,6 +280,76 @@ fn native_result_decoding_rejects_malformed_search_values_and_releases_results()
         .search(search_request())
         .expect("healthy search after malformed results");
     engine.close().expect("close search result-decoding engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_result_decoding_preserves_each_coverage_flag_and_issue_message() {
+    for fault in [
+        searchkernel_vespa_bindings::SK_DEGRADATION_MATCH_PHASE,
+        searchkernel_vespa_bindings::SK_DEGRADATION_TIMEOUT,
+        searchkernel_vespa_bindings::SK_DEGRADATION_ANN_TIMEOUT,
+    ] {
+        let result =
+            hardening::search_reply_metadata(fault, &[]).expect("decode coverage metadata result");
+        assert_eq!(result.coverage.degradation_flags, fault);
+        assert_eq!(result.coverage.active, 17);
+        assert_eq!(result.coverage.covered, 11);
+        assert_eq!(result.coverage.target_active, 19);
+    }
+
+    let result =
+        hardening::search_reply_metadata(0, &["first native issue", "second native issue"])
+            .expect("decode issue metadata result");
+    assert_eq!(
+        result.issues,
+        vec!["first native issue", "second native issue"]
+    );
+}
+
+#[test]
+fn native_grouping_tree_decoder_rejects_malformed_recursive_results_and_releases_them() {
+    let (engine, config, data) = fixture();
+    let faults = [
+        hardening::ResultFault::InvalidGroupingString,
+        hardening::ResultFault::UnknownGroupingValueKind,
+        hardening::ResultFault::HitListGroupingOutput,
+        hardening::ResultFault::UnknownGroupingOutputKind,
+        hardening::ResultFault::GroupingTreeGroupAccessorError,
+        hardening::ResultFault::GroupingTreeRootAccessorError,
+        hardening::ResultFault::GroupingTreeKeyAccessorError,
+        hardening::ResultFault::GroupingTreeOutputAccessorError,
+        hardening::ResultFault::GroupingOutputValueAccessorError,
+        hardening::ResultFault::NullGroupingChild,
+        hardening::ResultFault::NullGroupingOutput,
+        hardening::ResultFault::NullGroupingValue,
+    ];
+
+    for fault in faults {
+        let before = hardening::result_destroy_count(&engine).expect("read tree destroy count");
+        hardening::set_result_fault(&engine, fault).expect("set grouping tree fault");
+        let error = engine
+            .group(&Query::True, &grouping_plan())
+            .expect_err("malformed grouping tree unexpectedly decoded");
+        hardening::clear_result_fault(&engine).expect("clear grouping tree fault");
+        assert!(!error.to_string().is_empty());
+        let after = hardening::result_destroy_count(&engine).expect("read tree destroy count");
+        assert_eq!(
+            after,
+            before + 1,
+            "grouping tree was not destroyed exactly once"
+        );
+
+        let healthy = engine
+            .group(&Query::True, &grouping_plan())
+            .expect("healthy grouping after malformed tree");
+        assert!(!healthy.groups.is_empty());
+    }
+
+    engine
+        .close()
+        .expect("close grouping tree hardening engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

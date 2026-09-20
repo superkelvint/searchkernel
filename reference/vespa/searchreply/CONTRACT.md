@@ -25,7 +25,14 @@ the indexed, non-attribute `title` field). The status is non-OK, the result
 output is cleared to null, and the diagnostic buffer is populated.
 Degradation is therefore metadata on a valid result, not an error translation.
 
-The pinned setup has no stable, reasonable query that produces a positive
-`SearchReply::my_issues` message. This verifier consequently freezes the issue
-accessor bounds/error behavior on results with zero issues, while leaving
-future positive issue preservation additive.
+The pinned setup has no stable, reasonable matcher query that produces a
+positive `SearchReply::my_issues` message. The hardening-only native probe
+therefore constructs a real pinned `SearchReply`, `Coverage`, and
+`UniqueIssues` object, runs the same internal metadata-copy helper, and checks
+all copied issue bytes, exact count, and invalid-index behavior through the
+public result accessors. The limitation is only on obtaining positive issues
+from a real matcher execution; issue preservation itself is executable.
+
+The direct oracle and native probe emit the same canonical representation for
+the normal and match-phase-degraded replies. Frozen expected output is checked
+against both independently.

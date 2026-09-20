@@ -1,7 +1,7 @@
 //! Compile-only M10 contract: low-level Vespa ranking integration.
 
 use searchkernel_vespa_engine::{
-    Field, FieldType, Query, RankProfile, Schema, SearchRequest,
+    Field, FieldType, MatchFeatureValue, Query, RankProfile, Schema, SearchRequest,
 };
 
 #[allow(dead_code)]
@@ -32,7 +32,7 @@ fn m10_surface() {
 fn result_surface(result: searchkernel_vespa_engine::SearchResult) {
     for hit in result.hits {
         let _score: f64 = hit.score;
-        let _features: std::collections::BTreeMap<String, f64> = hit.match_features;
+        let _features: std::collections::BTreeMap<String, MatchFeatureValue> = hit.match_features;
     }
 }
 

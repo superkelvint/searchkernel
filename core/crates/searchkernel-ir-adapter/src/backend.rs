@@ -9,10 +9,10 @@ use crate::{
     native_search_error, project_document, value_to_ir,
 };
 use searchkernel_ir::{
-    AnalyzeRequestIr, AnalyzeResult, AnalyzedToken, Backend, DeleteRequestIr, DeleteResult,
-    FieldValueIr, GetRequestIr, GetResult, InsertRequestIr, InsertResult, PatchOperationIr,
-    PatchRequestIr, PortableError, Result, ScalarValueIr, SearchRequestIr, SearchResult,
-    TotalHitsRelation, UpsertRequestIr, UpsertResult,
+    AnalyzeRequestIr, AnalyzeResult, AnalyzedToken, Backend, Coverage, CoverageDegraded,
+    DeleteRequestIr, DeleteResult, FieldValueIr, GetRequestIr, GetResult, InsertRequestIr,
+    InsertResult, PatchOperationIr, PatchRequestIr, PortableError, Result, ScalarValueIr,
+    SearchRequestIr, SearchResult, TotalHitsRelation, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_vespa_engine::{
     DocumentUpdate, Engine, FieldValue, GroupingAggregation, GroupingExpression, GroupingOutput,
@@ -20,6 +20,52 @@ use searchkernel_vespa_engine::{
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
+
+/// Map the pinned Vespa `Coverage` counters to the portable result model.
+/// Vespa's `covered`, `active`, and `targetActive` are document counts, while
+/// the portable `nodes`/`results` fields describe the one embedded result set.
+pub(crate) fn portable_coverage(coverage: searchkernel_vespa_engine::SearchCoverage) -> Coverage {
+    let full = coverage.covered >= coverage.active
+        && !(coverage.active == 0 && coverage.degraded_by_timeout())
+        && !coverage.degraded_by_ann_timeout();
+    let coverage_percent = if coverage.target_active == 0 {
+        if coverage.degraded_by_timeout() {
+            0.0
+        } else {
+            100.0
+        }
+    } else if coverage.covered < coverage.target_active {
+        (coverage.covered as f64 * 100.0 / coverage.target_active as f64).round()
+    } else {
+        100.0
+    };
+    Coverage {
+        coverage_percent: Some(coverage_percent),
+        documents: Some(coverage.covered),
+        full: Some(full),
+        nodes: Some(1),
+        results: Some(1),
+        results_full: Some(u64::from(full)),
+        degraded: Some(CoverageDegraded {
+            match_phase: Some(coverage.degraded_by_match_phase()),
+            timeout: Some(coverage.degraded_by_timeout()),
+            adaptive_timeout: None,
+            ann_timeout: Some(coverage.degraded_by_ann_timeout()),
+            non_ideal_state: None,
+            metadata: std::collections::BTreeMap::new(),
+        }),
+        metadata: std::collections::BTreeMap::new(),
+    }
+}
+
+/// `UniqueIssues` are not portable semantic errors. Keep this policy explicit
+/// until the V2 result contract grows an issue channel rather than treating
+/// Vespa diagnostics as request failures.
+pub(crate) fn portable_errors_from_native_issues(
+    _issues: &[String],
+) -> Vec<searchkernel_ir::SearchResultError> {
+    Vec::new()
+}
 
 /// A real Vespa-backed implementation of the portable backend contract.
 pub struct VespaBackend {
@@ -332,7 +378,7 @@ impl Backend for VespaBackend {
         let m_request = lower_facets_into_request(m_request, &facets);
         let result = self
             .engine
-            .search(m_request)
+            .search(m_request.clone())
             .map_err(|error| native_search_error(error, "sort_field_type_not_supported"))?;
         if result.facets.len() != facets.len() {
             return Err(internal(
@@ -387,7 +433,7 @@ impl Backend for VespaBackend {
                 GroupingLowering::Native(native) => {
                     let grouped = self
                         .engine
-                        .group(&query, &native.plan)
+                        .group_with_request(&m_request, &native.plan)
                         .map_err(|error| native_search_error(error, "grouping_not_supported"))?;
                     children.push(grouping_result_node(grouped, &native.plan)?);
                 }
@@ -396,6 +442,11 @@ impl Backend for VespaBackend {
         if native_facets.next().is_some() {
             return Err(internal("native search returned too many facet groupings"));
         }
+        // Vespa `UniqueIssues` are advisory diagnostics, whereas portable
+        // `SearchResult::errors` describe semantic result errors. The V2
+        // result model has no faithful issue channel, so the explicit policy
+        // below intentionally does not fabricate errors from these messages.
+        let errors = portable_errors_from_native_issues(&result.issues);
         Ok(SearchResult {
             root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(children)),
             total_hits: searchkernel_ir::TotalHits {
@@ -403,11 +454,12 @@ impl Backend for VespaBackend {
                 relation: match result.total_hits_relation {
                     VespaTotalHitsRelation::Exact => TotalHitsRelation::Exact,
                     VespaTotalHitsRelation::LowerBound => TotalHitsRelation::LowerBound,
+                    VespaTotalHitsRelation::Unknown => TotalHitsRelation::Unknown,
                 },
             },
-            coverage: None,
+            coverage: Some(portable_coverage(result.coverage)),
             timing: None,
-            errors: Vec::new(),
+            errors,
             trace: None,
             metadata: std::collections::BTreeMap::new(),
         })

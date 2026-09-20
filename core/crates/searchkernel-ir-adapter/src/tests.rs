@@ -240,6 +240,35 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
 }
 
 #[test]
+fn vespa_coverage_maps_to_portable_coverage_without_issue_fabrication() {
+    let coverage = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 10,
+        covered: 5,
+        target_active: 20,
+        degradation_flags: 0,
+    });
+    assert_eq!(coverage.coverage_percent, Some(25.0));
+    assert_eq!(coverage.documents, Some(5));
+    assert_eq!(coverage.full, Some(false));
+    assert_eq!(coverage.nodes, Some(1));
+    assert_eq!(coverage.results, Some(1));
+    assert_eq!(coverage.results_full, Some(0));
+    assert_eq!(coverage.degraded.as_ref().unwrap().match_phase, Some(false));
+    assert_eq!(coverage.degraded.as_ref().unwrap().timeout, Some(false));
+    assert!(portable_errors_from_native_issues(&["advisory".to_owned()]).is_empty());
+
+    let timeout_with_active_documents =
+        portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+            active: 5,
+            covered: 5,
+            target_active: 5,
+            // Native ABI bit 0x02 is SK_DEGRADATION_TIMEOUT.
+            degradation_flags: 0x02,
+        });
+    assert_eq!(timeout_with_active_documents.full, Some(true));
+}
+
+#[test]
 fn output_on_parent_all_is_rejected_instead_of_moved_to_group() {
     let request = GroupingRequestIr {
         root: GroupingAllIr {
@@ -1264,6 +1293,7 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     ));
 
     let grouped = comparison
+        .clone()
         .with_query(QueryIr::MatchAll)
         .with_grouping(vec![native_grouping(&[
             (
@@ -1301,6 +1331,31 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     assert_eq!(qty_two.value, Some(Value::Int64(2)));
     assert_eq!(qty_two.fields["count"], Value::Int64(1));
     assert_eq!(qty_two.fields["average(price)"], Value::Float64(5.0));
+
+    let mut invalid_topology = native_grouping(&[(
+        "category",
+        vec![count_expression(), average_expression("price")],
+    )]);
+    let each = invalid_topology
+        .root
+        .operations
+        .pop()
+        .expect("canonical grouping has an each operation");
+    let GroupingOperationIr::Each(each) = each else {
+        panic!("canonical grouping must end with each");
+    };
+    invalid_topology
+        .root
+        .operations
+        .push(GroupingOperationIr::All(each));
+    let error = backend
+        .search(
+            comparison
+                .with_query(QueryIr::MatchAll)
+                .with_grouping(vec![invalid_topology]),
+        )
+        .expect_err("an all-only materialization must be rejected");
+    assert_eq!(error.details[0].code, "grouping_all_topology_not_supported");
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");
@@ -1727,6 +1782,41 @@ fn document_type_drives_native_schema_identity() {
     assert!(manifest.contains("\"document_type\":\"document_type\""));
     assert!(!manifest.contains("\"document_type\":\"index_name\""));
     std::fs::remove_dir_all(root).expect("remove temporary schema");
+}
+
+#[test]
+fn portable_dense_tensor_definition_compiles_and_opens_through_adapter() {
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![FieldIr::new(
+            field("embedding"),
+            DataTypeIr::Tensor {
+                type_spec: "tensor<float>(x[2])".to_owned(),
+            },
+            None,
+            FieldCapabilities::new(true, false, false, false, false),
+        )],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-portable-tensor-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let config = root.join("config");
+    let data = root.join("data");
+
+    compile_index_definition(&definition, &config).expect("tensor schema compiles");
+    let backend = VespaBackend::open(&data, &config).expect("tensor schema opens");
+    Box::new(backend).close().expect("tensor backend closes");
+    std::fs::remove_dir_all(root).expect("remove temporary tensor schema");
 }
 
 #[test]
@@ -2215,6 +2305,16 @@ fn value_conversion_preserves_all_native_value_shapes() {
             FieldValue::Array(ArrayValue::Booleans(vec![true])),
             Value::List(vec![Value::Bool(true)]),
         ),
+        (
+            FieldValue::Tensor(searchkernel_vespa_engine::TensorValue::dense(
+                "tensor<float>(x[2])",
+                [1.0, 2.0],
+            )),
+            Value::Tensor(RequestTensorIr {
+                type_spec: "tensor<float>(x[2])".into(),
+                payload: RequestTensorPayloadIr::Dense(vec![1.0, 2.0]),
+            }),
+        ),
     ];
     for (native, expected) in values {
         assert_eq!(value_to_ir(&native), expected);
@@ -2404,6 +2504,12 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
             )
             .attribute(),
         )
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary())
         .rank_profile(
             searchkernel_vespa_engine::RankProfile::new("semantic")
                 .query_input("query_embedding", "tensor<float>(x[2])")
@@ -2414,17 +2520,30 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
         .expect("compile nearest-neighbor schema");
     let backend = VespaBackend::open(&data, &config).expect("open nearest-neighbor backend");
 
-    for (id, values) in [("doc:near", vec![1.0, 0.0]), ("doc:far", vec![0.0, 1.0])] {
+    for (id, values, category, qty) in [
+        ("doc:near", vec![1.0, 0.0], "near", 1),
+        ("doc:far", vec![0.0, 1.0], "far", 2),
+    ] {
         backend
             .insert(InsertRequestIr::new(DocumentIr::new(
                 DocumentId::parse(id).unwrap(),
-                std::collections::BTreeMap::from([(
-                    field("embedding"),
-                    FieldValueIr::Tensor(RequestTensorIr {
-                        type_spec: "tensor<float>(x[2])".to_owned(),
-                        payload: RequestTensorPayloadIr::Dense(values),
-                    }),
-                )]),
+                std::collections::BTreeMap::from([
+                    (
+                        field("embedding"),
+                        FieldValueIr::Tensor(RequestTensorIr {
+                            type_spec: "tensor<float>(x[2])".to_owned(),
+                            payload: RequestTensorPayloadIr::Dense(values),
+                        }),
+                    ),
+                    (
+                        field("category"),
+                        FieldValueIr::Single(ScalarValueIr::String(category.to_owned())),
+                    ),
+                    (
+                        field("qty"),
+                        FieldValueIr::Single(ScalarValueIr::Int64(qty)),
+                    ),
+                ]),
             )))
             .expect("insert tensor document");
     }
@@ -2452,7 +2571,11 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
             type_spec: "tensor<float>(x[2])".to_owned(),
             payload: RequestTensorPayloadIr::Dense(vec![0.9, 0.1]),
         })),
-    )]));
+    )]))
+    .with_grouping(vec![native_grouping(&[(
+        "category",
+        vec![count_expression(), average_expression("qty")],
+    )])]);
     let result = backend
         .search(request)
         .expect("execute nearest-neighbor query");
@@ -2462,16 +2585,21 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
     let ids = group
         .children
         .iter()
-        .map(|child| match child {
-            ResultNode::Hit(hit) => hit.id.as_str(),
-            ResultNode::Group(_) => panic!("unexpected nested group"),
+        .filter_map(|child| match child {
+            ResultNode::Hit(hit) => Some(hit.id.as_str()),
+            ResultNode::Group(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(ids, vec!["doc:near", "doc:far"]);
     assert!(matches!(
         group.children.as_slice(),
-        [ResultNode::Hit(first), ResultNode::Hit(second)] if first.score > second.score
+        [ResultNode::Hit(first), ResultNode::Hit(second), ResultNode::Group(_)]
+            if first.score > second.score
     ));
+    let ResultNode::Group(grouping) = group.children.last().unwrap() else {
+        unreachable!("nearest-neighbor grouping is the final result child");
+    };
+    assert_eq!(grouping.children.len(), 2);
 
     backend
         .engine

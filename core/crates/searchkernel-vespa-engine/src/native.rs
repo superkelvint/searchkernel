@@ -110,7 +110,7 @@ pub(crate) fn add_document_field(
             }
         }
         FieldValue::Tensor(_) => {
-            return Err(Error::message(
+            return Err(Error::unsupported(
                 "sparse and mixed tensor document values are not supported by the current native path",
             ));
         }
@@ -178,9 +178,25 @@ pub(crate) fn add_update_field(
                 "array document updates require a multi-valued schema",
             ));
         }
+        FieldUpdate::Assign(FieldValue::Tensor(TensorValue::Dense { type_spec, values })) => {
+            let type_spec = cstring(type_spec)?;
+            let value_count = u32::try_from(values.len())
+                .map_err(|_| Error::message("tensor value count exceeds native capacity"))?;
+            unsafe {
+                sys::sk_document_update_assign_tensor_dense(
+                    update,
+                    field.as_ptr(),
+                    type_spec.as_ptr(),
+                    values.as_ptr(),
+                    value_count,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
         FieldUpdate::Assign(FieldValue::Tensor(_)) => {
-            return Err(Error::message(
-                "tensor document updates are not supported by the current native document ABI",
+            return Err(Error::unsupported(
+                "sparse and mixed tensor document updates are not supported by the current native path",
             ));
         }
     };
@@ -322,6 +338,25 @@ pub(crate) fn native_bytes<'a>(
     // the lifetime of its owning opaque result, which the caller holds while
     // consuming this slice.
     Ok(unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), length as usize) })
+}
+
+pub(crate) fn native_f64s<'a>(
+    _owner: &'a NativeDocument,
+    pointer: *const f64,
+    length: u32,
+    name: &str,
+) -> Result<&'a [f64], Error> {
+    if length == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null() {
+        return Err(Error::message(format!(
+            "native operation returned a null {name}"
+        )));
+    }
+    // SAFETY: the native result contract keeps the returned cells alive for
+    // the lifetime of its owning opaque document, which the caller holds.
+    Ok(unsafe { std::slice::from_raw_parts(pointer, length as usize) })
 }
 
 pub(crate) struct NativeQuery(pub(crate) NonNull<sys::sk_query>);

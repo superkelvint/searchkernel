@@ -54,25 +54,92 @@ require_pinned_vespa() {
 require_sdk_manifest() {
   local manifest="$1"
   local expected
-  local expected_abi
   local source_header="$REPO_ROOT/core/native/vespa/searchkernel_vespa.h"
   local sdk_header="$SDK/include/searchkernel_vespa.h"
+  local rust_abi="$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src/abi.rs"
+  local rust_bindings="$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src/bindings.rs"
   expected="$(expected_vespa_revision)"
-  expected_abi="$(sed -n 's/^#define SK_NATIVE_ABI_VERSION \([0-9][0-9]*\)U$/\1/p' \
-    "$REFERENCE_ROOT/NATIVE_ABI_CONTRACT.h")"
-  [[ -n "$expected_abi" ]] || fail_verification "native ABI version is missing from the contract"
   [[ -f "$source_header" ]] || fail_verification "source native ABI header is missing: $source_header"
   [[ -f "$sdk_header" ]] || fail_verification "SDK native ABI header is missing: $sdk_header"
+  [[ -f "$rust_abi" ]] || fail_verification "Rust native ABI source is missing: $rust_abi"
+  [[ -f "$rust_bindings" ]] || fail_verification "generated Rust bindings are missing: $rust_bindings"
   cmp -s "$source_header" "$sdk_header" ||
     fail_verification "SDK native ABI header differs from source header"
-  python3 - "$manifest" "$expected" "$expected_abi" <<'PY'
+  python3 - "$manifest" "$REFERENCE_ROOT/PINNED_VESPA.json" \
+    "$source_header" "$sdk_header" "$REFERENCE_ROOT/NATIVE_ABI_CONTRACT.h" "$rust_abi" "$rust_bindings" "$expected" <<'PY'
 import json
+import re
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as stream:
-    manifest = json.load(stream)
-assert manifest.get("native_abi_version") == int(sys.argv[3]), manifest
-assert manifest.get("vespa_commit") == sys.argv[2], manifest
+manifest_path, pin_path, source_header_path, sdk_header_path, contract_path, rust_path, bindings_path, expected_commit = sys.argv[1:]
+
+def read_json(path):
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream)
+
+def read_header_abi(path):
+    with open(path, encoding="utf-8") as stream:
+        matches = re.findall(
+            r"^#define SK_NATIVE_ABI_VERSION ([0-9]+)U$", stream.read(), re.MULTILINE
+        )
+    if len(matches) != 1:
+        raise SystemExit(
+            f"verification error: expected exactly one SK_NATIVE_ABI_VERSION in {path}, found {len(matches)}"
+        )
+    return int(matches[0])
+
+def read_rust_abi(path):
+    with open(path, encoding="utf-8") as stream:
+        matches = re.findall(
+            r"^pub const EXPECTED_ABI: u32 = ([0-9]+);$", stream.read(), re.MULTILINE
+        )
+    if len(matches) != 1:
+        raise SystemExit(
+            f"verification error: expected exactly one EXPECTED_ABI in {path}, found {len(matches)}"
+        )
+    return int(matches[0])
+
+def read_bindings_abi(path):
+    with open(path, encoding="utf-8") as stream:
+        matches = re.findall(
+            r"^pub const SK_NATIVE_ABI_VERSION: u32 = ([0-9]+);$", stream.read(), re.MULTILINE
+        )
+    if len(matches) != 1:
+        raise SystemExit(
+            f"verification error: expected exactly one SK_NATIVE_ABI_VERSION in {path}, found {len(matches)}"
+        )
+    return int(matches[0])
+
+manifest = read_json(manifest_path)
+pin = read_json(pin_path)
+source_abi = read_header_abi(source_header_path)
+sdk_abi = read_header_abi(sdk_header_path)
+contract_abi = read_header_abi(contract_path)
+rust_abi = read_rust_abi(rust_path)
+bindings_abi = read_bindings_abi(bindings_path)
+
+authorities = {
+    "source header": source_abi,
+    "SDK header": sdk_abi,
+    "SDK manifest": manifest.get("native_abi_version"),
+    "Rust EXPECTED_ABI": rust_abi,
+    "generated Rust bindings": bindings_abi,
+    "reference ABI contract": contract_abi,
+    "pinned metadata": pin.get("native_abi_version"),
+}
+if any(value != source_abi for value in authorities.values()):
+    details = ", ".join(f"{name}={value!r}" for name, value in authorities.items())
+    raise SystemExit(f"verification error: native ABI authorities disagree: {details}")
+if manifest.get("vespa_commit") != expected_commit:
+    raise SystemExit(
+        f"verification error: SDK manifest Vespa commit {manifest.get('vespa_commit')!r} "
+        f"does not match pinned commit {expected_commit!r}"
+    )
+if pin.get("commit") != expected_commit:
+    raise SystemExit(
+        f"verification error: pinned metadata commit {pin.get('commit')!r} "
+        f"does not match expected commit {expected_commit!r}"
+    )
 PY
 }
 
@@ -101,6 +168,7 @@ require_native_driver() {
 }
 
 run_workspace_quality() {
+  "$REPO_ROOT/tools/check-vespa-bindings.sh"
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features -- -D warnings
   cargo test --workspace --all-targets --all-features

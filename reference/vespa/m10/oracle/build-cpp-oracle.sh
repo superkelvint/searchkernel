@@ -78,7 +78,9 @@ def localize_command(args):
             replacement = shutil.which(Path(compiler).name)
             if replacement:
                 localized[1] = replacement
-        return localized
+        if Path(localized[0]).exists():
+            return localized
+        localized.pop(0)
     while localized and not Path(localized[0]).exists():
         replacement = shutil.which(Path(localized[0]).name)
         if replacement:

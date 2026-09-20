@@ -142,8 +142,9 @@ average                  -> {"type":"float","bits":"0x..."}
 If the pinned engine returns an integer aggregate in a wider/different native wrapper, preserve the exact mathematical result so long as it fits frozen Rust `i64`; fail authoring if the pinned behavior cannot be represented losslessly.
 
 Group keys map to `GroupingResultValue` JSON. M9 positive grouping cases use
-only String and Integer keys. The root key is null and every node has ordered
-`outputs` and recursive `groups` arrays.
+String, Integer, and Float keys. Float values are emitted by their exact IEEE
+754 bits. The root key is null and every node has ordered `outputs` and
+recursive `groups` arrays.
 
 ## Canonical group order
 

@@ -1,0 +1,51 @@
+{
+  "documents": [
+    {
+      "id": "id:test:typea::normal",
+      "fields": {"qty": {"integer": 18}}
+    }
+  ],
+  "degraded_documents": [
+    {"id": "id:test:typea::degraded-000", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-001", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-002", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-003", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-004", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-005", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-006", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-007", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-008", "fields": {"qty": {"integer": 18}}},
+    {"id": "id:test:typea::degraded-009", "fields": {"qty": {"integer": 18}}}
+  ],
+  "repeat_degraded_documents": 190,
+  "normal_request": {
+    "rank_profile": "default",
+    "limit": 10,
+    "offset": 0,
+    "query": {
+      "range": {
+        "field": "qty",
+        "lower": {"included": 18},
+        "upper": {"included": 18}
+      }
+    }
+  },
+  "degraded_request": {
+    "rank_profile": "default",
+    "limit": 10,
+    "offset": 0,
+    "sort": [{"field": "qty", "order": "ascending"}],
+    "rank_properties": [
+      {"name": "vespa.matchphase.degradation.maxfiltercoverage", "value": "0.9"},
+      {"name": "vespa.matchphase.degradation.attribute", "value": "qty"},
+      {"name": "vespa.matchphase.degradation.maxhits", "value": "10"}
+    ],
+    "query": {
+      "range": {
+        "field": "qty",
+        "lower": {"included": 18},
+        "upper": {"included": 18}
+      }
+    }
+  }
+}

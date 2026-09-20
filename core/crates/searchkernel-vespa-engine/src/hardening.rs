@@ -50,6 +50,23 @@ pub enum ResultFault {
     GroupAccessorError = sys::hardening::SK_TEST_RESULT_FAULT_GROUP_ACCESSOR_ERROR,
     UnknownAggregationKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_AGGREGATION_KIND,
     AggregationAccessorError = sys::hardening::SK_TEST_RESULT_FAULT_AGGREGATION_ACCESSOR_ERROR,
+    InvalidGroupingString = sys::hardening::SK_TEST_RESULT_FAULT_INVALID_GROUPING_STRING,
+    UnknownGroupingValueKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_VALUE_KIND,
+    HitListGroupingOutput = sys::hardening::SK_TEST_RESULT_FAULT_HIT_LIST_GROUPING_OUTPUT,
+    UnknownGroupingOutputKind = sys::hardening::SK_TEST_RESULT_FAULT_UNKNOWN_GROUPING_OUTPUT_KIND,
+    GroupingTreeGroupAccessorError =
+        sys::hardening::SK_TEST_RESULT_FAULT_GROUPING_TREE_GROUP_ACCESSOR_ERROR,
+    GroupingTreeRootAccessorError =
+        sys::hardening::SK_TEST_RESULT_FAULT_GROUPING_TREE_ROOT_ACCESSOR_ERROR,
+    GroupingTreeKeyAccessorError =
+        sys::hardening::SK_TEST_RESULT_FAULT_GROUPING_TREE_KEY_ACCESSOR_ERROR,
+    GroupingTreeOutputAccessorError =
+        sys::hardening::SK_TEST_RESULT_FAULT_GROUPING_TREE_OUTPUT_ACCESSOR_ERROR,
+    GroupingOutputValueAccessorError =
+        sys::hardening::SK_TEST_RESULT_FAULT_GROUPING_OUTPUT_VALUE_ACCESSOR_ERROR,
+    NullGroupingChild = sys::hardening::SK_TEST_RESULT_FAULT_NULL_GROUPING_CHILD,
+    NullGroupingOutput = sys::hardening::SK_TEST_RESULT_FAULT_NULL_GROUPING_OUTPUT,
+    NullGroupingValue = sys::hardening::SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE,
 }
 
 pub fn set_result_fault(engine: &Engine, fault: ResultFault) -> Result<()> {
@@ -96,6 +113,35 @@ pub fn result_destroy_count(engine: &Engine) -> Result<u64> {
     };
     check(status, &error)?;
     Ok(count)
+}
+
+pub fn search_reply_metadata(
+    degradation_flags: u32,
+    issue_messages: &[&str],
+) -> Result<crate::search::SearchResult> {
+    let messages: Vec<_> = issue_messages
+        .iter()
+        .map(|message| cstring(message))
+        .collect::<Result<_>>()?;
+    let pointers: Vec<_> = messages.iter().map(|message| message.as_ptr()).collect();
+    let mut result = std::ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        // SAFETY: the message pointers and output/error buffers remain valid
+        // for the duration of this test-only native construction call.
+        sys::hardening::sk_test_search_reply_metadata(
+            degradation_flags,
+            pointers.as_ptr(),
+            pointers.len() as u32,
+            &mut result,
+            error.as_mut_ptr(),
+            error.capacity(),
+        )
+    };
+    check(status, &error)?;
+    let result = std::ptr::NonNull::new(result)
+        .ok_or_else(|| crate::error::Error::message("native test result was null"))?;
+    crate::native::read_generic_search_result(result)
 }
 
 pub fn set(engine: &Engine, name: &str, hit: u32, action: Action) -> Result<()> {

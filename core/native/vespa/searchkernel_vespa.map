@@ -73,11 +73,13 @@ SEARCHKERNEL_2 {
         sk_document_add_tensor_dense;
         sk_document_field_count;
         sk_document_field;
+        sk_document_field_tensor_dense;
         sk_document_update_create_empty;
         sk_document_update_assign_string;
         sk_document_update_assign_integer;
         sk_document_update_assign_float;
         sk_document_update_assign_boolean;
+        sk_document_update_assign_tensor_dense;
         sk_document_update_clear;
         sk_document_annotate_text;
         sk_document_update_annotate_text;

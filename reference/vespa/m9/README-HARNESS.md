@@ -72,7 +72,7 @@ continuations
 group hit collection/group summaries
 distributed grouping merge
 Boolean sort
-Float/Boolean group keys
+Boolean group keys
 multi-value attributes
 arbitrary rank-profile/ranking-expression API
 Rust aggregation/facet engine

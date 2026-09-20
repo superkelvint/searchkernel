@@ -41,6 +41,12 @@ and copies `my_issues` messages into the result. A valid degraded reply stays
 successful; only an exception or other native operation failure becomes a
 native error status.
 
+The metadata copy is factored into `copy_search_reply_metadata`; the
+hardening-only SearchReply probe constructs real pinned `Coverage` and
+`UniqueIssues` values and exercises that helper through the result accessors.
+The independent direct oracle is `oracle/searchreply_oracle.cpp` and its
+frozen output is `expected/searchreply.json`.
+
 The deterministic degraded-result setup is defined by the pinned match-phase
 limiter and property name:
 

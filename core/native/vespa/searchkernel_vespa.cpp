@@ -105,6 +105,7 @@
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/eval/eval/fast_value.h>
 #include <vespa/eval/eval/tensor_spec.h>
+#include <vespa/eval/eval/typed_cells.h>
 #include <vespa/eval/eval/value_codec.h>
 #include <vespa/vespalib/util/shared_operation_throttler.h>
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
@@ -207,7 +208,7 @@ class ResultFaultController {
 
     static bool known(uint32_t fault) noexcept {
         return fault >= SK_TEST_RESULT_FAULT_NULL_RESULT &&
-               fault <= SK_TEST_RESULT_FAULT_ISSUE_MESSAGE;
+               fault <= SK_TEST_RESULT_FAULT_NULL_GROUPING_VALUE;
     }
 
 public:
@@ -1021,6 +1022,7 @@ struct OwnedValue {
     int64_t integer = 0;
     double floating = 0.0;
     bool boolean = false;
+    std::vector<double> tensor_cells;
 };
 
 struct DocumentFieldState {
@@ -1108,6 +1110,16 @@ struct LocalSearchRequestState {
     std::vector<LocalGroupingRequestState> groupings;
 };
 
+class TensorValidationError final : public std::invalid_argument {
+    const char *_detail_code;
+
+public:
+    TensorValidationError(const char *detail_code, const std::string &message)
+        : std::invalid_argument(message), _detail_code(detail_code) {}
+
+    const char *detail_code() const noexcept { return _detail_code; }
+};
+
 std::string encode_dense_tensor(const char *type_spec, const double *values,
                                 uint32_t value_count) {
     if (!type_spec || !values) {
@@ -1115,17 +1127,22 @@ std::string encode_dense_tensor(const char *type_spec, const double *values,
     }
     validate_string_size(type_spec, MAX_RANK_PROFILE_BYTES, "tensor type spec");
     const auto type = vespalib::eval::ValueType::from_spec(type_spec);
-    if (type.is_error() || type.count_indexed_dimensions() != 1 || type.count_mapped_dimensions() != 0) {
-        throw std::invalid_argument("nearest-neighbor tensors must have exactly one indexed dimension");
+    if (type.is_error()) {
+        throw TensorValidationError("tensor_type_spec_invalid", "tensor type specification is malformed");
+    }
+    if (type.count_indexed_dimensions() != 1 || type.count_mapped_dimensions() != 0) {
+        throw TensorValidationError("tensor_shape_unsupported",
+                                    "dense tensors must have exactly one indexed dimension and no mapped dimensions");
     }
     if (type.dense_subspace_size() != value_count) {
-        throw std::invalid_argument("dense tensor cell count does not match its type spec");
+        throw TensorValidationError("tensor_cell_count_mismatch",
+                                    "dense tensor cell count does not match its type spec");
     }
     vespalib::eval::TensorSpec spec(type_spec);
     const auto &dimension = type.dimensions().front();
     for (uint32_t index = 0; index < value_count; ++index) {
         if (!std::isfinite(values[index])) {
-            throw std::invalid_argument("tensor cell values must be finite");
+            throw TensorValidationError("tensor_non_finite_cell", "tensor cell values must be finite");
         }
         spec.add({{dimension.name, vespalib::eval::TensorSpec::Label(index)}}, values[index]);
     }
@@ -1135,6 +1152,61 @@ std::string encode_dense_tensor(const char *type_spec, const double *values,
     vespalib::nbostream stream;
     vespalib::eval::encode_value(*tensor, stream);
     return std::string(stream.data(), stream.size());
+}
+
+template <typename Cell>
+void copy_tensor_cells(const vespalib::eval::TypedCells &cells,
+                       std::vector<double> &output) {
+    for (const auto cell : cells.typify<Cell>()) {
+        const double value = static_cast<double>(cell);
+        if (!std::isfinite(value)) {
+            throw TensorValidationError("tensor_readback_non_finite", "native tensor contains a non-finite cell");
+        }
+        output.push_back(value);
+    }
+}
+
+std::vector<double> dense_tensor_cells(const vespalib::eval::Value &tensor) {
+    const auto &type = tensor.type();
+    if (type.is_error() || type.count_indexed_dimensions() != 1 ||
+        type.count_mapped_dimensions() != 0 || type.dense_subspace_size() == 0) {
+        throw TensorValidationError("tensor_readback_invalid", "native tensor readback is not a supported dense tensor");
+    }
+    const auto cells = tensor.cells();
+    if (cells.size != type.dense_subspace_size()) {
+        throw std::runtime_error("native tensor cell count does not match its type");
+    }
+    std::vector<double> output;
+    output.reserve(cells.size);
+    switch (cells.type) {
+    case vespalib::eval::CellType::DOUBLE:
+        copy_tensor_cells<double>(cells, output);
+        break;
+    case vespalib::eval::CellType::FLOAT:
+        copy_tensor_cells<float>(cells, output);
+        break;
+    case vespalib::eval::CellType::BFLOAT16:
+        copy_tensor_cells<vespalib::BFloat16>(cells, output);
+        break;
+    case vespalib::eval::CellType::INT8:
+        copy_tensor_cells<vespalib::eval::Int8Float>(cells, output);
+        break;
+    default:
+        throw std::runtime_error("native tensor cell type is unsupported");
+    }
+    return output;
+}
+
+OwnedValue make_dense_tensor_value(const char *type_spec, const double *values,
+                                   uint32_t value_count) {
+    OwnedValue result;
+    result.kind = SK_VALUE_TENSOR;
+    result.tensor_type = type_spec;
+    result.string = encode_dense_tensor(type_spec, values, value_count);
+    if (value_count != 0) {
+        result.tensor_cells.assign(values, values + value_count);
+    }
+    return result;
 }
 
 std::chrono::milliseconds remaining_search_timeout(
@@ -1544,6 +1616,10 @@ class EmbeddedEngine {
         const auto &field = require_manifest_field(field_name);
         if (field.type == "text" || field.type == "string") {
             if (value.kind != SK_VALUE_STRING) {
+                if (value.kind == SK_VALUE_TENSOR) {
+                    throw TensorValidationError("tensor_field_type_mismatch",
+                                                "tensor value supplied to non-tensor field: " + field_name);
+                }
                 throw std::invalid_argument("wrong string value type for field: " + field_name);
             }
             if (field.type == "text" && occurrences) {
@@ -1556,6 +1632,10 @@ class EmbeddedEngine {
         }
         if (field.type == "integer") {
             if (value.kind != SK_VALUE_INTEGER) {
+                if (value.kind == SK_VALUE_TENSOR) {
+                    throw TensorValidationError("tensor_field_type_mismatch",
+                                                "tensor value supplied to non-tensor field: " + field_name);
+                }
                 throw std::invalid_argument("wrong integer value type for field: " + field_name);
             }
             if (_legacy_state) {
@@ -1570,30 +1650,48 @@ class EmbeddedEngine {
         }
         if (field.type == "float") {
             if (value.kind != SK_VALUE_FLOAT || !std::isfinite(value.floating)) {
+                if (value.kind == SK_VALUE_TENSOR) {
+                    throw TensorValidationError("tensor_field_type_mismatch",
+                                                "tensor value supplied to non-tensor field: " + field_name);
+                }
                 throw std::invalid_argument("wrong float value type for field: " + field_name);
             }
             return std::make_unique<document::DoubleFieldValue>(value.floating);
         }
         if (field.type == "boolean") {
             if (value.kind != SK_VALUE_BOOLEAN) {
+                if (value.kind == SK_VALUE_TENSOR) {
+                    throw TensorValidationError("tensor_field_type_mismatch",
+                                                "tensor value supplied to non-tensor field: " + field_name);
+                }
                 throw std::invalid_argument("wrong boolean value type for field: " + field_name);
             }
             return std::make_unique<document::BoolFieldValue>(value.boolean);
         }
         if (field.type == "tensor") {
-            if (value.kind != SK_VALUE_TENSOR || value.tensor_type != field.tensor_type) {
-                throw std::invalid_argument("wrong tensor value type for field: " + field_name);
+            if (value.kind != SK_VALUE_TENSOR) {
+                throw TensorValidationError("tensor_field_type_mismatch",
+                                            "wrong tensor value type for field: " + field_name);
+            }
+            if (value.tensor_type != field.tensor_type) {
+                throw TensorValidationError("tensor_field_type_mismatch",
+                                            "tensor value does not match field type: " + field_name);
             }
             vespalib::nbostream stream(value.string.data(), value.string.size());
             auto tensor = vespalib::eval::decode_value(
                 stream, vespalib::eval::FastValueBuilderFactory::get());
             auto data_type = _doc_type->getField(field_name).getDataType().cast_tensor();
             if (!data_type || !data_type->isAssignableType(tensor->type())) {
-                throw std::invalid_argument("tensor value does not match field type: " + field_name);
+                throw TensorValidationError("tensor_field_type_mismatch",
+                                            "tensor value does not match field type: " + field_name);
             }
             auto result = std::make_unique<document::TensorFieldValue>(*data_type);
             *result = std::move(tensor);
             return result;
+        }
+        if (value.kind == SK_VALUE_TENSOR) {
+            throw TensorValidationError("tensor_field_type_mismatch",
+                                        "tensor value supplied to non-tensor field: " + field_name);
         }
         throw std::invalid_argument("unsupported document field type: " + field_name);
     }
@@ -1691,6 +1789,7 @@ class EmbeddedEngine {
             if (!tensor) throw std::invalid_argument("tensor field has no value: " + field_name);
             owned.kind = SK_VALUE_TENSOR;
             owned.tensor_type = tensor->type().to_spec();
+            owned.tensor_cells = dense_tensor_cells(*tensor);
             vespalib::nbostream stream;
             vespalib::eval::encode_value(*tensor, stream);
             owned.string.assign(stream.data(), stream.size());
@@ -3692,9 +3791,54 @@ public:
 
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
                                        const sk_grouping_plan &plan) const {
-        LocalSearchRequestState options;
-        options.rank_profile = "default";
-        return group_tree(query, plan, options);
+        std::shared_lock<std::shared_mutex> lifecycle_lock(_lifecycle_mutex);
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
+        require_open();
+
+        SearchRequest request;
+        request.setTimeout(60s);
+        request.ranking = "default";
+        request.maxhits = 0;
+        request.propertiesMap.lookupCreate(search::MapNames::RANK)
+            .add("vespa.matching.numthreadspersearch", "1");
+        request.setSerializedQueryTree(
+            SerializedQueryTree::fromStackDump(query.serialized_stack_dump()));
+
+        const auto grouping = make_grouping(plan);
+        vespalib::nbostream request_buffer;
+        vespalib::NBOSerializer request_output(request_buffer);
+        uint32_t grouping_count = 1;
+        request_output << grouping_count;
+        grouping.serialize(request_output);
+        request.groupSpec.assign(request_buffer.data(),
+                                 request_buffer.data() + request_buffer.size());
+
+        failpoint("group_before_match");
+        auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
+        failpoint("group_after_match");
+        if (!reply) {
+            throw std::runtime_error("Vespa matcher returned no reply");
+        }
+        if (!reply->hits.empty()) {
+            throw std::runtime_error("general grouping returned ordinary hits");
+        }
+        if (reply->groupResult.empty()) {
+            throw std::runtime_error("general grouping result is empty");
+        }
+
+        vespalib::nbostream result_buffer(reply->groupResult.data(),
+                                          reply->groupResult.size());
+        vespalib::NBOSerializer input(result_buffer);
+        uint32_t result_count = 0;
+        input >> result_count;
+        if (result_count != 1) {
+            throw std::runtime_error("unexpected general grouping result count");
+        }
+        Grouping result_grouping;
+        result_grouping.deserialize(input);
+        sk_grouping_tree_result result;
+        result.root = grouping_tree_node(result_grouping.getRoot(), false);
+        return result;
     }
 
     sk_grouping_tree_result group_tree(const NativeQueryState &query,
@@ -3926,6 +4070,9 @@ int32_t invoke(uint8_t *error, uint32_t error_capacity, Function &&function) noe
         return set_error(error, error_capacity, SK_NATIVE_STATUS_DEADLINE_EXCEEDED, exception.what());
     } catch (const TypeErrorNativeError &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_TYPE_ERROR, exception.what());
+    } catch (const TensorValidationError &exception) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         exception.what(), exception.detail_code());
     } catch (const std::invalid_argument &exception) {
         return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT, exception.what());
     } catch (const std::exception &exception) {
@@ -4745,11 +4892,7 @@ extern "C" SK_API int32_t sk_document_add_tensor_dense(
                          "document tensor arguments are invalid");
     }
     return add_document_value(document, field, error, error_capacity, [&] {
-        OwnedValue result;
-        result.kind = SK_VALUE_TENSOR;
-        result.tensor_type = type_spec;
-        result.string = encode_dense_tensor(type_spec, values, value_count);
-        return result;
+        return make_dense_tensor_value(type_spec, values, value_count);
     });
 }
 
@@ -4873,6 +5016,20 @@ extern "C" SK_API int32_t sk_document_update_assign_boolean(
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity, [&] {
         OwnedValue result; result.kind = SK_VALUE_BOOLEAN; result.boolean = value != 0; return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" SK_API int32_t sk_document_update_assign_tensor_dense(
+    sk_document_update *update, const char *field, const char *type_spec,
+    const double *values, uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!type_spec || !values) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "update tensor arguments are invalid");
+    }
+    return add_update_value(update, field, error, error_capacity, [&] {
+        return std::optional<OwnedValue>(
+            make_dense_tensor_value(type_spec, values, value_count));
     });
 }
 
@@ -5074,6 +5231,35 @@ extern "C" int32_t sk_document_field(const sk_document *document, uint32_t index
     });
 }
 
+extern "C" SK_API int32_t sk_document_field_tensor_dense(
+    const sk_document *document, uint32_t index,
+    const char **out_type_spec, uint32_t *out_type_spec_length,
+    const double **out_cells, uint32_t *out_cell_count,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!document || !out_type_spec || !out_type_spec_length || !out_cells ||
+        !out_cell_count) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "document tensor field arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (index >= document->fields.size()) {
+            throw std::invalid_argument("document field index is out of range");
+        }
+        const auto &field = document->fields[index];
+        if (field.value.kind != SK_VALUE_TENSOR) {
+            throw std::invalid_argument("document field is not a tensor");
+        }
+        if (field.value.tensor_type.size() > std::numeric_limits<uint32_t>::max() ||
+            field.value.tensor_cells.size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::runtime_error("document tensor field exceeds native capacity");
+        }
+        *out_type_spec = field.value.tensor_type.data();
+        *out_type_spec_length = static_cast<uint32_t>(field.value.tensor_type.size());
+        *out_cells = field.value.tensor_cells.data();
+        *out_cell_count = static_cast<uint32_t>(field.value.tensor_cells.size());
+    });
+}
+
 extern "C" int32_t sk_engine_remove(sk_engine *engine, const char *id,
                                      int32_t *out_was_found, uint8_t *error,
                                      uint32_t error_capacity) SK_NOEXCEPT {
@@ -5240,18 +5426,6 @@ extern "C" int32_t sk_engine_search_local(
         result->failpoints = engine->impl->failpoints();
         result->result_faults = engine->impl->result_faults();
         result->result_destroyed = engine->impl->result_destroyed_counter();
-        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_MATCH_PHASE)) {
-            result->degradation_flags |= SK_DEGRADATION_MATCH_PHASE;
-        }
-        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_TIMEOUT)) {
-            result->degradation_flags |= SK_DEGRADATION_TIMEOUT;
-        }
-        if (result->result_faults->take(SK_TEST_RESULT_FAULT_DEGRADATION_ANN_TIMEOUT)) {
-            result->degradation_flags |= SK_DEGRADATION_ANN_TIMEOUT;
-        }
-        if (result->result_faults->take(SK_TEST_RESULT_FAULT_ISSUE_MESSAGE)) {
-            result->issues.emplace_back("native test issue");
-        }
         for (auto &grouping : result->groupings) {
             grouping.failpoints = result->failpoints;
             grouping.result_faults = result->result_faults;

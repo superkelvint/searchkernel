@@ -6,7 +6,7 @@ use super::native::{
 use super::search::validate_search_ranking_inputs;
 use super::{
     Document, DocumentAnalysis, DocumentTerm, Error, ErrorKind, Query, QueryAnalysis, QueryTerm,
-    SearchRequest, SortField, SortOrder, Source, SummaryRequest,
+    SearchRequest, SortField, SortOrder, Source, SummaryRequest, TensorValue,
 };
 use std::time::Duration;
 
@@ -153,6 +153,26 @@ fn ranking_request_inputs_are_validated_before_native_calls() {
         .rank_property("boost", "3");
     let error = validate_search_ranking_inputs(&collision)
         .expect_err("query-feature/rank-property collisions must be rejected");
+    assert!(error.to_string().contains("collision"));
+
+    let tensor_feature_collision = SearchRequest::new(Query::True)
+        .query_tensor(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[1])", [1.0]),
+        )
+        .query_feature("embedding", 2.0);
+    let error = validate_search_ranking_inputs(&tensor_feature_collision)
+        .expect_err("query tensor/query-feature collisions must be rejected");
+    assert!(error.to_string().contains("collision"));
+
+    let tensor_rank_property_collision = SearchRequest::new(Query::True)
+        .query_tensor(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[1])", [1.0]),
+        )
+        .rank_property("embedding", "3");
+    let error = validate_search_ranking_inputs(&tensor_rank_property_collision)
+        .expect_err("query tensor/rank-property collisions must be rejected");
     assert!(error.to_string().contains("collision"));
 
     let reserved =
