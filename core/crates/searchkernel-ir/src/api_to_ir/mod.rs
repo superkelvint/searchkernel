@@ -13,14 +13,14 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use grouping::grouping_to_ir;
-pub(crate) use ranking::ranking_request_to_ir;
+pub(crate) use grouping::grouping_to_input;
 pub use resolve::{
     resolve_analyze, resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
-    resolve_projection, resolve_search, resolve_search_with_extensions, resolve_update,
-    resolve_upsert, AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput,
-    FacetInput, FacetSortInput, FilterBoundInput, FilterInput, GetInput, PatchOperationInput,
-    RankingInput, SearchFieldInput, SearchIntent, SortInput, UpdateOperationInput,
+    resolve_projection, resolve_search, resolve_update, resolve_upsert, AnalyzeInput,
+    AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput,
+    FilterBoundInput, FilterInput, GetInput, GroupingInput, PatchOperationInput, PresentationInput,
+    QueryModelInput, QuerySourceInput, RankingInput, SearchFieldInput, SearchInput, SearchIntent,
+    SortInput, SortTargetInput, TextualFilterInput, UpdateOperationInput,
 };
 pub use schema::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_rust_index_definition,

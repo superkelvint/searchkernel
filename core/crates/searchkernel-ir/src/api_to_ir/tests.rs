@@ -673,7 +673,7 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
     let rust_search = resolve_search(
         &rust_context,
         SearchIntent {
-            query: "coffee".to_owned(),
+            query: QuerySourceInput::Text("coffee".to_owned()),
             search_fields: Some(vec![SearchFieldInput {
                 field: "title".to_owned(),
                 weight: Some(2.5),
@@ -692,26 +692,35 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
                     include_upper: Some(true),
                 },
             ],
+            textual_filters: Vec::new(),
             sorts: vec![SortInput {
-                field: "price".to_owned(),
+                target: SortTargetInput::Field("price".to_owned()),
                 direction: SortDirection::Desc,
                 missing: Some(MissingPlacement::First),
+                annotations: BTreeMap::new(),
             }],
-            facets: vec![FacetInput {
+            grouping: vec![GroupingInput::Facet(FacetInput {
                 field: "brand".to_owned(),
                 limit: Some(7),
                 sort: Some(FacetSortInput::ValueAsc),
-            }],
+            })],
             ranking: Some(RankingInput::Bm25),
             query_inputs: BTreeMap::new(),
             rank_properties: BTreeMap::new(),
+            query_model: QueryModelInput {
+                language: Some("en-US".to_owned()),
+                ..Default::default()
+            },
             projection: Some(vec![
                 "title".to_owned(),
                 "brand".to_owned(),
                 "price".to_owned(),
             ]),
             highlighting: Some(vec!["title".to_owned()]),
-            language: Some("en-US".to_owned()),
+            presentation: PresentationInput::default(),
+            properties: BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
             timeout: Some(Duration::from_millis(250)),
             limit: Some(7),
             offset: Some(3),
@@ -734,17 +743,22 @@ fn unknown_ranking_profile_is_rejected_before_backend_lowering() {
     let error = resolve_search(
         &context(),
         SearchIntent {
-            query: String::new(),
+            query: QuerySourceInput::Text(String::new()),
             search_fields: None,
             filters: Vec::new(),
+            textual_filters: Vec::new(),
             sorts: Vec::new(),
-            facets: Vec::new(),
+            grouping: Vec::new(),
             ranking: Some(RankingInput::Named("missing".to_owned())),
             query_inputs: BTreeMap::new(),
             rank_properties: BTreeMap::new(),
+            query_model: QueryModelInput::default(),
             projection: None,
             highlighting: None,
-            language: None,
+            presentation: PresentationInput::default(),
+            properties: BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
             timeout: None,
             limit: None,
             offset: None,
@@ -1767,7 +1781,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
             QueryExprKindIr::DotProduct {
                 field: field("price"),
                 items: vec![WeightedQueryItemIr {
-                    key: RequestValueIr::String("x".to_owned()),
+                    key: RequestValueIr::Int64(7),
                     weight: 2,
                 }],
             },

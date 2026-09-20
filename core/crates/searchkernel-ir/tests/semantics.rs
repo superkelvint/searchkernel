@@ -62,6 +62,15 @@ fn index_context() -> IndexContext {
         },
     );
     let fields = builder.create_vector(&[field, brand]);
+    let configured_profile_name = builder.create_string("configured-profile");
+    let configured_profile = api::RankProfileDefinition::create(
+        &mut builder,
+        &api::RankProfileDefinitionArgs {
+            name: Some(configured_profile_name),
+            ..Default::default()
+        },
+    );
+    let configured_profiles = builder.create_vector(&[configured_profile]);
     let title = builder.create_string("title");
     let weight = api::OptionalDouble::new(1.0);
     let search_field = api::SearchField::create(
@@ -83,6 +92,7 @@ fn index_context() -> IndexContext {
         &api::IndexDefinitionArgs {
             fields: Some(fields),
             default_search_fields: Some(default_search_fields),
+            rank_profiles: Some(configured_profiles),
             ..Default::default()
         },
     );
@@ -253,6 +263,444 @@ fn standalone_value<'a>(
     )
 }
 
+fn rust_search(query: QuerySourceInput) -> SearchInput {
+    SearchInput {
+        query,
+        search_fields: None,
+        filters: Vec::new(),
+        textual_filters: Vec::new(),
+        sorts: Vec::new(),
+        grouping: Vec::new(),
+        ranking: None,
+        query_inputs: BTreeMap::new(),
+        rank_properties: BTreeMap::new(),
+        query_model: QueryModelInput::default(),
+        projection: None,
+        highlighting: None,
+        presentation: PresentationInput::default(),
+        properties: BTreeMap::new(),
+        query_profile: None,
+        search_chain: None,
+        timeout: None,
+        limit: None,
+        offset: None,
+    }
+}
+
+fn rust_typed_contains(field: &str, value: &str) -> QuerySourceInput {
+    QuerySourceInput::Typed(QueryExprIr {
+        kind: QueryExprKindIr::Contains {
+            field: QueryFieldRefIr {
+                path: FieldName::parse_query_path(field.to_owned()).unwrap(),
+                element_index: None,
+            },
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::Term {
+                    value: RequestValueIr::String(value.to_owned()),
+                },
+                annotations: BTreeMap::new(),
+            }),
+        },
+        annotations: BTreeMap::new(),
+    })
+}
+
+fn rust_typed_comparison() -> QuerySourceInput {
+    QuerySourceInput::Typed(QueryExprIr {
+        kind: QueryExprKindIr::Comparison {
+            field: QueryFieldRefIr {
+                path: FieldName::parse("title").unwrap(),
+                element_index: None,
+            },
+            op: ComparisonOp::Gt,
+            value: RequestValueIr::String("fox".to_owned()),
+        },
+        annotations: BTreeMap::new(),
+    })
+}
+
+fn rust_typed_nearest_neighbor() -> QuerySourceInput {
+    QuerySourceInput::Typed(QueryExprIr {
+        kind: QueryExprKindIr::NearestNeighbor {
+            document_field: QueryFieldRefIr {
+                path: FieldName::parse("title").unwrap(),
+                element_index: None,
+            },
+            query_tensor: "q".to_owned(),
+        },
+        annotations: BTreeMap::new(),
+    })
+}
+
+fn typed_comparison_request() -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string("title");
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field_name),
+            element_index: None,
+        },
+    );
+    let value = standalone_value(&mut builder, "fox");
+    let comparison = api::QueryComparison::create(
+        &mut builder,
+        &api::QueryComparisonArgs {
+            field: Some(field),
+            op: api::ComparisonOp::Gt,
+            value: Some(value),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryComparison,
+            expr: Some(comparison.as_union_value()),
+            annotations: None,
+        },
+    );
+    let typed = api::TypedQuery::create(
+        &mut builder,
+        &api::TypedQueryArgs {
+            query: Some(expression),
+        },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(typed.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn typed_nearest_neighbor_request(with_input: bool) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string("title");
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field_name),
+            element_index: None,
+        },
+    );
+    let query_tensor = builder.create_string("q");
+    let nearest = api::QueryNearestNeighbor::create(
+        &mut builder,
+        &api::QueryNearestNeighborArgs {
+            document_field: Some(field),
+            query_tensor: Some(query_tensor),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryNearestNeighbor,
+            expr: Some(nearest.as_union_value()),
+            annotations: None,
+        },
+    );
+    let typed = api::TypedQuery::create(
+        &mut builder,
+        &api::TypedQueryArgs {
+            query: Some(expression),
+        },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(typed.as_union_value()),
+        },
+    );
+    let inputs = if with_input {
+        let name = builder.create_string("q");
+        let value = standalone_value(&mut builder, "tensor");
+        let literal = api::LiteralQueryInput::create(
+            &mut builder,
+            &api::LiteralQueryInputArgs { value: Some(value) },
+        );
+        let input = api::QueryInput::create(
+            &mut builder,
+            &api::QueryInputArgs {
+                name: Some(name),
+                input_type: api::QueryInputKind::LiteralQueryInput,
+                input: Some(literal.as_union_value()),
+            },
+        );
+        Some(builder.create_vector(&[input]))
+    } else {
+        None
+    };
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            inputs,
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn text_request_with_profile(profile: &str) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let query = text_query(&mut builder, "fox");
+    let profile = builder.create_string(profile);
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            ranking: Some(ranking),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn typed_contains_request(field_name: &str, value: &str) -> Vec<u8> {
+    typed_contains_request_with_search_fields(field_name, value, false)
+}
+
+fn typed_contains_request_with_search_fields(
+    field_name: &str,
+    value: &str,
+    with_search_fields: bool,
+) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string(field_name);
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field_name),
+            element_index: None,
+        },
+    );
+    let term_value = standalone_value(&mut builder, value);
+    let term = api::TermQuery::create(
+        &mut builder,
+        &api::TermQueryArgs {
+            value: Some(term_value),
+        },
+    );
+    let term = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::TermQuery,
+            expr: Some(term.as_union_value()),
+            annotations: None,
+        },
+    );
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(term),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    let typed = api::TypedQuery::create(
+        &mut builder,
+        &api::TypedQueryArgs {
+            query: Some(expression),
+        },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(typed.as_union_value()),
+        },
+    );
+    let search_fields = if with_search_fields {
+        let field = builder.create_string("title");
+        let weight = api::OptionalDouble::new(1.0);
+        let search_field = api::SearchField::create(
+            &mut builder,
+            &api::SearchFieldArgs {
+                field: Some(field),
+                weight: Some(&weight),
+            },
+        );
+        let fields = builder.create_vector(&[search_field]);
+        Some(api::SearchFieldSelection::create(
+            &mut builder,
+            &api::SearchFieldSelectionArgs {
+                fields: Some(fields),
+            },
+        ))
+    } else {
+        None
+    };
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            search_fields,
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn assert_ingress_equivalent(context: &IndexContext, rust: SearchInput, portable: &[u8]) {
+    let rust_result = resolve_search(context, rust);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(portable).unwrap();
+    let portable_result = context.search_to_ir(request);
+    assert_eq!(rust_result, portable_result);
+}
+
+#[test]
+fn rust_and_portable_ingress_share_typed_query_validation() {
+    let context = index_context();
+    assert_ingress_equivalent(
+        &context,
+        rust_search(rust_typed_contains("title", "fox")),
+        &typed_contains_request("title", "fox"),
+    );
+    assert_ingress_equivalent(
+        &context,
+        rust_search(rust_typed_contains("missing", "fox")),
+        &typed_contains_request("missing", "fox"),
+    );
+    assert_ingress_equivalent(
+        &context,
+        rust_search(rust_typed_comparison()),
+        &typed_comparison_request(),
+    );
+
+    let mut rust = rust_search(rust_typed_contains("title", "fox"));
+    rust.search_fields = Some(vec![SearchFieldInput {
+        field: "title".to_owned(),
+        weight: None,
+    }]);
+    assert_ingress_equivalent(
+        &context,
+        rust,
+        &typed_contains_request_with_search_fields("title", "fox", true),
+    );
+}
+
+#[test]
+fn rust_and_portable_ingress_share_ranking_and_query_input_validation() {
+    let context = index_context();
+    let mut valid = rust_search(QuerySourceInput::Text("fox".to_owned()));
+    valid.ranking = Some(RankingInput::Named("configured-profile".to_owned()));
+    assert_ingress_equivalent(
+        &context,
+        valid,
+        &text_request_with_profile("configured-profile"),
+    );
+
+    let mut invalid = rust_search(QuerySourceInput::Text("fox".to_owned()));
+    invalid.ranking = Some(RankingInput::Named("missing".to_owned()));
+    assert_ingress_equivalent(&context, invalid, &text_request_with_profile("missing"));
+
+    let mut nearest = rust_search(rust_typed_nearest_neighbor());
+    nearest.query_inputs.insert(
+        "q".to_owned(),
+        QueryInputIr::Literal(RequestValueIr::String("tensor".to_owned())),
+    );
+    assert_ingress_equivalent(&context, nearest, &typed_nearest_neighbor_request(true));
+    assert_ingress_equivalent(
+        &context,
+        rust_search(rust_typed_nearest_neighbor()),
+        &typed_nearest_neighbor_request(false),
+    );
+}
+
+#[test]
+fn rust_and_portable_ingress_share_text_and_match_all_defaults() {
+    let context = index_context();
+    let mut text = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let source = text_query(&mut text, "fox");
+    let request = api::SearchRequest::create(
+        &mut text,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    text.finish(request, None);
+    assert_ingress_equivalent(
+        &context,
+        rust_search(QuerySourceInput::Text("fox".to_owned())),
+        text.finished_data(),
+    );
+
+    let mut browse = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let source = api::MatchAllQuery::create(&mut browse, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut browse,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(source.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut browse,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    browse.finish(request, None);
+    assert_ingress_equivalent(
+        &context,
+        rust_search(QuerySourceInput::MatchAll),
+        browse.finished_data(),
+    );
+
+    assert_ingress_equivalent(
+        &context,
+        rust_search(QuerySourceInput::Yql {
+            source: "select * from sources * where true".to_owned(),
+            parameters: BTreeMap::new(),
+        }),
+        &search_request_for_source(api::QuerySourceKind::YqlQuery, false),
+    );
+
+    let mut rust_yql = rust_search(QuerySourceInput::Yql {
+        source: "select * from sources * where true".to_owned(),
+        parameters: BTreeMap::new(),
+    });
+    rust_yql.search_fields = Some(vec![SearchFieldInput {
+        field: "title".to_owned(),
+        weight: None,
+    }]);
+    assert_ingress_equivalent(
+        &context,
+        rust_yql,
+        &search_request_for_source(api::QuerySourceKind::YqlQuery, true),
+    );
+}
+
 #[test]
 fn v2_index_definition_and_text_search_convert_to_ir() {
     let context = index_context();
@@ -418,7 +866,7 @@ fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
         },
     );
     let rank_properties = builder.create_vector(&[rank_property]);
-    let profile = builder.create_string("custom-profile");
+    let profile = builder.create_string("default");
     let ranking = api::RankingRequest::create(
         &mut builder,
         &api::RankingRequestArgs {
@@ -503,7 +951,7 @@ fn v2_request_controls_and_structured_grouping_are_preserved_in_ir() {
     assert!(matches!(converted.query(), QueryIr::Yql { .. }));
     assert_eq!(converted.grouping().len(), 1);
     assert_eq!(converted.grouping()[0].continuations, ["next-page"]);
-    assert_eq!(converted.ranking_request().profile, "custom-profile");
+    assert_eq!(converted.ranking_request().profile, "default");
     assert!(
         matches!(converted.inputs().get("query(vec)"), Some(QueryInputIr::Expression(value)) if value == "embed(model,@q)")
     );

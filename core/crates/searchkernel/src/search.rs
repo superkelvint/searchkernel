@@ -396,7 +396,7 @@ impl SearchBuilder {
     }
 }
 
-pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_ir::SearchIntent> {
+pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_ir::SearchInput> {
     let search_fields = request.search_fields.as_ref().map(|fields| {
         fields
             .iter()
@@ -415,7 +415,7 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         .sorts
         .iter()
         .map(|sort| searchkernel_ir::SortInput {
-            field: sort.field.clone(),
+            target: searchkernel_ir::SortTargetInput::Field(sort.field.clone()),
             direction: match sort.direction {
                 SortDirection::Asc => searchkernel_ir::SortDirection::Asc,
                 SortDirection::Desc => searchkernel_ir::SortDirection::Desc,
@@ -424,9 +424,10 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
                 MissingPlacement::First => searchkernel_ir::MissingPlacement::First,
                 MissingPlacement::Last => searchkernel_ir::MissingPlacement::Last,
             }),
+            annotations: std::collections::BTreeMap::new(),
         })
         .collect();
-    let facets = request
+    let mut grouping = request
         .facets
         .iter()
         .map(|facet| searchkernel_ir::FacetInput {
@@ -439,7 +440,20 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
                 FacetSort::ValueDesc => searchkernel_ir::FacetSortInput::ValueDesc,
             }),
         })
-        .collect();
+        .map(searchkernel_ir::GroupingInput::Facet)
+        .collect::<Vec<_>>();
+    grouping.extend(
+        request
+            .groupings
+            .clone()
+            .into_iter()
+            .map(|grouping| {
+                grouping
+                    .into_ir()
+                    .map(searchkernel_ir::GroupingInput::Structured)
+            })
+            .collect::<Result<Vec<_>>>()?,
+    );
     let ranking = request.ranking.as_ref().map(|ranking| match &ranking.kind {
         RankingKind::DefaultRelevanceV1 => searchkernel_ir::RankingInput::DefaultRelevanceV1,
         RankingKind::Bm25 => searchkernel_ir::RankingInput::Bm25,
@@ -462,45 +476,40 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
                     })
                 }
             };
-            (name.clone(), value)
+            (name.clone(), searchkernel_ir::QueryInputIr::Literal(value))
         })
         .collect();
-    Ok(searchkernel_ir::SearchIntent {
-        query: request.query.clone(),
+    let query = request
+        .typed_query
+        .clone()
+        .map(Query::into_ir)
+        .transpose()?
+        .map(searchkernel_ir::QuerySourceInput::Typed)
+        .unwrap_or_else(|| searchkernel_ir::QuerySourceInput::Text(request.query.clone()));
+    Ok(searchkernel_ir::SearchInput {
+        query,
         search_fields,
         filters,
+        textual_filters: Vec::new(),
         sorts,
-        facets,
+        grouping,
         ranking,
         query_inputs,
         rank_properties: request.rank_properties.clone(),
+        query_model: searchkernel_ir::QueryModelInput {
+            language: request.language.clone(),
+            ..Default::default()
+        },
         projection: request.projection.clone(),
         highlighting: request.highlighting.clone(),
-        language: request.language.clone(),
+        presentation: searchkernel_ir::PresentationInput::default(),
+        properties: std::collections::BTreeMap::new(),
+        query_profile: None,
+        search_chain: None,
         timeout: request.timeout,
         limit: request.limit,
         offset: request.offset,
     })
-}
-
-pub(crate) fn extensions_to_ir(
-    request: &SearchBuilder,
-) -> Result<(
-    Option<searchkernel_ir::QueryExprIr>,
-    Vec<searchkernel_ir::GroupingRequestIr>,
-)> {
-    let typed_query = request
-        .typed_query
-        .clone()
-        .map(Query::into_ir)
-        .transpose()?;
-    let groupings = request
-        .groupings
-        .clone()
-        .into_iter()
-        .map(|grouping| grouping.into_ir())
-        .collect::<Result<Vec<_>>>()?;
-    Ok((typed_query, groupings))
 }
 
 impl std::fmt::Debug for SearchBuilder {
@@ -609,7 +618,43 @@ mod tests {
         assert_eq!(error.details()[0].code, "unknown_field");
         assert_eq!(
             error.details()[0].path.as_deref(),
-            Some("typed_query.contains.field.path")
+            Some("query.contains.field.path")
+        );
+    }
+
+    #[test]
+    fn public_advanced_typed_queries_use_schema_validation_before_backend_execution() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new()
+                .field(Field::text("title"))
+                .field(Field::int64("price").filterable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let wrong_weight_key = runtime
+            .index()
+            .search("")
+            .typed_query(Query::weighted_set(
+                "price",
+                [crate::WeightedQueryItem::new("not-an-integer", 10)],
+            ))
+            .execute::<serde_json::Value>()
+            .expect_err("weighted query key type should be validated before execution");
+        assert_eq!(wrong_weight_key.details()[0].code, "type_mismatch");
+
+        let empty_weighted_query = runtime
+            .index()
+            .search("")
+            .typed_query(Query::dot_product(
+                "price",
+                Vec::<crate::WeightedQueryItem>::new(),
+            ))
+            .execute::<serde_json::Value>()
+            .expect_err("empty weighted query should be validated before execution");
+        assert_eq!(
+            empty_weighted_query.details()[0].code,
+            "empty_weighted_query"
         );
     }
 }

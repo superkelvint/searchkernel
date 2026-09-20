@@ -6,8 +6,8 @@ backend-independent IR, and encodes owned results back into the portable
 contract when a portable response is required.
 
 The direct Rust API does not make a FlatBuffers round trip. Its builders create
-resolver inputs such as `SearchIntent`, which use the same semantic resolution
-rules as the portable API path.
+the unresolved `SearchInput`, which uses the same semantic resolution operation
+as the portable API path.
 
 ## Start reading here
 

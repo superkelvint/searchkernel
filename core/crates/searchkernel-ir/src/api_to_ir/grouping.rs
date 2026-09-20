@@ -2,16 +2,38 @@ use super::*;
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 
-pub(crate) fn grouping_to_ir(
+pub(crate) fn grouping_to_input(
     values: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::GroupingRequest<'_>>>>,
-) -> Result<Vec<GroupingRequestIr>> {
+) -> Result<Vec<crate::api_to_ir::resolve::GroupingInput>> {
     let mut output = Vec::new();
     if let Some(values) = values {
         for (index, value) in values.iter().enumerate() {
             let structured = match value.source_type() {
-                api::GroupingSourceKind::StructuredGroupingSource => value.source_as_structured_grouping_source().ok_or_else(|| invalid("invalid_grouping", Some(format!("grouping[{index}].source")), "structured grouping source is missing"))?,
-                api::GroupingSourceKind::RawGroupingSource => return Err(PortableError::unsupported("raw_grouping_not_supported", Some(format!("grouping[{index}].source")), "raw grouping text requires a grouping parser before it can enter canonical IR")),
-                _ => return Err(invalid("invalid_grouping", Some(format!("grouping[{index}].source")), "grouping request must select a source")),
+                api::GroupingSourceKind::StructuredGroupingSource => value
+                    .source_as_structured_grouping_source()
+                    .ok_or_else(|| {
+                        invalid(
+                            "invalid_grouping",
+                            Some(format!("grouping[{index}].source")),
+                            "structured grouping source is missing",
+                        )
+                    })?,
+                api::GroupingSourceKind::RawGroupingSource => {
+                    let raw = value
+                        .source_as_raw_grouping_source()
+                        .and_then(|value| value.expression())
+                        .unwrap_or_default()
+                        .to_owned();
+                    output.push(crate::api_to_ir::resolve::GroupingInput::Raw(raw));
+                    continue;
+                }
+                _ => {
+                    return Err(invalid(
+                        "invalid_grouping",
+                        Some(format!("grouping[{index}].source")),
+                        "grouping request must select a source",
+                    ))
+                }
             };
             let root = structured.root().ok_or_else(|| {
                 invalid(
@@ -20,13 +42,15 @@ pub(crate) fn grouping_to_ir(
                     "structured grouping requires an all() root",
                 )
             })?;
-            output.push(GroupingRequestIr {
-                root: grouping_all_to_ir(root, &format!("grouping[{index}].source.root"))?,
-                continuations: value
-                    .continuations()
-                    .map(|values| values.iter().map(ToOwned::to_owned).collect())
-                    .unwrap_or_default(),
-            });
+            output.push(crate::api_to_ir::resolve::GroupingInput::Structured(
+                GroupingRequestIr {
+                    root: grouping_all_to_ir(root, &format!("grouping[{index}].source.root"))?,
+                    continuations: value
+                        .continuations()
+                        .map(|values| values.iter().map(ToOwned::to_owned).collect())
+                        .unwrap_or_default(),
+                },
+            ));
         }
     }
     Ok(output)

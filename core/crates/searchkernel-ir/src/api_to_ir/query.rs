@@ -518,12 +518,13 @@ impl IndexContext {
             QueryExprKindIr::Matches { field, .. } => {
                 self.validate_matches_query_field(field, &child_path("matches.field"))
             }
-            QueryExprKindIr::DotProduct { .. }
-            | QueryExprKindIr::WeightedSet { .. }
-            | QueryExprKindIr::Wand { .. }
-            | QueryExprKindIr::GeoLocation { .. }
-            | QueryExprKindIr::GeoBoundingBox { .. }
-            | QueryExprKindIr::NearestNeighbor { .. } => Ok(()),
+            QueryExprKindIr::GeoLocation { field, .. }
+            | QueryExprKindIr::GeoBoundingBox { field, .. } => {
+                self.validate_query_field_reference(field, path).map(|_| ())
+            }
+            QueryExprKindIr::NearestNeighbor { document_field, .. } => self
+                .validate_query_field_reference(document_field, path)
+                .map(|_| ()),
             QueryExprKindIr::Phrase(children)
             | QueryExprKindIr::Near { children, .. }
             | QueryExprKindIr::ONear { children, .. }
@@ -604,10 +605,12 @@ impl IndexContext {
                 )
             }
             QueryExprKindIr::Predicate {
+                field,
                 features,
                 range_features,
                 ..
             } => {
+                self.validate_query_field_reference(field, path)?;
                 validate_predicate_values(features, &child_path("predicate.features"))?;
                 validate_predicate_values(range_features, &child_path("predicate.range_features"))
             }
@@ -730,6 +733,7 @@ impl IndexContext {
         }
         Ok(())
     }
+
     pub(crate) fn typed_query_expr_to_ir(
         &self,
         expression: api::QueryExpr<'_>,
@@ -1311,15 +1315,25 @@ impl IndexContext {
         let value = value
             .ok_or_else(|| invalid("missing_query_field", Some(path), "query field is required"))?;
         let field_path = value.path().unwrap_or_default();
-        let field = self.query_field(field_path, format!("{path}.path"))?;
+        if field_path.is_empty() {
+            return Err(invalid(
+                "missing_query_field",
+                Some(format!("{path}.path")),
+                "query field path is required",
+            ));
+        }
         Ok(QueryFieldRefIr {
-            path: if field_path.contains('.') {
-                FieldName::parse_query_path(field_path.to_owned())?
-            } else {
-                field.name.clone()
-            },
+            path: FieldName::parse_query_path(field_path.to_owned())?,
             element_index: value.element_index().map(|value| value.value()),
         })
+    }
+
+    fn validate_query_field_reference(
+        &self,
+        field: &QueryFieldRefIr,
+        path: &str,
+    ) -> Result<&FieldIr> {
+        self.query_field(field.path.as_str(), format!("{path}.field.path"))
     }
 
     pub(crate) fn typed_query_children(

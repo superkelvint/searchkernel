@@ -1,7 +1,10 @@
 use super::*;
 use crate::api_to_ir::resolve::resolve_filter;
-use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable, FilterBindings};
+use crate::filter_expression::FilterBindings;
+#[cfg(test)]
+use crate::filter_expression::{bind_parsed_filter, parse_error_to_portable};
 use crate::model::*;
+#[cfg(test)]
 use searchkernel_filter::parse_filter;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
@@ -9,6 +12,68 @@ use std::collections::BTreeMap;
 pub(crate) const MAX_FILTER_BINDINGS: usize = 1024;
 
 impl IndexContext {
+    pub(crate) fn filters_to_input(
+        &self,
+        filters: Option<api::FilterRequest<'_>>,
+    ) -> Result<(
+        Vec<FilterInput>,
+        Vec<crate::api_to_ir::resolve::TextualFilterInput>,
+    )> {
+        let Some(filters) = filters else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        if filters.sources().is_some() || filters.parameters().is_some() {
+            return Err(invalid(
+                "invalid_filter",
+                Some("filters"),
+                "legacy global textual filter fields are unsupported; use filters.textual",
+            ));
+        }
+        let structured = filters
+            .structured()
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        filter_to_input_at(value, &format!("filters.structured[{index}]"))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let textual = filters
+            .textual()
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, clause)| {
+                        let path = format!("filters.textual[{index}]");
+                        Ok(crate::api_to_ir::resolve::TextualFilterInput {
+                            source: clause
+                                .source()
+                                .ok_or_else(|| {
+                                    invalid(
+                                        "missing_source",
+                                        Some(format!("{path}.source")),
+                                        "textual filter clause source is required",
+                                    )
+                                })?
+                                .to_owned(),
+                            bindings: filter_bindings(
+                                clause.bindings(),
+                                &format!("{path}.bindings"),
+                            )?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok((structured, textual))
+    }
+
     pub fn filter_to_ir(&self, filter: api::FilterExpr<'_>) -> Result<FilterIr> {
         self.filter_to_ir_at(filter, "filter")
     }
@@ -18,6 +83,7 @@ impl IndexContext {
     pub fn range_to_ir(&self, range: api::FilterRange<'_>) -> Result<RangeIr> {
         self.range_to_ir_at(range, "range")
     }
+    #[cfg(test)]
     pub(crate) fn filters_to_ir(
         &self,
         filters: Option<api::FilterRequest<'_>>,
@@ -284,6 +350,182 @@ impl IndexContext {
             FilterIr::Range(value) => Ok(value),
             _ => unreachable!("range resolver returned a non-range filter"),
         }
+    }
+}
+
+fn filter_to_input_at(filter: api::FilterExpr<'_>, path: &str) -> Result<FilterInput> {
+    match filter.expr_type() {
+        api::FilterExprKind::FilterAnd => {
+            let value = filter.expr_as_filter_and().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::All(
+                value
+                    .clauses()
+                    .map(|clauses| {
+                        clauses
+                            .iter()
+                            .enumerate()
+                            .map(|(index, child)| {
+                                filter_to_input_at(child, &format!("{path}.all[{index}]"))
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default(),
+            ))
+        }
+        api::FilterExprKind::FilterOr => {
+            let value = filter.expr_as_filter_or().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::Any(
+                value
+                    .clauses()
+                    .map(|clauses| {
+                        clauses
+                            .iter()
+                            .enumerate()
+                            .map(|(index, child)| {
+                                filter_to_input_at(child, &format!("{path}.any[{index}]"))
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default(),
+            ))
+        }
+        api::FilterExprKind::FilterNot => {
+            let value = filter.expr_as_filter_not().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            let child = value.clause().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(format!("{path}.negation.clause")),
+                    "negation requires a clause",
+                )
+            })?;
+            Ok(FilterInput::Not(Box::new(filter_to_input_at(
+                child,
+                &format!("{path}.negation.clause"),
+            )?)))
+        }
+        api::FilterExprKind::FilterExists => {
+            let value = filter.expr_as_filter_exists().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::Exists {
+                field: value
+                    .field()
+                    .and_then(|field| field.path())
+                    .unwrap_or_default()
+                    .to_owned(),
+            })
+        }
+        api::FilterExprKind::FilterComparison => {
+            let value = filter.expr_as_filter_comparison().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::Comparison {
+                field: value
+                    .field()
+                    .and_then(|field| field.path())
+                    .unwrap_or_default()
+                    .to_owned(),
+                op: crate::api_to_ir::query::query_comparison_op(
+                    value.op().0,
+                    &format!("{path}.comparison.op"),
+                )?,
+                value: RequestValueIr::from_api(
+                    value.value().ok_or_else(|| {
+                        invalid(
+                            "missing_value",
+                            Some(format!("{path}.comparison.value")),
+                            "comparison requires a value",
+                        )
+                    })?,
+                    format!("{path}.comparison.value"),
+                )?,
+            })
+        }
+        api::FilterExprKind::FilterRange => {
+            let value = filter.expr_as_filter_range().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::Range {
+                field: value
+                    .field()
+                    .and_then(|field| field.path())
+                    .unwrap_or_default()
+                    .to_owned(),
+                lower: filter_range_bound_to_input(value.lower(), &format!("{path}.range.lower"))?,
+                upper: filter_range_bound_to_input(value.upper(), &format!("{path}.range.upper"))?,
+                include_lower: value.include_lower().map(|value| value.value()),
+                include_upper: value.include_upper().map(|value| value.value()),
+            })
+        }
+        api::FilterExprKind::FilterIn => {
+            let value = filter.expr_as_filter_in().ok_or_else(|| {
+                invalid(
+                    "invalid_filter",
+                    Some(path),
+                    "filter expression must select an operation",
+                )
+            })?;
+            Ok(FilterInput::In {
+                field: value
+                    .field()
+                    .and_then(|field| field.path())
+                    .unwrap_or_default()
+                    .to_owned(),
+                values: value
+                    .values()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| {
+                                RequestValueIr::from_api(
+                                    value,
+                                    format!("{path}.in.values[{index}]"),
+                                )
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default(),
+            })
+        }
+        _ => Err(invalid(
+            "invalid_filter",
+            Some(path),
+            "filter expression must select an operation",
+        )),
     }
 }
 

@@ -5,8 +5,8 @@ use searchkernel::{
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
     GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr, HighlightingIr,
-    OperationIr, ProjectionIr, QueryInputIr, QueryIr, RequestValueIr, SearchFieldIr,
-    SearchFieldWeight, SearchRequestIr, SearchResult, TotalHits, TotalHitsRelation, Value,
+    OperationIr, ProjectionIr, QueryInputIr, QueryIr, RequestValueIr, SearchRequestIr,
+    SearchResult, TotalHits, TotalHitsRelation, Value,
 };
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde::{Deserialize, Serialize};
@@ -39,10 +39,7 @@ fn index_with(backend: Arc<dyn Backend>) -> Index {
 fn expected_search() -> SearchRequestIr {
     SearchRequestIr::new(
         QueryIr::MatchAll,
-        vec![SearchFieldIr::new(
-            FieldName::parse("title").unwrap(),
-            SearchFieldWeight::new(1.0).unwrap(),
-        )],
+        vec![],
         None,
         vec![],
         20,

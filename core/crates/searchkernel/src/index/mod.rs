@@ -253,14 +253,11 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<crate::search::InspectedQuery> {
         self.with_backend(|_| {
-            let (typed_query, groupings) = crate::search::extensions_to_ir(request)?;
-            let normalized = searchkernel_ir::resolve_search_with_extensions(
+            let normalized = searchkernel_ir::resolve_search(
                 &self.inner.context,
                 search_to_resolver_input(request)?,
-                typed_query,
-                groupings,
             )
-                .map_err(Error::from_ir)?;
+            .map_err(Error::from_ir)?;
             let query = match normalized.query() {
                 searchkernel_ir::QueryIr::MatchAll => String::new(),
                 searchkernel_ir::QueryIr::Text(value) => value.clone(),
@@ -361,12 +358,9 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<result::SearchResult<T>> {
         self.with_backend(|backend| {
-            let (typed_query, groupings) = crate::search::extensions_to_ir(request)?;
-            let ir_request = searchkernel_ir::resolve_search_with_extensions(
+            let ir_request = searchkernel_ir::resolve_search(
                 &self.inner.context,
                 search_to_resolver_input(request)?,
-                typed_query,
-                groupings,
             )
             .map_err(Error::from_ir)?;
             let backend_result = backend.search(ir_request).map_err(Error::from_ir)?;

@@ -215,19 +215,19 @@ is available.
 
 `SearchBuilder::execute` calls back into `Index::execute_search`.
 
-`execute_search` constructs a `SearchIntent` and calls the shared semantic
-search resolver directly. It does not build a FlatBuffers message. Portable
-clients enter through `searchkernel-dispatch`, parse their FlatBuffers request,
-and converge at the same `SearchRequestIr`.
+`execute_search` constructs a `SearchInput` and calls the shared semantic search
+resolver directly. It does not build a FlatBuffers message. Portable clients
+enter through `searchkernel-dispatch`, decode their FlatBuffers request into the
+same unresolved input, and converge at the same `SearchRequestIr`.
 
 The shared resolver is deliberate: it keeps portable semantics in one place
 while allowing the first-party Rust API to remain an in-process API.
 
 ### Step 3: the request becomes owned IR
 
-The Rust path calls `resolve_search` or `resolve_search_with_extensions` with
-Rust-native resolver inputs. Portable clients parse their `api::SearchRequest`
-and call `IndexContext::search_to_ir`.
+The Rust path calls `resolve_search` with a Rust-native `SearchInput`. Portable
+clients decode their `api::SearchRequest` into that same input and call
+`resolve_search` through `IndexContext::search_to_ir`.
 
 The search resolver coordinates the semantic conversion. It delegates to helpers
 for:
@@ -441,6 +441,10 @@ boundary, identify its owner and lifetime before trying to understand the
 syntax.
 
 ## Safe change workflow
+
+For a feature-propagation checklist, use the [change recipes](change-recipes.md).
+They complement this guide with ordered paths for portable schema, IR, Vespa,
+native ABI, result, ranking, grouping, update, and SDK changes.
 
 When modifying a capability:
 

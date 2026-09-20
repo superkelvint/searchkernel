@@ -2,6 +2,8 @@ use super::*;
 use crate::api_to_ir::document::condition_to_ir;
 use crate::api_to_ir::filter::{flatten_and, flatten_or};
 use crate::api_to_ir::schema::analyzer_identity;
+use crate::api_to_ir::search::validate_query_input_references;
+use crate::filter_expression::{bind_parsed_filter, FilterBindings};
 use crate::model::{
     AnalyzeRequestIr, AnalyzerIr, DeleteRequestIr, DocumentId, DocumentIr, FieldCardinality,
     FieldKind, FieldName, FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr,
@@ -15,6 +17,65 @@ use crate::model::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+
+/// The unresolved query source shared by the direct Rust and FlatBuffers
+/// ingress paths.  This is caller intent, not validated query IR.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum QuerySourceInput {
+    Text(String),
+    MatchAll,
+    Typed(QueryExprIr),
+    Yql {
+        source: String,
+        parameters: BTreeMap<String, RequestValueIr>,
+    },
+}
+
+/// One textual filter clause before schema-aware parsing and binding.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextualFilterInput {
+    pub source: String,
+    pub bindings: FilterBindings,
+}
+
+/// A grouping source before request-level grouping resolution.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingInput {
+    Facet(FacetInput),
+    Structured(GroupingRequestIr),
+    Raw(String),
+}
+
+/// A query model before language normalization.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct QueryModelInput {
+    pub query_string: Option<String>,
+    pub default_index: Option<String>,
+    pub encoding: Option<String>,
+    pub filter: Option<String>,
+    pub language: Option<String>,
+    pub locale: Option<String>,
+    pub query_type: Option<crate::model::QueryModelTypeIr>,
+    pub sources: Vec<String>,
+    pub restrict: Vec<String>,
+    pub search_path: Option<String>,
+    pub search_group: Option<u32>,
+}
+
+/// Presentation controls before field-aware projection/highlighting
+/// resolution.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PresentationInput {
+    pub summary: Option<String>,
+    pub format: Option<String>,
+    pub bolding: Option<bool>,
+    pub timing: Option<bool>,
+}
 
 /// The semantic input for a delete request.  This is intentionally smaller
 /// than the portable request model: the FlatBuffers adapter supplies the
@@ -144,10 +205,20 @@ pub struct SearchFieldInput {
 
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
+pub enum SortTargetInput {
+    Field(String),
+    Relevance,
+    RankFeature(String),
+    Raw,
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SortInput {
-    pub field: String,
+    pub target: SortTargetInput,
     pub direction: SortDirection,
     pub missing: Option<MissingPlacement>,
+    pub annotations: BTreeMap<String, RequestValueIr>,
 }
 
 #[doc(hidden)]
@@ -177,22 +248,31 @@ pub enum RankingInput {
 
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct SearchIntent {
-    pub query: String,
+pub struct SearchInput {
+    pub query: QuerySourceInput,
     pub search_fields: Option<Vec<SearchFieldInput>>,
     pub filters: Vec<FilterInput>,
+    pub textual_filters: Vec<TextualFilterInput>,
     pub sorts: Vec<SortInput>,
-    pub facets: Vec<FacetInput>,
+    pub grouping: Vec<GroupingInput>,
     pub ranking: Option<RankingInput>,
-    pub query_inputs: BTreeMap<String, RequestValueIr>,
+    pub query_inputs: BTreeMap<String, QueryInputIr>,
     pub rank_properties: BTreeMap<String, String>,
+    pub query_model: QueryModelInput,
     pub projection: Option<Vec<String>>,
     pub highlighting: Option<Vec<String>>,
-    pub language: Option<String>,
+    pub presentation: PresentationInput,
+    pub properties: BTreeMap<String, RequestValueIr>,
+    pub query_profile: Option<String>,
+    pub search_chain: Option<String>,
     pub timeout: Option<Duration>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
+
+/// Compatibility name for callers that used the old unresolved search type.
+#[doc(hidden)]
+pub type SearchIntent = SearchInput;
 
 /// Resolve a delete request independently of its transport representation.
 #[doc(hidden)]
@@ -261,34 +341,12 @@ pub fn resolve_analyze(context: &IndexContext, input: AnalyzeInput) -> Result<An
     })
 }
 
-/// Resolve the subset of search intent exposed by the high-level Rust API.
+/// Resolve one complete transport-independent search request.
 #[doc(hidden)]
-pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<SearchRequestIr> {
-    resolve_search_with_extensions(context, input, None, Vec::new())
-}
-
-/// Resolve the ergonomic facade's request plus the typed-query and general
-/// grouping extensions.  Keeping this separate preserves the existing
-/// `SearchIntent` shape used by transport callers while allowing the public
-/// Rust facade to carry lossless V2 request nodes.
-#[doc(hidden)]
-pub fn resolve_search_with_extensions(
-    context: &IndexContext,
-    input: SearchIntent,
-    typed_query: Option<QueryExprIr>,
-    mut additional_grouping: Vec<GroupingRequestIr>,
-) -> Result<SearchRequestIr> {
-    let query = match typed_query {
-        Some(query) => {
-            context.validate_typed_query(&query, None, None, "typed_query")?;
-            QueryIr::Typed(Box::new(query))
-        }
-        None => context.query_to_ir(&input.query, None)?,
-    };
-    let search_fields = match input.search_fields {
-        None => context.definition().default_search_fields().to_vec(),
-        Some(fields) => resolve_search_fields(context, &fields)?,
-    };
+pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<SearchRequestIr> {
+    let query = resolve_query_source(context, &input)?;
+    validate_query_input_references(&query, &input.query_inputs, "query")?;
+    let search_fields = resolve_search_fields_for_query(context, &input)?;
     if matches!(query, QueryIr::Text(_)) && search_fields.is_empty() {
         return Err(PortableError::failed_precondition(
             "no_searchable_fields",
@@ -296,28 +354,14 @@ pub fn resolve_search_with_extensions(
             "a text query requires at least one searchable field",
         ));
     }
-    let filter = match input.filters.len() {
-        0 => None,
-        1 => Some(resolve_filter(context, &input.filters[0], "filter")?),
-        _ => Some(flatten_and(
-            input
-                .filters
-                .iter()
-                .enumerate()
-                .map(|(index, filter)| {
-                    resolve_filter(context, filter, &format!("filters[{index}]"))
-                })
-                .collect::<Result<Vec<_>>>()?,
-        )),
-    };
+    let filter = resolve_filters(context, &input)?;
     let sort = resolve_sorts(context, &input.sorts)?;
-    let mut grouping = input
-        .facets
-        .iter()
-        .map(resolve_facet)
-        .collect::<Result<Vec<_>>>()?;
-    grouping.append(&mut additional_grouping);
-    let profile = match input.ranking.unwrap_or(RankingInput::DefaultRelevanceV1) {
+    let grouping = resolve_grouping(&input.grouping)?;
+    let profile = match input
+        .ranking
+        .clone()
+        .unwrap_or(RankingInput::DefaultRelevanceV1)
+    {
         RankingInput::DefaultRelevanceV1 => "default".to_owned(),
         RankingInput::Bm25 => "bm25".to_owned(),
         RankingInput::Named(profile) if !profile.is_empty() => profile,
@@ -331,14 +375,18 @@ pub fn resolve_search_with_extensions(
     };
     validate_ranking_profile(context, &profile)?;
     let language = input
+        .query_model
         .language
         .as_deref()
-        .map(|value| resolve_language(value, "language"))
+        .map(|value| resolve_language(value, "query_model.language"))
         .transpose()?;
     let projection = resolve_projection(context, input.projection.as_deref())?;
     let highlighting = resolve_highlighting(context, input.highlighting.as_deref())?;
     let timeout = input.timeout.map(resolve_timeout).transpose()?;
     let (limit, offset) = resolve_pagination(input.limit, input.offset);
+    validate_search_request_combinations(&input, &query)?;
+    let query_model = resolve_query_model(input.query_model, language.clone());
+    let presentation = resolve_presentation(input.presentation);
     Ok(SearchRequestIr {
         query,
         search_fields,
@@ -349,28 +397,230 @@ pub fn resolve_search_with_extensions(
             profile,
             properties: input.rank_properties,
         },
-        inputs: input
-            .query_inputs
-            .into_iter()
-            .map(|(name, value)| (name, QueryInputIr::Literal(value)))
-            .collect(),
+        inputs: input.query_inputs,
         limit,
         offset,
         projection,
         highlighting,
         language: language.clone(),
-        query_model: QueryModelIr {
-            language,
-            ..Default::default()
-        },
-        presentation: PresentationIr::default(),
-        properties: std::collections::BTreeMap::new(),
-        query_profile: None,
-        search_chain: None,
+        query_model,
+        presentation,
+        properties: input.properties,
+        query_profile: input.query_profile.filter(|value| !value.is_empty()),
+        search_chain: input.search_chain.filter(|value| !value.is_empty()),
         timeout,
         prefix_policy: PrefixPolicy::Disabled,
         typo_policy: TypoPolicy::Disabled,
     })
+}
+
+fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<QueryIr> {
+    match &input.query {
+        QuerySourceInput::Text(text) if text.trim().is_empty() => Ok(QueryIr::MatchAll),
+        QuerySourceInput::Text(text) => Ok(QueryIr::Text(text.clone())),
+        QuerySourceInput::MatchAll => Ok(QueryIr::MatchAll),
+        QuerySourceInput::Typed(query) => {
+            context.validate_typed_query(
+                query,
+                None,
+                input.query_model.default_index.as_deref(),
+                "query",
+            )?;
+            Ok(QueryIr::Typed(Box::new(query.clone())))
+        }
+        QuerySourceInput::Yql { source, parameters } => Ok(QueryIr::Yql {
+            source: source.clone(),
+            parameters: parameters.clone(),
+        }),
+    }
+}
+
+fn resolve_search_fields_for_query(
+    context: &IndexContext,
+    input: &SearchInput,
+) -> Result<Vec<SearchFieldIr>> {
+    match (&input.query, input.search_fields.as_deref()) {
+        (QuerySourceInput::Text(text), None) if !text.trim().is_empty() => {
+            Ok(context.definition().default_search_fields().to_vec())
+        }
+        (QuerySourceInput::Text(text), None) if text.trim().is_empty() => Ok(Vec::new()),
+        (QuerySourceInput::Text(_), Some(fields)) => resolve_search_fields(context, fields),
+        (QuerySourceInput::MatchAll, None) | (QuerySourceInput::Yql { .. }, None) => Ok(Vec::new()),
+        (QuerySourceInput::Typed(_), None) => Ok(Vec::new()),
+        (QuerySourceInput::Text(_), None) => Ok(Vec::new()),
+        (_, Some(_)) => Err(invalid(
+            "search_fields_not_supported",
+            Some("search_fields"),
+            "search fields apply only to text query sources",
+        )),
+    }
+}
+
+fn resolve_filters(context: &IndexContext, input: &SearchInput) -> Result<Option<FilterIr>> {
+    let mut clauses = input
+        .filters
+        .iter()
+        .enumerate()
+        .map(|(index, filter)| {
+            resolve_filter(context, filter, &format!("filters.structured[{index}]"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for (index, textual) in input.textual_filters.iter().enumerate() {
+        let parsed = searchkernel_filter::parse_filter(&textual.source)
+            .map_err(crate::filter_expression::parse_error_to_portable)
+            .map_err(|error| {
+                crate::api_to_ir::filter::decorate_filter_clause_error(
+                    error,
+                    index,
+                    &format!("filters.textual[{index}]"),
+                )
+            })?;
+        let bound = bind_parsed_filter(&parsed, context.definition(), &textual.bindings).map_err(
+            |error| {
+                crate::api_to_ir::filter::decorate_filter_clause_error(
+                    error,
+                    index,
+                    &format!("filters.textual[{index}]"),
+                )
+            },
+        )?;
+        clauses.push(bound.expression().clone());
+    }
+    Ok(match clauses.len() {
+        0 => None,
+        1 => clauses.into_iter().next(),
+        _ => Some(flatten_and(clauses)),
+    })
+}
+
+fn resolve_grouping(input: &[GroupingInput]) -> Result<Vec<GroupingRequestIr>> {
+    input
+        .iter()
+        .enumerate()
+        .map(|(index, value)| match value {
+            GroupingInput::Facet(value) => resolve_facet(value),
+            GroupingInput::Structured(value) => Ok(value.clone()),
+            GroupingInput::Raw(_) => Err(PortableError::unsupported(
+                "raw_grouping_not_supported",
+                Some(format!("grouping[{index}].source")),
+                "raw grouping text requires a grouping parser before it can enter canonical IR",
+            )),
+        })
+        .collect()
+}
+
+fn resolve_query_model(input: QueryModelInput, language: Option<LanguageHint>) -> QueryModelIr {
+    QueryModelIr {
+        query_string: input.query_string,
+        default_index: input.default_index,
+        encoding: input.encoding,
+        filter: input.filter,
+        language,
+        locale: input.locale,
+        query_type: input.query_type,
+        sources: input.sources,
+        restrict: input.restrict,
+        search_path: input.search_path,
+        search_group: input.search_group,
+    }
+}
+
+fn resolve_presentation(input: PresentationInput) -> PresentationIr {
+    PresentationIr {
+        summary: input.summary,
+        format: input.format,
+        bolding: input.bolding,
+        timing: input.timing,
+    }
+}
+
+fn validate_search_request_combinations(input: &SearchInput, query: &QueryIr) -> Result<()> {
+    if matches!(query, QueryIr::Yql { .. }) {
+        if !input.filters.is_empty() || !input.textual_filters.is_empty() {
+            return Err(invalid(
+                "yql_conflict",
+                Some("filters"),
+                "YQL cannot be combined with high-level filters",
+            ));
+        }
+        if !input.sorts.is_empty() {
+            return Err(invalid(
+                "yql_conflict",
+                Some("sort"),
+                "YQL cannot be combined with high-level sort",
+            ));
+        }
+        if input.projection.is_some() || input.highlighting.is_some() {
+            return Err(invalid(
+                "yql_conflict",
+                Some("presentation"),
+                "YQL owns projection and highlighting",
+            ));
+        }
+    }
+    let mut owned = BTreeSet::new();
+    if input.ranking.is_some() {
+        owned.insert("ranking.profile");
+    }
+    if input.limit.is_some() {
+        owned.insert("hits");
+    }
+    if input.offset.is_some() {
+        owned.insert("offset");
+    }
+    if input.timeout.is_some() {
+        owned.insert("timeout");
+    }
+    if query_model_is_present(&input.query_model) {
+        owned.insert("model");
+    }
+    if input.projection.is_some()
+        || input.highlighting.is_some()
+        || input.presentation != PresentationInput::default()
+    {
+        owned.insert("presentation");
+    }
+    if input
+        .query_profile
+        .as_deref()
+        .is_some_and(|value| !value.is_empty())
+    {
+        owned.insert("queryProfile");
+    }
+    if input
+        .search_chain
+        .as_deref()
+        .is_some_and(|value| !value.is_empty())
+    {
+        owned.insert("searchChain");
+    }
+    for key in input.properties.keys() {
+        if owned
+            .iter()
+            .any(|prefix| key == *prefix || key.starts_with(&format!("{prefix}.")))
+        {
+            return Err(invalid(
+                "property_overlaps_typed_field",
+                Some(format!("properties.{key}")),
+                format!("property `{key}` overlaps a populated typed request field"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn query_model_is_present(value: &QueryModelInput) -> bool {
+    value.query_string.is_some()
+        || value.default_index.is_some()
+        || value.encoding.is_some()
+        || value.filter.is_some()
+        || value.language.is_some()
+        || value.locale.is_some()
+        || value.query_type.is_some()
+        || !value.sources.is_empty()
+        || !value.restrict.is_empty()
+        || value.search_path.is_some()
+        || value.search_group.is_some()
 }
 
 fn validate_ranking_profile(context: &IndexContext, profile: &str) -> Result<()> {
@@ -705,26 +955,49 @@ pub(crate) fn resolve_sort(
     input: &SortInput,
     path: &str,
 ) -> Result<SortIr> {
-    let field = context.query_field_for_resolver(&input.field, format!("{path}.field"))?;
-    if !field.capabilities().sortable() {
-        return Err(invalid(
-            "field_not_sortable",
-            Some(format!("{path}.field")),
-            "sort requires a sortable field",
-        ));
-    }
-    if field.cardinality() != FieldCardinality::Single {
-        return Err(invalid(
-            "invalid_capability",
-            Some(format!("{path}.field")),
-            "multi-valued fields cannot be sortable",
-        ));
-    }
+    let target = match &input.target {
+        SortTargetInput::Field(name) => {
+            let field = context.query_field_for_resolver(name, format!("{path}.field"))?;
+            if !field.capabilities().sortable() {
+                return Err(invalid(
+                    "field_not_sortable",
+                    Some(format!("{path}.field")),
+                    "sort requires a sortable field",
+                ));
+            }
+            if field.cardinality() != FieldCardinality::Single {
+                return Err(invalid(
+                    "invalid_capability",
+                    Some(format!("{path}.field")),
+                    "multi-valued fields cannot be sortable",
+                ));
+            }
+            SortTargetIr::Field(field.name().clone())
+        }
+        SortTargetInput::Relevance => SortTargetIr::Relevance,
+        SortTargetInput::RankFeature(feature) if !feature.is_empty() => {
+            SortTargetIr::RankFeature(feature.clone())
+        }
+        SortTargetInput::RankFeature(_) => {
+            return Err(invalid(
+                "invalid_sort",
+                Some(format!("{path}.target.feature")),
+                "rank-feature sort requires a non-empty feature name",
+            ));
+        }
+        SortTargetInput::Raw => {
+            return Err(PortableError::unsupported(
+                "raw_sort_not_supported",
+                Some(format!("{path}.target")),
+                "raw sort expressions must be normalized before entering resolved IR",
+            ));
+        }
+    };
     Ok(SortIr {
-        target: SortTargetIr::Field(field.name().clone()),
+        target,
         direction: input.direction,
         missing: input.missing.clone().unwrap_or(MissingPlacement::Last),
-        annotations: BTreeMap::new(),
+        annotations: input.annotations.clone(),
     })
 }
 
@@ -735,7 +1008,7 @@ pub(crate) fn resolve_sorts(context: &IndexContext, sorts: &[SortInput]) -> Resu
         .enumerate()
         .map(|(index, input)| {
             let value = resolve_sort(context, input, &format!("sort[{index}]"))?;
-            if !seen.insert(value.field().cloned()) {
+            if value.field().is_some() && !seen.insert(value.field().cloned()) {
                 return Err(invalid(
                     "duplicate_sort_field",
                     Some(format!("sort[{index}].field")),

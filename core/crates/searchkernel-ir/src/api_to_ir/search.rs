@@ -1,85 +1,17 @@
 use super::*;
 use crate::api_to_ir::resolve::{
-    resolve_highlighting, resolve_language, resolve_pagination, resolve_search_fields_at,
-    resolve_sort, resolve_timeout,
+    resolve_highlighting, resolve_search, resolve_search_fields_at, resolve_sort, SearchInput,
 };
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
 
 impl IndexContext {
     pub fn inspect_query(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
         self.search_to_ir(request)
     }
     pub fn search_to_ir(&self, request: api::SearchRequest<'_>) -> Result<SearchRequestIr> {
-        let query_model = query_model_to_ir(request.query_model())?;
-        let query =
-            self.query_source_to_ir(request.query(), query_model.default_index.as_deref())?;
-        let search_fields_wrapper = request.search_fields();
-        validate_search_request_combinations(request, &query)?;
-        let source_kind = request.query().map(|source| source.source_type());
-        let search_fields = match (source_kind, search_fields_wrapper) {
-            (Some(api::QuerySourceKind::SearchKernelTextQuery), None) => {
-                self.definition.default_search_fields.clone()
-            }
-            (Some(api::QuerySourceKind::SearchKernelTextQuery), Some(selection)) => {
-                self.search_fields_to_ir(selection)?
-            }
-            (_, None) => Vec::new(),
-            (_, Some(_)) => {
-                return Err(invalid(
-                    "search_fields_not_supported",
-                    Some("search_fields"),
-                    "search fields apply only to text query sources",
-                ));
-            }
-        };
-        if matches!(query, QueryIr::Text(_)) && search_fields.is_empty() {
-            return Err(PortableError::failed_precondition(
-                "no_searchable_fields",
-                Some("search_fields"),
-                "a text query requires at least one searchable field",
-            ));
-        }
-        let filter = self.filters_to_ir(request.filters())?;
-        let sort = self.sorts_to_ir(request.sort())?;
-        let grouping = grouping_to_ir(request.grouping())?;
-        let language = query_model.language.clone();
-        let presentation = presentation_to_ir(request.presentation())?;
-        let timeout = request
-            .timeout_ms()
-            .map(|value| resolve_timeout(Duration::from_millis(value.value())))
-            .transpose()?;
-        let inputs = query_inputs_to_ir(request.inputs())?;
-        validate_query_input_references(&query, &inputs, "query")?;
-        let (limit, offset) = resolve_pagination(
-            request.limit().map(|value| value.value()),
-            request.offset().map(|value| value.value()),
-        );
-        Ok(SearchRequestIr {
-            query,
-            search_fields,
-            filter,
-            sort,
-            grouping,
-            ranking_request: ranking_request_to_ir(request.ranking())?,
-            inputs,
-            limit,
-            offset,
-            projection: self.projection_to_ir(request.presentation().and_then(|p| p.fields()))?,
-            highlighting: self
-                .highlighting_to_ir(request.presentation().and_then(|p| p.highlighting()))?,
-            language,
-            query_model,
-            presentation,
-            properties: request_values_to_map(request.properties(), "properties")?,
-            query_profile: normalized_optional_string(request.query_profile()),
-            search_chain: normalized_optional_string(request.search_chain()),
-            timeout,
-            prefix_policy: PrefixPolicy::Disabled,
-            typo_policy: TypoPolicy::Disabled,
-        })
+        resolve_search(self, decode_search_input(self, request)?)
     }
     pub fn analyze_to_ir(&self, request: api::AnalyzeRequest<'_>) -> Result<AnalyzeRequestIr> {
         let target = match request.target_type() {
@@ -164,11 +96,10 @@ impl IndexContext {
         }
     }
 
-    pub(crate) fn query_source_to_ir(
+    pub(crate) fn query_source_to_input(
         &self,
         source: Option<api::QuerySource<'_>>,
-        default_index: Option<&str>,
-    ) -> Result<QueryIr> {
+    ) -> Result<crate::api_to_ir::resolve::QuerySourceInput> {
         let source = source.ok_or_else(|| {
             invalid(
                 "missing_query",
@@ -177,13 +108,23 @@ impl IndexContext {
             )
         })?;
         match source.source_type() {
-            api::QuerySourceKind::SearchKernelTextQuery => self.query_to_ir(
-                source
-                    .source_as_search_kernel_text_query()
-                    .and_then(|query| query.text())
-                    .unwrap_or_default(),
-                None,
-            ),
+            api::QuerySourceKind::SearchKernelTextQuery => self
+                .query_to_ir(
+                    source
+                        .source_as_search_kernel_text_query()
+                        .and_then(|query| query.text())
+                        .unwrap_or_default(),
+                    None,
+                )
+                .map(|query| match query {
+                    QueryIr::MatchAll => {
+                        crate::api_to_ir::resolve::QuerySourceInput::Text(String::new())
+                    }
+                    QueryIr::Text(value) => {
+                        crate::api_to_ir::resolve::QuerySourceInput::Text(value)
+                    }
+                    _ => unreachable!("text query conversion returned a non-text query"),
+                }),
             api::QuerySourceKind::TypedQuery => {
                 let query = source
                     .source_as_typed_query()
@@ -191,9 +132,12 @@ impl IndexContext {
                     .ok_or_else(|| {
                         invalid("missing_query", Some("query"), "typed query is missing")
                     })?;
-                self.query_expr_to_ir_with_default_index(query, "query", default_index)
+                self.typed_query_expr_to_ir(query, "query")
+                    .map(crate::api_to_ir::resolve::QuerySourceInput::Typed)
             }
-            api::QuerySourceKind::MatchAllQuery => Ok(QueryIr::MatchAll),
+            api::QuerySourceKind::MatchAllQuery => {
+                Ok(crate::api_to_ir::resolve::QuerySourceInput::MatchAll)
+            }
             api::QuerySourceKind::YqlQuery => {
                 let yql = source.source_as_yql_query().ok_or_else(|| {
                     invalid("invalid_query", Some("query"), "YQL query is missing")
@@ -205,7 +149,7 @@ impl IndexContext {
                         "YQL source is required",
                     )
                 })?;
-                Ok(QueryIr::Yql {
+                Ok(crate::api_to_ir::resolve::QuerySourceInput::Yql {
                     source: source.to_owned(),
                     parameters: request_values_to_map(yql.parameters(), "query.parameters")?,
                 })
@@ -216,6 +160,106 @@ impl IndexContext {
                 "unknown query source",
             )),
         }
+    }
+    pub(crate) fn sorts_to_input(
+        &self,
+        sorts: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::SortExpr<'_>>>>,
+    ) -> Result<Vec<SortInput>> {
+        let mut output = Vec::new();
+        if let Some(sorts) = sorts {
+            for (index, value) in sorts.iter().enumerate() {
+                let path = format!("sort[{index}]");
+                let direction = match value.direction().0 {
+                    0 | 1 => SortDirection::Asc,
+                    2 => SortDirection::Desc,
+                    _ => {
+                        return Err(invalid(
+                            "invalid_sort",
+                            Some(format!("{path}.direction")),
+                            "sort direction is unknown",
+                        ));
+                    }
+                };
+                let missing = match value.missing() {
+                    None => None,
+                    Some(policy) => match policy.policy_type() {
+                        api::MissingPolicyKind::MissingFirst
+                            if policy.policy_as_missing_first().is_some() =>
+                        {
+                            Some(MissingPlacement::First)
+                        }
+                        api::MissingPolicyKind::MissingLast
+                            if policy.policy_as_missing_last().is_some() =>
+                        {
+                            Some(MissingPlacement::Last)
+                        }
+                        api::MissingPolicyKind::MissingAs => {
+                            Some(MissingPlacement::As(RequestValueIr::from_api(
+                                policy
+                                    .policy_as_missing_as()
+                                    .and_then(|value| value.value())
+                                    .ok_or_else(|| {
+                                        invalid(
+                                            "invalid_sort",
+                                            Some(format!("{path}.missing")),
+                                            "missing-as policy requires a value",
+                                        )
+                                    })?,
+                                format!("{path}.missing.value"),
+                            )?))
+                        }
+                        _ => {
+                            return Err(invalid(
+                                "invalid_sort",
+                                Some(format!("{path}.missing")),
+                                "missing policy is unsupported or missing its payload",
+                            ));
+                        }
+                    },
+                };
+                let annotations =
+                    request_values_to_map(value.annotations(), &format!("{path}.annotations"))?;
+                let target = value.target().ok_or_else(|| {
+                    invalid(
+                        "invalid_sort",
+                        Some(path.clone()),
+                        "sort expression requires a target",
+                    )
+                })?;
+                let target = match target.target_type() {
+                    api::SortTargetKind::FieldSortTarget => SortTargetInput::Field(
+                        target
+                            .target_as_field_sort_target()
+                            .and_then(|value| value.field())
+                            .unwrap_or_default()
+                            .to_owned(),
+                    ),
+                    api::SortTargetKind::RelevanceSortTarget => SortTargetInput::Relevance,
+                    api::SortTargetKind::RankFeatureSortTarget => SortTargetInput::RankFeature(
+                        target
+                            .target_as_rank_feature_sort_target()
+                            .and_then(|value| value.feature())
+                            .unwrap_or_default()
+                            .to_owned(),
+                    ),
+                    api::SortTargetKind::RawSortTarget => SortTargetInput::Raw,
+                    _ => {
+                        return Err(invalid(
+                            "invalid_sort",
+                            Some(format!("{path}.target")),
+                            "sort target must select a known variant",
+                        ));
+                    }
+                };
+                output.push(SortInput {
+                    target,
+                    direction,
+                    missing,
+                    annotations,
+                });
+            }
+        }
+        Ok(output)
     }
     pub fn sort_to_ir(&self, sort: api::SortExpr<'_>) -> Result<SortIr> {
         self.sort_to_ir_at(sort, "sort")
@@ -305,16 +349,16 @@ impl IndexContext {
                     .and_then(|target| target.field())
                     .unwrap_or_default()
                     .to_owned();
-                let mut sort = resolve_sort(
+                let sort = resolve_sort(
                     self,
                     &SortInput {
-                        field,
+                        target: SortTargetInput::Field(field),
                         direction,
                         missing: Some(missing),
+                        annotations,
                     },
                     &format!("{path}.target"),
                 )?;
-                sort.annotations = annotations;
                 return Ok(sort);
             }
             api::SortTargetKind::RelevanceSortTarget => SortTargetIr::Relevance,
@@ -360,112 +404,156 @@ impl IndexContext {
             annotations,
         })
     }
-    pub(crate) fn sorts_to_ir(
-        &self,
-        sorts: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::SortExpr<'_>>>>,
-    ) -> Result<Vec<SortIr>> {
-        let mut seen = BTreeSet::new();
-        let mut out = Vec::new();
-        if let Some(sorts) = sorts {
-            for (i, s) in sorts.iter().enumerate() {
-                let v = self.sort_to_ir_at(s, &format!("sort[{i}]"))?;
-                if let Some(field) = v.field() {
-                    if !seen.insert(field.clone()) {
-                        return Err(invalid(
-                            "duplicate_sort_field",
-                            Some(format!("sort[{i}].field")),
-                            "sort fields must be unique",
-                        ));
-                    }
-                }
-                out.push(v)
-            }
-        }
-        Ok(out)
+}
+
+fn decode_search_input(
+    context: &IndexContext,
+    request: api::SearchRequest<'_>,
+) -> Result<SearchInput> {
+    let query_model = query_model_to_input(request.query_model())?;
+    let query = context.query_source_to_input(request.query())?;
+    let search_fields = request.search_fields().map(|selection| {
+        selection
+            .fields()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| SearchFieldInput {
+                        field: field.field().unwrap_or_default().to_owned(),
+                        weight: field.weight().map(|value| value.value()),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    let (filters, textual_filters) = context.filters_to_input(request.filters())?;
+    let sorts = context.sorts_to_input(request.sort())?;
+    let grouping = grouping_to_input(request.grouping())?;
+    let (ranking, rank_properties) = ranking_to_input(request.ranking())?;
+    let inputs = query_inputs_to_ir(request.inputs())?;
+    let presentation = presentation_to_input(request.presentation());
+    let projection = request
+        .presentation()
+        .and_then(|value| value.fields())
+        .map(|value| {
+            value
+                .fields()
+                .map(|fields| fields.iter().map(ToOwned::to_owned).collect())
+                .unwrap_or_default()
+        });
+    let highlighting = request
+        .presentation()
+        .and_then(|value| value.highlighting())
+        .map(|value| {
+            value
+                .fields()
+                .map(|fields| fields.iter().map(ToOwned::to_owned).collect())
+                .unwrap_or_default()
+        });
+    let timeout = request
+        .timeout_ms()
+        .map(|value| std::time::Duration::from_millis(value.value()));
+    Ok(SearchInput {
+        query,
+        search_fields,
+        filters,
+        textual_filters,
+        sorts,
+        grouping,
+        ranking,
+        query_inputs: inputs,
+        rank_properties,
+        query_model,
+        projection,
+        highlighting,
+        presentation,
+        properties: request_values_to_map(request.properties(), "properties")?,
+        query_profile: normalized_optional_string(request.query_profile()),
+        search_chain: normalized_optional_string(request.search_chain()),
+        timeout,
+        limit: request.limit().map(|value| value.value()),
+        offset: request.offset().map(|value| value.value()),
+    })
+}
+
+fn query_model_to_input(
+    value: Option<api::QueryModel<'_>>,
+) -> Result<crate::api_to_ir::resolve::QueryModelInput> {
+    let Some(value) = value else {
+        return Ok(Default::default());
+    };
+    let query_type = value.type_().map(|value| QueryModelTypeIr {
+        composite: normalized_optional_string(value.composite()),
+        tokenization: normalized_optional_string(value.tokenization()),
+        syntax: normalized_optional_string(value.syntax()),
+        profile: normalized_optional_string(value.profile()),
+        is_yql_default: value.is_yql_default().map(|value| value.value()),
+    });
+    Ok(crate::api_to_ir::resolve::QueryModelInput {
+        query_string: normalized_optional_string(value.query_string()),
+        default_index: normalized_optional_string(value.default_index()),
+        encoding: normalized_optional_string(value.encoding()),
+        filter: normalized_optional_string(value.filter()),
+        language: normalized_optional_string(value.language()),
+        locale: normalized_optional_string(value.locale()),
+        query_type,
+        sources: value
+            .sources()
+            .map(|values| values.iter().map(ToOwned::to_owned).collect())
+            .unwrap_or_default(),
+        restrict: value
+            .restrict()
+            .map(|values| values.iter().map(ToOwned::to_owned).collect())
+            .unwrap_or_default(),
+        search_path: normalized_optional_string(value.search_path()),
+        search_group: value.search_group().map(|value| value.value()),
+    })
+}
+
+fn presentation_to_input(
+    value: Option<api::PresentationRequest<'_>>,
+) -> crate::api_to_ir::resolve::PresentationInput {
+    let Some(value) = value else {
+        return Default::default();
+    };
+    crate::api_to_ir::resolve::PresentationInput {
+        summary: normalized_optional_string(value.summary()),
+        format: normalized_optional_string(value.format()),
+        bolding: value.bolding().map(|value| value.value()),
+        timing: value.timing().map(|value| value.value()),
     }
 }
 
-pub(crate) fn validate_search_request_combinations(
-    request: api::SearchRequest<'_>,
-    query: &QueryIr,
-) -> Result<()> {
-    if matches!(query, QueryIr::Yql { .. }) {
-        if request.filters().is_some() {
-            return Err(invalid(
-                "yql_conflict",
-                Some("filters"),
-                "YQL cannot be combined with high-level filters",
-            ));
-        }
-        if request.sort().is_some_and(|sort| !sort.is_empty()) {
-            return Err(invalid(
-                "yql_conflict",
-                Some("sort"),
-                "YQL cannot be combined with high-level sort",
-            ));
-        }
-        if let Some(presentation) = request.presentation() {
-            if presentation.fields().is_some() || presentation.highlighting().is_some() {
+fn ranking_to_input(
+    value: Option<api::RankingRequest<'_>>,
+) -> Result<(Option<RankingInput>, BTreeMap<String, String>)> {
+    let Some(value) = value else {
+        return Ok((None, BTreeMap::new()));
+    };
+    let ranking = if value.profile().is_some_and(|profile| !profile.is_empty()) {
+        Some(RankingInput::Named(
+            value.profile().unwrap_or_default().to_owned(),
+        ))
+    } else {
+        None
+    };
+    let mut properties = BTreeMap::new();
+    if let Some(entries) = value.properties() {
+        for (index, entry) in entries.iter().enumerate() {
+            let key = entry.key().to_owned();
+            if properties
+                .insert(key.clone(), entry.value().unwrap_or_default().to_owned())
+                .is_some()
+            {
                 return Err(invalid(
-                    "yql_conflict",
-                    Some("presentation"),
-                    "YQL owns projection and highlighting",
+                    "duplicate_ranking_property",
+                    Some(format!("ranking.properties[{index}]")),
+                    format!("ranking property `{key}` occurs more than once"),
                 ));
             }
         }
     }
-    validate_property_overlaps(request)
-}
-
-pub(crate) fn validate_property_overlaps(request: api::SearchRequest<'_>) -> Result<()> {
-    let Some(properties) = request.properties() else {
-        return Ok(());
-    };
-    let mut owned = BTreeSet::new();
-    if request.ranking().is_some() {
-        owned.insert("ranking.profile");
-    }
-    if request.limit().is_some() {
-        owned.insert("hits");
-    }
-    if request.offset().is_some() {
-        owned.insert("offset");
-    }
-    if request.timeout_ms().is_some() {
-        owned.insert("timeout");
-    }
-    if request.query_model().is_some() {
-        owned.insert("model");
-    }
-    if request.presentation().is_some() {
-        owned.insert("presentation");
-    }
-    if request
-        .query_profile()
-        .is_some_and(|value| !value.is_empty())
-    {
-        owned.insert("queryProfile");
-    }
-    if request
-        .search_chain()
-        .is_some_and(|value| !value.is_empty())
-    {
-        owned.insert("searchChain");
-    }
-    for (index, property) in properties.iter().enumerate() {
-        let key = property.key();
-        if owned
-            .iter()
-            .any(|prefix| key == *prefix || key.starts_with(&format!("{prefix}.")))
-        {
-            return Err(invalid(
-                "property_overlaps_typed_field",
-                Some(format!("properties[{index}].key")),
-                format!("property `{key}` overlaps a populated typed request field"),
-            ));
-        }
-    }
-    Ok(())
+    Ok((ranking, properties))
 }
 
 pub(crate) fn query_inputs_to_ir(
@@ -586,55 +674,6 @@ pub(crate) fn validate_query_input_references_in_expr(
     }
     Ok(())
 }
-pub(crate) fn query_model_to_ir(value: Option<api::QueryModel<'_>>) -> Result<QueryModelIr> {
-    let Some(value) = value else {
-        return Ok(QueryModelIr::default());
-    };
-    let query_type = value.type_().map(|value| QueryModelTypeIr {
-        composite: normalized_optional_string(value.composite()),
-        tokenization: normalized_optional_string(value.tokenization()),
-        syntax: normalized_optional_string(value.syntax()),
-        profile: normalized_optional_string(value.profile()),
-        is_yql_default: value.is_yql_default().map(|value| value.value()),
-    });
-    Ok(QueryModelIr {
-        query_string: normalized_optional_string(value.query_string()),
-        default_index: normalized_optional_string(value.default_index()),
-        encoding: normalized_optional_string(value.encoding()),
-        filter: normalized_optional_string(value.filter()),
-        language: value
-            .language()
-            .map(|value| resolve_language(value, "query_model.language"))
-            .transpose()?,
-        locale: normalized_optional_string(value.locale()),
-        query_type,
-        sources: value
-            .sources()
-            .map(|values| values.iter().map(ToOwned::to_owned).collect())
-            .unwrap_or_default(),
-        restrict: value
-            .restrict()
-            .map(|values| values.iter().map(ToOwned::to_owned).collect())
-            .unwrap_or_default(),
-        search_path: normalized_optional_string(value.search_path()),
-        search_group: value.search_group().map(|value| value.value()),
-    })
-}
-
-pub(crate) fn presentation_to_ir(
-    value: Option<api::PresentationRequest<'_>>,
-) -> Result<PresentationIr> {
-    let Some(value) = value else {
-        return Ok(PresentationIr::default());
-    };
-    Ok(PresentationIr {
-        summary: normalized_optional_string(value.summary()),
-        format: normalized_optional_string(value.format()),
-        bolding: value.bolding().map(|value| value.value()),
-        timing: value.timing().map(|value| value.value()),
-    })
-}
-
 pub(crate) fn search_fields_to_ir_at(
     selection: api::SearchFieldSelection<'_>,
     fields: &[&FieldIr],
