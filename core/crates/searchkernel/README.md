@@ -7,7 +7,7 @@ filter, and search types that an application uses.
 
 1. `src/lib.rs` shows the public vocabulary and re-exports.
 2. `src/schema.rs` shows index and field builders.
-3. `src/index.rs` shows the CRUD entry points and backend handoff.
+3. `src/index/mod.rs` shows the CRUD entry points and backend handoff.
 4. `src/search.rs`, `src/filter.rs`, and `src/patch.rs` show request builders.
 5. `src/portable_definition.rs` shows the narrow manifest-provenance encoder;
    request semantics live in `searchkernel-ir` resolvers.
@@ -16,10 +16,11 @@ filter, and search types that an application uses.
 ## Key concepts
 
 - Builders collect caller intent; they do not own search semantics.
-- `Index` sends direct Rust intent to `searchkernel-ir` resolvers, which
-  validate and normalize it before handing owned IR to a backend.
-- `Index::from_backend` is test/infrastructure setup. The production native
-  lifecycle is supplied by the Vespa integration milestone.
+- `Index` sends direct Rust resolver inputs to `searchkernel-ir`, which
+  validates and normalizes them before handing owned IR to a backend. It does
+  not serialize the request through FlatBuffers or gRPC.
+- `Index::create` and `Index::open` use the native Vespa-backed lifecycle;
+  `Index::from_backend` is test/infrastructure setup.
 - Result documents are converted from owned backend values into caller-chosen
   `serde` types.
 

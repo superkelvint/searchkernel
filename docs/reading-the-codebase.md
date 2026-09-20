@@ -7,12 +7,18 @@ responsibility lives, and the order in which to read the code.
 The short version is:
 
 ```text
-caller
+Rust application
   -> public Rust API
-  -> portable FlatBuffers message
+  -> Rust resolver input
   -> validated owned Search Kernel IR
-  -> backend
-  -> Vespa adapter
+  -> Vespa backend adapter
+  -> Vespa C++ engine
+
+Non-Rust application
+  -> FlatBuffers/gRPC transport
+  -> searchkernel-dispatch
+  -> validated owned Search Kernel IR
+  -> Vespa backend adapter
   -> Vespa C++ engine
 ```
 
@@ -46,7 +52,7 @@ api/
   FlatBuffers schemas shared by all languages
 
 core/crates/searchkernel/
-  Product-facing Rust API and fluent builders
+  Product-facing Rust API, fluent builders, and direct Rust-to-IR conversion
 
 core/crates/searchkernel-ir/
   Validation, defaults, normalization, owned IR, and portable results
@@ -93,11 +99,14 @@ reference/
 ```
 
 Generated files and the pinned upstream checkout are reference material, not
-the first place to look for wrapper design.
+the first place to look for wrapper design. For the direct Rust path, start at
+`core/crates/searchkernel/src/index/mod.rs`; for the portable path, start at
+`core/crates/searchkernel-dispatch/src/lib.rs`.
 
 ## The most important distinction: three representations
 
-The same user intent appears in three different forms.
+The same user intent can appear in three different forms. The direct Rust path
+does not need to construct the portable form; both paths converge at owned IR.
 
 ### 1. Public Rust values
 
@@ -118,7 +127,7 @@ backend-specific details.
 Read:
 
 - `core/crates/searchkernel/src/lib.rs`
-- `core/crates/searchkernel/src/index.rs`
+- `core/crates/searchkernel/src/index/mod.rs`
 - `core/crates/searchkernel/src/search.rs`
 - `core/crates/searchkernel/src/filter.rs`
 - `core/crates/searchkernel/src/schema.rs`
@@ -128,7 +137,8 @@ Read:
 
 `core/crates/searchkernel/src/portable_definition.rs` contains the one narrow
 encoder retained for manifest provenance. Runtime Rust requests go directly to
-the semantic resolvers in `core/crates/searchkernel-ir`.
+the semantic resolvers in `core/crates/searchkernel-ir`; they do not serialize
+through FlatBuffers or gRPC merely to reach the local engine.
 
 FlatBuffers values are messages stored in bytes. The generated Rust types are
 borrowed views into those bytes. They are useful at the boundary, but they are
@@ -142,9 +152,9 @@ Read:
 
 ### 3. Owned Search Kernel IR
 
-`core/crates/searchkernel-ir` validates the FlatBuffers view and creates owned
-values. An IR value has no dependency on the original byte buffer and no
-dependency on Vespa.
+`core/crates/searchkernel-ir` validates portable FlatBuffers views and resolves
+direct Rust inputs into owned values. An IR value has no dependency on the
+original byte buffer and no dependency on Vespa.
 
 For example, a search request becomes an owned `SearchRequestIr` containing:
 
@@ -157,14 +167,15 @@ For example, a search request becomes an owned `SearchRequestIr` containing:
 Read:
 
 - `core/crates/searchkernel-ir/src/model.rs`
-- `core/crates/searchkernel-ir/src/api_to_ir.rs`
+- `core/crates/searchkernel-ir/src/api_to_ir/mod.rs`
+- `core/crates/searchkernel-ir/src/api_to_ir/resolve.rs`
 - `core/crates/searchkernel-ir/src/backend.rs`
 
 This is the key boundary in the whole project:
 
 ```text
-wire representation
-  -> parse and validate once
+Rust resolver input or portable wire representation
+  -> resolve and validate once
   -> owned, explicit meaning
   -> backend execution
 ```
@@ -176,7 +187,7 @@ Use this path when learning the code.
 ### Step 1: the caller builds a request
 
 The caller starts at `Index::search` in
-`core/crates/searchkernel/src/index.rs`. That returns a `SearchBuilder` from
+`core/crates/searchkernel/src/index/mod.rs`. That returns a `SearchBuilder` from
 `search.rs`.
 
 Each builder method stores one piece of caller intent:
@@ -197,24 +208,25 @@ The builder does not validate whether a field exists or whether a field is
 sortable. That belongs to the core semantic layer, where the index definition
 is available.
 
-### Step 2: public values become a portable message
+### Step 2: public values become resolver input
 
 `SearchBuilder::execute` calls back into `Index::execute_search`.
 
-`execute_search` constructs a resolver intent and calls the shared semantic
-search resolver directly. Portable clients still enter through the
-FlatBuffers adapter and converge at the same `SearchRequestIr`.
+`execute_search` constructs a `SearchIntent` and calls the shared semantic
+search resolver directly. It does not build a FlatBuffers message. Portable
+clients enter through `searchkernel-dispatch`, parse their FlatBuffers request,
+and converge at the same `SearchRequestIr`.
 
-This extra representation may seem indirect. It is deliberate: the same
-portable contract can be used by Rust, C, Python, JavaScript, and other
-bindings.
+The shared resolver is deliberate: it keeps portable semantics in one place
+while allowing the first-party Rust API to remain an in-process API.
 
 ### Step 3: the request becomes owned IR
 
-The Rust path calls `resolve_search`; portable clients parse their
-`api::SearchRequest` and call `IndexContext::search_to_ir`.
+The Rust path calls `resolve_search` or `resolve_search_with_extensions` with
+Rust-native resolver inputs. Portable clients parse their `api::SearchRequest`
+and call `IndexContext::search_to_ir`.
 
-`search_to_ir` coordinates the semantic conversion. It delegates to helpers
+The search resolver coordinates the semantic conversion. It delegates to helpers
 for:
 
 ```text
@@ -242,9 +254,9 @@ The result is an owned `SearchRequestIr`.
 
 ### Step 4: the backend executes the IR
 
-The `Backend` trait in `searchkernel-ir/src/backend.rs` accepts IR. The
-public facade does not fabricate IR directly, and the backend does not decide
-what omitted wire fields mean.
+The `Backend` trait in `core/crates/searchkernel-ir/src/backend.rs` accepts IR.
+The public facade and portable dispatcher both use the semantic resolver, and
+the backend does not decide what omitted wire fields mean.
 
 There are several backend implementations for different purposes:
 
@@ -285,9 +297,8 @@ Index::upsert
 ```
 
 `insert`, `patch`, `delete`, and `get` use the same pattern. Start in
-`core/crates/searchkernel/src/index.rs`, then follow the matching `wire` function,
-the matching `IndexContext::*_to_ir` method, and finally the corresponding
-`Backend` method.
+`core/crates/searchkernel/src/index/mod.rs`, then follow the matching
+`resolve_*` function and finally the corresponding `Backend` method.
 
 The important rule is that the public facade never skips the core conversion
 path, even when a test backend is being used.
@@ -298,7 +309,7 @@ The high-level facade and the native adapter are intentionally separate.
 
 ```text
 searchkernel
-  -> searchkernel-ir
+  -> searchkernel-ir resolver
   -> backend implementation
   -> searchkernel-vespa-engine
   -> searchkernel-vespa-bindings
@@ -431,8 +442,9 @@ syntax.
 When modifying a capability:
 
 1. Find the public entry point.
-2. Follow its wire encoder.
-3. Follow the matching API-to-IR converter.
+2. If it is a Rust call, follow its resolver-input conversion; if it is a
+   portable call, follow the FlatBuffers encoder and dispatcher.
+3. Follow the matching resolver and API-to-IR conversion.
 4. Find the core semantic test or frozen contract.
 5. Follow the backend method.
 6. If native, continue through `searchkernel-vespa-engine` and `core/native/vespa`.
@@ -450,6 +462,7 @@ Before declaring a change complete, confirm:
 
 ## One-sentence mental model
 
-Search Kernel takes friendly Rust input, turns it into a portable message,
-validates it into explicit owned meaning, hands that meaning to Vespa, and
-carefully converts the owned result back into ordinary application data.
+Search Kernel takes friendly Rust input directly, or a portable FlatBuffers
+message through the dispatcher, resolves both into explicit owned meaning,
+hands that meaning to Vespa, and carefully converts the owned result back into
+ordinary application data.

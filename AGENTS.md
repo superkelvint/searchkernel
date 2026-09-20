@@ -20,6 +20,10 @@ Search Kernel owns the wrapper: Rust API, ownership/lifetimes, conversion,
 errors, startup/shutdown, build/link/package integration, language bindings,
 and fidelity tests.
 
+When orienting yourself in the repository, read
+[`docs/reading-the-codebase.md`](docs/reading-the-codebase.md). It describes the
+current Rust and portable-client paths and links the main implementation seams.
+
 Vespa owns the search engine unless a task explicitly says otherwise. This
 includes persistence, transaction logging/recovery, indexes, fusion,
 attributes, matching, query execution, ranking, BM25, tensors, vectors,

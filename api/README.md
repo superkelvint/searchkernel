@@ -1,7 +1,9 @@
 # Portable API schemas
 
 This directory contains the language-neutral FlatBuffers schemas used at the
-boundary between callers and Search Kernel.
+portable boundary between non-Rust callers, `searchkerneld`, and Search Kernel.
+The first-party Rust API is embedded directly and does not serialize requests
+through these schemas merely to reach the local engine.
 
 ## Start reading here
 
@@ -10,13 +12,15 @@ boundary between callers and Search Kernel.
 2. Read `searchkernel_request.fbs` and `searchkernel_response.fbs` for the
    neutral canonical request/response envelopes used by dispatchers.
 3. Follow the Rust conversion code in
-   `core/crates/searchkernel-ir/src/api_to_ir.rs` and
-   `core/crates/searchkernel-ir/src/ir_to_api.rs`.
+   `core/crates/searchkernel-ir/src/api_to_ir/mod.rs` and
+   `core/crates/searchkernel-ir/src/ir_to_api/mod.rs`.
 
 ## Concepts to know
 
-- FlatBuffers tables are borrowed views over bytes. `searchkernel-ir` converts
-  them into owned Rust values before backend execution.
+- FlatBuffers tables are borrowed views over bytes. The portable dispatch path
+  converts them into owned Rust values before backend execution. The direct
+  Rust API constructs resolver inputs in Rust and converges at the same IR
+  boundary without a FlatBuffers round trip.
 - Optional fields preserve presence. Missing and explicitly supplied default
   values are not automatically treated as the same thing.
 - Union discriminators must agree with their payload tables. Malformed or

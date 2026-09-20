@@ -22,17 +22,32 @@ crate.
 
 For a guided reading order, start with `searchkernel`, then follow
 `searchkernel-ir`, `searchkernel-ir-adapter`, `searchkernel-vespa-engine`, and
-`searchkernel-vespa-bindings` for the native path.
+`searchkernel-vespa-bindings` for the direct Rust/native path. Read
+`searchkernel-protocol` and `searchkernel-dispatch` when following a portable
+FlatBuffers or gRPC request.
 
-The normal data flow is:
+The direct Rust data flow is:
 
 ```text
 public Rust API
-    -> FlatBuffers contract
+    -> SearchIntent / resolver input
     -> owned Search Kernel IR
-    -> backend
+    -> searchkernel-ir-adapter
     -> Vespa lowering/native execution
 ```
+
+The portable data flow is:
+
+```text
+FlatBuffers request
+    -> searchkernel-dispatch
+    -> owned Search Kernel IR
+    -> searchkernel-ir-adapter
+    -> Vespa lowering/native execution
+```
+
+The Rust API does not serialize through FlatBuffers or gRPC merely to reach
+the in-process engine. Both paths share the owned IR and backend boundary.
 
 Keep public API code free of Vespa types, keep raw `unsafe` in the bindings/FFI
 boundaries, and keep Vespa behavior in the Vespa engine integration or native

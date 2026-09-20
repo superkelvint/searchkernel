@@ -9,9 +9,23 @@ The canonical Portable API lives outside this directory in `api/`. Generated
 Rust API types, codecs, the native ABI, the safe Vespa engine wrapper, and the
 backend adapter live under `core/crates/`.
 
+The direct Rust product path is:
+
 ```text
-api/*.fbs
-    -> searchkernel-protocol
+public Rust API
+    -> searchkernel-ir resolver inputs
+    -> searchkernel-ir
+    -> searchkernel-ir-adapter
+    -> searchkernel-vespa-engine
+    -> searchkernel-vespa-bindings
+```
+
+Portable clients use the separate transport path before converging on the same
+IR and backend layers:
+
+```text
+FlatBuffers bytes
+    -> searchkernel-dispatch
     -> searchkernel-ir
     -> searchkernel-ir-adapter
     -> searchkernel-vespa-engine
