@@ -2324,8 +2324,13 @@ alias/output representative
 group filter or keep representative
 summary aggregation producing Hit children
 recursive result-tree decoding
-continuation-token preservation
 ```
+
+Grouping continuation:
+- portable request/result representation is lossless
+- SDK preserves opaque continuation values
+- real Vespa execution is explicitly Unsupported until the
+  embedded continuation translation layer is implemented
 
 ### Query/ranking
 

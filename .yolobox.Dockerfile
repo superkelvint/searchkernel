@@ -8,6 +8,7 @@ RUN apt-get update \
         ca-certificates \
         build-essential \
         pkg-config \
+        libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 USER yolo

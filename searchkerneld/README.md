@@ -14,6 +14,14 @@ that option is only used during creation. On Unix, omitting `--listen` uses
 `/tmp/searchkerneld.sock`. TCP addresses are also supported, for example
 `--listen 127.0.0.1:50051`.
 
+If a Unix socket path already exists, startup first probes it. A live server
+causes startup to fail; an unreachable stale socket is removed before binding.
+
+Native dispatches are admitted through a bounded blocking executor. The
+default limit is 16 concurrent dispatches; override it with
+`--execution-limit N` or `SEARCHKERNEL_EXECUTION_LIMIT`. Requests above the
+limit wait asynchronously until a dispatch slot is available.
+
 ## Request and response path
 
 The service contract intentionally consists of one generic operation:

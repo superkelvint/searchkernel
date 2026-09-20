@@ -2,7 +2,7 @@
 
 Search Kernel is a Rust interface to Vespa's native search engine, packaged so it can be embedded directly in an application instead of run as a separate service.
 
-Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API, and on top of that, bindings for JavaScript, PHP, Go, and Python — so you can add a search dependency in whichever of those you're already using instead of standing up a cluster.
+Vespa's C++ engine does the actual work: storage, indexing, ranking, query execution. Search Kernel does not reimplement any of it. It gives that engine a normal Rust API and a Python gRPC client today; additional language facades are added when there is a concrete product need.
 
 ```python
 from searchkernel import Index
@@ -39,6 +39,7 @@ Running a search cluster to get full-text search, filtering, and ranking is a lo
 Vespa already solves the hard problems here — ranking, tensors, vector search, index fusion, durability — at a level of maturity that would take years to reproduce. Search Kernel doesn't try. It makes that engine usable as a library.
 
 If you are new to the codebase, start with the [codebase reading guide](docs/reading-the-codebase.md).
+Agents should check the [current status](docs/status.md) before using the roadmap.
 
 ## What it is
 
@@ -82,13 +83,13 @@ models and do not maintain parallel full-schema DTOs or handwritten codecs.
 
 | Language   | Status |
 |------------|--------|
-| Rust       | *(status)* |
-| Python     | *(status)* |
-| JavaScript | *(status)* |
-| Go         | *(status)* |
-| PHP        | *(status)* |
+| Rust       | Direct embedded API |
+| Python     | gRPC transport and ergonomic facade present |
+| JavaScript | Planned/on demand |
+| Go         | Planned/on demand |
+| PHP        | Planned/on demand |
 
-All bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
+Implemented bindings expose the same underlying operations. If one binding supports something another doesn't yet, that's a gap to close, not a difference in design.
 
 ## Repository layout
 
@@ -104,7 +105,9 @@ reference/         frozen contracts and verifiers
 
 ## Status
 
-Under active development. The core workflow — open, index, search, update, delete, reopen — is the current focus, in Rust first. Performance, memory use, and durability are being measured, not assumed.
+See [docs/status.md](docs/status.md) for the current implementation inventory
+and verification entry points. The project remains under active development;
+the roadmap is intended sequencing, not a status report.
 
 The API will change before it stabilizes.
 

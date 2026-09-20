@@ -1,499 +1,538 @@
 # AGENTS.md
 
-## Project scope
+## Project
 
-Search Kernel is a **thin Rust wrapper around the local C++ search
-engine used by Vespa**.
+Search Kernel is a thin Rust interface to Vespa's local C++ search engine.
 
-The intended layering is:
+Search Kernel owns the product API, portable semantics, Rust/native boundary,
+integration, packaging, and fidelity tests.
 
-```text
-public Rust API
-    -> safe Rust wrapper
-    -> raw bindings/FFI crate
-    -> private Search Kernel native ABI
-    -> Search Kernel C++ adapter
-    -> Vespa C++
-```
+Vespa owns the search engine: persistence, indexing, attributes, matching,
+query execution, ranking, tensors, vectors, concurrency, and low-level resource
+management unless a task explicitly says otherwise.
 
-Search Kernel owns the wrapper: Rust API, ownership/lifetimes, conversion,
-errors, startup/shutdown, build/link/package integration, language bindings,
-and fidelity tests.
+When choosing between faithfully exposing Vespa and inventing a more general
+Search Kernel subsystem, prefer Vespa.
 
-When orienting yourself in the repository, read
-[`docs/reading-the-codebase.md`](docs/reading-the-codebase.md). It describes the
-current Rust and portable-client paths and links the main implementation seams.
+## Read first
 
-Vespa owns the search engine unless a task explicitly says otherwise. This
-includes persistence, transaction logging/recovery, indexes, fusion,
-attributes, matching, query execution, ranking, BM25, tensors, vectors,
-concurrency, and low-level resource management.
+Before making a non-trivial change, read:
 
-When choosing between:
+- `docs/reading-the-codebase.md` for repository navigation;
+- `docs/architecture.md` for current architecture and dependency boundaries;
+- the relevant contract/specification under `reference/` or `docs/` for the
+  task.
 
-```text
-represent Vespa faithfully
-```
+Treat repository documentation and executable contracts as the source of truth.
+Do not duplicate large architecture or API specifications in this file.
 
-and:
+Follow more-specific `AGENTS.md` files when present in a subtree.
 
-```text
-invent a more general Search Kernel subsystem
-```
-
-prefer the first until real usage proves the second is necessary.
-
-## Repository boundaries
+## Repository map
 
 ```text
 searchkernel2/
-├── api/                    # normative language-neutral Portable API
+├── api/                 # canonical FlatBuffers portable API
 ├── core/
-│   ├── crates/              # embeddable Rust implementation
-│   └── native/              # C/C++ adapter and generated native SDK
-├── clients/                # non-Rust language clients
-├── searchkerneld/          # daemon and transport host
-├── searchkernel-web/       # administration dashboard
-├── upstream/
-│   └── vespa/              # pinned upstream Vespa checkout; read-only
-├── reference/
-│   ├── api-conformance/    # Portable API semantic corpus
-│   ├── clients/            # client contracts and scenarios
-│   └── vespa/              # Vespa lifecycle contracts and verifiers
-├── tools/
-├── docs/
-└── AGENTS.md
+│   ├── crates/          # Rust implementation
+│   └── native/          # C/C++ Vespa adapter and generated SDK
+├── clients/             # non-Rust SDKs
+├── searchkerneld/       # daemon / gRPC transport host
+├── searchkernel-web/    # administration dashboard
+├── upstream/vespa/      # pinned Vespa checkout; read-only
+├── reference/           # frozen contracts, corpora, oracles, verifiers
+├── tools/               # build/generation/verification tooling
+└── docs/                # architecture and development documentation
+
 ```
 
-Portable-client rules:
+## Architectural invariants
 
-* FlatBuffers is the sole canonical portable data contract.
-* Non-Rust RPC uses generated gRPC carrying canonical FlatBuffer bytes.
-* Standard schema-aware FlatBuffers JSON is the only JSON representation.
-* Language SDKs use flatc-generated models and must not add full-schema DTOs or
-  handwritten field-by-field FlatBuffer codecs.
-* JSON is converted to FlatBuffer bytes before dispatch; it never implements a
-  separate JSON-to-IR semantic path.
+These are non-negotiable unless the task explicitly changes the architecture:
 
-### `upstream/vespa/` is read-only
+- FlatBuffers is the sole canonical portable domain contract.
+- `searchkernel-ir` owns portable semantics through `*_to_ir()`.
+- There must be one implementation of portable semantics.
+- Rust uses the engine directly in-process.
+- First-party non-Rust clients use gRPC carrying canonical FlatBuffer bytes.
+- Protobuf is transport framing only; it does not duplicate the domain model.
+- `searchkernel-ir-adapter` is the integration boundary between portable IR and
+  the Vespa-facing engine.
+- Vespa types stay behind the native adapter.
+- The retired portable client FFI/native-transport architecture must not return.
+- Do not independently implement Vespa engine behavior in Rust merely to make a
+  test pass.
 
-The Vespa checkout is intentionally inside the repository so sandboxed agents
-can inspect it.
+Prefer the smallest correct design that preserves these invariants.
 
-Pinned revision:
-
-```text
-2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
-```
-
-Use `upstream/vespa/` as the source of truth for Vespa behavior. Inspect the
-actual source and tests when wrapping a capability; do not guess from names or
-high-level documentation.
-
-Do not modify tracked files under `upstream/vespa/`.
-
-When relevant, verify:
-
-```bash
-git -C upstream/vespa rev-parse HEAD
-git -C upstream/vespa diff --quiet
-git -C upstream/vespa diff --cached --quiet
-```
-
-The revision must match the pin above and tracked source must be clean. Untracked
-build artifacts may exist.
-
-If the checkout is wrong or tracked source is dirty, report it. Do not fix a
-milestone by patching Vespa itself.
-
-### `core/native/vespa/` is our adaptation layer
-
-All Search Kernel-specific C/C++ integration belongs here.
-
-If the Vespa API is awkward, adapt it in `core/native/vespa/`; do not spread Vespa
-headers/types into Rust or modify upstream source.
-
-### `core/native/sdk/` is generated
-
-Normal Rust work consumes the prebuilt SDK and should not require a Vespa build
-or Docker session.
-
-Do not hand-edit SDK contents. Rebuild them only when the task explicitly
-requires a native adapter/SDK change, using repository tooling.
-
-## Source of truth and milestone discipline
+## Source of truth
 
 For wrapper behavior, authority is:
 
-```text
-1. frozen milestone/API contract
-2. pinned Vespa source and tests
-3. direct C++ oracle/golden behavior, where supplied
-4. Search Kernel implementation
-```
+1. frozen API/milestone contract;
+2. pinned Vespa source and tests;
+3. supplied direct oracle/golden behavior;
+4. Search Kernel implementation.
 
 The implementation does not define expected behavior.
 
-Milestones are verifier-first. The repository may contain:
+If the contract and Vespa behavior appear incompatible, surface the conflict.
+Do not silently redefine either one.
+
+## Starting a task
+
+Before editing:
+
+1. Determine whether the current checkout is already an isolated worktree for
+   this task.
+2. Inspect `git status --short` and the current branch.
+3. Identify pre-existing changes and treat them as belonging to someone else
+   unless the task explicitly says otherwise.
+4. Read the relevant implementation, tests, contract, and existing patterns.
+5. For Vespa behavior, inspect the pinned source under `upstream/vespa/`; do not
+   guess from API names or high-level documentation.
+6. Determine how the finished change will be verified.
+
+For a small, obvious change, implement directly.
+
+For a multi-file, architectural, unfamiliar, or ambiguous change, explore first
+and form a short implementation plan before editing.
+
+Do not broaden the task with unrelated cleanup.
+
+## Search scope
+
+Repository-wide discovery should exclude generated/build artifacts by default.
+The canonical exclusions are defined in `.rgignore`.
+
+In particular, do not search generated FlatBuffers/client output, BFBS files,
+native SDK artifacts, build output, or Python caches during normal code
+discovery.
+
+Search excluded paths explicitly only when debugging generation, protocol
+encoding, generated bindings, packaging, or SDK/native ABI output.
+
+## Worktree isolation
+
+Substantial implementation work should run in a dedicated Git worktree and task
+branch when parallel development is possible.
+
+The normal model is:
 
 ```text
-reference/vespa/API_CONTRACT.md
-reference/vespa/api-contract/
-reference/vespa/mN/CONTRACT.md
-reference/vespa/mN/scenarios/
-reference/vespa/mN/expected/
-reference/vespa/mN/oracle/
-reference/vespa/mN/SOURCE_TRACE.md
-reference/vespa/mN/verify-mN.sh
-reference/vespa/verify-through.sh
+task
+    -> dedicated branch/worktree
+    -> implementation
+    -> focused verification
+    -> task-owned commit(s)
+    -> serialized self-integration
+    -> combined verification
 ```
 
-Unless the task explicitly asks to author or revise the harness, these are
-**checked-in acceptance artifacts**. The verifier-authoring commit is the
-specification freeze boundary.
+If the current checkout is already a task-specific worktree, use it.
 
-Do not modify contracts, API fixtures, scenarios, expected outputs, oracles,
-comparators, or verifier scripts merely to make implementation pass. Git diff
-and review are the enforcement mechanism; implementation agents may change
-these files only when explicitly asked to author or repair a verifier.
+Otherwise, when isolation is useful and repository permissions allow it, create
+a dedicated worktree from the current integration baseline before editing.
 
-For a reviewer, the useful checks are:
-
-```bash
-git diff -- reference/
-git diff <verifier-freeze-commit>..HEAD -- reference/
-```
-
-Do not weaken earlier milestone tests. A later milestone must preserve all
-completed earlier milestones.
-
-If a task provides an acceptance command, run that exact command before calling
-the task complete.
-
-## The Rust API is defined up front
-
-Agents implementing milestones do **not** get to invent the public API.
-
-The API contract and compile fixtures under `reference/vespa/` are normative.
-If they require:
-
-```rust
-let engine = Engine::open(path, config)?;
-```
-
-then this is not equivalent:
-
-```rust
-let engine = VespaClient::new(...)?;
-```
-
-Do not rename public types, alter ownership, change return types, add required
-arguments, or replace the specified interface unless the task explicitly
-authorizes an API change.
-
-If a frozen API cannot faithfully expose the Vespa capability, surface the
-conflict instead of silently changing the API or verifier.
-
-## No shortcuts
-
-Passing a fixture is not sufficient if the implementation bypasses the intended
-Vespa path.
-
-Unless explicitly authorized:
-
-- do not replace Vespa with a mock/in-memory production backend;
-- do not implement matching in Rust to avoid Vespa matching;
-- do not compute BM25/ranking independently in Rust when wrapping Vespa ranking;
-- do not hard-code fixture IDs, documents, queries, scores, or results;
-- do not special-case verifier inputs;
-- do not return precomputed golden output;
-- do not bypass the native adapter;
-- do not patch upstream Vespa to simplify the wrapper;
-- do not weaken lifetime/error handling to make tests pass;
-- do not add a second production backend just to simplify tests.
-
-Mocks/fakes may be used for focused Rust unit tests, but they do not prove a
-Vespa integration milestone. Acceptance tests must exercise the real native
-engine when required by the contract.
-
-A direct C++ oracle is a behavioral reference, not another production backend.
-
-## Native boundary rules
-
-### Public native ABI aggregate rule
-
-The public native ABI must use opaque handles and fixed-width primitive
-arguments. Text or other repeated data must use primitive arrays (preferably a
-single structure-of-arrays transfer), never a public aggregate struct. A
-future aggregate may cross the boundary only after an executable benchmark
-demonstrates that the primitive representation is materially inadequate; a
-source-text check or intuition is not evidence. The reason is architectural:
-an aggregate creates a second C/Rust layout contract and, when it contains
-borrowed pointers, a second lifetime contract. New ABI additions must follow
-this rule as well.
-
-### No Vespa types in the public Rust API
-
-The native ABI uses Search Kernel-owned values and opaque handles. Convert to
-Vespa-specific types inside the C++ adapter.
-
-Do not expose Vespa headers, namespaces, pointers, ownership conventions, or
-internal classes through the Rust-facing API.
-
-### Keep `unsafe` at the boundary
-
-Raw FFI belongs in the dedicated bindings/FFI crates.
-
-The safe wrapper must establish clear invariants for:
+Use short descriptive branch names consistent with repository history, for
+example:
 
 ```text
-handle ownership and exactly-once destruction
-pointer/null validity
-borrowed buffer/string lifetimes
-array lengths/capacities
-thread-safety assumptions
-error payload ownership
+agent/fix-grouping-results
+agent/feat-document-update
+agent/refactor-search-resolution
 ```
 
-Do not spread `unsafe` into ordinary API code for convenience.
+The primary checkout should be treated as an integration workspace during
+parallel development, not as a shared implementation workspace.
 
-### Exceptions and panics do not cross the ABI
+Small changes may be performed directly when no concurrent work exists and a
+separate worktree would provide no useful isolation.
 
-Catch C++ exceptions inside the adapter and translate them to the native error
-representation.
+## Worktree safety
+
+Multiple humans or agents may operate on the repository concurrently.
+
+- Never discard, reset, clean, overwrite, or revert changes you did not create.
+- Never use destructive Git commands on another task's work.
+- Do not reuse another agent's worktree.
+- Do not modify another worktree merely to obtain a clean status.
+- Do not use `git stash` as a way to hide someone else's work.
+- Stage explicit task-owned paths or hunks.
+- Avoid `git add -A` or equivalent broad staging in a dirty checkout.
+- Before committing, inspect both the working diff and staged diff.
+- If unrelated changes prevent verification, report that rather than modifying
+  them.
+
+## Implementation discipline
+
+Make the smallest good change that satisfies the task and architecture.
+
+Do not:
+
+- invent public APIs when a frozen API exists;
+- modify acceptance artifacts merely to make implementation pass;
+- hard-code fixture IDs, queries, scores, documents, or expected results;
+- special-case verifier input;
+- introduce a fake production backend;
+- patch upstream Vespa;
+- hand-edit generated SDK/protocol outputs;
+- add abstractions without demonstrated need;
+- add production dependencies without a concrete reason;
+- perform unrelated renames, formatting sweeps, or dependency churn.
+
+Prefer existing repository patterns over new conventions.
+
+For a reported defect, add an executable regression test that demonstrates the
+failure before the fix when practical.
+
+Regression tests must exercise observable behavior or the real implementation
+path. Source-text searches, naming assertions, and similar textual proxies do
+not prove runtime behavior.
+
+## Vespa and native boundary
+
+`upstream/vespa/` is read-only.
+
+Use the repository's authoritative version metadata/tooling to determine the
+expected pinned Vespa revision. Do not silently update it.
+
+Inspect actual pinned Vespa source and tests when wrapping a capability.
+
+All Search Kernel-specific C/C++ adaptation belongs under:
+
+```text
+core/native/vespa/
+```
+
+Do not spread Vespa headers or types into ordinary Rust code.
+
+The public native boundary uses Search Kernel-owned primitives and opaque
+handles.
+
+Keep raw `unsafe` in the dedicated bindings layer.
+
+For every boundary value, ownership must be clear:
+
+```text
+who allocates
+who owns
+how long borrows remain valid
+who frees
+whether concurrent access is allowed
+```
+
+C++ exceptions must be caught inside the adapter.
 
 Rust panics must not unwind into C++.
 
-Operational failures become Rust `Result` errors. Do not abort or `unwrap()` on
-malformed input, initialization failure, I/O failure, or ordinary Vespa errors.
+Prefer clear boundary copies over fragile zero-copy lifetimes until measurement shows a copy materially matters.
 
-### Ownership is explicit
+`core/native/sdk/` is generated. Rebuild it only through repository tooling when the task actually requires a native adapter/SDK change.
 
-For every value crossing the boundary, know:
+Do not hand-edit generated SDK contents.
 
-```text
-who allocates it
-who owns it
-how long borrows remain valid
-who frees it
-whether calls may be concurrent
-```
+## Reference and verifier artifacts
 
-Prefer safe, obvious copies at the boundary until measurement shows a large
-copy matters. Do not introduce fragile zero-copy lifetimes prematurely.
+Contracts, scenarios, expected outputs, oracles, comparators, and verifier
+scripts under `reference/` are frozen acceptance artifacts unless the task
+explicitly asks to author or repair them.
 
-## Wrap before abstracting
+Do not weaken, rewrite, or regenerate them merely to make implementation pass.
 
-Prefer:
+Later milestones must preserve earlier completed milestone behavior.
 
-```text
-Vespa operation
-    -> thin native adapter
-    -> idiomatic Rust value
-```
+If a task supplies an acceptance command, run that exact command before calling
+the task complete.
 
-over inventing a generic query framework, schema framework, backend trait,
-plugin system, ranking VM, storage abstraction, or dependency-injection layer.
+A scripted or mock backend may support focused tests. It does not prove a
+real-engine milestone when the contract requires Vespa.
 
-Start with concrete Rust types that faithfully represent the Vespa capability.
-Extract abstractions only after multiple real uses justify them.
+## Rust
 
-Convenience APIs may come later. Fidelity comes first.
-
-## Use engineering judgment
-
-Implement the **simplest correct design appropriate for a native Vespa wrapper**,
-not the cheapest implementation that passes the current fixture.
-
-"Simple first" does not mean "throwaway first."
-
-Do not knowingly choose a shape that must be demolished by the immediately
-following milestone. But do not speculate about distant requirements or build
-frameworks for them.
-
-When two implementations are similarly straightforward, prefer the one that:
-
-- follows the frozen API;
-- stays close to real Vespa semantics;
-- keeps the native boundary narrow;
-- isolates upstream churn inside `core/native/vespa/`;
-- leaves the next known milestone additive.
-
-The goal is the smallest **good** implementation.
-
-## Commit discipline
-
-Commit in bite-sized, reviewable increments, not one large end-of-task dump.
-Examples:
-
-```text
-add opaque native engine handle and destruction
-wrap open/close in safe Rust ownership
-add M2 document conversion
-add native search-result conversion
-```
-
-Each commit must:
-
-- stay within authorized task/file scope;
-- remain buildable whenever reasonably possible;
-- include focused tests for new behavior;
-- explain the change in the commit message;
-- avoid unrelated cleanup, renaming, formatting, or dependency churn;
-- never edit checked-in acceptance artifacts unless the task is verifier-authoring work;
-- never modify upstream Vespa source.
-
-## Regression test quality
-
-When a reported defect is fixed, first add a regression test that demonstrates
-the defect against the existing implementation and confirm that it fails. The
-test must exercise observable behavior or the actual implementation path.
-Never use source-text searches, `include_str!` assertions, naming conventions,
-or similar textual proxies as a substitute for an executable regression test.
-Such tests are not evidence that the defect exists or that the fix works.
-
-## Rust style
-
-Write idiomatic, production-quality Rust for a native systems wrapper.
-
-### Ownership
-
-Do not defeat the borrow checker with cloning, `Arc`, complicated lifetimes, or
-interior mutability.
+Write boring, readable, idiomatic Rust.
 
 Prefer:
 
+- one clear owner;
+- borrowed access where natural;
+- explicit ownership transfer;
+- concrete types before traits;
+- small modules with obvious responsibilities;
+- `Result` for operational failure;
+- `Option` for absence;
+- deterministic conversion and ordering where required by the contract.
+
+Avoid:
+
+- unnecessary `Arc`, `Mutex`, cloning, or interior mutability;
+- trait/factory/backend hierarchies without real polymorphic need;
+- `unwrap()` or `expect()` for malformed input or operational failure;
+- wrapper-level nondeterminism;
+- broad lint suppressions;
+- clever abstractions that make control flow or ownership harder to follow.
+
+Do not optimize away simple safe code without evidence.
+
+## Verification
+
+Verification must produce evidence, not an assertion that the code "looks correct."
+
+During implementation, run the narrowest useful test or verifier repeatedly.
+
+For Rust changes, normally run the affected crate's:
+
 ```text
-single clear owner
-+ borrowed access where natural
-+ explicit ownership transfer
+cargo fmt --check
+cargo clippy -p <crate> --all-targets --all-features -- -D warnings
+cargo test -p <crate> --all-targets --all-features
 ```
 
-`Arc<Mutex<Runtime>>` is not an ownership architecture.
+Expand verification when the change has broader impact.
 
-### Concrete types first
+Run full workspace checks when the change crosses crate/API/IR/native boundaries, changes shared infrastructure, or otherwise has broad consequences:
 
-Do not turn every noun into a trait. Avoid factories, registries, service
-objects, backend hierarchies, and `Box<dyn Trait>` without a real polymorphic
-need.
-
-In particular, do not invent an `EngineBackend` abstraction merely to put a
-fake implementation next to Vespa. Vespa is the production backend.
-
-### Allocation
-
-Avoid gratuitous cloning and intermediate allocation, especially around large
-documents, result sets, feature vectors, and native buffers.
-
-Do not prematurely optimize away clear and safe boundary copies without
-measurement.
-
-### Errors
-
-Use `Result` for operational failure and `Option` for absence.
-
-`unwrap()`/`expect()` are for true internal invariants, not malformed input,
-native errors, missing files, invalid config, or runtime failure.
-
-Do not log an error and continue as though the operation succeeded.
-
-### Determinism
-
-Do not introduce wrapper-level nondeterminism where Vespa provides deterministic
-observable behavior.
-
-Do not rely on `HashMap` iteration order, thread scheduling, pointer values, or
-incidental local/native ordering during result conversion.
-
-When Vespa intentionally leaves ordering unspecified, do not invent a stronger
-Rust guarantee.
-
-## Definition of done
-
-At minimum:
-
-```bash
+```text
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
 ```
 
+Also:
+
+- run the exact milestone/acceptance verifier when one exists;
+- verify generated artifacts when changing their source;
+- use the real Vespa path when the contract requires it;
+- verify persistence/reopen when persistent behavior changes;
+- verify both sides of a shared semantic path when changing portable semantics.
+
 There must be zero compiler and Clippy warnings.
 
-Do not weaken lint settings or broadly suppress warnings to pass.
+Do not weaken lint settings merely to pass.
 
-For native C/C++, compile cleanly under the repository's configured warning
-policy.
-
-When the task supplies a milestone acceptance command, run it as well.
-Compilation/unit tests alone do not replace milestone verification.
-
-Passing tests is not completion if the implementation violates the required
-native path, public API contract, or repository boundaries.
-
-## Normal development workflow
-
-The ordinary loop should not require rebuilding Vespa:
-
-```bash
-cargo test --workspace
-```
-
-Agents may inspect `upstream/vespa/` at any time.
-
-Do not enter Docker or rebuild the SDK unless the task actually requires a
-change to `core/native/vespa/`, SDK construction, or a native capability absent from
-the current SDK.
-
-When a native rebuild is required, use repository tooling against the pinned
-`upstream/vespa/` checkout. Do not hand-edit generated outputs.
-
-## Final milestone review
-
-Before declaring a milestone complete, verify:
+For substantial changes, perform a fresh final diff review focused on:
 
 ```text
-API
-- matches frozen API contract
-- no unapproved public API invention
-
-Vespa fidelity
-- real pinned Vespa path is used
-- no Rust reimplementation or fixture-specific shortcut
-
-Boundary
-- Vespa types stay behind core/native/vespa
-- raw unsafe stays in the bindings/FFI layer
-- ownership and errors are explicit
-- exceptions/panics cannot cross the ABI
-
-Repository
-- tracked upstream/vespa source is unchanged
-- checked-in reference/verifier artifacts are unchanged
-- SDK outputs were not hand-edited
-
-Quality
-- fmt passes
-- clippy passes with warnings denied
-- workspace tests pass
-- milestone verifier passes
-- earlier milestones still pass
-
-## F-series frontend milestones
-
-Frontend dashboard work is documented under `docs/frontend/` and is implemented
-only in `searchkernel-web/`, `clients/typescript/`, and the appropriate daemon
-integration. The immutable acceptance machinery lives in
-`tools/frontend-harness/`.
-
-F-series rules:
-
-- TypeScript must not implement Search Kernel semantics.
-- Portable operations use the generated TypeScript client.
-- Dashboard code must not import internal `core/` crates or raw FlatBuffers.
-- Normal implementation work must not modify milestone verifiers, fixtures,
-  goldens, expected IR, manifests, reviewer contracts, or result schemas.
-- Unsupported capabilities are gated, never emulated.
-- Feature availability is capability-driven, not version-driven.
-- `frontend-accept <F#>` is the authority for F-series completion.
+correctness
+contract compliance
+architectural boundaries
+regressions
+error handling
+unintended scope
+missing tests
 ```
+
+If a required check cannot run, record the exact command, failure, and reason.
+Do not claim it passed.
+
+## Commit discipline
+
+Completed implementation work must be committed unless the user explicitly asks
+not to commit.
+
+Before committing:
+
+1. run the required focused verification;
+2. run `git status --short`;
+3. inspect the complete task diff;
+4. stage only task-owned changes;
+5. inspect `git diff --cached`;
+6. commit.
+
+Commit messages describe the code change, not the agent activity.
+
+Before choosing a message, inspect recent history:
+
+```text
+git log -10 --oneline
+```
+
+Follow a clear repository convention when one exists.
+
+If history has no consistent convention, use Conventional Commit form:
+
+```text
+<type>(<scope>): <imperative summary>
+```
+
+Common types:
+
+```text
+feat
+fix
+refactor
+test
+docs
+perf
+build
+ci
+chore
+```
+
+Examples:
+
+```text
+fix(grouping): preserve nested aggregation results
+feat(update): execute text field assignments
+refactor(ir): unify search request resolution
+test(dispatch): cover malformed protocol envelopes
+docs(agents): tighten agent workflow guidance
+```
+
+Keep the subject concise and imperative.
+
+For a non-trivial commit, add a body explaining why the change was needed and
+any important design constraint or tradeoff.
+
+Prefer one coherent commit for a small task.
+
+Use multiple commits when the pieces are independently reviewable and each
+commit leaves the branch in a sensible state.
+
+Do not amend, rebase, squash, or rewrite commits belonging to another task.
+
+Do not push unless explicitly requested.
+
+## Serialized self-integration
+
+When work was performed on a dedicated task branch/worktree, the implementation
+agent normally integrates its own completed work.
+
+A separate integration agent is not required for ordinary conflict-free work.
+
+Integration is serialized even though implementation may be parallel.
+
+Only one worker may update the integration branch at a time.
+
+Use the repository-provided integration command if one exists.
+
+Otherwise use an exclusive repository-wide lock under the common Git directory,
+for example with `flock`, so cooperating agents cannot race while updating the
+integration branch.
+
+Conceptually:
+
+```text
+acquire integration lock
+
+    identify current integration HEAD
+    update task branch onto that baseline
+    resolve safe mechanical conflicts if necessary
+    run relevant verification on the updated task branch
+    fast-forward/integrate into the integration worktree
+    run verification required for the combined state
+    confirm integration succeeded
+
+release integration lock
+```
+
+Do not hold the integration lock while doing ordinary implementation work.
+
+The lock protects only the short integration phase.
+
+### Integration rules
+
+Before integration:
+
+- the implementation must already be committed;
+- the task worktree must contain no accidental uncommitted changes;
+- the integration worktree must not contain unexplained dirty changes;
+- identify the current integration branch rather than assuming an outdated
+  baseline.
+
+While integrating:
+
+- preserve all already-integrated work;
+- never resolve a conflict by discarding another task's change;
+- never weaken tests or contracts to make branches combine;
+- rerun relevant verification after updating against the latest integration
+  branch;
+- prefer fast-forward integration after updating the task branch when practical;
+- preserve coherent task commits unless repository convention says otherwise.
+
+Straightforward mechanical conflicts may be resolved by the worker when the
+intended combined behavior is clear.
+
+Examples include:
+
+```text
+independent import additions
+non-overlapping manifest entries
+mechanical generated-file updates
+adjacent documentation edits
+```
+
+If integration exposes an actual semantic conflict, stop rather than guess.
+
+Examples include:
+
+```text
+two incompatible public API changes
+different schema meanings
+conflicting IR semantics
+different persistence behavior
+incompatible architectural decisions
+tests whose correct expectation depends on choosing one task over another
+```
+
+Report that conflict clearly for review.
+
+After successful integration:
+
+- confirm the integration branch contains the task commit(s);
+- run `git status --short`;
+- remove the task worktree/branch when safe and no longer needed;
+- do not leave an abandoned integration/rebase operation behind.
+
+## No manual merge dependency
+
+Routine completed work should not require a human to perform Git integration.
+
+The normal expectation is:
+
+```text
+agent implements
+agent verifies
+agent commits
+agent acquires integration lock
+agent updates against latest integrated state
+agent verifies again
+agent integrates
+```
+
+Human input is reserved for genuine semantic conflicts, failed requirements, or
+decisions the repository does not already answer.
+
+## Definition of done
+
+A task that changes code is complete only when:
+
+```text
+implementation matches the requested scope
+relevant contracts are preserved
+focused verification passes
+required acceptance verifier passes
+broader verification is run when warranted
+final diff has been reviewed
+task-owned work is committed
+task is integrated when using the normal self-integration workflow
+combined state remains healthy
+```
+
+Passing tests is not sufficient if the implementation violates the required
+native path, public API contract, semantic boundary, or repository rules.
+
+## Completion report
+
+When finished, report concisely:
+
+- what changed;
+- important verification commands and results;
+- commit hash and subject;
+- whether the task was integrated;
+- any remaining blocker or unsupported capability;
+- any pre-existing dirty state that remains relevant.
+
+Do not claim the repository is clean unless it actually is.
+
+Do not declare completion when required verification failed.

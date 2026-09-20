@@ -8,3 +8,7 @@ docker run --rm -it \
 
 
   VESPA_DEPS=/opt/vespa-deps   SK_NATIVE_SDK="$PWD/target/vespa-verifier/m11/sdk/hardening"   SK_NATIVE_BUILD_DIR="$PWD/target/vespa-verifier/m11/native-build/hardening"   SK_NATIVE_ENABLE_FAILPOINTS=1   core/native/vespa/build-sdk.sh
+
+
+
+  rm -rf core/native/sdk/linux-x86_64 && core/native/vespa/build-sdk.sh

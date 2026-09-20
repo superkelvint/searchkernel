@@ -1,4 +1,17 @@
-# Roadmap
+# Roadmap — intent and sequencing
+
+> This document describes intended work and the sequencing decisions behind
+> it. It is not the live project status. For the current repository state,
+> read [docs/status.md](status.md). For architectural invariants, read
+> [docs/architecture.md](architecture.md). For the reason older milestone and
+> transport references remain, read [docs/history.md](history.md).
+
+The roadmap was originally written when M11 was the planned end of the
+low-level hardening track and the gRPC/Python migration was future work. That
+sequence is now historical at those points: M12, M13, `searchkerneld`, and the
+Python gRPC/facade path exist in the repository. The sections below remain
+useful as design intent and future sequencing, but their presence is not proof
+that work is pending or complete.
 
 Search Kernel is a Rust interface to Vespa's local C++ search engine.
 
@@ -531,6 +544,8 @@ For ranking assets such as constants or models, embedded operation uses explicit
 
 ## M11 — Low-level wrapper hardening
 
+**Roadmap state:** historical checkpoint; M12 and M13 extend this track.
+
 Harden the complete M0–M10 `searchkernel-vespa-engine` surface independently of the portable client transport.
 
 Cover:
@@ -549,6 +564,48 @@ Cover:
 - M10 ranking/match features.
 
 M11 does not depend on gRPC, language clients, or a portable client C ABI.
+
+## M12 — Dense query tensors and nearest-neighbor execution
+
+**Roadmap state:** implementation and acceptance contract are present; see
+[current status](status.md) for the distinction between repository presence
+and a passing verifier.
+
+Freeze the first dense query-tensor and nearest-neighbor execution slice through
+the real Vespa path. The v1 scope is literal dense tensors with one indexed
+dimension, named query inputs, and exact nearest-neighbor execution. Sparse,
+mixed, mapped, and expression query inputs remain outside this milestone.
+
+The accepted paths are:
+
+```text
+low-level Rust API
+    -> native adapter
+    -> Vespa query/ranking properties and query tree
+    -> Proton matcher
+
+FlatBuffers
+    -> searchkernel-ir
+    -> searchkernel-ir-adapter
+    -> the same low-level API and native path
+```
+
+The normative contract and cumulative verifier are in
+[`reference/vespa/m12/`](../reference/vespa/m12/).
+
+## M13 — Dense tensor document CRUD
+
+**Roadmap state:** implementation and acceptance contract are present; M13 is
+cumulative on M12.
+
+Extend the real Vespa document and update paths to support whole-value dense
+tensor document lifecycle behavior: insert/upsert, readback, assignment,
+unset/reassign, close/reopen persistence, delete, and nearest-neighbor results
+after an update. Tensor construction and validation remain in the native Vespa
+adapter; Search Kernel does not add a parallel document store or tensor engine.
+
+The normative contract and cumulative verifier are in
+[`reference/vespa/m13/`](../reference/vespa/m13/).
 
 ---
 
@@ -867,6 +924,9 @@ C6 must continue to fail closed when BFBS contains schema features that Search K
 
 ## C7 — gRPC transport and `searchkerneld`
 
+**Roadmap state:** implemented in the current repository. The daemon and
+transport tests are the evidence; see [current status](status.md).
+
 Implement the replacement non-Rust transport as a small, transport-only RPC layer.
 
 ### RPC contract
@@ -955,6 +1015,15 @@ C7 is implemented additively beside the old client path. Do not delete the old p
 ---
 
 ## C8 — Python gRPC client and cutover
+
+**Roadmap state:** the gRPC transport and ergonomic facade are present in the
+current repository. Treat deletion/acceptance claims separately from code
+presence; see [current status](status.md).
+
+The imperative migration steps below record the sequence that led to the
+current implementation. They are not instructions to restore the retired
+native client path; use [history](history.md) and [current status](status.md)
+when deciding whether a cutover step remains outstanding.
 
 Migrate the existing Python product API onto the new RPC architecture without redesigning its user-facing semantics.
 
