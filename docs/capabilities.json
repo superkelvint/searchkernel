@@ -9,28 +9,57 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/verify-m7.sh"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs",
+        "clients/python/searchkernel/ergonomic.py"
       ],
       "limitations": []
     },
     {
-      "id": "query.phrase_near",
-      "title": "Phrase and proximity queries",
+      "id": "query.phrase",
+      "title": "Phrase queries",
       "area": "query",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/verify-m7.sh",
-        "core/crates/searchkernel/tests/native_e2e.rs",
-        "clients/python/tests/test_grpc_e2e.py"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
-      "limitations": []
+      "limitations": [
+        "The Python high-level q namespace does not yet expose a phrase helper; low-level generated FlatBuffers can still represent QueryPhrase."
+      ]
+    },
+    {
+      "id": "query.proximity",
+      "title": "Near and ordered-near proximity queries",
+      "area": "query",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+      ],
+      "limitations": [
+        "QueryNear and QueryONear execute through the adapter, but neither high-level Rust Query nor the Python q facade exposes proximity constructors yet."
+      ]
     },
     {
       "id": "query.same_element",
@@ -39,16 +68,17 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/QUERY_SOURCE_TRACE.md",
-        "docs/architecture.md",
-        "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
-        "clients/python/tests/test_grpc_e2e.py"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs"
       ],
       "limitations": [
-        "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model."
+        "Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field."
       ]
     },
     {
@@ -58,16 +88,17 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/CONTRACT.md",
-        "docs/architecture.md",
-        "core/crates/searchkernel/tests/native_e2e.rs",
-        "clients/python/tests/test_grpc_e2e.py"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path."
+        "The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path. The Python high-level q facade does not yet expose fuzzy."
       ]
     },
     {
@@ -77,14 +108,17 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
+        "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
-        "reference/vespa/m7/CONTRACT.md",
-        "docs/architecture.md"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "These typed helpers are not part of the reduced textual userInput/userQuery grammar."
+        "The Rust facade lowers these conveniences through literal-safe matches patterns. They are not part of the reduced textual userInput/userQuery grammar, and the Python q facade does not yet expose them."
       ]
     },
     {
@@ -94,13 +128,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "alternatives currently accepts term children only; more general alternatives are rejected."
+        "Alternatives currently accepts term children only; more general alternatives are rejected. High-level Rust and Python facades do not expose these nodes."
       ]
     },
     {
@@ -110,15 +147,18 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m12/verify-m12.sh",
-        "core/crates/searchkernel/tests/native_e2e.rs",
-        "clients/python/tests/test_flatbuffers_objects.py"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The proven slice uses dense tensors and does not expose the full Vespa HNSW tuning surface."
+        "The proven public path uses dense tensor query inputs and exposes only target hits, approximate mode, distance threshold, and explore-additional-hits rather than the full Vespa HNSW tuning surface."
       ]
     },
     {
@@ -128,15 +168,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md",
-        "core/crates/searchkernel/tests/native_e2e.rs",
-        "clients/python/tests/test_grpc_e2e.py"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Geo matching is delegated to Vespa and is not implemented in Rust; verified bounding-box edges are inclusive."
+        "Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end ergonomic SDK capability."
       ]
     },
     {
@@ -146,32 +187,36 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Only the supported signed-integer range representation and documented predicate expression shapes are lowered."
+        "Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades."
       ]
     },
     {
       "id": "query.weighted_and_wand",
-      "title": "Weighted-set, dot-product, weak-and, and WAND queries",
+      "title": "WeakAnd, weighted-set, dot-product, and WAND queries",
       "area": "query",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
-        "docs/architecture.md",
-        "core/crates/searchkernel/tests/native_e2e.rs",
-        "clients/python/tests/test_grpc_e2e.py"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped."
+        "Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped. The Python q facade does not yet expose these weighted query constructors."
       ]
     },
     {
@@ -181,13 +226,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites."
+        "The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. Neither high-level facade currently exposes userInput/userQuery constructors."
       ]
     },
     {
@@ -197,13 +245,18 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/verify-m7.sh",
-        "core/crates/searchkernel/src/filter.rs"
+        "core/crates/searchkernel/src/filter.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
-      "limitations": []
+      "limitations": [
+        "The Python high-level facade currently uses textual filters; it does not expose a typed structured-filter helper namespace."
+      ]
     },
     {
       "id": "filter.textual",
@@ -212,29 +265,58 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
-        "docs/filter-expression-language.md",
-        "core/crates/searchkernel-ir/src/filter_expression.rs"
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR."
+        "The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR. The Rust SearchBuilder currently accepts typed Filter values only; it has no public textual-filter overload."
       ]
     },
     {
       "id": "search.sorting",
-      "title": "Sorting and missing-value placement",
+      "title": "Field sorting",
       "area": "search",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m8/verify-m8.sh",
-        "core/crates/searchkernel/src/search.rs"
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": []
+    },
+    {
+      "id": "search.sort_missing_placement",
+      "title": "First/last missing-value sort placement",
+      "area": "search",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
+      ],
+      "limitations": [
+        "Rust exposes missing-first and missing-last. The portable/native path also has a missing-as-value form, but it is not exposed by the Rust convenience type. Python's high-level sort() currently has no missing-value option."
+      ]
     },
     {
       "id": "search.pagination",
@@ -243,28 +325,79 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m8/verify-m8.sh"
+        "core/crates/searchkernel/src/search.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
-      "limitations": []
+      "limitations": [
+        "Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper."
+      ]
     },
     {
-      "id": "result.summaries",
-      "title": "Document summaries and stored-field projection",
+      "id": "search.search_fields",
+      "title": "Text search-field selection",
+      "area": "search",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
+      ],
+      "limitations": [
+        "Field selection executes, but non-default per-field weights are rejected by the current native adapter. The Python high-level SearchBuilder does not yet expose search_field/search_fields."
+      ]
+    },
+    {
+      "id": "result.projection",
+      "title": "Stored-field projection and docsum-backed hit fields",
       "area": "result",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m8/verify-m8.sh",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Vespa capability: grouped summary hits carry the selected docsum payload and remain beneath their owning group. Search Kernel limitation: the native seam currently forwards only grouped hit IDs and the adapter creates default/empty Hit values. User-visible impact: summary aggregation does not yet provide promised docsum fields and is not an executable public semantic capability. Reason/status: the native summary generator and typed grouped-hit payload are not implemented; blocked pending a faithful Vespa-backed result seam."
+        "Tensor fields are readable through GET but are rejected from native search-summary projection because they are not native summary fields in the current integration. Named summary-class selection is tracked separately."
+      ]
+    },
+    {
+      "id": "result.named_summary",
+      "title": "Named summary-class selection",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs"
+      ],
+      "limitations": [
+        "Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection."
       ]
     },
     {
@@ -273,28 +406,59 @@
       "area": "result",
       "represented": true,
       "semantic": true,
-      "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "executable": false,
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/client-api-spec.md"
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
-      "limitations": []
+      "limitations": [
+        "The Rust SearchBuilder exposes highlight(), but the real Vespa-backed path deliberately returns highlighting_native_result_unavailable because generated fragments/spans do not cross the native result seam. Python has no high-level highlight method yet."
+      ]
     },
     {
-      "id": "result.tensor_readback",
-      "title": "Tensor feature and result readback",
+      "id": "result.tensor_document_readback",
+      "title": "Dense tensor document readback",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/lib.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "Dense tensor fields round-trip through document GET/projection and reopen. Sparse/mixed document tensors are outside the supported high-level path; Python currently exposes readback as the tagged $searchkernel_tensor object rather than reconstructing a Tensor instance."
+      ]
+    },
+    {
+      "id": "result.tensor_feature_readback",
+      "title": "Typed tensor feature readback",
       "area": "result",
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "core/crates/searchkernel-vespa-engine/tests/result_decoding.rs"
       ],
       "limitations": [
-        "Tensor decoding is a higher-layer capability and is not implied by the opaque Vespa feature container."
+        "Tensor-backed match features currently cross the native result seam as opaque data bytes. The adapter does not decode them into a portable TensorValue."
       ]
     },
     {
@@ -304,30 +468,38 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m9/verify-m9.sh",
-        "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh"
+        "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Parallel grouping branches are not representable by the current linear native grouping plan."
+        "The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree."
       ]
     },
     {
       "id": "grouping.functions",
-      "title": "Grouping expressions and functions",
+      "title": "Executable grouping expression/function subset",
       "area": "grouping",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
+        "clients/python/searchkernel/ergonomic.py"
       ],
       "limitations": [
-        "Vespa capability: grouping supports the full expression/function family accepted by the grouping parser. Search Kernel limitation: the embedded native adapter currently supports attributes, literals, arithmetic, aggregation references, and the verified function subset only; Member, MapLookup, and Bucket remain rejected. User-visible impact: valid portable requests using those forms fail with a structured unsupported error. Reason/status: the current linear ABI has no typed constructors for those Vespa expression nodes; arithmetic/literal/function lowering is implemented but needs dedicated real-engine acceptance coverage."
+        "The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade."
       ]
     },
     {
@@ -337,14 +509,18 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m9/verify-m9.sh",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
+        "core/native/vespa/abi.cc",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The executable expression subset is documented by the native adapter; unsupported forms fail before execution."
+        "The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete."
       ]
     },
     {
@@ -354,13 +530,17 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Vespa capability: summary() collects grouped hits using the surrounding max/default-hit policy and the requested summary class. Search Kernel limitation: finite max propagation is now retained where the linear plan has a grouping max, but grouped docsum payloads do not cross the native ABI. User-visible impact: callers cannot receive faithful summary fields from grouped Hit children. Reason/status: native summary generation and typed grouped-hit/docsum transfer remain unfinished; status is blocked, not a passing implementation."
+        "The Python facade can construct agg.summary(), and finite max propagation reaches the grouping plan, but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant."
       ]
     },
     {
@@ -368,15 +548,20 @@
       "title": "Grouping continuations",
       "area": "grouping",
       "represented": true,
-      "semantic": false,
+      "semantic": true,
       "executable": false,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir/src/api_to_ir/grouping.rs",
+        "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
+        "clients/python/searchkernel/ergonomic.py"
       ],
       "limitations": [
-        "Vespa capability: grouping requests and responses carry opaque continuation tokens for paged group lists. Search Kernel limitation: tokens are rejected before native execution and are not represented in GroupingPlan or GroupingResult. User-visible impact: grouping pagination cannot be requested or resumed through V2. Reason/status: the current linear native ABI has no typed continuation input/output seam; implementation remains deferred."
+        "Continuation tokens are preserved in GroupingRequestIr and in the portable result tree, but native grouping lowering rejects any request with continuations. Python result objects preserve tokens if received, yet there is no production native round-trip or high-level continuation request helper."
       ]
     },
     {
@@ -386,13 +571,16 @@
       "represented": true,
       "semantic": false,
       "executable": false,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs"
       ],
       "limitations": [
-        "Raw grouping text requires a parser and normalization step before it can enter canonical IR."
+        "Raw grouping text is represented as caller intent, but resolve_grouping rejects it until a parser/normalizer can produce canonical structured grouping IR."
       ]
     },
     {
@@ -402,13 +590,18 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/i/verify-i.sh",
-        "docs/status.md"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
-      "limitations": []
+      "limitations": [
+        "This row covers the ordinary unconditional operations and Patch set/unset. Conditional mutations and advanced update-operation families are tracked separately."
+      ]
     },
     {
       "id": "update.arithmetic",
@@ -416,30 +609,99 @@
       "area": "update",
       "represented": true,
       "semantic": true,
-      "executable": false,
-      "ergonomic": {"rust": false, "python": true},
+      "executable": true,
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir/src/api_to_ir/document.rs",
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Arithmetic update nodes are represented in the portable contract but are not yet proven through the complete native product path."
+        "Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate in Python. The high-level Rust product API currently has Patch set/unset only and no advanced UpdateBuilder."
+      ]
+    },
+    {
+      "id": "update.create_if_nonexistent",
+      "title": "Create-if-nonexistent document updates",
+      "area": "update",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "Python UpdateBuilder.create() is proven through the real native path. The high-level Rust product API does not yet expose advanced document updates."
       ]
     },
     {
       "id": "update.conditional",
-      "title": "Conditional and matched-element updates",
+      "title": "Conditional document mutations",
       "area": "update",
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {"rust": false, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir/src/model/document.rs",
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The portable update model represents conditional forms, but the public ergonomic and native execution paths are not complete."
+        "Conditions are preserved in canonical IR for upsert/delete/update, but the Vespa adapter returns conditional_mutation_not_supported. Python exposes condition arguments/builders; Rust does not."
+      ]
+    },
+    {
+      "id": "update.collection_add_remove",
+      "title": "Collection add/remove updates",
+      "area": "update",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/document.rs"
+      ],
+      "limitations": [
+        "AddUpdate and RemoveUpdate are represented in FlatBuffers, but update_to_ir currently rejects them as update_operation_not_supported before canonical IR."
+      ]
+    },
+    {
+      "id": "update.matched_element",
+      "title": "Matched-element updates",
+      "area": "update",
+      "represented": true,
+      "semantic": false,
+      "executable": false,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/document.rs"
+      ],
+      "limitations": [
+        "MatchUpdate is represented in FlatBuffers, but the current UpdateOperationIr has no matched-element variant and update_to_ir rejects it before canonical IR."
       ]
     },
     {
@@ -447,15 +709,19 @@
       "title": "Tensor modify updates",
       "area": "update",
       "represented": true,
-      "semantic": true,
+      "semantic": false,
       "executable": false,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir/src/api_to_ir/document.rs",
+        "core/crates/searchkernel-ir/src/model/document.rs"
       ],
       "limitations": [
-        "Tensor modify operations are represented but not exposed as a complete ergonomic and verified product capability."
+        "TensorModifyUpdate is represented in FlatBuffers, but there is no tensor-modify UpdateOperationIr and update_to_ir rejects it before canonical IR."
       ]
     },
     {
@@ -465,14 +731,18 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m13/verify-m13.sh",
-        "core/crates/searchkernel/src/tensor.rs"
+        "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Sparse and mixed tensors remain unsupported in the current document and query-input paths."
+        "Sparse and mixed tensors remain unsupported in the current high-level document and query-input paths."
       ]
     },
     {
@@ -482,31 +752,37 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m13/grouping-yql/verify-grouping-yql.sh",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the wrapper."
+        "Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. The public Rust Index has search()/browse() but no yql() entry point."
       ]
     },
     {
       "id": "query.text_weak_and",
-      "title": "Analyzed text and WeakAnd queries",
+      "title": "Analyzed text search with default WeakAnd semantics",
       "area": "query",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m7/verify-m7.sh",
-        "docs/architecture.md"
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "text(...) is plain analyzed text with Vespa's default WeakAnd semantics; it is not a phrase."
+        "Primary search(text) is analyzed text retrieval with Vespa WeakAnd-style default matching; it is not a phrase query. The low-level QueryText node is broader than the current facade helpers."
       ]
     },
     {
@@ -516,13 +792,17 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": false},
+      "ergonomic": {
+        "rust": true,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel/src/query.rs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "String and integer values use Vespa's native InTerm node rather than an OR of equality terms."
+        "String and integer values use Vespa's native InTerm node rather than an OR of equality terms. The Python q facade does not yet expose in()."
       ]
     },
     {
@@ -532,13 +812,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker."
+        "NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker. No high-level facade helper exists yet."
       ]
     },
     {
@@ -548,13 +831,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties."
+        "Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties. No high-level labeled-query helper exists yet."
       ]
     },
     {
@@ -564,13 +850,16 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Member queries are relative to the parent element and do not form a general nested struct or map model."
+        "The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field and Python field-spec facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported."
       ]
     },
     {
@@ -580,30 +869,121 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md",
-        "core/crates/searchkernel/tests/native_e2e.rs"
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "The native adapter publishes Vespa-compatible derived zcurve data; Search Kernel does not implement geo matching independently."
+        "The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust or Python schema builders."
+      ]
+    },
+    {
+      "id": "ranking.profile_selection",
+      "title": "Rank-profile selection",
+      "area": "ranking",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "The profile must exist in the compiled index schema; Search Kernel does not introduce a second ranking language."
+      ]
+    },
+    {
+      "id": "ranking.numeric_query_inputs",
+      "title": "Numeric scalar query inputs",
+      "area": "ranking",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "The public Rust QueryInputValue currently exposes integer, unsigned integer, float, and tensor values; the proven scalar real-engine path is numeric. Expression query inputs are not exposed by the high-level facades."
+      ]
+    },
+    {
+      "id": "ranking.tensor_query_inputs",
+      "title": "Dense tensor query inputs",
+      "area": "ranking",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "Only literal dense tensors are executable by the current native query-input seam; sparse/mixed tensors and expression inputs are rejected."
+      ]
+    },
+    {
+      "id": "ranking.rank_properties",
+      "title": "Rank properties",
+      "area": "ranking",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel/src/search.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "Adapter-owned vespa.label.* properties are reserved for labeled queries and cannot be supplied by callers."
       ]
     },
     {
       "id": "result.match_features",
-      "title": "Match-feature and summary-feature readback",
+      "title": "Match-feature readback",
       "area": "result",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/searchreply/CONTRACT.md"
+        "core/crates/searchkernel-vespa-engine/tests/result_decoding.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Match features cross the Vespa boundary as doubles or borrowed opaque data; tensor decoding is tracked separately."
+        "Scalar match features are decoded. Tensor-backed feature output remains opaque bytes. The adapter currently leaves summary_features and rank_features empty even though the portable Hit schema represents them."
       ]
     },
     {
@@ -613,29 +993,39 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/m9/verify-m9.sh"
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The implemented plan exposes recursive groups, keys, aggregation values, and the canonical root, not Vespa's complete result-tree surface."
+        "The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Python exposes root/children losslessly. Rust currently projects recursive ResultGroup values into groups/aggregations and does not expose the canonical mixed root; nested Hit children would be dropped by that Rust projection."
       ]
     },
     {
       "id": "result.degradation_metadata",
-      "title": "Coverage, timeout, and issue metadata",
+      "title": "Coverage and degradation metadata",
       "area": "result",
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": true, "python": true},
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
       "verified_by": [
         "api/searchkernel.fbs",
-        "reference/vespa/searchreply/CONTRACT.md"
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Deterministic acceptance relies on real match-phase degradation; the frozen verifier does not fabricate a Vespa issue."
+        "The real backend populates coverage counters and match-phase/timeout/ANN degradation flags. Portable timing, trace, arbitrary metadata, and native Vespa UniqueIssues are not currently populated by this backend; UniqueIssues are deliberately not fabricated into SearchResult.errors."
       ]
     },
     {
@@ -645,7 +1035,10 @@
       "represented": false,
       "semantic": false,
       "executable": false,
-      "ergonomic": {"rust": false, "python": false},
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
       "verified_by": [
         "docs/architecture.md",
         "docs/status.md"
