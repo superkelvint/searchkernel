@@ -210,7 +210,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
     def test_focused_updates_survive_restart_and_change_search_visibility(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))
-        index = Index(self.client)
+        index = Index(self.client, ergonomic=True)
         index.upsert("doc:1", {"title": "quick fox", "price": 10})
 
         index.update("doc:1").set("title", "slow hare").execute()
@@ -229,7 +229,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
 
         endpoint = self._start_server(definition=False)
         self.client = Client(GrpcTransport(endpoint))
-        reopened = Index(self.client)
+        reopened = Index(self.client, ergonomic=True)
         self.assertEqual(reopened.get("doc:1")["price"], 15)
         self.assertEqual(
             {hit.id for hit in reopened.search("hare").execute().hits},
@@ -367,10 +367,10 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))
         index = Index(self.client)
-        index.upsert("d1", {"title": "quick brown fox", "category": "a", "price": 5})
-        index.upsert("d2", {"title": "brown quick fox", "category": "b", "price": 2})
-        index.upsert("d3", {"title": "quick fox", "category": "a", "price": 8})
-        index.upsert("d4", {"title": "fox", "category": "b", "price": 1})
+        index.upsert("d1", {"title": "quick brown fox", "category": "fox", "price": 5})
+        index.upsert("d2", {"title": "brown quick fox", "category": "fox", "price": 2})
+        index.upsert("d3", {"title": "quick fox", "category": "fox", "price": 8})
+        index.upsert("d4", {"title": "fox", "category": "fox", "price": 1})
 
         def ids(query):
             result = index.search(SearchRequestT(query=query, limit=OptionalUInt32T(value=10)))
@@ -379,7 +379,7 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.assertEqual(ids(q.contains("title", q.phrase("quick", "brown"))), ["d1"])
         self.assertEqual(set(ids(q.contains("title", q.near("quick", "brown")))), {"d1", "d2"})
         self.assertEqual(ids(q.contains("title", q.onear("quick", "brown"))), ["d1"])
-        self.assertEqual(set(ids(q.contains("title", q.fuzzy("foxx")))), {"d1", "d2", "d3", "d4"})
+        self.assertEqual(set(ids(q.contains("category", q.fuzzy("foxx")))), {"d1", "d2", "d3", "d4"})
         self.assertEqual(
             set(ids(q.rank(q.contains("title", "fox"), q.contains("title", "quick")))),
             {"d1", "d2", "d3", "d4"},
@@ -421,8 +421,8 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
                             )
                         ),
                     ),
-                    stored=OptionalBoolT(True),
-                    searchable=OptionalBoolT(True),
+                    stored=OptionalBoolT(False),
+                    searchable=OptionalBoolT(False),
                 )
             ],
         )

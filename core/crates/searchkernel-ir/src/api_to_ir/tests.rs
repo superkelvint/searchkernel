@@ -2696,7 +2696,7 @@ fn typed_query_validation_enforces_field_capabilities_and_types() {
                 ],
             })),
             None,
-            searchable_string(),
+            FieldCapabilities::new(true, false, true, false, false),
         ),
     ]);
     let relative = IndexContext::from_definition_ir(relative_definition);

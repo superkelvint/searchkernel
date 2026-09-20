@@ -400,7 +400,20 @@ impl IndexContext {
                 let fuzzy_on_string_attribute = item.expr_type() == api::QueryExprKind::QueryFuzzy
                     && field.kind() == FieldKind::Keyword
                     && field.capabilities().filterable();
-                if !field.capabilities().searchable() && !fuzzy_on_string_attribute {
+                let same_element_on_struct_array = item.expr_type()
+                    == api::QueryExprKind::QuerySameElement
+                    && matches!(
+                        field.data_type(),
+                        DataTypeIr::Array(element)
+                            if matches!(
+                                element.as_ref(),
+                                DataTypeIr::Struct { .. } | DataTypeIr::StructReference { .. }
+                            )
+                    );
+                if !field.capabilities().searchable()
+                    && !fuzzy_on_string_attribute
+                    && !same_element_on_struct_array
+                {
                     return Err(invalid(
                         "field_not_searchable",
                         Some(format!("{path}.contains.field")),
@@ -644,7 +657,11 @@ impl IndexContext {
                 }
             }
             QueryExprKindIr::Contains { field, item } => {
-                let field = if matches!(item.kind, QueryExprKindIr::Fuzzy { .. }) {
+                let field = if matches!(item.kind, QueryExprKindIr::SameElement(_))
+                    && self.is_struct_array_field(field)
+                {
+                    field.clone()
+                } else if matches!(item.kind, QueryExprKindIr::Fuzzy { .. }) {
                     self.resolve_fuzzy_query_field(
                         field,
                         field_context,
@@ -1072,7 +1089,9 @@ impl IndexContext {
 
     fn validate_searchable_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
         let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
-        if !schema_field.capabilities().searchable() {
+        if !schema_field.capabilities().searchable()
+            && !self.struct_member_is_searchable(field.path.as_str())
+        {
             return Err(invalid(
                 "field_not_searchable",
                 Some(path.to_owned()),
@@ -1080,6 +1099,64 @@ impl IndexContext {
             ));
         }
         Ok(())
+    }
+
+    fn struct_member_is_searchable(&self, path: &str) -> bool {
+        let mut parts = path.split('.');
+        let Some(root) = parts.next() else {
+            return false;
+        };
+        if parts.clone().next().is_none() {
+            return false;
+        }
+        let Ok(field) = self.query_field(root, format!("query.{root}")) else {
+            return false;
+        };
+        let mut data_type = field.data_type().clone();
+        for part in parts {
+            if let crate::model::DataTypeIr::Array(element) = data_type {
+                data_type = *element;
+            }
+            if let crate::model::DataTypeIr::StructReference { name } = &data_type {
+                let Some(structure) = self
+                    .definition
+                    .structs()
+                    .iter()
+                    .find(|value| value.name == *name)
+                else {
+                    return false;
+                };
+                data_type = crate::model::DataTypeIr::Struct {
+                    fields: structure.fields.clone(),
+                };
+            }
+            let crate::model::DataTypeIr::Struct { fields } = data_type else {
+                return false;
+            };
+            let Some(member) = fields.into_iter().find(|field| field.name == part) else {
+                return false;
+            };
+            data_type = member.data_type;
+        }
+        matches!(
+            data_type,
+            crate::model::DataTypeIr::Primitive(crate::model::PrimitiveDataTypeIr::String)
+        )
+    }
+
+    fn is_struct_array_field(&self, field: &QueryFieldRefIr) -> bool {
+        self.query_field(field.path.as_str(), "query.contains.field".to_owned())
+            .is_ok_and(|field| {
+                matches!(
+                    field.data_type(),
+                    crate::model::DataTypeIr::Array(element)
+                        if matches!(
+                            element.as_ref(),
+                            crate::model::DataTypeIr::Struct { .. }
+                                | crate::model::DataTypeIr::StructReference { .. }
+                        )
+                )
+            })
     }
 
     fn validate_typed_term_value(value: &RequestValueIr, path: &str) -> Result<()> {

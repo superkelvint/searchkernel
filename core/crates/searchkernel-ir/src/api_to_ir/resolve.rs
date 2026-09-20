@@ -1586,6 +1586,57 @@ pub(crate) fn resolve_field_value(
             )),
         };
     }
+    if let crate::model::DataTypeIr::Array(element) = field.data_type() {
+        let crate::model::DataTypeIr::Struct { fields } = element.as_ref() else {
+            return resolve_scalar_or_multi_value(field, value, path);
+        };
+        let RequestValueIr::List(values) = value else {
+            return Err(invalid(
+                "cardinality_mismatch",
+                Some(path),
+                "array-of-struct fields require a list value",
+            ));
+        };
+        return values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let RequestValueIr::Object(values) = value else {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(format!("{path}[{index}]")),
+                        "array-of-struct elements require an object value",
+                    ));
+                };
+                let mut members = std::collections::BTreeMap::new();
+                for (name, value) in values {
+                    let Some(field_definition) = fields.iter().find(|field| field.name == name)
+                    else {
+                        return Err(invalid(
+                            "unknown_field",
+                            Some(format!("{path}[{index}].{name}")),
+                            "struct member is not defined",
+                        ));
+                    };
+                    let member_path = format!("{path}[{index}].{name}");
+                    members.insert(
+                        name,
+                        resolve_struct_scalar(value, &field_definition.data_type, member_path)?,
+                    );
+                }
+                Ok(members)
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(FieldValueIr::Structured);
+    }
+    resolve_scalar_or_multi_value(field, value, path)
+}
+
+fn resolve_scalar_or_multi_value(
+    field: &crate::model::FieldIr,
+    value: RequestValueIr,
+    path: String,
+) -> Result<FieldValueIr> {
     let list = match (&field.cardinality(), value) {
         (FieldCardinality::Single, RequestValueIr::List(_)) => {
             return Err(invalid(
@@ -1618,6 +1669,55 @@ pub(crate) fn resolve_field_value(
         field.kind(),
         path,
     )?))
+}
+
+fn resolve_struct_scalar(
+    value: RequestValueIr,
+    data_type: &crate::model::DataTypeIr,
+    path: String,
+) -> Result<ScalarValueIr> {
+    let scalar = match value {
+        RequestValueIr::Bool(value) => ScalarValueIr::Bool(value),
+        RequestValueIr::Int64(value) => ScalarValueIr::Int64(value),
+        RequestValueIr::Float64(value) if value.is_finite() => ScalarValueIr::Float64(value),
+        RequestValueIr::String(value) => ScalarValueIr::String(value),
+        _ => {
+            return Err(invalid(
+                "type_mismatch",
+                Some(path),
+                "struct members require scalar values",
+            ));
+        }
+    };
+    let matches = matches!(
+        (&scalar, data_type),
+        (
+            ScalarValueIr::String(_),
+            crate::model::DataTypeIr::Primitive(crate::model::PrimitiveDataTypeIr::String)
+        ) | (
+            ScalarValueIr::Bool(_),
+            crate::model::DataTypeIr::Primitive(crate::model::PrimitiveDataTypeIr::Bool)
+        ) | (
+            ScalarValueIr::Int64(_),
+            crate::model::DataTypeIr::Primitive(
+                crate::model::PrimitiveDataTypeIr::Int32 | crate::model::PrimitiveDataTypeIr::Int64,
+            )
+        ) | (
+            ScalarValueIr::Float64(_),
+            crate::model::DataTypeIr::Primitive(
+                crate::model::PrimitiveDataTypeIr::Float32
+                    | crate::model::PrimitiveDataTypeIr::Float64,
+            )
+        )
+    );
+    if !matches {
+        return Err(invalid(
+            "type_mismatch",
+            Some(path),
+            "struct member value does not match its field type",
+        ));
+    }
+    Ok(scalar)
 }
 
 pub(crate) fn resolve_position_value(value: RequestValueIr, path: String) -> Result<FieldValueIr> {
