@@ -42,6 +42,18 @@ def source_files(path: Path):
                 yield child
 
 
+TEST_ONLY_CFG = re.compile(
+    r"(?m)^\s*#\[cfg\(\s*(?:test|all\([^)]*\btest\b[^)]*\))\s*\)\]\s*$"
+)
+
+
+def strip_rust_test_code(contents: str) -> str:
+    """Exclude Rust items compiled only for tests from the production scan."""
+
+    match = TEST_ONLY_CFG.search(contents)
+    return contents[:match.start()] if match else contents
+
+
 def main() -> int:
     args = sys.argv[1:]
     keys = {"id", "input", "text", "query", "doc"}
@@ -64,8 +76,8 @@ def main() -> int:
             if source.suffix == ".rs":
                 # Unit tests may intentionally use the same semantic words as
                 # an acceptance scenario. The scan is for production literals;
-                # Rust keeps conventional unit tests behind this cfg boundary.
-                contents = re.split(r"(?m)^\s*#\[cfg\(test\)\]", contents, maxsplit=1)[0]
+                # Rust keeps test-only modules behind this cfg boundary.
+                contents = strip_rust_test_code(contents)
             for needle in needles:
                 if any(char.isspace() for char in needle):
                     found = needle in contents

@@ -15,8 +15,11 @@ for scenario in "$ROOT/m5/scenarios"/*.json; do
         "$REPO_ROOT/core/crates/searchkernel-vespa-bindings/src" "$REPO_ROOT/core/native/vespa"
 done
 
+# Inspect the driver's declared manifest and source, not Cargo.lock. A
+# transitive dependency of the public engine (for example serde_json) is not
+# an M5 driver dependency or persistence shortcut.
 if rg -n 'searchkernel-(core|testkit)|searchkernel =|searchkernel-ir|searchkernel-testkit|serde_json|HashMap|HashSet' \
-    "$ROOT/m5/rust-driver"; then
+    "$ROOT/m5/rust-driver/Cargo.toml" "$ROOT/m5/rust-driver/src"; then
     echo "M5 driver has a forbidden dependency or persistence shortcut" >&2
     exit 1
 fi

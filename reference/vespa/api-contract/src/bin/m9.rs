@@ -75,6 +75,9 @@ fn visit_group(result: GroupingResult) {
             GroupingOutput::Value(GroupingResultValue::Float(value)) => {
                 let _: f64 = value;
             }
+            GroupingOutput::Value(GroupingResultValue::Boolean(value)) => {
+                let _: bool = value;
+            }
             GroupingOutput::Value(GroupingResultValue::Quantiles(values)) => {
                 let _: Vec<(f64, f64)> = values;
             }
