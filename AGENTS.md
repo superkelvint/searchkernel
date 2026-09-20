@@ -100,6 +100,28 @@ and form a short implementation plan before editing.
 
 Do not broaden the task with unrelated cleanup.
 
+## Repository command surface
+
+Use the root `./dev` command as the normal entry point for repository setup,
+verification, generation, and acceptance lanes:
+
+```text
+./dev doctor
+./dev check-fast
+./dev test ir
+./dev test rust-api
+./dev test python
+./dev regen protocol
+./dev verify m13
+./dev verify integration
+```
+
+Start with `./dev doctor` when entering an unfamiliar checkout or when a build
+fails for an environment-related reason. It reports each prerequisite
+separately; fix or report failed prerequisites before diagnosing product code.
+Use `./dev --help` for the supported command list. Keep direct underlying
+scripts for focused debugging or when a contract explicitly names one.
+
 ## Search scope
 
 Repository-wide discovery should exclude generated/build artifacts by default.
