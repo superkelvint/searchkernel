@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+EXPECTED_FLATBUFFERS_VERSION=25.12.19
+PYTHON=${PYTHON:-python3}
+
+cd "$ROOT"
+
+usage() {
+    cat <<'EOF'
+Search Kernel development commands
+
+  ./dev check                 Run the full repository quality and test suite
+  ./dev check-fast            Run formatting, compile, and boundary checks
+  ./dev test ir               Test the portable semantic IR
+  ./dev test rust-api         Test the public Rust API
+  ./dev test python           Test the Python client
+  ./dev regen protocol        Regenerate checked-in protocol artifacts
+  ./dev verify m13            Run a frozen Vespa milestone verifier
+  ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev doctor                Diagnose local build and verification prerequisites
+
+Environment overrides used by the underlying tools, including FLATC_PATH,
+FLATBUFFERS_CPP_ROOT, SK_NATIVE_SDK, and CARGO_TARGET_DIR, are honored.
+EOF
+}
+
+run_python_tests() {
+    "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
+}
+
+check_fast() {
+    cargo fmt --all --check
+    cargo check --workspace --all-targets --all-features
+    bash "$ROOT/tools/check-layout.sh"
+    bash "$ROOT/tools/check-ir-boundary.sh"
+    "$PYTHON" "$ROOT/tools/check_abi_surface.py" \
+        "$ROOT/core/native/vespa/searchkernel_vespa.h"
+    "$PYTHON" "$ROOT/tools/check-python-flatbuffers-boundary.py"
+}
+
+check_all() {
+    check_fast
+    bash "$ROOT/tools/check-vespa-bindings.sh"
+    bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/check-python-grpc.sh"
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo test --workspace --all-targets --all-features
+    run_python_tests
+}
+
+regen_protocol() {
+    bash "$ROOT/tools/generate-searchkernel-protocol.sh"
+    bash "$ROOT/tools/generate-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/generate-python-flatbuffers.sh"
+    bash "$ROOT/tools/generate-python-grpc.sh"
+}
+
+test_target() {
+    case "${1:-}" in
+        ir)
+            cargo test -p searchkernel-ir --all-targets --all-features
+            ;;
+        rust-api|rust)
+            cargo test -p searchkernel --all-targets --all-features
+            ;;
+        python)
+            run_python_tests
+            ;;
+        *)
+            echo "usage: ./dev test ir|rust-api|python" >&2
+            return 2
+            ;;
+    esac
+}
+
+verify_target() {
+    case "${1:-}" in
+        integration|i)
+            "$ROOT/reference/vespa/i/verify-i.sh"
+            ;;
+        m0|m1|m2|m3|m4|m5|m6|m7|m8|m9|m10|m11|m12|m13|phase10|searchreply)
+            "$ROOT/reference/vespa/verify-through.sh" "$1"
+            ;;
+        *)
+            echo "usage: ./dev verify m0|...|m13|integration|phase10|searchreply" >&2
+            return 2
+            ;;
+    esac
+}
+
+find_flatc() {
+    if [[ -n "${FLATC_PATH:-}" ]]; then
+        printf '%s\n' "$FLATC_PATH"
+    elif command -v flatc >/dev/null 2>&1; then
+        command -v flatc
+    else
+        find "$ROOT/target" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
+            -perm -111 -print -quit 2>/dev/null || true
+    fi
+}
+
+doctor_cargo() {
+    command -v cargo >/dev/null 2>&1
+    cargo --version >/dev/null
+}
+
+doctor_flatc() {
+    DOCTOR_FLATC=$(find_flatc)
+    [[ -x "${DOCTOR_FLATC:-}" ]]
+    [[ "$("$DOCTOR_FLATC" --version)" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]]
+}
+
+doctor_flatbuffers_cpp() {
+    local flatc cpp_root header major minor revision actual
+    flatc=${DOCTOR_FLATC:-$(find_flatc)}
+    [[ -x "${flatc:-}" ]] || return 1
+
+    if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]]; then
+        cpp_root=$FLATBUFFERS_CPP_ROOT
+    else
+        cpp_root=$(cd -- "$(dirname -- "$flatc")/.." && pwd)
+    fi
+    header="$cpp_root/include/flatbuffers/base.h"
+    [[ -f "$header" ]] || return 1
+    major=$(sed -n 's/^#define FLATBUFFERS_VERSION_MAJOR //p' "$header")
+    minor=$(sed -n 's/^#define FLATBUFFERS_VERSION_MINOR //p' "$header")
+    revision=$(sed -n 's/^#define FLATBUFFERS_VERSION_REVISION //p' "$header")
+    actual="$major.$minor.$revision"
+    [[ "$actual" == "$EXPECTED_FLATBUFFERS_VERSION" ]] || return 1
+    find "$cpp_root" -maxdepth 3 -type f -name 'libflatbuffers.*' -print -quit 2>/dev/null | grep -q .
+}
+
+doctor_generated_protocol() {
+    [[ -s "$ROOT/core/crates/searchkernel-protocol/src/lib.rs" ]]
+    [[ -n "$(find "$ROOT/core/crates/searchkernel-protocol/src/generated" -name '*.rs' -type f -print -quit 2>/dev/null)" ]]
+    [[ -s "$ROOT/core/crates/searchkernel-protocol/bfbs/searchkernel_request.bfbs" ]]
+    [[ -s "$ROOT/core/crates/searchkernel-protocol/bfbs/searchkernel_response.bfbs" ]]
+    [[ -n "$(find "$ROOT/clients/python/searchkernel/_wire_generated" -name '*.py' -type f -print -quit 2>/dev/null)" ]]
+    FLATC_PATH="${DOCTOR_FLATC:-$(find_flatc)}" \
+        bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+}
+
+doctor_native_sdk() {
+    local sdk=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+    [[ -f "$sdk/include/searchkernel_vespa.h" ]]
+    [[ -f "$sdk/manifest.json" ]]
+    compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null
+}
+
+doctor_native_abi() {
+    # Keep ABI authority checking in the existing acceptance helper so doctor
+    # and milestone verification cannot silently grow different rules.
+    source "$ROOT/reference/vespa/common/verify-common.sh"
+    require_sdk_manifest "${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}/manifest.json"
+}
+
+doctor_vespa() {
+    source "$ROOT/reference/vespa/common/verify-common.sh"
+    require_pinned_vespa
+}
+
+doctor_python() {
+    "$PYTHON" - <<'PY'
+from importlib.metadata import version
+
+expected = {
+    "flatbuffers": "25.12.19",
+    "grpcio": "1.84.0",
+    "protobuf": "7.35.1",
+}
+try:
+    import flatbuffers
+    import google.protobuf
+    import grpc
+    from grpc_tools import protoc  # noqa: F401 - verifies grpcio-tools is installed
+except ModuleNotFoundError as error:
+    raise SystemExit(f"missing Python module: {error.name}") from None
+
+actual = {
+    "flatbuffers": getattr(flatbuffers, "__version__", None),
+    "grpcio": grpc.__version__,
+    "protobuf": google.protobuf.__version__,
+}
+for package, wanted in expected.items():
+    if actual[package] != wanted:
+        raise SystemExit(f"{package} {actual[package]} (expected {wanted})")
+if version("grpcio-tools") != "1.84.0":
+    raise SystemExit(f"grpcio-tools {version('grpcio-tools')} (expected 1.84.0)")
+PY
+}
+
+doctor_searchkerneld() {
+    local target_dir=${CARGO_TARGET_DIR:-$ROOT/target}
+    local binary=${SEARCHKERNELD_BIN:-$target_dir/debug/searchkerneld}
+    [[ -x "$binary" ]]
+}
+
+doctor() {
+    local status=0
+    local diagnostics
+    diagnostics=$(mktemp)
+
+    doctor_check() {
+        local label=$1
+        shift
+        if "$@" >"$diagnostics" 2>&1; then
+            printf 'PASS  %s\n' "$label"
+        else
+            printf 'FAIL  %s\n' "$label"
+            sed -n '1,3p' "$diagnostics" | sed 's/^/      /'
+            status=1
+        fi
+    }
+
+    echo "Search Kernel doctor"
+    doctor_check 'cargo present' doctor_cargo
+    doctor_check 'flatc correct version' doctor_flatc
+    doctor_check 'FlatBuffers C++ correct version' doctor_flatbuffers_cpp
+    doctor_check 'generated protocol present/current' doctor_generated_protocol
+    doctor_check 'native SDK present' doctor_native_sdk
+    doctor_check 'native ABI versions agree' doctor_native_abi
+    doctor_check 'pinned Vespa checkout present' doctor_vespa
+    doctor_check 'Python dependencies present' doctor_python
+    doctor_check 'searchkerneld built' doctor_searchkerneld
+
+    if ((status == 0)); then
+        echo 'Doctor: all prerequisites passed'
+    else
+        echo 'Doctor: one or more prerequisites failed' >&2
+    fi
+    rm -f "$diagnostics"
+    return "$status"
+}
+
+case "${1:-help}" in
+    help|-h|--help)
+        usage
+        ;;
+    check)
+        check_all
+        ;;
+    check-fast)
+        check_fast
+        ;;
+    test)
+        shift
+        test_target "${1:-}"
+        ;;
+    regen)
+        [[ "${2:-}" == protocol ]] || {
+            echo 'usage: ./dev regen protocol' >&2
+            exit 2
+        }
+        regen_protocol
+        ;;
+    verify)
+        shift
+        verify_target "${1:-}"
+        ;;
+    doctor)
+        doctor
+        ;;
+    *)
+        echo "unknown command: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

@@ -73,6 +73,27 @@ For a non-standard installation, set `FLATBUFFERS_CPP_ROOT` for Cargo and
 `FLATC_PATH` for schema and Python-generation checks. All installed components
 must be version `25.12.19`.
 
+### Development command surface
+
+Repository checks and generators are available through one root command:
+
+```text
+./dev check
+./dev check-fast
+./dev test ir
+./dev test rust-api
+./dev test python
+./dev regen protocol
+./dev verify m13
+./dev verify integration
+./dev doctor
+```
+
+`./dev doctor` is the first command to run when setup is uncertain. It reports
+the Cargo, FlatBuffers, generated protocol, native SDK/ABI, pinned Vespa,
+Python, and `searchkerneld` prerequisites individually. Run `./dev --help` for
+the complete command list.
+
 FlatBuffers is the sole portable data contract. Non-Rust RPC carries canonical
 FlatBuffer bytes over generated gRPC. Standard FlatBuffers JSON is the only
 supported JSON representation; it is parsed to FlatBuffers before dispatch and
