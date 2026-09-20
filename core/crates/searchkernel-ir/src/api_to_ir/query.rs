@@ -543,6 +543,16 @@ impl IndexContext {
                         "weighted query requires an indexed or attribute field",
                     ));
                 }
+                if !matches!(
+                    schema_field.data_type().scalar_primitive(),
+                    Some(PrimitiveDataTypeIr::String | PrimitiveDataTypeIr::Int64)
+                ) {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(path.to_owned()),
+                        "weighted query requires a string or integer field",
+                    ));
+                }
                 if items.is_empty() {
                     return Err(invalid(
                         "empty_weighted_query",
@@ -572,7 +582,15 @@ impl IndexContext {
                         "geo coordinates must be finite",
                     ));
                 }
-                self.validate_query_field_reference(field, path).map(|_| ())
+                let schema_field = self.validate_query_field_reference(field, path)?;
+                if !matches!(schema_field.data_type(), DataTypeIr::Position) {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(path.to_owned()),
+                        "geo queries require a position field",
+                    ));
+                }
+                Ok(())
             }
             QueryExprKindIr::GeoBoundingBox {
                 field,
@@ -591,11 +609,27 @@ impl IndexContext {
                         "geo coordinates must be finite",
                     ));
                 }
-                self.validate_query_field_reference(field, path).map(|_| ())
+                let schema_field = self.validate_query_field_reference(field, path)?;
+                if !matches!(schema_field.data_type(), DataTypeIr::Position) {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(path.to_owned()),
+                        "geo queries require a position field",
+                    ));
+                }
+                Ok(())
             }
-            QueryExprKindIr::NearestNeighbor { document_field, .. } => self
-                .validate_query_field_reference(document_field, path)
-                .map(|_| ()),
+            QueryExprKindIr::NearestNeighbor { document_field, .. } => {
+                let schema_field = self.validate_query_field_reference(document_field, path)?;
+                if !matches!(schema_field.data_type(), DataTypeIr::Tensor { .. }) {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(path.to_owned()),
+                        "nearest-neighbor queries require a tensor field",
+                    ));
+                }
+                Ok(())
+            }
             QueryExprKindIr::Phrase(children)
             | QueryExprKindIr::Near { children, .. }
             | QueryExprKindIr::ONear { children, .. }
@@ -692,9 +726,19 @@ impl IndexContext {
                 range_features,
                 ..
             } => {
-                self.validate_query_field_reference(field, path)?;
-                validate_predicate_values(features, &child_path("predicate.features"))?;
-                validate_predicate_values(range_features, &child_path("predicate.range_features"))
+                let schema_field = self.validate_query_field_reference(field, path)?;
+                if !matches!(schema_field.data_type(), DataTypeIr::Predicate) {
+                    return Err(invalid(
+                        "type_mismatch",
+                        Some(path.to_owned()),
+                        "predicate queries require a predicate field",
+                    ));
+                }
+                validate_predicate_features(features, &child_path("predicate.features"))?;
+                validate_predicate_range_features(
+                    range_features,
+                    &child_path("predicate.range_features"),
+                )
             }
         }
     }
