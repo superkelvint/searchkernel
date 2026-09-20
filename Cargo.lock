@@ -1499,7 +1499,6 @@ name = "searchkernel-vespa-engine"
 version = "0.1.0"
 dependencies = [
  "searchkernel-vespa-bindings",
- "serde_json",
  "unicode-general-category",
  "unicode-normalization",
 ]
