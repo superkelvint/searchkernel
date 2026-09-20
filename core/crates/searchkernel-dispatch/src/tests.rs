@@ -452,6 +452,10 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
             wire::ResponsePayload::SearchKernel_V2_PatchResult,
         ),
         (
+            "write.update-assign.skrq",
+            wire::ResponsePayload::SearchKernel_V2_UpdateResult,
+        ),
+        (
             "write.delete.skrq",
             wire::ResponsePayload::SearchKernel_V2_DeleteResult,
         ),
@@ -987,6 +991,29 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
             "{fixture} response kind"
         );
     }
+}
+
+#[test]
+fn rejects_update_type_errors_before_backend_execution() {
+    let fixture_root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/portable/requests");
+    let request = fs::read(fixture_root.join("write.update-type-error.skrq")).unwrap();
+    let recording = Arc::new(RecordingBackend::new());
+    let dispatcher = Dispatcher::from_backend(context(), recording.clone());
+    let response = dispatcher.dispatch(&request).unwrap();
+    let envelope = root::<wire::ResponseEnvelope<'_>>(&response).unwrap();
+    assert_eq!(
+        envelope.payload_type(),
+        wire::ResponsePayload::SearchKernel_V2_Error
+    );
+    assert_eq!(
+        envelope.payload_as_search_kernel_v2_error().unwrap().code(),
+        api::ErrorCode::InvalidArgument
+    );
+    assert!(
+        recording.take_calls().is_empty(),
+        "invalid update must not reach the backend"
+    );
 }
 
 #[test]

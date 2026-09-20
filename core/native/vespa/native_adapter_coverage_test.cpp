@@ -122,6 +122,10 @@ void invalid_argument_surface() {
     expect_invalid(sk_document_update_annotate_text(nullptr, TITLE_FIELD, nullptr, 0, nullptr,
                                                      nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
                    "update annotate null");
+    expect_invalid(sk_document_update_annotate_string_array(
+                       nullptr, TITLE_FIELD, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                       error.data(), ERROR_CAPACITY),
+                   "update annotate array null");
     sk_document_update_destroy(nullptr);
 
     expect_invalid(sk_search_request_create(nullptr, 1, 1, &request, error.data(), ERROR_CAPACITY),

@@ -365,6 +365,7 @@ pub struct DocumentUpdate {
     id: String,
     fields: BTreeMap<String, FieldUpdate>,
     text_analysis: BTreeMap<String, DocumentAnalysis>,
+    array_text_analysis: BTreeMap<String, Vec<DocumentAnalysis>>,
     create_if_nonexistent: bool,
 }
 
@@ -432,6 +433,7 @@ impl DocumentUpdate {
             id: id.into(),
             fields: BTreeMap::new(),
             text_analysis: BTreeMap::new(),
+            array_text_analysis: BTreeMap::new(),
             create_if_nonexistent: false,
         }
     }
@@ -464,6 +466,17 @@ impl DocumentUpdate {
         self
     }
 
+    /// Attach Vespa-compatible term annotations to every element of a string
+    /// array assignment. Each element keeps its own token positions.
+    pub fn annotate_text_array(
+        mut self,
+        name: impl Into<String>,
+        analyses: Vec<DocumentAnalysis>,
+    ) -> Self {
+        self.array_text_analysis.insert(name.into(), analyses);
+        self
+    }
+
     pub fn create_if_nonexistent(mut self, value: bool) -> Self {
         self.create_if_nonexistent = value;
         self
@@ -478,6 +491,10 @@ impl DocumentUpdate {
 
     pub(crate) fn text_analysis(&self) -> &BTreeMap<String, DocumentAnalysis> {
         &self.text_analysis
+    }
+
+    pub(crate) fn array_text_analysis(&self) -> &BTreeMap<String, Vec<DocumentAnalysis>> {
+        &self.array_text_analysis
     }
 
     pub(crate) fn create_if_nonexistent_flag(&self) -> bool {

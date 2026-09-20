@@ -1221,6 +1221,7 @@ class EmbeddedEngine {
         update->setCreateIfNonExistent(source.create_if_nonexistent);
         for (const auto &[name, value] : source.fields) {
             const auto &field = _doc_type->getField(name);
+            const auto &manifest_field = require_manifest_field(name);
             document::FieldUpdate field_update(field);
             if (value) {
                 const auto annotated = std::find_if(
@@ -1235,12 +1236,41 @@ class EmbeddedEngine {
                 const auto *array_occurrences = annotated_array == source.annotated_array_fields.end()
                                                     ? nullptr
                                                     : &annotated_array->second;
+                auto field_value = make_document_value(name, *value, occurrences, array_occurrences);
+                std::optional<int64_t> zcurve;
+                if (manifest_field.type == "position" && manifest_field.attribute) {
+                    const auto *position = dynamic_cast<const document::StructFieldValue *>(field_value.get());
+                    if (!position) {
+                        throw std::invalid_argument("position field value is not a struct: " + name);
+                    }
+                    auto x = position->getValue(document::PositionDataType::FIELD_X);
+                    auto y = position->getValue(document::PositionDataType::FIELD_Y);
+                    zcurve = vespalib::geo::ZCurve::encode(x->getAsInt(), y->getAsInt());
+                }
                 field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
-                    make_document_value(name, *value, occurrences, array_occurrences)));
+                    std::move(field_value)));
+                update->addUpdate(std::move(field_update));
+                if (zcurve) {
+                    // Geo queries read the generated *_zcurve attribute. The
+                    // embedded DocumentUpdate path does not derive it from a
+                    // position assignment, so keep it in lockstep with the
+                    // source field just as make_value_document does for PUT.
+                    document::FieldUpdate zcurve_update(_doc_type->getField(
+                        document::PositionDataType::getZCurveFieldName(name)));
+                    zcurve_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
+                        std::make_unique<document::LongFieldValue>(*zcurve)));
+                    update->addUpdate(std::move(zcurve_update));
+                }
             } else {
                 field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
+                update->addUpdate(std::move(field_update));
+                if (manifest_field.type == "position" && manifest_field.attribute) {
+                    document::FieldUpdate zcurve_update(_doc_type->getField(
+                        document::PositionDataType::getZCurveFieldName(name)));
+                    zcurve_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
+                    update->addUpdate(std::move(zcurve_update));
+                }
             }
-            update->addUpdate(std::move(field_update));
         }
         for (const auto &arithmetic : source.arithmetic) {
             const auto &field = _doc_type->getField(arithmetic.field);

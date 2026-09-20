@@ -758,6 +758,84 @@ extern "C" SK_API int32_t sk_document_update_annotate_text(
     });
 }
 
+extern "C" SK_API int32_t sk_document_update_annotate_string_array(
+    sk_document_update *update, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    const uint32_t *element_offsets, uint32_t element_count,
+    uint32_t occurrence_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "array annotation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        auto existing = std::find_if(update->fields.begin(), update->fields.end(),
+                                     [field](const auto &entry) { return entry.first == field; });
+        if (existing == update->fields.end() || !existing->second ||
+            existing->second->kind != SK_VALUE_STRING_ARRAY) {
+            throw std::invalid_argument("a string array assignment is required before annotation");
+        }
+        if (element_count != existing->second->strings.size()) {
+            throw std::invalid_argument("array annotation element count does not match array");
+        }
+        if (!element_offsets || element_offsets[0] != 0 ||
+            element_offsets[element_count] != occurrence_count) {
+            throw std::invalid_argument("array annotation offsets are invalid");
+        }
+        if (occurrence_count != 0 && (!term_lengths || !byte_starts || !byte_lengths)) {
+            throw std::invalid_argument("array annotation occurrence arrays are invalid");
+        }
+
+        std::vector<std::vector<TextOccurrence>> analyzed_elements(element_count);
+        for (uint32_t element = 0; element < element_count; ++element) {
+            const auto begin = element_offsets[element];
+            const auto end = element_offsets[element + 1];
+            if (begin > end || end > occurrence_count) {
+                throw std::invalid_argument("array annotation offsets are invalid");
+            }
+            std::vector<uint32_t> lengths;
+            std::vector<uint32_t> starts;
+            std::vector<uint32_t> byte_lengths_for_element;
+            if (begin != end) {
+                lengths.assign(term_lengths + begin, term_lengths + end);
+                starts.assign(byte_starts + begin, byte_starts + end);
+                byte_lengths_for_element.assign(byte_lengths + begin, byte_lengths + end);
+            }
+            size_t term_offset = 0;
+            for (uint32_t prior = 0; prior < begin; ++prior) {
+                term_offset += term_lengths[prior];
+            }
+            std::vector<uint8_t> element_term_bytes;
+            for (uint32_t occurrence = begin; occurrence < end; ++occurrence) {
+                const auto length = term_lengths[occurrence];
+                if (term_offset > term_bytes_length || length > term_bytes_length - term_offset) {
+                    throw std::invalid_argument("array annotation term bytes are invalid");
+                }
+                element_term_bytes.insert(element_term_bytes.end(),
+                                           term_bytes + term_offset,
+                                           term_bytes + term_offset + length);
+                term_offset += length;
+            }
+            TextDocument analyzed;
+            analyzed.text = existing->second->strings[element];
+            append_text_occurrences(analyzed, element_term_bytes.data(),
+                                    static_cast<uint32_t>(element_term_bytes.size()),
+                                    lengths.data(), starts.data(),
+                                    byte_lengths_for_element.data(), end - begin);
+            analyzed_elements[element] = std::move(analyzed.occurrences);
+        }
+        auto annotated = std::find_if(update->annotated_array_fields.begin(),
+                                      update->annotated_array_fields.end(),
+                                      [field](const auto &entry) { return entry.first == field; });
+        if (annotated == update->annotated_array_fields.end()) {
+            update->annotated_array_fields.emplace_back(field, std::move(analyzed_elements));
+        } else {
+            annotated->second = std::move(analyzed_elements);
+        }
+    });
+}
+
 extern "C" int32_t sk_search_request_create(const char *field, int64_t value,
                                               uint32_t limit,
                                               sk_search_request **out,

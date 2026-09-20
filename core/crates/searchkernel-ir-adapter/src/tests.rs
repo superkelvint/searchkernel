@@ -2980,6 +2980,131 @@ fn array_struct_same_element_requires_two_terms_on_one_element() {
 }
 
 #[test]
+fn array_string_patch_and_update_reanalyze_each_element() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-array-update-analysis-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("array_update_analysis")
+        .field(Field::new("tags", FieldType::ArrayString).indexed());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile array update schema");
+    let backend = VespaBackend::open(&data, &config).expect("open array update backend");
+    let tags = |values: &[&str]| {
+        FieldValueIr::Multi(
+            values
+                .iter()
+                .map(|value| ScalarValueIr::String((*value).to_owned()))
+                .collect(),
+        )
+    };
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:array-update").unwrap(),
+            std::collections::BTreeMap::from([(field("tags"), tags(&["quick fox"]))]),
+        )))
+        .expect("insert array document");
+
+    let request = |term| {
+        SearchRequestIr::new(
+            typed_expression(QueryExprKindIr::Contains {
+                field: typed_field("tags"),
+                item: Box::new(typed_term(term)),
+            }),
+            Vec::new(),
+            None,
+            Vec::new(),
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        group
+            .children
+            .into_iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    backend
+        .patch(PatchRequestIr::new(
+            DocumentId::parse("doc:array-update").unwrap(),
+            vec![PatchOperationIr::Set {
+                field: field("tags"),
+                value: tags(&["slow hare"]),
+            }],
+        ))
+        .expect("patch array document");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(
+        ids(backend
+            .search(request("hare"))
+            .expect("search patched term")),
+        ["doc:array-update"]
+    );
+    assert!(ids(backend
+        .search(request("quick"))
+        .expect("search removed patched term"))
+    .is_empty());
+
+    backend
+        .update(UpdateRequestIr::new(
+            DocumentId::parse("doc:array-update").unwrap(),
+            vec![UpdateOperationIr::Assign {
+                target: UpdateTargetIr::parse("tags").unwrap(),
+                value: tags(&["bright owl"]),
+            }],
+        ))
+        .expect("update array document");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(
+        ids(backend.search(request("owl")).expect("search updated term")),
+        ["doc:array-update"]
+    );
+    assert!(ids(backend
+        .search(request("hare"))
+        .expect("search removed updated term"))
+    .is_empty());
+
+    backend.engine.close().expect("close array update backend");
+    let reopened = VespaBackend::open(&data, &config).expect("reopen array update backend");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(
+        ids(reopened
+            .search(request("owl"))
+            .expect("search persisted updated term")),
+        ["doc:array-update"]
+    );
+    assert!(ids(reopened
+        .search(request("quick"))
+        .expect("search persisted removed term"))
+    .is_empty());
+    reopened
+        .engine
+        .close()
+        .expect("close reopened array update backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-same-element-{}-{}",
@@ -3241,7 +3366,82 @@ fn typed_query_c_geo_reaches_real_vespa_for_location_and_bounding_box() {
             .expect("geo bounding-box query")),
         vec!["doc:near", "doc:far", "doc:boundary"]
     );
+
+    backend
+        .update(UpdateRequestIr::new(
+            DocumentId::parse("doc:near").unwrap(),
+            vec![UpdateOperationIr::Assign {
+                target: UpdateTargetIr::parse("location").unwrap(),
+                value: FieldValueIr::Position {
+                    latitude: 70.0,
+                    longitude: 20.0,
+                },
+            }],
+        ))
+        .expect("update position document");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert!(ids(backend
+        .search(request(QueryExprKindIr::GeoLocation {
+            field: typed_field("location"),
+            latitude: 60.0,
+            longitude: 10.0,
+            radius: "15km".to_owned(),
+        }))
+        .expect("search old position after update"))
+    .is_empty());
+    assert_eq!(
+        ids(backend
+            .search(request(QueryExprKindIr::GeoLocation {
+                field: typed_field("location"),
+                latitude: 70.0,
+                longitude: 20.0,
+                radius: "15km".to_owned(),
+            }))
+            .expect("search new position after update")),
+        vec!["doc:near"]
+    );
+
     backend.engine.close().expect("close geo backend");
+    let reopened = VespaBackend::open(&data, &config).expect("reopen geo backend");
+    assert!(ids(reopened
+        .search(request(QueryExprKindIr::GeoLocation {
+            field: typed_field("location"),
+            latitude: 60.0,
+            longitude: 10.0,
+            radius: "15km".to_owned(),
+        }))
+        .expect("search persisted old position"))
+    .is_empty());
+    assert_eq!(
+        ids(reopened
+            .search(request(QueryExprKindIr::GeoLocation {
+                field: typed_field("location"),
+                latitude: 70.0,
+                longitude: 20.0,
+                radius: "15km".to_owned(),
+            }))
+            .expect("search persisted new position")),
+        vec!["doc:near"]
+    );
+    reopened
+        .update(UpdateRequestIr::new(
+            DocumentId::parse("doc:near").unwrap(),
+            vec![UpdateOperationIr::Clear {
+                target: UpdateTargetIr::parse("location").unwrap(),
+            }],
+        ))
+        .expect("clear position document");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert!(ids(reopened
+        .search(request(QueryExprKindIr::GeoLocation {
+            field: typed_field("location"),
+            latitude: 70.0,
+            longitude: 20.0,
+            radius: "15km".to_owned(),
+        }))
+        .expect("search cleared position"))
+    .is_empty());
+    reopened.engine.close().expect("close reopened geo backend");
     let _ = std::fs::remove_dir_all(root);
 }
 

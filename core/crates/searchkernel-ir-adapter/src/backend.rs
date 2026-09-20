@@ -423,6 +423,27 @@ impl Backend for VespaBackend {
                         );
                         update = update.annotate_text(field.as_str(), analysis);
                     }
+                    if let FieldValueIr::Multi(values) = value {
+                        let texts = values
+                            .iter()
+                            .map(|value| match value {
+                                ScalarValueIr::String(text) => Ok(text),
+                                _ => Err(()),
+                            })
+                            .collect::<std::result::Result<Vec<_>, _>>();
+                        if let Ok(texts) = texts {
+                            let analyses = texts
+                                .into_iter()
+                                .map(|text| {
+                                    searchkernel_vespa_engine::Linguistics.analyze_document(
+                                        text,
+                                        searchkernel_vespa_engine::LinguisticsOptions::default(),
+                                    )
+                                })
+                                .collect();
+                            update = update.annotate_text_array(field.as_str(), analyses);
+                        }
+                    }
                 }
                 PatchOperationIr::Unset { field } => update = update.clear(field.as_str()),
             }
@@ -455,6 +476,27 @@ impl Backend for VespaBackend {
                             searchkernel_vespa_engine::LinguisticsOptions::default(),
                         );
                         update = update.annotate_text(target.as_str(), analysis);
+                    }
+                    if let FieldValueIr::Multi(values) = value {
+                        let texts = values
+                            .iter()
+                            .map(|value| match value {
+                                ScalarValueIr::String(text) => Ok(text),
+                                _ => Err(()),
+                            })
+                            .collect::<std::result::Result<Vec<_>, _>>();
+                        if let Ok(texts) = texts {
+                            let analyses = texts
+                                .into_iter()
+                                .map(|text| {
+                                    searchkernel_vespa_engine::Linguistics.analyze_document(
+                                        text,
+                                        searchkernel_vespa_engine::LinguisticsOptions::default(),
+                                    )
+                                })
+                                .collect();
+                            update = update.annotate_text_array(target.as_str(), analyses);
+                        }
                     }
                 }
                 UpdateOperationIr::Clear { target } => {

@@ -173,9 +173,10 @@ typedef struct sk_grouping_filter sk_grouping_filter;
  */
 #define SK_ERROR_MESSAGE_CAPACITY 512U
 
-/* This ABI revision adds dense tensor document assignment and primitive
-   readback on top of the previous tensor query/document insertion surface. */
-#define SK_NATIVE_ABI_VERSION 10U
+/* This ABI revision adds dense tensor document assignment, primitive readback,
+   and document-update string-array annotations on top of the previous tensor
+   query/document insertion surface. */
+#define SK_NATIVE_ABI_VERSION 11U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -323,6 +324,13 @@ SK_API int32_t sk_document_update_annotate_text(
     sk_document_update *update, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
     const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_annotate_string_array(
+    sk_document_update *update, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    const uint32_t *element_offsets, uint32_t element_count,
     uint32_t occurrence_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 

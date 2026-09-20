@@ -670,6 +670,7 @@ pub(crate) fn add_text_array_annotation<T>(
     handle: *mut T,
     field: &str,
     analyses: &[crate::linguistics::DocumentAnalysis],
+    update: bool,
 ) -> Result<(), Error> {
     let mut occurrences = NativeArrayOccurrences::new();
     for analysis in analyses {
@@ -678,20 +679,37 @@ pub(crate) fn add_text_array_annotation<T>(
     let field = cstring(field)?;
     let mut error = NativeError::new();
     let status = unsafe {
-        sys::sk_document_annotate_string_array(
-            handle.cast(),
-            field.as_ptr(),
-            occurrences.term_bytes.as_ptr(),
-            length_u32(occurrences.term_bytes.len(), "array term bytes")?,
-            occurrences.term_lengths.as_ptr(),
-            occurrences.byte_starts.as_ptr(),
-            occurrences.byte_lengths.as_ptr(),
-            occurrences.element_offsets.as_ptr(),
-            length_u32(occurrences.element_offsets.len() - 1, "array element")?,
-            length_u32(occurrences.term_lengths.len(), "array occurrence")?,
-            error.as_mut_ptr(),
-            error.capacity(),
-        )
+        if update {
+            sys::sk_document_update_annotate_string_array(
+                handle.cast(),
+                field.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "array term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                occurrences.element_offsets.as_ptr(),
+                length_u32(occurrences.element_offsets.len() - 1, "array element")?,
+                length_u32(occurrences.term_lengths.len(), "array occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        } else {
+            sys::sk_document_annotate_string_array(
+                handle.cast(),
+                field.as_ptr(),
+                occurrences.term_bytes.as_ptr(),
+                length_u32(occurrences.term_bytes.len(), "array term bytes")?,
+                occurrences.term_lengths.as_ptr(),
+                occurrences.byte_starts.as_ptr(),
+                occurrences.byte_lengths.as_ptr(),
+                occurrences.element_offsets.as_ptr(),
+                length_u32(occurrences.element_offsets.len() - 1, "array element")?,
+                length_u32(occurrences.term_lengths.len(), "array occurrence")?,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        }
     };
     check(status, &error)
 }

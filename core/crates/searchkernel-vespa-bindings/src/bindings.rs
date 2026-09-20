@@ -87,7 +87,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 10;
+pub const SK_NATIVE_ABI_VERSION: u32 = 11;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -616,6 +616,22 @@ unsafe extern "C" {
         term_lengths: *const u32,
         byte_starts: *const u32,
         byte_lengths: *const u32,
+        occurrence_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_update_annotate_string_array(
+        update: *mut sk_document_update,
+        field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        byte_starts: *const u32,
+        byte_lengths: *const u32,
+        element_offsets: *const u32,
+        element_count: u32,
         occurrence_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,

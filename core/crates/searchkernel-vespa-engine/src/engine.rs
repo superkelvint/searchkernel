@@ -506,7 +506,7 @@ impl Engine {
                     .iter()
                     .map(|value| Linguistics.analyze_document(value, LinguisticsOptions::default()))
                     .collect::<Vec<_>>();
-                add_text_array_annotation(native.0.as_ptr(), field, &analyses)?;
+                add_text_array_annotation(native.0.as_ptr(), field, &analyses, false)?;
             }
         }
         let mut error = NativeError::new();
@@ -588,6 +588,21 @@ impl Engine {
                 });
             if let Some(analysis) = analysis {
                 add_text_annotation(native.0.as_ptr(), field, &analysis, true)?;
+            }
+            if let FieldUpdate::Assign(FieldValue::Array(ArrayValue::Strings(values))) = mutation {
+                let analyses = update
+                    .array_text_analysis()
+                    .get(field)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        values
+                            .iter()
+                            .map(|value| {
+                                Linguistics.analyze_document(value, LinguisticsOptions::default())
+                            })
+                            .collect()
+                    });
+                add_text_array_annotation(native.0.as_ptr(), field, &analyses, true)?;
             }
         }
         let mut error = NativeError::new();
