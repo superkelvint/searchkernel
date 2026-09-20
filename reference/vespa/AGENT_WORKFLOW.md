@@ -17,6 +17,22 @@ The reviewed verifier and expected outputs are committed as the milestone's
 specification freeze boundary. The implementation agent is told that the
 checked-in `reference/vespa/**` verifier files are frozen during implementation.
 
+## Keeping the verifier map current
+
+[`README.md`](README.md) is the authoritative index for this directory. Any
+verifier-authoring change that adds, renames, splits, merges, or retires a lane
+must update the index in the same reviewed change. The entry must state:
+
+- whether the lane is the active baseline, an integration gate, specialized,
+  additive, cumulative history, or obsolete;
+- the first contract or README an agent should read;
+- the exact acceptance command;
+- whether the lane is cumulative or independently runnable; and
+- any parent or downstream verifier that invokes it.
+
+Do not infer that a lane is obsolete from its age or directory name. A lane may
+be historical and still be required by a later cumulative verifier.
+
 ## Implementer prompt template
 
 ```text

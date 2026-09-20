@@ -1,204 +1,118 @@
-# Search Kernel Vespa verifier harness — M0–M2
+# Search Kernel Vespa verifier map
 
-This package defines the checked-in contracts and acceptance harness for the
-first three Search Kernel milestones.
+This directory contains the frozen contracts, scenarios, expected outputs,
+direct Vespa oracles, and acceptance verifiers for the embedded Search Kernel
+wrapper. It is specification material: implementation code must conform to it;
+it must not redefine the API or expected behavior.
 
-The guiding rule is simple:
+This README is the authoritative map of the tree. Start here before searching
+the individual milestone directories.
 
-> The implementation agent does not define the API and does not define expected behavior.
+## Current status
 
-Both are fixed before implementation begins.
+| Status | Lane | Start here | Acceptance command | Relationship |
+| --- | --- | --- | --- | --- |
+| **ACTIVE BASELINE** | M13 | [`m13/CONTRACT.md`](m13/CONTRACT.md) | `./reference/vespa/verify-through.sh m13` | Latest cumulative native milestone; includes M0–M12. |
+| **ACTIVE INTEGRATION GATE** | I-series | [`i/CONTRACT.md`](i/CONTRACT.md) | `./reference/vespa/verify-through.sh i` | Product-path release gate; currently composes M10 and Phase 10. |
+| **ACTIVE INTEGRATION SCENARIO** | Phase 10 | [`phase10/verify-phase10.sh`](phase10/verify-phase10.sh) | `./reference/vespa/phase10/verify-phase10.sh` | Canonical public Rust API / real-engine E2E used by the I-series gate. |
+| **ACTIVE SPECIALIZED** | Phase 9 | [`phase9/CONTRACT.md`](phase9/CONTRACT.md) | `./reference/vespa/phase9/verify-phase9.sh` | Additive native ABI coverage; not a numbered cumulative M milestone. |
+| **ACTIVE SPECIALIZED** | SearchReply | [`searchreply/CONTRACT.md`](searchreply/CONTRACT.md) | `./reference/vespa/verify-through.sh searchreply` | Generic result coverage, degradation, and native metadata behavior. |
+| **ACTIVE SPECIALIZED** | Recursive grouping ABI | [`m9-general-grouping-verifier/CONTRACT.md`](m9-general-grouping-verifier/CONTRACT.md) | `./reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh` | Focused low-level grouping verifier, reused by M9 and Phase 9. |
+| **ACTIVE SPECIALIZED** | Product recovery | [`recovery/CONTRACT.md`](recovery/CONTRACT.md) | `./reference/vespa/recovery/verify-recovery.sh` | Crash/reopen behavior through the product lifecycle. |
+| **ACTIVE ADDITIVE** | M13 grouping/YQL | [`m13/grouping-yql/README.md`](m13/grouping-yql/README.md) | `./reference/vespa/m13/grouping-yql/verify-grouping-yql.sh` | Additional grouping and portable YQL coverage on top of M13. |
+| **CUMULATIVE HISTORY** | M0–M12 | The matching `mN/CONTRACT.md` | `./reference/vespa/verify-through.sh mN` | Historical milestones that remain acceptance inputs because later M verifiers are cumulative. |
 
-## Milestones
+There is currently no lane classified as obsolete. Age, a numeric milestone
+name, or a parallel directory is not evidence that a verifier can be removed.
+Retirement requires an explicit maintainer decision, a replacement link, and a
+reviewed change to this index.
 
-- **M0 — Native SDK:** package the embedded Vespa engine behind a small C ABI.
-- **M1 — Rust ownership:** safely open and close that engine from the frozen Rust API.
-- **M2 — Document mutation + attribute search:** reproduce the proven embedded Vespa CRUD/search lifecycle through Rust.
+## Choose a starting point by capability
 
-Pinned Vespa source:
+| If you are working on... | Read first | Then inspect |
+| --- | --- | --- |
+| Native SDK, handles, startup, or shutdown | [`m0/CONTRACT.md`](m0/CONTRACT.md) | `m0/verify-m0.sh`, [`NATIVE_ABI_CONTRACT.h`](NATIVE_ABI_CONTRACT.h) |
+| Rust ownership and the first public engine API | [`m1/CONTRACT.md`](m1/CONTRACT.md) | `m1/verify-m1.sh`, [`API_CONTRACT.md`](API_CONTRACT.md) |
+| Basic document mutation and integer search | [`m2/CONTRACT.md`](m2/CONTRACT.md) | `m2/verify-m2.sh` and `m2/oracle/` |
+| Linguistics or stemming | [`m3/CONTRACT.md`](m3/CONTRACT.md) | `m3/oracle/`, `m3/kstem/` |
+| Text indexing and matching | [`m4/CONTRACT.md`](m4/CONTRACT.md) | `m4/oracle/`, `m4/fixture/` |
+| Persistence and low-level lifecycle | [`m5/CONTRACT.md`](m5/CONTRACT.md) | `m5/scenarios/`, `m5/verify-m5.sh` |
+| Schema/configuration and attributes | [`m6/CONTRACT.md`](m6/CONTRACT.md) | `m6/oracle/`, `m6/verify-m6.sh` |
+| Query trees, YQL, filters, and ranges | [`m7/CONTRACT.md`](m7/CONTRACT.md) | `m7/scenarios/`, `m7/verify-m7.sh` |
+| Local requests, sorting, summaries, and results | [`m8/CONTRACT.md`](m8/CONTRACT.md) | `m8/oracle/`, `m8/verify-m8.sh` |
+| Attributes, facets, and ordinary grouping | [`m9/CONTRACT.md`](m9/CONTRACT.md) | `m9/verify-m9.sh`, `m9-general-grouping-verifier/` |
+| Ranking, BM25, query features, or match features | [`m10/CONTRACT.md`](m10/CONTRACT.md) | `m10/README-HARNESS.md`, `m10/feature-values/` |
+| Thread safety, lifecycle hardening, or stress | [`m11/CONTRACT.md`](m11/CONTRACT.md) | `m11/verify-m11-*.sh` |
+| Dense query tensors or nearest-neighbor search | [`m12/CONTRACT.md`](m12/CONTRACT.md) | `m12/README-HARNESS.md`, `phase9/` |
+| Dense tensor document CRUD and persistence | [`m13/CONTRACT.md`](m13/CONTRACT.md) | `m13/oracle/`, `m13/verify-m13.sh` |
+| Full public product API behavior | [`i/CONTRACT.md`](i/CONTRACT.md) | `phase10/verify-phase10.sh` and `i/verify-i.sh` |
+| SearchReply coverage, degradation, or metadata | [`searchreply/CONTRACT.md`](searchreply/CONTRACT.md) | `searchreply/total-hit-accuracy/` |
+| Crash recovery after product operations | [`recovery/CONTRACT.md`](recovery/CONTRACT.md) | `recovery/scenarios/`, `recovery/verify-recovery.sh` |
 
-```text
-vespa-engine/vespa@2300ef0412bdb76f227ae3b497c8ca5e73c5da4e
-```
+## Cumulative M-series
 
-## Install into the repository
-
-Copy this directory to:
-
-```text
-reference/vespa/
-```
-
-Then review and commit it **before** giving an implementation milestone to an
-agent. That verifier-authoring commit is the specification freeze boundary.
-
-Expected repository shape:
-
-```text
-core/crates/
-    searchkernel/
-    searchkernel-vespa-engine/
-    searchkernel-vespa-bindings/
-
-core/native/
-    sdk/
-        linux-x86_64/
-            include/searchkernel_vespa.h
-            lib/libsearchkernel_vespa.so
-            share/embedded_crud_cfg/...
-            manifest.json
-
-reference/
-    vespa/
-        ...this harness...
-```
-
-## Native SDK environment
-
-By default the verifier expects:
+The numbered M-series is a chronological, cumulative acceptance chain:
 
 ```text
-core/native/sdk/linux-x86_64
+M0 -> M1 -> M2 -> M3 -> M4 -> M5 -> M6 -> M7 -> M8 -> M9 -> M10 -> M11 -> M12 -> M13
 ```
 
-Override with:
+The latest baseline is M13. A later verifier normally invokes its predecessor,
+so M0–M12 are still relevant even though they are not the current feature
+frontier. Read the latest contract for the capability being changed, then use
+earlier contracts to understand compatibility obligations.
+
+The shared public API compile fixtures live in
+[`api-contract/`](api-contract/), and shell/comparison helpers live in
+[`common/`](common/). The root-level documents are also important:
+
+- [`API_CONTRACT.md`](API_CONTRACT.md) — frozen public Rust API requirements.
+- [`NATIVE_ABI_CONTRACT.h`](NATIVE_ABI_CONTRACT.h) — public native ABI boundary.
+- [`PINNED_VESPA.json`](PINNED_VESPA.json) — pinned upstream revision metadata.
+- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) — implementation/review workflow.
+
+## How to search without archaeology
+
+Search the small set of orientation files first:
 
 ```sh
-export SK_NATIVE_SDK=/absolute/path/to/core/native/sdk/linux-x86_64
+rg -n '^(#|##)|Goal|Acceptance|Required|Forbidden|Verification' \
+  reference/vespa \
+  -g 'CONTRACT.md' -g 'README.md' -g 'README-HARNESS.md' -g 'SOURCE_TRACE.md'
 ```
 
-The SDK must be usable without a Vespa source checkout or Vespa development
-container.
+Then inspect the verifier entrypoint and only the fixtures/oracle files named
+by that contract. Expected output and oracle implementation are evidence for a
+specific lane, not a general description of the current API.
 
-## Verify milestones
+Avoid treating generated content as source context. In particular, exclude:
 
-After the verifier specification is committed:
+```text
+target/
+__pycache__/
+*.pyc
+```
+
+The normal cumulative commands are:
 
 ```sh
-./reference/vespa/verify-through.sh m0
-./reference/vespa/verify-through.sh m1
-./reference/vespa/verify-through.sh m2
+./reference/vespa/verify-through.sh m13       # current native baseline
+./reference/vespa/verify-through.sh i         # current product integration gate
+./reference/vespa/verify-through.sh searchreply
 ```
 
-`m2` is cumulative and therefore runs M0, M1, and M2.
+Phase 9, recovery, and the focused grouping/YQL verifier are intentionally
+listed above with their direct commands because they are specialized lanes,
+not entries in the cumulative `verify-through.sh` M/I dispatch.
 
-To run one milestone only:
+## Contract and verifier rules
 
-```sh
-./reference/vespa/m2/verify-m2.sh
-```
+Contracts, scenarios, expected outputs, oracle sources, comparators, and
+verifier scripts are frozen acceptance artifacts. Do not modify them merely to
+make an implementation pass. The implementation must use the real pinned
+Vespa path and must not replace it with a Rust matcher, fake backend, fixture
+special case, or precomputed result.
 
-Verifier output is written only under:
-
-```text
-target/vespa-verifier/
-```
-
-The verifier never rewrites golden files.
-
-## API contract
-
-`API_CONTRACT.md` is normative for the public Rust surface through M2.
-
-The API is also enforced mechanically by:
-
-```text
-api-contract/src/bin/m1.rs
-api-contract/src/bin/m2.rs
-```
-
-The verifier runs `cargo check` on these programs. An implementation that
-renames methods, changes ownership, or invents a different public model fails
-before the behavioral tests run.
-
-This is deliberately a thin wrapper API. In particular, M0–M2 use:
-
-```rust
-EngineConfig::from_directory(...)
-Engine::open(...)
-Document
-DocumentUpdate
-Value::I32
-Query::term(...)
-SearchRequest
-SearchResult
-```
-
-There is no schema builder, query DSL, ranking abstraction, or Search Kernel
-analysis system in these milestones.
-
-## Golden behavior
-
-### M0
-
-The native C probe opens and closes the real native engine twice and compares
-its normalized JSON result to `m0/expected/01-native-open-close.json`.
-
-M0 is primarily an ABI/lifecycle contract, not a search-result oracle.
-
-### M1
-
-A separate Rust program imports only the public `searchkernel` crate, opens and
-closes the real engine twice, and compares normalized output with the M1 golden.
-
-This proves the public Rust ownership path rather than only the raw ABI.
-
-### M2
-
-M2 is based on the already-proven direct C++ embedded Vespa scenario:
-
-```text
-PUT doc1 attr1=10
-PUT doc2 attr1=20
-SEARCH 10 -> doc1
-UPDATE doc2 attr1=10
-SEARCH 10 -> doc1, doc2
-DELETE doc1
-SEARCH 10 -> doc2
-SEARCH 20 -> none
-```
-
-The original proven C++ spike is preserved under:
-
-```text
-m2/oracle/embedded_crud_spike.cpp
-```
-
-The Rust driver must reproduce the same observable states through the public
-Rust API.
-
-## Golden regeneration
-
-Implementation agents must **not** regenerate goldens.
-
-For M2, the direct C++ oracle is the authority. If a maintainer intentionally
-changes the pinned Vespa revision or milestone contract, first rebuild and run
-the direct C++ oracle, then deliberately update the expected JSON in a separate
-verifier-authoring commit.
-
-Do not make `verify-mN.sh` regenerate expected output.
-
-## Preventing shortcuts
-
-The harness uses several layers:
-
-1. **Frozen API compile fixtures** — agents cannot substitute another Rust API.
-2. **Frozen expected JSON** — implementation cannot define expected behavior.
-3. **Cumulative verification** — later milestones cannot silently regress earlier ones.
-4. **Native linkage checks** — M1/M2 executables must dynamically link the Search Kernel native library.
-5. **Symbol checks** — the M2 executable must reference the native CRUD/search ABI symbols.
-6. **Production-source fixture scan** — known golden document IDs/values may not appear in production Rust code.
-7. **Git review** — the checked-in verifier and expected outputs define the
-   milestone contract; reference-file changes are reviewed against the
-   verifier-authoring commit.
-8. **Reviewer pass** — see `AGENT_WORKFLOW.md`; a separate reviewer is explicitly tasked with finding bypasses and reimplementations.
-
-No finite harness can prove that an implementation contains no malicious
-hard-coding. The combination of differential/golden behavior, structural
-checks, source review, and randomized testing in later milestones is the intended
-control.
-
-## Agent workflow
-
-See `AGENT_WORKFLOW.md` for the recommended implement/review/fix/verify loop and
-a ready-to-use milestone prompt template.
+The pinned Vespa checkout under `upstream/vespa/` is read-only. Search Kernel
+adaptation belongs under `core/native/vespa/`; Vespa types must not leak through
+the public Rust or native ABI.

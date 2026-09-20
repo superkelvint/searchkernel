@@ -9,7 +9,8 @@ of the implementation.
 1. Read `api-conformance/` for the portable API-to-IR semantic corpus.
 2. The retired portable client C ABI has no active conformance lane; protocol
    and native-engine contracts are the current boundaries.
-3. Read `vespa/README.md` for the cumulative native lifecycle milestones.
+3. Read [`vespa/README.md`](vespa/README.md) for the authoritative M0–M13
+   verifier map, current integration gate, and specialized active lanes.
 4. Read `clients/c2/` for the high-level semantic-core contract.
 
 ## Key concepts
