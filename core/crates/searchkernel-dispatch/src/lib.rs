@@ -100,6 +100,23 @@ impl Dispatcher {
                     },
                 ))
             }
+            wire::RequestPayload::SearchKernel_V2_UpdateRequest => {
+                let payload = envelope
+                    .payload_as_search_kernel_v2_update_request()
+                    .ok_or(DispatchError::InvalidRequest)?;
+                let result = self.execute_backend(|context, backend| {
+                    context
+                        .update_to_ir(payload)
+                        .and_then(|request| backend.update(request))
+                })?;
+                Ok(encode_result(
+                    result,
+                    wire::ResponsePayload::SearchKernel_V2_UpdateResult,
+                    |builder, result| {
+                        Ok(searchkernel_ir::update_result_offset(builder, result).as_union_value())
+                    },
+                ))
+            }
             wire::RequestPayload::SearchKernel_V2_DeleteRequest => {
                 let payload = envelope
                     .payload_as_search_kernel_v2_delete_request()

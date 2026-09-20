@@ -75,6 +75,118 @@ impl IndexContext {
             .unwrap_or_default();
         resolve_patch(self, request.id().unwrap_or_default(), &operations)
     }
+    pub fn update_to_ir(&self, request: api::UpdateRequest<'_>) -> Result<UpdateRequestIr> {
+        let operations = request
+            .operations()
+            .map(|operations| {
+                operations
+                    .iter()
+                    .map(|operation| {
+                        let target = operation
+                            .target()
+                            .and_then(|target| target.path())
+                            .unwrap_or_default()
+                            .to_owned();
+                        match operation.operation_type() {
+                            api::UpdateOperationKind::AssignUpdate => {
+                                let assign = operation.operation_as_assign_update().ok_or_else(|| {
+                                    invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain an assign payload",
+                                    )
+                                })?;
+                                let value = assign.value().ok_or_else(|| {
+                                    invalid(
+                                        "missing_value",
+                                        Some("operations.value"),
+                                        "assign operation requires a value",
+                                    )
+                                })?;
+                                Ok(UpdateOperationInput::Assign {
+                                    target,
+                                    value: RequestValueIr::from_api(
+                                        value,
+                                        "operations.value".to_owned(),
+                                    )?,
+                                })
+                            }
+                            api::UpdateOperationKind::ClearUpdate => {
+                                if operation.operation_as_clear_update().is_none() {
+                                    return Err(invalid(
+                                        "invalid_update_operation",
+                                        Some("operations"),
+                                        "update operation must contain a clear payload",
+                                    ));
+                                }
+                                Ok(UpdateOperationInput::Clear { target })
+                            }
+                            api::UpdateOperationKind::ArithmeticUpdate => {
+                                let arithmetic = operation
+                                    .operation_as_arithmetic_update()
+                                    .ok_or_else(|| {
+                                        invalid(
+                                            "invalid_update_operation",
+                                            Some("operations"),
+                                            "update operation must contain an arithmetic payload",
+                                        )
+                                    })?;
+                                let operand = arithmetic.operand().ok_or_else(|| {
+                                    invalid(
+                                        "missing_value",
+                                        Some("operations.operand"),
+                                        "arithmetic operation requires an operand",
+                                    )
+                                })?;
+                                let operator = match arithmetic.operator() {
+                                    api::ArithmeticUpdateOperator::Increment => {
+                                        UpdateArithmeticOperatorIr::Increment
+                                    }
+                                    api::ArithmeticUpdateOperator::Decrement => {
+                                        UpdateArithmeticOperatorIr::Decrement
+                                    }
+                                    api::ArithmeticUpdateOperator::Multiply => {
+                                        UpdateArithmeticOperatorIr::Multiply
+                                    }
+                                    api::ArithmeticUpdateOperator::Divide => {
+                                        UpdateArithmeticOperatorIr::Divide
+                                    }
+                                    _ => {
+                                        return Err(invalid(
+                                            "invalid_update_operator",
+                                            Some("operations.operator"),
+                                            "arithmetic operation requires a supported operator",
+                                        ));
+                                    }
+                                };
+                                Ok(UpdateOperationInput::Arithmetic {
+                                    target,
+                                    operator,
+                                    operand: RequestValueIr::from_api(
+                                        operand,
+                                        "operations.operand".to_owned(),
+                                    )?,
+                                })
+                            }
+                            _ => Err(PortableError::unsupported(
+                                "update_operation_not_supported",
+                                Some("operations.operation"),
+                                "the current native DocumentUpdate adapter supports assign, clear, and arithmetic operations only",
+                            )),
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        resolve_update(
+            self,
+            request.id().unwrap_or_default(),
+            &operations,
+            request.condition(),
+            request.create_().map(|create| create.value()),
+        )
+    }
     pub fn delete_to_ir(&self, request: api::DeleteRequest<'_>) -> Result<DeleteRequestIr> {
         resolve_delete(request.id().unwrap_or_default(), request.condition())
     }
@@ -108,6 +220,7 @@ impl IndexContext {
             WriteRequestRef::Insert(r) => self.insert_to_ir(r).map(WriteRequestIr::Insert),
             WriteRequestRef::Upsert(r) => self.upsert_to_ir(r).map(WriteRequestIr::Upsert),
             WriteRequestRef::Patch(r) => self.patch_to_ir(r).map(WriteRequestIr::Patch),
+            WriteRequestRef::Update(r) => self.update_to_ir(r).map(WriteRequestIr::Update),
             WriteRequestRef::Delete(r) => self.delete_to_ir(r).map(WriteRequestIr::Delete),
         }
     }

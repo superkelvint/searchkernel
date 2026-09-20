@@ -906,6 +906,25 @@ with Index.create(
 
     heading("26. ADVANCED UPDATE BUILDER")
 
+    index.update("shoe-1").unset("sale_price").execute()
+    assert "sale_price" not in index.get("shoe-1")
+
+    (
+        index.update("shoe-1")
+        .set("title", "Fast Marathon Shoes")
+        .execute()
+    )
+
+    updated = index.get("shoe-1")
+    assert updated["title"] == "Fast Marathon Shoes"
+    marathon_results = index.search("marathon").execute()
+    assert "shoe-1" in {hit.id for hit in marathon_results.hits}
+    old_title_results = index.search("jumped").execute()
+    assert "shoe-1" not in {hit.id for hit in old_title_results.hits}
+
+    index.update("shoe-1").set("inventory", 20).execute()
+    assert index.get("shoe-1")["inventory"] == 20
+
     (
         index.update("shoe-1")
         .increment("inventory", 5)
@@ -915,7 +934,17 @@ with Index.create(
     updated = index.get("shoe-1")
     print(updated)
 
-    assert updated["inventory"] == 15
+    assert updated["inventory"] == 25
+
+    index.update("shoe-created").set("inventory", 7).create().execute()
+    assert index.get("shoe-created")["inventory"] == 7
+
+    try:
+        index.update("shoe-1").set("inventory", 16).condition("inventory == 15").execute()
+    except SearchKernelError as error:
+        assert error.code == "unsupported"
+    else:
+        raise AssertionError("embedded update conditions must be typed Unsupported")
 
     # -----------------------------------------------------------------------
     # DELETE.
@@ -999,7 +1028,9 @@ with Index.open(INDEX_PATH) as index:
 
     assert shoe1["price"] == 79.0
     assert shoe1["rating"] == 4
-    assert shoe1["inventory"] == 15
+    assert shoe1["inventory"] == 25
+    assert shoe1["title"] == "Fast Marathon Shoes"
+    assert index.get("shoe-created")["inventory"] == 7
     assert "sale_price" not in shoe1
 
     # Upsert replacement survives.
@@ -1068,7 +1099,7 @@ Successfully demonstrated through the public Python facade:
   ✓ get
   ✓ delete + duplicate delete
   ✓ PatchBuilder set/unset
-  ✓ UpdateBuilder increment
+  ✓ UpdateBuilder set / unset / increment / create
   ✓ persistence across reopen
 
   SEARCH / FILTERING

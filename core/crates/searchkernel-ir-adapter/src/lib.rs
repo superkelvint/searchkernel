@@ -80,6 +80,9 @@ fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
         FieldValueIr::Predicate { features } => Ok(FieldValue::Predicate(PredicateValue::new(
             features.clone(),
         ))),
+        FieldValueIr::PredicateExpression { expression } => Ok(FieldValue::Predicate(
+            PredicateValue::from_expression(expression.clone()),
+        )),
         FieldValueIr::Tensor(tensor) => match &tensor.payload {
             RequestTensorPayloadIr::Dense(values)
                 if !tensor.type_spec.trim().is_empty()
@@ -105,6 +108,21 @@ fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
                 ))
             }
         },
+        FieldValueIr::Structured(values) => Ok(FieldValue::Array(
+            searchkernel_vespa_engine::ArrayValue::Structs(
+                values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .iter()
+                            .map(|(name, value)| {
+                                lower_scalar(value).map(|value| (name.clone(), value))
+                            })
+                            .collect::<Result<BTreeMap<_, _>>>()
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        )),
         FieldValueIr::Multi(values) => {
             let mut values = values.iter();
             let Some(first) = values.next() else {
@@ -228,7 +246,29 @@ fn value_to_ir(value: &FieldValue) -> Value {
         FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Booleans(values)) => {
             Value::List(values.iter().copied().map(Value::Bool).collect())
         }
+        FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Structs(values)) => Value::List(
+            values
+                .iter()
+                .map(|value| {
+                    Value::Object(
+                        value
+                            .iter()
+                            .map(|(name, value)| (name.clone(), scalar_value_to_ir(value)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        ),
         FieldValue::Tensor(tensor) => Value::Tensor(tensor_to_ir(tensor)),
+    }
+}
+
+fn scalar_value_to_ir(value: &ScalarValue) -> Value {
+    match value {
+        ScalarValue::String(value) => Value::String(value.clone()),
+        ScalarValue::Integer(value) => Value::Int64(*value),
+        ScalarValue::Float(value) => Value::Float64(*value),
+        ScalarValue::Boolean(value) => Value::Bool(*value),
     }
 }
 

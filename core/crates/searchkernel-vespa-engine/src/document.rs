@@ -66,6 +66,7 @@ pub enum ArrayValue {
     Integers(Vec<i64>),
     Floats(Vec<f64>),
     Booleans(Vec<bool>),
+    Structs(Vec<BTreeMap<String, ScalarValue>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,11 +87,22 @@ impl PositionValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PredicateValue {
     pub features: BTreeMap<String, String>,
+    pub expression: Option<String>,
 }
 
 impl PredicateValue {
     pub fn new(features: BTreeMap<String, String>) -> Self {
-        Self { features }
+        Self {
+            features,
+            expression: None,
+        }
+    }
+
+    pub fn from_expression(expression: impl Into<String>) -> Self {
+        Self {
+            features: BTreeMap::new(),
+            expression: Some(expression.into()),
+        }
     }
 }
 
@@ -353,6 +365,65 @@ pub struct DocumentUpdate {
     id: String,
     fields: BTreeMap<String, FieldUpdate>,
     text_analysis: BTreeMap<String, DocumentAnalysis>,
+    create_if_nonexistent: bool,
+}
+
+/// A document containing only attribute assignments.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributeDocument {
+    document_id: String,
+    fields: Vec<(String, ScalarValue)>,
+}
+
+impl AttributeDocument {
+    pub fn new(document_id: impl Into<String>) -> Self {
+        Self {
+            document_id: document_id.into(),
+            fields: Vec::new(),
+        }
+    }
+
+    pub fn field(mut self, name: impl Into<String>, value: impl Into<ScalarValue>) -> Self {
+        self.fields.push((name.into(), value.into()));
+        self
+    }
+
+    pub(crate) fn document_id(&self) -> &str {
+        &self.document_id
+    }
+
+    pub(crate) fn fields(&self) -> &[(String, ScalarValue)] {
+        &self.fields
+    }
+}
+
+/// Attribute assignments applied to an existing document.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttributeUpdate {
+    document_id: String,
+    assignments: Vec<(String, ScalarValue)>,
+}
+
+impl AttributeUpdate {
+    pub fn new(document_id: impl Into<String>) -> Self {
+        Self {
+            document_id: document_id.into(),
+            assignments: Vec::new(),
+        }
+    }
+
+    pub fn assign(mut self, name: impl Into<String>, value: impl Into<ScalarValue>) -> Self {
+        self.assignments.push((name.into(), value.into()));
+        self
+    }
+
+    pub(crate) fn document_id(&self) -> &str {
+        &self.document_id
+    }
+
+    pub(crate) fn assignments(&self) -> &[(String, ScalarValue)] {
+        &self.assignments
+    }
 }
 
 impl DocumentUpdate {
@@ -361,6 +432,7 @@ impl DocumentUpdate {
             id: id.into(),
             fields: BTreeMap::new(),
             text_analysis: BTreeMap::new(),
+            create_if_nonexistent: false,
         }
     }
 
@@ -392,6 +464,11 @@ impl DocumentUpdate {
         self
     }
 
+    pub fn create_if_nonexistent(mut self, value: bool) -> Self {
+        self.create_if_nonexistent = value;
+        self
+    }
+
     pub fn id(&self) -> &str {
         &self.id
     }
@@ -401,6 +478,10 @@ impl DocumentUpdate {
 
     pub(crate) fn text_analysis(&self) -> &BTreeMap<String, DocumentAnalysis> {
         &self.text_analysis
+    }
+
+    pub(crate) fn create_if_nonexistent_flag(&self) -> bool {
+        self.create_if_nonexistent
     }
 }
 

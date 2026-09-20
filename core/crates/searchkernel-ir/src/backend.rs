@@ -1,8 +1,8 @@
-use crate::error::Result;
+use crate::error::{PortableError, Result};
 use crate::model::{
     AnalyzeRequestIr, AnalyzeResult, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult,
     InsertRequestIr, InsertResult, PatchRequestIr, PatchResult, SearchRequestIr, SearchResult,
-    UpsertRequestIr, UpsertResult,
+    UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };
 
 /// Execution surface for a Search Kernel backend.
@@ -14,6 +14,13 @@ pub trait Backend: Send + Sync {
     fn insert(&self, request: InsertRequestIr) -> Result<InsertResult>;
     fn upsert(&self, request: UpsertRequestIr) -> Result<UpsertResult>;
     fn patch(&self, request: PatchRequestIr) -> Result<PatchResult>;
+    fn update(&self, _request: UpdateRequestIr) -> Result<UpdateResult> {
+        Err(PortableError::unsupported(
+            "update_not_supported",
+            None::<String>,
+            "this backend does not implement document updates",
+        ))
+    }
     fn delete(&self, request: DeleteRequestIr) -> Result<DeleteResult>;
     fn get(&self, request: GetRequestIr) -> Result<GetResult>;
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult>;

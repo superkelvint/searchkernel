@@ -525,12 +525,19 @@ pub enum ScalarValueIr {
 pub enum FieldValueIr {
     Single(ScalarValueIr),
     Multi(Vec<ScalarValueIr>),
+    /// An array of Vespa struct values represented by owned scalar members.
+    Structured(Vec<std::collections::BTreeMap<String, ScalarValueIr>>),
     Position {
         latitude: f64,
         longitude: f64,
     },
     Predicate {
         features: std::collections::BTreeMap<String, String>,
+    },
+    /// Canonical Vespa predicate Slime JSON. The native adapter parses this
+    /// representation; Rust does not evaluate predicate expressions.
+    PredicateExpression {
+        expression: String,
     },
     Tensor(RequestTensorIr),
 }
@@ -622,6 +629,111 @@ pub enum PatchOperationIr {
 pub struct PatchRequestIr {
     pub(crate) id: DocumentId,
     pub(crate) operations: Vec<PatchOperationIr>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UpdateTargetIr(String);
+
+impl UpdateTargetIr {
+    pub fn parse(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(PortableError::invalid(
+                "invalid_update_target",
+                None::<String>,
+                "update target must not be empty",
+            ));
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_simple_field(&self) -> bool {
+        FieldName::parse(self.0.clone()).is_ok()
+    }
+}
+
+impl AsRef<str> for UpdateTargetIr {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateArithmeticOperatorIr {
+    Add,
+    Increment,
+    Subtract,
+    Decrement,
+    Multiply,
+    Divide,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateOperationIr {
+    Assign {
+        target: UpdateTargetIr,
+        value: FieldValueIr,
+    },
+    Clear {
+        target: UpdateTargetIr,
+    },
+    Arithmetic {
+        target: UpdateTargetIr,
+        operator: UpdateArithmeticOperatorIr,
+        operand: f64,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UpdateRequestIr {
+    pub(crate) id: DocumentId,
+    pub(crate) operations: Vec<UpdateOperationIr>,
+    pub(crate) condition: Option<String>,
+    pub(crate) create: Option<bool>,
+}
+
+impl UpdateRequestIr {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(id: DocumentId, operations: Vec<UpdateOperationIr>) -> Self {
+        Self {
+            id,
+            operations,
+            condition: None,
+            create: None,
+        }
+    }
+
+    pub fn id(&self) -> &DocumentId {
+        &self.id
+    }
+
+    pub fn operations(&self) -> &[UpdateOperationIr] {
+        &self.operations
+    }
+
+    pub fn condition(&self) -> Option<&str> {
+        self.condition.as_deref()
+    }
+
+    pub fn create(&self) -> Option<bool> {
+        self.create
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
+        self.condition = Some(condition.into());
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_create(mut self, create: bool) -> Self {
+        self.create = Some(create);
+        self
+    }
 }
 
 impl PatchRequestIr {
@@ -1802,6 +1914,7 @@ pub enum WriteRequestIr {
     Insert(InsertRequestIr),
     Upsert(UpsertRequestIr),
     Patch(PatchRequestIr),
+    Update(UpdateRequestIr),
     Delete(DeleteRequestIr),
 }
 
@@ -1811,6 +1924,7 @@ pub enum OperationIr {
     Insert(InsertRequestIr),
     Upsert(UpsertRequestIr),
     Patch(PatchRequestIr),
+    Update(UpdateRequestIr),
     Delete(DeleteRequestIr),
     Get(GetRequestIr),
     Search(SearchRequestIr),
@@ -1850,6 +1964,11 @@ pub struct UpsertResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PatchResult {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdateResult {
     pub id: String,
 }
 

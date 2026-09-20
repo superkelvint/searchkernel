@@ -8,6 +8,7 @@ pub enum ScriptedResult {
     Insert(searchkernel_ir::InsertResult),
     Upsert(searchkernel_ir::UpsertResult),
     Patch(searchkernel_ir::PatchResult),
+    Update(searchkernel_ir::UpdateResult),
     Delete(searchkernel_ir::DeleteResult),
     Get(searchkernel_ir::GetResult),
     Search(Box<searchkernel_ir::SearchResult>),
@@ -147,6 +148,12 @@ impl ScriptedBackend {
     ) -> std::result::Result<searchkernel_ir::PatchResult, ScriptedCallError> {
         self.call_typed(OperationIr::Patch(request), OperationKind::Patch)
     }
+    pub fn call_update(
+        &self,
+        request: searchkernel_ir::UpdateRequestIr,
+    ) -> std::result::Result<searchkernel_ir::UpdateResult, ScriptedCallError> {
+        self.call_typed(OperationIr::Update(request), OperationKind::Update)
+    }
     pub fn call_delete(
         &self,
         request: searchkernel_ir::DeleteRequestIr,
@@ -238,6 +245,21 @@ impl FromScriptedResult for searchkernel_ir::PatchResult {
             _ => Err(TestkitError::InvalidOutcome {
                 operation,
                 outcome: "patch",
+            }),
+        }
+    }
+}
+
+impl FromScriptedResult for searchkernel_ir::UpdateResult {
+    fn from_result(
+        result: ScriptedResult,
+        operation: OperationKind,
+    ) -> std::result::Result<Self, TestkitError> {
+        match result {
+            ScriptedResult::Update(value) => Ok(value),
+            _ => Err(TestkitError::InvalidOutcome {
+                operation,
+                outcome: "update",
             }),
         }
     }
@@ -339,6 +361,12 @@ impl Backend for ScriptedBackend {
         request: searchkernel_ir::PatchRequestIr,
     ) -> searchkernel_ir::Result<searchkernel_ir::PatchResult> {
         self.trait_call(OperationIr::Patch(request), OperationKind::Patch)
+    }
+    fn update(
+        &self,
+        request: searchkernel_ir::UpdateRequestIr,
+    ) -> searchkernel_ir::Result<searchkernel_ir::UpdateResult> {
+        self.trait_call(OperationIr::Update(request), OperationKind::Update)
     }
     fn delete(
         &self,

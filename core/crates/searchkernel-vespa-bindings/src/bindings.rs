@@ -40,6 +40,7 @@ pub const SK_VALUE_TENSOR: u32 = 5;
 pub const SK_VALUE_STRING_ARRAY: u32 = 6;
 pub const SK_VALUE_POSITION: u32 = 7;
 pub const SK_VALUE_PREDICATE: u32 = 8;
+pub const SK_VALUE_STRUCT_ARRAY: u32 = 9;
 pub const SK_SORT_ASCENDING: u32 = 1;
 pub const SK_SORT_DESCENDING: u32 = 2;
 pub const SK_SORT_MISSING_DEFAULT: u32 = 0;
@@ -89,6 +90,11 @@ pub struct sk_engine {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_document {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sk_struct_array {
     _unused: [u8; 0],
 }
 #[repr(C)]
@@ -353,6 +359,82 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_document_add_predicate_json(
+        document: *mut sk_document,
+        field: *const ::std::os::raw::c_char,
+        expression_json: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_create(
+        out_array: *mut *mut sk_struct_array,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_add_element(
+        array: *mut sk_struct_array,
+        out_element_index: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_set_string(
+        array: *mut sk_struct_array,
+        element_index: u32,
+        field: *const ::std::os::raw::c_char,
+        value: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_set_integer(
+        array: *mut sk_struct_array,
+        element_index: u32,
+        field: *const ::std::os::raw::c_char,
+        value: i64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_set_float(
+        array: *mut sk_struct_array,
+        element_index: u32,
+        field: *const ::std::os::raw::c_char,
+        value: f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_set_boolean(
+        array: *mut sk_struct_array,
+        element_index: u32,
+        field: *const ::std::os::raw::c_char,
+        value: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_struct_array_destroy(array: *mut sk_struct_array);
+}
+unsafe extern "C" {
+    pub fn sk_document_add_struct_array(
+        document: *mut sk_document,
+        field: *const ::std::os::raw::c_char,
+        array: *const sk_struct_array,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_document_annotate_text(
         document: *mut sk_document,
         field: *const ::std::os::raw::c_char,
@@ -361,6 +443,22 @@ unsafe extern "C" {
         term_lengths: *const u32,
         byte_starts: *const u32,
         byte_lengths: *const u32,
+        occurrence_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_annotate_string_array(
+        document: *mut sk_document,
+        field: *const ::std::os::raw::c_char,
+        term_bytes: *const u8,
+        term_bytes_length: u32,
+        term_lengths: *const u32,
+        byte_starts: *const u32,
+        byte_lengths: *const u32,
+        element_offsets: *const u32,
+        element_count: u32,
         occurrence_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
@@ -383,6 +481,14 @@ unsafe extern "C" {
     pub fn sk_document_update_create_empty(
         document_id: *const ::std::os::raw::c_char,
         out_update: *mut *mut sk_document_update,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_update_set_create_if_nonexistent(
+        update: *mut sk_document_update,
+        create_if_nonexistent: u8,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -464,6 +570,15 @@ unsafe extern "C" {
         feature_value_bytes: *const u8,
         feature_value_lengths: *const u32,
         feature_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_document_update_assign_predicate_json(
+        update: *mut sk_document_update,
+        field: *const ::std::os::raw::c_char,
+        expression_json: *const ::std::os::raw::c_char,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

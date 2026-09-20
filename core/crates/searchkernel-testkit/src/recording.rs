@@ -72,6 +72,13 @@ impl Backend for RecordingBackend {
         self.record(OperationIr::Patch(request))
     }
 
+    fn update(
+        &self,
+        request: searchkernel_ir::UpdateRequestIr,
+    ) -> Result<searchkernel_ir::UpdateResult> {
+        self.record(OperationIr::Update(request))
+    }
+
     fn delete(
         &self,
         request: searchkernel_ir::DeleteRequestIr,

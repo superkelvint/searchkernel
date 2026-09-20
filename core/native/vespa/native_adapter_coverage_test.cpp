@@ -106,6 +106,9 @@ void invalid_argument_surface() {
                    "update create null id");
     expect_invalid(sk_document_update_create_empty(nullptr, &update, error.data(), ERROR_CAPACITY),
                    "empty update null id");
+    expect_invalid(sk_document_update_set_create_if_nonexistent(nullptr, 1, error.data(),
+                                                                ERROR_CAPACITY),
+                   "update create flag null");
     expect_invalid(sk_document_update_assign_string(nullptr, "qty", "x", error.data(), ERROR_CAPACITY),
                    "update string null");
     expect_invalid(sk_document_update_assign_integer(nullptr, "qty", 1, error.data(), ERROR_CAPACITY),
@@ -367,6 +370,9 @@ void exercise_native_engine(const std::filesystem::path &data,
     sk_document_update *update = nullptr;
     expect_ok(sk_document_update_create_empty("id:test:typea::coverage", &update,
                                                error.data(), ERROR_CAPACITY), "update create");
+    expect_ok(sk_document_update_set_create_if_nonexistent(update, 1, error.data(),
+                                                            ERROR_CAPACITY),
+              "update create flag");
     expect_ok(sk_document_update_assign_integer(update, "qty", 18, error.data(), ERROR_CAPACITY),
               "update integer");
     expect_ok(sk_engine_update(engine, update, error.data(), ERROR_CAPACITY), "document update");

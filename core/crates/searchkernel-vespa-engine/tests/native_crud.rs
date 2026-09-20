@@ -111,6 +111,69 @@ fn native_document_crud_round_trip_exercises_lifecycle_and_value_conversion() {
 }
 
 #[test]
+fn native_arithmetic_updates_survive_read_and_reopen() {
+    let config = temporary_path("arithmetic-config");
+    let data = temporary_path("arithmetic-data");
+    let schema =
+        Schema::new("typea").field(Field::new("rating", FieldType::Float).attribute().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile arithmetic config");
+    let engine = Engine::open(&data, &config).expect("open arithmetic engine");
+    engine
+        .put(Document::new("arithmetic-1").field("rating", 4.0_f64))
+        .expect("put arithmetic baseline");
+
+    for (operator, operand) in [
+        (ArithmeticOperator::Add, 1.5),
+        (ArithmeticOperator::Subtract, 0.5),
+        (ArithmeticOperator::Multiply, 2.0),
+        (ArithmeticOperator::Divide, 4.0),
+    ] {
+        engine
+            .update(DocumentUpdate::new("arithmetic-1").arithmetic("rating", operator, operand))
+            .expect("apply arithmetic update");
+    }
+    let updated = engine
+        .get("arithmetic-1")
+        .expect("read arithmetic update")
+        .expect("arithmetic document exists");
+    assert_eq!(
+        updated.fields()["rating"],
+        FieldValue::Scalar(ScalarValue::Float(2.5))
+    );
+    engine
+        .update(
+            DocumentUpdate::new("arithmetic-created")
+                .assign("rating", 7.0_f64)
+                .create_if_nonexistent(true),
+        )
+        .expect("create-if-nonexistent update");
+    assert_eq!(
+        engine
+            .get("arithmetic-created")
+            .expect("read created document")
+            .expect("created document exists")
+            .fields()["rating"],
+        FieldValue::Scalar(ScalarValue::Float(7.0))
+    );
+    engine.close().expect("close arithmetic engine");
+
+    let reopened = Engine::open(&data, &config).expect("reopen arithmetic engine");
+    let persisted = reopened
+        .get("arithmetic-1")
+        .expect("read persisted arithmetic update")
+        .expect("persisted arithmetic document exists");
+    assert_eq!(
+        persisted.fields()["rating"],
+        FieldValue::Scalar(ScalarValue::Float(2.5))
+    );
+    reopened.close().expect("close reopened arithmetic engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_nearest_neighbor_uses_a_tensor_query_input_and_rank_profile() {
     let config = temporary_path("nearest-config");
     let data = temporary_path("nearest-data");
@@ -687,11 +750,11 @@ fn native_text_crud_and_query_forms_round_trip() {
         .put(Document::new("text-1").field("title", "quick fox"))
         .expect("put analyzed text");
     engine
-        .update(DocumentUpdate::new("text-1").assign("title", "quick fox jumps"))
+        .update(DocumentUpdate::new("text-1").assign("title", "slow hare"))
         .expect("update analyzed text");
 
     let term = engine
-        .search(SearchRequest::new(Query::term("title", "jumps")))
+        .search(SearchRequest::new(Query::term("title", "hare")))
         .expect("search text term");
     assert_eq!(
         term.hits
@@ -702,16 +765,21 @@ fn native_text_crud_and_query_forms_round_trip() {
     );
 
     let phrase = engine
-        .search(SearchRequest::new(Query::phrase("title", "quick fox")))
+        .search(SearchRequest::new(Query::phrase("title", "slow hare")))
         .expect("search text phrase");
     assert_eq!(phrase.hits.len(), 1);
 
-    let typed = engine
+    let removed = engine
         .search(SearchRequest::new(Query::term("title", "jumps")))
+        .expect("search removed text term");
+    assert!(removed.hits.is_empty());
+
+    let typed = engine
+        .search(SearchRequest::new(Query::term("title", "hare")))
         .expect("search typed query");
     let yql = engine
         .search(SearchRequest::new(
-            Query::from_yql("select * from typea where title contains \"jumps\"")
+            Query::from_yql("select * from typea where title contains \"hare\"")
                 .expect("parse YQL query"),
         ))
         .expect("search YQL query");

@@ -16,6 +16,10 @@ impl Backend for SharedBackend {
         self.0.patch(request)
     }
 
+    fn update(&self, request: crate::UpdateRequestIr) -> crate::Result<crate::UpdateResult> {
+        self.0.update(request)
+    }
+
     fn delete(&self, request: crate::DeleteRequestIr) -> crate::Result<crate::DeleteResult> {
         self.0.delete(request)
     }
@@ -200,7 +204,7 @@ mod tests {
     use crate::{
         AnalyzeRequestIr, AnalyzeResult, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult,
         InsertRequestIr, InsertResult, PatchRequestIr, PatchResult, SearchRequestIr, SearchResult,
-        UpsertRequestIr, UpsertResult,
+        UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
     };
     use std::panic::AssertUnwindSafe;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -253,6 +257,10 @@ mod tests {
         }
 
         fn patch(&self, _request: PatchRequestIr) -> crate::Result<PatchResult> {
+            Self::unsupported()
+        }
+
+        fn update(&self, _request: UpdateRequestIr) -> crate::Result<UpdateResult> {
             Self::unsupported()
         }
 

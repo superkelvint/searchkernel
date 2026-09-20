@@ -10,6 +10,7 @@ use crate::model::{
     PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr, QueryInputIr, QueryIr,
     QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
     SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy,
+    UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpdateTargetIr,
     UpsertRequestIr,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,6 +53,23 @@ pub enum PatchOperationInput {
     },
     Unset {
         field: String,
+    },
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateOperationInput {
+    Assign {
+        target: String,
+        value: RequestValueIr,
+    },
+    Clear {
+        target: String,
+    },
+    Arithmetic {
+        target: String,
+        operator: UpdateArithmeticOperatorIr,
+        operand: RequestValueIr,
     },
 }
 
@@ -909,6 +927,112 @@ pub fn resolve_patch(
     Ok(PatchRequestIr {
         id,
         operations: resolved,
+    })
+}
+
+/// Resolve a full document update against the index schema.
+#[doc(hidden)]
+pub fn resolve_update(
+    context: &IndexContext,
+    id: &str,
+    operations: &[UpdateOperationInput],
+    condition: Option<&str>,
+    create: Option<bool>,
+) -> Result<UpdateRequestIr> {
+    if operations.is_empty() {
+        return Err(invalid(
+            "empty_update",
+            Some("operations"),
+            "update must contain at least one operation",
+        ));
+    }
+    let id = DocumentId::parse(id.to_owned()).map_err(|_| {
+        invalid(
+            "invalid_document_id",
+            Some("id"),
+            "document ID must not be empty",
+        )
+    })?;
+    let mut seen = BTreeSet::new();
+    let mut resolved = Vec::with_capacity(operations.len());
+    for (index, operation) in operations.iter().enumerate() {
+        let path = format!("operations[{index}]");
+        let target = match operation {
+            UpdateOperationInput::Assign { target, .. }
+            | UpdateOperationInput::Clear { target }
+            | UpdateOperationInput::Arithmetic { target, .. } => target,
+        };
+        let target = UpdateTargetIr::parse(target.clone()).map_err(|_| {
+            invalid(
+                "invalid_update_target",
+                Some(format!("{path}.target.path")),
+                "update target must not be empty",
+            )
+        })?;
+        if !target.is_simple_field() {
+            return Err(PortableError::unsupported(
+                "update_field_path_not_supported",
+                Some(format!("{path}.target.path")),
+                "the current native DocumentUpdate adapter supports simple fields only",
+            ));
+        }
+        if !seen.insert(target.as_str().to_owned()) {
+            return Err(invalid(
+                "duplicate_update_target",
+                Some(path),
+                "an update may mention each target at most once",
+            ));
+        }
+        let field = context.field_for_resolver(target.as_str(), format!("{path}.target.path"))?;
+        match operation {
+            UpdateOperationInput::Assign { value, .. } => {
+                resolved.push(UpdateOperationIr::Assign {
+                    target,
+                    value: resolve_field_value(
+                        field,
+                        value.clone(),
+                        format!("{path}.operation.value"),
+                    )?,
+                })
+            }
+            UpdateOperationInput::Clear { .. } => {
+                resolved.push(UpdateOperationIr::Clear { target })
+            }
+            UpdateOperationInput::Arithmetic {
+                operator, operand, ..
+            } => {
+                if !matches!(field.kind(), FieldKind::Int64 | FieldKind::Float64) {
+                    return Err(invalid(
+                        "arithmetic_requires_numeric_field",
+                        Some(format!("{path}.target.path")),
+                        "arithmetic updates require an integer or float field",
+                    ));
+                }
+                let operand = match operand {
+                    RequestValueIr::Int64(value) => *value as f64,
+                    RequestValueIr::UInt64(value) => *value as f64,
+                    RequestValueIr::Float64(value) if value.is_finite() => *value,
+                    _ => {
+                        return Err(invalid(
+                            "arithmetic_operand_type",
+                            Some(format!("{path}.operation.operand")),
+                            "arithmetic operands must be finite numbers",
+                        ));
+                    }
+                };
+                resolved.push(UpdateOperationIr::Arithmetic {
+                    target,
+                    operator: *operator,
+                    operand,
+                });
+            }
+        }
+    }
+    Ok(UpdateRequestIr {
+        id,
+        operations: resolved,
+        condition: condition_to_ir(condition),
+        create,
     })
 }
 

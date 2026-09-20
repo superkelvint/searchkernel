@@ -249,6 +249,18 @@ impl Engine {
         };
         check(status, &error)?;
         let native = NativeUpdate(require_ptr(native, "document update")?);
+        if update.create_if_nonexistent_flag() {
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_document_update_set_create_if_nonexistent(
+                    native.0.as_ptr(),
+                    1,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         for (field, mutation) in update.fields() {
             add_update_field(native.0.as_ptr(), field, mutation)?;
             let analysis = update

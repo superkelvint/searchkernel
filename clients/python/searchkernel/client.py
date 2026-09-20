@@ -41,6 +41,7 @@ from SearchKernel.V2.PatchRequest import PatchRequestT
 from SearchKernel.V2.StringValue import StringValueT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
 from SearchKernel.V2.UpsertRequest import UpsertRequestT
+from SearchKernel.V2.UpdateRequest import UpdateRequestT
 from SearchKernel.V2.Value import ValueT
 from SearchKernel.V2.ValueEntry import ValueEntryT
 from SearchKernel.V2.ValueKind import ValueKind
@@ -325,6 +326,9 @@ class Client:
 
     def patch(self, request: PatchRequestT) -> Any:
         return self.execute("patch", request)
+
+    def update(self, request: UpdateRequestT) -> Any:
+        return self.execute("update", request)
 
     def get(self, identifier: str, projection: Sequence[str] | None = None) -> Any:
         projection_t = FieldProjectionT(fields=list(projection)) if projection is not None else None

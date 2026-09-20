@@ -37,6 +37,21 @@ pub fn patch_result_to_api(result: &ir::PatchResult) -> Vec<u8> {
     builder.finished_data().to_vec()
 }
 
+pub fn update_result_to_api(result: &ir::UpdateResult) -> Vec<u8> {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let offset = update_result_offset(&mut builder, result);
+    builder.finish(offset, None);
+    builder.finished_data().to_vec()
+}
+
+pub fn update_result_offset<'a>(
+    builder: &mut flatbuffers::FlatBufferBuilder<'a>,
+    result: &ir::UpdateResult,
+) -> flatbuffers::WIPOffset<api::UpdateResult<'a>> {
+    let id = builder.create_string(&result.id);
+    api::UpdateResult::create(builder, &api::UpdateResultArgs { id: Some(id) })
+}
+
 pub fn patch_result_offset<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
     result: &ir::PatchResult,

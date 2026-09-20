@@ -53,7 +53,9 @@ extern "C" {
 #define SK_QUERY_FIELD_BOOLEAN 5U
 #define SK_QUERY_FIELD_ATTRIBUTE 6U
 #define SK_QUERY_FIELD_TENSOR 7U
-#define SK_QUERY_FIELD_ARRAY_STRING 8U
+#define SK_QUERY_FIELD_ARRAY 8U
+/* Kept as an ABI/source compatibility alias for existing clients. */
+#define SK_QUERY_FIELD_ARRAY_STRING SK_QUERY_FIELD_ARRAY
 #define SK_QUERY_FIELD_POSITION 9U
 #define SK_QUERY_FIELD_PREDICATE 10U
 
@@ -65,6 +67,7 @@ extern "C" {
 #define SK_VALUE_STRING_ARRAY 6U
 #define SK_VALUE_POSITION 7U
 #define SK_VALUE_PREDICATE 8U
+#define SK_VALUE_STRUCT_ARRAY 9U
 
 #define SK_SORT_ASCENDING 1U
 #define SK_SORT_DESCENDING 2U
@@ -115,6 +118,7 @@ extern "C" {
  */
 typedef struct sk_engine sk_engine;
 typedef struct sk_document sk_document;
+typedef struct sk_struct_array sk_struct_array;
 typedef struct sk_document_update sk_document_update;
 typedef struct sk_search_request sk_search_request;
 typedef struct sk_search_result sk_search_result;
@@ -216,10 +220,42 @@ SK_API int32_t sk_document_add_predicate(
     const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
     const uint32_t *feature_value_lengths, uint32_t feature_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_predicate_json(
+    sk_document *document, const char *field, const char *expression_json,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_create(
+    sk_struct_array **out_array, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_add_element(
+    sk_struct_array *array, uint32_t *out_element_index, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_set_string(
+    sk_struct_array *array, uint32_t element_index, const char *field,
+    const char *value, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_set_integer(
+    sk_struct_array *array, uint32_t element_index, const char *field,
+    int64_t value, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_set_float(
+    sk_struct_array *array, uint32_t element_index, const char *field,
+    double value, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_struct_array_set_boolean(
+    sk_struct_array *array, uint32_t element_index, const char *field,
+    uint8_t value, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API void sk_struct_array_destroy(sk_struct_array *array) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_struct_array(
+    sk_document *document, const char *field, const sk_struct_array *array,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_annotate_text(
     sk_document *document, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
     const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    uint32_t occurrence_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_annotate_string_array(
+    sk_document *document, const char *field, const uint8_t *term_bytes,
+    uint32_t term_bytes_length, const uint32_t *term_lengths,
+    const uint32_t *byte_starts, const uint32_t *byte_lengths,
+    const uint32_t *element_offsets, uint32_t element_count,
     uint32_t occurrence_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 
@@ -233,6 +269,9 @@ SK_API int32_t sk_document_update_create_empty(const char *document_id,
                                                sk_document_update **out_update,
                                                uint8_t *out_error,
                                                uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_set_create_if_nonexistent(
+    sk_document_update *update, uint8_t create_if_nonexistent, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_assign_string(sk_document_update *update,
                                                 const char *field, const char *value,
                                                 uint8_t *out_error,
@@ -264,6 +303,9 @@ SK_API int32_t sk_document_update_assign_predicate(
     sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
     const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
     const uint32_t *feature_value_lengths, uint32_t feature_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_assign_predicate_json(
+    sk_document_update *update, const char *field, const char *expression_json,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                         uint8_t *out_error,

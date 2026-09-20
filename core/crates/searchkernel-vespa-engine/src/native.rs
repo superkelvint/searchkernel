@@ -67,6 +67,96 @@ fn packed_predicate(value: &PredicateValue) -> Result<PackedPredicate, Error> {
     Ok((key_bytes, key_lengths, value_bytes, value_lengths))
 }
 
+fn add_struct_array_field(
+    document: *mut sys::sk_document,
+    field: *const std::os::raw::c_char,
+    values: &[BTreeMap<String, ScalarValue>],
+    error: &mut NativeError,
+) -> Result<(), Error> {
+    let mut pointer = ptr::null_mut();
+    check(
+        unsafe { sys::sk_struct_array_create(&mut pointer, error.as_mut_ptr(), error.capacity()) },
+        error,
+    )?;
+    let array = NativeStructArray(require_ptr(pointer, "native struct array")?);
+    for (element_index, element) in values.iter().enumerate() {
+        let mut native_index = 0;
+        check(
+            unsafe {
+                sys::sk_struct_array_add_element(
+                    array.0.as_ptr(),
+                    &mut native_index,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            error,
+        )?;
+        debug_assert_eq!(native_index as usize, element_index);
+        for (name, value) in element {
+            let name = cstring(name)?;
+            let status = match value {
+                ScalarValue::String(value) => {
+                    let value = cstring(value)?;
+                    unsafe {
+                        sys::sk_struct_array_set_string(
+                            array.0.as_ptr(),
+                            native_index,
+                            name.as_ptr(),
+                            value.as_ptr(),
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    }
+                }
+                ScalarValue::Integer(value) => unsafe {
+                    sys::sk_struct_array_set_integer(
+                        array.0.as_ptr(),
+                        native_index,
+                        name.as_ptr(),
+                        *value,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+                ScalarValue::Float(value) => unsafe {
+                    sys::sk_struct_array_set_float(
+                        array.0.as_ptr(),
+                        native_index,
+                        name.as_ptr(),
+                        *value,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+                ScalarValue::Boolean(value) => unsafe {
+                    sys::sk_struct_array_set_boolean(
+                        array.0.as_ptr(),
+                        native_index,
+                        name.as_ptr(),
+                        u8::from(*value),
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+            };
+            check(status, error)?;
+        }
+    }
+    check(
+        unsafe {
+            sys::sk_document_add_struct_array(
+                document,
+                field,
+                array.0.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        error,
+    )
+}
+
 pub(crate) fn add_document_field(
     document: *mut sys::sk_document,
     field: &str,
@@ -129,6 +219,10 @@ pub(crate) fn add_document_field(
                 )
             }
         }
+        FieldValue::Array(ArrayValue::Structs(values)) => {
+            add_struct_array_field(document, field.as_ptr(), values, &mut error)?;
+            return Ok(());
+        }
         FieldValue::Array(_) => {
             return Err(Error::unsupported(
                 "only array<string> document values are supported",
@@ -148,6 +242,21 @@ pub(crate) fn add_document_field(
             )
         },
         FieldValue::Predicate(value) => {
+            if let Some(expression) = &value.expression {
+                let expression = cstring(expression)?;
+                return check(
+                    unsafe {
+                        sys::sk_document_add_predicate_json(
+                            document,
+                            field.as_ptr(),
+                            expression.as_ptr(),
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                );
+            }
             let (key_bytes, key_lengths, value_bytes, value_lengths) = packed_predicate(value)?;
             unsafe {
                 sys::sk_document_add_predicate(
@@ -294,6 +403,21 @@ pub(crate) fn add_update_field(
             )
         },
         FieldUpdate::Assign(FieldValue::Predicate(value)) => {
+            if let Some(expression) = &value.expression {
+                let expression = cstring(expression)?;
+                return check(
+                    unsafe {
+                        sys::sk_document_update_assign_predicate_json(
+                            update,
+                            field.as_ptr(),
+                            expression.as_ptr(),
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                );
+            }
             let (key_bytes, key_lengths, value_bytes, value_lengths) = packed_predicate(value)?;
             unsafe {
                 sys::sk_document_update_assign_predicate(

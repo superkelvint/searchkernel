@@ -59,6 +59,8 @@ from SearchKernel.V2.QueryInput import QueryInputT
 from SearchKernel.V2.QueryInputKind import QueryInputKind
 from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT
 from SearchKernel.V2.ExpressionQueryInput import ExpressionQueryInputT
+from SearchKernel.V2.MatchingMode import MatchingMode
+from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind
 from SearchKernel.V2.QuerySource import QuerySourceT
 from SearchKernel.V2.QuerySourceKind import QuerySourceKind
 from SearchKernel.V2.SearchField import SearchFieldT
@@ -428,9 +430,68 @@ class PatchBuilder:
 
 
 class UpdateBuilder:
-    def __init__(self, index, identifier): self.index, self.identifier = index, identifier
-    def increment(self, field, item): self.field, self.item = field, item; return self
-    def execute(self): raise NotImplementedError("UpdateRequest is not part of the current canonical V2 operation envelope")
+    def __init__(self, index, identifier):
+        self.index, self.identifier = index, identifier
+        self.operations = []
+        self._condition = None
+        self._create = None
+
+    def set(self, field, item):
+        self.operations.append(UpdateOperationT(
+            target=FieldPathT(path=field),
+            operationType=UpdateOperationKind.AssignUpdate,
+            operation=AssignUpdateT(value=value(item)),
+        ))
+        return self
+
+    assign = set
+
+    def unset(self, field):
+        self.operations.append(UpdateOperationT(
+            target=FieldPathT(path=field),
+            operationType=UpdateOperationKind.ClearUpdate,
+            operation=ClearUpdateT(),
+        ))
+        return self
+
+    clear = unset
+
+    def _arithmetic(self, field, item, operator):
+        self.operations.append(UpdateOperationT(
+            target=FieldPathT(path=field),
+            operationType=UpdateOperationKind.ArithmeticUpdate,
+            operation=ArithmeticUpdateT(operator=operator, operand=value(item)),
+        ))
+        return self
+
+    def increment(self, field, item):
+        return self._arithmetic(field, item, ArithmeticUpdateOperator.Increment)
+
+    def decrement(self, field, item):
+        return self._arithmetic(field, item, ArithmeticUpdateOperator.Decrement)
+
+    def multiply(self, field, item):
+        return self._arithmetic(field, item, ArithmeticUpdateOperator.Multiply)
+
+    def divide(self, field, item):
+        return self._arithmetic(field, item, ArithmeticUpdateOperator.Divide)
+
+    def condition(self, expression):
+        self._condition = expression
+        return self
+
+    def create(self, enabled=True):
+        self._create = enabled
+        return self
+
+    def execute(self):
+        request = UpdateRequestT(
+            id=self.identifier,
+            operations=self.operations,
+            condition=self._condition,
+            create=OptionalBoolT(value=self._create) if self._create is not None else None,
+        )
+        return self.index.client.update(request)
 
 
 class Hit(dict):

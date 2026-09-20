@@ -19,5 +19,5 @@ pub use scripted::{ExpectedCall, ScriptedBackend, ScriptedOutcome, ScriptedResul
 pub use searchkernel_ir::{
     AnalyzeRequestIr, AnalyzeResult, Backend, DeleteRequestIr, DeleteResult, GetRequestIr,
     GetResult, InsertRequestIr, InsertResult, OperationIr, PatchRequestIr, PatchResult,
-    SearchRequestIr, SearchResult, UpsertRequestIr, UpsertResult,
+    SearchRequestIr, SearchResult, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };

@@ -1074,12 +1074,15 @@ struct OwnedValue {
     double latitude = 0.0;
     double longitude = 0.0;
     std::vector<std::pair<std::string, std::string>> predicate_features;
+    std::string predicate_json;
+    std::vector<std::vector<std::pair<std::string, OwnedValue>>> struct_elements;
 };
 
 struct DocumentFieldState {
     std::string name;
     OwnedValue value;
     std::vector<TextOccurrence> occurrences;
+    std::vector<std::vector<TextOccurrence>> array_occurrences;
 };
 
 struct ValueDocument {
@@ -1789,7 +1792,11 @@ class EmbeddedEngine {
             return std::make_unique<document::BoolFieldValue>(value.boolean);
         }
         if (field.type == "array<string>") {
-            return make_string_array_value(_doc_type->getField(field_name).getDataType(), value);
+            return make_string_array_value(_doc_type->getField(field_name).getDataType(), value,
+                                           array_occurrences);
+        }
+        if (field.type == "array<struct>") {
+            return make_struct_array_value(_doc_type->getField(field_name).getDataType(), value);
         }
         if (field.type == "position") {
             if (value.kind != SK_VALUE_POSITION) {
@@ -1799,7 +1806,7 @@ class EmbeddedEngine {
                                        value.latitude, value.longitude);
         }
         if (field.type == "predicate") {
-            return make_predicate_value(value);
+            return make_predicate_value(value, field.predicate_arity);
         }
         if (field.type == "tensor") {
             if (value.kind != SK_VALUE_TENSOR) {
@@ -1834,9 +1841,23 @@ class EmbeddedEngine {
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto document = std::make_shared<Document>(*_repo, *_doc_type, id);
         for (const auto &entry : source.fields) {
+            const auto &manifest_field = require_manifest_field(entry.name);
             const auto *occurrences = entry.occurrences.empty() ? nullptr : &entry.occurrences;
-            document->setFieldValue(_doc_type->getField(entry.name),
-                                    make_document_value(entry.name, entry.value, occurrences));
+            const auto *array_occurrences = entry.array_occurrences.empty()
+                                                ? nullptr
+                                                : &entry.array_occurrences;
+            auto field_value = make_document_value(entry.name, entry.value, occurrences,
+                                                   array_occurrences);
+            if (manifest_field.type == "position" && manifest_field.attribute) {
+                const auto *position = dynamic_cast<const document::StructFieldValue *>(field_value.get());
+                auto x = position->getValue(document::PositionDataType::FIELD_X);
+                auto y = position->getValue(document::PositionDataType::FIELD_Y);
+                const auto zcurve = vespalib::geo::ZCurve::encode(x->getAsInt(), y->getAsInt());
+                document->setFieldValue(
+                    _doc_type->getField(document::PositionDataType::getZCurveFieldName(entry.name)),
+                    std::make_unique<document::LongFieldValue>(zcurve));
+            }
+            document->setFieldValue(_doc_type->getField(entry.name), std::move(field_value));
         }
         return document;
     }
@@ -1846,6 +1867,7 @@ class EmbeddedEngine {
         if (source.fields.empty() && source.arithmetic.empty()) throw std::invalid_argument("document update must not be empty");
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
+        update->setCreateIfNonExistent(source.create_if_nonexistent);
         for (const auto &[name, value] : source.fields) {
             const auto &field = _doc_type->getField(name);
             document::FieldUpdate field_update(field);
@@ -1856,8 +1878,14 @@ class EmbeddedEngine {
                 const auto *occurrences = annotated == source.annotated_fields.end()
                                                ? nullptr
                                                : &annotated->second;
+                const auto annotated_array = std::find_if(
+                    source.annotated_array_fields.begin(), source.annotated_array_fields.end(),
+                    [&name](const auto &entry) { return entry.first == name; });
+                const auto *array_occurrences = annotated_array == source.annotated_array_fields.end()
+                                                    ? nullptr
+                                                    : &annotated_array->second;
                 field_update.addUpdate(std::make_unique<document::AssignValueUpdate>(
-                    make_document_value(name, *value, occurrences)));
+                    make_document_value(name, *value, occurrences, array_occurrences)));
             } else {
                 field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
             }
@@ -4269,7 +4297,7 @@ public:
         failpoint("attribute_mutation_after_native_call");
         failpoint("mutation_after_native_call");
         if (result.hasError()) throw std::runtime_error(result.getErrorMessage());
-        wait_for_source_state(id, was_present, update.fields, false);
+        wait_for_source_state(id, was_present || update.create_if_nonexistent, update.fields, false);
     }
 
     LocalSearchResultState search_local_result(const NativeQueryState &query,
@@ -5365,6 +5393,18 @@ extern "C" SK_API int32_t sk_document_update_create_empty(
     });
 }
 
+extern "C" SK_API int32_t sk_document_update_set_create_if_nonexistent(
+    sk_document_update *update, uint8_t create_if_nonexistent, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "update arguments must not be null");
+    }
+    return invoke(error, error_capacity, [&] {
+        update->create_if_nonexistent = create_if_nonexistent != 0;
+    });
+}
+
 template <typename Add>
 int32_t add_update_value(sk_document_update *update, const char *field,
                          uint8_t *error, uint32_t error_capacity, Add &&add) noexcept {
@@ -5468,6 +5508,21 @@ extern "C" SK_API int32_t sk_document_update_assign_predicate(
         result.predicate_features = copy_predicate_features(
             feature_key_bytes, feature_key_lengths, feature_value_bytes,
             feature_value_lengths, feature_count);
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" SK_API int32_t sk_document_update_assign_predicate_json(
+    sk_document_update *update, const char *field, const char *expression_json,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!expression_json) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "predicate expression must not be null");
+    }
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_PREDICATE;
+        result.predicate_json = expression_json;
         return std::optional<OwnedValue>(std::move(result));
     });
 }
@@ -5591,7 +5646,7 @@ extern "C" int32_t sk_engine_update(sk_engine *engine,
                          "update arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        if (!update->fields.empty()) {
+        if (!update->fields.empty() || !update->arithmetic.empty()) {
             engine->impl->update_document(*update);
         } else {
             engine->impl->update(update->id, update->field, update->value);

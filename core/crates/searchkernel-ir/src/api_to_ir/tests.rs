@@ -96,6 +96,33 @@ fn bool_value(
     )
 }
 
+#[test]
+fn update_resolution_preserves_operations_create_and_condition() {
+    let request = resolve_update(
+        &context(),
+        "doc:1",
+        &[
+            UpdateOperationInput::Assign {
+                target: "price".to_owned(),
+                value: RequestValueIr::Int64(12),
+            },
+            UpdateOperationInput::Arithmetic {
+                target: "rating".to_owned(),
+                operator: UpdateArithmeticOperatorIr::Increment,
+                operand: RequestValueIr::Float64(3.0),
+            },
+        ],
+        Some("price == 9"),
+        Some(true),
+    )
+    .expect("valid update resolves");
+
+    assert_eq!(request.id().as_str(), "doc:1");
+    assert_eq!(request.operations().len(), 2);
+    assert_eq!(request.condition(), Some("price == 9"));
+    assert_eq!(request.create(), Some(true));
+}
+
 fn string_value(
     builder: &mut crate::__flatbuffers::FlatBufferBuilder<'static>,
     value: &str,

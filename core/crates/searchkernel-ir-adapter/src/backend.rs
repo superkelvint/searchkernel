@@ -12,7 +12,8 @@ use searchkernel_ir::{
     AnalyzeRequestIr, AnalyzeResult, AnalyzedToken, Backend, Coverage, CoverageDegraded,
     DeleteRequestIr, DeleteResult, FieldValueIr, GetRequestIr, GetResult, InsertRequestIr,
     InsertResult, PatchOperationIr, PatchRequestIr, PortableError, Result, ScalarValueIr,
-    SearchRequestIr, SearchResult, TotalHitsRelation, UpsertRequestIr, UpsertResult,
+    SearchRequestIr, SearchResult, TotalHitsRelation, UpdateArithmeticOperatorIr,
+    UpdateOperationIr, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult,
 };
 use searchkernel_vespa_engine::{
     DocumentUpdate, Engine, FieldValue, GroupingAggregation, GroupingExpression, GroupingOutput,
@@ -373,6 +374,63 @@ impl Backend for VespaBackend {
         }
         self.engine.update(update).map_err(native_error)?;
         Ok(searchkernel_ir::PatchResult {
+            id: request.id().to_string(),
+        })
+    }
+
+    fn update(&self, request: UpdateRequestIr) -> Result<UpdateResult> {
+        if request.condition().is_some() {
+            return Err(PortableError::unsupported(
+                "conditional_mutation_not_supported",
+                Some("condition"),
+                "the current embedded Vespa boundary cannot execute update test-and-set conditions atomically",
+            ));
+        }
+        let mut update = DocumentUpdate::new(request.id().as_str());
+        if let Some(create) = request.create() {
+            update = update.create_if_nonexistent(create);
+        }
+        for operation in request.operations() {
+            match operation {
+                UpdateOperationIr::Assign { target, value } => {
+                    update = update.assign(target.as_str(), lower_field_value(value)?);
+                    if let FieldValueIr::Single(ScalarValueIr::String(text)) = value {
+                        let analysis = searchkernel_vespa_engine::Linguistics.analyze_document(
+                            text,
+                            searchkernel_vespa_engine::LinguisticsOptions::default(),
+                        );
+                        update = update.annotate_text(target.as_str(), analysis);
+                    }
+                }
+                UpdateOperationIr::Clear { target } => {
+                    update = update.clear(target.as_str());
+                }
+                UpdateOperationIr::Arithmetic {
+                    target,
+                    operator,
+                    operand,
+                } => {
+                    let operator = match operator {
+                        UpdateArithmeticOperatorIr::Add | UpdateArithmeticOperatorIr::Increment => {
+                            searchkernel_vespa_engine::ArithmeticOperator::Add
+                        }
+                        UpdateArithmeticOperatorIr::Subtract
+                        | UpdateArithmeticOperatorIr::Decrement => {
+                            searchkernel_vespa_engine::ArithmeticOperator::Subtract
+                        }
+                        UpdateArithmeticOperatorIr::Multiply => {
+                            searchkernel_vespa_engine::ArithmeticOperator::Multiply
+                        }
+                        UpdateArithmeticOperatorIr::Divide => {
+                            searchkernel_vespa_engine::ArithmeticOperator::Divide
+                        }
+                    };
+                    update = update.arithmetic(target.as_str(), operator, *operand);
+                }
+            }
+        }
+        self.engine.update(update).map_err(native_error)?;
+        Ok(UpdateResult {
             id: request.id().to_string(),
         })
     }

@@ -7,6 +7,7 @@ static_assert(noexcept(sk_engine_destroy(nullptr)));
 static_assert(noexcept(sk_document_create(nullptr, nullptr, 0, nullptr, nullptr, 0)));
 static_assert(noexcept(sk_document_destroy(nullptr)));
 static_assert(noexcept(sk_document_update_create(nullptr, nullptr, 0, nullptr, nullptr, 0)));
+static_assert(noexcept(sk_document_update_set_create_if_nonexistent(nullptr, 0, nullptr, 0)));
 static_assert(noexcept(sk_document_update_destroy(nullptr)));
 static_assert(noexcept(sk_search_request_create(nullptr, 0, 0, nullptr, nullptr, 0)));
 static_assert(noexcept(sk_search_request_destroy(nullptr)));
