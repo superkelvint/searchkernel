@@ -14,7 +14,8 @@ assert {case["id"] for case in cases} == {
     "recursive-grouping",
     "root-labels-order-max-precision-aliases-filters",
     "yql-properties-order-and-grouping",
-    "grouped-summary-and-continuation",
+    "grouped-summary-hits",
+    "grouping-continuations",
 }
 
 for case in cases:
@@ -22,6 +23,7 @@ for case in cases:
     assert verifier.exists(), f"missing verifier: {verifier}"
     assert case["coverage"], f"empty coverage description: {case['id']}"
 
-blocked = [case for case in cases if case.get("status") == "blocked-until-native-support"]
-assert [case["id"] for case in blocked] == ["grouped-summary-and-continuation"]
+by_id = {case["id"]: case for case in cases}
+assert by_id["grouped-summary-hits"]["status"] == "executable"
+assert by_id["grouping-continuations"]["status"] == "intentionally-deferred"
 print("M13 grouping/YQL coverage manifest is valid")

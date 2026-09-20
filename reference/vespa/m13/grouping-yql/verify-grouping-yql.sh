@@ -16,8 +16,8 @@ python3 "$DIR/validate.py"
 
 # The portable showcase drives the daemon/native Vespa path through the shared
 # FlatBuffer compiler. It covers the currently executable root/grouping and YQL
-# cases. Future grouping work must make the manifest's blocked summary and
-# continuation case executable without adding a second semantic implementation.
+# cases. Summary-hit grouping is an executable coverage case. Continuation
+# round-trips remain intentionally deferred until their translation path exists.
 PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
   python3 "$ROOT/clients/python/examples/try_searchkernel_client_api_e2e.py"
 

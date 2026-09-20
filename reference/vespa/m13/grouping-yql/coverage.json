@@ -19,10 +19,16 @@
       "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py"
     },
     {
-      "id": "grouped-summary-and-continuation",
-      "coverage": "grouped summary hits and opaque continuation round-trip",
+      "id": "grouped-summary-hits",
+      "coverage": "grouped summary hits beneath their result groups",
       "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py",
-      "status": "blocked-until-native-support"
+      "status": "executable"
+    },
+    {
+      "id": "grouping-continuations",
+      "coverage": "opaque grouping continuation round-trip",
+      "verifier": "clients/python/examples/try_searchkernel_client_api_e2e.py",
+      "status": "intentionally-deferred"
     }
   ]
 }

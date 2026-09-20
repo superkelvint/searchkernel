@@ -11,8 +11,9 @@ contract and verifier remain unchanged.
    generated FlatBuffers, daemon transport, adapter, and native Vespa engine.
 
 The coverage manifest records the cases that must be exercised. Grouped summary
-hits and continuation round-trips are explicitly marked blocked until the
-native result seam supports them; they are not silently treated as passing.
+hits are executable and have their own verification case. Grouping continuation
+round-trips are intentionally deferred because continuation translation is not
+implemented end to end; they are not silently treated as passing.
 
 Run it directly with:
 
