@@ -1,0 +1,38 @@
+# Search Kernel agent/search exclusions.
+# These files may exist in the repository, but should not participate in
+# normal repository-wide code discovery.
+#
+# Search explicitly with `rg --no-ignore ...` when debugging generation,
+# protocol output, packaging, or native SDK artifacts.
+
+# Rust build output
+target/
+
+# Generated FlatBuffers / protocol output
+clients/python/searchkernel/_wire_generated/
+**/*.bfbs
+
+# Generated gRPC output, if present
+clients/python/searchkernel/_rpc_generated/
+
+# Native SDK / generated binary artifacts
+core/native/sdk/
+
+# Python caches and packaging artifacts
+clients/python/.pytest_cache/
+clients/python/*.egg-info/
+clients/python/**/*.egg-info/
+**/__pycache__/
+**/*.pyc
+
+# Common local tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
