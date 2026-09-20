@@ -1,3 +1,4 @@
+#[cfg(test)]
 use super::{
     parse_yql, validate_query, Query, RangeBound, Value, MAX_QUERY_DEPTH, MAX_QUERY_NODES,
     MAX_YQL_BYTES,
