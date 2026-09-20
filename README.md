@@ -87,6 +87,7 @@ Repository checks and generators are available through one root command:
 ./dev regen protocol
 ./dev verify m13
 ./dev verify integration
+./dev worktree create my-task
 ./dev doctor
 ```
 

@@ -19,6 +19,7 @@ Search Kernel development commands
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev worktree create <task-name> Create a sibling task worktree and agent branch
   ./dev doctor                Diagnose local build and verification prerequisites
 
 Environment overrides used by the underlying tools, including FLATC_PATH,
@@ -88,6 +89,36 @@ verify_target() {
             return 2
             ;;
     esac
+}
+
+worktree_create() {
+    local task_name=${1:-}
+    local worktree_root repo_name branch path
+
+    if [[ $# -ne 1 || ! "$task_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo 'usage: ./dev worktree create <task-name>' >&2
+        echo 'task-name may contain only letters, numbers, dot, underscore, and hyphen' >&2
+        return 2
+    fi
+
+    repo_name=$(basename "$ROOT")
+    worktree_root=${DEV_WORKTREE_ROOT:-$(dirname "$ROOT")}
+    branch="agent/$task_name"
+    path="$worktree_root/$repo_name-$task_name"
+
+    if [[ -e "$path" ]]; then
+        echo "worktree path already exists: $path" >&2
+        return 1
+    fi
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+        echo "branch already exists: $branch" >&2
+        return 1
+    fi
+
+    git worktree add -b "$branch" "$path" HEAD
+    echo "created worktree: $path"
+    echo "branch: $branch"
+    echo "next: cd \"$path\""
 }
 
 find_flatc() {
@@ -258,6 +289,14 @@ case "${1:-help}" in
     verify)
         shift
         verify_target "${1:-}"
+        ;;
+    worktree)
+        [[ "${2:-}" == create ]] || {
+            echo 'usage: ./dev worktree create <task-name>' >&2
+            exit 2
+        }
+        shift 2
+        worktree_create "$@"
         ;;
     doctor)
         doctor

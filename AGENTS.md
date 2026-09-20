@@ -114,6 +114,7 @@ verification, generation, and acceptance lanes:
 ./dev regen protocol
 ./dev verify m13
 ./dev verify integration
+./dev worktree create my-task
 ```
 
 Start with `./dev doctor` when entering an unfamiliar checkout or when a build
@@ -121,6 +122,11 @@ fails for an environment-related reason. It reports each prerequisite
 separately; fix or report failed prerequisites before diagnosing product code.
 Use `./dev --help` for the supported command list. Keep direct underlying
 scripts for focused debugging or when a contract explicitly names one.
+
+For isolated implementation work, use `./dev worktree create <task-name>`.
+It creates a sibling worktree at `../<repository>-<task-name>` on the
+`agent/<task-name>` branch from the current `HEAD`; it does not copy
+uncommitted changes from the current checkout.
 
 ## Search scope
 
