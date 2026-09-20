@@ -90,6 +90,10 @@ The gRPC transport boundary is separate from the Rust ↔ Vespa C++ native
 boundary. The former carries canonical FlatBuffer frames between processes;
 the latter connects the Rust engine wrapper to Vespa.
 
+The Rust gRPC module is checked in at `src/generated/rpc.rs`. Regenerate it
+with `tools/generate-searchkernel-rpc.sh`; `tools/check-searchkernel-rpc.sh`
+compares fresh standard-tool output with the checked-in file.
+
 ## Responsibilities
 
 `searchkerneld` owns gRPC and gRPC-Web server lifecycle, TCP and

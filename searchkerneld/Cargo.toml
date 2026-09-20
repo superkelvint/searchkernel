@@ -3,7 +3,6 @@ name = "searchkerneld"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-build = "build.rs"
 
 [features]
 default = ["native"]
@@ -17,10 +16,6 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }
 tonic-web = "0.12"
-
-[build-dependencies]
-protoc-bin-vendored = "3"
-tonic-build = "0.12"
 
 [dev-dependencies]
 flatbuffers = "=25.12.19"

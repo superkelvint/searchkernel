@@ -28,7 +28,7 @@ use tonic_web::GrpcWebLayer;
 /// Rust bindings generated from the public Search Kernel gRPC protocol.
 #[allow(clippy::result_large_err)]
 pub mod rpc {
-    tonic::include_proto!("searchkernel.rpc.v1");
+    include!("generated/rpc.rs");
 }
 
 use rpc::{

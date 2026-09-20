@@ -16,6 +16,8 @@
 **/node_modules/*
 **/dist/**
 **/generated/**
+!searchkerneld/src/generated/
+!searchkerneld/src/generated/rpc.rs
 **/*.pyi
 __pycache__/
 .pytest_cache/

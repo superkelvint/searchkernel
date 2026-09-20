@@ -10,10 +10,10 @@ build = "build.rs"
 default = ["native"]
 native = []
 hardening = ["native"]
+native-contract-tests = ["native", "dep:cc"]
 
 [lib]
 name = "searchkernel_vespa_bindings"
 
 [build-dependencies]
-bindgen = "0.71"
-cc = "1"
+cc = { version = "1", optional = true }

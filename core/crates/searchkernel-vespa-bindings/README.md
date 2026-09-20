@@ -8,7 +8,7 @@ constants, and function declarations to `searchkernel-vespa-engine`.
 
 1. Read `src/abi.rs` for the expected ABI version.
 2. Read `src/bindings.rs` for the generated C declarations and symbols.
-3. Read `build.rs` to understand SDK discovery and bindgen drift checks.
+3. Read `build.rs` to understand SDK discovery and ABI checks.
 4. Read `core/native/vespa/searchkernel_vespa.h` for the native declaration.
 
 ## Key concepts
@@ -23,3 +23,8 @@ constants, and function declarations to `searchkernel-vespa-engine`.
   release-level shared-library ABI is checked with libabigail as documented in
   `../../native/ABI.md`.
 - SDK contents are generated/prebuilt artifacts; do not hand-edit them.
+- `src/bindings.rs` is checked in and used by normal builds. Run
+  `tools/check-native-bindings.sh` to compare it with an explicit bindgen
+  regeneration; this keeps libclang out of the normal build graph.
+- The C++ contract helpers are compiled only by
+  `tools/test-native-bindings.sh` through the `native-contract-tests` feature.

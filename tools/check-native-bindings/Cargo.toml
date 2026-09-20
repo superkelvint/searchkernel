@@ -1,0 +1,10 @@
+[package]
+name = "searchkernel-native-bindings-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+bindgen = "=0.71.1"

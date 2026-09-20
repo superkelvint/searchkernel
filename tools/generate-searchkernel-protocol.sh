@@ -8,7 +8,12 @@ if [[ -n "${FLATC_PATH:-}" ]]; then
 elif command -v flatc >/dev/null 2>&1; then
     flatc_bin=flatc
 else
-    flatc_bin=$(find "$repo_root/target/debug/build" -path '*/flatbuffers-build-*/out/bin/flatc' -type f -print -quit)
+    flatc_bin=/usr/local/bin/flatc
+fi
+
+if [[ ! -x "$flatc_bin" ]]; then
+    echo "error: FlatBuffers 25.12.19 flatc is required" >&2
+    exit 1
 fi
 
 actual_version=$($flatc_bin --version)

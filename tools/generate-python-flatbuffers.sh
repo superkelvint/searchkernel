@@ -9,7 +9,7 @@ if [[ -n "${FLATC_PATH:-}" ]]; then
 elif command -v flatc >/dev/null 2>&1; then
     flatc_bin=$(command -v flatc)
 else
-    flatc_bin=$(find "$repo_root/target/debug/build" -path '*/flatbuffers-build-*/out/bin/flatc' -type f -print -quit)
+    flatc_bin=/usr/local/bin/flatc
 fi
 
 if [[ -z "${flatc_bin:-}" || ! -x "$flatc_bin" ]]; then

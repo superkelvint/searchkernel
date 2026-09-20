@@ -7,7 +7,7 @@ if [[ -n "${FLATC_PATH:-}" ]]; then
 elif command -v flatc >/dev/null 2>&1; then
     flatc_bin=$(command -v flatc)
 else
-    flatc_bin=$(find "$root/target/debug/build" -path '*/flatbuffers-build-*/out/bin/flatc' -type f -print -quit 2>/dev/null || true)
+    flatc_bin=/usr/local/bin/flatc
 fi
 [[ -x "${flatc_bin:-}" ]] || { echo "FlatBuffers 25.12.19 flatc is required" >&2; exit 1; }
 [[ "$($flatc_bin --version)" == "flatc version 25.12.19" ]] || { echo "wrong flatc version" >&2; exit 1; }

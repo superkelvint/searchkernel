@@ -15,4 +15,5 @@ unicode-normalization = "0.1.25"
 [features]
 default = ["native"]
 native = ["searchkernel-vespa-bindings/native"]
+native-contract-tests = ["native", "searchkernel-vespa-bindings/native-contract-tests"]
 hardening = ["native", "searchkernel-vespa-bindings/hardening"]

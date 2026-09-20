@@ -6,7 +6,7 @@ fn main() {
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
         // The workspace's no-default-features lane still builds this member,
         // but must not require the optional Vespa SDK just to compile the
-        // generated ABI declarations.
+        // checked-in ABI declarations.
         return;
     }
 
@@ -51,6 +51,7 @@ fn main() {
             );
         }
     }
+
     let rust_abi =
         fs::read_to_string(manifest_dir.join("src/abi.rs")).expect("read Rust native ABI version");
     let expected_abi = rust_abi
@@ -72,31 +73,6 @@ fn main() {
         );
     }
 
-    let bindings_check = env::var_os("SK_NATIVE_BINDINGS_CHECK").is_some();
-    if let Some(output) = env::var_os("SK_NATIVE_BINDINGS_OUTPUT").or_else(|| {
-        bindings_check.then(|| {
-            PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"))
-                .join("native_bindings.rs")
-                .into_os_string()
-        })
-    }) {
-        let bindings = generate_bindings(&header);
-        bindings
-            .write_to_file(&output)
-            .expect("write native ABI bindings");
-        if bindings_check {
-            let checked_in = fs::read(manifest_dir.join("src/bindings.rs"))
-                .expect("read checked-in native ABI bindings");
-            let generated = fs::read(&output).expect("read generated native ABI bindings");
-            if generated != checked_in {
-                panic!(
-                    "checked-in native ABI bindings are stale; regenerate them from {}",
-                    header.display()
-                );
-            }
-        }
-    }
-
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
     // Make binaries using the raw bindings crate runnable without requiring
@@ -107,8 +83,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SDK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ABI_HEADER");
     println!("cargo:rerun-if-changed={}", source_header.display());
-    println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_OUTPUT");
-    println!("cargo:rerun-if-env-changed=SK_NATIVE_BINDINGS_CHECK");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_ENABLE_FAILPOINTS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_LINK_FLAGS");
@@ -116,59 +90,66 @@ fn main() {
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     println!("cargo:rerun-if-changed={}", header.display());
-    println!("cargo:rerun-if-changed=../../native/vespa/searchkernel_vespa_test.h");
-    println!("cargo:rerun-if-changed=../../native/vespa/searchkernel_vespa_test.map");
-    println!("cargo:rerun-if-changed=schema_identity_fd_test.cc");
-    println!("cargo:rerun-if-changed=transport_lifecycle_test.cc");
-    println!("cargo:rerun-if-changed=query_lifetime_test.cc");
-    println!("cargo:rerun-if-changed=abi_noexcept_check.cc");
-    println!("cargo:rerun-if-changed=native_header_namespace_check.cc");
+
+    #[cfg(feature = "native-contract-tests")]
+    compile_contract_tests(&manifest_dir, &sdk);
+}
+
+#[cfg(feature = "native-contract-tests")]
+fn compile_contract_tests(manifest_dir: &Path, sdk: &Path) {
+    let verifier_dir = manifest_dir.join("../../../tools/native-contract-tests");
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir.join("schema_identity_fd_test.cc").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir.join("transport_lifecycle_test.cc").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir.join("query_lifetime_test.cc").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir.join("abi_noexcept_check.cc").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verifier_dir
+            .join("native_header_namespace_check.cc")
+            .display()
+    );
     println!("cargo:rerun-if-changed=../../native/vespa/file_descriptor.h");
     println!("cargo:rerun-if-changed=../../native/vespa/transport_owner.h");
     cc::Build::new()
         .cpp(true)
-        .file(manifest_dir.join("schema_identity_fd_test.cc"))
+        .file(verifier_dir.join("schema_identity_fd_test.cc"))
         .include(manifest_dir.join("../../native/vespa"))
         .warnings(true)
         .compile("searchkernel_schema_identity_fd_test");
     cc::Build::new()
         .cpp(true)
-        .file(manifest_dir.join("transport_lifecycle_test.cc"))
+        .file(verifier_dir.join("transport_lifecycle_test.cc"))
         .include(manifest_dir.join("../../native/vespa"))
         .warnings(true)
         .compile("searchkernel_transport_lifecycle_test");
     cc::Build::new()
         .cpp(true)
-        .file(manifest_dir.join("query_lifetime_test.cc"))
+        .file(verifier_dir.join("query_lifetime_test.cc"))
         .include(sdk.join("include"))
         .warnings(true)
         .compile("searchkernel_query_lifetime_test");
     cc::Build::new()
         .cpp(true)
-        .file(manifest_dir.join("abi_noexcept_check.cc"))
+        .file(verifier_dir.join("abi_noexcept_check.cc"))
         .include(sdk.join("include"))
         .warnings(true)
         .compile("searchkernel_vespa_abi_noexcept");
     cc::Build::new()
         .cpp(true)
-        .file(manifest_dir.join("native_header_namespace_check.cc"))
+        .file(verifier_dir.join("native_header_namespace_check.cc"))
         .include(sdk.join("include"))
         .warnings(true)
         .compile("searchkernel_vespa_header_namespace");
-}
-
-fn generate_bindings(header: &Path) -> bindgen::Bindings {
-    bindgen::Builder::default()
-        .header(header.to_string_lossy())
-        .allowlist_type(
-            "sk_(engine|document|document_update|search_request|search_result|text_document|text_update|text_request|text_result|query|nearest_neighbor_options|local_search_request|local_search_result|attribute_document|attribute_update|local_grouping_request|local_grouping_result|generic_search_request|generic_search_result|generic_grouping_request|generic_grouping_result|feature_value|struct_array|grouping_plan|grouping_level|grouping_expression|grouping_aggregation|grouping_filter|grouping_result_value|grouping_tree_output|grouping_tree_result|grouping_tree_node)",
-        )
-        .allowlist_function("sk_.*")
-        .allowlist_var(
-            "SK_(NATIVE_ABI_VERSION|ERROR_MESSAGE_CAPACITY|NATIVE_STATUS_.*|ARITHMETIC_(ADD|DIV|MUL|SUB)|FEATURE_VALUE_(KIND_INVALID|DOUBLE|DATA)|DEGRADATION_(MATCH_PHASE|TIMEOUT|ANN_TIMEOUT)|GROUPING_(BINARY_(ADD|SUBTRACT|MULTIPLY|DIVIDE|MODULO)|RESULT_VALUE_(STRING|INTEGER|FLOAT|BOOLEAN|QUANTILES|HIT_LIST)|TREE_OUTPUT_(VALUE|HIT_LIST))|TEXT_QUERY_(TERM|PHRASE)|QUERY_(NODE_(AND|OR|NOT|TRUE|NEAR|ONEAR|EQUIV|WEAK_AND|RANK)|TEXT_(TERM|PHRASE)|BOUND_(UNBOUNDED|INCLUDED|EXCLUDED)|FIELD_(TEXT|INTEGER|STRING|FLOAT|BOOLEAN|ATTRIBUTE|TENSOR|ARRAY(_STRING)?|POSITION|PREDICATE))|VALUE_(STRING|INTEGER|FLOAT|BOOLEAN|TENSOR|STRING_ARRAY|POSITION|PREDICATE|STRUCT_ARRAY)|SORT_(ASCENDING|DESCENDING|MISSING_DEFAULT|MISSING_FIRST|MISSING_LAST)|SUMMARY_(NONE|DEFAULT|FIELDS)|AGGREGATION_(SUM|MIN|MAX|AVERAGE|STDDEV|XOR|QUANTILES|SUMMARY)|GROUP_ORDER_(NONE|COUNT_ASC|COUNT_DESC|VALUE_ASC|VALUE_DESC))",
-        )
-        .layout_tests(true)
-        .generate_comments(false)
-        .generate()
-        .expect("generate native ABI bindings")
 }

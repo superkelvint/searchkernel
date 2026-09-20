@@ -46,6 +46,7 @@ check_all() {
     check_fast
     bash "$ROOT/tools/check-vespa-bindings.sh"
     bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/check-searchkernel-rpc.sh"
     bash "$ROOT/tools/check-python-grpc.sh"
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo test --workspace --all-targets --all-features
@@ -55,6 +56,7 @@ check_all() {
 regen_protocol() {
     bash "$ROOT/tools/generate-searchkernel-protocol.sh"
     bash "$ROOT/tools/generate-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/generate-searchkernel-rpc.sh"
     bash "$ROOT/tools/generate-python-flatbuffers.sh"
     bash "$ROOT/tools/generate-python-grpc.sh"
 }
@@ -133,8 +135,7 @@ find_flatc() {
     elif command -v flatc >/dev/null 2>&1; then
         command -v flatc
     else
-        find "$ROOT/target" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
-            -perm -111 -print -quit 2>/dev/null || true
+        printf '%s\n' /usr/local/bin/flatc
     fi
 }
 
@@ -154,11 +155,7 @@ doctor_flatbuffers_cpp() {
     flatc=${DOCTOR_FLATC:-$(find_flatc)}
     [[ -x "${flatc:-}" ]] || return 1
 
-    if [[ -n "${FLATBUFFERS_CPP_ROOT:-}" ]]; then
-        cpp_root=$FLATBUFFERS_CPP_ROOT
-    else
-        cpp_root=$(cd -- "$(dirname -- "$flatc")/.." && pwd)
-    fi
+    cpp_root=${FLATBUFFERS_CPP_ROOT:-/usr/local}
     header="$cpp_root/include/flatbuffers/base.h"
     [[ -f "$header" ]] || return 1
     major=$(sed -n 's/^#define FLATBUFFERS_VERSION_MAJOR //p' "$header")
@@ -177,6 +174,7 @@ doctor_generated_protocol() {
     [[ -n "$(find "$ROOT/clients/python/searchkernel/_wire_generated" -name '*.py' -type f -print -quit 2>/dev/null)" ]]
     FLATC_PATH="${DOCTOR_FLATC:-$(find_flatc)}" \
         bash "$ROOT/tools/check-flatbuffers-bfbs.sh"
+    bash "$ROOT/tools/check-searchkernel-rpc.sh"
 }
 
 doctor_native_sdk() {

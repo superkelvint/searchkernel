@@ -34,6 +34,7 @@ fn compile_config(label: &str, schema: &Schema) -> (PathBuf, PathBuf) {
     (config, data)
 }
 
+#[cfg(feature = "native-contract-tests")]
 unsafe extern "C" {
     fn searchkernel_query_outlives_engine_regression(
         data_dir: *const std::os::raw::c_char,
@@ -427,6 +428,7 @@ fn yql_search_uses_the_same_query_as_typed_search() {
     let _ = fs::remove_dir_all(data);
 }
 
+#[cfg(feature = "native-contract-tests")]
 #[test]
 fn native_query_can_outlive_engine() {
     let (config_path, data_path) = compile_config(
@@ -445,6 +447,7 @@ fn native_query_can_outlive_engine() {
     let _ = fs::remove_dir_all(data_path);
 }
 
+#[cfg(feature = "native-contract-tests")]
 #[test]
 fn native_scalar_query_features_ignore_the_process_global_locale() {
     let (config_path, data_path) = compile_config(

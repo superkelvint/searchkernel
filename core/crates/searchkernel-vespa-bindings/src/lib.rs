@@ -9,13 +9,13 @@ include!("bindings.rs");
 #[cfg(feature = "hardening")]
 pub mod hardening;
 
-#[cfg(all(test, feature = "native"))]
+#[cfg(all(test, feature = "native-contract-tests"))]
 unsafe extern "C" {
     fn searchkernel_schema_identity_fd_reuse_regression() -> i32;
     fn searchkernel_transport_destructor_regression() -> i32;
 }
 
-#[cfg(all(test, feature = "native"))]
+#[cfg(all(test, feature = "native-contract-tests"))]
 mod native_regression_tests {
     use super::{
         searchkernel_schema_identity_fd_reuse_regression,
