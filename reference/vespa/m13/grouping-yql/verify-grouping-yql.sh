@@ -18,7 +18,11 @@ python3 "$DIR/validate.py"
 # FlatBuffer compiler. It covers the currently executable root/grouping and YQL
 # cases. Summary-hit grouping is an executable coverage case. Continuation
 # round-trips remain intentionally deferred until their translation path exists.
+PYTHON_LOG="$(mktemp)"
+trap 'rm -f "$PYTHON_LOG"' EXIT
 PYTHONPATH="$ROOT/clients/python${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 "$ROOT/clients/python/examples/try_searchkernel_client_api_e2e.py"
+  python3 "$ROOT/clients/python/examples/try_searchkernel_client_api_e2e.py" | tee "$PYTHON_LOG"
+rg -F 'textual filter parser, clause-local bindings, grammar, and syntax errors PASS' "$PYTHON_LOG" >/dev/null ||
+  fail_verification "canonical Python E2E did not report textual filter parser coverage"
 
 echo "M13 grouping/YQL acceptance coverage passed for currently executable cases"

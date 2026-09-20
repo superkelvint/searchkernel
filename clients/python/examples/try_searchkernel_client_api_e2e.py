@@ -942,7 +942,7 @@ with Index.create(
     assert normal.coverage.full is True
 
     degraded = (
-        index.search("")
+        index.browse()
         .filter("inventory = :value", {"value": 18})
         .sort("inventory", "asc")
         .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
@@ -1058,6 +1058,25 @@ with Index.create(
         assert "unused_parameter" in detail_codes
     else:
         raise AssertionError("unused filter binding should fail")
+
+    heading("24A. TEXTUAL FILTER SYNTAX ERROR")
+
+    try:
+        (
+            index.search("shoes")
+            .filter("price <= :max AND (")
+            .execute()
+        )
+    except SearchKernelError as error:
+        syntax_error = next(
+            (detail for detail in error.details if detail.code == "syntax_error"),
+            None,
+        )
+        assert syntax_error is not None
+        assert syntax_error.path == "filters.textual[0].source"
+    else:
+        raise AssertionError("malformed textual filter should fail in the parser")
+    print("textual filter parser, clause-local bindings, grammar, and syntax errors PASS")
 
     # -----------------------------------------------------------------------
     # PATCH builder: simple partial update + explicit unset.
@@ -1344,6 +1363,7 @@ Successfully demonstrated through the public Python facade:
   ✓ repeated filters -> AND
   ✓ placeholder reuse across independent filter clauses
   ✓ OR / NOT / IN / parentheses
+  ✓ malformed textual filter -> syntax_error
   ✓ sorting
   ✓ fields projection
   ✓ offset/limit

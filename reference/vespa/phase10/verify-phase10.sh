@@ -43,6 +43,7 @@ cargo run --quiet -p searchkernel --features native \
 for marker in \
   'CREATE INDEX' \
   'typed term/phrase/AND/OR/NOT/equality/inclusive-exclusive range/IN/weakAnd/WAND/weighted-set/dot-product/fuzzy/literal prefix/substring/suffix PASS' \
+  'textual filter parser, clause-local bindings, grammar, and syntax errors PASS' \
   'nested grouping keys, count, and average values PASS' \
   'valid degraded result retains hits, coverage, and degradation reason PASS' \
   'ranking configuration, grouping source data, tensor persistence, and ANN after reopen PASS'; do

@@ -2,6 +2,23 @@ use crate::document::{pending, PendingValue};
 use crate::error::{Error, Result as KernelResult};
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
+
+/// Typed values carried by one textual filter clause.
+///
+/// The values are kept separate from the source text and converted into the
+/// canonical IR value domain when the request enters the resolver.
+pub type FilterBindings = BTreeMap<String, serde_json::Value>;
+
+/// Caller intent for one structured or textual filter clause.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SearchFilterInput {
+    Structured(Filter),
+    Textual {
+        source: String,
+        bindings: FilterBindings,
+    },
+}
 
 #[derive(Clone, Debug, PartialEq)]
 /// A filter expression evaluated by the backend.
@@ -157,6 +174,42 @@ impl Filter {
     #[allow(clippy::should_implement_trait)]
     pub fn not(filter: Filter) -> Self {
         Self(FilterNode::Not(Box::new(filter)))
+    }
+}
+
+impl From<Filter> for SearchFilterInput {
+    fn from(filter: Filter) -> Self {
+        Self::Structured(filter)
+    }
+}
+
+impl From<&str> for SearchFilterInput {
+    fn from(source: &str) -> Self {
+        Self::Textual {
+            source: source.to_owned(),
+            bindings: FilterBindings::new(),
+        }
+    }
+}
+
+impl From<String> for SearchFilterInput {
+    fn from(source: String) -> Self {
+        Self::Textual {
+            source,
+            bindings: FilterBindings::new(),
+        }
+    }
+}
+
+impl<S> From<(S, FilterBindings)> for SearchFilterInput
+where
+    S: Into<String>,
+{
+    fn from((source, bindings): (S, FilterBindings)) -> Self {
+        Self::Textual {
+            source: source.into(),
+            bindings,
+        }
     }
 }
 

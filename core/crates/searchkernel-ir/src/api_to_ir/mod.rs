@@ -28,7 +28,7 @@ pub use schema::{
     RustIndexDefinitionInput, RustRankProfileInput, RustSearchFieldInput,
 };
 pub(crate) use search::search_fields_to_ir_at;
-pub use value::request_value_from_json;
+pub use value::{filter_binding_value_from_json, request_value_from_json};
 pub(crate) use value::{request_values_to_map, scalar_to_ir, value_from_api};
 
 use crate::error::{PortableError, Result};

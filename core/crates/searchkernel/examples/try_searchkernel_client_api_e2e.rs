@@ -24,6 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "native")]
 mod showcase {
+    use searchkernel::params;
     use searchkernel::{
         field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
         GroupingAggregation, GroupingPlan, Hit, Index, IndexDefinition, Patch, Query, QueryBound,
@@ -497,6 +498,56 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-3", "shoe-1", "shoe-5", "shoe-2"]);
 
+        heading("10A. TEXTUAL FILTER PARSER AND CLAUSE-LOCAL BINDINGS");
+
+        let scalar = index
+            .search("shoes")
+            .filter(("price <= :max", params! { "max" => 100.0_f64 }))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_ids(&scalar, ["shoe-3", "shoe-1"]);
+
+        let repeated = index
+            .search("shoes")
+            .filter(("price <= :value", params! { "value" => 120.0_f64 }))
+            .filter(("rating >= :value", params! { "value" => 4_i64 }))
+            .filter("in_stock = true")
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_ids(&repeated, ["shoe-1", "shoe-5"]);
+
+        let textual = index
+            .search("shoes")
+            .filter((
+                "(brand IN (:brands) OR rating = :rating) AND NOT (in_stock = false)",
+                params! {
+                    "brands" => vec!["Acme", "TrailCo"],
+                    "rating" => 3_i64,
+                },
+            ))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_ids(&textual, ["shoe-3", "shoe-1", "shoe-5", "shoe-2"]);
+
+        let structured_equivalent = index
+            .search("shoes")
+            .filter(Filter::all([
+                Filter::any([
+                    field("brand").eq("Acme"),
+                    field("brand").eq("TrailCo"),
+                    field("rating").eq(3_i64),
+                ]),
+                Filter::not(field("in_stock").eq(false)),
+            ]))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_eq!(ids(&textual), ids(&structured_equivalent));
+        println!("textual filter parser, clause-local bindings, grammar, and textual/structured equivalence PASS");
+
         heading("11. SORT + FIELD PROJECTION + HIT ACCESS");
 
         let results = index
@@ -800,6 +851,25 @@ mod showcase {
             Some("filters.structured[0].field")
         );
 
+        heading("21A. TEXTUAL FILTER SYNTAX ERROR");
+
+        let error = index
+            .search("shoes")
+            .filter("price <= :max AND (")
+            .execute::<Value>()
+            .expect_err("malformed textual filter should fail in the parser");
+        assert_eq!(error.code(), ErrorCode::InvalidArgument);
+        let syntax_error = error
+            .details()
+            .iter()
+            .find(|detail| detail.code == "syntax_error")
+            .expect("malformed textual filter should report syntax_error");
+        assert_eq!(
+            syntax_error.path.as_deref(),
+            Some("filters.textual[0].source")
+        );
+        println!("textual filter parser, clause-local bindings, grammar, and syntax errors PASS");
+
         heading("22. PATCH SET / UNSET");
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
@@ -1066,6 +1136,8 @@ Successfully demonstrated through the public Rust facade:
   ✓ typed term, phrase, AND, OR, NOT, equality, range, IN, and weakAnd queries
   ✓ typed WAND, weighted-set, dot-product, fuzzy, prefix, substring, and suffix queries
   ✓ typed filters, exists, repeated filters -> AND, and explicit OR / NOT trees
+  ✓ textual filter bindings, clause-local namespaces, full grammar, and syntax errors
+  ✓ textual and structured equivalent filters return identical hit IDs
   ✓ sorting
   ✓ missing-first / missing-last sorting
   ✓ projection

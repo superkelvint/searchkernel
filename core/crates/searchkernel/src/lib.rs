@@ -17,7 +17,7 @@ mod tensor;
 pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
-pub use filter::{field, FieldRef, Filter, Range};
+pub use filter::{field, FieldRef, Filter, FilterBindings, Range, SearchFilterInput};
 pub use grouping::{GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan};
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
@@ -36,8 +36,25 @@ pub use search::{
 };
 pub use tensor::Tensor;
 
+/// Build clause-local typed values for a textual filter.
+#[macro_export]
+macro_rules! params {
+    ($($name:expr => $value:expr),* $(,)?) => {{
+        let mut bindings = $crate::FilterBindings::new();
+        $(
+            bindings.insert(
+                $name.into(),
+                $crate::__private::serde_json::to_value(&$value)
+                    .expect("filter parameter must be JSON serializable"),
+            );
+        )*
+        bindings
+    }};
+}
+
 /// Internal constructor namespace used by backend-injected tests.
 #[doc(hidden)]
 pub mod __private {
     pub use crate::index::Index;
+    pub use serde_json;
 }

@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::filter::Filter;
+use crate::filter::{Filter, SearchFilterInput};
 use crate::grouping::GroupingPlan;
 use crate::index::Index;
 use crate::query::Query;
@@ -228,6 +228,7 @@ pub struct SearchBuilder {
     pub(crate) query_source: QuerySource,
     pub(crate) search_fields: Option<Vec<crate::schema::SearchField>>,
     pub(crate) filters: Vec<Filter>,
+    pub(crate) textual_filters: Vec<(String, crate::filter::FilterBindings)>,
     pub(crate) sorts: Vec<Sort>,
     pub(crate) facets: Vec<Facet>,
     pub(crate) ranking: Option<Ranking>,
@@ -264,6 +265,7 @@ impl SearchBuilder {
             query_source,
             search_fields: None,
             filters: Vec::new(),
+            textual_filters: Vec::new(),
             sorts: Vec::new(),
             facets: Vec::new(),
             ranking: None,
@@ -289,9 +291,27 @@ impl SearchBuilder {
         self
     }
 
-    /// Add one filter to the search request.
-    pub fn filter(mut self, filter: Filter) -> Self {
-        self.filters.push(filter);
+    /// Add one structured or textual filter to the search request.
+    ///
+    /// Textual clauses keep their typed bindings separate from the source and
+    /// are parsed later by the canonical IR resolver. For example:
+    ///
+    /// ```no_run
+    /// # use searchkernel::{params, Index};
+    /// # let index: Index = todo!();
+    /// let request = index.search("").filter((
+    ///     "price <= :max",
+    ///     params! { "max" => 120.0 },
+    /// ));
+    /// # let _ = request;
+    /// ```
+    pub fn filter(mut self, filter: impl Into<SearchFilterInput>) -> Self {
+        match filter.into() {
+            SearchFilterInput::Structured(filter) => self.filters.push(filter),
+            SearchFilterInput::Textual { source, bindings } => {
+                self.textual_filters.push((source, bindings));
+            }
+        }
         self
     }
 
@@ -424,6 +444,27 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         .iter()
         .map(crate::filter::to_resolver_input)
         .collect::<Result<Vec<_>>>()?;
+    let textual_filters = request
+        .textual_filters
+        .iter()
+        .map(|(source, bindings)| {
+            let bindings = bindings
+                .iter()
+                .map(|(name, value)| {
+                    searchkernel_ir::filter_binding_value_from_json(
+                        value,
+                        format!("filter.bindings.{name}"),
+                    )
+                    .map(|value| (name.clone(), value))
+                    .map_err(crate::error::Error::from_ir)
+                })
+                .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+            Ok(searchkernel_ir::TextualFilterInput {
+                source: source.clone(),
+                bindings,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let sorts = request
         .sorts
         .iter()
@@ -503,7 +544,7 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         query,
         search_fields,
         filters,
-        textual_filters: Vec::new(),
+        textual_filters,
         sorts,
         grouping,
         ranking,
@@ -537,6 +578,7 @@ impl std::fmt::Debug for SearchBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::field;
     use crate::index::IndexRuntime;
     use crate::schema::{Field, IndexDefinition};
     use crate::ErrorCode;
@@ -701,5 +743,85 @@ mod tests {
             expression.annotations.get("exploreAdditionalHits"),
             Some(&searchkernel_ir::RequestValueIr::UInt64(50))
         );
+    }
+
+    #[test]
+    fn textual_filter_without_bindings_is_routed_to_textual_input() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::bool("in_stock").filterable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let request = runtime.index().search("").filter("in_stock = true");
+        let input = to_resolver_input(&request).expect("textual filter should become input");
+
+        assert!(input.filters.is_empty());
+        assert_eq!(input.textual_filters.len(), 1);
+        assert_eq!(input.textual_filters[0].source, "in_stock = true");
+        assert!(input.textual_filters[0].bindings.is_empty());
+    }
+
+    #[test]
+    fn textual_filter_bindings_preserve_scalar_and_list_types() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new()
+                .field(Field::float64("price").filterable(true))
+                .field(Field::keyword("brand").filterable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let request = runtime
+            .index()
+            .browse()
+            .filter(("price <= :max", crate::params! { "max" => 120.0_f64 }))
+            .filter((
+                "brand IN (:brands)",
+                crate::params! { "brands" => vec!["Acme", "TrailCo"] },
+            ));
+        let input = to_resolver_input(&request).expect("textual bindings should become input");
+
+        assert_eq!(input.filters.len(), 0);
+        assert_eq!(input.textual_filters.len(), 2);
+        assert_eq!(
+            input.textual_filters[0].bindings.get("max"),
+            Some(&searchkernel_ir::Value::Float64(120.0))
+        );
+        assert_eq!(
+            input.textual_filters[1].bindings.get("brands"),
+            Some(&searchkernel_ir::Value::List(vec![
+                searchkernel_ir::Value::String("Acme".to_owned()),
+                searchkernel_ir::Value::String("TrailCo".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn structured_and_textual_filters_keep_separate_input_lanes_and_resolve_together() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new()
+                .field(Field::float64("price").filterable(true))
+                .field(Field::bool("in_stock").filterable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let request = runtime
+            .index()
+            .browse()
+            .filter(field("price").lte(120.0_f64))
+            .filter((
+                "in_stock = :available",
+                crate::params! { "available" => true },
+            ));
+        let input = to_resolver_input(&request).expect("mixed filter intent should route");
+
+        assert_eq!(input.filters.len(), 1);
+        assert_eq!(input.textual_filters.len(), 1);
+        let inspected = request
+            .inspect()
+            .expect("structured and textual filters should resolve with AND semantics");
+        assert!(inspected.filter.is_some());
     }
 }

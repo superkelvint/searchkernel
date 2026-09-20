@@ -65,6 +65,45 @@ pub fn request_value_from_json(value: &serde_json::Value, path: String) -> Resul
     }
 }
 
+/// Convert a Rust-facade textual-filter binding into the value domain consumed
+/// by the canonical filter binder. This is representation conversion only;
+/// field lookup and filter-language validation remain in `filter_expression`.
+#[doc(hidden)]
+pub fn filter_binding_value_from_json(value: &serde_json::Value, path: String) -> Result<Value> {
+    match value {
+        serde_json::Value::Null => Ok(Value::Null),
+        serde_json::Value::Bool(value) => Ok(Value::Bool(*value)),
+        serde_json::Value::Number(value) if value.as_i64().is_some() => {
+            Ok(Value::Int64(value.as_i64().unwrap_or_default()))
+        }
+        serde_json::Value::Number(value) if value.as_u64().is_some() => {
+            Ok(Value::UInt64(value.as_u64().unwrap_or_default()))
+        }
+        serde_json::Value::Number(value) => value
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .map(Value::Float64)
+            .ok_or_else(|| invalid("non_finite_number", Some(path), "number must be finite")),
+        serde_json::Value::String(value) => Ok(Value::String(value.clone())),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                filter_binding_value_from_json(value, format!("{path}.values[{index}]"))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Value::List),
+        serde_json::Value::Object(values) => values
+            .iter()
+            .map(|(name, value)| {
+                filter_binding_value_from_json(value, format!("{path}.fields.{name}"))
+                    .map(|value| (name.clone(), value))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
+            .map(Value::Object),
+    }
+}
+
 impl IndexContext {
     pub(crate) fn value_to_ir_at(
         &self,

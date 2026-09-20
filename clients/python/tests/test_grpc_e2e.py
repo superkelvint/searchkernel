@@ -26,6 +26,8 @@ from SearchKernel.V2.FieldDefinition import FieldDefinitionT  # noqa: E402
 from SearchKernel.V2.ArrayDataType import ArrayDataTypeT  # noqa: E402
 from SearchKernel.V2.StructDataType import StructDataTypeT  # noqa: E402
 from SearchKernel.V2.StructFieldDefinition import StructFieldDefinitionT  # noqa: E402
+from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
+from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.MatchingConfig import MatchingConfigT  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
@@ -48,6 +50,7 @@ from SearchKernel.V2.PositionDataType import PositionDataTypeT  # noqa: E402
 from SearchKernel.V2.PresentationRequest import PresentationRequestT  # noqa: E402
 from SearchKernel.V2.FieldProjection import FieldProjectionT  # noqa: E402
 from SearchKernel.V2.HighlightRequest import HighlightRequestT  # noqa: E402
+from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -166,6 +169,24 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         result = index.search(request)
         self.assertEqual(result.totalHits.value, 2)
         self.assertEqual({child.node.id for child in [result.root.node.children[0], result.root.node.children[1]]}, {"doc:1", "doc:2"})
+
+        filtered = index.search(SearchRequestT(
+            query=QuerySourceT(
+                sourceType=QuerySourceKind.SearchKernelTextQuery,
+                source=SearchKernelTextQueryT(text="hello"),
+            ),
+            filters=FilterRequestT(
+                textual=[FilterClauseT(
+                    source="price <= :max",
+                    bindings=[ValueEntryT(key="max", value=value(2))],
+                )],
+            ),
+            limit=OptionalUInt32T(value=10),
+        ))
+        self.assertEqual(
+            {child.node.id for child in filtered.root.node.children},
+            {"doc:2"},
+        )
 
         described = index.describe().index
         self.assertEqual(described.name, self.definition.name)
