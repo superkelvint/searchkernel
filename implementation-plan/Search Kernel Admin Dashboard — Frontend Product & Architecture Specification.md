@@ -63,21 +63,19 @@ The canonical application path remains:
 ```text
 Dashboard
     ↓
-generated TypeScript Search Kernel client
+clients/typescript ergonomic facade
     ↓
-HTTP/JSON transport
+flatc-generated TypeScript models
+    ↓
+canonical RequestEnvelope bytes
+    ↓
+generated gRPC-Web client
     ↓
 searchkerneld
     ↓
-    schema-aware FlatBuffers JSON boundary
-    ↓
-canonical FlatBuffers
-    ↓
-shared dispatcher
+canonical dispatcher
     ↓
 searchkernel-ir
-    ↓
-Search Kernel IR
     ↓
 Vespa backend
 ```
