@@ -80,16 +80,15 @@ REPORT="$TARGET/gcov.txt"
 ) >"$REPORT"
 
 read -r LINE_RATE BRANCH_RATE FUNCTION_RATE < <(
-    python3 - "$REPORT" <<'PY'
+    python3 - "$REPORT" "$ROOT/core/native/vespa" <<'PY'
+import pathlib
 import re
 import sys
 
 report = open(sys.argv[1], encoding="utf-8").read()
-sources = {
-    "abi.cc", "engine.cc", "document.cc", "update.cc", "query.cc",
-    "search.cc", "grouping.cc", "tensor.cc", "errors.cc", "hardening.cc",
-}
+sources = {path.name for path in pathlib.Path(sys.argv[2]).glob("*.cc")}
 sections = re.split(r"(?m)^File ['\"]", report)[1:]
+reported_sources = set()
 line_rates = []
 branch_rates = []
 function_rates = []
@@ -97,6 +96,7 @@ for section in sections:
     name, _, body = section.partition("'\n")
     if name.rsplit("/", 1)[-1] not in sources:
         continue
+    reported_sources.add(name.rsplit("/", 1)[-1])
     lines = re.search(r"Lines executed:([0-9.]+)% of ([0-9]+)", body)
     branches = re.search(r"Branches executed:([0-9.]+)% of ([0-9]+)", body)
     functions = re.search(r"Functions executed:([0-9.]+)% of ([0-9]+)", body)
@@ -108,6 +108,12 @@ for section in sections:
         function_rates.append((float(functions.group(1)), int(functions.group(2))))
 if not line_rates:
     raise SystemExit("gcov did not report the split native adapter sources")
+missing = sorted(sources - reported_sources)
+if missing:
+    raise SystemExit(
+        "gcov did not report all native adapter translation units: "
+        + ", ".join(missing)
+    )
 def average(values):
     if not values:
         return "unknown"

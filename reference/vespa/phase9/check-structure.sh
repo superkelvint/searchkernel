@@ -43,12 +43,18 @@ if grep -Eiq 'fake|precomputed|hard.?coded.*(score|result)' \
   exit 1
 fi
 
-python3 - "$ROOT/core/native/vespa/abi.cc" <<'PY'
+python3 - "$ROOT/core/native/vespa" <<'PY'
 import pathlib
 import re
 import sys
 
-source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+source_root = pathlib.Path(sys.argv[1])
+unity = (source_root / "abi.cc").read_text(encoding="utf-8")
+for source_path in sorted(source_root.glob("*.cc")):
+    if source_path.name != "abi.cc" and f'#include "{source_path.name}"' not in unity:
+        raise SystemExit(f"native adapter source is not included by abi.cc: {source_path.name}")
+
+source = unity
 
 def body(name):
     match = re.search(r"\b" + re.escape(name) + r"\s*\([^)]*\)\s*(?:SK_NOEXCEPT\s*)?\{", source)
