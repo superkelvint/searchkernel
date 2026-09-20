@@ -362,9 +362,7 @@ impl IndexContext {
         };
 
         match &query.kind {
-            QueryExprKindIr::Term { .. }
-            | QueryExprKindIr::Fuzzy { .. }
-            | QueryExprKindIr::Text { .. } => {
+            QueryExprKindIr::Term { .. } | QueryExprKindIr::Text { .. } => {
                 let field = field_context.ok_or_else(|| {
                     invalid(
                         "missing_field_context",
@@ -373,6 +371,16 @@ impl IndexContext {
                     )
                 })?;
                 self.validate_searchable_query_field(field, path)
+            }
+            QueryExprKindIr::Fuzzy { .. } => {
+                let field = field_context.ok_or_else(|| {
+                    invalid(
+                        "missing_field_context",
+                        Some(path.to_owned()),
+                        "fuzzy query requires a containing field context",
+                    )
+                })?;
+                self.validate_fuzzy_query_field(field, path)
             }
             QueryExprKindIr::UserInput {
                 default_index: query_default_index,
@@ -388,11 +396,18 @@ impl IndexContext {
                 }
             }
             QueryExprKindIr::Contains { field, item } => {
-                let field = self.resolve_searchable_query_field(
-                    field,
-                    field_context,
-                    &child_path("contains.field"),
-                )?;
+                let field = match item.kind {
+                    QueryExprKindIr::Fuzzy { .. } => self.resolve_fuzzy_query_field(
+                        field,
+                        field_context,
+                        &child_path("contains.field"),
+                    )?,
+                    _ => self.resolve_searchable_query_field(
+                        field,
+                        field_context,
+                        &child_path("contains.field"),
+                    )?,
+                };
                 self.validate_typed_query(
                     item,
                     Some(&field),
@@ -755,6 +770,20 @@ impl IndexContext {
         Ok(())
     }
 
+    fn validate_fuzzy_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
+        let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
+        let keyword_attribute =
+            schema_field.kind() == FieldKind::Keyword && schema_field.capabilities().filterable();
+        if !schema_field.capabilities().searchable() && !keyword_attribute {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(path.to_owned()),
+                "fuzzy query requires a searchable text field or filterable keyword field",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_matches_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
         let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
         let attribute_string =
@@ -805,6 +834,40 @@ impl IndexContext {
             element_index: field.element_index,
         };
         self.validate_searchable_query_field(&qualified_ref, path)?;
+        Ok(qualified_ref)
+    }
+
+    fn resolve_fuzzy_query_field(
+        &self,
+        field: &QueryFieldRefIr,
+        field_context: Option<&QueryFieldRefIr>,
+        path: &str,
+    ) -> Result<QueryFieldRefIr> {
+        if self
+            .query_field(field.path.as_str(), format!("{path}.path"))
+            .is_ok()
+        {
+            self.validate_fuzzy_query_field(field, path)?;
+            return Ok(field.clone());
+        }
+        if field.path.as_str().contains('.') {
+            self.validate_fuzzy_query_field(field, path)?;
+            return Ok(field.clone());
+        }
+        let Some(context) = field_context else {
+            self.validate_fuzzy_query_field(field, path)?;
+            return Ok(field.clone());
+        };
+        let qualified = FieldName::parse_query_path(format!(
+            "{}.{}",
+            context.path.as_str(),
+            field.path.as_str()
+        ))?;
+        let qualified_ref = QueryFieldRefIr {
+            path: qualified,
+            element_index: field.element_index,
+        };
+        self.validate_fuzzy_query_field(&qualified_ref, path)?;
         Ok(qualified_ref)
     }
 
