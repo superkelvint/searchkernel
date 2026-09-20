@@ -100,13 +100,21 @@ approximated.
 
 ## Result
 
-### Stored-field projection and docsum-backed hit fields (`result.projection`)
+### Document-summary field projection (`result.docsum_field_projection`)
 
-- Tensor fields are readable through GET but are rejected from native search-summary projection because they are not native summary fields in the current integration. Named summary-class selection is tracked separately.
+- Stored scalar fields are projected through the current native summary seam. Named summary-class selection, rich docsum value decoding, and summary-feature readback are tracked separately.
 
-### Named summary-class selection (`result.named_summary`)
+### Named summary-class selection (`result.named_summary_class`)
 
 - Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection.
+
+### Rich document-summary values (scalar subset) (`result.rich_docsum_values`)
+
+- Only scalar string, number, and boolean docsum values are executable through the current native result seam. Arrays, structs/maps, tensors, and other rich Vespa docsum values are not decoded faithfully.
+
+### Summary-feature readback (`result.summary_features`)
+
+- The portable Hit schema and IR represent summary features, but the current adapter leaves summary_features empty instead of decoding native summary-feature values.
 
 ### Highlighting (`result.highlighting`)
 
@@ -122,7 +130,7 @@ approximated.
 
 ### Match-feature readback (`result.match_features`)
 
-- Scalar match features are decoded. Tensor-backed feature output remains opaque bytes. The adapter currently leaves summary_features and rank_features empty even though the portable Hit schema represents them.
+- Scalar match features are decoded. Tensor-backed feature output remains opaque bytes; summary-feature readback is tracked separately. Rank features remain unpopulated.
 
 ### Recursive grouping result trees (`result.grouping_tree`)
 
@@ -148,7 +156,7 @@ approximated.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
-- The Python facade can construct agg.summary(), and finite max propagation reaches the grouping plan, but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
+- The native grouping skeleton preserves summary() and finite max propagation, and the Python facade can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
 
 ### Grouping continuations (`grouping.continuations`)
 
@@ -195,6 +203,10 @@ approximated.
 - Sparse and mixed tensors remain unsupported in the current high-level document and query-input paths.
 
 ## Schema
+
+### Document-summary schema definitions (`schema.document_summaries`)
+
+- Document-summary definitions and fields survive FlatBuffers-to-IR semantic conversion, but native schema generation does not install named document summaries for execution.
 
 ### Array-of-struct document fields (`schema.array_struct_fields`)
 

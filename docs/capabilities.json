@@ -360,8 +360,8 @@
       ]
     },
     {
-      "id": "result.projection",
-      "title": "Stored-field projection and docsum-backed hit fields",
+      "id": "result.docsum_field_projection",
+      "title": "Document-summary field projection",
       "area": "result",
       "represented": true,
       "semantic": true,
@@ -377,11 +377,11 @@
         "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Tensor fields are readable through GET but are rejected from native search-summary projection because they are not native summary fields in the current integration. Named summary-class selection is tracked separately."
+        "Stored scalar fields are projected through the current native summary seam. Named summary-class selection, rich docsum value decoding, and summary-feature readback are tracked separately."
       ]
     },
     {
-      "id": "result.named_summary",
+      "id": "result.named_summary_class",
       "title": "Named summary-class selection",
       "area": "result",
       "represented": true,
@@ -398,6 +398,48 @@
       ],
       "limitations": [
         "Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection."
+      ]
+    },
+    {
+      "id": "result.rich_docsum_values",
+      "title": "Rich document-summary values (scalar subset)",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "ergonomic": {
+        "rust": true,
+        "python": true
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/crates/searchkernel-vespa-engine/tests/result_decoding.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
+      ],
+      "limitations": [
+        "Only scalar string, number, and boolean docsum values are executable through the current native result seam. Arrays, structs/maps, tensors, and other rich Vespa docsum values are not decoded faithfully."
+      ]
+    },
+    {
+      "id": "result.summary_features",
+      "title": "Summary-feature readback",
+      "area": "result",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/model/result.rs",
+        "core/crates/searchkernel-ir-adapter/src/backend.rs"
+      ],
+      "limitations": [
+        "The portable Hit schema and IR represent summary features, but the current adapter leaves summary_features empty instead of decoding native summary-feature values."
       ]
     },
     {
@@ -540,7 +582,7 @@
         "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The Python facade can construct agg.summary(), and finite max propagation reaches the grouping plan, but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant."
+        "The native grouping skeleton preserves summary() and finite max propagation, and the Python facade can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant."
       ]
     },
     {
@@ -844,6 +886,26 @@
       ]
     },
     {
+      "id": "schema.document_summaries",
+      "title": "Document-summary schema definitions",
+      "area": "schema",
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "ergonomic": {
+        "rust": false,
+        "python": false
+      },
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/model/schema.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/schema.rs"
+      ],
+      "limitations": [
+        "Document-summary definitions and fields survive FlatBuffers-to-IR semantic conversion, but native schema generation does not install named document summaries for execution."
+      ]
+    },
+    {
       "id": "schema.array_struct_fields",
       "title": "Array-of-struct document fields",
       "area": "schema",
@@ -983,7 +1045,7 @@
         "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "Scalar match features are decoded. Tensor-backed feature output remains opaque bytes. The adapter currently leaves summary_features and rank_features empty even though the portable Hit schema represents them."
+        "Scalar match features are decoded. Tensor-backed feature output remains opaque bytes; summary-feature readback is tracked separately. Rank features remain unpopulated."
       ]
     },
     {
