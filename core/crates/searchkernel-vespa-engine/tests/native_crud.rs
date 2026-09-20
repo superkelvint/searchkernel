@@ -834,7 +834,7 @@ fn native_text_crud_and_query_forms_round_trip() {
     assert_eq!(phrase.hits.len(), 1);
 
     let removed = engine
-        .search(SearchRequest::new(Query::term("title", "jumps")))
+        .search(SearchRequest::new(Query::term("title", "quick")))
         .expect("search removed text term");
     assert!(removed.hits.is_empty());
 
