@@ -5,7 +5,8 @@ use searchkernel_ir::{
     AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldIr, FieldKind,
     FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext, IndexDefinitionIr,
     InsertRequestIr, LanguageHint, PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr,
-    QueryIr, RangeIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr, UpsertRequestIr,
+    QueryIr, RangeIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr,
+    UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpsertRequestIr,
     WriteRequestIr, WriteRequestRef,
 };
 use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
@@ -722,6 +723,14 @@ fn execute(
                 &context.patch_to_ir(root).map_err(ExecError::Portable)?,
             ))
         }
+        "update_to_ir" => {
+            let context = context.ok_or("operation requires index fixture")?;
+            let root = flatbuffers::root::<api::UpdateRequest>(&bytes)
+                .map_err(|error| error.to_string())?;
+            ok(update_json(
+                &context.update_to_ir(root).map_err(ExecError::Portable)?,
+            ))
+        }
         "delete_to_ir" => {
             let context = context.ok_or("operation requires index fixture")?;
             let root = flatbuffers::root::<api::DeleteRequest>(&bytes)
@@ -759,6 +768,11 @@ fn execute(
                     let root = flatbuffers::root::<api::PatchRequest>(&bytes)
                         .map_err(|error| error.to_string())?;
                     context.write_to_ir(WriteRequestRef::Patch(root))
+                }
+                "update" => {
+                    let root = flatbuffers::root::<api::UpdateRequest>(&bytes)
+                        .map_err(|error| error.to_string())?;
+                    context.write_to_ir(WriteRequestRef::Update(root))
                 }
                 "delete" => {
                     let root = flatbuffers::root::<api::DeleteRequest>(&bytes)
@@ -855,6 +869,20 @@ fn field_value_json(value: &FieldValueIr) -> JsonValue {
             json!({"position":{"latitude":latitude,"longitude":longitude}})
         }
         FieldValueIr::Predicate { features } => json!({"predicate":features}),
+        FieldValueIr::PredicateExpression { expression } => {
+            json!({"predicate_expression":expression})
+        }
+        FieldValueIr::Structured(values) => json!({
+            "structs": values
+                .iter()
+                .map(|value| {
+                    value
+                        .iter()
+                        .map(|(name, scalar)| (name.clone(), scalar_json(scalar)))
+                        .collect::<serde_json::Map<_, _>>()
+                })
+                .collect::<Vec<_>>()
+        }),
     }
 }
 fn search_fields_json(values: &[SearchFieldIr]) -> JsonValue {
@@ -922,11 +950,45 @@ fn patch_operation_json(value: &PatchOperationIr) -> JsonValue {
 fn patch_json(value: &PatchRequestIr) -> JsonValue {
     json!({"id":value.id().as_str(),"operations":value.operations().iter().map(patch_operation_json).collect::<Vec<_>>()})
 }
+fn update_operation_json(value: &UpdateOperationIr) -> JsonValue {
+    match value {
+        UpdateOperationIr::Assign { target, value } => {
+            json!({"set":{"field":target.as_str(),"value":field_value_json(value)}})
+        }
+        UpdateOperationIr::Clear { target } => json!({"unset":{"field":target.as_str()}}),
+        UpdateOperationIr::Arithmetic {
+            target,
+            operator,
+            operand,
+        } => {
+            let name = match operator {
+                UpdateArithmeticOperatorIr::Add | UpdateArithmeticOperatorIr::Increment => {
+                    "increment"
+                }
+                UpdateArithmeticOperatorIr::Subtract | UpdateArithmeticOperatorIr::Decrement => {
+                    "decrement"
+                }
+                UpdateArithmeticOperatorIr::Multiply => "multiply",
+                UpdateArithmeticOperatorIr::Divide => "divide",
+            };
+            json!({name:{"field":target.as_str(),"value":operand}})
+        }
+    }
+}
+fn update_json(value: &UpdateRequestIr) -> JsonValue {
+    json!({
+        "id": value.id().as_str(),
+        "operations": value.operations().iter().map(update_operation_json).collect::<Vec<_>>(),
+        "condition": value.condition(),
+        "create": value.create(),
+    })
+}
 fn write_json(value: &WriteRequestIr) -> JsonValue {
     match value {
         WriteRequestIr::Insert(value) => json!({"insert":insert_json(value)}),
         WriteRequestIr::Upsert(value) => json!({"upsert":upsert_json(value)}),
         WriteRequestIr::Patch(value) => json!({"patch":patch_json(value)}),
+        WriteRequestIr::Update(value) => json!({"update":update_json(value)}),
         WriteRequestIr::Delete(value) => json!({"delete":delete_json(value)}),
     }
 }
@@ -1172,6 +1234,10 @@ impl WireBuilder {
                     self.finish(root)
                 }
             }
+            "update_to_ir" => {
+                let request = self.update_request(input)?;
+                self.finish(request)
+            }
             "delete_to_ir" => {
                 let id = input
                     .get("id")
@@ -1293,6 +1359,10 @@ impl WireBuilder {
                             &api::PatchRequestArgs { id, operations },
                         );
                         self.finish(root)
+                    }
+                    "update" => {
+                        let update = self.update_request(request)?;
+                        self.finish(update)
                     }
                     kind => Err(format!("unknown write kind {kind}")),
                 }
@@ -2968,6 +3038,124 @@ impl WireBuilder {
                 &api::PatchOperationArgs::default(),
             ))
         }
+    }
+
+    fn update_request(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::UpdateRequest<'static>>, String> {
+        let id = input
+            .get("id")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let operations = input
+            .get("operations")
+            .and_then(JsonValue::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|value| self.update_operation(value))
+                    .collect::<StdResult<Vec<_>, _>>()
+            })
+            .transpose()?
+            .map(|values| self.builder.create_vector(&values));
+        let condition = input
+            .get("condition")
+            .and_then(JsonValue::as_str)
+            .map(|value| self.text(value));
+        let create = input
+            .get("create")
+            .and_then(JsonValue::as_bool)
+            .map(api::OptionalBool::new);
+        Ok(api::UpdateRequest::create(
+            &mut self.builder,
+            &api::UpdateRequestArgs {
+                id,
+                operations,
+                condition,
+                create: create.as_ref(),
+            },
+        ))
+    }
+
+    fn update_operation(
+        &mut self,
+        input: &JsonValue,
+    ) -> StdResult<flatbuffers::WIPOffset<api::UpdateOperation<'static>>, String> {
+        let object = input
+            .as_object()
+            .ok_or("update operation must be an object")?;
+        let (target, operation_type, operation) = if let Some(value) = object.get("set") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let payload = value
+                .get("value")
+                .map(|value| self.value(value))
+                .transpose()?;
+            let assign = api::AssignUpdate::create(
+                &mut self.builder,
+                &api::AssignUpdateArgs { value: payload },
+            );
+            (
+                target,
+                api::UpdateOperationKind::AssignUpdate,
+                assign.as_union_value(),
+            )
+        } else if let Some(value) = object.get("unset") {
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let clear = api::ClearUpdate::create(&mut self.builder, &api::ClearUpdateArgs {});
+            (
+                target,
+                api::UpdateOperationKind::ClearUpdate,
+                clear.as_union_value(),
+            )
+        } else {
+            let (name, operator) = [
+                ("increment", api::ArithmeticUpdateOperator::Increment),
+                ("decrement", api::ArithmeticUpdateOperator::Decrement),
+                ("multiply", api::ArithmeticUpdateOperator::Multiply),
+                ("divide", api::ArithmeticUpdateOperator::Divide),
+            ]
+            .iter()
+            .find_map(|(name, operator)| object.get(*name).map(|_| (*name, *operator)))
+            .ok_or("unknown update operation")?;
+            let value = object.get(name).ok_or("missing arithmetic update")?;
+            let target = value
+                .get("field")
+                .and_then(JsonValue::as_str)
+                .map(|value| self.field_path(value));
+            let operand = value
+                .get("value")
+                .map(|value| self.value(value))
+                .transpose()?;
+            let arithmetic = api::ArithmeticUpdate::create(
+                &mut self.builder,
+                &api::ArithmeticUpdateArgs { operator, operand },
+            );
+            (
+                target,
+                api::UpdateOperationKind::ArithmeticUpdate,
+                arithmetic.as_union_value(),
+            )
+        };
+        Ok(api::UpdateOperation::create(
+            &mut self.builder,
+            &api::UpdateOperationArgs {
+                target,
+                operation_type,
+                operation: Some(operation),
+            },
+        ))
+    }
+
+    fn field_path(&mut self, value: &str) -> flatbuffers::WIPOffset<api::FieldPath<'static>> {
+        let path = self.text(value);
+        api::FieldPath::create(&mut self.builder, &api::FieldPathArgs { path: Some(path) })
     }
 }
 

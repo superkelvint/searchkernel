@@ -64,22 +64,84 @@ pub(crate) fn bind_parsed_filter(
     schema: &IndexDefinitionIr,
     bindings: &FilterBindings,
 ) -> Result<BoundFilter> {
+    let mut referenced = BTreeMap::<String, Span>::new();
+    collect_parameter_references(parsed, &mut referenced);
+    let mut binding_error = None;
+    for (name, span) in &referenced {
+        if !bindings.contains_key(name) {
+            append_binding_error(
+                &mut binding_error,
+                filter_error(
+                    "unknown_parameter",
+                    *span,
+                    format!("unknown parameter `:{name}`"),
+                ),
+            );
+        }
+    }
+    for name in bindings
+        .keys()
+        .filter(|name| !referenced.contains_key(*name))
+    {
+        append_binding_error(
+            &mut binding_error,
+            PortableError::invalid(
+                "unused_parameter",
+                Some(format!("filter.bindings.{name}")),
+                format!("binding `:{name}` is not referenced by the filter expression"),
+            ),
+        );
+    }
+    if let Some(error) = binding_error {
+        return Err(error);
+    }
     let mut referenced_parameters = BTreeSet::new();
     let expression = bind_expr(parsed, schema, bindings, &mut referenced_parameters)?;
-    if let Some(name) = bindings
-        .keys()
-        .find(|name| !referenced_parameters.contains(*name))
-    {
-        return Err(PortableError::invalid(
-            "unused_parameter",
-            Some(format!("filter.bindings.{name}")),
-            format!("binding `:{name}` is not referenced by the filter expression"),
-        ));
-    }
     Ok(BoundFilter {
         expression,
         referenced_parameters,
     })
+}
+
+fn append_binding_error(target: &mut Option<PortableError>, error: PortableError) {
+    if let Some(target) = target {
+        target.details.extend(error.details);
+    } else {
+        *target = Some(error);
+    }
+}
+
+fn collect_parameter_references(
+    expression: &Spanned<Expr>,
+    references: &mut BTreeMap<String, Span>,
+) {
+    match &expression.node {
+        Expr::Predicate(Predicate::Compare { value, .. }) => {
+            if let ValueExpr::Parameter(parameter) = &value.node {
+                references.entry(parameter.0.clone()).or_insert(value.span);
+            }
+        }
+        Expr::Predicate(Predicate::In { values, .. }) => match values {
+            InValues::Parameter(parameter) => {
+                references
+                    .entry(parameter.node.0.clone())
+                    .or_insert(parameter.span);
+            }
+            InValues::Values(values) => {
+                for value in values {
+                    if let ValueExpr::Parameter(parameter) = &value.node {
+                        references.entry(parameter.0.clone()).or_insert(value.span);
+                    }
+                }
+            }
+        },
+        Expr::And(children) | Expr::Or(children) => {
+            for child in children {
+                collect_parameter_references(child, references);
+            }
+        }
+        Expr::Not(child) => collect_parameter_references(child, references),
+    }
 }
 
 fn bind_expr(

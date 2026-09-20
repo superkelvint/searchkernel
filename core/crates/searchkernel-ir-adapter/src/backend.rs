@@ -203,12 +203,24 @@ fn grouping_result_group(
 ) -> Result<searchkernel_ir::ResultGroup> {
     let fields = match level {
         None => {
-            if !result.outputs.is_empty() {
+            if result.outputs.len() != plan.root_aggregations.len() {
                 return Err(internal(
-                    "native grouping returned outputs on its root node",
+                    "native grouping returned an unexpected root output count",
                 ));
             }
-            std::collections::BTreeMap::new()
+            plan.root_aggregations
+                .iter()
+                .zip(result.outputs.iter())
+                .enumerate()
+                .map(|(index, (aggregation, output))| {
+                    let label = plan
+                        .root_output_labels
+                        .get(index)
+                        .and_then(|label| label.clone())
+                        .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                    Ok((label, grouping_output_value(output.clone())?))
+                })
+                .collect::<Result<std::collections::BTreeMap<_, _>>>()?
         }
         Some(level) => {
             let grouping_level = plan
@@ -223,26 +235,65 @@ fn grouping_result_group(
             grouping_level
                 .aggregations
                 .iter()
-                .zip(result.outputs)
-                .map(|(aggregation, output)| {
-                    Ok((
-                        grouping_aggregation_name(aggregation),
-                        grouping_output_value(output)?,
-                    ))
+                .zip(result.outputs.iter())
+                .enumerate()
+                .filter(|(index, _)| {
+                    grouping_level
+                        .output_visible
+                        .get(*index)
+                        .copied()
+                        .unwrap_or(true)
+                })
+                .map(|(index, (aggregation, output))| {
+                    let label = grouping_level
+                        .output_labels
+                        .get(index)
+                        .and_then(|label| label.clone())
+                        .unwrap_or_else(|| grouping_aggregation_name(aggregation));
+                    Ok((label, grouping_output_value(output.clone())?))
                 })
                 .collect::<Result<std::collections::BTreeMap<_, _>>>()?
         }
     };
     let child_level = level.map_or(0, |level| level + 1);
-    let children = result
-        .groups
-        .into_iter()
-        .map(|child| grouping_result_group(child, plan, Some(child_level)))
-        .map(|child| child.map(searchkernel_ir::ResultNode::Group))
-        .collect::<Result<Vec<_>>>()?;
+    let mut children = Vec::new();
+    for (index, output) in result.outputs.iter().enumerate() {
+        if !matches!(output, GroupingOutput::HitList(_)) {
+            continue;
+        }
+        if level.is_some()
+            && !plan
+                .levels
+                .get(level.expect("level is known"))
+                .and_then(|level| level.output_visible.get(index))
+                .copied()
+                .unwrap_or(true)
+        {
+            continue;
+        }
+        if let GroupingOutput::HitList(ids) = output {
+            children.extend(ids.iter().cloned().map(|id| {
+                searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
+                    id,
+                    ..Default::default()
+                })
+            }));
+        }
+    }
+    children.extend(
+        result
+            .groups
+            .into_iter()
+            .map(|child| grouping_result_group(child, plan, Some(child_level)))
+            .map(|child| child.map(searchkernel_ir::ResultNode::Group))
+            .collect::<Result<Vec<_>>>()?,
+    );
     Ok(searchkernel_ir::ResultGroup {
-        id: None,
-        label: None,
+        id: level.map(|index| format!("grouping-{index}")),
+        label: match level {
+            None => plan.root_label.clone(),
+            Some(index) => plan.levels.get(index).and_then(|level| level.label.clone()),
+        },
         value: result.key.map(grouping_value_to_ir),
         fields,
         children,
@@ -256,22 +307,26 @@ fn grouping_result_group(
 }
 
 fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
+    let expression_name = |expression: &GroupingExpression| match expression {
+        GroupingExpression::Attribute(field) => field.clone(),
+        GroupingExpression::AggregationReference(index) => format!("aggregation({index})"),
+        expression => format!("{expression:?}"),
+    };
     match aggregation {
         GroupingAggregation::Count => "count".to_owned(),
-        GroupingAggregation::Average(GroupingExpression::Attribute(field)) => {
-            format!("average({field})")
+        GroupingAggregation::Average(expression) => {
+            format!("average({})", expression_name(expression))
         }
-        GroupingAggregation::Sum(GroupingExpression::Attribute(field)) => format!("sum({field})"),
-        GroupingAggregation::Min(GroupingExpression::Attribute(field)) => format!("min({field})"),
-        GroupingAggregation::Max(GroupingExpression::Attribute(field)) => format!("max({field})"),
-        GroupingAggregation::StandardDeviation(GroupingExpression::Attribute(field)) => {
-            format!("stddev({field})")
+        GroupingAggregation::Sum(expression) => format!("sum({})", expression_name(expression)),
+        GroupingAggregation::Min(expression) => format!("min({})", expression_name(expression)),
+        GroupingAggregation::Max(expression) => format!("max({})", expression_name(expression)),
+        GroupingAggregation::StandardDeviation(expression) => {
+            format!("stddev({})", expression_name(expression))
         }
-        GroupingAggregation::Xor(GroupingExpression::Attribute(field)) => format!("xor({field})"),
-        GroupingAggregation::Quantiles {
-            expression: GroupingExpression::Attribute(field),
-            ..
-        } => format!("quantiles({field})"),
+        GroupingAggregation::Xor(expression) => format!("xor({})", expression_name(expression)),
+        GroupingAggregation::Quantiles { expression, .. } => {
+            format!("quantiles({})", expression_name(expression))
+        }
         GroupingAggregation::Summary { .. } => "summary".to_owned(),
     }
 }
@@ -536,6 +591,7 @@ impl Backend for VespaBackend {
                 })
             })
             .collect::<Vec<_>>();
+        let mut root_fields = std::collections::BTreeMap::new();
         let mut native_facets = result.facets.into_iter();
         for grouping in groupings {
             match grouping {
@@ -552,7 +608,16 @@ impl Backend for VespaBackend {
                         .engine
                         .group_with_request(&grouping_request, &native.plan)
                         .map_err(|error| native_search_error(error, "grouping_not_supported"))?;
-                    children.push(grouping_result_node(grouped, &native.plan)?);
+                    let grouping_node = grouping_result_node(grouped, &native.plan)?;
+                    if !native.plan.root_aggregations.is_empty() {
+                        let searchkernel_ir::ResultNode::Group(group) = grouping_node else {
+                            return Err(internal("native grouping root is not a result group"));
+                        };
+                        root_fields.extend(group.fields);
+                        children.extend(group.children);
+                    } else {
+                        children.push(grouping_node);
+                    }
                 }
             }
         }
@@ -565,7 +630,11 @@ impl Backend for VespaBackend {
         // below intentionally does not fabricate errors from these messages.
         let errors = portable_errors_from_native_issues(&result.issues);
         Ok(SearchResult {
-            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(children)),
+            root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup {
+                fields: root_fields,
+                children,
+                ..searchkernel_ir::ResultGroup::root(Vec::new())
+            }),
             total_hits: searchkernel_ir::TotalHits {
                 value: result.total_hits,
                 relation: match result.total_hits_relation {

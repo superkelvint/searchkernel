@@ -264,7 +264,11 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                 ));
             }
         }
-        Query::SameElement { field, children } => {
+        Query::SameElement {
+            field,
+            children,
+            element_filter,
+        } => {
             if field.is_empty() {
                 return Err(invalid_query("same-element query field must not be empty"));
             }
@@ -273,6 +277,7 @@ fn validate_query_at(query: &Query, depth: usize, nodes: &mut usize) -> Result<(
                     "same-element query requires at least two children",
                 ));
             }
+            let _ = element_filter;
             for child in children {
                 validate_query_at(child, depth + 1, nodes)?;
             }

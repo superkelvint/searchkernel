@@ -1,8 +1,9 @@
 #[cfg(test)]
 use super::{
-    parse_yql, validate_query, Query, RangeBound, Value, MAX_QUERY_DEPTH, MAX_QUERY_NODES,
-    MAX_YQL_BYTES,
+    parse_yql, parse_yql_with_properties, validate_query, Query, RangeBound, Value,
+    DEFAULT_WEAK_AND_TARGET_HITS, MAX_QUERY_DEPTH, MAX_QUERY_NODES, MAX_YQL_BYTES,
 };
+use std::collections::BTreeMap;
 
 fn nested_not(depth: usize) -> Query {
     let mut query = Query::Term {
@@ -199,11 +200,16 @@ fn malformed_and_unsupported_yql_are_classified() {
         .unwrap_err()
         .to_string();
     assert!(malformed.starts_with("invalid_yql:"));
-    let unsupported =
-        Query::from_yql("select * from sources * where title contains \"fox\" order by title")
-            .unwrap_err()
-            .to_string();
-    assert!(unsupported.starts_with("unsupported_yql:"));
+    let parsed =
+        Query::from_yql("select * from sources * where title contains \"fox\" order by title desc")
+            .expect("ORDER BY is supported by the low-level YQL compiler");
+    assert_eq!(
+        parsed,
+        Query::Term {
+            field: "title".into(),
+            text: "fox".into(),
+        }
+    );
 }
 
 #[test]
@@ -228,6 +234,7 @@ fn specialized_query_nodes_validate_their_required_shape() {
     assert!(validate_query(&Query::SameElement {
         field: "tags".into(),
         children: vec![Query::term("tags", "one")],
+        element_filter: Vec::new(),
     })
     .is_err());
     assert!(validate_query(&Query::GeoLocation {
@@ -278,6 +285,41 @@ fn internal_parser_preserves_named_query_source() {
 
     let wildcard = parse_yql("select * from sources * where title contains \"fox\"").unwrap();
     assert_eq!(wildcard.source, "*");
+}
+
+#[test]
+fn yql_parser_binds_properties_and_preserves_order_by() {
+    let properties = BTreeMap::from([(String::from("q"), String::from("wireless headphones"))]);
+    let parsed = parse_yql_with_properties(
+        "select * from products where title contains text(@q) order by price desc, title asc",
+        &properties,
+    )
+    .unwrap();
+
+    assert_eq!(parsed.source, "products");
+    assert_eq!(
+        parsed.query,
+        Query::Text {
+            field: "title".into(),
+            text: "wireless headphones".into(),
+            target_num_hits: DEFAULT_WEAK_AND_TARGET_HITS,
+        }
+    );
+    assert_eq!(
+        parsed.sort,
+        vec![("price".into(), false), ("title".into(), true)]
+    );
+}
+
+#[test]
+fn yql_parser_rejects_missing_properties() {
+    let error = parse_yql_with_properties(
+        "select * from products where title contains text(@q)",
+        &BTreeMap::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("missing YQL property `@q`"));
 }
 
 #[test]

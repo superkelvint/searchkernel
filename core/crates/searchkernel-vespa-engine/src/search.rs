@@ -193,14 +193,29 @@ impl SearchRequest {
 
     /// Parse YQL while retaining its document-source selection.
     pub fn from_yql(yql: &str) -> Result<Self, Error> {
-        let parsed = query::parse_yql(yql)?;
+        Self::from_yql_with_properties(yql, &BTreeMap::new())
+    }
+
+    pub fn from_yql_with_properties(
+        yql: &str,
+        properties: &BTreeMap<String, String>,
+    ) -> Result<Self, Error> {
+        let parsed = query::parse_yql_with_properties(yql, properties)?;
         query::validate_query(&parsed.query)?;
         let source = if parsed.source == "*" {
             Source::All
         } else {
             Source::Named(parsed.source)
         };
-        Ok(Self::new(parsed.query).source(source))
+        let mut request = Self::new(parsed.query).source(source);
+        for (field, ascending) in parsed.sort {
+            request = request.sort(if ascending {
+                SortField::ascending(field)
+            } else {
+                SortField::descending(field)
+            });
+        }
+        Ok(request)
     }
 
     pub fn source(mut self, source: Source) -> Self {
@@ -317,17 +332,64 @@ pub enum GroupingOrder {
     ValueDescending,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum GroupingLiteral {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum GroupingExpression {
     Attribute(String),
+    AggregationReference(usize),
+    Literal(GroupingLiteral),
+    Function {
+        name: String,
+        arguments: Vec<GroupingExpression>,
+    },
+    Negative(Box<GroupingExpression>),
+    Binary {
+        operator: GroupingBinaryOperator,
+        left: Box<GroupingExpression>,
+        right: Box<GroupingExpression>,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupingBinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum GroupingFilter {
-    Regex { field: String, pattern: String },
+    Regex {
+        field: String,
+        pattern: String,
+    },
+    RegexExpression {
+        expression: GroupingExpression,
+        pattern: String,
+    },
+    And(Vec<GroupingFilter>),
+    Or(Vec<GroupingFilter>),
+    Not(Box<GroupingFilter>),
+    Range {
+        expression: GroupingExpression,
+        lower: f64,
+        upper: f64,
+        include_lower: bool,
+        include_upper: bool,
+    },
+    IsTrue(GroupingExpression),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupingOrderBy {
     pub expression: GroupingExpression,
     pub ascending: bool,
@@ -361,7 +423,13 @@ pub enum GroupingAggregation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupingLevel {
     pub classifier: GroupingExpression,
+    pub label: Option<String>,
     pub aggregations: Vec<GroupingAggregation>,
+    /// Output labels are request metadata.  The native grouping protocol is
+    /// positional, so they are kept alongside the plan rather than encoded as
+    /// part of an expression string.
+    pub output_labels: Vec<Option<String>>,
+    pub output_visible: Vec<bool>,
     pub max_groups: Option<u64>,
     pub precision: Option<u64>,
     pub filter: Option<GroupingFilter>,
@@ -372,7 +440,10 @@ impl GroupingLevel {
     pub fn new(classifier: GroupingExpression) -> Self {
         Self {
             classifier,
+            label: None,
             aggregations: Vec::new(),
+            output_labels: Vec::new(),
+            output_visible: Vec::new(),
             max_groups: None,
             precision: None,
             filter: None,
@@ -382,11 +453,32 @@ impl GroupingLevel {
 
     pub fn aggregation(mut self, aggregation: GroupingAggregation) -> Self {
         self.aggregations.push(aggregation);
+        self.output_labels.push(None);
+        self.output_visible.push(true);
+        self
+    }
+
+    pub fn aggregation_label(
+        mut self,
+        aggregation: GroupingAggregation,
+        label: impl Into<String>,
+    ) -> Self {
+        self.aggregations.push(aggregation);
+        self.output_labels.push(Some(label.into()));
+        self.output_visible.push(true);
         self
     }
 
     pub fn max_groups(mut self, max_groups: u64) -> Self {
         self.max_groups = Some(max_groups);
+        self
+    }
+
+    /// Request all groups. The native Vespa grouping ABI represents this as
+    /// `-1`; the public Rust API keeps the field unsigned and uses
+    /// `u64::MAX` as its unlimited sentinel.
+    pub fn unlimited_groups(mut self) -> Self {
+        self.max_groups = Some(u64::MAX);
         self
     }
 
@@ -412,15 +504,41 @@ impl GroupingLevel {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupingPlan {
     pub levels: Vec<GroupingLevel>,
+    pub group_all: bool,
+    pub root_label: Option<String>,
+    pub root_aggregations: Vec<GroupingAggregation>,
+    pub root_output_labels: Vec<Option<String>>,
 }
 
 impl GroupingPlan {
     pub fn new() -> Self {
-        Self { levels: Vec::new() }
+        Self {
+            levels: Vec::new(),
+            group_all: false,
+            root_label: None,
+            root_aggregations: Vec::new(),
+            root_output_labels: Vec::new(),
+        }
     }
 
     pub fn level(mut self, level: GroupingLevel) -> Self {
         self.levels.push(level);
+        self
+    }
+
+    pub fn root_aggregation(mut self, aggregation: GroupingAggregation) -> Self {
+        self.root_aggregations.push(aggregation);
+        self.root_output_labels.push(None);
+        self
+    }
+
+    pub fn root_aggregation_label(
+        mut self,
+        aggregation: GroupingAggregation,
+        label: impl Into<String>,
+    ) -> Self {
+        self.root_aggregations.push(aggregation);
+        self.root_output_labels.push(Some(label.into()));
         self
     }
 }

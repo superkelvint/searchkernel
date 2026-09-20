@@ -1,8 +1,8 @@
 use super::*;
 use searchkernel_ir::*;
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Engine, Field, FieldType, GroupingExpression, Query, Schema, SortField,
-    Value as VespaValue,
+    ArrayValue, ConfigCompiler, Document, Engine, Field, FieldType, FieldValue, GroupingExpression,
+    Query, Schema, SortField, Source, StructField, StructFieldType, Value as VespaValue,
 };
 
 fn field(name: &str) -> FieldName {
@@ -760,6 +760,7 @@ fn typed_query_c_lowers_specialized_nodes_and_retains_annotations_guard() {
                 Query::term("tags", "wireless"),
                 Query::term("tags", "audio")
             ],
+            element_filter: Vec::new(),
         }
     );
 
@@ -1115,6 +1116,96 @@ fn typed_query_b_rejects_unsupported_weighted_values() {
 }
 
 #[test]
+fn typed_query_b_rejects_unsupported_reduced_user_query_syntax() {
+    for value in [
+        r#"wire\ less"#,  // escaping
+        "wireless^2",     // weights
+        "price:[10,20]",  // ranges
+        "wire*",          // prefix/suffix
+        "*wire",          // suffix/prefix
+        "wire*less",      // infix wildcard
+        "wire?less",      // wildcard
+        "wire~2",         // fuzzy parser syntax
+        "rank(wireless)", // composite/parser mode syntax
+        "weakAnd(wireless)",
+        "wireless+headphones",
+    ] {
+        let query = typed_contains(
+            "title",
+            QueryExprKindIr::UserInput {
+                value: value.to_owned(),
+                default_index: None,
+                target_hits: 100,
+            },
+        );
+        let error = lower_query(&query, &[]).expect_err(value);
+        assert!(
+            matches!(
+                error.details[0].code.as_str(),
+                "user_query_syntax_not_supported" | "user_query_composite_syntax_not_supported"
+            ),
+            "{value} returned {}",
+            error.details[0].code
+        );
+    }
+
+    let parser_mode = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Contains {
+            field: typed_field("title"),
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::UserInput {
+                    value: "wireless".to_owned(),
+                    default_index: None,
+                    target_hits: 100,
+                },
+                annotations: std::collections::BTreeMap::from([(
+                    "grammar".to_owned(),
+                    RequestValueIr::String("all".to_owned()),
+                )]),
+            }),
+        },
+        annotations: std::collections::BTreeMap::new(),
+    }));
+    let error = lower_query(&parser_mode, &[]).expect_err("parser modes are unsupported");
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_annotations_not_supported"
+    );
+}
+
+#[test]
+fn typed_query_b_non_empty_rejects_false_and_documents_alternatives_shape() {
+    let error = lower_query(
+        &typed_contains(
+            "title",
+            QueryExprKindIr::NonEmpty(Box::new(QueryExprIr {
+                kind: QueryExprKindIr::False,
+                annotations: std::collections::BTreeMap::new(),
+            })),
+        ),
+        &[],
+    )
+    .expect_err("false is an empty native query");
+    assert_eq!(error.details[0].code, "empty_typed_query");
+
+    let unsupported = typed_contains(
+        "title",
+        QueryExprKindIr::Alternatives(vec![QueryAlternativeIr {
+            query: QueryExprIr {
+                kind: QueryExprKindIr::And(vec![typed_term("wireless"), typed_term("headphones")]),
+                annotations: std::collections::BTreeMap::new(),
+            },
+            exactness: None,
+        }]),
+    );
+    let error = lower_query(&unsupported, &[]).expect_err("alternatives are term-only");
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_alternative_not_supported"
+    );
+}
+
+#[test]
 fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
     let alternatives = typed_contains(
         "title",
@@ -1389,7 +1480,17 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let ResultNode::Group(group) = result.root else {
         panic!("search root must be a group");
     };
-    assert_eq!(group.children.len(), 2);
+    assert_eq!(
+        group
+            .children
+            .iter()
+            .map(|child| match child {
+                ResultNode::Hit(hit) => hit.id.as_str(),
+                ResultNode::Group(_) => panic!("unexpected nested group"),
+            })
+            .collect::<Vec<_>>(),
+        vec!["doc:wireless", "doc:wired"]
+    );
 
     let text_query = SearchRequestIr::new(
         typed_contains(
@@ -1413,7 +1514,17 @@ fn typed_query_a_reaches_real_vespa_through_the_adapter() {
     let ResultNode::Group(group) = result.root else {
         panic!("search root must be a group");
     };
-    assert_eq!(group.children.len(), 2);
+    assert_eq!(
+        group
+            .children
+            .iter()
+            .map(|child| match child {
+                ResultNode::Hit(hit) => hit.id.as_str(),
+                ResultNode::Group(_) => panic!("unexpected nested group"),
+            })
+            .collect::<Vec<_>>(),
+        vec!["doc:wireless", "doc:wired"]
+    );
 
     let comparison = SearchRequestIr::new(
         typed_expression(QueryExprKindIr::Comparison {
@@ -2707,6 +2818,13 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
             .expect("insert tensor document");
     }
 
+    backend
+        .engine
+        .close()
+        .expect("close tensor plus INT32 backend before reopen");
+    let backend = VespaBackend::open(&data, &config)
+        .expect("reopen tensor plus INT32 backend without legacy classification");
+
     let request = SearchRequestIr::new(
         typed_expression(QueryExprKindIr::NearestNeighbor {
             document_field: typed_field("embedding"),
@@ -2768,6 +2886,366 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
 }
 
 #[test]
+fn array_struct_same_element_requires_two_terms_on_one_element() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-array-struct-same-element-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("array_struct_same_element")
+        .field(Field::new("tags", FieldType::ArrayString).indexed())
+        .field(
+            Field::new(
+                "items",
+                FieldType::ArrayStruct(vec![
+                    StructField {
+                        name: "name".to_owned(),
+                        field_type: StructFieldType::String,
+                    },
+                    StructField {
+                        name: "color".to_owned(),
+                        field_type: StructFieldType::String,
+                    },
+                ]),
+            )
+            .attribute(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile array-struct schema");
+    let engine = Engine::open(&data, &config).expect("open array-struct engine");
+    let make_items = |first_color: &str, second_color: &str| {
+        ArrayValue::Structs(vec![
+            std::collections::BTreeMap::from([
+                ("name".to_owned(), "alice".into()),
+                ("color".to_owned(), first_color.into()),
+            ]),
+            std::collections::BTreeMap::from([
+                ("name".to_owned(), "bob".into()),
+                ("color".to_owned(), second_color.into()),
+            ]),
+        ])
+    };
+    engine
+        .put(
+            Document::new("doc:match")
+                .field(
+                    "tags",
+                    FieldValue::Array(ArrayValue::Strings(vec![
+                        "wireless headphones".into(),
+                        "speaker".into(),
+                    ])),
+                )
+                .field("items", FieldValue::Array(make_items("red", "blue"))),
+        )
+        .expect("put matching array-struct document");
+    engine
+        .put(
+            Document::new("doc:cross")
+                .field(
+                    "tags",
+                    FieldValue::Array(ArrayValue::Strings(vec![
+                        "wireless".into(),
+                        "headphones".into(),
+                    ])),
+                )
+                .field("items", FieldValue::Array(make_items("blue", "red"))),
+        )
+        .expect("put cross-element array-struct document");
+    let query = Query::SameElement {
+        field: "tags".to_owned(),
+        children: vec![
+            Query::term("tags", "wireless"),
+            Query::term("tags", "headphones"),
+        ],
+        element_filter: Vec::new(),
+    };
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let result = engine
+        .search(searchkernel_vespa_engine::SearchRequest::new(query).limit(10))
+        .expect("same-element query");
+    let ids = result
+        .hits
+        .into_iter()
+        .map(|hit| hit.document_id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["doc:match"]);
+    engine.close().expect("close array-struct engine");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-same-element-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("typed_same_element")
+        .field(
+            Field::new("tags", FieldType::ArrayString)
+                .indexed()
+                .attribute()
+                .summary(),
+        )
+        .field(
+            Field::new(
+                "items",
+                FieldType::ArrayStruct(vec![
+                    StructField {
+                        name: "name".to_owned(),
+                        field_type: StructFieldType::String,
+                    },
+                    StructField {
+                        name: "color".to_owned(),
+                        field_type: StructFieldType::String,
+                    },
+                ]),
+            )
+            .attribute(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile same-element schema");
+    let backend = VespaBackend::open(&data, &config).expect("open same-element backend");
+
+    let document = |id: &str, tags: Vec<&str>, items: [(&str, &str); 2]| {
+        DocumentIr::new(
+            DocumentId::parse(id).unwrap(),
+            std::collections::BTreeMap::from([
+                (
+                    field("tags"),
+                    FieldValueIr::Multi(
+                        tags.into_iter()
+                            .map(|value| ScalarValueIr::String(value.to_owned()))
+                            .collect(),
+                    ),
+                ),
+                (
+                    field("items"),
+                    FieldValueIr::Structured(
+                        items
+                            .into_iter()
+                            .map(|(name, color)| {
+                                std::collections::BTreeMap::from([
+                                    ("name".to_owned(), ScalarValueIr::String(name.to_owned())),
+                                    ("color".to_owned(), ScalarValueIr::String(color.to_owned())),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ]),
+        )
+    };
+    backend
+        .insert(InsertRequestIr::new(document(
+            "doc:same",
+            vec!["wireless headphones", "speaker"],
+            [("alice", "red"), ("bob", "blue")],
+        )))
+        .expect("insert same-element document");
+    backend
+        .insert(InsertRequestIr::new(document(
+            "doc:split",
+            vec!["wireless", "headphones"],
+            [("alice", "blue"), ("bob", "red")],
+        )))
+        .expect("insert split-element document");
+
+    let request = |query| {
+        SearchRequestIr::new(
+            query,
+            Vec::new(),
+            None,
+            Vec::new(),
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        group
+            .children
+            .into_iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let tags_query = typed_contains(
+        "tags",
+        QueryExprKindIr::SameElement(vec![typed_term("wireless"), typed_term("headphones")]),
+    );
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(
+        ids(backend
+            .search(request(tags_query))
+            .expect("array<string> sameElement")),
+        vec!["doc:same"]
+    );
+
+    let member_query = |element_filter: Vec<u64>| {
+        let mut annotations = std::collections::BTreeMap::new();
+        annotations.insert(
+            "elementFilter".to_owned(),
+            searchkernel_ir::RequestValueIr::List(
+                element_filter
+                    .into_iter()
+                    .map(searchkernel_ir::RequestValueIr::UInt64)
+                    .collect(),
+            ),
+        );
+        typed_expression(QueryExprKindIr::Contains {
+            field: typed_field("items"),
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::SameElement(vec![
+                    QueryExprIr {
+                        kind: QueryExprKindIr::Contains {
+                            field: typed_field("name"),
+                            item: Box::new(typed_term("bob")),
+                        },
+                        annotations: std::collections::BTreeMap::new(),
+                    },
+                    QueryExprIr {
+                        kind: QueryExprKindIr::Contains {
+                            field: typed_field("color"),
+                            item: Box::new(typed_term("blue")),
+                        },
+                        annotations: std::collections::BTreeMap::new(),
+                    },
+                ]),
+                annotations,
+            }),
+        })
+    };
+    assert_eq!(
+        ids(backend
+            .search(request(member_query(vec![1])))
+            .expect("array<struct> relative sameElement")),
+        vec!["doc:same"]
+    );
+    assert!(ids(backend
+        .search(request(member_query(vec![0])))
+        .expect("array<struct> elementFilter"))
+    .is_empty());
+
+    backend.engine.close().expect("close same-element backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn typed_query_c_geo_reaches_real_vespa_for_location_and_bounding_box() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-geo-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema =
+        Schema::new("typed_geo").field(Field::new("location", FieldType::Position).attribute());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile geo schema");
+    let backend = VespaBackend::open(&data, &config).expect("open geo backend");
+    for (id, latitude, longitude) in [
+        ("doc:near", 60.0, 10.0),
+        ("doc:far", 60.2, 10.0),
+        ("doc:boundary", 61.0, 11.0),
+        ("doc:outside", 62.0, 12.0),
+    ] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([(
+                    field("location"),
+                    FieldValueIr::Position {
+                        latitude,
+                        longitude,
+                    },
+                )]),
+            )))
+            .expect("insert position document");
+    }
+    let request = |kind| {
+        SearchRequestIr::new(
+            typed_expression(kind),
+            Vec::new(),
+            None,
+            Vec::new(),
+            10,
+            0,
+            searchkernel_ir::ProjectionIr::new(Vec::new()),
+            HighlightingIr::Disabled,
+            None,
+            PrefixPolicy::Disabled,
+            TypoPolicy::Disabled,
+        )
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        group
+            .children
+            .into_iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(backend
+            .search(request(QueryExprKindIr::GeoLocation {
+                field: typed_field("location"),
+                latitude: 60.0,
+                longitude: 10.0,
+                radius: "15km".to_owned(),
+            }))
+            .expect("geo location query")),
+        vec!["doc:near"]
+    );
+    assert_eq!(
+        ids(backend
+            .search(request(QueryExprKindIr::GeoBoundingBox {
+                field: typed_field("location"),
+                south: 59.0,
+                west: 9.0,
+                north: 61.0,
+                east: 11.0,
+            }))
+            .expect("geo bounding-box query")),
+        vec!["doc:near", "doc:far", "doc:boundary"]
+    );
+    backend.engine.close().expect("close geo backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
     let root = std::env::temp_dir().join(format!(
         "searchkernel-adapter-typed-query-c-special-{}-{}",
@@ -2779,29 +3257,53 @@ fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
     ));
     let data = root.join("data");
     let config = root.join("config");
-    let schema = Schema::new("typed_query_c_special")
-        .field(Field::new("access", FieldType::Predicate).attribute());
+    let schema = Schema::new("typed_query_c_special").field(
+        Field::new("access", FieldType::Predicate)
+            .attribute()
+            .predicate_arity(8),
+    );
     ConfigCompiler
         .compile_to(&schema, &config)
         .expect("compile specialized-query schema");
     let backend = VespaBackend::open(&data, &config).expect("open specialized-query backend");
 
-    for (id, hobby) in [("doc:near", "music"), ("doc:far", "hiking")] {
-        backend
-            .insert(InsertRequestIr::new(DocumentIr::new(
-                DocumentId::parse(id).unwrap(),
-                std::collections::BTreeMap::from([(
-                    field("access"),
-                    FieldValueIr::Predicate {
-                        features: std::collections::BTreeMap::from([(
-                            "hobby".to_owned(),
-                            hobby.to_owned(),
-                        )]),
-                    },
-                )]),
-            )))
-            .expect("insert specialized-query document");
-    }
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:legacy-feature").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::Predicate {
+                    features: std::collections::BTreeMap::from([(
+                        "hobby".to_owned(),
+                        "music".to_owned(),
+                    )]),
+                },
+            )]),
+        )))
+        .expect("insert legacy feature predicate document");
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:composed").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":1,"children":[{"type":4,"key":"hobby","feature_set":["music"]},{"type":5,"key":"age","range_min":18,"range_max":30}]}"#.to_owned(),
+                },
+            )]),
+        )))
+        .expect("insert composed predicate expression document");
+    backend
+        .insert(InsertRequestIr::new(DocumentIr::new(
+            DocumentId::parse("doc:range").unwrap(),
+            std::collections::BTreeMap::from([(
+                field("access"),
+                FieldValueIr::PredicateExpression {
+                    expression: r#"{"type":5,"key":"age","range_min":18,"range_max":30}"#
+                        .to_owned(),
+                },
+            )]),
+        )))
+        .expect("insert range predicate expression document");
 
     let search = |kind| {
         backend
@@ -2846,7 +3348,40 @@ fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
             },
             annotations: std::collections::BTreeMap::new(),
         })))),
-        vec!["doc:near"]
+        vec!["doc:legacy-feature"]
+    );
+
+    assert_eq!(
+        ids(search(QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Predicate {
+                field: typed_field("access"),
+                features: std::collections::BTreeMap::new(),
+                range_features: std::collections::BTreeMap::from([(
+                    "age".to_owned(),
+                    RequestValueIr::UInt64(21),
+                )]),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        })))),
+        vec!["doc:range"]
+    );
+
+    assert_eq!(
+        ids(search(QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Predicate {
+                field: typed_field("access"),
+                features: std::collections::BTreeMap::from([(
+                    "hobby".to_owned(),
+                    RequestValueIr::String("music".to_owned()),
+                )]),
+                range_features: std::collections::BTreeMap::from([(
+                    "age".to_owned(),
+                    RequestValueIr::UInt64(21),
+                )]),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        })))),
+        vec!["doc:legacy-feature", "doc:composed", "doc:range"]
     );
 
     backend
@@ -2890,6 +3425,29 @@ fn nearest_neighbor_lowers_dense_tensor_input_to_native_request_input() {
                 }
             )
         )]
+    );
+}
+
+#[test]
+fn nearest_neighbor_allows_zero_explore_additional_hits() {
+    let query = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::NearestNeighbor {
+            document_field: typed_field("embedding"),
+            query_tensor: "query_embedding".to_owned(),
+        },
+        annotations: std::collections::BTreeMap::from([(
+            "exploreAdditionalHits".to_owned(),
+            RequestValueIr::UInt64(0),
+        )]),
+    }));
+    assert_eq!(
+        lower_query(&query, &[]).expect("zero exploreAdditionalHits is valid"),
+        Query::NearestNeighbor {
+            document_field: "embedding".to_owned(),
+            query_tensor: "query_embedding".to_owned(),
+            target_num_hits: 100,
+            approximate: true,
+        }
     );
 }
 
@@ -3045,7 +3603,7 @@ fn supported_rank_profile_definitions_lower_to_native_config() {
     let _ = std::fs::remove_dir_all(&root);
     compile_index_definition(&definition, &root).expect("supported profile compiles");
     let config = std::fs::read_to_string(root.join("rank-profiles.cfg")).unwrap();
-    assert!(config.contains("rankprofile[1].name \"product_search\""));
+    assert!(config.contains("rankprofile[2].name \"product_search\""));
     assert!(config.contains("rankingExpression(product_search).rankingScript"));
     assert!(config.contains("bm25(title) + query(boost)"));
     std::fs::remove_dir_all(root).unwrap();
@@ -3281,4 +3839,63 @@ fn test_document(value: i64) -> searchkernel_ir::DocumentIr {
             FieldValueIr::Single(ScalarValueIr::Int64(value)),
         )]),
     )
+}
+
+#[test]
+fn yql_lowering_uses_shared_parser_and_native_order_by() {
+    let request = request(Vec::new(), Vec::new(), None).with_query(QueryIr::Yql {
+        source:
+            "select * from products where title contains \"fox\" order by price desc, title asc"
+                .to_owned(),
+        parameters: std::collections::BTreeMap::new(),
+    });
+    let language = searchkernel_vespa_engine::LinguisticsOptions::default();
+
+    assert_eq!(
+        lower_query(request.query(), &[]).unwrap(),
+        Query::Term {
+            field: "title".to_owned(),
+            text: "fox".to_owned(),
+        }
+    );
+    let lowered = lower_search_options(
+        &request,
+        lower_search_query(&request, language).unwrap(),
+        language,
+    )
+    .unwrap();
+    assert_eq!(lowered.source, Source::Named("products".to_owned()));
+    assert_eq!(
+        lowered.sort,
+        vec![
+            SortField::descending("price"),
+            SortField::ascending("title")
+        ]
+    );
+}
+
+#[test]
+fn yql_controls_conflict_with_separately_supplied_filter() {
+    let request = SearchRequestIr::new(
+        QueryIr::Yql {
+            source: "select * from products where title contains \"fox\"".to_owned(),
+            parameters: std::collections::BTreeMap::new(),
+        },
+        Vec::new(),
+        Some(FilterIr::Exists {
+            field: field("title"),
+        }),
+        Vec::new(),
+        10,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+
+    let error = validate_search_request(&request).unwrap_err();
+    assert_eq!(error.details[0].code, "yql_conflict");
+    assert_eq!(error.details[0].path.as_deref(), Some("filter"));
 }

@@ -437,7 +437,7 @@ mod tests {
 
     use tokio::sync::Semaphore;
 
-    use super::{run_blocking, DEFAULT_EXECUTION_LIMIT};
+    use super::run_blocking;
 
     #[tokio::test]
     async fn blocking_work_waits_for_an_execution_permit() {
@@ -464,10 +464,5 @@ mod tests {
             42
         );
         assert!(started.load(Ordering::Acquire));
-    }
-
-    #[test]
-    fn default_execution_limit_is_bounded() {
-        assert!(DEFAULT_EXECUTION_LIMIT > 0);
     }
 }

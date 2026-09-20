@@ -48,6 +48,7 @@ pub struct RankProfile {
     pub(crate) name: String,
     pub(crate) first_phase: String,
     pub(crate) match_features: Vec<String>,
+    pub(crate) query_inputs: Vec<(String, String)>,
 }
 
 impl RankProfile {
@@ -56,6 +57,7 @@ impl RankProfile {
             name: name.into(),
             first_phase: String::new(),
             match_features: Vec::new(),
+            query_inputs: Vec::new(),
         }
     }
 
@@ -66,6 +68,12 @@ impl RankProfile {
 
     pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
         self.match_features.push(expression.into());
+        self
+    }
+
+    /// Declare a tensor query input used by this rank profile.
+    pub fn query_input(mut self, name: impl Into<String>, type_spec: impl Into<String>) -> Self {
+        self.query_inputs.push((name.into(), type_spec.into()));
         self
     }
 

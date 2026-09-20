@@ -21,14 +21,24 @@ pub(crate) fn lower_search_query(
     language: searchkernel_vespa_engine::LinguisticsOptions,
 ) -> Result<Query> {
     let rank_properties = effective_rank_properties(request)?;
-    let mut clauses = vec![lower_query_with_context(
-        request.query(),
-        request.search_fields(),
-        language,
-        request.query_model().default_index.as_deref(),
-        request.query_model().query_string.as_deref(),
-        &rank_properties,
-    )?];
+    let mut clauses = vec![match request.query() {
+        QueryIr::Yql { source, parameters } => {
+            let properties = yql_properties(request, parameters)?;
+            SearchRequest::from_yql_with_properties(source, &properties)
+                .map(|request| request.query)
+                .map_err(|error| {
+                    PortableError::invalid("invalid_yql", Some("query"), error.to_string())
+                })?
+        }
+        query => lower_query_with_context(
+            query,
+            request.search_fields(),
+            language,
+            request.query_model().default_index.as_deref(),
+            request.query_model().query_string.as_deref(),
+            &rank_properties,
+        )?,
+    }];
     if let Some(filter) = request.filter() {
         clauses.push(filter::lower_filter(filter)?);
     }
@@ -50,6 +60,17 @@ pub(crate) fn lower_search_options(
         .offset(request.offset())
         .rank_profile(request.ranking_request().profile.clone())
         .language(language);
+    if let QueryIr::Yql { source, parameters } = request.query() {
+        let properties = yql_properties(request, parameters)?;
+        let yql_request =
+            SearchRequest::from_yql_with_properties(source, &properties).map_err(|error| {
+                PortableError::invalid("invalid_yql", Some("query"), error.to_string())
+            })?;
+        m_request = m_request.source(yql_request.source);
+        for sort in yql_request.sort {
+            m_request = m_request.sort(sort);
+        }
+    }
     for (name, input) in request.inputs() {
         match input {
             QueryInputIr::Literal(RequestValueIr::Tensor(tensor)) => {
@@ -176,6 +197,44 @@ fn effective_rank_properties(request: &SearchRequestIr) -> Result<BTreeMap<Strin
     Ok(properties)
 }
 
+fn yql_properties(
+    request: &SearchRequestIr,
+    parameters: &BTreeMap<String, RequestValueIr>,
+) -> Result<BTreeMap<String, String>> {
+    let mut values = BTreeMap::new();
+    for (name, value) in parameters {
+        values.insert(name.clone(), yql_property_value(value, name)?);
+    }
+    for (name, value) in request.properties() {
+        let value = yql_property_value(value, name)?;
+        if let Some(previous) = values.insert(name.clone(), value.clone()) {
+            if previous != value {
+                return Err(PortableError::invalid(
+                    "yql_property_conflict",
+                    Some(format!("properties.{name}")),
+                    "YQL parameter and request property provide different values",
+                ));
+            }
+        }
+    }
+    Ok(values)
+}
+
+fn yql_property_value(value: &RequestValueIr, name: &str) -> Result<String> {
+    match value {
+        RequestValueIr::String(value) => Ok(value.clone()),
+        RequestValueIr::Bool(value) => Ok(value.to_string()),
+        RequestValueIr::Int64(value) => Ok(value.to_string()),
+        RequestValueIr::UInt64(value) => Ok(value.to_string()),
+        RequestValueIr::Float64(value) if value.is_finite() => Ok(value.to_string()),
+        _ => Err(PortableError::invalid(
+            "invalid_yql_property",
+            Some(format!("properties.{name}")),
+            "YQL text properties must be scalar finite values",
+        )),
+    }
+}
+
 fn collect_label_names(expression: &searchkernel_ir::QueryExprIr, labels: &mut BTreeSet<String>) {
     use searchkernel_ir::QueryExprKindIr;
     match &expression.kind {
@@ -261,7 +320,8 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
     validate_nearest_neighbor_inputs(request)?;
-    if !request.properties().is_empty() {
+    validate_yql_controls(request)?;
+    if !request.properties().is_empty() && !matches!(request.query(), QueryIr::Yql { .. }) {
         return Err(PortableError::unsupported(
             "query_properties_not_supported",
             Some("properties"),
@@ -308,13 +368,6 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
             "the current native adapter supports only fields and highlighting presentation controls",
         ));
     }
-    if matches!(request.query(), QueryIr::Yql { .. }) {
-        return Err(PortableError::unsupported(
-            "yql_not_supported",
-            Some("query"),
-            "the current native adapter does not expose a YQL execution path",
-        ));
-    }
     if !matches!(
         request.highlighting(),
         searchkernel_ir::HighlightingIr::Disabled
@@ -337,6 +390,35 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
         ));
     }
     analysis_options(request.language())?;
+    Ok(())
+}
+
+fn validate_yql_controls(request: &SearchRequestIr) -> Result<()> {
+    if !matches!(request.query(), QueryIr::Yql { .. }) {
+        return Ok(());
+    }
+    if request.filter().is_some() {
+        return Err(PortableError::invalid(
+            "yql_conflict",
+            Some("filter"),
+            "YQL cannot be combined with a separately supplied filter",
+        ));
+    }
+    if !request.sort().is_empty() {
+        return Err(PortableError::invalid(
+            "yql_conflict",
+            Some("sort"),
+            "YQL ORDER BY cannot be combined with separately supplied sort controls",
+        ));
+    }
+    if request.query_model().query_string.is_some() || request.query_model().default_index.is_some()
+    {
+        return Err(PortableError::invalid(
+            "yql_conflict",
+            Some("query_model"),
+            "YQL cannot be combined with typed query-model controls",
+        ));
+    }
     Ok(())
 }
 

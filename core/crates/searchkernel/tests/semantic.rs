@@ -2,7 +2,7 @@ use searchkernel::{Field, Index, IndexDefinition, Patch};
 use searchkernel_ir::{
     Backend, DeleteRequestIr, DeleteResult, DocumentResult, FieldValueIr, GetRequestIr, GetResult,
     InsertRequestIr, InsertResult, PatchOperationIr, PatchRequestIr, PatchResult, SearchRequestIr,
-    SearchResult, UpsertRequestIr, UpsertResult, Value,
+    SearchResult, UpdateRequestIr, UpdateResult, UpsertRequestIr, UpsertResult, Value,
 };
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -62,6 +62,44 @@ fn field_value(value: &FieldValueIr) -> Value {
     match value {
         FieldValueIr::Single(value) => scalar_value(value),
         FieldValueIr::Multi(values) => Value::List(values.iter().map(scalar_value).collect()),
+        FieldValueIr::Structured(values) => Value::List(
+            values
+                .iter()
+                .map(|value| {
+                    Value::Object(
+                        value
+                            .iter()
+                            .map(|(name, value)| (name.clone(), scalar_value(value)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        ),
+        FieldValueIr::Position {
+            latitude,
+            longitude,
+        } => Value::Object(
+            [
+                ("latitude".to_owned(), Value::Float64(*latitude)),
+                ("longitude".to_owned(), Value::Float64(*longitude)),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        FieldValueIr::Predicate { features } => Value::Object(
+            [(
+                "features".to_owned(),
+                Value::Object(
+                    features
+                        .iter()
+                        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                        .collect(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
+        ),
+        FieldValueIr::PredicateExpression { expression } => Value::String(expression.clone()),
         FieldValueIr::Tensor(value) => Value::Tensor(value.clone()),
     }
 }
@@ -107,6 +145,14 @@ impl Backend for StatefulBackend {
             }
         }
         Ok(PatchResult { id })
+    }
+
+    fn update(&self, _request: UpdateRequestIr) -> searchkernel_ir::Result<UpdateResult> {
+        Err(searchkernel_ir::PortableError::unsupported(
+            "test_backend",
+            None::<String>,
+            "update is not part of the C4 facade",
+        ))
     }
 
     fn delete(&self, request: DeleteRequestIr) -> searchkernel_ir::Result<DeleteResult> {

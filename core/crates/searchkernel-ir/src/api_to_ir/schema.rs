@@ -22,6 +22,7 @@ pub struct RustRankProfileInput {
     pub name: String,
     pub first_phase: String,
     pub match_features: Vec<String>,
+    pub query_inputs: Vec<(String, String)>,
 }
 
 #[doc(hidden)]
@@ -185,7 +186,20 @@ pub fn resolve_rust_index_definition_with_profiles(
             .map(|profile| RankProfileDefinitionIr {
                 name: profile.name,
                 inherits: Vec::new(),
-                inputs: Vec::new(),
+                inputs: profile
+                    .query_inputs
+                    .into_iter()
+                    .map(|(name, type_spec)| RankProfileInputIr {
+                        name,
+                        data_type: DataTypeIr::Tensor {
+                            type_spec: type_spec.clone(),
+                        },
+                        default_value: RequestValueIr::Tensor(RequestTensorIr {
+                            type_spec,
+                            payload: RequestTensorPayloadIr::Dense(Vec::new()),
+                        }),
+                    })
+                    .collect(),
                 functions: Vec::new(),
                 first_phase: Some(RankPhaseDefinitionIr {
                     expression: Some(profile.first_phase),
@@ -524,6 +538,49 @@ impl IndexContext {
                 Some(path),
                 "imported field aliases are preserved in the schema but have no local type for query binding",
             )),
+            None if name.contains('.') => {
+                let root = name.split('.').next().unwrap_or_default();
+                let field = self.query_field(root, path.clone())?;
+                let mut data_type = field.data_type().clone();
+                for part in name.split('.').skip(1) {
+                    if let crate::model::DataTypeIr::Array(element) = &data_type {
+                        data_type = (**element).clone();
+                    }
+                    if let crate::model::DataTypeIr::StructReference { name } = &data_type {
+                        let Some(structure) = self
+                            .definition
+                            .structs()
+                            .iter()
+                            .find(|value| value.name == *name)
+                        else {
+                            return Err(invalid(
+                                "unknown_struct",
+                                Some(path),
+                                "struct field path references an unknown struct",
+                            ));
+                        };
+                        data_type = crate::model::DataTypeIr::Struct {
+                            fields: structure.fields.clone(),
+                        };
+                    }
+                    let crate::model::DataTypeIr::Struct { fields } = &data_type else {
+                        return Err(invalid(
+                            "unknown_field",
+                            Some(path),
+                            "struct field path is not defined",
+                        ));
+                    };
+                    let Some(struct_field) = fields.iter().find(|value| value.name == part) else {
+                        return Err(invalid(
+                            "unknown_field",
+                            Some(path),
+                            "struct field path is not defined",
+                        ));
+                    };
+                    data_type = struct_field.data_type.clone();
+                }
+                Ok(field)
+            }
             None => Err(invalid("unknown_field", Some(path), "field is not defined")),
         }
     }

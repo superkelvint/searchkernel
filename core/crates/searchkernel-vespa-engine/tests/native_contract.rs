@@ -170,7 +170,7 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "attributes.cfg",
-            "attribute[0].datatype INT64",
+            "attribute[0].datatype INT32",
             "attribute[0].datatype DOUBLE",
         ),
         (
@@ -386,7 +386,7 @@ fn native_scalar_query_features_ignore_the_process_global_locale() {
 fn low_level_query_range_accepts_full_signed_i64_domain() {
     let (config, data) = compile_config(
         "query-signed-range",
-        &Schema::new("typea").field(Field::new("qty", FieldType::Integer).attribute()),
+        &Schema::new("typea").field(Field::new("qty", FieldType::Long).attribute()),
     );
     let engine = Engine::open(&data, &config).expect("open signed range config");
     engine

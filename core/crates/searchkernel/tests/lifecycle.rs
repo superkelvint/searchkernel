@@ -1,7 +1,8 @@
 use searchkernel::{ErrorCode, Field, IndexDefinition, IndexRuntime};
 use searchkernel_ir::{
     Backend, DeleteRequestIr, DeleteResult, GetRequestIr, GetResult, InsertRequestIr, InsertResult,
-    PatchRequestIr, PatchResult, SearchRequestIr, SearchResult, UpsertRequestIr, UpsertResult,
+    PatchRequestIr, PatchResult, SearchRequestIr, SearchResult, UpdateRequestIr, UpdateResult,
+    UpsertRequestIr, UpsertResult,
 };
 use searchkernel_testkit::RecordingBackend;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
@@ -93,6 +94,10 @@ impl Backend for BlockingBackend {
     }
 
     fn patch(&self, _request: PatchRequestIr) -> searchkernel_ir::Result<PatchResult> {
+        unsupported()
+    }
+
+    fn update(&self, _request: UpdateRequestIr) -> searchkernel_ir::Result<UpdateResult> {
         unsupported()
     }
 

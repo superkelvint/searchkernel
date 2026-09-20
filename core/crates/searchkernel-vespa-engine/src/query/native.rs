@@ -321,10 +321,14 @@ pub(crate) fn lower_query(
         } => {
             add_native_nearest_neighbor_with_options(native, document_field, query_tensor, options)
         }
-        Query::SameElement { field, children } => {
-            add_native_same_element(native, field, children.len())?;
+        Query::SameElement {
+            field,
+            children,
+            element_filter,
+        } => {
+            add_native_same_element(native, field, children.len(), element_filter)?;
             for child in children {
-                lower_query(native, child, language)?;
+                lower_same_element_child(native, child, field, language)?;
             }
             Ok(())
         }
@@ -347,6 +351,84 @@ pub(crate) fn lower_query(
             range_features,
         } => add_native_predicate(native, field, features, range_features),
     }
+}
+
+fn relative_same_element_field(field: &str, parent: &str) -> Result<String, Error> {
+    if field == parent {
+        Ok(String::new())
+    } else if let Some(member) = field
+        .strip_prefix(parent)
+        .and_then(|value| value.strip_prefix('.'))
+    {
+        Ok(member.to_owned())
+    } else {
+        Err(invalid_query(format!(
+            "same-element child field '{field}' is outside parent field '{parent}'"
+        )))
+    }
+}
+
+fn relative_same_element_query(mut query: Query, parent: &str) -> Result<Query, Error> {
+    match &mut query {
+        Query::Text { field, .. }
+        | Query::Term { field, .. }
+        | Query::Phrase { field, .. }
+        | Query::Alternatives { field, .. }
+        | Query::Matches { field, .. }
+        | Query::Fuzzy { field, .. } => {
+            *field = relative_same_element_field(field, parent)?;
+        }
+        Query::Near {
+            field, children, ..
+        }
+        | Query::ONear {
+            field, children, ..
+        } => {
+            *field = relative_same_element_field(field, parent)?;
+            let nested = std::mem::take(children)
+                .into_iter()
+                .map(|child| relative_same_element_query(child, parent))
+                .collect::<Result<Vec<_>, _>>()?;
+            *children = nested;
+        }
+        Query::And(children)
+        | Query::Or(children)
+        | Query::Equiv(children)
+        | Query::WeakAnd { children, .. } => {
+            let nested = std::mem::take(children)
+                .into_iter()
+                .map(|child| relative_same_element_query(child, parent))
+                .collect::<Result<Vec<_>, _>>()?;
+            *children = nested;
+        }
+        Query::Not(nested) | Query::Labeled { query: nested, .. } => {
+            **nested = relative_same_element_query((**nested).clone(), parent)?;
+        }
+        Query::Rank { matching, ranking } => {
+            **matching = relative_same_element_query((**matching).clone(), parent)?;
+            let nested = std::mem::take(ranking)
+                .into_iter()
+                .map(|child| relative_same_element_query(child, parent))
+                .collect::<Result<Vec<_>, _>>()?;
+            *ranking = nested;
+        }
+        _ => {
+            return Err(invalid_query(
+                "same-element children must be text query nodes",
+            ));
+        }
+    }
+    Ok(query)
+}
+
+fn lower_same_element_child(
+    native: &NativeQuery,
+    child: &Query,
+    parent: &str,
+    language: LinguisticsOptions,
+) -> Result<(), Error> {
+    let child = relative_same_element_query(child.clone(), parent)?;
+    lower_query(native, &child, language)
 }
 
 pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Result<(), Error> {
@@ -456,8 +538,10 @@ pub(crate) fn validate_query_fields(native: &NativeQuery, query: &Query) -> Resu
         | Query::NearestNeighborWithOptions { document_field, .. } => {
             validate_native_field(native, sys::SK_QUERY_FIELD_TENSOR, document_field)
         }
-        Query::SameElement { field, children } => {
-            validate_native_field(native, sys::SK_QUERY_FIELD_ARRAY_STRING, field)?;
+        Query::SameElement {
+            field, children, ..
+        } => {
+            validate_native_field(native, sys::SK_QUERY_FIELD_ARRAY, field)?;
             for child in children {
                 validate_query_fields(native, child)?;
             }
@@ -1076,16 +1160,20 @@ fn add_native_same_element(
     native: &NativeQuery,
     field: &str,
     child_count: usize,
+    element_filter: &[u32],
 ) -> Result<(), Error> {
     let field = cstring(field)?;
     let child_count = u32::try_from(child_count)
         .map_err(|_| invalid_query("same-element child count exceeds native capacity"))?;
     let mut error = NativeError::new();
     let status = unsafe {
-        sys::sk_query_add_same_element(
+        sys::sk_query_add_same_element_with_filter(
             native.0.as_ptr(),
             field.as_ptr(),
             child_count,
+            element_filter.as_ptr(),
+            u32::try_from(element_filter.len())
+                .map_err(|_| invalid_query("same-element filter exceeds native capacity"))?,
             error.as_mut_ptr(),
             error.capacity(),
         )

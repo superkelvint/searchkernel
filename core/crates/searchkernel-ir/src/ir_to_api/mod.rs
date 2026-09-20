@@ -34,7 +34,8 @@ pub use result::{
     analyze_result_offset, analyze_result_to_api, delete_result_offset, delete_result_to_api,
     get_result_offset, get_result_to_api, insert_result_offset, insert_result_to_api,
     patch_result_offset, patch_result_to_api, search_result_offset, search_result_to_api,
-    upsert_result_offset, upsert_result_to_api, validate_search_result,
+    update_result_offset, update_result_to_api, upsert_result_offset, upsert_result_to_api,
+    validate_search_result,
 };
 pub use schema::{describe_result_offset, describe_result_to_api, index_definition_ir_to_api};
 pub use search::{

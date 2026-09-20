@@ -1,8 +1,9 @@
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Document, DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue,
-    GroupingAggregation, GroupingExpression, GroupingLevel, GroupingOrder, GroupingPlan,
-    InQueryValue, LinguisticsOptions, Query, QueryInput, RankProfile, ScalarValue, Schema,
-    SearchRequest, SortField, SummaryRequest, TensorValue, Value,
+    ArithmeticOperator, AttributeDocument, AttributeUpdate, ConfigCompiler, Document,
+    DocumentUpdate, Engine, FacetRequest, Field, FieldType, FieldValue, GroupingAggregation,
+    GroupingExpression, GroupingFilter, GroupingLevel, GroupingOrder, GroupingPlan, InQueryValue,
+    LinguisticsOptions, NearestNeighborOptions, Query, QueryInput, RankProfile, ScalarValue,
+    Schema, SearchRequest, SortField, SummaryRequest, TensorValue, Value,
 };
 use std::collections::BTreeSet;
 use std::fs;
@@ -228,6 +229,64 @@ fn native_nearest_neighbor_uses_a_tensor_query_input_and_rank_profile() {
     assert!(result.hits[0].score > result.hits[1].score);
 
     engine.close().expect("close nearest-neighbor engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_nearest_neighbor_options_accept_zero_explore_additional_hits() {
+    let config = temporary_path("nearest-options-config");
+    let data = temporary_path("nearest-options-data");
+    let schema = Schema::new("typea")
+        .field(
+            Field::new(
+                "embedding",
+                FieldType::Tensor("tensor<float>(x[2])".to_owned()),
+            )
+            .attribute(),
+        )
+        .rank_profile(
+            RankProfile::new("semantic")
+                .query_input("query_embedding", "tensor<float>(x[2])")
+                .first_phase("closeness(embedding)"),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile nearest-neighbor options config");
+    let engine = Engine::open(&data, &config).expect("open nearest-neighbor options engine");
+    engine
+        .put(Document::new("near-options").field(
+            "embedding",
+            TensorValue::dense("tensor<float>(x[2])", [1.0, 0.0]),
+        ))
+        .expect("put nearest-neighbor options document");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::NearestNeighborWithOptions {
+                document_field: "embedding".to_owned(),
+                query_tensor: "query_embedding".to_owned(),
+                options: NearestNeighborOptions {
+                    target_num_hits: 1,
+                    approximate: true,
+                    distance_threshold: None,
+                    explore_additional_hits: 0,
+                },
+            })
+            .rank_profile("semantic")
+            .input(
+                "query_embedding",
+                QueryInput::Literal(TensorValue::dense("tensor<float>(x[2])", [1.0, 0.0])),
+            )
+            .limit(1),
+        )
+        .expect("execute nearest-neighbor options search");
+    assert_eq!(result.hits.len(), 1);
+    assert_eq!(result.hits[0].document_id, "near-options");
+
+    engine
+        .close()
+        .expect("close nearest-neighbor options engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }
@@ -642,11 +701,16 @@ fn native_local_search_and_attribute_operations_round_trip() {
         FieldValue::Scalar(ScalarValue::Integer(7))
     );
 
+    let error = engine
+        .put_attributes(&AttributeDocument::new("local-1").field("title", "not-an-attribute"))
+        .expect_err("attribute puts must reject indexed-only fields");
+    assert!(error.to_string().contains("not an attribute"));
+
     engine
-        .put(Document::new("local-1").field("qty", 11_i64))
+        .put_attributes(&AttributeDocument::new("local-1").field("qty", 11_i64))
         .expect("put attribute document");
     engine
-        .update(DocumentUpdate::new("local-1").assign("qty", 13_i64))
+        .update_attributes(&AttributeUpdate::new("local-1").assign("qty", 13_i64))
         .expect("update attribute document");
 
     let grouped = engine
@@ -1034,6 +1098,164 @@ fn native_grouping_supports_float_keys() {
     );
 
     engine.close().expect("close float-group engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_raw_sort_spec_is_available_through_the_safe_request_wrapper() {
+    let config = temporary_path("raw-sort-config");
+    let data = temporary_path("raw-sort-data");
+    let schema = Schema::new("typea").field(Field::new("category", FieldType::String).attribute());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile raw sort config");
+    let engine = Engine::open(&data, &config).expect("open raw sort engine");
+    for (id, category) in [("raw-sort-b", "B"), ("raw-sort-a", "A")] {
+        engine
+            .put(Document::new(id).field("category", category))
+            .expect("put raw sort document");
+    }
+    let result = engine
+        .search(SearchRequest::new(Query::True).raw_sort_spec("+category"))
+        .expect("execute raw sort search");
+    let ids: Vec<_> = result
+        .hits
+        .iter()
+        .map(|hit| hit.document_id.as_str())
+        .collect();
+    assert_eq!(ids, ["raw-sort-a", "raw-sort-b"]);
+
+    engine.close().expect("close raw sort engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_decodes_quantiles_and_summary_hits() {
+    let config = temporary_path("group-extensions-config");
+    let data = temporary_path("group-extensions-data");
+    let schema = Schema::new("typea")
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        )
+        .field(Field::new("qty", FieldType::Integer).attribute().summary())
+        .field(Field::new("rating", FieldType::Float).attribute().summary())
+        .field(Field::new("title", FieldType::Text).indexed().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile grouping extension config");
+    let engine = Engine::open(&data, &config).expect("open grouping extension engine");
+    for (id, qty, rating, title) in [
+        ("group-extension-1", 1_i64, 10.0_f64, "first"),
+        ("group-extension-2", 2_i64, 20.0_f64, "second"),
+    ] {
+        engine
+            .put(
+                Document::new(id)
+                    .field("category", "all")
+                    .field("qty", qty)
+                    .field("rating", rating)
+                    .field("title", title),
+            )
+            .expect("put grouping extension document");
+    }
+    let level = GroupingLevel::new(GroupingExpression::attribute("category"))
+        .aggregation(GroupingAggregation::Count)
+        .aggregation(GroupingAggregation::Sum(GroupingExpression::attribute(
+            "rating",
+        )))
+        .aggregation(GroupingAggregation::Min(GroupingExpression::attribute(
+            "rating",
+        )))
+        .aggregation(GroupingAggregation::Max(GroupingExpression::attribute(
+            "rating",
+        )))
+        .aggregation(GroupingAggregation::StandardDeviation(
+            GroupingExpression::attribute("rating"),
+        ))
+        .aggregation(GroupingAggregation::Xor(GroupingExpression::attribute(
+            "qty",
+        )))
+        .aggregation(GroupingAggregation::Quantiles {
+            expression: GroupingExpression::attribute("rating"),
+            quantiles: vec![0.5, 1.0],
+        })
+        .aggregation(GroupingAggregation::Summary {
+            summary_class: "default".to_owned(),
+            max_hits: 2,
+        });
+    let result = engine
+        .group(&Query::True, &GroupingPlan::new().level(level))
+        .expect("execute grouping extensions");
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].outputs.len(), 8);
+    assert!(result.groups[0].outputs.iter().any(|output| matches!(
+        output,
+        searchkernel_vespa_engine::GroupingOutput::HitList(hits)
+            if hits.len() == 2
+    )));
+    assert!(result.groups[0].outputs.iter().any(|output| matches!(
+        output,
+        searchkernel_vespa_engine::GroupingOutput::Value(
+            searchkernel_vespa_engine::GroupingResultValue::Quantiles(values)
+        ) if values.len() == 2
+    )));
+    engine.close().expect("close grouping extension engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_grouping_filter_survives_serialization_and_filters_groups() {
+    let config = temporary_path("group-filter-config");
+    let data = temporary_path("group-filter-data");
+    let schema = Schema::new("typea").field(
+        Field::new("category", FieldType::String)
+            .attribute()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile grouping filter config");
+    let engine = Engine::open(&data, &config).expect("open grouping filter engine");
+    for (id, category) in [("group-filter-a", "A"), ("group-filter-b", "B")] {
+        engine
+            .put(Document::new(id).field("category", category))
+            .expect("put grouping filter document");
+    }
+
+    let filtered = GroupingLevel::new(GroupingExpression::attribute("category"))
+        .aggregation(GroupingAggregation::Count)
+        .filter(GroupingFilter::Regex {
+            field: "category".to_owned(),
+            pattern: "^A$".to_owned(),
+        });
+    let result = engine
+        .group(&Query::True, &GroupingPlan::new().level(filtered))
+        .expect("execute positive grouping filter");
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(
+        result.groups[0].key,
+        Some(searchkernel_vespa_engine::GroupingResultValue::String(
+            "A".to_owned(),
+        ))
+    );
+
+    let rejected = GroupingLevel::new(GroupingExpression::attribute("category"))
+        .aggregation(GroupingAggregation::Count)
+        .filter(GroupingFilter::Regex {
+            field: "category".to_owned(),
+            pattern: "^Z$".to_owned(),
+        });
+    let result = engine
+        .group(&Query::True, &GroupingPlan::new().level(rejected))
+        .expect("execute negative grouping filter");
+    assert!(result.groups.is_empty());
+
+    engine.close().expect("close grouping filter engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

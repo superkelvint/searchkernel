@@ -207,6 +207,10 @@ pub enum Query {
     SameElement {
         field: String,
         children: Vec<Query>,
+        /// Vespa's sameElement elementFilter is a list of element indexes.
+        /// It is kept as query metadata and passed unchanged to the native
+        /// QueryBuilder; Rust does not evaluate the filter.
+        element_filter: Vec<u32>,
     },
     GeoLocation {
         field: String,
@@ -292,8 +296,16 @@ impl Query {
 pub(crate) struct ParsedYql {
     pub source: String,
     pub query: Query,
+    pub sort: Vec<(String, bool)>,
 }
 
 pub(crate) fn parse_yql(yql: &str) -> Result<ParsedYql> {
-    yql::parse(yql)
+    yql::parse(yql, &std::collections::BTreeMap::new())
+}
+
+pub(crate) fn parse_yql_with_properties(
+    yql: &str,
+    properties: &std::collections::BTreeMap<String, String>,
+) -> Result<ParsedYql> {
+    yql::parse(yql, properties)
 }

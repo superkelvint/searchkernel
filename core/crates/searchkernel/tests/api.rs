@@ -1,6 +1,6 @@
 use searchkernel::{
     field, DocumentId, Error, ErrorCode, Facet, FacetSort, Field, Filter, Index, IndexDefinition,
-    Patch, Range, Ranking, Sort,
+    Patch, Range, RankProfile, Ranking, Sort,
 };
 use searchkernel_ir::{
     Backend, FieldName, FilterIr, GetResult, GroupingAggregationIr, GroupingAllIr,
@@ -28,6 +28,8 @@ fn definition() -> IndexDefinition {
         .field(Field::keyword("brand"))
         .field(Field::float64("price"))
         .field(Field::bool("in_stock"))
+        .rank_profile(RankProfile::new("product_search"))
+        .rank_profile(RankProfile::new("bm25"))
 }
 
 fn index_with(backend: Arc<dyn Backend>) -> Index {

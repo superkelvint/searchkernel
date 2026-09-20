@@ -387,10 +387,14 @@ impl IndexContext {
                 }
             }
             QueryExprKindIr::Contains { field, item } => {
-                self.validate_searchable_query_field(field, &child_path("contains.field"))?;
+                let field = self.resolve_searchable_query_field(
+                    field,
+                    field_context,
+                    &child_path("contains.field"),
+                )?;
                 self.validate_typed_query(
                     item,
-                    Some(field),
+                    Some(&field),
                     default_index,
                     &child_path("contains.item"),
                 )
@@ -634,6 +638,45 @@ impl IndexContext {
             ));
         }
         Ok(())
+    }
+
+    fn resolve_searchable_query_field(
+        &self,
+        field: &QueryFieldRefIr,
+        field_context: Option<&QueryFieldRefIr>,
+        path: &str,
+    ) -> Result<QueryFieldRefIr> {
+        if self
+            .query_field(field.path.as_str(), format!("{path}.path"))
+            .is_ok()
+            && self
+                .query_field(field.path.as_str(), format!("{path}.path"))?
+                .capabilities()
+                .searchable()
+        {
+            return Ok(field.clone());
+        }
+        let Some(context) = field_context else {
+            return self
+                .validate_searchable_query_field(field, path)
+                .map(|()| field.clone());
+        };
+        if field.path.as_str().contains('.') {
+            return self
+                .validate_searchable_query_field(field, path)
+                .map(|()| field.clone());
+        }
+        let qualified = FieldName::parse_query_path(format!(
+            "{}.{}",
+            context.path.as_str(),
+            field.path.as_str()
+        ))?;
+        let qualified_ref = QueryFieldRefIr {
+            path: qualified,
+            element_index: field.element_index,
+        };
+        self.validate_searchable_query_field(&qualified_ref, path)?;
+        Ok(qualified_ref)
     }
 
     fn validate_filter_query_field<'a>(
@@ -1270,7 +1313,11 @@ impl IndexContext {
         let field_path = value.path().unwrap_or_default();
         let field = self.query_field(field_path, format!("{path}.path"))?;
         Ok(QueryFieldRefIr {
-            path: field.name.clone(),
+            path: if field_path.contains('.') {
+                FieldName::parse_query_path(field_path.to_owned())?
+            } else {
+                field.name.clone()
+            },
             element_index: value.element_index().map(|value| value.value()),
         })
     }

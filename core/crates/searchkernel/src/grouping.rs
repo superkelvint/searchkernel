@@ -170,3 +170,33 @@ fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
         expression: GroupingExpressionIr::Aggregation(Box::new(aggregation)),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_plan_materializes_each_before_nested_all() {
+        let plan = GroupingPlan::new().level(
+            GroupingPlan::by("category")
+                .output(GroupingAggregation::count())
+                .nested(GroupingPlan::by("rating").output(GroupingAggregation::count())),
+        );
+
+        let request = plan.into_ir().expect("grouping plan should convert");
+        let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)), GroupingOperationIr::Each(each)] =
+            request.root.operations.as_slice()
+        else {
+            panic!("nested grouping must materialize its group with each");
+        };
+        assert_eq!(field, "category");
+        assert!(matches!(
+            each.operations.first(),
+            Some(GroupingOperationIr::Output(_))
+        ));
+        assert!(matches!(
+            each.operations.get(1),
+            Some(GroupingOperationIr::All(_))
+        ));
+    }
+}

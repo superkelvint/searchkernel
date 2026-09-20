@@ -29,6 +29,7 @@ pub const SK_QUERY_FIELD_FLOAT: u32 = 4;
 pub const SK_QUERY_FIELD_BOOLEAN: u32 = 5;
 pub const SK_QUERY_FIELD_ATTRIBUTE: u32 = 6;
 pub const SK_QUERY_FIELD_TENSOR: u32 = 7;
+pub const SK_QUERY_FIELD_ARRAY: u32 = 8;
 pub const SK_QUERY_FIELD_ARRAY_STRING: u32 = 8;
 pub const SK_QUERY_FIELD_POSITION: u32 = 9;
 pub const SK_QUERY_FIELD_PREDICATE: u32 = 10;
@@ -69,6 +70,11 @@ pub const SK_GROUP_ORDER_COUNT_ASC: u32 = 1;
 pub const SK_GROUP_ORDER_COUNT_DESC: u32 = 2;
 pub const SK_GROUP_ORDER_VALUE_ASC: u32 = 3;
 pub const SK_GROUP_ORDER_VALUE_DESC: u32 = 4;
+pub const SK_GROUPING_BINARY_ADD: u32 = 1;
+pub const SK_GROUPING_BINARY_SUBTRACT: u32 = 2;
+pub const SK_GROUPING_BINARY_MULTIPLY: u32 = 3;
+pub const SK_GROUPING_BINARY_DIVIDE: u32 = 4;
+pub const SK_GROUPING_BINARY_MODULO: u32 = 5;
 pub const SK_NATIVE_STATUS_DEADLINE_EXCEEDED: u32 = 5;
 pub const SK_ARITHMETIC_ADD: u32 = 0;
 pub const SK_ARITHMETIC_DIV: u32 = 1;
@@ -1126,19 +1132,6 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
-    pub fn sk_query_add_nearest_neighbor_with_options(
-        query: *mut sk_query,
-        document_field: *const ::std::os::raw::c_char,
-        query_tensor: *const ::std::os::raw::c_char,
-        target_num_hits: u32,
-        allow_approximate: u8,
-        distance_threshold: f64,
-        explore_additional_hits: u32,
-        out_error: *mut u8,
-        out_error_capacity: u32,
-    ) -> i32;
-}
-unsafe extern "C" {
     pub fn sk_nearest_neighbor_options_create(
         out_options: *mut *mut sk_nearest_neighbor_options,
         out_error: *mut u8,
@@ -1181,6 +1174,17 @@ unsafe extern "C" {
         query: *mut sk_query,
         field: *const ::std::os::raw::c_char,
         child_count: u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_query_add_same_element_with_filter(
+        query: *mut sk_query,
+        field: *const ::std::os::raw::c_char,
+        child_count: u32,
+        element_filter: *const u32,
+        element_filter_count: u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;
@@ -1823,8 +1827,84 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_grouping_plan_set_all(
+        plan: *mut sk_grouping_plan,
+        all: u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_grouping_expression_attribute(
         field: *const ::std::os::raw::c_char,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_string(
+        value: *const ::std::os::raw::c_char,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_integer(
+        value: i64,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_float(
+        value: f64,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_boolean(
+        value: u8,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_negative(
+        input: *const sk_grouping_expression,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_binary(
+        operator_kind: u32,
+        left: *const sk_grouping_expression,
+        right: *const sk_grouping_expression,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_function(
+        name: *const ::std::os::raw::c_char,
+        arguments: *const *const sk_grouping_expression,
+        argument_count: u32,
+        out_expression: *mut *mut sk_grouping_expression,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_expression_aggregation_reference(
+        index: u32,
         out_expression: *mut *mut sk_grouping_expression,
         out_error: *mut u8,
         out_error_capacity: u32,
@@ -1945,6 +2025,61 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_grouping_filter_regex_expression(
+        pattern: *const ::std::os::raw::c_char,
+        expression: *const sk_grouping_expression,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_filter_and(
+        filters: *const *const sk_grouping_filter,
+        filter_count: u32,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_filter_or(
+        filters: *const *const sk_grouping_filter,
+        filter_count: u32,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_filter_not(
+        filter: *const sk_grouping_filter,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_filter_range(
+        lower: f64,
+        upper: f64,
+        expression: *const sk_grouping_expression,
+        include_lower: u8,
+        include_upper: u8,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_filter_is_true(
+        expression: *const sk_grouping_expression,
+        out_filter: *mut *mut sk_grouping_filter,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_grouping_filter_destroy(filter: *mut sk_grouping_filter);
 }
 unsafe extern "C" {
@@ -1983,6 +2118,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn sk_grouping_level_add_aggregation_handle(
         level: *mut sk_grouping_level,
+        aggregation: *const sk_grouping_aggregation,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_plan_add_root_aggregation_handle(
+        plan: *mut sk_grouping_plan,
         aggregation: *const sk_grouping_aggregation,
         out_error: *mut u8,
         out_error_capacity: u32,
@@ -2100,6 +2243,19 @@ unsafe extern "C" {
     pub fn sk_grouping_tree_output_value(
         output: *const sk_grouping_tree_output,
         out_value: *mut *const sk_grouping_result_value,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_count(output: *const sk_grouping_tree_output) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_id(
+        output: *const sk_grouping_tree_output,
+        hit_index: u32,
+        out_id: *mut *const ::std::os::raw::c_char,
+        out_id_length: *mut u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

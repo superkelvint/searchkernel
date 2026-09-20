@@ -2,6 +2,7 @@
 
 use super::{Query, RangeBound};
 use crate::{Error, Result};
+use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Token {
     Identifier(String),
@@ -17,17 +18,21 @@ enum Token {
     Equals,
     Bang,
     Minus,
+    At,
     End,
 }
 
-pub(super) fn parse(input: &str) -> Result<super::ParsedYql> {
+pub(super) fn parse(
+    input: &str,
+    properties: &BTreeMap<String, String>,
+) -> Result<super::ParsedYql> {
     if input.len() > super::MAX_YQL_BYTES {
         return Err(invalid_yql_error(format!(
             "YQL exceeds maximum size {} bytes",
             super::MAX_YQL_BYTES
         )));
     }
-    let mut parser = Parser::new(input)?;
+    let mut parser = Parser::new(input, properties)?;
     parser.parse_statement()
 }
 
@@ -35,14 +40,16 @@ struct Parser {
     tokens: Vec<Token>,
     position: usize,
     depth: usize,
+    properties: BTreeMap<String, String>,
 }
 
 impl Parser {
-    fn new(input: &str) -> Result<Self> {
+    fn new(input: &str, properties: &BTreeMap<String, String>) -> Result<Self> {
         Ok(Self {
             tokens: lex(input)?,
             position: 0,
             depth: 0,
+            properties: properties.clone(),
         })
     }
 
@@ -63,6 +70,21 @@ impl Parser {
         };
         self.expect_keyword("where")?;
         let query = self.parse_or()?;
+        let mut sort = Vec::new();
+        if self.take_keyword("order") {
+            self.expect_keyword("by")?;
+            loop {
+                let field = self
+                    .take_identifier()
+                    .ok_or_else(|| invalid_yql_error("ORDER BY requires a field name"))?;
+                let _ = self.take_keyword("asc");
+                let ascending = !self.take_keyword("desc");
+                sort.push((field, ascending));
+                if !self.take_simple(Token::Comma) {
+                    break;
+                }
+            }
+        }
         match self.peek() {
             Token::End => {}
             Token::Identifier(name) if is_unsupported_clause(name) => {
@@ -74,7 +96,11 @@ impl Parser {
                 ));
             }
         }
-        Ok(super::ParsedYql { source, query })
+        Ok(super::ParsedYql {
+            source,
+            query,
+            sort,
+        })
     }
 
     fn parse_or(&mut self) -> Result<Query> {
@@ -155,6 +181,27 @@ impl Parser {
             return Ok(Query::Phrase {
                 field,
                 text: terms.join(" "),
+            });
+        }
+        if self.take_keyword("text") {
+            self.expect_simple(Token::LParen, "expected `(` after text")?;
+            let text = if self.take_simple(Token::At) {
+                let name = self
+                    .take_identifier()
+                    .ok_or_else(|| invalid_yql_error("text property requires a name"))?;
+                self.properties
+                    .get(&name)
+                    .cloned()
+                    .ok_or_else(|| invalid_yql_error(format!("missing YQL property `@{name}`")))?
+            } else {
+                self.take_string()
+                    .ok_or_else(|| invalid_yql_error("text requires a quoted value or @property"))?
+            };
+            self.expect_simple(Token::RParen, "expected `)` after text")?;
+            return Ok(Query::Text {
+                field,
+                text,
+                target_num_hits: super::DEFAULT_WEAK_AND_TARGET_HITS,
             });
         }
         let text = self.take_string().ok_or_else(|| {
@@ -457,6 +504,10 @@ fn lex(input: &str) -> Result<Vec<Token>> {
             }
             b'-' => {
                 tokens.push(Token::Minus);
+                index += 1;
+            }
+            b'@' => {
+                tokens.push(Token::At);
                 index += 1;
             }
             b'"' => {

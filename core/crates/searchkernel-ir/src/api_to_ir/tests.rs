@@ -730,6 +730,33 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
 }
 
 #[test]
+fn unknown_ranking_profile_is_rejected_before_backend_lowering() {
+    let error = resolve_search(
+        &context(),
+        SearchIntent {
+            query: String::new(),
+            search_fields: None,
+            filters: Vec::new(),
+            sorts: Vec::new(),
+            facets: Vec::new(),
+            ranking: Some(RankingInput::Named("missing".to_owned())),
+            query_inputs: BTreeMap::new(),
+            rank_properties: BTreeMap::new(),
+            projection: None,
+            highlighting: None,
+            language: None,
+            timeout: None,
+            limit: None,
+            offset: None,
+        },
+    )
+    .expect_err("unknown ranking profile must not reach Vespa fallback");
+
+    assert_eq!(error.code, crate::ErrorCode::InvalidArgument);
+    assert_eq!(error.details[0].code, "invalid_rank_profile");
+}
+
+#[test]
 fn tensor_patch_resolution_preserves_tensor_values_and_rejects_scalars() {
     let definition = IndexDefinitionIr::new(
         None,

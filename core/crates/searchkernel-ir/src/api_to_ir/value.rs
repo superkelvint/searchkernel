@@ -100,61 +100,8 @@ impl IndexContext {
             })?;
             return request_tensor_to_ir(tensor, path).map(FieldValueIr::Tensor);
         }
-        if value.kind_type() == api::ValueKind::NONE {
-            return Err(invalid(
-                "missing_value",
-                Some(path),
-                "value must select a scalar kind",
-            ));
-        }
-        let value_list = if value.kind_type() == api::ValueKind::ValueList {
-            Some(value.kind_as_value_list().ok_or_else(|| {
-                invalid(
-                    "missing_value",
-                    Some(path.clone()),
-                    "value list union payload is missing",
-                )
-            })?)
-        } else {
-            None
-        };
-        match field.cardinality() {
-            FieldCardinality::Single => {
-                if value_list.is_some() {
-                    return Err(invalid(
-                        "cardinality_mismatch",
-                        Some(path),
-                        "single-valued fields require a scalar value",
-                    ));
-                }
-                Ok(FieldValueIr::Single(scalar_to_ir(
-                    value,
-                    field.kind(),
-                    path,
-                )?))
-            }
-            FieldCardinality::Multi => {
-                let list = value_list.ok_or_else(|| {
-                    invalid(
-                        "cardinality_mismatch",
-                        Some(path.clone()),
-                        "multi-valued fields require a list value",
-                    )
-                })?;
-                let values = list
-                    .values()
-                    .map(|v| {
-                        v.iter()
-                            .enumerate()
-                            .map(|(i, value)| {
-                                scalar_to_ir(value, field.kind(), format!("{path}.values[{i}]"))
-                            })
-                            .collect::<Result<Vec<_>>>()
-                    })
-                    .unwrap_or_else(|| Ok(Vec::new()))?;
-                Ok(FieldValueIr::Multi(values))
-            }
-        }
+        let request = RequestValueIr::from_api(value, path.clone())?;
+        super::resolve::resolve_field_value(field, request, path)
     }
 }
 

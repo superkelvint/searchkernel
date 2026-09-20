@@ -504,6 +504,9 @@ fn routes_every_operation_and_encodes_its_canonical_response() {
             OperationIr::Patch(request) => ScriptedResult::Patch(searchkernel_ir::PatchResult {
                 id: request.id().as_str().to_owned(),
             }),
+            OperationIr::Update(request) => ScriptedResult::Update(searchkernel_ir::UpdateResult {
+                id: request.id().as_str().to_owned(),
+            }),
             OperationIr::Delete(request) => ScriptedResult::Delete(searchkernel_ir::DeleteResult {
                 id: request.id().as_str().to_owned(),
                 deleted: true,

@@ -32,13 +32,34 @@ const RESERVED_FIELD_NAMES: &[&str] = &[
 pub enum FieldType {
     Text,
     ArrayString,
+    ArrayStruct(Vec<StructField>),
     String,
+    /// A Vespa LONG field used by the portable API's signed 64-bit integer.
+    ///
+    /// `Integer` is retained as the legacy INT32 spelling required by the
+    /// frozen M6 contract.
+    Long,
     Integer,
     Float,
     Boolean,
     Position,
     Predicate,
     Tensor(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructField {
+    pub name: String,
+    pub field_type: StructFieldType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StructFieldType {
+    String,
+    Long,
+    Integer,
+    Float,
+    Boolean,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +71,7 @@ pub struct Field {
     attribute: bool,
     fast_search: bool,
     summary: bool,
+    predicate_arity: Option<u32>,
 }
 
 impl Field {
@@ -62,6 +84,7 @@ impl Field {
             attribute: false,
             fast_search: false,
             summary: false,
+            predicate_arity: None,
         }
     }
 
@@ -86,6 +109,13 @@ impl Field {
     /// Include this field in the default document summary.
     pub fn summary(mut self) -> Self {
         self.summary = true;
+        self
+    }
+
+    /// Set Vespa predicate field arity. Predicate fields require this native
+    /// configuration because it controls the predicate hash space.
+    pub fn predicate_arity(mut self, arity: u32) -> Self {
+        self.predicate_arity = Some(arity);
         self
     }
 }
@@ -190,6 +220,7 @@ fn write_generated_files(
     if schema.fields.iter().any(|field| {
         matches!(&field.field_type, FieldType::Position)
             || (matches!(&field.field_type, FieldType::ArrayString) && field.indexed)
+            || matches!(&field.field_type, FieldType::ArrayStruct(_))
     }) {
         write_config(directory, "ilscripts.cfg", &derived_config.ilscripts())?;
     }
@@ -230,13 +261,32 @@ impl<'a> DerivedConfig<'a> {
                     field.attribute,
                     field.summary,
                 )),
+                FieldType::ArrayStruct(struct_fields) => output.push_str(&format!(
+                    "{{\"name\":{},\"type\":\"array<struct>\",\"struct_fields\":[{}],\"index\":{},\"attribute\":{},\"summary\":{}}}",
+                    quoted(&field.name),
+                    struct_fields
+                        .iter()
+                        .map(|value| format!(
+                            "{{\"name\":{},\"type\":{}}}",
+                            quoted(&value.name),
+                            quoted(value.field_type.manifest_name())
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    field.indexed,
+                    field.attribute,
+                    field.summary,
+                )),
                 _ => output.push_str(&format!(
-                    "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}}}",
+                    "{{\"name\":{},\"type\":{},\"index\":{},\"attribute\":{},\"summary\":{}{} }}",
                     quoted(&field.name),
                     quoted(field.field_type.manifest_name()),
                     field.indexed,
                     field.attribute,
                     field.summary,
+                    field.predicate_arity
+                        .map(|arity| format!(",\"predicate_arity\":{arity}"))
+                        .unwrap_or_default(),
                 )),
             }
         }
@@ -245,13 +295,25 @@ impl<'a> DerivedConfig<'a> {
     }
 
     fn indexschema(&self) -> String {
-        let indexed: Vec<&Field> = self.fields().iter().filter(|field| field.indexed).collect();
+        let mut indexed = Vec::new();
+        for field in self.fields() {
+            if field.indexed {
+                indexed.push((field.name.clone(), field.field_type.index_collection_type()));
+            }
+            if let FieldType::ArrayStruct(struct_fields) = &field.field_type {
+                for struct_field in struct_fields {
+                    if matches!(struct_field.field_type, StructFieldType::String) {
+                        indexed.push((format!("{}__{}", field.name, struct_field.name), "ARRAY"));
+                    }
+                }
+            }
+        }
         let mut output = format!("indexfield[{}]\n", indexed.len());
-        for (index, field) in indexed.iter().enumerate() {
+        for (index, (name, collection_type)) in indexed.iter().enumerate() {
             output.push_str(&format!(
                 "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype {}\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
-                quoted(&field.name),
-                field.field_type.index_collection_type()
+                quoted(name),
+                collection_type
             ));
         }
         output
@@ -263,8 +325,27 @@ impl<'a> DerivedConfig<'a> {
             .iter()
             .filter(|field| field.attribute)
             .collect();
-        let mut output = format!("attribute[{}]\n", attributes.len());
-        for (index, field) in attributes.iter().enumerate() {
+        let attribute_count = attributes
+            .iter()
+            .map(|field| match &field.field_type {
+                FieldType::ArrayStruct(fields) => fields.len(),
+                _ => 1,
+            })
+            .sum::<usize>();
+        let mut output = format!("attribute[{}]\n", attribute_count);
+        let mut index = 0;
+        for field in attributes {
+            if let FieldType::ArrayStruct(fields) = &field.field_type {
+                for struct_field in fields {
+                    output.push_str(&format!(
+                        "attribute[{index}].name {}\nattribute[{index}].datatype {}\nattribute[{index}].collectiontype ARRAY\n",
+                        quoted(&format!("{}.{}", field.name, struct_field.name)),
+                        struct_field.field_type.attribute_type(),
+                    ));
+                    index += 1;
+                }
+                continue;
+            }
             let name = match &field.field_type {
                 FieldType::Position => format!("{}_zcurve", field.name),
                 _ => field.name.clone(),
@@ -285,41 +366,81 @@ impl<'a> DerivedConfig<'a> {
                     quoted(type_spec)
                 ));
             }
+            if let FieldType::Predicate = &field.field_type {
+                output.push_str(&format!(
+                    "attribute[{index}].arity {}\n",
+                    field.predicate_arity.unwrap_or_default()
+                ));
+                output.push_str(&format!(
+                    "attribute[{index}].lowerbound {}\nattribute[{index}].upperbound {}\nattribute[{index}].densepostinglistthreshold 0.4\n",
+                    i64::MIN,
+                    i64::MAX
+                ));
+            }
             if field.fast_search || matches!(&field.field_type, FieldType::Position) {
                 output.push_str(&format!("attribute[{index}].fastsearch true\n"));
             }
+            index += 1;
         }
         output
     }
 
     fn ilscripts(&self) -> String {
-        let indexed_special_fields: Vec<&Field> = self
-            .fields()
-            .iter()
-            .filter(|field| {
-                matches!(&field.field_type, FieldType::Position)
-                    || (matches!(&field.field_type, FieldType::ArrayString) && field.indexed)
-            })
-            .collect();
+        let mut indexed_special_fields = Vec::new();
+        for field in self.fields() {
+            match &field.field_type {
+                FieldType::Position => indexed_special_fields.push((
+                    field.name.clone(),
+                    format!(
+                        "clear_state | guard {{ input {} | zcurve | attribute {}_zcurve; }}",
+                        field.name, field.name
+                    ),
+                )),
+                FieldType::ArrayString if field.indexed => indexed_special_fields.push((
+                    field.name.clone(),
+                    {
+                        let summary = if field.summary {
+                            format!(" | summary {}", field.name)
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "clear_state | guard {{ input {} | for_each {{ tokenize normalize stem:\"BEST\" }}{} | index {} | attribute {}; }}",
+                            field.name,
+                            summary,
+                            field.name,
+                            field.name
+                        )
+                    },
+                )),
+                FieldType::ArrayStruct(struct_fields) => {
+                    for member in struct_fields {
+                        if matches!(member.field_type, StructFieldType::String) {
+                            let name = format!("{}.{}", field.name, member.name);
+                            indexed_special_fields.push((
+                                name.clone(),
+                                format!(
+                                    "clear_state | guard {{ input {} | for_each {{ tokenize normalize stem:\"BEST\" }} | index {} | attribute {}; }}",
+                                    name,
+                                    name.replace('.', "__"),
+                                    name
+                                ),
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         let mut output = String::from(
             "maxtermoccurrences 10000\nmaxtokenlength 1000\nfieldmatchmaxlength 1000000\nmaxReplacementCharactersRatio 0.25\nmaxReplacementCharacters 5000\n",
         );
-        output.push_str(&format!("ilscript[{}]\n", indexed_special_fields.len()));
-        for (index, field) in indexed_special_fields.iter().enumerate() {
-            let content = match &field.field_type {
-                FieldType::Position => format!(
-                    "clear_state | guard {{ input {} | zcurve | attribute {}_zcurve; }}",
-                    field.name, field.name
-                ),
-                FieldType::ArrayString => format!(
-                    "clear_state | guard {{ input {} | for_each {{ tokenize normalize stem:\"BEST\" }} | attribute {} | index {}; }}",
-                    field.name, field.name, field.name
-                ),
-                _ => unreachable!("only special fields are selected above"),
-            };
+        for (field, content) in indexed_special_fields.iter() {
             output.push_str(&format!(
-                "ilscript[{index}].doctype {}\nilscript[{index}].docfield[] {}\nilscript[{index}].content[] {}\n",
-                quoted(&self.schema.document_type), quoted(&field.name), quoted(&content)
+                "ilscript[].doctype {}\nilscript[].docfield[] {}\nilscript[].content[] {}\n",
+                quoted(&self.schema.document_type),
+                quoted(field),
+                quoted(content)
             ));
         }
         output
@@ -407,7 +528,9 @@ impl FieldType {
         match self {
             Self::Text => "text",
             Self::ArrayString => "array<string>",
+            Self::ArrayStruct(_) => "array<struct>",
             Self::String => "string",
+            Self::Long => "integer",
             Self::Integer => "integer",
             Self::Float => "float",
             Self::Boolean => "boolean",
@@ -420,7 +543,9 @@ impl FieldType {
     fn attribute_type(&self) -> &'static str {
         match self {
             Self::Text | Self::ArrayString | Self::String => "STRING",
-            Self::Integer => "INT64",
+            Self::ArrayStruct(_) => "STRUCT",
+            Self::Long => "INT64",
+            Self::Integer => "INT32",
             Self::Float => "DOUBLE",
             Self::Boolean => "BOOL",
             Self::Position => "POSITION",
@@ -431,14 +556,14 @@ impl FieldType {
 
     fn index_collection_type(&self) -> &'static str {
         match self {
-            Self::ArrayString => "ARRAY",
+            Self::ArrayString | Self::ArrayStruct(_) => "ARRAY",
             _ => "SINGLE",
         }
     }
 
     fn attribute_collection_type(&self) -> &'static str {
         match self {
-            Self::ArrayString => "ARRAY",
+            Self::ArrayString | Self::ArrayStruct(_) => "ARRAY",
             _ => "SINGLE",
         }
     }
@@ -446,12 +571,34 @@ impl FieldType {
     fn summary_type(&self) -> &'static str {
         match self {
             Self::Text | Self::ArrayString | Self::String => "longstring",
-            Self::Integer => "integer",
+            Self::ArrayStruct(_) => "longstring",
+            Self::Long | Self::Integer => "integer",
             Self::Float => "double",
             Self::Boolean => "bool",
             Self::Position => "position",
             Self::Predicate => "predicate",
             Self::Tensor(_) => "tensor",
+        }
+    }
+}
+
+impl StructFieldType {
+    fn manifest_name(&self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Long | Self::Integer => "integer",
+            Self::Float => "float",
+            Self::Boolean => "boolean",
+        }
+    }
+
+    fn attribute_type(&self) -> &'static str {
+        match self {
+            Self::String => "STRING",
+            Self::Long => "INT64",
+            Self::Integer => "INT32",
+            Self::Float => "DOUBLE",
+            Self::Boolean => "BOOL",
         }
     }
 }
@@ -508,6 +655,12 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             FieldType::Position | FieldType::Predicate if field.summary => {
                 return Err(Error::message(format!(
                     "special field '{}' may not be a summary field",
+                    field.name
+                )));
+            }
+            FieldType::Predicate if field.predicate_arity.is_none_or(|arity| arity == 0) => {
+                return Err(Error::message(format!(
+                    "predicate field '{}' must have a positive arity",
                     field.name
                 )));
             }
@@ -647,12 +800,28 @@ fn quoted(value: &str) -> String {
 
 fn rank_profiles(schema: &Schema) -> String {
     if !schema.rank_profiles.is_empty() {
+        let text_field = schema
+            .fields
+            .iter()
+            .find(|field| field.field_type == FieldType::Text)
+            .map(|field| field.name.as_str());
+        let includes_generated_bm25 = text_field.is_some()
+            && !schema
+                .rank_profiles
+                .iter()
+                .any(|profile| profile.name == "bm25");
+        let profile_count = schema.rank_profiles.len() + 1 + usize::from(includes_generated_bm25);
         let mut output = format!(
             "rankprofile[{}]\nrankprofile[0].name \"default\"\n",
-            schema.rank_profiles.len() + 1
+            profile_count
         );
+        if let Some(field) = text_field.filter(|_| includes_generated_bm25) {
+            output.push_str(&format!(
+                "rankprofile[1].name \"bm25\"\nrankprofile[1].fef.property[2]\nrankprofile[1].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[1].fef.property[0].value \"rankingExpression(bm25)\"\nrankprofile[1].fef.property[1].name \"rankingExpression(bm25).rankingScript\"\nrankprofile[1].fef.property[1].value \"bm25({field})\"\n"
+            ));
+        }
         for (index, profile) in schema.rank_profiles.iter().enumerate() {
-            let index = index + 1;
+            let index = index + 1 + usize::from(includes_generated_bm25);
             let property_count = 2 + profile.match_features.len() + profile.query_inputs.len();
             output.push_str(&format!(
                 "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
@@ -968,7 +1137,7 @@ mod tests {
         assert!(index.contains("indexfield[0].positions true"));
         assert!(index.contains("indexfield[0].interleavedfeatures false"));
         assert!(attributes.contains("attribute[0].datatype STRING"));
-        assert!(attributes.contains("attribute[1].datatype INT64"));
+        assert!(attributes.contains("attribute[1].datatype INT32"));
         assert!(attributes.contains("attribute[2].datatype DOUBLE"));
         assert!(attributes.contains("attribute[3].datatype BOOL"));
         assert!(summary.contains("classes[0].fields[0].name \"documentid\""));

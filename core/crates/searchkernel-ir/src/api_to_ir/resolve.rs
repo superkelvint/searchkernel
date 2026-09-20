@@ -329,6 +329,7 @@ pub fn resolve_search_with_extensions(
             ));
         }
     };
+    validate_ranking_profile(context, &profile)?;
     let language = input
         .language
         .as_deref()
@@ -370,6 +371,33 @@ pub fn resolve_search_with_extensions(
         prefix_policy: PrefixPolicy::Disabled,
         typo_policy: TypoPolicy::Disabled,
     })
+}
+
+fn validate_ranking_profile(context: &IndexContext, profile: &str) -> Result<()> {
+    let configured = context
+        .definition()
+        .rank_profiles()
+        .iter()
+        .any(|candidate| candidate.name == profile);
+    let generated_bm25 = profile == "bm25"
+        && !context
+            .definition()
+            .rank_profiles()
+            .iter()
+            .any(|candidate| candidate.name == "bm25")
+        && context
+            .definition()
+            .fields()
+            .iter()
+            .any(|field| field.kind() == FieldKind::Text);
+    if profile == "default" || configured || generated_bm25 {
+        return Ok(());
+    }
+    Err(invalid(
+        "invalid_rank_profile",
+        Some("ranking"),
+        format!("rank profile '{profile}' is not configured for this index"),
+    ))
 }
 
 pub(crate) fn resolve_search_fields(
@@ -836,7 +864,7 @@ pub fn resolve_get(context: &IndexContext, input: GetInput) -> Result<GetRequest
             "document ID must not be empty",
         )
     })?;
-    let projection = resolve_projection(context, input.projection.as_deref())?;
+    let projection = resolve_get_projection(context, input.projection.as_deref())?;
     Ok(GetRequestIr { id, projection })
 }
 
@@ -1054,7 +1082,7 @@ fn ensure_field_is_not_repeated(
     Ok(())
 }
 
-fn resolve_field_value(
+pub(crate) fn resolve_field_value(
     field: &crate::model::FieldIr,
     value: RequestValueIr,
     path: String,
@@ -1162,9 +1190,41 @@ pub(crate) fn resolve_predicate_value(value: RequestValueIr, path: String) -> Re
         return Err(invalid(
             "type_mismatch",
             Some(path),
-            "predicate fields require an object with a features object",
+            "predicate fields require a Vespa predicate expression object or a features object",
         ));
     };
+    if let Some(expression) = fields.remove("expression") {
+        if !fields.is_empty() {
+            return Err(invalid(
+                "invalid_value",
+                Some(path.clone()),
+                "predicate expression objects may contain only expression",
+            ));
+        }
+        let RequestValueIr::Object(expression) = expression else {
+            return Err(invalid(
+                "type_mismatch",
+                Some(format!("{path}.expression")),
+                "predicate expression must be an object",
+            ));
+        };
+        return Ok(FieldValueIr::PredicateExpression {
+            expression: serde_json::to_string(&request_value_to_json(
+                RequestValueIr::Object(expression),
+                &format!("{path}.expression"),
+            )?)
+            .map_err(|error| invalid("invalid_value", Some(path), error.to_string()))?,
+        });
+    }
+    if fields.contains_key("type") {
+        return Ok(FieldValueIr::PredicateExpression {
+            expression: serde_json::to_string(&request_value_to_json(
+                RequestValueIr::Object(fields),
+                &path,
+            )?)
+            .map_err(|error| invalid("invalid_value", Some(path), error.to_string()))?,
+        });
+    }
     let Some(RequestValueIr::Object(features)) = fields.remove("features") else {
         return Err(invalid(
             "missing_value",
@@ -1198,6 +1258,41 @@ pub(crate) fn resolve_predicate_value(value: RequestValueIr, path: String) -> Re
         ));
     }
     Ok(FieldValueIr::Predicate { features })
+}
+
+fn request_value_to_json(value: RequestValueIr, path: &str) -> Result<serde_json::Value> {
+    match value {
+        RequestValueIr::Null => Ok(serde_json::Value::Null),
+        RequestValueIr::Bool(value) => Ok(serde_json::Value::Bool(value)),
+        RequestValueIr::Int64(value) => Ok(serde_json::Value::Number(value.into())),
+        RequestValueIr::UInt64(value) => Ok(serde_json::Value::Number(value.into())),
+        RequestValueIr::Float64(value) if value.is_finite() => {
+            Ok(serde_json::Number::from_f64(value)
+                .map_or(serde_json::Value::Null, serde_json::Value::Number))
+        }
+        RequestValueIr::String(value) => Ok(serde_json::Value::String(value)),
+        RequestValueIr::List(values) => values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| request_value_to_json(value, &format!("{path}[{index}]")))
+            .collect::<Result<Vec<_>>>()
+            .map(serde_json::Value::Array),
+        RequestValueIr::Object(values) => values
+            .into_iter()
+            .map(|(name, value)| {
+                request_value_to_json(value, &format!("{path}.{name}")).map(|value| (name, value))
+            })
+            .collect::<Result<serde_json::Map<_, _>>>()
+            .map(serde_json::Value::Object),
+        RequestValueIr::Float64(_)
+        | RequestValueIr::NonFiniteFloat(_)
+        | RequestValueIr::Bytes(_)
+        | RequestValueIr::Tensor(_) => Err(invalid(
+            "unsupported_value",
+            Some(path.to_owned()),
+            "predicate expressions support JSON scalar, list, and object values only",
+        )),
+    }
 }
 
 fn resolve_scalar_value(
@@ -1245,6 +1340,21 @@ pub fn resolve_projection(
     context: &IndexContext,
     fields: Option<&[String]>,
 ) -> Result<ProjectionIr> {
+    resolve_projection_inner(context, fields, false)
+}
+
+fn resolve_get_projection(
+    context: &IndexContext,
+    fields: Option<&[String]>,
+) -> Result<ProjectionIr> {
+    resolve_projection_inner(context, fields, true)
+}
+
+fn resolve_projection_inner(
+    context: &IndexContext,
+    fields: Option<&[String]>,
+    allow_tensor: bool,
+) -> Result<ProjectionIr> {
     let mut output = Vec::new();
     match fields {
         None => output.extend(
@@ -1253,7 +1363,11 @@ pub fn resolve_projection(
                 .query_fields()
                 .filter(|field| {
                     field.capabilities().stored()
-                        && !matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. })
+                        && (allow_tensor
+                            || !matches!(
+                                field.data_type(),
+                                crate::model::DataTypeIr::Tensor { .. }
+                            ))
                 })
                 .map(|field| field.name().clone()),
         ),
@@ -1269,7 +1383,9 @@ pub fn resolve_projection(
                         "projection requires a stored field",
                     ));
                 }
-                if matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. }) {
+                if !allow_tensor
+                    && matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. })
+                {
                     return Err(PortableError::unsupported(
                         "tensor_search_projection_not_supported",
                         Some(format!("projection.fields[{index}]")),

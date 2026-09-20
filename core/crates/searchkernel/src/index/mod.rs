@@ -598,6 +598,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 name: profile.name.clone(),
                 first_phase: profile.first_phase.clone(),
                 match_features: profile.match_features.clone(),
+                query_inputs: profile.query_inputs.clone(),
             })
             .collect(),
     )

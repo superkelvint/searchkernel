@@ -2,7 +2,9 @@
 
 use crate::native_error;
 use searchkernel_ir::{PortableError, Result};
-use searchkernel_vespa_engine::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
+use searchkernel_vespa_engine::{
+    ConfigCompiler, Field, FieldType, RankProfile, Schema, StructField, StructFieldType,
+};
 
 /// Compile the resolved portable definition into the M-layer configuration.
 ///
@@ -39,12 +41,21 @@ pub fn compile_index_definition(
             {
                 FieldType::ArrayString
             }
+            searchkernel_ir::DataTypeIr::Array(element)
+                if matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Struct { .. }
+                        | searchkernel_ir::DataTypeIr::StructReference { .. }
+                ) =>
+            {
+                FieldType::ArrayStruct(struct_fields(definition, element)?)
+            }
             searchkernel_ir::DataTypeIr::Position => FieldType::Position,
             searchkernel_ir::DataTypeIr::Predicate => FieldType::Predicate,
             _ => match field.kind() {
                 searchkernel_ir::FieldKind::Text => FieldType::Text,
                 searchkernel_ir::FieldKind::Keyword => FieldType::String,
-                searchkernel_ir::FieldKind::Int64 => FieldType::Integer,
+                searchkernel_ir::FieldKind::Int64 => FieldType::Long,
                 searchkernel_ir::FieldKind::Float64 => FieldType::Float,
                 searchkernel_ir::FieldKind::Bool => FieldType::Boolean,
             },
@@ -98,7 +109,6 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
     if !definition.properties().is_empty()
         || !definition.schema_inherits().is_empty()
         || !definition.document_inherits().is_empty()
-        || !definition.structs().is_empty()
         || !definition.fieldsets().is_empty()
         || !definition.schema_fields().is_empty()
         || !definition.imported_fields().is_empty()
@@ -126,7 +136,8 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                     element.as_ref(),
                     searchkernel_ir::DataTypeIr::Primitive(
                         searchkernel_ir::PrimitiveDataTypeIr::String
-                    )
+                    ) | searchkernel_ir::DataTypeIr::Struct { .. }
+                        | searchkernel_ir::DataTypeIr::StructReference { .. }
                 )
         ) {
             return Err(PortableError::unsupported(
@@ -306,6 +317,15 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                         searchkernel_ir::PrimitiveDataTypeIr::String
                     )
                 ) => {}
+            searchkernel_ir::DataTypeIr::Array(element)
+                if matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Struct { .. }
+                        | searchkernel_ir::DataTypeIr::StructReference { .. }
+                ) =>
+            {
+                struct_fields(definition, element)?;
+            }
             _ => {
                 return Err(PortableError::unsupported(
                     "data_type_not_supported",
@@ -316,6 +336,65 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
     }
     Ok(())
+}
+
+fn struct_fields(
+    definition: &searchkernel_ir::IndexDefinitionIr,
+    data_type: &searchkernel_ir::DataTypeIr,
+) -> Result<Vec<StructField>> {
+    let fields = match data_type {
+        searchkernel_ir::DataTypeIr::Struct { fields } => fields.clone(),
+        searchkernel_ir::DataTypeIr::StructReference { name } => definition
+            .structs()
+            .iter()
+            .find(|value| value.name == *name)
+            .map(|value| value.fields.clone())
+            .ok_or_else(|| {
+                PortableError::invalid(
+                    "unknown_struct",
+                    Some("fields"),
+                    format!("struct `{name}` is not declared"),
+                )
+            })?,
+        _ => unreachable!("struct_fields called for a non-struct type"),
+    };
+    fields
+        .into_iter()
+        .map(|field| {
+            let field_type = match field.data_type {
+                searchkernel_ir::DataTypeIr::Primitive(
+                    searchkernel_ir::PrimitiveDataTypeIr::String,
+                ) => StructFieldType::String,
+                searchkernel_ir::DataTypeIr::Primitive(
+                    searchkernel_ir::PrimitiveDataTypeIr::Int64,
+                ) => StructFieldType::Long,
+                searchkernel_ir::DataTypeIr::Primitive(
+                    searchkernel_ir::PrimitiveDataTypeIr::Int32,
+                ) => StructFieldType::Integer,
+                searchkernel_ir::DataTypeIr::Primitive(
+                    searchkernel_ir::PrimitiveDataTypeIr::Float64
+                    | searchkernel_ir::PrimitiveDataTypeIr::Float32,
+                ) => StructFieldType::Float,
+                searchkernel_ir::DataTypeIr::Primitive(
+                    searchkernel_ir::PrimitiveDataTypeIr::Bool,
+                ) => StructFieldType::Boolean,
+                _ => {
+                    return Err(PortableError::unsupported(
+                        "nested_struct_value_not_supported",
+                        Some("structs"),
+                        format!(
+                            "struct member `{}` must be a supported primitive",
+                            field.name
+                        ),
+                    ));
+                }
+            };
+            Ok(StructField {
+                name: field.name,
+                field_type,
+            })
+        })
+        .collect()
 }
 
 /// Lower the deliberately small portable rank-profile subset understood by

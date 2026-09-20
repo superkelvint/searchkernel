@@ -3,10 +3,10 @@
 
 use searchkernel_ir::{PortableError, Result};
 use searchkernel_vespa_engine::{
-    FacetRequest, GroupingAggregation, GroupingExpression, GroupingFilter, GroupingLevel,
-    GroupingPlan, SearchRequest,
+    FacetRequest, GroupingAggregation, GroupingBinaryOperator, GroupingExpression, GroupingFilter,
+    GroupingLevel, GroupingLiteral, GroupingPlan, SearchRequest,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FacetLowering {
@@ -92,154 +92,239 @@ fn grouping_plan(value: &searchkernel_ir::GroupingRequestIr) -> Result<GroupingP
             "native grouping plans do not support continuations",
         ));
     }
-    let mut compiler = GroupingCompiler { levels: Vec::new() };
+    let mut compiler = GroupingCompiler {
+        levels: Vec::new(),
+        group_all: false,
+        root_aggregations: Vec::new(),
+        root_output_labels: Vec::new(),
+    };
     compiler.lower_root(&value.root)?;
-    let levels = compiler.levels;
-    if levels.is_empty() {
+    if compiler.levels.is_empty() && compiler.root_aggregations.is_empty() {
         return Err(unsupported_grouping(
             "grouping_level_missing_classifier",
             "a native grouping plan requires an attribute classifier",
         ));
     }
-    Ok(GroupingPlan { levels })
+    Ok(GroupingPlan {
+        levels: compiler.levels,
+        group_all: compiler.group_all,
+        root_label: value.root.label.clone(),
+        root_aggregations: compiler.root_aggregations,
+        root_output_labels: compiler.root_output_labels,
+    })
 }
 
 struct GroupingCompiler {
     levels: Vec<GroupingLevel>,
+    group_all: bool,
+    root_aggregations: Vec<GroupingAggregation>,
+    root_output_labels: Vec<Option<String>>,
 }
 
 impl GroupingCompiler {
-    /// Lower the small linear shape that RequestBuilder can represent as one
-    /// backend Grouping: the root/all scope records a classifier and the
-    /// following each scope materializes it. Nested all scopes are structural
-    /// and must contain the next group/each pair.
     fn lower_root(&mut self, value: &searchkernel_ir::GroupingAllIr) -> Result<()> {
         self.lower_grouping_scope(value)
     }
 
     fn lower_grouping_scope(&mut self, value: &searchkernel_ir::GroupingAllIr) -> Result<()> {
-        if value.label.is_some() {
-            return Err(unsupported_grouping(
-                "grouping_labels_not_supported",
-                "native grouping plans do not expose grouping labels",
-            ));
-        }
-
         let mut classifier = None;
-        let mut each = None;
+        let mut materializer = None;
         for operation in &value.operations {
             match operation {
                 searchkernel_ir::GroupingOperationIr::Group(expression) => {
-                    if each.is_some() {
-                        return Err(unsupported_grouping(
-                            "grouping_group_after_each_not_supported",
-                            "group must establish pending state before each materializes it",
-                        ));
-                    }
                     if classifier.is_some() {
                         return Err(unsupported_grouping(
                             "multiple_group_classifiers",
-                            "a native grouping level has exactly one attribute classifier",
+                            "a native grouping level has exactly one classifier",
                         ));
                     }
-                    classifier = Some(lower_classifier(expression)?);
+                    classifier = Some(lower_grouping_expression(expression)?);
                 }
                 searchkernel_ir::GroupingOperationIr::Each(child) => {
-                    if classifier.is_none() {
-                        return Err(unsupported_grouping(
-                            "grouping_each_without_group",
-                            "each cannot materialize a grouping level without pending group-by state",
-                        ));
-                    }
-                    if each.is_some() {
+                    if materializer.is_some() {
                         return Err(unsupported_grouping(
                             "parallel_grouping_not_supported",
-                            "native grouping plans support one linear each branch",
+                            "the linear native grouping plan supports one child branch",
                         ));
                     }
-                    each = Some(child);
-                }
-                searchkernel_ir::GroupingOperationIr::Output(_) => {
-                    return Err(unsupported_grouping(
-                        "grouping_output_before_each",
-                        "grouping output is attached only after each materializes its pending group-by",
-                    ));
+                    materializer = Some(child);
                 }
                 searchkernel_ir::GroupingOperationIr::All(_) => {
                     return Err(unsupported_grouping(
                         "grouping_all_topology_not_supported",
-                        "all does not materialize pending group-by state; the supported topology requires each",
+                        "All cannot materialize a native grouping level; use Each",
                     ));
                 }
-                _ => {
-                    return Err(unsupported_grouping(
-                        "grouping_operation_not_supported",
-                        "the native grouping plan does not support this grouping operation",
-                    ));
-                }
+                searchkernel_ir::GroupingOperationIr::Output(_)
+                | searchkernel_ir::GroupingOperationIr::Alias { .. }
+                | searchkernel_ir::GroupingOperationIr::Max(_)
+                | searchkernel_ir::GroupingOperationIr::Precision(_)
+                | searchkernel_ir::GroupingOperationIr::Order(_)
+                | searchkernel_ir::GroupingOperationIr::Filter(_)
+                | searchkernel_ir::GroupingOperationIr::Keep(_)
+                | searchkernel_ir::GroupingOperationIr::Where(_) => {}
             }
         }
 
-        let classifier = classifier.ok_or_else(|| {
-            unsupported_grouping(
-                "grouping_level_missing_classifier",
-                "a native grouping level requires an attribute classifier",
-            )
-        })?;
-        let each = each.ok_or_else(|| {
-            unsupported_grouping(
-                "grouping_each_required",
-                "each is required to materialize pending group-by state",
-            )
-        })?;
+        let Some(classifier) = classifier else {
+            if materializer.is_some() {
+                return Err(unsupported_grouping(
+                    "grouping_output_before_each",
+                    "root outputs must be inside the materialized grouping level",
+                ));
+            }
+            self.lower_root_operations(&value.operations)?;
+            return Ok(());
+        };
+
+        let label = value
+            .label
+            .clone()
+            .or_else(|| materializer.as_ref().and_then(|child| child.label.clone()));
         let level = self.levels.len();
         self.levels.push(GroupingLevel {
             classifier,
+            label,
             aggregations: Vec::new(),
+            output_labels: Vec::new(),
+            output_visible: Vec::new(),
             max_groups: None,
             precision: None,
             filter: None,
             order_by: Vec::new(),
         });
-        self.lower_each_body(each, level)
+
+        let mut aliases = BTreeMap::new();
+        let mut output_names = BTreeSet::new();
+        let materializer_index = value.operations.iter().position(|operation| {
+            matches!(operation, searchkernel_ir::GroupingOperationIr::Each(_))
+        });
+        if let Some(index) = materializer_index {
+            if value.operations[..index].iter().any(|operation| {
+                matches!(
+                    operation,
+                    searchkernel_ir::GroupingOperationIr::Output(_)
+                        | searchkernel_ir::GroupingOperationIr::Alias { .. }
+                )
+            }) {
+                return Err(unsupported_grouping(
+                    "grouping_output_before_each",
+                    "group outputs must be inside the materialized grouping level",
+                ));
+            }
+        }
+        let local_operations = value.operations.iter().filter(|operation| {
+            !matches!(
+                operation,
+                searchkernel_ir::GroupingOperationIr::Each(_)
+                    | searchkernel_ir::GroupingOperationIr::All(_)
+            )
+        });
+        self.lower_level_operations(local_operations, level, &mut aliases, &mut output_names)?;
+        if let Some(child) = materializer {
+            for nested in self.lower_level_operations(
+                child.operations.iter(),
+                level,
+                &mut aliases,
+                &mut output_names,
+            )? {
+                self.lower_grouping_scope(nested)?;
+            }
+        }
+        Ok(())
     }
 
-    fn lower_each_body(
+    fn lower_root_operations(
         &mut self,
-        value: &searchkernel_ir::GroupingAllIr,
-        level: usize,
+        operations: &[searchkernel_ir::GroupingOperationIr],
     ) -> Result<()> {
-        if value.label.is_some() {
-            return Err(unsupported_grouping(
-                "grouping_labels_not_supported",
-                "native grouping plans do not expose grouping labels",
-            ));
-        }
-
-        let mut nested = None;
+        let mut aliases = BTreeMap::<String, (GroupingAggregation, usize)>::new();
         let mut output_names = BTreeSet::new();
-        for operation in &value.operations {
+        for operation in operations {
             match operation {
                 searchkernel_ir::GroupingOperationIr::Output(outputs) => {
                     for output in outputs {
-                        if output.label.is_some() {
+                        let aggregation =
+                            lower_aggregation_with_aliases(&output.expression, &aliases)?;
+                        let name = output
+                            .label
+                            .clone()
+                            .unwrap_or_else(|| grouping_aggregation_name(&aggregation));
+                        if !output_names.insert(name) {
                             return Err(unsupported_grouping(
-                                "grouping_output_labels_not_supported",
-                                "native grouping outputs do not expose aliases or labels",
+                                "grouping_output_name_collision",
+                                "native grouping outputs must have unique portable field names",
                             ));
                         }
-                        let aggregation = lower_aggregation(&output.expression)?;
-                        if !output_names.insert(grouping_aggregation_name(&aggregation)) {
+                        self.root_aggregations.push(aggregation);
+                        self.root_output_labels.push(output.label.clone());
+                    }
+                }
+                searchkernel_ir::GroupingOperationIr::Alias { name, expression } => {
+                    let aggregation = lower_aggregation(expression)?;
+                    aliases.insert(name.clone(), (aggregation, usize::MAX));
+                }
+                searchkernel_ir::GroupingOperationIr::Group(_)
+                | searchkernel_ir::GroupingOperationIr::All(_)
+                | searchkernel_ir::GroupingOperationIr::Each(_) => {}
+                searchkernel_ir::GroupingOperationIr::Max(_)
+                | searchkernel_ir::GroupingOperationIr::Precision(_)
+                | searchkernel_ir::GroupingOperationIr::Order(_)
+                | searchkernel_ir::GroupingOperationIr::Filter(_)
+                | searchkernel_ir::GroupingOperationIr::Keep(_) => {
+                    return Err(unsupported_grouping(
+                        "grouping_operation_without_level",
+                        "this grouping operation requires a materialized group level",
+                    ));
+                }
+                searchkernel_ir::GroupingOperationIr::Where(expression) => {
+                    self.lower_where(expression, true)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_level_operations<'a>(
+        &mut self,
+        operations: impl IntoIterator<Item = &'a searchkernel_ir::GroupingOperationIr>,
+        level: usize,
+        aliases: &mut BTreeMap<String, (GroupingAggregation, usize)>,
+        output_names: &mut BTreeSet<String>,
+    ) -> Result<Vec<&'a searchkernel_ir::GroupingAllIr>> {
+        let mut nested = None;
+        for operation in operations {
+            match operation {
+                searchkernel_ir::GroupingOperationIr::Group(_) => {}
+                searchkernel_ir::GroupingOperationIr::Output(outputs) => {
+                    for output in outputs {
+                        let aggregation =
+                            lower_aggregation_with_aliases(&output.expression, aliases)?;
+                        let name = output
+                            .label
+                            .clone()
+                            .unwrap_or_else(|| grouping_aggregation_name(&aggregation));
+                        if !output_names.insert(name) {
                             return Err(unsupported_grouping(
                                 "grouping_output_name_collision",
                                 "native grouping outputs must have unique portable field names",
                             ));
                         }
                         self.levels[level].aggregations.push(aggregation);
+                        self.levels[level].output_labels.push(output.label.clone());
+                        self.levels[level].output_visible.push(true);
                     }
                 }
+                searchkernel_ir::GroupingOperationIr::Alias { name, expression } => {
+                    let aggregation = lower_aggregation(expression)?;
+                    let index = self.levels[level].aggregations.len();
+                    self.levels[level].aggregations.push(aggregation.clone());
+                    self.levels[level].output_labels.push(None);
+                    self.levels[level].output_visible.push(false);
+                    aliases.insert(name.clone(), (aggregation, index));
+                }
                 searchkernel_ir::GroupingOperationIr::Max(value) => {
-                    self.levels[level].max_groups = value.map(u64::from);
+                    self.levels[level].max_groups = Some(value.map_or(u64::MAX, u64::from));
                 }
                 searchkernel_ir::GroupingOperationIr::Precision(value) => {
                     self.levels[level].precision = Some(u64::from(*value));
@@ -247,13 +332,22 @@ impl GroupingCompiler {
                 searchkernel_ir::GroupingOperationIr::Order(expressions) => {
                     for expression in expressions {
                         let (expression, ascending) = match expression {
-                            searchkernel_ir::GroupingExpressionIr::Positive(value) => {
-                                (lower_classifier(value)?, true)
-                            }
-                            searchkernel_ir::GroupingExpressionIr::Negative(value) => {
-                                (lower_classifier(value)?, false)
-                            }
-                            _ => (lower_classifier(expression)?, true),
+                            searchkernel_ir::GroupingExpressionIr::Positive(value) => (
+                                lower_order_expression(value, aliases, &mut self.levels[level])?,
+                                true,
+                            ),
+                            searchkernel_ir::GroupingExpressionIr::Negative(value) => (
+                                lower_order_expression(value, aliases, &mut self.levels[level])?,
+                                false,
+                            ),
+                            _ => (
+                                lower_order_expression(
+                                    expression,
+                                    aliases,
+                                    &mut self.levels[level],
+                                )?,
+                                true,
+                            ),
                         };
                         self.levels[level].order_by.push(
                             searchkernel_vespa_engine::GroupingOrderBy {
@@ -265,13 +359,22 @@ impl GroupingCompiler {
                 }
                 searchkernel_ir::GroupingOperationIr::Filter(filter)
                 | searchkernel_ir::GroupingOperationIr::Keep(filter) => {
+                    if self.levels[level].filter.is_some() {
+                        return Err(unsupported_grouping(
+                            "grouping_multiple_filters_not_supported",
+                            "the native grouping plan supports one filter per level",
+                        ));
+                    }
                     self.levels[level].filter = Some(lower_filter(filter)?);
+                }
+                searchkernel_ir::GroupingOperationIr::Where(expression) => {
+                    self.lower_where(expression, level == 0)?;
                 }
                 searchkernel_ir::GroupingOperationIr::All(child) => {
                     if nested.is_some() {
                         return Err(unsupported_grouping(
                             "parallel_grouping_not_supported",
-                            "native grouping plans support one linear nested branch",
+                            "the linear native grouping plan supports one child branch",
                         ));
                     }
                     nested = Some(child);
@@ -282,47 +385,165 @@ impl GroupingCompiler {
                         "each cannot materialize another level without a structural all scope",
                     ));
                 }
-                searchkernel_ir::GroupingOperationIr::Group(_) => {
-                    return Err(unsupported_grouping(
-                        "grouping_group_scope_not_supported",
-                        "group must be processed inside an all scope before each",
-                    ));
-                }
-                _ => {
-                    return Err(unsupported_grouping(
-                        "grouping_operation_not_supported",
-                        "the native grouping plan does not support this grouping operation",
-                    ));
-                }
             }
         }
+        Ok(nested.into_iter().collect())
+    }
 
-        if let Some(nested) = nested {
-            self.lower_grouping_scope(nested)?;
+    fn lower_where(
+        &mut self,
+        expression: &searchkernel_ir::GroupingExpressionIr,
+        is_root: bool,
+    ) -> Result<()> {
+        if !is_root {
+            return Err(unsupported_grouping(
+                "grouping_where_not_root",
+                "Vespa where(...) is only valid on the root grouping operation",
+            ));
         }
-        Ok(())
+        match expression {
+            searchkernel_ir::GroupingExpressionIr::Literal(
+                searchkernel_ir::RequestValueIr::String(value),
+            ) if value == "true" => {
+                self.group_all = true;
+                Ok(())
+            }
+            searchkernel_ir::GroupingExpressionIr::Literal(
+                searchkernel_ir::RequestValueIr::String(value),
+            ) if value == "$query" => Ok(()),
+            _ => Err(unsupported_grouping_with_detail(
+                "grouping_where_not_supported",
+                "Vespa where(...) supports only true and $query in the embedded engine",
+                format!("where expression `{expression:?}` cannot be lowered"),
+            )),
+        }
     }
 }
 
-/*
- * Keep this comment beside the compiler: an output on an all node is not an
- * output for the group that a later each creates. RequestBuilder attaches it
- * to the current Group immediately, so collapsing all/each would change the
- * result scope. The compiler therefore rejects it rather than relocating it.
- */
-
-fn lower_classifier(
+fn lower_grouping_expression(
     expression: &searchkernel_ir::GroupingExpressionIr,
 ) -> Result<GroupingExpression> {
     match expression {
         searchkernel_ir::GroupingExpressionIr::Attribute(field) => {
             Ok(GroupingExpression::attribute(field))
         }
-        _ => Err(unsupported_grouping(
+        searchkernel_ir::GroupingExpressionIr::Literal(value) => {
+            Ok(GroupingExpression::Literal(match value {
+                searchkernel_ir::RequestValueIr::String(value) => {
+                    GroupingLiteral::String(value.clone())
+                }
+                searchkernel_ir::RequestValueIr::Int64(value) => GroupingLiteral::Integer(*value),
+                searchkernel_ir::RequestValueIr::UInt64(value) => {
+                    GroupingLiteral::Integer(i64::try_from(*value).map_err(|_| {
+                        unsupported_grouping(
+                            "grouping_literal_out_of_range",
+                            "unsigned grouping literals must fit in a signed native integer",
+                        )
+                    })?)
+                }
+                searchkernel_ir::RequestValueIr::Float64(value) if value.is_finite() => {
+                    GroupingLiteral::Float(*value)
+                }
+                searchkernel_ir::RequestValueIr::Bool(value) => GroupingLiteral::Boolean(*value),
+                _ => return Err(unsupported_grouping(
+                    "grouping_literal_not_supported",
+                    "native grouping literals support finite numeric, boolean, and string values",
+                )),
+            }))
+        }
+        searchkernel_ir::GroupingExpressionIr::Negative(value) => Ok(GroupingExpression::Negative(
+            Box::new(lower_grouping_expression(value)?),
+        )),
+        searchkernel_ir::GroupingExpressionIr::Positive(value) => lower_grouping_expression(value),
+        searchkernel_ir::GroupingExpressionIr::Binary {
+            operator,
+            left,
+            right,
+        } => Ok(GroupingExpression::Binary {
+            operator: match operator {
+                searchkernel_ir::GroupingBinaryOperatorIr::Add => GroupingBinaryOperator::Add,
+                searchkernel_ir::GroupingBinaryOperatorIr::Subtract => {
+                    GroupingBinaryOperator::Subtract
+                }
+                searchkernel_ir::GroupingBinaryOperatorIr::Multiply => {
+                    GroupingBinaryOperator::Multiply
+                }
+                searchkernel_ir::GroupingBinaryOperatorIr::Divide => GroupingBinaryOperator::Divide,
+                searchkernel_ir::GroupingBinaryOperatorIr::Modulo => GroupingBinaryOperator::Modulo,
+            },
+            left: Box::new(lower_grouping_expression(left)?),
+            right: Box::new(lower_grouping_expression(right)?),
+        }),
+        searchkernel_ir::GroupingExpressionIr::Function { name, arguments } => {
+            Ok(GroupingExpression::Function {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(lower_grouping_expression)
+                    .collect::<Result<Vec<_>>>()?,
+            })
+        }
+        searchkernel_ir::GroupingExpressionIr::Alias(name) => {
+            Err(unsupported_grouping_with_detail(
+                "grouping_alias_not_materialized",
+                "an alias cannot be used as a classifier without a native expression handle",
+                format!("classifier alias `{name}`"),
+            ))
+        }
+        searchkernel_ir::GroupingExpressionIr::Member { .. }
+        | searchkernel_ir::GroupingExpressionIr::MapLookup { .. }
+        | searchkernel_ir::GroupingExpressionIr::Bucket(_)
+        | searchkernel_ir::GroupingExpressionIr::Aggregation(_) => Err(unsupported_grouping(
             "grouping_classifier_not_supported",
-            "native grouping classifiers support only attributes",
+            "this grouping expression requires a native function or bucket constructor",
         )),
     }
+}
+
+fn lower_order_expression(
+    expression: &searchkernel_ir::GroupingExpressionIr,
+    aliases: &BTreeMap<String, (GroupingAggregation, usize)>,
+    level: &mut GroupingLevel,
+) -> Result<GroupingExpression> {
+    match expression {
+        searchkernel_ir::GroupingExpressionIr::Alias(name) => aliases
+            .get(name)
+            .map(|(_, index)| GroupingExpression::AggregationReference(*index))
+            .ok_or_else(|| {
+                unsupported_grouping("grouping_alias_unknown", "grouping alias is not defined")
+            }),
+        searchkernel_ir::GroupingExpressionIr::Aggregation(_) => {
+            let aggregation = lower_aggregation(expression)?;
+            if let Some(index) = level
+                .aggregations
+                .iter()
+                .position(|candidate| candidate == &aggregation)
+            {
+                return Ok(GroupingExpression::AggregationReference(index));
+            }
+            let index = level.aggregations.len();
+            level.aggregations.push(aggregation);
+            level.output_labels.push(None);
+            level.output_visible.push(false);
+            Ok(GroupingExpression::AggregationReference(index))
+        }
+        _ => lower_grouping_expression(expression),
+    }
+}
+
+fn lower_aggregation_with_aliases(
+    expression: &searchkernel_ir::GroupingExpressionIr,
+    aliases: &BTreeMap<String, (GroupingAggregation, usize)>,
+) -> Result<GroupingAggregation> {
+    if let searchkernel_ir::GroupingExpressionIr::Alias(name) = expression {
+        return aliases
+            .get(name)
+            .map(|(aggregation, _)| aggregation.clone())
+            .ok_or_else(|| {
+                unsupported_grouping("grouping_alias_unknown", "grouping alias is not defined")
+            });
+    }
+    lower_aggregation(expression)
 }
 
 fn lower_aggregation(
@@ -331,34 +552,37 @@ fn lower_aggregation(
     let searchkernel_ir::GroupingExpressionIr::Aggregation(aggregation) = expression else {
         return Err(unsupported_grouping(
             "grouping_output_not_supported",
-            "native grouping outputs must be count or average aggregations",
+            "the expression is not a native grouping aggregation",
         ));
     };
     match aggregation.as_ref() {
         searchkernel_ir::GroupingAggregationIr::Count => Ok(GroupingAggregation::Count),
         searchkernel_ir::GroupingAggregationIr::Avg(expression) => {
-            Ok(GroupingAggregation::Average(lower_classifier(expression)?))
+            reject_non_numeric_literal(expression)?;
+            Ok(GroupingAggregation::Average(lower_aggregation_expression(
+                expression,
+            )?))
         }
-        searchkernel_ir::GroupingAggregationIr::Sum(value) => {
-            Ok(GroupingAggregation::Sum(lower_classifier(value)?))
-        }
-        searchkernel_ir::GroupingAggregationIr::Min(value) => {
-            Ok(GroupingAggregation::Min(lower_classifier(value)?))
-        }
-        searchkernel_ir::GroupingAggregationIr::Max(value) => {
-            Ok(GroupingAggregation::Max(lower_classifier(value)?))
-        }
-        searchkernel_ir::GroupingAggregationIr::Xor(value) => {
-            Ok(GroupingAggregation::Xor(lower_classifier(value)?))
-        }
+        searchkernel_ir::GroupingAggregationIr::Sum(value) => Ok(GroupingAggregation::Sum(
+            lower_aggregation_expression(value)?,
+        )),
+        searchkernel_ir::GroupingAggregationIr::Min(value) => Ok(GroupingAggregation::Min(
+            lower_aggregation_expression(value)?,
+        )),
+        searchkernel_ir::GroupingAggregationIr::Max(value) => Ok(GroupingAggregation::Max(
+            lower_aggregation_expression(value)?,
+        )),
+        searchkernel_ir::GroupingAggregationIr::Xor(value) => Ok(GroupingAggregation::Xor(
+            lower_aggregation_expression(value)?,
+        )),
         searchkernel_ir::GroupingAggregationIr::StdDev(value) => Ok(
-            GroupingAggregation::StandardDeviation(lower_classifier(value)?),
+            GroupingAggregation::StandardDeviation(lower_aggregation_expression(value)?),
         ),
         searchkernel_ir::GroupingAggregationIr::Quantiles {
             quantiles,
             expression,
         } => Ok(GroupingAggregation::Quantiles {
-            expression: lower_classifier(expression)?,
+            expression: lower_aggregation_expression(expression)?,
             quantiles: quantiles.clone(),
         }),
         searchkernel_ir::GroupingAggregationIr::Summary(summary_class) => {
@@ -370,25 +594,50 @@ fn lower_aggregation(
     }
 }
 
+fn reject_non_numeric_literal(expression: &searchkernel_ir::GroupingExpressionIr) -> Result<()> {
+    if let searchkernel_ir::GroupingExpressionIr::Literal(value) = expression {
+        if matches!(
+            value,
+            searchkernel_ir::RequestValueIr::String(_) | searchkernel_ir::RequestValueIr::Bool(_)
+        ) {
+            return Err(unsupported_grouping(
+                "grouping_classifier_not_supported",
+                "numeric grouping aggregations require a numeric expression",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
+    let expression_name = |expression: &GroupingExpression| match expression {
+        GroupingExpression::Attribute(field) => field.clone(),
+        GroupingExpression::AggregationReference(index) => format!("aggregation({index})"),
+        expression => format!("{expression:?}"),
+    };
     match aggregation {
         GroupingAggregation::Count => "count".to_owned(),
-        GroupingAggregation::Average(GroupingExpression::Attribute(field)) => {
-            format!("average({field})")
+        GroupingAggregation::Average(expression) => {
+            format!("average({})", expression_name(expression))
         }
-        GroupingAggregation::Sum(GroupingExpression::Attribute(field)) => format!("sum({field})"),
-        GroupingAggregation::Min(GroupingExpression::Attribute(field)) => format!("min({field})"),
-        GroupingAggregation::Max(GroupingExpression::Attribute(field)) => format!("max({field})"),
-        GroupingAggregation::StandardDeviation(GroupingExpression::Attribute(field)) => {
-            format!("stddev({field})")
+        GroupingAggregation::Sum(expression) => format!("sum({})", expression_name(expression)),
+        GroupingAggregation::Min(expression) => format!("min({})", expression_name(expression)),
+        GroupingAggregation::Max(expression) => format!("max({})", expression_name(expression)),
+        GroupingAggregation::StandardDeviation(expression) => {
+            format!("stddev({})", expression_name(expression))
         }
-        GroupingAggregation::Xor(GroupingExpression::Attribute(field)) => format!("xor({field})"),
-        GroupingAggregation::Quantiles {
-            expression: GroupingExpression::Attribute(field),
-            ..
-        } => format!("quantiles({field})"),
+        GroupingAggregation::Xor(expression) => format!("xor({})", expression_name(expression)),
+        GroupingAggregation::Quantiles { expression, .. } => {
+            format!("quantiles({})", expression_name(expression))
+        }
         GroupingAggregation::Summary { .. } => "summary".to_owned(),
     }
+}
+
+fn lower_aggregation_expression(
+    expression: &searchkernel_ir::GroupingExpressionIr,
+) -> Result<GroupingExpression> {
+    lower_grouping_expression(expression)
 }
 
 fn lower_filter(value: &searchkernel_ir::GroupingFilterIr) -> Result<GroupingFilter> {
@@ -396,22 +645,74 @@ fn lower_filter(value: &searchkernel_ir::GroupingFilterIr) -> Result<GroupingFil
         searchkernel_ir::GroupingFilterIr::Regex {
             expression,
             pattern,
-        } => {
-            let GroupingExpression::Attribute(field) = lower_classifier(expression)?;
-            Ok(GroupingFilter::Regex {
-                field,
-                pattern: pattern.clone(),
-            })
+        } => Ok(GroupingFilter::RegexExpression {
+            expression: lower_grouping_expression(expression)?,
+            pattern: pattern.clone(),
+        }),
+        searchkernel_ir::GroupingFilterIr::And(filters) => Ok(GroupingFilter::And(
+            filters
+                .iter()
+                .map(lower_filter)
+                .collect::<Result<Vec<_>>>()?,
+        )),
+        searchkernel_ir::GroupingFilterIr::Or(filters) => Ok(GroupingFilter::Or(
+            filters
+                .iter()
+                .map(lower_filter)
+                .collect::<Result<Vec<_>>>()?,
+        )),
+        searchkernel_ir::GroupingFilterIr::Not(filter) => {
+            Ok(GroupingFilter::Not(Box::new(lower_filter(filter)?)))
         }
+        searchkernel_ir::GroupingFilterIr::Range {
+            expression,
+            lower,
+            upper,
+            include_lower,
+            include_upper,
+        } => Ok(GroupingFilter::Range {
+            expression: lower_grouping_expression(expression)?,
+            lower: grouping_filter_bound(lower)?,
+            upper: grouping_filter_bound(upper)?,
+            include_lower: *include_lower,
+            include_upper: *include_upper,
+        }),
+        searchkernel_ir::GroupingFilterIr::IsTrue(expression) => Ok(GroupingFilter::IsTrue(
+            lower_grouping_expression(expression)?,
+        )),
+    }
+}
+
+fn grouping_filter_bound(value: &searchkernel_ir::GroupingExpressionIr) -> Result<f64> {
+    let searchkernel_ir::GroupingExpressionIr::Literal(value) = value else {
+        return Err(unsupported_grouping(
+            "grouping_filter_bound_not_supported",
+            "native Vespa range predicates require numeric literal bounds",
+        ));
+    };
+    match value {
+        searchkernel_ir::RequestValueIr::Int64(value) => Ok(*value as f64),
+        searchkernel_ir::RequestValueIr::UInt64(value) => Ok(*value as f64),
+        searchkernel_ir::RequestValueIr::Float64(value) if value.is_finite() => Ok(*value),
         _ => Err(unsupported_grouping(
-            "grouping_filter_not_supported",
-            "native grouping supports only regex filters over an attribute",
+            "grouping_filter_bound_not_supported",
+            "native Vespa range predicates require finite numeric literal bounds",
         )),
     }
 }
 
 fn unsupported_grouping(code: &'static str, message: &'static str) -> PortableError {
     PortableError::unsupported(code, Some("grouping"), message)
+}
+
+fn unsupported_grouping_with_detail(
+    code: &'static str,
+    message: &'static str,
+    detail: String,
+) -> PortableError {
+    let mut error = unsupported_grouping(code, message);
+    error.details[0].message = format!("{message}: {detail}");
+    error
 }
 
 pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Option<FacetLowering> {
