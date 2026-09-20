@@ -246,7 +246,9 @@ highlighting
 
 This is where defaults and validation happen. Examples:
 
-- an empty text query becomes `MatchAll`;
+- portable legacy empty text queries retain their existing `MatchAll` behavior;
+  the Rust facade rejects blank `search(text)` calls and uses `browse()` for
+  the explicit `MatchAll` source;
 - omitted limits receive the defined default;
 - unknown fields are rejected;
 - text queries require searchable fields;

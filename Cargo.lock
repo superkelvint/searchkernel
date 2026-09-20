@@ -1424,6 +1424,7 @@ dependencies = [
  "libc",
  "searchkernel-ir",
  "searchkernel-ir-adapter",
+ "searchkernel-protocol",
  "searchkernel-testkit",
  "serde",
  "serde_json",

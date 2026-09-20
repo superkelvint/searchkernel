@@ -233,7 +233,6 @@ pub struct SearchBuilder {
     pub(crate) ranking: Option<Ranking>,
     pub(crate) query_inputs: std::collections::BTreeMap<String, QueryInputValue>,
     pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
-    pub(crate) typed_query: Option<Query>,
     pub(crate) groupings: Vec<GroupingPlan>,
     pub(crate) projection: Option<Vec<String>>,
     pub(crate) highlighting: Option<Vec<String>>,
@@ -243,10 +242,11 @@ pub struct SearchBuilder {
     pub(crate) offset: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum QuerySource {
     Text(String),
     MatchAll,
+    Typed(Query),
 }
 
 impl SearchBuilder {
@@ -269,7 +269,6 @@ impl SearchBuilder {
             ranking: None,
             query_inputs: std::collections::BTreeMap::new(),
             rank_properties: std::collections::BTreeMap::new(),
-            typed_query: None,
             groupings: Vec::new(),
             projection: None,
             highlighting: None,
@@ -342,7 +341,7 @@ impl SearchBuilder {
 
     /// Execute a typed query through the canonical IR query path.
     pub fn typed_query(mut self, query: Query) -> Self {
-        self.typed_query = Some(query);
+        self.query_source = QuerySource::Typed(query);
         self
     }
 
@@ -493,24 +492,18 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
             (name.clone(), searchkernel_ir::QueryInputIr::Literal(value))
         })
         .collect();
-    let typed_query = request
-        .typed_query
-        .clone()
-        .map(Query::into_ir)
-        .transpose()?
-        .map(searchkernel_ir::QuerySourceInput::Typed);
-    let query = match typed_query {
-        Some(query) => query,
-        None => match &request.query_source {
-            QuerySource::Text(text) if text.trim().is_empty() => {
-                return Err(crate::Error::search(
-                    crate::ErrorCode::InvalidArgument,
-                    "search text must not be empty or whitespace-only; use browse() for match-all searches",
-                ));
-            }
-            QuerySource::Text(text) => searchkernel_ir::QuerySourceInput::Text(text.clone()),
-            QuerySource::MatchAll => searchkernel_ir::QuerySourceInput::MatchAll,
-        },
+    let query = match &request.query_source {
+        QuerySource::Text(text) if text.trim().is_empty() => {
+            return Err(crate::Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "search text must not be empty or whitespace-only; use browse() for match-all searches",
+            ));
+        }
+        QuerySource::Text(text) => searchkernel_ir::QuerySourceInput::Text(text.clone()),
+        QuerySource::MatchAll => searchkernel_ir::QuerySourceInput::MatchAll,
+        QuerySource::Typed(query) => {
+            searchkernel_ir::QuerySourceInput::Typed(query.clone().into_ir()?)
+        }
     };
     Ok(searchkernel_ir::SearchInput {
         query,

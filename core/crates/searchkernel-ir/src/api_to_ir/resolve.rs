@@ -10,10 +10,10 @@ use crate::model::{
     FieldKind, FieldName, FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr,
     GroupingAllIr, GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
     HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr,
-    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr, QueryInputIr, QueryIr,
-    QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
-    SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy,
-    UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpdateTargetIr,
+    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr, QueryExprKindIr,
+    QueryInputIr, QueryIr, QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr,
+    SearchFieldIr, SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr,
+    TypoPolicy, UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpdateTargetIr,
     UpsertRequestIr,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -421,6 +421,7 @@ fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<Q
         QuerySourceInput::Text(text) => Ok(QueryIr::Text(text.clone())),
         QuerySourceInput::MatchAll => Ok(QueryIr::MatchAll),
         QuerySourceInput::Typed(query) => {
+            reject_unannotated_zero_target_hits(query, "query")?;
             let mut query = query.clone();
             normalize_typed_query(&mut query, "query")?;
             context.validate_typed_query(
@@ -435,6 +436,74 @@ fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<Q
             source: source.clone(),
             parameters: parameters.clone(),
         }),
+    }
+}
+
+fn reject_unannotated_zero_target_hits(query: &QueryExprIr, path: &str) -> Result<()> {
+    if let QueryExprKindIr::WeakAnd {
+        children,
+        target_hits,
+    } = &query.kind
+    {
+        if *target_hits == 0 && !query.annotations.contains_key("totalTargetHits") {
+            return Err(invalid(
+                "invalid_typed_query_annotation",
+                Some(format!("{path}.annotations.totalTargetHits")),
+                "totalTargetHits must be at least one",
+            ));
+        }
+        for (index, child) in children.iter().enumerate() {
+            reject_unannotated_zero_target_hits(
+                child,
+                &format!("{path}.weak_and.clauses[{index}]"),
+            )?;
+        }
+        return Ok(());
+    }
+
+    match &query.kind {
+        QueryExprKindIr::Contains { item, .. } => {
+            reject_unannotated_zero_target_hits(item, &format!("{path}.contains.item"))
+        }
+        QueryExprKindIr::And(children) | QueryExprKindIr::Or(children) => {
+            for (index, child) in children.iter().enumerate() {
+                reject_unannotated_zero_target_hits(child, &format!("{path}.clauses[{index}]"))?;
+            }
+            Ok(())
+        }
+        QueryExprKindIr::Not(child) | QueryExprKindIr::NonEmpty(child) => {
+            reject_unannotated_zero_target_hits(child, &format!("{path}.child"))
+        }
+        QueryExprKindIr::Phrase(children)
+        | QueryExprKindIr::Near { children, .. }
+        | QueryExprKindIr::ONear { children, .. }
+        | QueryExprKindIr::SameElement(children)
+        | QueryExprKindIr::Equiv(children) => {
+            for (index, child) in children.iter().enumerate() {
+                reject_unannotated_zero_target_hits(child, &format!("{path}.clauses[{index}]"))?;
+            }
+            Ok(())
+        }
+        QueryExprKindIr::Alternatives(values) => {
+            for (index, value) in values.iter().enumerate() {
+                reject_unannotated_zero_target_hits(
+                    &value.query,
+                    &format!("{path}.alternatives[{index}].query"),
+                )?;
+            }
+            Ok(())
+        }
+        QueryExprKindIr::Rank { matching, ranking } => {
+            reject_unannotated_zero_target_hits(matching, &format!("{path}.rank.match"))?;
+            for (index, child) in ranking.iter().enumerate() {
+                reject_unannotated_zero_target_hits(child, &format!("{path}.rank[{index}]"))?;
+            }
+            Ok(())
+        }
+        QueryExprKindIr::Labeled { query, .. } => {
+            reject_unannotated_zero_target_hits(query, &format!("{path}.labeled.query"))
+        }
+        _ => Ok(()),
     }
 }
 

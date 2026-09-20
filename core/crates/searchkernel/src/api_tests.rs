@@ -1,6 +1,7 @@
 use super::*;
-use crate::{field, Analyzer, Filter, Ranking, SearchBuilder, Sort};
+use crate::{field, Analyzer, Filter, Query, Ranking, SearchBuilder, Sort};
 use searchkernel_ir::{IndexContext, OperationIr};
+use searchkernel_protocol::v2 as api;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -27,6 +28,213 @@ fn context_for(definition: &IndexDefinition) -> Arc<IndexContext> {
     let (_probe_runtime, probe) =
         runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
     Arc::clone(&probe.inner.context)
+}
+
+fn portable_match_all_request(with_search_fields: bool) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let search_fields = if with_search_fields {
+        let field = builder.create_string("title");
+        let weight = api::OptionalDouble::new(1.0);
+        let search_field = api::SearchField::create(
+            &mut builder,
+            &api::SearchFieldArgs {
+                field: Some(field),
+                weight: Some(&weight),
+            },
+        );
+        let fields = builder.create_vector(&[search_field]);
+        Some(api::SearchFieldSelection::create(
+            &mut builder,
+            &api::SearchFieldSelectionArgs {
+                fields: Some(fields),
+            },
+        ))
+    } else {
+        None
+    };
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            search_fields,
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn portable_value_string<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    value: &str,
+) -> searchkernel_ir::__flatbuffers::WIPOffset<api::Value<'a>> {
+    let value = builder.create_string(value);
+    let string = api::StringValue::create(builder, &api::StringValueArgs { value: Some(value) });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::StringValue,
+            kind: Some(string.as_union_value()),
+        },
+    )
+}
+
+fn portable_value_int64<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    value: i64,
+) -> searchkernel_ir::__flatbuffers::WIPOffset<api::Value<'a>> {
+    let integer = api::Int64Value::create(builder, &api::Int64ValueArgs { value });
+    api::Value::create(
+        builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::Int64Value,
+            kind: Some(integer.as_union_value()),
+        },
+    )
+}
+
+fn portable_field<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    path: &str,
+) -> searchkernel_ir::__flatbuffers::WIPOffset<api::QueryFieldRef<'a>> {
+    let path = builder.create_string(path);
+    api::QueryFieldRef::create(
+        builder,
+        &api::QueryFieldRefArgs {
+            path: Some(path),
+            element_index: None,
+        },
+    )
+}
+
+fn finish_portable_typed_request<'a>(
+    builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
+    expression: searchkernel_ir::__flatbuffers::WIPOffset<api::QueryExpr<'a>>,
+) -> Vec<u8> {
+    let typed = api::TypedQuery::create(
+        builder,
+        &api::TypedQueryArgs {
+            query: Some(expression),
+        },
+    );
+    let source = api::QuerySource::create(
+        builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(typed.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn portable_typed_contains_request(field_name: &str) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let value = portable_value_string(&mut builder, "value");
+    let term = api::TermQuery::create(&mut builder, &api::TermQueryArgs { value: Some(value) });
+    let term = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::TermQuery,
+            expr: Some(term.as_union_value()),
+            annotations: None,
+        },
+    );
+    let field = portable_field(&mut builder, field_name);
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(term),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_weak_and_zero_request() -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let child = api::QueryTrue::create(&mut builder, &api::QueryTrueArgs {});
+    let child = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryTrue,
+            expr: Some(child.as_union_value()),
+            annotations: None,
+        },
+    );
+    let clauses = builder.create_vector(&[child]);
+    let weak_and = api::QueryWeakAnd::create(
+        &mut builder,
+        &api::QueryWeakAndArgs {
+            clauses: Some(clauses),
+        },
+    );
+    let key = builder.create_string("totalTargetHits");
+    let annotation_value = portable_value_int64(&mut builder, 0);
+    let annotation = api::ValueEntry::create(
+        &mut builder,
+        &api::ValueEntryArgs {
+            key: Some(key),
+            value: Some(annotation_value),
+        },
+    );
+    let annotations = builder.create_vector(&[annotation]);
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryWeakAnd,
+            expr: Some(weak_and.as_union_value()),
+            annotations: Some(annotations),
+        },
+    );
+    finish_portable_typed_request(&mut builder, expression)
+}
+
+fn portable_geo_nan_request() -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field = portable_field(&mut builder, "title");
+    let radius = builder.create_string("10 km");
+    let geo = api::QueryGeoLocation::create(
+        &mut builder,
+        &api::QueryGeoLocationArgs {
+            field: Some(field),
+            latitude: f64::NAN,
+            longitude: 1.0,
+            radius: Some(radius),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryGeoLocation,
+            expr: Some(geo.as_union_value()),
+            annotations: None,
+        },
+    );
+    finish_portable_typed_request(&mut builder, expression)
 }
 
 fn expected_get(
@@ -281,6 +489,111 @@ fn browse_executes_match_all_and_describe_returns_schema() {
     assert!(result.hits.is_empty());
     assert_eq!(result.total_hits.value, 0);
     backend.finish().unwrap();
+}
+
+#[test]
+fn public_rust_browse_and_portable_match_all_share_source_semantics() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition.clone(), recording.clone());
+    assert!(index.browse().execute::<serde_json::Value>().is_err());
+    let OperationIr::Search(rust_request) = recording.last_call().unwrap() else {
+        panic!("browse should reach the recording backend");
+    };
+    let bytes = portable_match_all_request(false);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_request = context.search_to_ir(request).unwrap();
+    assert_eq!(rust_request, portable_request);
+
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition, recording.clone());
+    let rust_error = index
+        .browse()
+        .search_fields(["title"])
+        .execute::<serde_json::Value>()
+        .unwrap_err();
+    let bytes = portable_match_all_request(true);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_error = context.search_to_ir(request).unwrap_err();
+    assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
+    assert_eq!(
+        portable_error.code,
+        searchkernel_ir::ErrorCode::InvalidArgument
+    );
+    assert_eq!(rust_error.details()[0].code, portable_error.details[0].code);
+    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
+}
+
+#[test]
+fn public_search_rejects_blank_text_instead_of_becoming_browse() {
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(scripted_definition(), recording.clone());
+    let error = index
+        .search(" \t\n")
+        .execute::<serde_json::Value>()
+        .unwrap_err();
+    assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
+    assert!(recording.calls().is_empty());
+}
+
+#[test]
+fn public_rust_typed_query_errors_match_independent_portable_requests() {
+    let definition = scripted_definition();
+    let context = context_for(&definition);
+
+    let cases = vec![
+        (
+            "weak_and_zero",
+            Query::weak_and([Query::term("title", "value")], 0),
+            portable_weak_and_zero_request(),
+        ),
+        (
+            "geo_nan",
+            Query::GeoLocation {
+                field: "title".to_owned(),
+                latitude: f64::NAN,
+                longitude: 1.0,
+                radius: "10 km".to_owned(),
+            },
+            portable_geo_nan_request(),
+        ),
+        (
+            "dotted_field",
+            Query::term("people.name", "value"),
+            portable_typed_contains_request("people.name"),
+        ),
+    ];
+
+    for (name, query, bytes) in cases {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording);
+        let builder = index.search("typed").typed_query(query);
+        let rust_error = builder.execute::<serde_json::Value>().unwrap_err();
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let portable_error = context.search_to_ir(request).unwrap_err();
+        assert_eq!(
+            rust_error.code(),
+            crate::ErrorCode::InvalidArgument,
+            "{name}"
+        );
+        assert_eq!(
+            portable_error.code,
+            searchkernel_ir::ErrorCode::InvalidArgument,
+            "{name}"
+        );
+        assert_eq!(
+            rust_error.details()[0].code,
+            portable_error.details[0].code,
+            "{name}"
+        );
+        assert_eq!(
+            rust_error.details()[0].path,
+            portable_error.details[0].path,
+            "{name}"
+        );
+    }
 }
 
 #[test]

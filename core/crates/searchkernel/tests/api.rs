@@ -184,14 +184,14 @@ fn presence_and_explicit_zero_are_preserved() {
     let index = index_with(Arc::new(RecordingBackend::new()));
     let inspected = index
         .search("probe")
-        .search_fields(std::iter::empty::<searchkernel::SearchField>())
+        .search_fields(["title"])
         .projection(std::iter::empty::<&str>())
         .highlight(std::iter::empty::<&str>())
         .limit(0)
         .offset(0)
         .inspect()
         .unwrap();
-    assert!(inspected.search_fields.is_empty());
+    assert_eq!(inspected.search_fields.len(), 1);
     assert!(inspected.projection.is_empty());
     assert_eq!(inspected.highlighting, Some(Vec::new()));
     assert_eq!(inspected.limit, 0);
