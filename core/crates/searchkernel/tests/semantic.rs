@@ -252,7 +252,7 @@ fn public_api_round_trips_crud_and_match_all_search() {
 
     index.upsert("sku-1", &product).unwrap();
     index.upsert("sku-2", &product).unwrap();
-    let result = index.search("").execute::<Product>().unwrap();
+    let result = index.browse().execute::<Product>().unwrap();
     assert_eq!(result.total_hits.value, 2);
     assert_eq!(
         result.total_hits.relation,

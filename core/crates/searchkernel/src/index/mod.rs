@@ -213,7 +213,7 @@ impl Index {
 
     /// Start a match-all search intended for browsing or administration.
     pub fn browse(&self) -> SearchBuilder {
-        self.search("")
+        SearchBuilder::match_all(self.clone())
     }
 
     /// Return the effective schema and search defaults for this index.

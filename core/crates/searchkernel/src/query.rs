@@ -529,7 +529,8 @@ impl std::ops::Not for Query {
 }
 
 fn field_ref(field: &str) -> Result<QueryFieldRefIr> {
-    let path = searchkernel_ir::FieldName::parse(field.to_owned()).map_err(Error::from_ir)?;
+    let path =
+        searchkernel_ir::FieldName::parse_query_path(field.to_owned()).map_err(Error::from_ir)?;
     Ok(QueryFieldRefIr {
         path,
         element_index: None,
@@ -599,7 +600,7 @@ fn wand_annotations(options: WandOptions) -> BTreeMap<String, RequestValueIr> {
 }
 
 fn nearest_annotations(options: NearestNeighborOptions) -> BTreeMap<String, RequestValueIr> {
-    BTreeMap::from([
+    let mut annotations = BTreeMap::from([
         (
             "targetNumHits".to_owned(),
             RequestValueIr::UInt64(u64::from(options.target_hits)),
@@ -608,7 +609,20 @@ fn nearest_annotations(options: NearestNeighborOptions) -> BTreeMap<String, Requ
             "approximate".to_owned(),
             RequestValueIr::Bool(options.approximate),
         ),
-    ])
+    ]);
+    if let Some(distance_threshold) = options.distance_threshold {
+        annotations.insert(
+            "distanceThreshold".to_owned(),
+            RequestValueIr::Float64(distance_threshold),
+        );
+    }
+    if options.explore_additional_hits > 0 {
+        annotations.insert(
+            "exploreAdditionalHits".to_owned(),
+            RequestValueIr::UInt64(u64::from(options.explore_additional_hits)),
+        );
+    }
+    annotations
 }
 
 impl QueryValue {

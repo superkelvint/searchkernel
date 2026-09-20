@@ -225,7 +225,7 @@ pub struct InspectedQuery {
 /// called.
 pub struct SearchBuilder {
     pub(crate) index: Index,
-    pub(crate) query: String,
+    pub(crate) query_source: QuerySource,
     pub(crate) search_fields: Option<Vec<crate::schema::SearchField>>,
     pub(crate) filters: Vec<Filter>,
     pub(crate) sorts: Vec<Sort>,
@@ -243,11 +243,25 @@ pub struct SearchBuilder {
     pub(crate) offset: Option<u32>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum QuerySource {
+    Text(String),
+    MatchAll,
+}
+
 impl SearchBuilder {
     pub(crate) fn new(index: Index, query: impl Into<String>) -> Self {
+        Self::with_source(index, QuerySource::Text(query.into()))
+    }
+
+    pub(crate) fn match_all(index: Index) -> Self {
+        Self::with_source(index, QuerySource::MatchAll)
+    }
+
+    fn with_source(index: Index, query_source: QuerySource) -> Self {
         Self {
             index,
-            query: query.into(),
+            query_source,
             search_fields: None,
             filters: Vec::new(),
             sorts: Vec::new(),
@@ -479,13 +493,25 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
             (name.clone(), searchkernel_ir::QueryInputIr::Literal(value))
         })
         .collect();
-    let query = request
+    let typed_query = request
         .typed_query
         .clone()
         .map(Query::into_ir)
         .transpose()?
-        .map(searchkernel_ir::QuerySourceInput::Typed)
-        .unwrap_or_else(|| searchkernel_ir::QuerySourceInput::Text(request.query.clone()));
+        .map(searchkernel_ir::QuerySourceInput::Typed);
+    let query = match typed_query {
+        Some(query) => query,
+        None => match &request.query_source {
+            QuerySource::Text(text) if text.trim().is_empty() => {
+                return Err(crate::Error::search(
+                    crate::ErrorCode::InvalidArgument,
+                    "search text must not be empty or whitespace-only; use browse() for match-all searches",
+                ));
+            }
+            QuerySource::Text(text) => searchkernel_ir::QuerySourceInput::Text(text.clone()),
+            QuerySource::MatchAll => searchkernel_ir::QuerySourceInput::MatchAll,
+        },
+    };
     Ok(searchkernel_ir::SearchInput {
         query,
         search_fields,
@@ -516,7 +542,7 @@ impl std::fmt::Debug for SearchBuilder {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("SearchBuilder")
-            .field("query", &self.query)
+            .field("query_source", &self.query_source)
             .finish_non_exhaustive()
     }
 }
@@ -610,7 +636,7 @@ mod tests {
 
         let error = runtime
             .index()
-            .search("")
+            .browse()
             .typed_query(Query::term("missing", "value"))
             .execute::<serde_json::Value>()
             .expect_err("unknown typed-query field should fail validation");
@@ -634,7 +660,7 @@ mod tests {
 
         let wrong_weight_key = runtime
             .index()
-            .search("")
+            .browse()
             .typed_query(Query::weighted_set(
                 "price",
                 [crate::WeightedQueryItem::new("not-an-integer", 10)],
@@ -645,7 +671,7 @@ mod tests {
 
         let empty_weighted_query = runtime
             .index()
-            .search("")
+            .browse()
             .typed_query(Query::dot_product(
                 "price",
                 Vec::<crate::WeightedQueryItem>::new(),
@@ -655,6 +681,38 @@ mod tests {
         assert_eq!(
             empty_weighted_query.details()[0].code,
             "empty_weighted_query"
+        );
+    }
+
+    #[test]
+    fn public_nearest_neighbor_options_reach_the_ir_annotations() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let query = Query::NearestNeighbor {
+            field: "embedding".to_owned(),
+            query_tensor: "query_embedding".to_owned(),
+            options: crate::NearestNeighborOptions {
+                target_hits: 100,
+                approximate: true,
+                distance_threshold: Some(0.25),
+                explore_additional_hits: 50,
+            },
+        };
+        let request = runtime.index().search("").typed_query(query);
+        let input = to_resolver_input(&request).expect("public query should resolve to input");
+        let searchkernel_ir::QuerySourceInput::Typed(expression) = input.query else {
+            panic!("expected typed query input");
+        };
+        assert_eq!(
+            expression.annotations.get("distanceThreshold"),
+            Some(&searchkernel_ir::RequestValueIr::Float64(0.25))
+        );
+        assert_eq!(
+            expression.annotations.get("exploreAdditionalHits"),
+            Some(&searchkernel_ir::RequestValueIr::UInt64(50))
         );
     }
 }

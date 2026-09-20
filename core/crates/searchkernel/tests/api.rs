@@ -181,27 +181,21 @@ fn ranking_controls_cross_the_core_boundary() {
 
 #[test]
 fn presence_and_explicit_zero_are_preserved() {
-    let backend = Arc::new(RecordingBackend::new());
-    let index = index_with(backend.clone());
-    assert!(index
-        .search("")
+    let index = index_with(Arc::new(RecordingBackend::new()));
+    let inspected = index
+        .search("probe")
         .search_fields(std::iter::empty::<searchkernel::SearchField>())
         .projection(std::iter::empty::<&str>())
         .highlight(std::iter::empty::<&str>())
         .limit(0)
         .offset(0)
-        .execute::<Product>()
-        .is_err());
-    let OperationIr::Search(request) = backend.last_call().unwrap() else {
-        unreachable!()
-    };
-    assert!(request.search_fields().is_empty());
-    assert_eq!(request.projection().fields(), &[]);
-    assert!(
-        matches!(request.highlighting(), HighlightingIr::Requested { fields } if fields.is_empty())
-    );
-    assert_eq!(request.limit(), 0);
-    assert_eq!(request.offset(), 0);
+        .inspect()
+        .unwrap();
+    assert!(inspected.search_fields.is_empty());
+    assert!(inspected.projection.is_empty());
+    assert_eq!(inspected.highlighting, Some(Vec::new()));
+    assert_eq!(inspected.limit, 0);
+    assert_eq!(inspected.offset, 0);
 }
 
 #[test]
@@ -331,7 +325,7 @@ fn scripted_results_map_to_product_values_and_preserve_totals() {
         ScriptedResult::Search(Box::new(result)),
     )]));
     let index = index_with(backend.clone());
-    let result = index.search("").execute::<serde_json::Value>().unwrap();
+    let result = index.browse().execute::<serde_json::Value>().unwrap();
     assert_eq!(result.hits[0].id.as_str(), "sku-42");
     assert_eq!(result.hits[0].score, Some(2.5));
     assert_eq!(result.hits[0].document["title"], "headphones");
@@ -377,7 +371,7 @@ fn range_and_facets_compile_without_facade_validation() {
     let backend = Arc::new(RecordingBackend::new());
     let index = index_with(backend.clone());
     assert!(index
-        .search("")
+        .browse()
         .filter(field("price").range(Range::new().lower(100.0).upper(500.0).include_lower(false)))
         .facets(["brand", "in_stock"])
         .execute::<serde_json::Value>()
@@ -526,7 +520,7 @@ fn result_variants_map_to_owned_product_values() {
     let index = index_with(backend.clone());
 
     let result = index
-        .search("")
+        .browse()
         .facet(Facet::new("brand"))
         .execute::<serde_json::Value>()
         .unwrap();
@@ -726,13 +720,13 @@ fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
     ]));
     let index = index_with(backend.clone());
     let error = index
-        .search("")
+        .browse()
         .facet(Facet::new("ratio"))
         .execute::<String>()
         .unwrap_err();
     assert!(matches!(error, Error::Deserialization(_)));
     let error = index
-        .search("")
+        .browse()
         .facet(Facet::new("ratio"))
         .execute::<serde_json::Value>()
         .unwrap_err();
@@ -751,7 +745,7 @@ fn backend_errors_and_false_deletes_are_returned_without_reinterpretation() {
         .patch("patch", Patch::new().unset("brand"))
         .is_err());
     assert!(recorder.delete("delete").is_err());
-    assert!(recorder.search("").execute::<serde_json::Value>().is_err());
+    assert!(recorder.browse().execute::<serde_json::Value>().is_err());
     let calls = recording.calls();
     let error = searchkernel_ir::PortableError::new(
         searchkernel_ir::ErrorCode::Unavailable,
@@ -778,7 +772,7 @@ fn backend_errors_and_false_deletes_are_returned_without_reinterpretation() {
     ));
     assert!(matches!(index.delete("delete"), Err(Error::Search { .. })));
     assert!(matches!(
-        index.search("").execute::<serde_json::Value>(),
+        index.browse().execute::<serde_json::Value>(),
         Err(Error::Search { .. })
     ));
     backend.finish().unwrap();

@@ -277,7 +277,8 @@ impl IndexContext {
         path: &str,
         default_index: Option<&str>,
     ) -> Result<QueryIr> {
-        let query = self.typed_query_expr_to_ir(expression, path)?;
+        let mut query = self.typed_query_expr_to_ir(expression, path)?;
+        normalize_typed_query(&mut query, path)?;
         self.validate_typed_query(&query, None, default_index, path)?;
         Ok(QueryIr::Typed(Box::new(query)))
     }
@@ -399,16 +400,27 @@ impl IndexContext {
                     &child_path("contains.item"),
                 )
             }
-            QueryExprKindIr::And(children)
-            | QueryExprKindIr::Or(children)
-            | QueryExprKindIr::WeakAnd { children, .. } => validate_children(
+            QueryExprKindIr::And(children) | QueryExprKindIr::Or(children) => validate_children(
                 children,
                 match &query.kind {
                     QueryExprKindIr::And(_) => "and",
                     QueryExprKindIr::Or(_) => "or",
-                    _ => "weak_and",
+                    _ => unreachable!(),
                 },
             ),
+            QueryExprKindIr::WeakAnd {
+                children,
+                target_hits,
+            } => {
+                if *target_hits == 0 {
+                    return Err(invalid(
+                        "invalid_typed_query_annotation",
+                        Some(format!("{path}.annotations.totalTargetHits")),
+                        "totalTargetHits must be at least one",
+                    ));
+                }
+                validate_children(children, "weak_and")
+            }
             QueryExprKindIr::Not(child) | QueryExprKindIr::NonEmpty(child) => {
                 self.validate_typed_query(child, field_context, default_index, &child_path("child"))
             }
@@ -518,8 +530,67 @@ impl IndexContext {
             QueryExprKindIr::Matches { field, .. } => {
                 self.validate_matches_query_field(field, &child_path("matches.field"))
             }
-            QueryExprKindIr::GeoLocation { field, .. }
-            | QueryExprKindIr::GeoBoundingBox { field, .. } => {
+            QueryExprKindIr::DotProduct { field, items }
+            | QueryExprKindIr::WeightedSet { field, items }
+            | QueryExprKindIr::Wand { field, items } => {
+                let schema_field = self.validate_query_field_reference(field, path)?;
+                if !schema_field.capabilities().searchable()
+                    && !schema_field.capabilities().filterable()
+                {
+                    return Err(invalid(
+                        "field_not_searchable",
+                        Some(path.to_owned()),
+                        "weighted query requires an indexed or attribute field",
+                    ));
+                }
+                if items.is_empty() {
+                    return Err(invalid(
+                        "empty_weighted_query",
+                        Some(path.to_owned()),
+                        "weighted query requires at least one item",
+                    ));
+                }
+                for (index, item) in items.iter().enumerate() {
+                    self.validate_weighted_query_item(
+                        item,
+                        schema_field.kind(),
+                        &format!("{path}.items[{index}].key"),
+                    )?;
+                }
+                Ok(())
+            }
+            QueryExprKindIr::GeoLocation {
+                field,
+                latitude,
+                longitude,
+                ..
+            } => {
+                if !latitude.is_finite() || !longitude.is_finite() {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.geo_location")),
+                        "geo coordinates must be finite",
+                    ));
+                }
+                self.validate_query_field_reference(field, path).map(|_| ())
+            }
+            QueryExprKindIr::GeoBoundingBox {
+                field,
+                south,
+                west,
+                north,
+                east,
+            } => {
+                if [*south, *west, *north, *east]
+                    .iter()
+                    .any(|value| !value.is_finite())
+                {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.geo_bounding_box")),
+                        "geo coordinates must be finite",
+                    ));
+                }
                 self.validate_query_field_reference(field, path).map(|_| ())
             }
             QueryExprKindIr::NearestNeighbor { document_field, .. } => self
@@ -589,12 +660,23 @@ impl IndexContext {
                 )?;
                 validate_children(ranking, "rank.ranking")
             }
-            QueryExprKindIr::Labeled { query, label, .. } => {
+            QueryExprKindIr::Labeled {
+                query,
+                label,
+                score,
+            } => {
                 if label.is_empty() {
                     return Err(invalid(
                         "missing_label",
                         Some(child_path("labeled.label")),
                         "labeled query requires a non-empty label",
+                    ));
+                }
+                if !score.is_finite() {
+                    return Err(invalid(
+                        "non_finite_number",
+                        Some(format!("{path}.labeled.score")),
+                        "labeled score must be finite",
                     ));
                 }
                 self.validate_typed_query(
@@ -734,12 +816,35 @@ impl IndexContext {
         Ok(())
     }
 
+    fn validate_weighted_query_item(
+        &self,
+        item: &WeightedQueryItemIr,
+        kind: FieldKind,
+        path: &str,
+    ) -> Result<()> {
+        let valid = matches!(
+            (&item.key, kind),
+            (
+                RequestValueIr::String(_),
+                FieldKind::Text | FieldKind::Keyword
+            ) | (RequestValueIr::Int64(_), FieldKind::Int64)
+        );
+        if !valid {
+            return Err(invalid(
+                "type_mismatch",
+                Some(path.to_owned()),
+                "weighted query key type does not match the field kind",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn typed_query_expr_to_ir(
         &self,
         expression: api::QueryExpr<'_>,
         path: &str,
     ) -> Result<QueryExprIr> {
-        let mut annotations =
+        let annotations =
             request_values_to_map(expression.annotations(), &format!("{path}.annotations"))?;
         let kind = match expression.expr_type() {
             api::QueryExprKind::TermQuery => {
@@ -994,13 +1099,6 @@ impl IndexContext {
                     invalid("invalid_query", Some(path), "labeled query is missing")
                 })?;
                 let score = query.score();
-                if !score.is_finite() {
-                    return Err(invalid(
-                        "non_finite_number",
-                        Some(format!("{path}.labeled.score")),
-                        "labeled score must be finite",
-                    ));
-                }
                 QueryExprKindIr::Labeled {
                     query: Box::new(self.typed_query_expr_to_ir(
                         query.query().ok_or_else(|| {
@@ -1046,8 +1144,6 @@ impl IndexContext {
                 ))
             }
         };
-        let mut kind = kind;
-        resolve_typed_query_annotations(&mut kind, &mut annotations, path)?;
         Ok(QueryExprIr { kind, annotations })
     }
 
@@ -1114,13 +1210,6 @@ impl IndexContext {
                             )
                         })?;
                         let exactness = value.exactness().map(|value| value.value());
-                        if exactness.is_some_and(|value| !value.is_finite()) {
-                            return Err(invalid(
-                                "non_finite_number",
-                                Some(format!("{path}.alternatives[{index}].exactness")),
-                                "alternative exactness must be finite",
-                            ));
-                        }
                         Ok(QueryAlternativeIr {
                             query: self.typed_query_expr_to_ir(
                                 query,
@@ -1194,14 +1283,6 @@ impl IndexContext {
                 let query = expression.expr_as_query_geo_location().ok_or_else(|| {
                     invalid("invalid_query", Some(path), "geo location query is missing")
                 })?;
-                let values = [query.latitude(), query.longitude()];
-                if values.iter().any(|value| !value.is_finite()) {
-                    return Err(invalid(
-                        "non_finite_number",
-                        Some(format!("{path}.geo_location")),
-                        "geo coordinates must be finite",
-                    ));
-                }
                 Ok(QueryExprKindIr::GeoLocation {
                     field: self.query_field_ref_to_ir(
                         query.field(),
@@ -1229,14 +1310,6 @@ impl IndexContext {
                         "geo bounding box query is missing",
                     )
                 })?;
-                let values = [query.south(), query.west(), query.north(), query.east()];
-                if values.iter().any(|value| !value.is_finite()) {
-                    return Err(invalid(
-                        "non_finite_number",
-                        Some(format!("{path}.geo_bounding_box")),
-                        "geo coordinates must be finite",
-                    ));
-                }
                 Ok(QueryExprKindIr::GeoBoundingBox {
                     field: self.query_field_ref_to_ir(
                         query.field(),
@@ -1358,6 +1431,67 @@ impl IndexContext {
             .transpose()
             .map(|value| value.unwrap_or_default())
     }
+}
+
+/// Apply typed-query defaults and annotation validation after either ingress
+/// has produced the structural query tree.
+pub(crate) fn normalize_typed_query(query: &mut QueryExprIr, path: &str) -> Result<()> {
+    resolve_typed_query_annotations(&mut query.kind, &mut query.annotations, path)?;
+    match &mut query.kind {
+        QueryExprKindIr::Contains { item, .. } => {
+            normalize_typed_query(item, &format!("{path}.contains.item"))
+        }
+        QueryExprKindIr::And(children) => normalize_typed_query_children(children, path, "and"),
+        QueryExprKindIr::Or(children) => normalize_typed_query_children(children, path, "or"),
+        QueryExprKindIr::Not(child) => normalize_typed_query(child, &format!("{path}.not.clause")),
+        QueryExprKindIr::Phrase(children) => {
+            normalize_typed_query_children(children, path, "phrase")
+        }
+        QueryExprKindIr::Near { children, .. } => {
+            normalize_typed_query_children(children, path, "near")
+        }
+        QueryExprKindIr::ONear { children, .. } => {
+            normalize_typed_query_children(children, path, "onear")
+        }
+        QueryExprKindIr::SameElement(children) => {
+            normalize_typed_query_children(children, path, "same_element")
+        }
+        QueryExprKindIr::Equiv(children) => normalize_typed_query_children(children, path, "equiv"),
+        QueryExprKindIr::Alternatives(values) => {
+            for (index, value) in values.iter_mut().enumerate() {
+                normalize_typed_query(
+                    &mut value.query,
+                    &format!("{path}.alternatives[{index}].query"),
+                )?;
+            }
+            Ok(())
+        }
+        QueryExprKindIr::WeakAnd { children, .. } => {
+            normalize_typed_query_children(children, path, "weak_and")
+        }
+        QueryExprKindIr::Rank { matching, ranking } => {
+            normalize_typed_query(matching, &format!("{path}.rank.match"))?;
+            normalize_typed_query_children(ranking, path, "rank")
+        }
+        QueryExprKindIr::Labeled { query, .. } => {
+            normalize_typed_query(query, &format!("{path}.labeled.query"))
+        }
+        QueryExprKindIr::NonEmpty(child) => {
+            normalize_typed_query(child, &format!("{path}.non_empty.query"))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn normalize_typed_query_children(
+    children: &mut [QueryExprIr],
+    path: &str,
+    operation: &str,
+) -> Result<()> {
+    for (index, child) in children.iter_mut().enumerate() {
+        normalize_typed_query(child, &format!("{path}.{operation}.clauses[{index}]"))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn query_children(

@@ -76,13 +76,13 @@ fn native_product_path_supports_int64_values_outside_legacy_i32_range() {
         .expect_err("native Vespa LONG minimum sentinel must be rejected");
     assert!(format!("{minimum_error:?}").contains("INT64_MIN"));
     let minimum_query_error = index
-        .search("")
+        .browse()
         .filter(field("value").eq(i64::MIN))
         .execute::<serde_json::Value>()
         .expect_err("native query must reject the LONG minimum sentinel");
     assert!(format!("{minimum_query_error:?}").contains("INT64_MIN"));
     let filtered = index
-        .search("")
+        .browse()
         .filter(field("value").eq(i64::MAX))
         .execute::<serde_json::Value>()
         .expect("filter full int64 value");
@@ -133,7 +133,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
         .expect("put true bool document");
 
     let false_hits = index
-        .search("")
+        .browse()
         .filter(field("active").eq(false))
         .execute::<serde_json::Value>()
         .expect("search false bool values");
@@ -159,7 +159,7 @@ fn native_product_path_preserves_vespa_boolean_clear_semantics() {
     index.close().expect("close native bool index");
     let reopened = searchkernel::Index::open(&path).expect("reopen native bool index");
     let reopened_false_hits = reopened
-        .search("")
+        .browse()
         .filter(field("active").eq(false))
         .execute::<serde_json::Value>()
         .expect("search cleared bool values after reopen");

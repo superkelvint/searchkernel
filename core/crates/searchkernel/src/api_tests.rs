@@ -129,7 +129,7 @@ fn inspect_exposes_normalized_filter_defaults() {
     let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
 
     let inspected = index
-        .search("")
+        .browse()
         .filter(field("price").range(crate::Range::new().lower(100.0)))
         .inspect()
         .unwrap();
@@ -147,7 +147,7 @@ fn inspect_exposes_canonical_filter_structure() {
     let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
 
     let inspected = index
-        .search("")
+        .browse()
         .filter(Filter::all([
             field("brand").eq("acme"),
             Filter::all([field("category").eq("books"), field("region").eq("eu")]),

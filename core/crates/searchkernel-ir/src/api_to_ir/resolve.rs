@@ -1,6 +1,7 @@
 use super::*;
 use crate::api_to_ir::document::condition_to_ir;
 use crate::api_to_ir::filter::{flatten_and, flatten_or};
+use crate::api_to_ir::query::normalize_typed_query;
 use crate::api_to_ir::schema::analyzer_identity;
 use crate::api_to_ir::search::validate_query_input_references;
 use crate::filter_expression::{bind_parsed_filter, FilterBindings};
@@ -420,13 +421,15 @@ fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<Q
         QuerySourceInput::Text(text) => Ok(QueryIr::Text(text.clone())),
         QuerySourceInput::MatchAll => Ok(QueryIr::MatchAll),
         QuerySourceInput::Typed(query) => {
+            let mut query = query.clone();
+            normalize_typed_query(&mut query, "query")?;
             context.validate_typed_query(
-                query,
+                &query,
                 None,
                 input.query_model.default_index.as_deref(),
                 "query",
             )?;
-            Ok(QueryIr::Typed(Box::new(query.clone())))
+            Ok(QueryIr::Typed(Box::new(query)))
         }
         QuerySourceInput::Yql { source, parameters } => Ok(QueryIr::Yql {
             source: source.clone(),
