@@ -17,15 +17,15 @@ pub(crate) use grouping::grouping_to_ir;
 pub(crate) use ranking::ranking_request_to_ir;
 pub use resolve::{
     resolve_analyze, resolve_delete, resolve_document, resolve_get, resolve_insert, resolve_patch,
-    resolve_projection, resolve_search, resolve_upsert, AnalyzeInput, AnalyzeTargetInput,
-    AnalyzerInput, DeleteInput, DocumentInput, FacetInput, FacetSortInput, FilterBoundInput,
-    FilterInput, GetInput, PatchOperationInput, RankingInput, SearchFieldInput, SearchIntent,
-    SortInput,
+    resolve_projection, resolve_search, resolve_search_with_extensions, resolve_upsert,
+    AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput, FacetInput,
+    FacetSortInput, FilterBoundInput, FilterInput, GetInput, PatchOperationInput, RankingInput,
+    SearchFieldInput, SearchIntent, SortInput,
 };
 pub use schema::{
     analyzer_to_ir, field_to_ir, index_definition_to_ir, resolve_rust_index_definition,
-    RustAnalyzerInput, RustFieldInput, RustFieldKind, RustIndexDefinitionInput,
-    RustSearchFieldInput,
+    resolve_rust_index_definition_with_profiles, RustAnalyzerInput, RustFieldInput, RustFieldKind,
+    RustIndexDefinitionInput, RustRankProfileInput, RustSearchFieldInput,
 };
 pub(crate) use search::search_fields_to_ir_at;
 pub use value::request_value_from_json;

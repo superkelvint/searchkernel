@@ -18,13 +18,14 @@ impl Analyzer {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FieldKind {
     Text,
     Keyword,
     Int64,
     Float64,
     Bool,
+    Tensor(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +40,38 @@ pub struct Field {
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
     pub(crate) analyzer: Option<Analyzer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// A first-phase Vespa rank profile exposed by the native schema compiler.
+pub struct RankProfile {
+    pub(crate) name: String,
+    pub(crate) first_phase: String,
+    pub(crate) match_features: Vec<String>,
+}
+
+impl RankProfile {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            first_phase: String::new(),
+            match_features: Vec::new(),
+        }
+    }
+
+    pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
+        self.first_phase = expression.into();
+        self
+    }
+
+    pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
+        self.match_features.push(expression.into());
+        self
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl Field {
@@ -80,6 +113,21 @@ impl Field {
     /// Create a boolean field.
     pub fn bool(name: impl Into<String>) -> Self {
         Self::new(name, FieldKind::Bool)
+    }
+
+    /// Create a dense tensor field with the supplied Vespa type spec.
+    pub fn tensor(name: impl Into<String>, type_spec: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            kind: FieldKind::Tensor(type_spec.into()),
+            multi: false,
+            stored: None,
+            searchable: None,
+            filterable: None,
+            sortable: None,
+            facetable: None,
+            analyzer: None,
+        }
     }
 
     /// Make this field contain a collection of values.
@@ -209,6 +257,7 @@ pub struct IndexDefinition {
     pub(crate) name: Option<String>,
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
+    pub(crate) rank_profiles: Vec<RankProfile>,
 }
 
 impl IndexDefinition {
@@ -236,6 +285,12 @@ impl IndexDefinition {
         self
     }
 
+    /// Add a native first-phase rank profile to the generated schema.
+    pub fn rank_profile(mut self, profile: RankProfile) -> Self {
+        self.rank_profiles.push(profile);
+        self
+    }
+
     /// Return the optional index name.
     pub fn index_name(&self) -> Option<&str> {
         self.name.as_deref()
@@ -249,6 +304,10 @@ impl IndexDefinition {
     /// Return the explicitly configured default search fields.
     pub fn configured_default_search_fields(&self) -> Option<&[SearchField]> {
         self.default_search_fields.as_deref()
+    }
+
+    pub fn rank_profiles(&self) -> &[RankProfile] {
+        &self.rank_profiles
     }
 }
 

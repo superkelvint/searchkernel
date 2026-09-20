@@ -6,13 +6,22 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The deliberately small schema intent accepted by the ergonomic Rust
 /// facade. It is not a second representation of the portable schema.
 #[doc(hidden)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RustFieldKind {
     Text,
     Keyword,
     Int64,
     Float64,
     Bool,
+    Tensor(String),
+}
+
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustRankProfileInput {
+    pub name: String,
+    pub first_phase: String,
+    pub match_features: Vec<String>,
 }
 
 #[doc(hidden)]
@@ -56,6 +65,14 @@ pub struct RustIndexDefinitionInput {
 /// used by the portable FlatBuffers path.
 #[doc(hidden)]
 pub fn resolve_rust_index_definition(input: RustIndexDefinitionInput) -> Result<IndexDefinitionIr> {
+    resolve_rust_index_definition_with_profiles(input, Vec::new())
+}
+
+#[doc(hidden)]
+pub fn resolve_rust_index_definition_with_profiles(
+    input: RustIndexDefinitionInput,
+    rank_profiles: Vec<RustRankProfileInput>,
+) -> Result<IndexDefinitionIr> {
     if input.fields.is_empty() {
         return Err(invalid(
             "invalid_schema",
@@ -163,7 +180,35 @@ pub fn resolve_rust_index_definition(input: RustIndexDefinitionInput) -> Result<
         schema_fields: Vec::new(),
         imported_fields: Vec::new(),
         document_summaries: Vec::new(),
-        rank_profiles: Vec::new(),
+        rank_profiles: rank_profiles
+            .into_iter()
+            .map(|profile| RankProfileDefinitionIr {
+                name: profile.name,
+                inherits: Vec::new(),
+                inputs: Vec::new(),
+                functions: Vec::new(),
+                first_phase: Some(RankPhaseDefinitionIr {
+                    expression: Some(profile.first_phase),
+                    rerank_count: None,
+                    rank_score_drop_limit: None,
+                    properties: SchemaPropertiesIr::new(),
+                    total_rerank_count: None,
+                    keep_rank_count: None,
+                    total_keep_rank_count: None,
+                }),
+                second_phase: None,
+                global_phase: None,
+                rank_features: Vec::new(),
+                match_features: profile.match_features,
+                summary_features: Vec::new(),
+                sort_features: Vec::new(),
+                constants: Vec::new(),
+                onnx_models: Vec::new(),
+                rank_properties: BTreeMap::new(),
+                strict: None,
+                properties: SchemaPropertiesIr::new(),
+            })
+            .collect(),
         constants: Vec::new(),
         onnx_models: Vec::new(),
     })
@@ -223,6 +268,15 @@ fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Resul
             true,
             !field.multi,
             true,
+        ),
+        RustFieldKind::Tensor(type_spec) => (
+            DataTypeIr::Tensor { type_spec },
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
         ),
     };
     let data_type = if field.multi {

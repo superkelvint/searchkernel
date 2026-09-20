@@ -1,6 +1,8 @@
 use crate::error::Result;
 use crate::filter::Filter;
+use crate::grouping::GroupingPlan;
 use crate::index::Index;
+use crate::query::Query;
 use crate::result::SearchResult;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
@@ -158,6 +160,7 @@ pub enum QueryInputValue {
     Int64(i64),
     UInt64(u64),
     Float64(f64),
+    Tensor(crate::Tensor),
 }
 
 impl From<i64> for QueryInputValue {
@@ -187,6 +190,12 @@ impl From<i32> for QueryInputValue {
 impl From<u32> for QueryInputValue {
     fn from(value: u32) -> Self {
         Self::UInt64(u64::from(value))
+    }
+}
+
+impl From<crate::Tensor> for QueryInputValue {
+    fn from(value: crate::Tensor) -> Self {
+        Self::Tensor(value)
     }
 }
 
@@ -224,6 +233,8 @@ pub struct SearchBuilder {
     pub(crate) ranking: Option<Ranking>,
     pub(crate) query_inputs: std::collections::BTreeMap<String, QueryInputValue>,
     pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
+    pub(crate) typed_query: Option<Query>,
+    pub(crate) groupings: Vec<GroupingPlan>,
     pub(crate) projection: Option<Vec<String>>,
     pub(crate) highlighting: Option<Vec<String>>,
     pub(crate) language: Option<String>,
@@ -244,6 +255,8 @@ impl SearchBuilder {
             ranking: None,
             query_inputs: std::collections::BTreeMap::new(),
             rank_properties: std::collections::BTreeMap::new(),
+            typed_query: None,
+            groupings: Vec::new(),
             projection: None,
             highlighting: None,
             language: None,
@@ -310,6 +323,19 @@ impl SearchBuilder {
     /// Supply a request rank property to the selected rank profile.
     pub fn rank_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.rank_properties.insert(name.into(), value.into());
+        self
+    }
+
+    /// Execute a typed query through the canonical IR query path.
+    pub fn typed_query(mut self, query: Query) -> Self {
+        self.typed_query = Some(query);
+        self
+    }
+
+    /// Add a general grouping plan. Facets remain available as a compatibility
+    /// convenience, while plans are returned as recursive grouping results.
+    pub fn grouping(mut self, grouping: GroupingPlan) -> Self {
+        self.groupings.push(grouping);
         self
     }
 
@@ -427,6 +453,14 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
                 QueryInputValue::Int64(value) => searchkernel_ir::RequestValueIr::Int64(*value),
                 QueryInputValue::UInt64(value) => searchkernel_ir::RequestValueIr::UInt64(*value),
                 QueryInputValue::Float64(value) => searchkernel_ir::RequestValueIr::Float64(*value),
+                QueryInputValue::Tensor(value) => {
+                    searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
+                        type_spec: value.type_spec().to_owned(),
+                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(
+                            value.values().to_vec(),
+                        ),
+                    })
+                }
             };
             (name.clone(), value)
         })
@@ -447,6 +481,26 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         limit: request.limit,
         offset: request.offset,
     })
+}
+
+pub(crate) fn extensions_to_ir(
+    request: &SearchBuilder,
+) -> Result<(
+    Option<searchkernel_ir::QueryExprIr>,
+    Vec<searchkernel_ir::GroupingRequestIr>,
+)> {
+    let typed_query = request
+        .typed_query
+        .clone()
+        .map(Query::into_ir)
+        .transpose()?;
+    let groupings = request
+        .groupings
+        .clone()
+        .into_iter()
+        .map(|grouping| grouping.into_ir())
+        .collect::<Result<Vec<_>>>()?;
+    Ok((typed_query, groupings))
 }
 
 impl std::fmt::Debug for SearchBuilder {

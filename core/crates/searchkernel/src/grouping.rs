@@ -1,0 +1,172 @@
+use crate::error::{Error, Result};
+use searchkernel_ir::{
+    GroupingAggregationIr, GroupingAllIr, GroupingExpressionIr, GroupingOperationIr,
+    GroupingOutputIr, GroupingRequestIr,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupingExpression(String);
+
+impl GroupingExpression {
+    pub fn attribute(field: impl Into<String>) -> Self {
+        Self(field.into())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupingAggregation {
+    Count,
+    Average(GroupingExpression),
+    Sum(GroupingExpression),
+    Min(GroupingExpression),
+    Max(GroupingExpression),
+}
+
+impl GroupingAggregation {
+    pub fn count() -> Self {
+        Self::Count
+    }
+    pub fn average(field: impl Into<String>) -> Self {
+        Self::Average(GroupingExpression::attribute(field))
+    }
+    pub fn sum(field: impl Into<String>) -> Self {
+        Self::Sum(GroupingExpression::attribute(field))
+    }
+    pub fn min(field: impl Into<String>) -> Self {
+        Self::Min(GroupingExpression::attribute(field))
+    }
+    pub fn max(field: impl Into<String>) -> Self {
+        Self::Max(GroupingExpression::attribute(field))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingLevel {
+    classifier: GroupingExpression,
+    outputs: Vec<GroupingAggregation>,
+    nested: Option<Box<GroupingLevel>>,
+    max_groups: Option<u32>,
+}
+
+impl GroupingLevel {
+    pub fn new(classifier: GroupingExpression) -> Self {
+        Self {
+            classifier,
+            outputs: Vec::new(),
+            nested: None,
+            max_groups: None,
+        }
+    }
+
+    pub fn output(mut self, aggregation: GroupingAggregation) -> Self {
+        self.outputs.push(aggregation);
+        self
+    }
+    pub fn nested(mut self, level: GroupingLevel) -> Self {
+        self.nested = Some(Box::new(level));
+        self
+    }
+    pub fn max_groups(mut self, value: u32) -> Self {
+        self.max_groups = Some(value);
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GroupingPlan {
+    levels: Vec<GroupingLevel>,
+}
+
+impl GroupingPlan {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn level(mut self, level: GroupingLevel) -> Self {
+        self.levels.push(level);
+        self
+    }
+    pub fn by(field: impl Into<String>) -> GroupingLevel {
+        GroupingLevel::new(GroupingExpression::attribute(field))
+    }
+
+    pub(crate) fn into_ir(self) -> Result<GroupingRequestIr> {
+        let levels = self.levels;
+        if levels.len() > 1 {
+            return Err(Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "grouping levels must be nested with GroupingLevel::nested",
+            ));
+        }
+        let first = levels.into_iter().next().ok_or_else(|| {
+            Error::search(
+                crate::ErrorCode::InvalidArgument,
+                "grouping requires at least one level",
+            )
+        })?;
+        Ok(GroupingRequestIr {
+            root: level_to_scope(first)?,
+            continuations: Vec::new(),
+        })
+    }
+}
+
+fn level_to_scope(level: GroupingLevel) -> Result<GroupingAllIr> {
+    let mut each = Vec::new();
+    if let Some(max) = level.max_groups {
+        each.push(GroupingOperationIr::Max(Some(max)));
+    }
+    if !level.outputs.is_empty() {
+        each.push(GroupingOperationIr::Output(
+            level
+                .outputs
+                .into_iter()
+                .map(output_to_ir)
+                .collect::<Result<Vec<_>>>()?,
+        ));
+    }
+    if let Some(nested) = level.nested {
+        each.push(GroupingOperationIr::All(level_to_scope(*nested)?));
+    }
+    Ok(GroupingAllIr {
+        operations: vec![
+            GroupingOperationIr::Group(expression_to_ir(level.classifier)?),
+            GroupingOperationIr::Each(GroupingAllIr {
+                operations: each,
+                label: None,
+            }),
+        ],
+        label: None,
+    })
+}
+
+fn expression_to_ir(expression: GroupingExpression) -> Result<GroupingExpressionIr> {
+    if expression.0.is_empty() {
+        return Err(Error::search(
+            crate::ErrorCode::InvalidArgument,
+            "grouping attribute must not be empty",
+        ));
+    }
+    Ok(GroupingExpressionIr::Attribute(expression.0))
+}
+
+fn output_to_ir(output: GroupingAggregation) -> Result<GroupingOutputIr> {
+    let aggregation = match output {
+        GroupingAggregation::Count => GroupingAggregationIr::Count,
+        GroupingAggregation::Average(expression) => {
+            GroupingAggregationIr::Avg(expression_to_ir(expression)?)
+        }
+        GroupingAggregation::Sum(expression) => {
+            GroupingAggregationIr::Sum(expression_to_ir(expression)?)
+        }
+        GroupingAggregation::Min(expression) => {
+            GroupingAggregationIr::Min(expression_to_ir(expression)?)
+        }
+        GroupingAggregation::Max(expression) => {
+            GroupingAggregationIr::Max(expression_to_ir(expression)?)
+        }
+    };
+    Ok(GroupingOutputIr {
+        label: None,
+        expression: GroupingExpressionIr::Aggregation(Box::new(aggregation)),
+    })
+}

@@ -135,6 +135,36 @@ fn canonical_one_level_grouping_lowers_to_linear_attribute_plan() {
 }
 
 #[test]
+fn duplicate_count_grouping_output_is_rejected() {
+    let request = native_grouping(&[("category", vec![count_expression(), count_expression()])]);
+    let error = lower_groupings(&[request]).expect_err("duplicate count outputs must be rejected");
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+}
+
+#[test]
+fn duplicate_average_grouping_output_is_rejected() {
+    let request = native_grouping(&[(
+        "category",
+        vec![average_expression("price"), average_expression("price")],
+    )]);
+    let error = lower_groupings(&[request]).expect_err("duplicate averages must be rejected");
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+}
+
+#[test]
+fn distinct_grouping_output_names_are_accepted() {
+    let request = native_grouping(&[(
+        "category",
+        vec![average_expression("price"), average_expression("qty")],
+    )]);
+    let lowered = lower_groupings(&[request]).expect("distinct averages must be accepted");
+    assert!(matches!(
+        lowered.as_slice(),
+        [crate::search::GroupingLowering::Native(_)]
+    ));
+}
+
+#[test]
 fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
     let request = native_grouping(&[
         (
@@ -173,6 +203,29 @@ fn canonical_two_level_grouping_lowers_to_linear_attribute_plan() {
                 ),
             )
     );
+}
+
+#[test]
+fn semantically_different_all_each_trees_do_not_share_lowering() {
+    let canonical = native_grouping(&[("category", vec![count_expression()])]);
+    let mut all_materialization = canonical.clone();
+    let each = all_materialization
+        .root
+        .operations
+        .pop()
+        .expect("canonical grouping has an each operation");
+    let GroupingOperationIr::Each(each) = each else {
+        panic!("canonical grouping must end with each");
+    };
+    all_materialization
+        .root
+        .operations
+        .push(GroupingOperationIr::All(each));
+
+    assert!(lower_groupings(&[canonical]).is_ok());
+    let error =
+        lower_groupings(&[all_materialization]).expect_err("All must not be treated as Each");
+    assert_eq!(error.details[0].code, "grouping_all_topology_not_supported");
 }
 
 #[test]
@@ -241,31 +294,121 @@ fn canonical_grouping_round_trips_through_flatbuffers_and_ir() {
 
 #[test]
 fn vespa_coverage_maps_to_portable_coverage_without_issue_fabrication() {
-    let coverage = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+    let full = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
         active: 10,
-        covered: 5,
+        covered: 10,
+        target_active: 10,
+        degradation_flags: 0,
+    });
+    assert_eq!(full.coverage_percent, Some(100.0));
+    assert_eq!(full.full, Some(true));
+    assert_eq!(full.results_full, Some(1));
+
+    let partial = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 10,
+        covered: 4,
         target_active: 20,
         degradation_flags: 0,
     });
-    assert_eq!(coverage.coverage_percent, Some(25.0));
-    assert_eq!(coverage.documents, Some(5));
-    assert_eq!(coverage.full, Some(false));
-    assert_eq!(coverage.nodes, Some(1));
-    assert_eq!(coverage.results, Some(1));
-    assert_eq!(coverage.results_full, Some(0));
-    assert_eq!(coverage.degraded.as_ref().unwrap().match_phase, Some(false));
-    assert_eq!(coverage.degraded.as_ref().unwrap().timeout, Some(false));
-    assert!(portable_errors_from_native_issues(&["advisory".to_owned()]).is_empty());
+    assert_eq!(partial.coverage_percent, Some(40.0));
+    assert_eq!(partial.documents, Some(4));
+    assert_eq!(partial.full, Some(false));
+    assert_eq!(partial.results_full, Some(0));
 
-    let timeout_with_active_documents =
-        portable_coverage(searchkernel_vespa_engine::SearchCoverage {
-            active: 5,
-            covered: 5,
-            target_active: 5,
-            // Native ABI bit 0x02 is SK_DEGRADATION_TIMEOUT.
-            degradation_flags: 0x02,
-        });
-    assert_eq!(timeout_with_active_documents.full, Some(true));
+    let match_phase = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 10,
+        covered: 10,
+        target_active: 20,
+        degradation_flags: 0x01,
+    });
+    assert_eq!(match_phase.coverage_percent, Some(100.0));
+    assert_eq!(match_phase.full, Some(false));
+    assert_eq!(match_phase.results_full, Some(0));
+    assert_eq!(
+        match_phase.degraded.as_ref().unwrap().match_phase,
+        Some(true)
+    );
+
+    let timeout = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 10,
+        covered: 10,
+        target_active: 20,
+        degradation_flags: 0x02,
+    });
+    assert_eq!(timeout.coverage_percent, Some(100.0));
+    assert_eq!(timeout.full, Some(false));
+    assert_eq!(timeout.results_full, Some(0));
+    assert_eq!(timeout.degraded.as_ref().unwrap().timeout, Some(true));
+
+    let ann_timeout = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 10,
+        covered: 10,
+        target_active: 20,
+        degradation_flags: 0x04,
+    });
+    assert_eq!(ann_timeout.coverage_percent, Some(100.0));
+    assert_eq!(ann_timeout.full, Some(false));
+    assert_eq!(ann_timeout.results_full, Some(0));
+    assert_eq!(
+        ann_timeout.degraded.as_ref().unwrap().ann_timeout,
+        Some(true)
+    );
+
+    let empty = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 0,
+        covered: 0,
+        target_active: 10,
+        degradation_flags: 0,
+    });
+    assert_eq!(empty.coverage_percent, Some(100.0));
+    assert_eq!(empty.full, Some(true));
+
+    let empty_timeout = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 0,
+        covered: 0,
+        target_active: 0,
+        degradation_flags: 0x02,
+    });
+    assert_eq!(empty_timeout.coverage_percent, Some(0.0));
+    assert_eq!(empty_timeout.full, Some(false));
+
+    let non_ideal_corpus = portable_coverage(searchkernel_vespa_engine::SearchCoverage {
+        active: 8,
+        covered: 8,
+        target_active: 10,
+        degradation_flags: 0,
+    });
+    assert_eq!(non_ideal_corpus.coverage_percent, Some(100.0));
+    assert_eq!(non_ideal_corpus.full, Some(true));
+    assert_eq!(
+        non_ideal_corpus.degraded.as_ref().unwrap().non_ideal_state,
+        None
+    );
+
+    assert_eq!(full.documents, Some(10));
+    assert_eq!(full.nodes, Some(1));
+    assert_eq!(full.results, Some(1));
+    assert!(portable_errors_from_native_issues(&["advisory".to_owned()]).is_empty());
+}
+
+#[test]
+fn grouping_deadline_remaining_duration_is_deterministic() {
+    let started = std::time::Instant::now();
+    let deadline = started + std::time::Duration::from_millis(100);
+    assert_eq!(
+        super::backend::remaining_search_timeout(
+            deadline,
+            started + std::time::Duration::from_millis(40),
+        )
+        .unwrap(),
+        std::time::Duration::from_millis(60)
+    );
+    let error = super::backend::remaining_search_timeout(
+        deadline,
+        started + std::time::Duration::from_millis(100),
+    )
+    .expect_err("an exhausted deadline must reject the next grouping");
+    assert_eq!(error.code, ErrorCode::DeadlineExceeded);
 }
 
 #[test]
@@ -347,9 +490,7 @@ fn unsupported_grouping_ir_is_not_approximated() {
             GroupingAggregationIr::Sum(GroupingExpressionIr::Attribute("price".into())),
         ))],
     )]);
-    let error = lower_groupings(&[request]).expect_err("sum must remain unsupported");
-    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
-    assert_eq!(error.details[0].code, "grouping_aggregation_not_supported");
+    lower_groupings(&[request]).expect("sum is a supported phase9 aggregation");
 
     let request = native_grouping(&[(
         "category",
@@ -1061,32 +1202,38 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
         }
     );
 
-    let non_empty_error = lower_query(
-        &typed_contains(
-            "title",
-            QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
-        ),
-        &[],
-    )
-    .expect_err("NonEmpty must not be silently erased");
-    assert_eq!(non_empty_error.details[0].code, "non_empty_not_supported");
-    let user_input_error = lower_query(
-        &typed_contains(
-            "title",
-            QueryExprKindIr::UserInput {
-                value: "wireless headphones".to_owned(),
-                default_index: None,
-                target_hits: 100,
-            },
-        ),
-        &[],
-    )
-    .expect_err("userInput must not be approximated");
     assert_eq!(
-        user_input_error.details[0].code,
-        "user_query_parser_not_supported"
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::term("title", "wireless")
     );
-
+    assert_eq!(
+        lower_query(
+            &typed_contains(
+                "title",
+                QueryExprKindIr::UserInput {
+                    value: "wireless headphones".to_owned(),
+                    default_index: None,
+                    target_hits: 100,
+                },
+            ),
+            &[],
+        )
+        .unwrap(),
+        Query::WeakAnd {
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphones"),
+            ],
+            target_num_hits: 100,
+        }
+    );
     let user_query_request = request(Vec::new(), Vec::new(), None)
         .with_query(typed_expression(QueryExprKindIr::UserQuery {
             default_index: None,
@@ -1097,14 +1244,19 @@ fn typed_query_b_remaining_operators_lower_to_existing_vespa_nodes() {
             default_index: Some("title".to_owned()),
             ..QueryModelIr::default()
         });
-    let user_query_error = lower_search_query(
-        &user_query_request,
-        searchkernel_vespa_engine::LinguisticsOptions::default(),
-    )
-    .expect_err("userQuery must not be approximated");
     assert_eq!(
-        user_query_error.details[0].code,
-        "user_query_parser_not_supported"
+        lower_search_query(
+            &user_query_request,
+            searchkernel_vespa_engine::LinguisticsOptions::default(),
+        )
+        .unwrap(),
+        Query::WeakAnd {
+            children: vec![
+                Query::term("title", "wireless"),
+                Query::term("title", "headphones"),
+            ],
+            target_num_hits: 100,
+        }
     );
 }
 
@@ -1610,7 +1762,7 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
         .expect("execute dot-product query"));
     assert!(dot_product_ids.contains(&"doc:ordered".to_owned()));
 
-    let user_input_error = backend
+    let user_input_ids = ids(backend
         .search(request(typed_contains(
             "title",
             QueryExprKindIr::UserInput {
@@ -1619,13 +1771,23 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
                 target_hits: 100,
             },
         )))
-        .expect_err("userInput must not be approximated");
-    assert_eq!(
-        user_input_error.details[0].code,
-        "user_query_parser_not_supported"
-    );
+        .expect("userInput query"));
+    assert!(user_input_ids.contains(&"doc:ordered".to_owned()));
+    assert!(user_input_ids.contains(&"doc:spaced".to_owned()));
 
-    let user_query_error = backend
+    let user_input_phrase_ids = ids(backend
+        .search(request(typed_contains(
+            "title",
+            QueryExprKindIr::UserInput {
+                value: "\"wireless headphones\"".to_owned(),
+                default_index: None,
+                target_hits: 100,
+            },
+        )))
+        .expect("quoted userInput query"));
+    assert_eq!(user_input_phrase_ids, vec!["doc:ordered"]);
+
+    let user_query_ids = ids(backend
         .search(
             request(typed_expression(QueryExprKindIr::UserQuery {
                 default_index: None,
@@ -1637,11 +1799,8 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
                 ..QueryModelIr::default()
             }),
         )
-        .expect_err("userQuery must not be approximated");
-    assert_eq!(
-        user_query_error.details[0].code,
-        "user_query_parser_not_supported"
-    );
+        .expect("userQuery query"));
+    assert!(user_query_ids.contains(&"doc:ordered".to_owned()));
 
     let labeled_ids = ids(backend
         .search(request(typed_contains(
@@ -1655,13 +1814,13 @@ fn typed_query_b_reaches_real_vespa_query_nodes() {
         .expect("execute labeled query"));
     assert!(labeled_ids.contains(&"doc:ordered".to_owned()));
 
-    let non_empty_error = backend
+    let non_empty_ids = ids(backend
         .search(request(typed_contains(
             "title",
             QueryExprKindIr::NonEmpty(Box::new(typed_term("wireless"))),
         )))
-        .expect_err("NonEmpty must not be silently erased");
-    assert_eq!(non_empty_error.details[0].code, "non_empty_not_supported");
+        .expect("NonEmpty query"));
+    assert!(non_empty_ids.contains(&"doc:ordered".to_owned()));
 
     backend.engine.close().expect("close Vespa backend");
     std::fs::remove_dir_all(root).expect("remove typed-query test data");
@@ -1736,7 +1895,7 @@ fn multi_valued_schema_is_rejected_before_m_configuration() {
         None,
         vec![FieldIr::new(
             field("tags"),
-            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+            DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64))),
             None,
             FieldCapabilities::new(false, false, true, false, false),
         )],
@@ -2605,6 +2764,95 @@ fn typed_query_c_nearest_neighbor_reaches_real_vespa_through_the_adapter() {
         .engine
         .close()
         .expect("close nearest-neighbor backend");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn typed_query_c_special_fields_reach_real_vespa_through_the_adapter() {
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-typed-query-c-special-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    let config = root.join("config");
+    let schema = Schema::new("typed_query_c_special")
+        .field(Field::new("access", FieldType::Predicate).attribute());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile specialized-query schema");
+    let backend = VespaBackend::open(&data, &config).expect("open specialized-query backend");
+
+    for (id, hobby) in [("doc:near", "music"), ("doc:far", "hiking")] {
+        backend
+            .insert(InsertRequestIr::new(DocumentIr::new(
+                DocumentId::parse(id).unwrap(),
+                std::collections::BTreeMap::from([(
+                    field("access"),
+                    FieldValueIr::Predicate {
+                        features: std::collections::BTreeMap::from([(
+                            "hobby".to_owned(),
+                            hobby.to_owned(),
+                        )]),
+                    },
+                )]),
+            )))
+            .expect("insert specialized-query document");
+    }
+
+    let search = |kind| {
+        backend
+            .search(SearchRequestIr::new(
+                kind,
+                Vec::new(),
+                None,
+                Vec::new(),
+                10,
+                0,
+                searchkernel_ir::ProjectionIr::new(Vec::new()),
+                HighlightingIr::Disabled,
+                None,
+                PrefixPolicy::Disabled,
+                TypoPolicy::Disabled,
+            ))
+            .expect("execute specialized query")
+    };
+    let ids = |result: SearchResult| {
+        let ResultNode::Group(group) = result.root else {
+            panic!("search root must be a group");
+        };
+        group
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                ResultNode::Hit(hit) => Some(hit.id.clone()),
+                ResultNode::Group(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        ids(search(QueryIr::Typed(Box::new(QueryExprIr {
+            kind: QueryExprKindIr::Predicate {
+                field: typed_field("access"),
+                features: std::collections::BTreeMap::from([(
+                    "hobby".to_owned(),
+                    RequestValueIr::String("music".to_owned()),
+                )]),
+                range_features: std::collections::BTreeMap::new(),
+            },
+            annotations: std::collections::BTreeMap::new(),
+        })))),
+        vec!["doc:near"]
+    );
+
+    backend
+        .engine
+        .close()
+        .expect("close specialized-query backend");
     let _ = std::fs::remove_dir_all(root);
 }
 

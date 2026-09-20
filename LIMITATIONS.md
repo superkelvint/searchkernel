@@ -13,11 +13,14 @@ must not be silently approximated.
   semantics are required.
 - `in(...)` uses Vespa's native `InTerm` node for string and integer attribute
   values. It is not lowered to an OR of equality terms.
-- `userInput(...)` and `userQuery(...)` are currently unsupported by the typed
-  adapter. The adapter does not claim to implement Vespa's grammar, phrases,
-  negative terms, field selection, or parser configuration.
-- `NonEmpty(...)` is currently unsupported unless a future verifier establishes
-  an equivalent static proof. It is not erased after validation.
+- `userInput(...)` and `userQuery(...)` implement the pinned adapter's small
+  parser contract: weak-and terms, quoted phrases, leading negative terms,
+  field selection, parentheses, and explicit `AND`/`OR`. Vespa's complete
+  configurable user-input grammar, escaping rules, and parser modes are not
+  implemented.
+- `NonEmpty(...)` validates the lowered child and rejects statically empty
+  boolean operators, then lowers to that child. It does not reproduce all of
+  Vespa's parser-generated null/empty markers.
 - `alternatives(...)` currently accepts term children only. More general
   alternatives are rejected.
 - Labels are allocated by the adapter and exported as generated
@@ -29,13 +32,18 @@ must not be silently approximated.
 
 ## Schema and document model
 
-- The native document ABI currently supports scalar values and dense tensor
-  values. Array/struct document writes, position values, and predicate values
-  are not yet a complete public document contract.
-- Consequently, `sameElement`, geo position queries, and predicate queries
-  have native query-tree plumbing but are not certified as end-to-end product
-  capabilities for schemas that cannot be created and populated through the
-  Search Kernel document path.
+- The native document ABI supports scalar values, dense tensors,
+  `array<string>`, position values, and feature-only predicate values. It does
+  not yet support arbitrary arrays, `array<struct>`, nested structs, predicate
+  range values, or SameElement element filters.
+- `sameElement`, geo position queries, and predicate queries have native
+  query-tree plumbing. Predicate has a real schema/document/search execution
+  proof; SameElement and geo remain limited by the small schema/indexing
+  contract and are not yet frozen as full Vespa-compatible scenarios.
+- The nearest-neighbor path is proven for dense tensors and the default
+  execution slice. Its supported target-hit, approximate, distance-threshold,
+  and exploration annotations lower to native Vespa controls, but the full
+  Vespa HNSW tuning surface is not exposed.
 - Sparse and mixed tensors remain unsupported in the current document and
   query-input paths.
 

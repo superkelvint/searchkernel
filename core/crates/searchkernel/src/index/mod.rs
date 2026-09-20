@@ -253,9 +253,12 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<crate::search::InspectedQuery> {
         self.with_backend(|_| {
-            let normalized = searchkernel_ir::resolve_search(
+            let (typed_query, groupings) = crate::search::extensions_to_ir(request)?;
+            let normalized = searchkernel_ir::resolve_search_with_extensions(
                 &self.inner.context,
                 search_to_resolver_input(request)?,
+                typed_query,
+                groupings,
             )
                 .map_err(Error::from_ir)?;
             let query = match normalized.query() {
@@ -358,9 +361,12 @@ impl Index {
         request: &SearchBuilder,
     ) -> Result<result::SearchResult<T>> {
         self.with_backend(|backend| {
-            let ir_request = searchkernel_ir::resolve_search(
+            let (typed_query, groupings) = crate::search::extensions_to_ir(request)?;
+            let ir_request = searchkernel_ir::resolve_search_with_extensions(
                 &self.inner.context,
                 search_to_resolver_input(request)?,
+                typed_query,
+                groupings,
             )
             .map_err(Error::from_ir)?;
             let backend_result = backend.search(ir_request).map_err(Error::from_ir)?;
@@ -550,12 +556,15 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 .transpose()?;
             Ok(searchkernel_ir::RustFieldInput {
                 name: field.name.clone(),
-                kind: match field.kind {
+                kind: match &field.kind {
                     crate::schema::FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
                     crate::schema::FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
                     crate::schema::FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
                     crate::schema::FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
                     crate::schema::FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
+                    crate::schema::FieldKind::Tensor(type_spec) => {
+                        searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
+                    }
                 },
                 multi: field.multi,
                 stored: field.stored,
@@ -576,11 +585,22 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             })
             .collect()
     });
-    searchkernel_ir::resolve_rust_index_definition(searchkernel_ir::RustIndexDefinitionInput {
-        name: definition.name.clone(),
-        fields,
-        default_search_fields,
-    })
+    searchkernel_ir::resolve_rust_index_definition_with_profiles(
+        searchkernel_ir::RustIndexDefinitionInput {
+            name: definition.name.clone(),
+            fields,
+            default_search_fields,
+        },
+        definition
+            .rank_profiles
+            .iter()
+            .map(|profile| searchkernel_ir::RustRankProfileInput {
+                name: profile.name.clone(),
+                first_phase: profile.first_phase.clone(),
+                match_features: profile.match_features.clone(),
+            })
+            .collect(),
+    )
     .map_err(Error::from_ir)
 }
 
@@ -597,6 +617,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
             searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
         };
+        if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
+            value = Field::tensor(field.name().as_str(), type_spec);
+        }
         if matches!(
             field.cardinality(),
             searchkernel_ir::FieldCardinality::Multi

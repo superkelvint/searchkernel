@@ -51,12 +51,12 @@ fn encode_field<'a>(
     let filterable = field.filterable.map(api::OptionalBool::new);
     let sortable = field.sortable.map(api::OptionalBool::new);
     let facetable = field.facetable.map(api::OptionalBool::new);
-    let data_type = encode_data_type(builder, field.kind, field.multi);
-    let matching = matches!(field.kind, FieldKind::Text | FieldKind::Keyword).then(|| {
+    let data_type = encode_data_type(builder, &field.kind, field.multi);
+    let matching = matches!(&field.kind, FieldKind::Text | FieldKind::Keyword).then(|| {
         api::MatchingConfig::create(
             builder,
             &api::MatchingConfigArgs {
-                mode: match field.kind {
+                mode: match &field.kind {
                     FieldKind::Text => api::MatchingMode::Text,
                     FieldKind::Keyword => api::MatchingMode::Exact,
                     _ => api::MatchingMode::Unspecified,
@@ -149,34 +149,55 @@ fn encode_search_fields<'a>(
 
 fn encode_data_type<'a>(
     builder: &mut flatbuffers::FlatBufferBuilder<'a>,
-    kind: FieldKind,
+    kind: &FieldKind,
     multi: bool,
 ) -> flatbuffers::WIPOffset<api::DataType<'a>> {
-    let primitive = api::PrimitiveDataType::create(
-        builder,
-        &api::PrimitiveDataTypeArgs {
-            kind: match kind {
-                FieldKind::Text | FieldKind::Keyword => api::PrimitiveDataTypeKind::String,
-                FieldKind::Int64 => api::PrimitiveDataTypeKind::Int64,
-                FieldKind::Float64 => api::PrimitiveDataTypeKind::Float64,
-                FieldKind::Bool => api::PrimitiveDataTypeKind::Bool,
-            },
-        },
-    );
-    let primitive = api::DataType::create(
-        builder,
-        &api::DataTypeArgs {
-            kind_type: api::DataTypeKind::PrimitiveDataType,
-            kind: Some(primitive.as_union_value()),
-        },
-    );
+    let scalar = match kind {
+        FieldKind::Tensor(type_spec) => {
+            let type_spec = builder.create_string(type_spec);
+            let tensor = api::TensorDataType::create(
+                builder,
+                &api::TensorDataTypeArgs {
+                    type_spec: Some(type_spec),
+                },
+            );
+            api::DataType::create(
+                builder,
+                &api::DataTypeArgs {
+                    kind_type: api::DataTypeKind::TensorDataType,
+                    kind: Some(tensor.as_union_value()),
+                },
+            )
+        }
+        _ => {
+            let primitive = api::PrimitiveDataType::create(
+                builder,
+                &api::PrimitiveDataTypeArgs {
+                    kind: match kind {
+                        FieldKind::Text | FieldKind::Keyword => api::PrimitiveDataTypeKind::String,
+                        FieldKind::Int64 => api::PrimitiveDataTypeKind::Int64,
+                        FieldKind::Float64 => api::PrimitiveDataTypeKind::Float64,
+                        FieldKind::Bool => api::PrimitiveDataTypeKind::Bool,
+                        FieldKind::Tensor(_) => unreachable!(),
+                    },
+                },
+            );
+            api::DataType::create(
+                builder,
+                &api::DataTypeArgs {
+                    kind_type: api::DataTypeKind::PrimitiveDataType,
+                    kind: Some(primitive.as_union_value()),
+                },
+            )
+        }
+    };
     if !multi {
-        return primitive;
+        return scalar;
     }
     let array = api::ArrayDataType::create(
         builder,
         &api::ArrayDataTypeArgs {
-            element_type: Some(primitive),
+            element_type: Some(scalar),
         },
     );
     api::DataType::create(

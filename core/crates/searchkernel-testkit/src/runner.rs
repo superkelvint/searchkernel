@@ -848,6 +848,13 @@ fn field_value_json(value: &FieldValueIr) -> JsonValue {
             };
             json!({"tensor":{"type_spec":value.type_spec,"payload":payload}})
         }
+        FieldValueIr::Position {
+            latitude,
+            longitude,
+        } => {
+            json!({"position":{"latitude":latitude,"longitude":longitude}})
+        }
+        FieldValueIr::Predicate { features } => json!({"predicate":features}),
     }
 }
 fn search_fields_json(values: &[SearchFieldIr]) -> JsonValue {

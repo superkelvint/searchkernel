@@ -31,10 +31,13 @@ const RESERVED_FIELD_NAMES: &[&str] = &[
 /// A field type supported by the embedded Vespa configuration compiler.
 pub enum FieldType {
     Text,
+    ArrayString,
     String,
     Integer,
     Float,
     Boolean,
+    Position,
+    Predicate,
     Tensor(String),
 }
 
@@ -184,6 +187,12 @@ fn write_generated_files(
     write_config(directory, "attributes.cfg", &derived_config.attributes())?;
     write_config(directory, "summary.cfg", &derived_config.summary())?;
     write_config(directory, "rank-profiles.cfg", &rank_profiles(schema))?;
+    if schema.fields.iter().any(|field| {
+        matches!(&field.field_type, FieldType::Position)
+            || (matches!(&field.field_type, FieldType::ArrayString) && field.indexed)
+    }) {
+        write_config(directory, "ilscripts.cfg", &derived_config.ilscripts())?;
+    }
     write_config(directory, "juniperrc.cfg", "")?;
     write_config(directory, "proton.cfg", &derived_config.proton())
 }
@@ -240,8 +249,9 @@ impl<'a> DerivedConfig<'a> {
         let mut output = format!("indexfield[{}]\n", indexed.len());
         for (index, field) in indexed.iter().enumerate() {
             output.push_str(&format!(
-                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype SINGLE\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
-                quoted(&field.name)
+                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype {}\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
+                quoted(&field.name),
+                field.field_type.index_collection_type()
             ));
         }
         output
@@ -255,10 +265,19 @@ impl<'a> DerivedConfig<'a> {
             .collect();
         let mut output = format!("attribute[{}]\n", attributes.len());
         for (index, field) in attributes.iter().enumerate() {
+            let name = match &field.field_type {
+                FieldType::Position => format!("{}_zcurve", field.name),
+                _ => field.name.clone(),
+            };
+            let attribute_type = match &field.field_type {
+                FieldType::Position => "INT64",
+                _ => field.field_type.attribute_type(),
+            };
             output.push_str(&format!(
-                "attribute[{index}].name {}\nattribute[{index}].datatype {}\nattribute[{index}].collectiontype SINGLE\n",
-                quoted(&field.name),
-                field.field_type.attribute_type()
+                "attribute[{index}].name {}\nattribute[{index}].datatype {}\nattribute[{index}].collectiontype {}\n",
+                quoted(&name),
+                attribute_type,
+                field.field_type.attribute_collection_type(),
             ));
             if let FieldType::Tensor(type_spec) = &field.field_type {
                 output.push_str(&format!(
@@ -266,9 +285,42 @@ impl<'a> DerivedConfig<'a> {
                     quoted(type_spec)
                 ));
             }
-            if field.fast_search {
+            if field.fast_search || matches!(&field.field_type, FieldType::Position) {
                 output.push_str(&format!("attribute[{index}].fastsearch true\n"));
             }
+        }
+        output
+    }
+
+    fn ilscripts(&self) -> String {
+        let indexed_special_fields: Vec<&Field> = self
+            .fields()
+            .iter()
+            .filter(|field| {
+                matches!(&field.field_type, FieldType::Position)
+                    || (matches!(&field.field_type, FieldType::ArrayString) && field.indexed)
+            })
+            .collect();
+        let mut output = String::from(
+            "maxtermoccurrences 10000\nmaxtokenlength 1000\nfieldmatchmaxlength 1000000\nmaxReplacementCharactersRatio 0.25\nmaxReplacementCharacters 5000\n",
+        );
+        output.push_str(&format!("ilscript[{}]\n", indexed_special_fields.len()));
+        for (index, field) in indexed_special_fields.iter().enumerate() {
+            let content = match &field.field_type {
+                FieldType::Position => format!(
+                    "clear_state | guard {{ input {} | zcurve | attribute {}_zcurve; }}",
+                    field.name, field.name
+                ),
+                FieldType::ArrayString => format!(
+                    "clear_state | guard {{ input {} | for_each {{ tokenize normalize stem:\"BEST\" }} | attribute {} | index {}; }}",
+                    field.name, field.name, field.name
+                ),
+                _ => unreachable!("only special fields are selected above"),
+            };
+            output.push_str(&format!(
+                "ilscript[{index}].doctype {}\nilscript[{index}].docfield[] {}\nilscript[{index}].content[] {}\n",
+                quoted(&self.schema.document_type), quoted(&field.name), quoted(&content)
+            ));
         }
         output
     }
@@ -354,30 +406,51 @@ impl FieldType {
     fn manifest_name(&self) -> &'static str {
         match self {
             Self::Text => "text",
+            Self::ArrayString => "array<string>",
             Self::String => "string",
             Self::Integer => "integer",
             Self::Float => "float",
             Self::Boolean => "boolean",
+            Self::Position => "position",
+            Self::Predicate => "predicate",
             Self::Tensor(_) => "tensor",
         }
     }
 
     fn attribute_type(&self) -> &'static str {
         match self {
-            Self::Text | Self::String => "STRING",
+            Self::Text | Self::ArrayString | Self::String => "STRING",
             Self::Integer => "INT64",
             Self::Float => "DOUBLE",
             Self::Boolean => "BOOL",
+            Self::Position => "POSITION",
+            Self::Predicate => "PREDICATE",
             Self::Tensor(_) => "TENSOR",
+        }
+    }
+
+    fn index_collection_type(&self) -> &'static str {
+        match self {
+            Self::ArrayString => "ARRAY",
+            _ => "SINGLE",
+        }
+    }
+
+    fn attribute_collection_type(&self) -> &'static str {
+        match self {
+            Self::ArrayString => "ARRAY",
+            _ => "SINGLE",
         }
     }
 
     fn summary_type(&self) -> &'static str {
         match self {
-            Self::Text | Self::String => "longstring",
+            Self::Text | Self::ArrayString | Self::String => "longstring",
             Self::Integer => "integer",
             Self::Float => "double",
             Self::Boolean => "bool",
+            Self::Position => "position",
+            Self::Predicate => "predicate",
             Self::Tensor(_) => "tensor",
         }
     }
@@ -413,6 +486,31 @@ fn validate_schema(schema: &Schema) -> Result<()> {
                 )));
             }
             FieldType::Text => {}
+            FieldType::ArrayString if !field.indexed && !field.attribute => {
+                return Err(Error::message(format!(
+                    "array string field '{}' must be indexed or an attribute",
+                    field.name
+                )));
+            }
+            FieldType::ArrayString => {}
+            FieldType::Position | FieldType::Predicate if !field.attribute => {
+                return Err(Error::message(format!(
+                    "special field '{}' must be an attribute",
+                    field.name
+                )));
+            }
+            FieldType::Position | FieldType::Predicate if field.indexed => {
+                return Err(Error::message(format!(
+                    "special field '{}' may not be indexed",
+                    field.name
+                )));
+            }
+            FieldType::Position | FieldType::Predicate if field.summary => {
+                return Err(Error::message(format!(
+                    "special field '{}' may not be a summary field",
+                    field.name
+                )));
+            }
             _ if field.indexed => {
                 return Err(Error::message(format!(
                     "non-text field '{}' may not be indexed",

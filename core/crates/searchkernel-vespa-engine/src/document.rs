@@ -68,6 +68,32 @@ pub enum ArrayValue {
     Booleans(Vec<bool>),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PositionValue {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl PositionValue {
+    pub fn new(latitude: f64, longitude: f64) -> Self {
+        Self {
+            latitude,
+            longitude,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PredicateValue {
+    pub features: BTreeMap<String, String>,
+}
+
+impl PredicateValue {
+    pub fn new(features: BTreeMap<String, String>) -> Self {
+        Self { features }
+    }
+}
+
 impl From<Vec<String>> for ArrayValue {
     fn from(value: Vec<String>) -> Self {
         Self::Strings(value)
@@ -121,6 +147,8 @@ impl From<Vec<bool>> for FieldValue {
 pub enum FieldValue {
     Scalar(ScalarValue),
     Array(ArrayValue),
+    Position(PositionValue),
+    Predicate(PredicateValue),
     Tensor(TensorValue),
 }
 
@@ -183,6 +211,18 @@ impl IntoFieldValue for FieldValue {
 impl IntoFieldValue for TensorValue {
     fn into_field_value(self) -> FieldValue {
         FieldValue::Tensor(self)
+    }
+}
+
+impl IntoFieldValue for PositionValue {
+    fn into_field_value(self) -> FieldValue {
+        FieldValue::Position(self)
+    }
+}
+
+impl IntoFieldValue for PredicateValue {
+    fn into_field_value(self) -> FieldValue {
+        FieldValue::Predicate(self)
     }
 }
 
@@ -290,10 +330,22 @@ impl Document {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArithmeticOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldUpdate {
     Assign(FieldValue),
     Clear,
+    Arithmetic {
+        operator: ArithmeticOperator,
+        operand: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -320,6 +372,17 @@ impl DocumentUpdate {
 
     pub fn clear(mut self, name: impl Into<String>) -> Self {
         self.fields.insert(name.into(), FieldUpdate::Clear);
+        self
+    }
+
+    pub fn arithmetic(
+        mut self,
+        name: impl Into<String>,
+        operator: ArithmeticOperator,
+        operand: f64,
+    ) -> Self {
+        self.fields
+            .insert(name.into(), FieldUpdate::Arithmetic { operator, operand });
         self
     }
 

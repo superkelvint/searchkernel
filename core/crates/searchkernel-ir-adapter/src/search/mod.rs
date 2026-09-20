@@ -66,8 +66,18 @@ pub(crate) fn lower_search_options(
     if let Some(timeout) = request.timeout() {
         m_request = m_request.timeout(timeout);
     }
-    for sort in request.sort() {
-        m_request = m_request.sort(lower_sort(sort)?);
+    if request.sort().iter().any(sort_requires_raw_native_spec) {
+        let sort_spec = request
+            .sort()
+            .iter()
+            .map(raw_sort_spec)
+            .collect::<Result<Vec<_>>>()?
+            .join(" ");
+        m_request = m_request.raw_sort_spec(sort_spec);
+    } else {
+        for sort in request.sort() {
+            m_request = m_request.sort(lower_sort(sort)?);
+        }
     }
 
     // C2 has already resolved the projection. An empty list means that no
@@ -80,6 +90,58 @@ pub(crate) fn lower_search_options(
         m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
     }
     Ok(m_request)
+}
+
+fn sort_requires_raw_native_spec(sort: &searchkernel_ir::SortIr) -> bool {
+    !matches!(sort.target(), searchkernel_ir::SortTargetIr::Field(_))
+        || matches!(sort.missing(), searchkernel_ir::MissingPlacement::As(_))
+}
+
+fn raw_sort_spec(sort: &searchkernel_ir::SortIr) -> Result<String> {
+    if !sort.annotations().is_empty() {
+        return Err(PortableError::unsupported(
+            "sort_annotations_not_supported",
+            Some("sort.annotations"),
+            "the current native sort escape hatch cannot execute annotated sort expressions",
+        ));
+    }
+    let direction = match sort.direction() {
+        searchkernel_ir::SortDirection::Asc => '+',
+        searchkernel_ir::SortDirection::Desc => '-',
+    };
+    let target = match sort.target() {
+        searchkernel_ir::SortTargetIr::Field(field) => field.as_str().to_owned(),
+        searchkernel_ir::SortTargetIr::Relevance => "relevance".to_owned(),
+        searchkernel_ir::SortTargetIr::RankFeature(feature) => format!("feature({feature})"),
+    };
+    let target = match sort.missing() {
+        searchkernel_ir::MissingPlacement::First => format!("missing({target},first)"),
+        searchkernel_ir::MissingPlacement::Last => format!("missing({target},last)"),
+        searchkernel_ir::MissingPlacement::As(value) => {
+            format!("missing({target},as,{})", raw_sort_value(&value)?)
+        }
+    };
+    Ok(format!("{direction}{target}"))
+}
+
+fn raw_sort_value(value: &searchkernel_ir::RequestValueIr) -> Result<String> {
+    match value {
+        searchkernel_ir::RequestValueIr::String(value) => Ok(format!(
+            "\"{}\"",
+            value.replace('\\', "\\\\").replace('"', "\\\"")
+        )),
+        searchkernel_ir::RequestValueIr::Bool(value) => Ok(value.to_string()),
+        searchkernel_ir::RequestValueIr::Int64(value) => Ok(value.to_string()),
+        searchkernel_ir::RequestValueIr::UInt64(value) => Ok(value.to_string()),
+        searchkernel_ir::RequestValueIr::Float64(value) if value.is_finite() => {
+            Ok(value.to_string())
+        }
+        _ => Err(PortableError::invalid(
+            "invalid_sort_missing_value",
+            Some("sort.missing"),
+            "missing-as sort values must be scalar finite values",
+        )),
+    }
 }
 
 fn effective_rank_properties(request: &SearchRequestIr) -> Result<BTreeMap<String, String>> {

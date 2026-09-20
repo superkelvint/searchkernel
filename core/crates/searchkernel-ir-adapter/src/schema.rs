@@ -25,23 +25,22 @@ pub fn compile_index_definition(
         schema = schema.rank_profile(profile?);
     }
     for field in definition.fields() {
-        if matches!(
-            field.cardinality(),
-            searchkernel_ir::FieldCardinality::Multi
-        ) {
-            return Err(PortableError::unsupported(
-                "multi_valued_fields_not_supported",
-                Some("fields"),
-                format!(
-                    "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
-                    field.name().as_str()
-                ),
-            ));
-        }
         let kind = match field.data_type() {
             searchkernel_ir::DataTypeIr::Tensor { type_spec } => {
                 FieldType::Tensor(type_spec.clone())
             }
+            searchkernel_ir::DataTypeIr::Array(element)
+                if matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Primitive(
+                        searchkernel_ir::PrimitiveDataTypeIr::String
+                    )
+                ) =>
+            {
+                FieldType::ArrayString
+            }
+            searchkernel_ir::DataTypeIr::Position => FieldType::Position,
+            searchkernel_ir::DataTypeIr::Predicate => FieldType::Predicate,
             _ => match field.kind() {
                 searchkernel_ir::FieldKind::Text => FieldType::Text,
                 searchkernel_ir::FieldKind::Keyword => FieldType::String,
@@ -119,13 +118,22 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
     for (index, field) in definition.fields().iter().enumerate() {
         if matches!(
             field.data_type(),
-            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+            searchkernel_ir::DataTypeIr::WeightedSet(_)
+        ) || matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Array(element)
+                if !matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Primitive(
+                        searchkernel_ir::PrimitiveDataTypeIr::String
+                    )
+                )
         ) {
             return Err(PortableError::unsupported(
                 "multi_valued_fields_not_supported",
                 Some("fields"),
                 format!(
-                    "multi-valued field `{}` requires collection-valued M document/configuration and grouping support",
+                    "field `{}` requires a collection type outside the supported array<string> path",
                     field.name().as_str()
                 ),
             ));
@@ -283,12 +291,21 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
         match field.data_type() {
             searchkernel_ir::DataTypeIr::Primitive(
-                searchkernel_ir::PrimitiveDataTypeIr::String
-                | searchkernel_ir::PrimitiveDataTypeIr::Bool
-                | searchkernel_ir::PrimitiveDataTypeIr::Int64
-                | searchkernel_ir::PrimitiveDataTypeIr::Float64,
+                searchkernel_ir::PrimitiveDataTypeIr::String,
+            )
+            | searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Bool)
+            | searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int64)
+            | searchkernel_ir::DataTypeIr::Primitive(
+                searchkernel_ir::PrimitiveDataTypeIr::Float64,
             )
             | searchkernel_ir::DataTypeIr::Tensor { .. } => {}
+            searchkernel_ir::DataTypeIr::Array(element)
+                if matches!(
+                    element.as_ref(),
+                    searchkernel_ir::DataTypeIr::Primitive(
+                        searchkernel_ir::PrimitiveDataTypeIr::String
+                    )
+                ) => {}
             _ => {
                 return Err(PortableError::unsupported(
                     "data_type_not_supported",

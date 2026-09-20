@@ -1,4 +1,5 @@
 use super::*;
+use crate::api_to_ir::resolve::{resolve_position_value, resolve_predicate_value};
 use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
@@ -29,13 +30,38 @@ pub fn request_value_from_json(value: &serde_json::Value, path: String) -> Resul
             .collect::<Result<Vec<_>>>()
             .map(RequestValueIr::List),
         serde_json::Value::Object(values) => values
-            .iter()
-            .map(|(name, value)| {
-                request_value_from_json(value, format!("{path}.fields.{name}"))
-                    .map(|value| (name.clone(), value))
+            .get("$searchkernel_tensor")
+            .and_then(|payload| payload.as_object())
+            .and_then(|payload| {
+                let type_spec = payload.get("type_spec")?.as_str()?.to_owned();
+                let dense = payload
+                    .get("dense")?
+                    .as_array()?
+                    .iter()
+                    .map(serde_json::Value::as_f64)
+                    .collect::<Option<Vec<_>>>()?;
+                Some(RequestValueIr::Tensor(RequestTensorIr {
+                    type_spec,
+                    payload: RequestTensorPayloadIr::Dense(dense),
+                }))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .map(RequestValueIr::Object),
+            .ok_or_else(|| {
+                invalid(
+                    "invalid_tensor_value",
+                    Some(path.clone()),
+                    "tensor value requires type_spec and dense values",
+                )
+            })
+            .or_else(|_| {
+                values
+                    .iter()
+                    .map(|(name, value)| {
+                        request_value_from_json(value, format!("{path}.fields.{name}"))
+                            .map(|value| (name.clone(), value))
+                    })
+                    .collect::<Result<BTreeMap<_, _>>>()
+                    .map(RequestValueIr::Object)
+            }),
     }
 }
 
@@ -46,6 +72,17 @@ impl IndexContext {
         value: api::Value<'_>,
         path: String,
     ) -> Result<FieldValueIr> {
+        if matches!(
+            field.data_type(),
+            DataTypeIr::Position | DataTypeIr::Predicate
+        ) {
+            let request = RequestValueIr::from_api(value, path.clone())?;
+            return match field.data_type() {
+                DataTypeIr::Position => resolve_position_value(request, path),
+                DataTypeIr::Predicate => resolve_predicate_value(request, path),
+                _ => unreachable!("special value type was checked above"),
+            };
+        }
         if matches!(field.data_type(), DataTypeIr::Tensor { .. }) {
             if value.kind_type() != api::ValueKind::TensorValue {
                 return Err(invalid(

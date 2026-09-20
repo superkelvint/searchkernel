@@ -20,22 +20,40 @@ use searchkernel_vespa_engine::{
     TotalHitsRelation as VespaTotalHitsRelation, Value as VespaValue,
 };
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+pub(crate) fn remaining_search_timeout(deadline: Instant, now: Instant) -> Result<Duration> {
+    let remaining = deadline.checked_duration_since(now).unwrap_or_default();
+    if remaining.is_zero() {
+        return Err(PortableError::new(
+            searchkernel_ir::ErrorCode::DeadlineExceeded,
+            "portable search deadline exceeded before grouping completed",
+        ));
+    }
+    Ok(remaining)
+}
 
 /// Map the pinned Vespa `Coverage` counters to the portable result model.
-/// Vespa's `covered`, `active`, and `targetActive` are document counts, while
-/// the portable `nodes`/`results` fields describe the one embedded result set.
+/// Vespa keeps `covered`, `active`, and `targetActive` distinct: the first is
+/// what this execution searched, the second is the currently searchable
+/// corpus, and the third is the eventual ideal corpus. The portable percentage
+/// describes this embedded execution, so its denominator is `active`; the
+/// target corpus is deliberately not inferred as a portable non-ideal-state
+/// flag. This follows the distinction in the pinned `Coverage` and
+/// `container.handler.Coverage` sources.
 pub(crate) fn portable_coverage(coverage: searchkernel_vespa_engine::SearchCoverage) -> Coverage {
-    let full = coverage.covered >= coverage.active
-        && !(coverage.active == 0 && coverage.degraded_by_timeout())
-        && !coverage.degraded_by_ann_timeout();
-    let coverage_percent = if coverage.target_active == 0 {
-        if coverage.degraded_by_timeout() {
+    let degraded = coverage.degraded_by_match_phase()
+        || coverage.degraded_by_timeout()
+        || coverage.degraded_by_ann_timeout();
+    let full = coverage.covered >= coverage.active && !degraded;
+    let coverage_percent = if coverage.active == 0 {
+        if degraded {
             0.0
         } else {
             100.0
         }
-    } else if coverage.covered < coverage.target_active {
-        (coverage.covered as f64 * 100.0 / coverage.target_active as f64).round()
+    } else if coverage.covered < coverage.active {
+        (coverage.covered.min(coverage.active) as f64 * 100.0 / coverage.active as f64).round()
     } else {
         100.0
     };
@@ -242,12 +260,30 @@ fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
         GroupingAggregation::Average(GroupingExpression::Attribute(field)) => {
             format!("average({field})")
         }
+        GroupingAggregation::Sum(GroupingExpression::Attribute(field)) => format!("sum({field})"),
+        GroupingAggregation::Min(GroupingExpression::Attribute(field)) => format!("min({field})"),
+        GroupingAggregation::Max(GroupingExpression::Attribute(field)) => format!("max({field})"),
+        GroupingAggregation::StandardDeviation(GroupingExpression::Attribute(field)) => {
+            format!("stddev({field})")
+        }
+        GroupingAggregation::Xor(GroupingExpression::Attribute(field)) => format!("xor({field})"),
+        GroupingAggregation::Quantiles {
+            expression: GroupingExpression::Attribute(field),
+            ..
+        } => format!("quantiles({field})"),
+        GroupingAggregation::Summary { .. } => "summary".to_owned(),
     }
 }
 
 fn grouping_output_value(output: GroupingOutput) -> Result<searchkernel_ir::Value> {
     match output {
         GroupingOutput::Value(value) => Ok(grouping_value_to_ir(value)),
+        GroupingOutput::HitList(values) => Ok(searchkernel_ir::Value::List(
+            values
+                .into_iter()
+                .map(searchkernel_ir::Value::String)
+                .collect(),
+        )),
     }
 }
 
@@ -256,6 +292,20 @@ fn grouping_value_to_ir(value: GroupingResultValue) -> searchkernel_ir::Value {
         GroupingResultValue::String(value) => searchkernel_ir::Value::String(value),
         GroupingResultValue::Integer(value) => searchkernel_ir::Value::Int64(value),
         GroupingResultValue::Float(value) => searchkernel_ir::Value::Float64(value),
+        GroupingResultValue::Quantiles(values) => searchkernel_ir::Value::List(
+            values
+                .into_iter()
+                .map(|(quantile, value)| {
+                    searchkernel_ir::Value::Object(std::collections::BTreeMap::from([
+                        (
+                            "quantile".to_owned(),
+                            searchkernel_ir::Value::Float64(quantile),
+                        ),
+                        ("value".to_owned(), searchkernel_ir::Value::Float64(value)),
+                    ]))
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -363,6 +413,7 @@ impl Backend for VespaBackend {
     }
 
     fn search(&self, request: SearchRequestIr) -> Result<SearchResult> {
+        let started = Instant::now();
         validate_search_request(&request)?;
         let language = analysis_options(request.language())?;
         let query = lower_search_query(&request, language)?;
@@ -376,6 +427,12 @@ impl Backend for VespaBackend {
             .collect::<Vec<_>>();
         let m_request = lower_search_options(&request, query.clone(), language)?;
         let m_request = lower_facets_into_request(m_request, &facets);
+        let deadline = started.checked_add(m_request.timeout).ok_or_else(|| {
+            PortableError::new(
+                searchkernel_ir::ErrorCode::DeadlineExceeded,
+                "portable search deadline cannot be represented",
+            )
+        })?;
         let result = self
             .engine
             .search(m_request.clone())
@@ -431,9 +488,11 @@ impl Backend for VespaBackend {
                     children.push(facet_result_node(native, facet)?);
                 }
                 GroupingLowering::Native(native) => {
+                    let remaining = remaining_search_timeout(deadline, Instant::now())?;
+                    let grouping_request = m_request.clone().timeout(remaining);
                     let grouped = self
                         .engine
-                        .group_with_request(&m_request, &native.plan)
+                        .group_with_request(&grouping_request, &native.plan)
                         .map_err(|error| native_search_error(error, "grouping_not_supported"))?;
                     children.push(grouping_result_node(grouped, &native.plan)?);
                 }

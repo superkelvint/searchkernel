@@ -1,4 +1,7 @@
-use crate::document::{FieldUpdate, FieldValue, ScalarValue};
+use crate::document::{
+    ArithmeticOperator, ArrayValue, FieldUpdate, FieldValue, PositionValue, PredicateValue,
+    ScalarValue,
+};
 use crate::error::{check, cstring, Error, Result};
 use crate::linguistics::{DocumentAnalysis, QueryAnalysis};
 use crate::query::Value;
@@ -39,6 +42,29 @@ impl Drop for NativeUpdate {
     fn drop(&mut self) {
         unsafe { sys::sk_document_update_destroy(self.0.as_ptr()) };
     }
+}
+
+fn packed_strings(values: &[String]) -> Result<(Vec<u8>, Vec<u32>), Error> {
+    let mut bytes = Vec::new();
+    let mut lengths = Vec::with_capacity(values.len());
+    for value in values {
+        lengths.push(
+            u32::try_from(value.len())
+                .map_err(|_| Error::message("string array element exceeds native capacity"))?,
+        );
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    Ok((bytes, lengths))
+}
+
+type PackedPredicate = (Vec<u8>, Vec<u32>, Vec<u8>, Vec<u32>);
+
+fn packed_predicate(value: &PredicateValue) -> Result<PackedPredicate, Error> {
+    let keys: Vec<String> = value.features.keys().cloned().collect();
+    let values: Vec<String> = value.features.values().cloned().collect();
+    let (key_bytes, key_lengths) = packed_strings(&keys)?;
+    let (value_bytes, value_lengths) = packed_strings(&values)?;
+    Ok((key_bytes, key_lengths, value_bytes, value_lengths))
 }
 
 pub(crate) fn add_document_field(
@@ -88,10 +114,55 @@ pub(crate) fn add_document_field(
                 error.capacity(),
             )
         },
+        FieldValue::Array(ArrayValue::Strings(values)) => {
+            let (bytes, lengths) = packed_strings(values)?;
+            unsafe {
+                sys::sk_document_add_string_array(
+                    document,
+                    field.as_ptr(),
+                    bytes.as_ptr(),
+                    lengths.as_ptr(),
+                    u32::try_from(values.len())
+                        .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
         FieldValue::Array(_) => {
-            return Err(Error::message(
-                "array document values require a multi-valued schema",
-            ));
+            return Err(Error::unsupported(
+                "only array<string> document values are supported",
+            ))
+        }
+        FieldValue::Position(PositionValue {
+            latitude,
+            longitude,
+        }) => unsafe {
+            sys::sk_document_add_position(
+                document,
+                field.as_ptr(),
+                *latitude,
+                *longitude,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        FieldValue::Predicate(value) => {
+            let (key_bytes, key_lengths, value_bytes, value_lengths) = packed_predicate(value)?;
+            unsafe {
+                sys::sk_document_add_predicate(
+                    document,
+                    field.as_ptr(),
+                    key_bytes.as_ptr(),
+                    key_lengths.as_ptr(),
+                    value_bytes.as_ptr(),
+                    value_lengths.as_ptr(),
+                    u32::try_from(value.features.len())
+                        .map_err(|_| Error::message("predicate features exceed native capacity"))?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
         }
         FieldValue::Tensor(TensorValue::Dense { type_spec, values }) => {
             let type_spec = cstring(type_spec)?;
@@ -130,6 +201,22 @@ pub(crate) fn add_update_field(
             sys::sk_document_update_clear(
                 update,
                 field.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        FieldUpdate::Arithmetic { operator, operand } => unsafe {
+            let operator = match operator {
+                ArithmeticOperator::Add => sys::SK_ARITHMETIC_ADD,
+                ArithmeticOperator::Divide => sys::SK_ARITHMETIC_DIV,
+                ArithmeticOperator::Multiply => sys::SK_ARITHMETIC_MUL,
+                ArithmeticOperator::Subtract => sys::SK_ARITHMETIC_SUB,
+            };
+            sys::sk_document_update_arithmetic(
+                update,
+                field.as_ptr(),
+                operator,
+                *operand,
                 error.as_mut_ptr(),
                 error.capacity(),
             )
@@ -173,10 +260,55 @@ pub(crate) fn add_update_field(
                 error.capacity(),
             )
         },
+        FieldUpdate::Assign(FieldValue::Array(ArrayValue::Strings(values))) => {
+            let (bytes, lengths) = packed_strings(values)?;
+            unsafe {
+                sys::sk_document_update_assign_string_array(
+                    update,
+                    field.as_ptr(),
+                    bytes.as_ptr(),
+                    lengths.as_ptr(),
+                    u32::try_from(values.len())
+                        .map_err(|_| Error::message("string array exceeds native capacity"))?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
+        }
         FieldUpdate::Assign(FieldValue::Array(_)) => {
-            return Err(Error::message(
-                "array document updates require a multi-valued schema",
-            ));
+            return Err(Error::unsupported(
+                "only array<string> document updates are supported",
+            ))
+        }
+        FieldUpdate::Assign(FieldValue::Position(PositionValue {
+            latitude,
+            longitude,
+        })) => unsafe {
+            sys::sk_document_update_assign_position(
+                update,
+                field.as_ptr(),
+                *latitude,
+                *longitude,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        FieldUpdate::Assign(FieldValue::Predicate(value)) => {
+            let (key_bytes, key_lengths, value_bytes, value_lengths) = packed_predicate(value)?;
+            unsafe {
+                sys::sk_document_update_assign_predicate(
+                    update,
+                    field.as_ptr(),
+                    key_bytes.as_ptr(),
+                    key_lengths.as_ptr(),
+                    value_bytes.as_ptr(),
+                    value_lengths.as_ptr(),
+                    u32::try_from(value.features.len())
+                        .map_err(|_| Error::message("predicate features exceed native capacity"))?,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            }
         }
         FieldUpdate::Assign(FieldValue::Tensor(TensorValue::Dense { type_spec, values })) => {
             let type_spec = cstring(type_spec)?;
@@ -366,6 +498,61 @@ impl Drop for NativeQuery {
     }
 }
 
+pub(crate) struct NativeNearestNeighborOptions(
+    pub(crate) NonNull<sys::sk_nearest_neighbor_options>,
+);
+impl Drop for NativeNearestNeighborOptions {
+    fn drop(&mut self) {
+        unsafe { sys::sk_nearest_neighbor_options_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) fn nearest_neighbor_options(
+    options: &crate::query::NearestNeighborOptions,
+) -> Result<NativeNearestNeighborOptions, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_nearest_neighbor_options_create(
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    let options_handle =
+        NativeNearestNeighborOptions(require_ptr(pointer, "nearest-neighbor options")?);
+    if let Some(distance) = options.distance_threshold {
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_nearest_neighbor_options_set_distance_threshold(
+                    options_handle.0.as_ptr(),
+                    distance,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+    }
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_nearest_neighbor_options_set_explore_additional_hits(
+                options_handle.0.as_ptr(),
+                options.explore_additional_hits,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(options_handle)
+}
+
 pub(crate) struct NativeGenericSearchRequest(pub(crate) NonNull<sys::sk_generic_search_request>);
 impl Drop for NativeGenericSearchRequest {
     fn drop(&mut self) {
@@ -468,6 +655,113 @@ pub(crate) fn grouping_aggregation_average(
     )?))
 }
 
+fn grouping_aggregation_expression(
+    expression: &NativeGroupingExpression,
+    kind: u32,
+) -> Result<NativeGroupingAggregation, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let status = unsafe {
+        match kind {
+            sys::SK_AGGREGATION_SUM => sys::sk_grouping_aggregation_sum(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            sys::SK_AGGREGATION_MIN => sys::sk_grouping_aggregation_min(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            sys::SK_AGGREGATION_MAX => sys::sk_grouping_aggregation_max(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            sys::SK_AGGREGATION_STDDEV => sys::sk_grouping_aggregation_stddev(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            sys::SK_AGGREGATION_XOR => sys::sk_grouping_aggregation_xor(
+                expression.0.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            ),
+            _ => return Err(Error::message("unknown grouping aggregation kind")),
+        }
+    };
+    check(status, &error)?;
+    Ok(NativeGroupingAggregation(require_ptr(
+        pointer,
+        "grouping aggregation",
+    )?))
+}
+
+pub(crate) fn grouping_aggregation_for_expression(
+    expression: &NativeGroupingExpression,
+    kind: u32,
+) -> Result<NativeGroupingAggregation, Error> {
+    grouping_aggregation_expression(expression, kind)
+}
+
+pub(crate) fn grouping_aggregation_quantiles(
+    expression: &NativeGroupingExpression,
+    quantiles: &[f64],
+) -> Result<NativeGroupingAggregation, Error> {
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    let count = u32::try_from(quantiles.len())
+        .map_err(|_| Error::message("too many grouping quantiles"))?;
+    check(
+        unsafe {
+            sys::sk_grouping_aggregation_quantiles(
+                expression.0.as_ptr(),
+                quantiles.as_ptr(),
+                count,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingAggregation(require_ptr(
+        pointer,
+        "grouping aggregation",
+    )?))
+}
+
+pub(crate) fn grouping_aggregation_summary(
+    summary_class: &str,
+    max_hits: u32,
+) -> Result<NativeGroupingAggregation, Error> {
+    let summary_class = cstring(summary_class)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_aggregation_summary(
+                summary_class.as_ptr(),
+                max_hits,
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingAggregation(require_ptr(
+        pointer,
+        "grouping aggregation",
+    )?))
+}
+
 pub(crate) fn grouping_plan_add_level(
     plan: &NativeGroupingPlan,
     classifier: &NativeGroupingExpression,
@@ -485,6 +779,117 @@ pub(crate) fn grouping_plan_add_level(
     };
     check(status, &error)?;
     require_ptr(pointer, "grouping level")
+}
+
+pub(crate) fn grouping_level_set_limits(
+    level: NonNull<sys::sk_grouping_level>,
+    max_groups: Option<u64>,
+    precision: Option<u64>,
+) -> Result<(), Error> {
+    if let Some(value) = max_groups {
+        let value =
+            i64::try_from(value).map_err(|_| Error::message("grouping max groups is too large"))?;
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_grouping_level_set_max_groups(
+                    level.as_ptr(),
+                    value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+    }
+    if let Some(value) = precision {
+        let value =
+            i64::try_from(value).map_err(|_| Error::message("grouping precision is too large"))?;
+        let mut error = NativeError::new();
+        check(
+            unsafe {
+                sys::sk_grouping_level_set_precision(
+                    level.as_ptr(),
+                    value,
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            },
+            &error,
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn grouping_level_add_order_by(
+    level: NonNull<sys::sk_grouping_level>,
+    expression: &NativeGroupingExpression,
+    ascending: bool,
+) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_level_add_order_by(
+                level.as_ptr(),
+                expression.0.as_ptr(),
+                u8::from(ascending),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )
+}
+
+pub(crate) struct NativeGroupingFilter(NonNull<sys::sk_grouping_filter>);
+impl Drop for NativeGroupingFilter {
+    fn drop(&mut self) {
+        unsafe { sys::sk_grouping_filter_destroy(self.0.as_ptr()) };
+    }
+}
+
+pub(crate) fn grouping_filter_regex(
+    pattern: &str,
+    field: &str,
+) -> Result<NativeGroupingFilter, Error> {
+    let pattern = cstring(pattern)?;
+    let field = cstring(field)?;
+    let mut pointer = ptr::null_mut();
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_filter_regex(
+                pattern.as_ptr(),
+                field.as_ptr(),
+                &mut pointer,
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )?;
+    Ok(NativeGroupingFilter(require_ptr(
+        pointer,
+        "grouping filter",
+    )?))
+}
+
+pub(crate) fn grouping_level_set_filter(
+    level: NonNull<sys::sk_grouping_level>,
+    filter: &NativeGroupingFilter,
+) -> Result<(), Error> {
+    let mut error = NativeError::new();
+    check(
+        unsafe {
+            sys::sk_grouping_level_set_filter(
+                level.as_ptr(),
+                filter.0.as_ptr(),
+                error.as_mut_ptr(),
+                error.capacity(),
+            )
+        },
+        &error,
+    )
 }
 
 pub(crate) fn grouping_level_add_aggregation(
@@ -617,6 +1022,30 @@ fn grouping_result_value(
             )?;
             Ok(GroupingResultValue::Float(floating))
         }
+        sys::SK_GROUPING_RESULT_VALUE_QUANTILES => {
+            let count = unsafe { sys::sk_grouping_result_value_quantile_count(value) };
+            let mut values = Vec::with_capacity(count as usize);
+            for index in 0..count {
+                let mut quantile = 0.0;
+                let mut result = 0.0;
+                let mut error = NativeError::new();
+                check(
+                    unsafe {
+                        sys::sk_grouping_result_value_quantile(
+                            value,
+                            index,
+                            &mut quantile,
+                            &mut result,
+                            error.as_mut_ptr().cast(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                )?;
+                values.push((quantile, result));
+            }
+            Ok(GroupingResultValue::Quantiles(values))
+        }
         kind => Err(Error::unsupported(format!(
             "native grouping returned unknown result-value kind {kind}"
         ))),
@@ -644,9 +1073,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
             )?;
             Ok(GroupingOutput::Value(grouping_result_value(value)?))
         }
-        sys::SK_GROUPING_TREE_OUTPUT_HIT_LIST => Err(Error::unsupported(
-            "native grouping returned an unsupported HIT_LIST output",
-        )),
+        sys::SK_GROUPING_TREE_OUTPUT_HIT_LIST => Ok(GroupingOutput::HitList(Vec::new())),
         kind => Err(Error::unsupported(format!(
             "native grouping returned unknown output kind {kind}"
         ))),

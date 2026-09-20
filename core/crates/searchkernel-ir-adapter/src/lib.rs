@@ -12,7 +12,7 @@ use searchkernel_ir::{
     DocumentIr, FieldValueIr, PortableError, RequestTensorIr, RequestTensorPayloadIr, Result,
     ScalarValueIr, Value,
 };
-use searchkernel_vespa_engine::{Document, FieldValue, ScalarValue};
+use searchkernel_vespa_engine::{Document, FieldValue, PositionValue, PredicateValue, ScalarValue};
 use std::collections::BTreeMap;
 
 #[cfg(test)]
@@ -74,6 +74,12 @@ fn project_document(
 fn lower_field_value(value: &FieldValueIr) -> Result<FieldValue> {
     match value {
         FieldValueIr::Single(value) => Ok(FieldValue::Scalar(lower_scalar(value)?)),
+        FieldValueIr::Position { latitude, longitude } => Ok(FieldValue::Position(
+            PositionValue::new(*latitude, *longitude),
+        )),
+        FieldValueIr::Predicate { features } => Ok(FieldValue::Predicate(PredicateValue::new(
+            features.clone(),
+        ))),
         FieldValueIr::Tensor(tensor) => match &tensor.payload {
             RequestTensorPayloadIr::Dense(values)
                 if !tensor.type_spec.trim().is_empty()
@@ -188,6 +194,28 @@ fn value_to_ir(value: &FieldValue) -> Value {
         FieldValue::Scalar(ScalarValue::Integer(value)) => Value::Int64(*value),
         FieldValue::Scalar(ScalarValue::Float(value)) => Value::Float64(*value),
         FieldValue::Scalar(ScalarValue::Boolean(value)) => Value::Bool(*value),
+        FieldValue::Position(value) => Value::Object(
+            [
+                ("latitude".to_owned(), Value::Float64(value.latitude)),
+                ("longitude".to_owned(), Value::Float64(value.longitude)),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        FieldValue::Predicate(value) => Value::Object(
+            [(
+                "features".to_owned(),
+                Value::Object(
+                    value
+                        .features
+                        .iter()
+                        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                        .collect(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
+        ),
         FieldValue::Array(searchkernel_vespa_engine::ArrayValue::Strings(values)) => {
             Value::List(values.iter().cloned().map(Value::String).collect())
         }

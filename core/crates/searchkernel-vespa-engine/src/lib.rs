@@ -15,8 +15,8 @@ mod tensor;
 mod tests;
 
 pub use document::{
-    ArrayValue, Document, DocumentUpdate, FieldUpdate, FieldValue, IntoFieldValue, IntoScalarValue,
-    ScalarValue,
+    ArithmeticOperator, ArrayValue, Document, DocumentUpdate, FieldUpdate, FieldValue,
+    IntoFieldValue, IntoScalarValue, PositionValue, PredicateValue, ScalarValue,
 };
 pub use engine::Engine;
 pub use error::{Error, ErrorKind, Result};
@@ -30,10 +30,10 @@ pub use query::{
 };
 pub use schema::{ConfigCompiler, Field, FieldType, RankProfile, Schema};
 pub use search::{
-    FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingExpression, GroupingLevel,
-    GroupingOrder, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Hit,
-    MatchFeatureValue, MissingPlacement, QueryInput, SearchCoverage, SearchRequest, SearchResult,
-    SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
+    FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingExpression, GroupingFilter,
+    GroupingLevel, GroupingOrder, GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult,
+    GroupingResultValue, Hit, MatchFeatureValue, MissingPlacement, QueryInput, SearchCoverage,
+    SearchRequest, SearchResult, SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 

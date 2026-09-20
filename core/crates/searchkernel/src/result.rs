@@ -28,6 +28,9 @@ pub struct SearchResult<T> {
     pub hits: Vec<Hit<T>>,
     pub total_hits: TotalHits,
     pub facets: Vec<FacetResult>,
+    pub groups: Vec<GroupingResult>,
+    pub coverage: Option<Coverage>,
+    pub issues: Vec<ResultIssue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -38,6 +41,54 @@ pub struct Hit<T> {
     pub score: Option<f64>,
     pub document: T,
     pub highlights: Vec<HighlightResult>,
+    pub features: std::collections::BTreeMap<String, FeatureSet>,
+    pub sort_values: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeatureSet {
+    Value(FeatureValue),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeatureValue {
+    Double(f64),
+    Data(Vec<u8>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupingResult {
+    pub key: Option<serde_json::Value>,
+    pub aggregations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub groups: Vec<GroupingResult>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CoverageDegraded {
+    pub match_phase: Option<bool>,
+    pub timeout: Option<bool>,
+    pub adaptive_timeout: Option<bool>,
+    pub ann_timeout: Option<bool>,
+    pub non_ideal_state: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Coverage {
+    pub coverage_percent: Option<f64>,
+    pub documents: Option<u64>,
+    pub full: Option<bool>,
+    pub nodes: Option<u32>,
+    pub results: Option<u64>,
+    pub results_full: Option<u64>,
+    pub degraded: Option<CoverageDegraded>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResultIssue {
+    pub code: i64,
+    pub summary: Option<String>,
+    pub message: Option<String>,
+    pub transient: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,11 +137,21 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
 ) -> Result<SearchResult<T>> {
     let mut hits = Vec::new();
     let mut facets = Vec::new();
-    project_root(result.root, requested_facets, &mut hits, &mut facets)?;
+    let mut groups = Vec::new();
+    project_root(
+        result.root,
+        requested_facets,
+        &mut hits,
+        &mut facets,
+        &mut groups,
+    )?;
     Ok(SearchResult {
         hits,
         total_hits: total_hits(result.total_hits),
         facets,
+        groups,
+        coverage: result.coverage.map(coverage),
+        issues: result.errors.into_iter().map(result_issue).collect(),
     })
 }
 
@@ -102,6 +163,7 @@ fn project_root<T: serde::de::DeserializeOwned>(
     requested_facets: &[&str],
     hits: &mut Vec<Hit<T>>,
     facets: &mut Vec<FacetResult>,
+    groups: &mut Vec<GroupingResult>,
 ) -> Result<()> {
     match root {
         core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
@@ -112,6 +174,8 @@ fn project_root<T: serde::de::DeserializeOwned>(
                     core::ResultNode::Group(group) => {
                         if let Some(facet) = convert_facet_group(&group, requested_facets)? {
                             facets.push(facet);
+                        } else {
+                            groups.push(convert_group(group)?);
                         }
                     }
                 }
@@ -139,7 +203,74 @@ fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>>
         score: hit.score,
         document,
         highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
+        features: hit
+            .match_features
+            .into_iter()
+            .map(|(name, value)| {
+                let value = match value {
+                    core::Value::Float64(value) => FeatureValue::Double(value),
+                    core::Value::Bytes(value) => FeatureValue::Data(value),
+                    other => FeatureValue::Data(json_bytes(other)),
+                };
+                (name, FeatureSet::Value(value))
+            })
+            .collect(),
+        sort_values: hit
+            .sort_values
+            .into_iter()
+            .map(json_value)
+            .collect::<Result<Vec<_>>>()?,
     })
+}
+
+fn convert_group(group: core::ResultGroup) -> Result<GroupingResult> {
+    let mut nested = Vec::new();
+    for child in group.children {
+        if let core::ResultNode::Group(child) = child {
+            nested.push(convert_group(child)?);
+        }
+    }
+    let aggregations = group
+        .fields
+        .into_iter()
+        .map(|(name, value)| json_value(value).map(|value| (name, value)))
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    Ok(GroupingResult {
+        key: group.value.map(json_value).transpose()?,
+        aggregations,
+        groups: nested,
+    })
+}
+
+fn coverage(value: core::Coverage) -> Coverage {
+    Coverage {
+        coverage_percent: value.coverage_percent,
+        documents: value.documents,
+        full: value.full,
+        nodes: value.nodes,
+        results: value.results,
+        results_full: value.results_full,
+        degraded: value.degraded.map(|value| CoverageDegraded {
+            match_phase: value.match_phase,
+            timeout: value.timeout,
+            adaptive_timeout: value.adaptive_timeout,
+            ann_timeout: value.ann_timeout,
+            non_ideal_state: value.non_ideal_state,
+        }),
+    }
+}
+
+fn result_issue(value: core::SearchResultError) -> ResultIssue {
+    ResultIssue {
+        code: value.code,
+        summary: value.summary,
+        message: value.message,
+        transient: value.transient,
+    }
+}
+
+fn json_bytes(value: core::Value) -> Vec<u8> {
+    format!("{value:?}").into_bytes()
 }
 
 fn total_hits(total_hits: core::TotalHits) -> TotalHits {
@@ -274,11 +405,15 @@ fn json_value(value: Value) -> Result<serde_json::Value> {
             }
             serde_json::Value::Object(object)
         }
-        Value::Tensor(_) => {
-            return Err(Error::infrastructure(
-                "backend returned a tensor value unsupported by the public JSON result projection",
-            ))
-        }
+        Value::Tensor(tensor) => serde_json::json!({
+            "$searchkernel_tensor": {
+                "type_spec": tensor.type_spec,
+                "dense": match tensor.payload {
+                    searchkernel_ir::RequestTensorPayloadIr::Dense(values) => values,
+                    _ => return Err(Error::search(crate::ErrorCode::Unsupported, "sparse and mixed tensors are not public JSON values")),
+                }
+            }
+        }),
     })
 }
 

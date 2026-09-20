@@ -3,9 +3,10 @@
 
 use searchkernel_ir::{PortableError, Result};
 use searchkernel_vespa_engine::{
-    FacetRequest, GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan,
-    SearchRequest,
+    FacetRequest, GroupingAggregation, GroupingExpression, GroupingFilter, GroupingLevel,
+    GroupingPlan, SearchRequest,
 };
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FacetLowering {
@@ -14,12 +15,12 @@ pub(crate) struct FacetLowering {
     pub(crate) order: searchkernel_vespa_engine::GroupingOrder,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativeGroupingLowering {
     pub(crate) plan: GroupingPlan,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum GroupingLowering {
     Facet(FacetLowering),
     Native(NativeGroupingLowering),
@@ -195,6 +196,10 @@ impl GroupingCompiler {
         self.levels.push(GroupingLevel {
             classifier,
             aggregations: Vec::new(),
+            max_groups: None,
+            precision: None,
+            filter: None,
+            order_by: Vec::new(),
         });
         self.lower_each_body(each, level)
     }
@@ -212,6 +217,7 @@ impl GroupingCompiler {
         }
 
         let mut nested = None;
+        let mut output_names = BTreeSet::new();
         for operation in &value.operations {
             match operation {
                 searchkernel_ir::GroupingOperationIr::Output(outputs) => {
@@ -222,10 +228,44 @@ impl GroupingCompiler {
                                 "native grouping outputs do not expose aliases or labels",
                             ));
                         }
-                        self.levels[level]
-                            .aggregations
-                            .push(lower_aggregation(&output.expression)?);
+                        let aggregation = lower_aggregation(&output.expression)?;
+                        if !output_names.insert(grouping_aggregation_name(&aggregation)) {
+                            return Err(unsupported_grouping(
+                                "grouping_output_name_collision",
+                                "native grouping outputs must have unique portable field names",
+                            ));
+                        }
+                        self.levels[level].aggregations.push(aggregation);
                     }
+                }
+                searchkernel_ir::GroupingOperationIr::Max(value) => {
+                    self.levels[level].max_groups = value.map(u64::from);
+                }
+                searchkernel_ir::GroupingOperationIr::Precision(value) => {
+                    self.levels[level].precision = Some(u64::from(*value));
+                }
+                searchkernel_ir::GroupingOperationIr::Order(expressions) => {
+                    for expression in expressions {
+                        let (expression, ascending) = match expression {
+                            searchkernel_ir::GroupingExpressionIr::Positive(value) => {
+                                (lower_classifier(value)?, true)
+                            }
+                            searchkernel_ir::GroupingExpressionIr::Negative(value) => {
+                                (lower_classifier(value)?, false)
+                            }
+                            _ => (lower_classifier(expression)?, true),
+                        };
+                        self.levels[level].order_by.push(
+                            searchkernel_vespa_engine::GroupingOrderBy {
+                                expression,
+                                ascending,
+                            },
+                        );
+                    }
+                }
+                searchkernel_ir::GroupingOperationIr::Filter(filter)
+                | searchkernel_ir::GroupingOperationIr::Keep(filter) => {
+                    self.levels[level].filter = Some(lower_filter(filter)?);
                 }
                 searchkernel_ir::GroupingOperationIr::All(child) => {
                     if nested.is_some() {
@@ -299,9 +339,73 @@ fn lower_aggregation(
         searchkernel_ir::GroupingAggregationIr::Avg(expression) => {
             Ok(GroupingAggregation::Average(lower_classifier(expression)?))
         }
+        searchkernel_ir::GroupingAggregationIr::Sum(value) => {
+            Ok(GroupingAggregation::Sum(lower_classifier(value)?))
+        }
+        searchkernel_ir::GroupingAggregationIr::Min(value) => {
+            Ok(GroupingAggregation::Min(lower_classifier(value)?))
+        }
+        searchkernel_ir::GroupingAggregationIr::Max(value) => {
+            Ok(GroupingAggregation::Max(lower_classifier(value)?))
+        }
+        searchkernel_ir::GroupingAggregationIr::Xor(value) => {
+            Ok(GroupingAggregation::Xor(lower_classifier(value)?))
+        }
+        searchkernel_ir::GroupingAggregationIr::StdDev(value) => Ok(
+            GroupingAggregation::StandardDeviation(lower_classifier(value)?),
+        ),
+        searchkernel_ir::GroupingAggregationIr::Quantiles {
+            quantiles,
+            expression,
+        } => Ok(GroupingAggregation::Quantiles {
+            expression: lower_classifier(expression)?,
+            quantiles: quantiles.clone(),
+        }),
+        searchkernel_ir::GroupingAggregationIr::Summary(summary_class) => {
+            Ok(GroupingAggregation::Summary {
+                summary_class: summary_class.clone().unwrap_or_default(),
+                max_hits: 0,
+            })
+        }
+    }
+}
+
+fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
+    match aggregation {
+        GroupingAggregation::Count => "count".to_owned(),
+        GroupingAggregation::Average(GroupingExpression::Attribute(field)) => {
+            format!("average({field})")
+        }
+        GroupingAggregation::Sum(GroupingExpression::Attribute(field)) => format!("sum({field})"),
+        GroupingAggregation::Min(GroupingExpression::Attribute(field)) => format!("min({field})"),
+        GroupingAggregation::Max(GroupingExpression::Attribute(field)) => format!("max({field})"),
+        GroupingAggregation::StandardDeviation(GroupingExpression::Attribute(field)) => {
+            format!("stddev({field})")
+        }
+        GroupingAggregation::Xor(GroupingExpression::Attribute(field)) => format!("xor({field})"),
+        GroupingAggregation::Quantiles {
+            expression: GroupingExpression::Attribute(field),
+            ..
+        } => format!("quantiles({field})"),
+        GroupingAggregation::Summary { .. } => "summary".to_owned(),
+    }
+}
+
+fn lower_filter(value: &searchkernel_ir::GroupingFilterIr) -> Result<GroupingFilter> {
+    match value {
+        searchkernel_ir::GroupingFilterIr::Regex {
+            expression,
+            pattern,
+        } => {
+            let GroupingExpression::Attribute(field) = lower_classifier(expression)?;
+            Ok(GroupingFilter::Regex {
+                field,
+                pattern: pattern.clone(),
+            })
+        }
         _ => Err(unsupported_grouping(
-            "grouping_aggregation_not_supported",
-            "native grouping supports only count and average(attribute)",
+            "grouping_filter_not_supported",
+            "native grouping supports only regex filters over an attribute",
         )),
     }
 }

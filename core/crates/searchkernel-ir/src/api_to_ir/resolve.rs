@@ -7,7 +7,7 @@ use crate::model::{
     FieldKind, FieldName, FieldValueIr, FilterIr, GetRequestIr, GroupingAggregationIr,
     GroupingAllIr, GroupingExpressionIr, GroupingOperationIr, GroupingOutputIr, GroupingRequestIr,
     HighlightingIr, InsertRequestIr, LanguageHint, MissingPlacement, PatchOperationIr,
-    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryInputIr, QueryIr,
+    PatchRequestIr, PrefixPolicy, PresentationIr, ProjectionIr, QueryExprIr, QueryInputIr, QueryIr,
     QueryModelIr, RankingRequestIr, RequestValueIr, ScalarValueIr, SearchFieldIr,
     SearchFieldWeight, SearchRequestIr, SortDirection, SortIr, SortTargetIr, TypoPolicy,
     UpsertRequestIr,
@@ -246,7 +246,24 @@ pub fn resolve_analyze(context: &IndexContext, input: AnalyzeInput) -> Result<An
 /// Resolve the subset of search intent exposed by the high-level Rust API.
 #[doc(hidden)]
 pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<SearchRequestIr> {
-    let query = context.query_to_ir(&input.query, None)?;
+    resolve_search_with_extensions(context, input, None, Vec::new())
+}
+
+/// Resolve the ergonomic facade's request plus the typed-query and general
+/// grouping extensions.  Keeping this separate preserves the existing
+/// `SearchIntent` shape used by transport callers while allowing the public
+/// Rust facade to carry lossless V2 request nodes.
+#[doc(hidden)]
+pub fn resolve_search_with_extensions(
+    context: &IndexContext,
+    input: SearchIntent,
+    typed_query: Option<QueryExprIr>,
+    mut additional_grouping: Vec<GroupingRequestIr>,
+) -> Result<SearchRequestIr> {
+    let query = match typed_query {
+        Some(query) => QueryIr::Typed(Box::new(query)),
+        None => context.query_to_ir(&input.query, None)?,
+    };
     let search_fields = match input.search_fields {
         None => context.definition().default_search_fields().to_vec(),
         Some(fields) => resolve_search_fields(context, &fields)?,
@@ -273,11 +290,12 @@ pub fn resolve_search(context: &IndexContext, input: SearchIntent) -> Result<Sea
         )),
     };
     let sort = resolve_sorts(context, &input.sorts)?;
-    let grouping = input
+    let mut grouping = input
         .facets
         .iter()
         .map(resolve_facet)
         .collect::<Result<Vec<_>>>()?;
+    grouping.append(&mut additional_grouping);
     let profile = match input.ranking.unwrap_or(RankingInput::DefaultRelevanceV1) {
         RankingInput::DefaultRelevanceV1 => "default".to_owned(),
         RankingInput::Bm25 => "bm25".to_owned(),
@@ -914,6 +932,11 @@ fn resolve_field_value(
     value: RequestValueIr,
     path: String,
 ) -> Result<FieldValueIr> {
+    match field.data_type() {
+        crate::model::DataTypeIr::Position => return resolve_position_value(value, path),
+        crate::model::DataTypeIr::Predicate => return resolve_predicate_value(value, path),
+        _ => {}
+    }
     if matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. }) {
         return match value {
             RequestValueIr::Tensor(value) => Ok(FieldValueIr::Tensor(value)),
@@ -956,6 +979,98 @@ fn resolve_field_value(
         field.kind(),
         path,
     )?))
+}
+
+pub(crate) fn resolve_position_value(value: RequestValueIr, path: String) -> Result<FieldValueIr> {
+    let RequestValueIr::Object(mut fields) = value else {
+        return Err(invalid(
+            "type_mismatch",
+            Some(path),
+            "position fields require an object with latitude and longitude",
+        ));
+    };
+    let latitude = resolve_position_coordinate(fields.remove("latitude"), "latitude", &path)?;
+    let longitude = resolve_position_coordinate(fields.remove("longitude"), "longitude", &path)?;
+    if !fields.is_empty() {
+        return Err(invalid(
+            "invalid_value",
+            Some(path),
+            "position objects may contain only latitude and longitude",
+        ));
+    }
+    Ok(FieldValueIr::Position {
+        latitude,
+        longitude,
+    })
+}
+
+fn resolve_position_coordinate(
+    value: Option<RequestValueIr>,
+    name: &str,
+    path: &str,
+) -> Result<f64> {
+    let Some(value) = value else {
+        return Err(invalid(
+            "missing_value",
+            Some(format!("{path}.{name}")),
+            format!("position {name} is required"),
+        ));
+    };
+    let value = match value {
+        RequestValueIr::Int64(value) => value as f64,
+        RequestValueIr::Float64(value) if value.is_finite() => value,
+        _ => {
+            return Err(invalid(
+                "type_mismatch",
+                Some(format!("{path}.{name}")),
+                "position coordinates must be finite numbers",
+            ));
+        }
+    };
+    Ok(value)
+}
+
+pub(crate) fn resolve_predicate_value(value: RequestValueIr, path: String) -> Result<FieldValueIr> {
+    let RequestValueIr::Object(mut fields) = value else {
+        return Err(invalid(
+            "type_mismatch",
+            Some(path),
+            "predicate fields require an object with a features object",
+        ));
+    };
+    let Some(RequestValueIr::Object(features)) = fields.remove("features") else {
+        return Err(invalid(
+            "missing_value",
+            Some(format!("{path}.features")),
+            "predicate features are required",
+        ));
+    };
+    if !fields.is_empty() {
+        return Err(invalid(
+            "invalid_value",
+            Some(path.clone()),
+            "predicate objects may contain only features",
+        ));
+    }
+    let features = features
+        .into_iter()
+        .map(|(key, value)| match value {
+            RequestValueIr::String(value) => Ok((key, value)),
+            _ => Err(invalid(
+                "type_mismatch",
+                Some(format!("{path}.features.{key}")),
+                "predicate feature values must be strings",
+            )),
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    if features.is_empty() {
+        return Err(invalid(
+            "invalid_value",
+            Some(format!("{path}.features")),
+            "predicate fields require at least one feature",
+        ));
+    }
+    Ok(FieldValueIr::Predicate { features })
 }
 
 fn resolve_scalar_value(
@@ -1009,7 +1124,10 @@ pub fn resolve_projection(
             context
                 .definition()
                 .query_fields()
-                .filter(|field| field.capabilities().stored())
+                .filter(|field| {
+                    field.capabilities().stored()
+                        && !matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. })
+                })
                 .map(|field| field.name().clone()),
         ),
         Some(fields) => {
@@ -1022,6 +1140,13 @@ pub fn resolve_projection(
                         "field_not_stored",
                         Some(format!("projection.fields[{index}]")),
                         "projection requires a stored field",
+                    ));
+                }
+                if matches!(field.data_type(), crate::model::DataTypeIr::Tensor { .. }) {
+                    return Err(PortableError::unsupported(
+                        "tensor_search_projection_not_supported",
+                        Some(format!("projection.fields[{index}]")),
+                        "tensor fields are readable through get but are not native summary fields",
                     ));
                 }
                 if !seen.insert(field.name().clone()) {

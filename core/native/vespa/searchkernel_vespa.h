@@ -62,6 +62,9 @@ extern "C" {
 #define SK_VALUE_FLOAT 3U
 #define SK_VALUE_BOOLEAN 4U
 #define SK_VALUE_TENSOR 5U
+#define SK_VALUE_STRING_ARRAY 6U
+#define SK_VALUE_POSITION 7U
+#define SK_VALUE_PREDICATE 8U
 
 #define SK_SORT_ASCENDING 1U
 #define SK_SORT_DESCENDING 2U
@@ -75,9 +78,15 @@ extern "C" {
 #define SK_AGGREGATION_MIN 2U
 #define SK_AGGREGATION_MAX 3U
 #define SK_AGGREGATION_AVERAGE 4U
+#define SK_AGGREGATION_STDDEV 5U
+#define SK_AGGREGATION_XOR 6U
+#define SK_AGGREGATION_QUANTILES 7U
+#define SK_AGGREGATION_SUMMARY 8U
 #define SK_GROUPING_RESULT_VALUE_STRING 1U
 #define SK_GROUPING_RESULT_VALUE_INTEGER 2U
 #define SK_GROUPING_RESULT_VALUE_FLOAT 3U
+#define SK_GROUPING_RESULT_VALUE_QUANTILES 4U
+#define SK_GROUPING_RESULT_VALUE_HIT_LIST 5U
 #define SK_GROUPING_TREE_OUTPUT_VALUE 1U
 #define SK_GROUPING_TREE_OUTPUT_HIT_LIST 2U
 #define SK_GROUP_ORDER_NONE 0U
@@ -86,6 +95,11 @@ extern "C" {
 #define SK_GROUP_ORDER_VALUE_ASC 3U
 #define SK_GROUP_ORDER_VALUE_DESC 4U
 #define SK_NATIVE_STATUS_DEADLINE_EXCEEDED 5U
+
+#define SK_ARITHMETIC_ADD 0U
+#define SK_ARITHMETIC_DIV 1U
+#define SK_ARITHMETIC_MUL 2U
+#define SK_ARITHMETIC_SUB 3U
 
 #define SK_DEGRADATION_MATCH_PHASE 0x01U
 #define SK_DEGRADATION_TIMEOUT 0x02U
@@ -109,6 +123,7 @@ typedef struct sk_text_update sk_text_update;
 typedef struct sk_text_request sk_text_request;
 typedef struct sk_text_result sk_text_result;
 typedef struct sk_query sk_query;
+typedef struct sk_nearest_neighbor_options sk_nearest_neighbor_options;
 typedef struct sk_local_search_request sk_local_search_request;
 typedef struct sk_local_search_result sk_local_search_result;
 typedef struct sk_attribute_document sk_attribute_document;
@@ -135,6 +150,7 @@ typedef struct sk_grouping_result_value sk_grouping_result_value;
 typedef struct sk_grouping_tree_output sk_grouping_tree_output;
 typedef struct sk_grouping_tree_result sk_grouping_tree_result;
 typedef struct sk_grouping_tree_node sk_grouping_tree_node;
+typedef struct sk_grouping_filter sk_grouping_filter;
 
 /*
  * Diagnostics are caller-owned bytes rather than a public error struct. The
@@ -188,6 +204,18 @@ SK_API int32_t sk_document_add_tensor_dense(
     sk_document *document, const char *field, const char *type_spec,
     const double *values, uint32_t value_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_string_array(
+    sk_document *document, const char *field, const uint8_t *value_bytes,
+    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_position(
+    sk_document *document, const char *field, double latitude, double longitude,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_add_predicate(
+    sk_document *document, const char *field, const uint8_t *feature_key_bytes,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_annotate_text(
     sk_document *document, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
@@ -225,9 +253,24 @@ SK_API int32_t sk_document_update_assign_tensor_dense(
     sk_document_update *update, const char *field, const char *type_spec,
     const double *values, uint32_t value_count, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_assign_string_array(
+    sk_document_update *update, const char *field, const uint8_t *value_bytes,
+    const uint32_t *value_lengths, uint32_t value_count, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_assign_position(
+    sk_document_update *update, const char *field, double latitude, double longitude,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_assign_predicate(
+    sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    const uint32_t *feature_value_lengths, uint32_t feature_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                         uint8_t *out_error,
                                         uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_document_update_arithmetic(
+    sk_document_update *update, const char *field, uint32_t arithmetic_operator,
+    double operand, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_document_update_annotate_text(
     sk_document_update *update, const char *field, const uint8_t *term_bytes,
     uint32_t term_bytes_length, const uint32_t *term_lengths,
@@ -482,6 +525,22 @@ SK_API int32_t sk_query_add_nearest_neighbor_with_options(
     uint32_t target_num_hits, uint8_t allow_approximate,
     double distance_threshold, uint32_t explore_additional_hits,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_nearest_neighbor_options_create(
+    sk_nearest_neighbor_options **out_options, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API void sk_nearest_neighbor_options_destroy(
+    sk_nearest_neighbor_options *options) SK_NOEXCEPT;
+SK_API int32_t sk_nearest_neighbor_options_set_distance_threshold(
+    sk_nearest_neighbor_options *options, double distance_threshold,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_nearest_neighbor_options_set_explore_additional_hits(
+    sk_nearest_neighbor_options *options, uint32_t explore_additional_hits,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_nearest_neighbor_with_options_handle(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate,
+    const sk_nearest_neighbor_options *options, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_same_element(
     sk_query *query, const char *field, uint32_t child_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -592,6 +651,9 @@ SK_API int32_t sk_generic_search_request_add_sort(
     sk_generic_search_request *request, const char *field, uint32_t order,
     uint32_t missing, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_request_set_sort_spec(
+    sk_generic_search_request *request, const char *sort_spec,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_summary_field(
     sk_generic_search_request *request, const char *field,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -758,12 +820,50 @@ SK_API int32_t sk_grouping_aggregation_average(
     const sk_grouping_expression *expression,
     sk_grouping_aggregation **out, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_sum(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_min(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_max(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_stddev(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_xor(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_quantiles(
+    const sk_grouping_expression *expression, const double *quantiles,
+    uint32_t quantile_count, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_aggregation_summary(
+    const char *summary_class, uint32_t max_hits, sk_grouping_aggregation **out,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_aggregation_destroy(
     sk_grouping_aggregation *aggregation) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_plan_add_level(
     sk_grouping_plan *plan, const sk_grouping_expression *classifier,
     sk_grouping_level **out_level, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_set_max_groups(
+    sk_grouping_level *level, int64_t max_groups, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_set_precision(
+    sk_grouping_level *level, int64_t precision, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_regex(
+    const char *pattern, const char *field, sk_grouping_filter **out_filter,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API void sk_grouping_filter_destroy(sk_grouping_filter *filter) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_set_filter(
+    sk_grouping_level *level, const sk_grouping_filter *filter,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_level_add_order_by(
+    sk_grouping_level *level, const sk_grouping_expression *expression,
+    uint8_t ascending, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_level_add_count(
     sk_grouping_level *level, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -812,6 +912,12 @@ SK_API int32_t sk_grouping_result_value_integer(
 SK_API int32_t sk_grouping_result_value_float(
     const sk_grouping_result_value *value, double *out_float,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_result_value_quantile_count(
+    const sk_grouping_result_value *value) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_result_value_quantile(
+    const sk_grouping_result_value *value, uint32_t index,
+    double *out_quantile, double *out_value, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_grouping_tree_node_output_count(
     const sk_grouping_tree_node *node) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_tree_node_output(

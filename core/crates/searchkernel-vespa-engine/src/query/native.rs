@@ -8,7 +8,8 @@ use super::{
 use crate::error::{check, cstring};
 use crate::linguistics::{Linguistics, LinguisticsOptions};
 use crate::native::{
-    length_u32, text_query_terms, validate_term_query, NativeError, NativeQuery, NativeQueryTerms,
+    length_u32, nearest_neighbor_options, text_query_terms, validate_term_query, NativeError,
+    NativeQuery, NativeQueryTerms,
 };
 use crate::{Error, Result};
 use searchkernel_vespa_bindings as sys;
@@ -1046,16 +1047,16 @@ fn add_native_nearest_neighbor_with_options(
 ) -> Result<(), Error> {
     let document_field = cstring(document_field)?;
     let query_tensor = cstring(query_tensor)?;
+    let options_handle = nearest_neighbor_options(options)?;
     let mut error = NativeError::new();
     let status = unsafe {
-        sys::sk_query_add_nearest_neighbor_with_options(
+        sys::sk_query_add_nearest_neighbor_with_options_handle(
             native.0.as_ptr(),
             document_field.as_ptr(),
             query_tensor.as_ptr(),
             options.target_num_hits,
             u8::from(options.approximate),
-            options.distance_threshold.unwrap_or(f64::INFINITY),
-            options.explore_additional_hits,
+            options_handle.0.as_ptr(),
             error.as_mut_ptr(),
             error.capacity(),
         )

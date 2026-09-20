@@ -4,15 +4,18 @@ use crate::linguistics::{Linguistics, LinguisticsOptions};
 use crate::native::{
     add_document_field, add_text_annotation, add_update_field, engine_group_tree,
     engine_group_tree_with_request, grouping_aggregation_average, grouping_aggregation_count,
-    grouping_expression_attribute, grouping_level_add_aggregation, grouping_plan_add_level,
-    grouping_plan_create, native_bytes, native_f64s, read_generic_search_result, require_ptr,
-    NativeDocument, NativeError, NativeGenericSearchRequest, NativeQuery, NativeUpdate,
+    grouping_aggregation_for_expression, grouping_aggregation_quantiles,
+    grouping_aggregation_summary, grouping_expression_attribute, grouping_filter_regex,
+    grouping_level_add_aggregation, grouping_level_add_order_by, grouping_level_set_filter,
+    grouping_level_set_limits, grouping_plan_add_level, grouping_plan_create, native_bytes,
+    native_f64s, read_generic_search_result, require_ptr, NativeDocument, NativeError,
+    NativeGenericSearchRequest, NativeQuery, NativeUpdate,
 };
 use crate::query::{self, lower_query, validate_query_fields, Query};
 use crate::search::{
-    validate_search_ranking_inputs, GroupingAggregation, GroupingExpression, GroupingOrder,
-    GroupingPlan, MissingPlacement, QueryInput, SearchRequest, SearchResult, SortOrder, Source,
-    SummaryRequest,
+    validate_search_ranking_inputs, GroupingAggregation, GroupingExpression, GroupingFilter,
+    GroupingOrder, GroupingPlan, MissingPlacement, QueryInput, SearchRequest, SearchResult,
+    SortOrder, Source, SummaryRequest,
 };
 use crate::tensor::TensorValue;
 use searchkernel_vespa_bindings as sys;
@@ -50,6 +53,75 @@ fn configured_document_type(config_dir: &Path) -> Result<String, Error> {
 pub struct Engine {
     pub(crate) handle: NonNull<sys::sk_engine>,
     document_type: String,
+}
+
+fn add_grouping_level_configuration(
+    native_level: NonNull<sys::sk_grouping_level>,
+    level: &crate::GroupingLevel,
+) -> Result<(), Error> {
+    grouping_level_set_limits(native_level, level.max_groups, level.precision)?;
+    for order in &level.order_by {
+        let expression = match &order.expression {
+            GroupingExpression::Attribute(field) => grouping_expression_attribute(field)?,
+        };
+        grouping_level_add_order_by(native_level, &expression, order.ascending)?;
+    }
+    if let Some(filter) = &level.filter {
+        let GroupingFilter::Regex { field, pattern } = filter;
+        let filter = grouping_filter_regex(pattern, field)?;
+        grouping_level_set_filter(native_level, &filter)?;
+    }
+    Ok(())
+}
+
+fn add_grouping_aggregation(
+    native_level: NonNull<sys::sk_grouping_level>,
+    aggregation: &GroupingAggregation,
+) -> Result<(), Error> {
+    let expression_for = |expression: &GroupingExpression| -> Result<_, Error> {
+        match expression {
+            GroupingExpression::Attribute(field) => grouping_expression_attribute(field),
+        }
+    };
+    let native = match aggregation {
+        GroupingAggregation::Count => grouping_aggregation_count()?,
+        GroupingAggregation::Average(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_average(&expression)?
+        }
+        GroupingAggregation::Sum(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_for_expression(&expression, sys::SK_AGGREGATION_SUM)?
+        }
+        GroupingAggregation::Min(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_for_expression(&expression, sys::SK_AGGREGATION_MIN)?
+        }
+        GroupingAggregation::Max(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_for_expression(&expression, sys::SK_AGGREGATION_MAX)?
+        }
+        GroupingAggregation::StandardDeviation(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_for_expression(&expression, sys::SK_AGGREGATION_STDDEV)?
+        }
+        GroupingAggregation::Xor(expression) => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_for_expression(&expression, sys::SK_AGGREGATION_XOR)?
+        }
+        GroupingAggregation::Quantiles {
+            expression,
+            quantiles,
+        } => {
+            let expression = expression_for(expression)?;
+            grouping_aggregation_quantiles(&expression, quantiles)?
+        }
+        GroupingAggregation::Summary {
+            summary_class,
+            max_hits,
+        } => grouping_aggregation_summary(summary_class, *max_hits)?,
+    };
+    grouping_level_add_aggregation(native_level, &native)
 }
 
 // SAFETY: the native adapter owns the pointed-to engine and protects its
@@ -387,6 +459,19 @@ impl Engine {
             )
         };
         check(status, &error)?;
+        if let Some(sort_spec) = &request.raw_sort_spec {
+            let sort_spec = cstring(sort_spec)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_set_sort_spec(
+                    native_request.0.as_ptr(),
+                    sort_spec.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         for sort in &request.sort {
             let field = cstring(&sort.field)?;
             let order = match sort.order {
@@ -543,22 +628,9 @@ impl Engine {
                 GroupingExpression::Attribute(field) => grouping_expression_attribute(field)?,
             };
             let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            add_grouping_level_configuration(native_level, level)?;
             for aggregation in &level.aggregations {
-                match aggregation {
-                    GroupingAggregation::Count => {
-                        let aggregation = grouping_aggregation_count()?;
-                        grouping_level_add_aggregation(native_level, &aggregation)?;
-                    }
-                    GroupingAggregation::Average(expression) => {
-                        let expression = match expression {
-                            GroupingExpression::Attribute(field) => {
-                                grouping_expression_attribute(field)?
-                            }
-                        };
-                        let aggregation = grouping_aggregation_average(&expression)?;
-                        grouping_level_add_aggregation(native_level, &aggregation)?;
-                    }
-                }
+                add_grouping_aggregation(native_level, aggregation)?;
             }
         }
         engine_group_tree(self.handle, native_query.0, &native_plan)
@@ -590,22 +662,9 @@ impl Engine {
                 GroupingExpression::Attribute(field) => grouping_expression_attribute(field)?,
             };
             let native_level = grouping_plan_add_level(&native_plan, &classifier)?;
+            add_grouping_level_configuration(native_level, level)?;
             for aggregation in &level.aggregations {
-                match aggregation {
-                    GroupingAggregation::Count => {
-                        let aggregation = grouping_aggregation_count()?;
-                        grouping_level_add_aggregation(native_level, &aggregation)?;
-                    }
-                    GroupingAggregation::Average(expression) => {
-                        let expression = match expression {
-                            GroupingExpression::Attribute(field) => {
-                                grouping_expression_attribute(field)?
-                            }
-                        };
-                        let aggregation = grouping_aggregation_average(&expression)?;
-                        grouping_level_add_aggregation(native_level, &aggregation)?;
-                    }
-                }
+                add_grouping_aggregation(native_level, aggregation)?;
             }
         }
         engine_group_tree_with_request(self.handle, native_query.0, native_request.0, &native_plan)

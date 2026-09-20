@@ -4,28 +4,37 @@ mod analyze;
 mod document;
 mod error;
 mod filter;
+mod grouping;
 mod index;
 mod patch;
 #[cfg(feature = "native")]
 mod portable_definition;
+mod query;
 mod result;
 mod schema;
 mod search;
+mod tensor;
 pub use analyze::{AnalyzeBuilder, AnalyzeResult, AnalyzedToken};
 pub use document::DocumentId;
 pub use error::{Error, ErrorCode, ErrorDetail, Result};
 pub use filter::{field, FieldRef, Filter, Range};
+pub use grouping::{GroupingAggregation, GroupingExpression, GroupingLevel, GroupingPlan};
 pub use index::{Index, IndexRuntime};
 pub use patch::Patch;
-pub use result::{
-    FacetResult, FacetValue, HighlightFragment, HighlightResult, HighlightSpan, Hit, SearchResult,
-    TotalHits, TotalHitsRelation,
+pub use query::{
+    NearestNeighborOptions, Query, QueryBound, QueryValue, WandOptions, WeightedQueryItem,
 };
-pub use schema::{Analyzer, Field, IndexDefinition, SearchField};
+pub use result::{
+    Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
+    HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult, TotalHits,
+    TotalHitsRelation,
+};
+pub use schema::{Analyzer, Field, IndexDefinition, RankProfile, SearchField};
 pub use search::{
     Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,
     Sort, SortDirection,
 };
+pub use tensor::Tensor;
 
 /// Internal constructor namespace used by backend-injected tests.
 #[doc(hidden)]

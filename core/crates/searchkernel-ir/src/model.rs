@@ -525,6 +525,13 @@ pub enum ScalarValueIr {
 pub enum FieldValueIr {
     Single(ScalarValueIr),
     Multi(Vec<ScalarValueIr>),
+    Position {
+        latitude: f64,
+        longitude: f64,
+    },
+    Predicate {
+        features: std::collections::BTreeMap<String, String>,
+    },
     Tensor(RequestTensorIr),
 }
 

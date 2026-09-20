@@ -164,6 +164,7 @@ pub struct SearchRequest {
     pub limit: u32,
     pub offset: u32,
     pub sort: Vec<SortField>,
+    pub raw_sort_spec: Option<String>,
     pub summary: SummaryRequest,
     pub language: LinguisticsOptions,
     pub facets: Vec<FacetRequest>,
@@ -182,6 +183,7 @@ impl SearchRequest {
             limit: 10,
             offset: 0,
             sort: Vec::new(),
+            raw_sort_spec: None,
             summary: SummaryRequest::None,
             language: LinguisticsOptions::default(),
             facets: Vec::new(),
@@ -253,6 +255,11 @@ impl SearchRequest {
         self
     }
 
+    pub fn raw_sort_spec(mut self, sort_spec: impl Into<String>) -> Self {
+        self.raw_sort_spec = Some(sort_spec.into());
+        self
+    }
+
     pub fn fields<I, S>(mut self, fields: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -315,22 +322,50 @@ pub enum GroupingExpression {
     Attribute(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupingFilter {
+    Regex { field: String, pattern: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupingOrderBy {
+    pub expression: GroupingExpression,
+    pub ascending: bool,
+}
+
 impl GroupingExpression {
     pub fn attribute(field: impl Into<String>) -> Self {
         Self::Attribute(field.into())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GroupingAggregation {
     Count,
     Average(GroupingExpression),
+    Sum(GroupingExpression),
+    Min(GroupingExpression),
+    Max(GroupingExpression),
+    StandardDeviation(GroupingExpression),
+    Xor(GroupingExpression),
+    Quantiles {
+        expression: GroupingExpression,
+        quantiles: Vec<f64>,
+    },
+    Summary {
+        summary_class: String,
+        max_hits: u32,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupingLevel {
     pub classifier: GroupingExpression,
     pub aggregations: Vec<GroupingAggregation>,
+    pub max_groups: Option<u64>,
+    pub precision: Option<u64>,
+    pub filter: Option<GroupingFilter>,
+    pub order_by: Vec<GroupingOrderBy>,
 }
 
 impl GroupingLevel {
@@ -338,6 +373,10 @@ impl GroupingLevel {
         Self {
             classifier,
             aggregations: Vec::new(),
+            max_groups: None,
+            precision: None,
+            filter: None,
+            order_by: Vec::new(),
         }
     }
 
@@ -345,9 +384,32 @@ impl GroupingLevel {
         self.aggregations.push(aggregation);
         self
     }
+
+    pub fn max_groups(mut self, max_groups: u64) -> Self {
+        self.max_groups = Some(max_groups);
+        self
+    }
+
+    pub fn precision(mut self, precision: u64) -> Self {
+        self.precision = Some(precision);
+        self
+    }
+
+    pub fn filter(mut self, filter: GroupingFilter) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+
+    pub fn order_by(mut self, expression: GroupingExpression, ascending: bool) -> Self {
+        self.order_by.push(GroupingOrderBy {
+            expression,
+            ascending,
+        });
+        self
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupingPlan {
     pub levels: Vec<GroupingLevel>,
 }
@@ -374,11 +436,13 @@ pub enum GroupingResultValue {
     String(String),
     Integer(i64),
     Float(f64),
+    Quantiles(Vec<(f64, f64)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupingOutput {
     Value(GroupingResultValue),
+    HitList(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

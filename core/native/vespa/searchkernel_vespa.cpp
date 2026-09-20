@@ -19,14 +19,20 @@
 #include <vespa/document/fieldvalue/intfieldvalue.h>
 #include <vespa/document/fieldvalue/longfieldvalue.h>
 #include <vespa/document/fieldvalue/boolfieldvalue.h>
+#include <vespa/document/fieldvalue/arrayfieldvalue.h>
+#include <vespa/document/fieldvalue/structfieldvalue.h>
+#include <vespa/document/fieldvalue/predicatefieldvalue.h>
 #include <vespa/document/fieldvalue/doublefieldvalue.h>
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
 #include <vespa/document/fieldvalue/tensorfieldvalue.h>
 #include <vespa/document/datatype/tensor_data_type.h>
+#include <vespa/document/datatype/positiondatatype.h>
+#include <vespa/document/predicate/predicate_slime_builder.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
 #include <vespa/document/repo/newconfigbuilder.h>
 #include <vespa/document/update/assignvalueupdate.h>
+#include <vespa/document/update/arithmeticvalueupdate.h>
 #include <vespa/document/update/clearvalueupdate.h>
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/update/fieldupdate.h>
@@ -57,6 +63,7 @@
 #include <vespa/searchcore/proton/server/i_shared_threading_service.h>
 #include <vespa/searchlib/attribute/interlock.h>
 #include <vespa/searchlib/common/i_document_id_provider.h>
+#include <vespa/searchlib/common/identifiable.h>
 #include <vespa/searchlib/engine/searchreply.h>
 #include <vespa/searchlib/engine/searchrequest.h>
 #include <vespa/searchlib/engine/docsumreply.h>
@@ -70,7 +77,13 @@
 #include <vespa/searchlib/aggregation/maxaggregationresult.h>
 #include <vespa/searchlib/aggregation/minaggregationresult.h>
 #include <vespa/searchlib/aggregation/sumaggregationresult.h>
+#include <vespa/searchlib/aggregation/standarddeviationaggregationresult.h>
+#include <vespa/searchlib/aggregation/quantile_aggregation_result.h>
+#include <vespa/searchlib/aggregation/hitsaggregationresult.h>
+#include <vespa/searchlib/aggregation/xoraggregationresult.h>
 #include <vespa/searchlib/expression/attributenode.h>
+#include <vespa/searchlib/expression/regex_predicate_node.h>
+#include <vespa/searchlib/expression/filter_predicate_node.h>
 #include <vespa/searchlib/expression/aggregationrefnode.h>
 #include <vespa/searchlib/expression/floatresultnode.h>
 #include <vespa/searchlib/expression/integerresultnode.h>
@@ -174,6 +187,10 @@ using search::aggregation::GroupingLevel;
 using search::aggregation::MaxAggregationResult;
 using search::aggregation::MinAggregationResult;
 using search::aggregation::SumAggregationResult;
+using search::aggregation::StandardDeviationAggregationResult;
+using search::aggregation::QuantileAggregationResult;
+using search::aggregation::HitsAggregationResult;
+using search::aggregation::XorAggregationResult;
 using search::expression::AttributeNode;
 using search::expression::BoolResultNode;
 using search::expression::FloatResultNode;
@@ -241,6 +258,13 @@ public:
 enum class GroupingAggregationKind : uint32_t {
     COUNT,
     AVERAGE,
+    SUM,
+    MIN,
+    MAX,
+    STDDEV,
+    XOR,
+    QUANTILES,
+    SUMMARY,
 };
 
 struct sk_grouping_expression {
@@ -250,11 +274,28 @@ struct sk_grouping_expression {
 struct sk_grouping_aggregation {
     GroupingAggregationKind kind = GroupingAggregationKind::COUNT;
     std::unique_ptr<search::expression::ExpressionNode> expression;
+    std::vector<double> quantiles;
+    std::string summary_class;
+    uint32_t max_hits = 0;
+};
+
+struct sk_grouping_filter {
+    std::string pattern;
+    std::unique_ptr<search::expression::ExpressionNode> expression;
+};
+
+struct sk_grouping_order_by {
+    std::unique_ptr<search::expression::ExpressionNode> expression;
+    bool ascending = true;
 };
 
 struct sk_grouping_level {
     std::unique_ptr<search::expression::ExpressionNode> classifier;
     std::vector<sk_grouping_aggregation> aggregations;
+    int64_t max_groups = -1;
+    int64_t precision = -1;
+    std::optional<sk_grouping_filter> filter;
+    std::vector<sk_grouping_order_by> order_by;
 };
 
 struct sk_grouping_plan {
@@ -266,6 +307,7 @@ struct sk_grouping_result_value {
     std::string string;
     int64_t integer = 0;
     double floating = 0.0;
+    std::vector<std::pair<double, double>> quantiles;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     std::shared_ptr<const ResultFaultController> result_faults;
 #endif
@@ -305,6 +347,11 @@ struct sk_grouping_tree_result {
         }
     }
 #endif
+};
+
+struct sk_nearest_neighbor_options {
+    std::optional<double> distance_threshold;
+    uint32_t explore_additional_hits = 0;
 };
 
 namespace {
@@ -1023,6 +1070,10 @@ struct OwnedValue {
     double floating = 0.0;
     bool boolean = false;
     std::vector<double> tensor_cells;
+    std::vector<std::string> strings;
+    double latitude = 0.0;
+    double longitude = 0.0;
+    std::vector<std::pair<std::string, std::string>> predicate_features;
 };
 
 struct DocumentFieldState {
@@ -1047,6 +1098,12 @@ struct ValueUpdate {
     std::string field;
     int64_t value = 0;
     std::vector<std::pair<std::string, std::optional<OwnedValue>>> fields;
+    struct Arithmetic {
+        std::string field;
+        uint32_t operation = SK_ARITHMETIC_ADD;
+        double operand = 0.0;
+    };
+    std::vector<Arithmetic> arithmetic;
     std::vector<std::pair<std::string, std::vector<TextOccurrence>>> annotated_fields;
 };
 
@@ -1103,6 +1160,7 @@ struct LocalSearchRequestState {
         uint32_t missing = SK_SORT_MISSING_DEFAULT;
     };
     std::vector<Sort> sort;
+    std::optional<std::string> raw_sort_spec;
     std::vector<std::string> summary_fields;
     std::vector<std::pair<std::string, double>> query_features;
     std::vector<std::pair<std::string, std::string>> query_tensors;
@@ -1567,6 +1625,55 @@ class EmbeddedEngine {
         return field;
     }
 
+    static std::unique_ptr<document::ArrayFieldValue>
+    make_string_array_value(const document::DataType &type, const OwnedValue &value) {
+        if (value.kind != SK_VALUE_STRING_ARRAY) {
+            throw std::invalid_argument("wrong array value type");
+        }
+        auto result = std::make_unique<document::ArrayFieldValue>(type);
+        for (const auto &entry : value.strings) {
+            result->append(std::make_unique<document::StringFieldValue>(entry));
+        }
+        return result;
+    }
+
+    static std::unique_ptr<document::StructFieldValue>
+    make_position_value(const document::DataType &type, double latitude, double longitude) {
+        if (!std::isfinite(latitude) || !std::isfinite(longitude) ||
+            latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
+            throw std::invalid_argument("position coordinates are outside the valid range");
+        }
+        const auto scaled = [](double value) {
+            const auto result = std::llround(value * 1'000'000.0);
+            if (result < std::numeric_limits<int32_t>::min() ||
+                result > std::numeric_limits<int32_t>::max()) {
+                throw std::invalid_argument("position coordinate is outside Vespa's range");
+            }
+            return static_cast<int32_t>(result);
+        };
+        auto value = type.createFieldValue();
+        auto *result = dynamic_cast<document::StructFieldValue *>(value.get());
+        if (!result) throw std::runtime_error("could not create Vespa position value");
+        result->setValue(document::PositionDataType::FIELD_X,
+                         std::make_unique<document::IntFieldValue>(scaled(longitude)));
+        result->setValue(document::PositionDataType::FIELD_Y,
+                         std::make_unique<document::IntFieldValue>(scaled(latitude)));
+        return std::unique_ptr<document::StructFieldValue>(
+            static_cast<document::StructFieldValue *>(value.release()));
+    }
+
+    static std::unique_ptr<document::PredicateFieldValue>
+    make_predicate_value(const OwnedValue &value) {
+        if (value.kind != SK_VALUE_PREDICATE || value.predicate_features.empty()) {
+            throw std::invalid_argument("predicate value requires at least one feature");
+        }
+        document::PredicateSlimeBuilder builder;
+        for (const auto &[key, feature] : value.predicate_features) {
+            builder.feature(key).value(feature);
+        }
+        return std::make_unique<document::PredicateFieldValue>(builder.build());
+    }
+
     std::unique_ptr<document::FieldValue> make_attribute_value(
         const std::string &field_name, const OwnedValue &value) const {
         const auto &field = require_attribute_field(field_name);
@@ -1595,6 +1702,19 @@ class EmbeddedEngine {
         if (field.type == "boolean") {
             if (value.kind != SK_VALUE_BOOLEAN) throw std::invalid_argument("wrong value type for attribute: " + field_name);
             return std::make_unique<document::BoolFieldValue>(value.boolean);
+        }
+        if (field.type == "array<string>") {
+            return make_string_array_value(_doc_type->getField(field_name).getDataType(), value);
+        }
+        if (field.type == "position") {
+            if (value.kind != SK_VALUE_POSITION) {
+                throw std::invalid_argument("wrong position value type for attribute: " + field_name);
+            }
+            return make_position_value(_doc_type->getField(field_name).getDataType(),
+                                       value.latitude, value.longitude);
+        }
+        if (field.type == "predicate") {
+            return make_predicate_value(value);
         }
         throw std::invalid_argument("unsupported attribute field type: " + field_name);
     }
@@ -1668,6 +1788,19 @@ class EmbeddedEngine {
             }
             return std::make_unique<document::BoolFieldValue>(value.boolean);
         }
+        if (field.type == "array<string>") {
+            return make_string_array_value(_doc_type->getField(field_name).getDataType(), value);
+        }
+        if (field.type == "position") {
+            if (value.kind != SK_VALUE_POSITION) {
+                throw std::invalid_argument("wrong position value type for field: " + field_name);
+            }
+            return make_position_value(_doc_type->getField(field_name).getDataType(),
+                                       value.latitude, value.longitude);
+        }
+        if (field.type == "predicate") {
+            return make_predicate_value(value);
+        }
         if (field.type == "tensor") {
             if (value.kind != SK_VALUE_TENSOR) {
                 throw TensorValidationError("tensor_field_type_mismatch",
@@ -1710,7 +1843,7 @@ class EmbeddedEngine {
 
     std::shared_ptr<document::DocumentUpdate>
     make_value_update(const ValueUpdate &source) const {
-        if (source.fields.empty()) throw std::invalid_argument("document update must not be empty");
+        if (source.fields.empty() && source.arithmetic.empty()) throw std::invalid_argument("document update must not be empty");
         const DocumentId id(internal_document_id(source.id, _document_type));
         auto update = std::make_shared<document::DocumentUpdate>(*_repo, *_doc_type, id);
         for (const auto &[name, value] : source.fields) {
@@ -1728,6 +1861,25 @@ class EmbeddedEngine {
             } else {
                 field_update.addUpdate(std::make_unique<document::ClearValueUpdate>());
             }
+            update->addUpdate(std::move(field_update));
+        }
+        for (const auto &arithmetic : source.arithmetic) {
+            const auto &field = _doc_type->getField(arithmetic.field);
+            if (field.getDataType().getId() != document::DataType::T_DOUBLE &&
+                field.getDataType().getId() != document::DataType::T_FLOAT &&
+                field.getDataType().getId() != document::DataType::T_LONG) {
+                throw std::invalid_argument("arithmetic update requires a numeric field: " + arithmetic.field);
+            }
+            document::ArithmeticValueUpdate::Operator operation;
+            switch (arithmetic.operation) {
+            case SK_ARITHMETIC_ADD: operation = document::ArithmeticValueUpdate::Add; break;
+            case SK_ARITHMETIC_DIV: operation = document::ArithmeticValueUpdate::Div; break;
+            case SK_ARITHMETIC_MUL: operation = document::ArithmeticValueUpdate::Mul; break;
+            case SK_ARITHMETIC_SUB: operation = document::ArithmeticValueUpdate::Sub; break;
+            default: throw std::invalid_argument("unknown arithmetic update operator");
+            }
+            document::FieldUpdate field_update(field);
+            field_update.addUpdate(std::make_unique<document::ArithmeticValueUpdate>(operation, arithmetic.operand));
             update->addUpdate(std::move(field_update));
         }
         return update;
@@ -1783,6 +1935,34 @@ class EmbeddedEngine {
             owned.kind = SK_VALUE_BOOLEAN;
             owned.boolean = value.getAsLong() != 0;
             break;
+        case document::FieldValue::Type::ARRAY: {
+            const auto *array = dynamic_cast<const document::ArrayFieldValue *>(&value);
+            if (!array) throw std::invalid_argument("array field has no value: " + field_name);
+            owned.kind = SK_VALUE_STRING_ARRAY;
+            for (const auto &entry : *array) {
+                if (entry.type() != document::FieldValue::Type::STRING) {
+                    throw std::invalid_argument("retrieved array field is not string-valued: " + field_name);
+                }
+                owned.strings.push_back(entry.getAsString());
+            }
+            break;
+        }
+        case document::FieldValue::Type::STRUCT: {
+            const auto *position = dynamic_cast<const document::StructFieldValue *>(&value);
+            if (!position) {
+                throw std::invalid_argument("retrieved struct field is not a position: " + field_name);
+            }
+            auto x = position->getValue(document::PositionDataType::FIELD_X);
+            auto y = position->getValue(document::PositionDataType::FIELD_Y);
+            if (!x || !y) throw std::invalid_argument("position field has no coordinates: " + field_name);
+            owned.kind = SK_VALUE_POSITION;
+            owned.longitude = static_cast<double>(x->getAsInt()) / 1'000'000.0;
+            owned.latitude = static_cast<double>(y->getAsInt()) / 1'000'000.0;
+            break;
+        }
+        case document::FieldValue::Type::PREDICATE:
+            owned.kind = SK_VALUE_PREDICATE;
+            break;
         case document::FieldValue::Type::TENSOR: {
             const auto *tensor_value = dynamic_cast<const document::TensorFieldValue *>(&value);
             const auto *tensor = tensor_value ? tensor_value->getAsTensorPtr() : nullptr;
@@ -1813,6 +1993,29 @@ class EmbeddedEngine {
             return actual.type() == document::FieldValue::Type::DOUBLE && actual.getAsDouble() == expected.floating;
         case SK_VALUE_BOOLEAN:
             return actual.type() == document::FieldValue::Type::BOOL && (actual.getAsLong() != 0) == expected.boolean;
+        case SK_VALUE_STRING_ARRAY: {
+            const auto *array = dynamic_cast<const document::ArrayFieldValue *>(&actual);
+            if (!array || array->size() != expected.strings.size()) return false;
+            return std::equal(array->begin(), array->end(), expected.strings.begin(),
+                              [](const auto &entry, const auto &value) {
+                                  return entry.type() == document::FieldValue::Type::STRING &&
+                                         entry.getAsString() == value;
+                              });
+        }
+        case SK_VALUE_POSITION: {
+            const auto *position = dynamic_cast<const document::StructFieldValue *>(&actual);
+            if (!position) return false;
+            auto x = position->getValue(document::PositionDataType::FIELD_X);
+            auto y = position->getValue(document::PositionDataType::FIELD_Y);
+            if (!x || !y) return false;
+            return x->getAsLong() == std::llround(expected.longitude * 1'000'000.0) &&
+                   y->getAsLong() == std::llround(expected.latitude * 1'000'000.0);
+        }
+        case SK_VALUE_PREDICATE: {
+            if (actual.type() != document::FieldValue::Type::PREDICATE) return false;
+            auto expected_value = make_predicate_value(expected);
+            return actual.compare(*expected_value) == 0;
+        }
         case SK_VALUE_TENSOR: {
             const auto *tensor_value = dynamic_cast<const document::TensorFieldValue *>(&actual);
             const auto *tensor = tensor_value ? tensor_value->getAsTensorPtr() : nullptr;
@@ -2235,9 +2438,12 @@ class EmbeddedEngine {
 
     static std::string manifest_attribute_type(const std::string &type) {
         if (type == "text" || type == "string") return "STRING";
+        if (type == "array<string>") return "STRING";
         if (type == "integer") return "INT64";
         if (type == "float") return "DOUBLE";
         if (type == "boolean") return "BOOL";
+        if (type == "position") return "INT64";
+        if (type == "predicate") return "PREDICATE";
         if (type == "tensor") return "TENSOR";
         throw std::invalid_argument("inconsistent generated configuration");
     }
@@ -2252,6 +2458,7 @@ class EmbeddedEngine {
 
     static std::string manifest_summary_type(const std::string &type) {
         if (type == "text" || type == "string") return "longstring";
+        if (type == "array<string>") return "longstring";
         if (type == "integer") return "integer";
         if (type == "float") return "double";
         if (type == "boolean") return "bool";
@@ -2271,15 +2478,18 @@ class EmbeddedEngine {
         for (const auto &field : manifest.fields) {
             if (!field.index) continue;
             const auto prefix = "indexfield[" + std::to_string(index) + "].";
-            if (field.type != "text") {
+            if (field.type != "text" && field.type != "array<string>") {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
             require_config_value(values, prefix + "name", field.name);
             require_config_value(values, prefix + "datatype", "STRING");
-            require_config_value(values, prefix + "collectiontype", "SINGLE");
+            require_config_value(values, prefix + "collectiontype",
+                                 field.type == "array<string>" ? "ARRAY" : "SINGLE");
             require_config_value(values, prefix + "prefix", "false");
             require_config_value(values, prefix + "phrases", "false");
-            require_config_value(values, prefix + "positions", "true");
+            if (field.type == "text") {
+                require_config_value(values, prefix + "positions", "true");
+            }
             require_config_value(values, prefix + "averageelementlen", "512");
             const auto interleaved = config_value(values, prefix + "interleavedfeatures");
             const bool legacy_text_only = std::none_of(
@@ -2304,14 +2514,16 @@ class EmbeddedEngine {
         for (const auto &field : manifest.fields) {
             if (!field.attribute) continue;
             const auto prefix = "attribute[" + std::to_string(index) + "].";
-            require_config_value(values, prefix + "name", field.name);
+            require_config_value(values, prefix + "name",
+                                 field.type == "position" ? field.name + "_zcurve" : field.name);
             if (!attribute_type_matches(field.type, config_value(values, prefix + "datatype"))) {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
             if (field.type == "tensor") {
                 require_config_value(values, prefix + "tensortype", field.tensor_type);
             }
-            require_config_value(values, prefix + "collectiontype", "SINGLE");
+            require_config_value(values, prefix + "collectiontype",
+                                 field.type == "array<string>" ? "ARRAY" : "SINGLE");
             ++index;
         }
     }
@@ -2641,8 +2853,9 @@ class EmbeddedEngine {
             }
             field_names.push_back(name);
             auto type = field["type"].asString().make_string();
-            if (type != "text" && type != "string" && type != "integer" &&
-                type != "float" && type != "boolean" && type != "tensor") {
+            if (type != "text" && type != "array<string>" && type != "string" &&
+                type != "integer" && type != "float" && type != "boolean" &&
+                type != "position" && type != "predicate" && type != "tensor") {
                 throw std::invalid_argument("unsupported generated schema field type: " + type);
             }
             const bool indexed = is_slime_type(field["index"], vespalib::slime::BOOL::ID)
@@ -2655,7 +2868,8 @@ class EmbeddedEngine {
                                          : std::string();
             if ((type == "tensor" && (tensor_type.empty() || !attribute)) ||
                 (type == "text" && !indexed) ||
-                (type != "text" && (indexed || !attribute))) {
+                (type != "text" && type != "array<string>" && (indexed || !attribute)) ||
+                ((type == "position" || type == "predicate") && summary)) {
                 throw std::invalid_argument("generated schema field capabilities are invalid");
             }
             manifest.fields.push_back({std::move(name), std::move(type), std::move(tensor_type),
@@ -2677,12 +2891,19 @@ class EmbeddedEngine {
         for (const auto &field : manifest.fields) {
             if (field.type == "text" || field.type == "string") {
                 document_type.addField(field.name, builder.stringTypeRef());
+            } else if (field.type == "array<string>") {
+                document_type.addField(field.name,
+                                       document_type.createArray(builder.stringTypeRef()).ref());
             } else if (field.type == "integer") {
                 document_type.addField(field.name, builder.longTypeRef());
             } else if (field.type == "float") {
                 document_type.addField(field.name, builder.doubleTypeRef());
             } else if (field.type == "boolean") {
                 document_type.addField(field.name, builder.boolTypeRef());
+            } else if (field.type == "position") {
+                document_type.addField(field.name, builder.positionType());
+            } else if (field.type == "predicate") {
+                document_type.addField(field.name, builder.predicateTypeRef());
             } else if (field.type == "tensor") {
                 document_type.addTensorField(field.name, field.tensor_type);
             } else {
@@ -2697,6 +2918,11 @@ class EmbeddedEngine {
         if (type == "integer") return legacy ? document::DataType::INT : document::DataType::LONG;
         if (type == "float") return document::DataType::DOUBLE;
         if (type == "boolean") return document::DataType::BOOL;
+        if (type == "position") return &document::PositionDataType::getInstance();
+        if (type == "predicate") return document::DataType::PREDICATE;
+        if (type == "array<string>") {
+            throw std::invalid_argument("array fields are not supported in legacy state");
+        }
         if (type == "tensor") {
             throw std::invalid_argument("tensor fields are not supported in legacy state");
         }
@@ -3406,6 +3632,13 @@ public:
             auto level = GroupingLevel().setExpression(
                 std::unique_ptr<search::expression::ExpressionNode>(
                     level_state->classifier->clone()));
+            if (level_state->max_groups >= -1) level.setMaxGroups(level_state->max_groups);
+            if (level_state->precision >= -1) level.setPresicion(level_state->precision);
+            for (const auto &order : level_state->order_by) {
+                if (!order.expression) throw std::invalid_argument("grouping order expression is missing");
+                level.addOrderBy(std::unique_ptr<search::expression::ExpressionNode>(order.expression->clone()),
+                                 order.ascending);
+            }
             if (level_state->aggregations.empty()) {
                 throw std::invalid_argument("grouping level must contain an aggregation");
             }
@@ -3433,12 +3666,68 @@ public:
                     average->setExpression(std::unique_ptr<search::expression::ExpressionNode>(
                         aggregation_state.expression->clone()));
                     aggregation = std::move(average);
+                } else if (aggregation_state.kind == GroupingAggregationKind::SUM) {
+                    if (!aggregation_state.expression) throw std::invalid_argument("sum grouping aggregation expression is missing");
+                    auto sum = std::make_unique<SumAggregationResult>();
+                    sum->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    aggregation = std::move(sum);
+                } else if (aggregation_state.kind == GroupingAggregationKind::MIN) {
+                    if (!aggregation_state.expression) throw std::invalid_argument("min grouping aggregation expression is missing");
+                    auto min = std::make_unique<MinAggregationResult>();
+                    min->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    aggregation = std::move(min);
+                } else if (aggregation_state.kind == GroupingAggregationKind::MAX) {
+                    if (!aggregation_state.expression) throw std::invalid_argument("max grouping aggregation expression is missing");
+                    auto max = std::make_unique<MaxAggregationResult>();
+                    max->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    aggregation = std::move(max);
+                } else if (aggregation_state.kind == GroupingAggregationKind::STDDEV) {
+                    if (!aggregation_state.expression) throw std::invalid_argument("stddev grouping aggregation expression is missing");
+                    auto stddev = std::make_unique<StandardDeviationAggregationResult>();
+                    stddev->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    aggregation = std::move(stddev);
+                } else if (aggregation_state.kind == GroupingAggregationKind::XOR) {
+                    if (!aggregation_state.expression) throw std::invalid_argument("xor grouping aggregation expression is missing");
+                    auto xor_result = std::make_unique<XorAggregationResult>();
+                    xor_result->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    aggregation = std::move(xor_result);
+                } else if (aggregation_state.kind == GroupingAggregationKind::QUANTILES) {
+                    if (!aggregation_state.expression || aggregation_state.quantiles.empty()) throw std::invalid_argument("quantile grouping aggregation arguments are invalid");
+                    auto quantiles = std::make_unique<QuantileAggregationResult>();
+                    quantiles->setExpression(std::unique_ptr<search::expression::ExpressionNode>(aggregation_state.expression->clone()));
+                    quantiles->set_quantiles(aggregation_state.quantiles);
+                    aggregation = std::move(quantiles);
+                } else if (aggregation_state.kind == GroupingAggregationKind::SUMMARY) {
+                    auto hits = std::make_unique<HitsAggregationResult>();
+                    hits->setSummaryClass(aggregation_state.summary_class).setMaxHits(aggregation_state.max_hits);
+                    aggregation = std::move(hits);
                 } else {
                     throw UnsupportedNativeError(
                         "grouping_aggregation_kind",
                         "unsupported grouping aggregation kind");
                 }
                 level.addAggregationResult(std::move(aggregation));
+            }
+            if (level_state->filter) {
+                // GroupingLevel exposes V2 filter support in its wire format but
+                // the pinned C++ API has no public setter. Round-tripping the
+                // level through that exact pinned representation keeps the
+                // filter inside Vespa's grouping implementation.
+                using Filter = search::expression::FilterPredicateNode;
+                auto predicate = std::make_unique<search::expression::RegexPredicateNode>(
+                    level_state->filter->pattern,
+                    std::unique_ptr<search::expression::ExpressionNode>(
+                        level_state->filter->expression->clone()));
+                vespalib::IdentifiablePtr<Filter> filter(predicate.release());
+                vespalib::nbostream stream;
+                vespalib::NBOSerializer serializer(stream);
+                serializer << static_cast<uint32_t>(CID_search_aggregation_GroupingLevelV2)
+                           << level.getMaxGroups() << level.getPrecision()
+                           << level.getExpression() << filter << level.getGroupPrototype();
+                GroupingLevel filtered;
+                vespalib::NBOSerializer deserializer(stream);
+                filtered.deserializeVariant(deserializer, true);
+                level = std::move(filtered);
             }
             grouping.addLevel(std::move(level));
         }
@@ -3637,6 +3926,9 @@ public:
         }
         request.offset = options.offset;
         request.maxhits = options.limit;
+        if (options.raw_sort_spec) {
+            request.sortSpec = *options.raw_sort_spec;
+        }
         for (const auto &sort : options.sort) {
             const auto &field = require_manifest_field(sort.field);
             if (!field.attribute) {
@@ -4128,6 +4420,21 @@ std::unique_ptr<sk_grouping_tree_output> grouping_tree_output(
         output->value->floating = static_cast<const AverageAggregationResult &>(aggregation)
                                      .getAverage()
                                      .getFloat();
+    } else if (aggregation.getClass().inherits(SumAggregationResult::classId) ||
+               aggregation.getClass().inherits(MinAggregationResult::classId) ||
+               aggregation.getClass().inherits(MaxAggregationResult::classId) ||
+               aggregation.getClass().inherits(StandardDeviationAggregationResult::classId) ||
+               aggregation.getClass().inherits(XorAggregationResult::classId)) {
+        auto value = grouping_result_value(*aggregation.getResult());
+        output->value = std::move(value);
+    } else if (aggregation.getClass().inherits(QuantileAggregationResult::classId)) {
+        output->value->kind = SK_GROUPING_RESULT_VALUE_QUANTILES;
+        for (const auto &result : static_cast<const QuantileAggregationResult &>(aggregation).quantile_results()) {
+            output->value->quantiles.emplace_back(result.quantile, result.value);
+        }
+    } else if (aggregation.getClass().inherits(HitsAggregationResult::classId)) {
+        output->kind = SK_GROUPING_TREE_OUTPUT_HIT_LIST;
+        output->value.reset();
     } else {
         throw UnsupportedNativeError(
             "grouping_output_kind",
@@ -4180,6 +4487,9 @@ void attach_grouping_aggregation(sk_grouping_level &level,
     if (aggregation.expression) {
         copy.expression.reset(aggregation.expression->clone());
     }
+    copy.quantiles = aggregation.quantiles;
+    copy.summary_class = aggregation.summary_class;
+    copy.max_hits = aggregation.max_hits;
     level.aggregations.push_back(std::move(copy));
 }
 
@@ -4849,6 +5159,54 @@ int32_t add_document_value(sk_document *document, const char *field,
     });
 }
 
+std::vector<std::string> copy_string_array(const uint8_t *bytes,
+                                           const uint32_t *lengths,
+                                           uint32_t count,
+                                           const char *what) {
+    if (count != 0 && (!bytes || !lengths)) {
+        throw std::invalid_argument(std::string(what) + " arrays are invalid");
+    }
+    std::vector<std::string> result;
+    result.reserve(count);
+    size_t offset = 0;
+    for (uint32_t index = 0; index < count; ++index) {
+        const size_t length = lengths[index];
+        if (offset > std::numeric_limits<size_t>::max() - length) {
+            throw std::invalid_argument(std::string(what) + " data is too large");
+        }
+        result.emplace_back(reinterpret_cast<const char *>(bytes + offset), length);
+        offset += length;
+    }
+    return result;
+}
+
+std::vector<std::pair<std::string, std::string>> copy_predicate_features(
+    const uint8_t *key_bytes, const uint32_t *key_lengths,
+    const uint8_t *value_bytes, const uint32_t *value_lengths,
+    uint32_t count) {
+    if (count == 0 || !key_bytes || !key_lengths || !value_bytes || !value_lengths) {
+        throw std::invalid_argument("predicate feature arrays are invalid");
+    }
+    std::vector<std::pair<std::string, std::string>> result;
+    result.reserve(count);
+    size_t key_offset = 0;
+    size_t value_offset = 0;
+    for (uint32_t index = 0; index < count; ++index) {
+        const size_t key_length = key_lengths[index];
+        const size_t value_length = value_lengths[index];
+        if (key_offset > std::numeric_limits<size_t>::max() - key_length ||
+            value_offset > std::numeric_limits<size_t>::max() - value_length) {
+            throw std::invalid_argument("predicate feature data is too large");
+        }
+        result.emplace_back(
+            std::string(reinterpret_cast<const char *>(key_bytes + key_offset), key_length),
+            std::string(reinterpret_cast<const char *>(value_bytes + value_offset), value_length));
+        key_offset += key_length;
+        value_offset += value_length;
+    }
+    return result;
+}
+
 extern "C" SK_API int32_t sk_document_add_string(sk_document *document, const char *field,
                                             const char *value, uint8_t *error,
                                             uint32_t error_capacity) SK_NOEXCEPT {
@@ -4893,6 +5251,45 @@ extern "C" SK_API int32_t sk_document_add_tensor_dense(
     }
     return add_document_value(document, field, error, error_capacity, [&] {
         return make_dense_tensor_value(type_spec, values, value_count);
+    });
+}
+
+extern "C" SK_API int32_t sk_document_add_string_array(
+    sk_document *document, const char *field, const uint8_t *value_bytes,
+    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_STRING_ARRAY;
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        return result;
+    });
+}
+
+extern "C" SK_API int32_t sk_document_add_position(
+    sk_document *document, const char *field, double latitude, double longitude,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_POSITION;
+        result.latitude = latitude;
+        result.longitude = longitude;
+        return result;
+    });
+}
+
+extern "C" SK_API int32_t sk_document_add_predicate(
+    sk_document *document, const char *field, const uint8_t *feature_key_bytes,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return add_document_value(document, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_PREDICATE;
+        result.predicate_features = copy_predicate_features(
+            feature_key_bytes, feature_key_lengths, feature_value_bytes,
+            feature_value_lengths, feature_count);
+        return result;
     });
 }
 
@@ -4982,6 +5379,9 @@ int32_t add_update_value(sk_document_update *update, const char *field,
                                      [field](const auto &entry) { return entry.first == field; });
         if (existing != update->fields.end()) existing->second = std::move(value);
         else update->fields.emplace_back(field, std::move(value));
+        update->arithmetic.erase(std::remove_if(update->arithmetic.begin(), update->arithmetic.end(),
+                                                [field](const auto &entry) { return entry.field == field; }),
+                                 update->arithmetic.end());
     });
 }
 
@@ -5033,10 +5433,73 @@ extern "C" SK_API int32_t sk_document_update_assign_tensor_dense(
     });
 }
 
+extern "C" SK_API int32_t sk_document_update_assign_string_array(
+    sk_document_update *update, const char *field, const uint8_t *value_bytes,
+    const uint32_t *value_lengths, uint32_t value_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_STRING_ARRAY;
+        result.strings = copy_string_array(value_bytes, value_lengths, value_count, "string array");
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" SK_API int32_t sk_document_update_assign_position(
+    sk_document_update *update, const char *field, double latitude, double longitude,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_POSITION;
+        result.latitude = latitude;
+        result.longitude = longitude;
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
+extern "C" SK_API int32_t sk_document_update_assign_predicate(
+    sk_document_update *update, const char *field, const uint8_t *feature_key_bytes,
+    const uint32_t *feature_key_lengths, const uint8_t *feature_value_bytes,
+    const uint32_t *feature_value_lengths, uint32_t feature_count, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return add_update_value(update, field, error, error_capacity, [&] {
+        OwnedValue result;
+        result.kind = SK_VALUE_PREDICATE;
+        result.predicate_features = copy_predicate_features(
+            feature_key_bytes, feature_key_lengths, feature_value_bytes,
+            feature_value_lengths, feature_count);
+        return std::optional<OwnedValue>(std::move(result));
+    });
+}
+
 extern "C" SK_API int32_t sk_document_update_clear(sk_document_update *update, const char *field,
                                               uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
     return add_update_value(update, field, error, error_capacity,
                             [] { return std::optional<OwnedValue>(); });
+}
+
+extern "C" SK_API int32_t sk_document_update_arithmetic(
+    sk_document_update *update, const char *field, uint32_t arithmetic_operator,
+    double operand, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!update || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "arithmetic update arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (!std::isfinite(operand)) throw std::invalid_argument("arithmetic operand must be finite");
+        if (arithmetic_operator > SK_ARITHMETIC_SUB) {
+            throw std::invalid_argument("unknown arithmetic update operator");
+        }
+        update->fields.erase(std::remove_if(update->fields.begin(), update->fields.end(),
+                                            [field](const auto &entry) { return entry.first == field; }),
+                             update->fields.end());
+        auto existing = std::find_if(update->arithmetic.begin(), update->arithmetic.end(),
+                                     [field](const auto &entry) { return entry.field == field; });
+        ValueUpdate::Arithmetic value{field, arithmetic_operator, operand};
+        if (existing == update->arithmetic.end()) update->arithmetic.push_back(std::move(value));
+        else *existing = std::move(value);
+    });
 }
 
 extern "C" SK_API int32_t sk_document_update_annotate_text(
@@ -5767,6 +6230,92 @@ extern "C" int32_t sk_grouping_aggregation_average(
     });
 }
 
+int32_t grouping_expression_aggregation(
+    GroupingAggregationKind kind, const sk_grouping_expression *expression,
+    sk_grouping_aggregation **out, uint8_t *error, uint32_t error_capacity) {
+    if (out) *out = nullptr;
+    if (!expression || !out) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping aggregation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (!expression->expression) throw std::invalid_argument("grouping expression is empty");
+        auto aggregation = std::make_unique<sk_grouping_aggregation>();
+        aggregation->kind = kind;
+        aggregation->expression.reset(expression->expression->clone());
+        *out = aggregation.release();
+    });
+}
+
+extern "C" int32_t sk_grouping_aggregation_sum(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_expression_aggregation(GroupingAggregationKind::SUM, expression, out, error, error_capacity);
+}
+extern "C" int32_t sk_grouping_aggregation_min(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_expression_aggregation(GroupingAggregationKind::MIN, expression, out, error, error_capacity);
+}
+extern "C" int32_t sk_grouping_aggregation_max(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_expression_aggregation(GroupingAggregationKind::MAX, expression, out, error, error_capacity);
+}
+extern "C" int32_t sk_grouping_aggregation_stddev(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_expression_aggregation(GroupingAggregationKind::STDDEV, expression, out, error, error_capacity);
+}
+extern "C" int32_t sk_grouping_aggregation_xor(
+    const sk_grouping_expression *expression, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return grouping_expression_aggregation(GroupingAggregationKind::XOR, expression, out, error, error_capacity);
+}
+
+extern "C" int32_t sk_grouping_aggregation_quantiles(
+    const sk_grouping_expression *expression, const double *quantiles,
+    uint32_t quantile_count, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!expression || !quantiles || !out || quantile_count == 0) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "quantile grouping aggregation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        if (!expression->expression) throw std::invalid_argument("grouping expression is empty");
+        if (quantile_count > 1024) throw std::invalid_argument("too many grouping quantiles");
+        auto aggregation = std::make_unique<sk_grouping_aggregation>();
+        aggregation->kind = GroupingAggregationKind::QUANTILES;
+        aggregation->expression.reset(expression->expression->clone());
+        aggregation->quantiles.assign(quantiles, quantiles + quantile_count);
+        for (double quantile : aggregation->quantiles) {
+            if (!std::isfinite(quantile) || quantile < 0.0 || quantile > 1.0) {
+                throw std::invalid_argument("grouping quantiles must be finite values in [0, 1]");
+            }
+        }
+        *out = aggregation.release();
+    });
+}
+
+extern "C" int32_t sk_grouping_aggregation_summary(
+    const char *summary_class, uint32_t max_hits, sk_grouping_aggregation **out,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out) *out = nullptr;
+    if (!summary_class || !out) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "summary grouping aggregation arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_string_size(summary_class, MAX_SCHEMA_IDENTIFIER_BYTES, "summary class");
+        auto aggregation = std::make_unique<sk_grouping_aggregation>();
+        aggregation->kind = GroupingAggregationKind::SUMMARY;
+        aggregation->summary_class = summary_class;
+        aggregation->max_hits = max_hits;
+        *out = aggregation.release();
+    });
+}
+
 extern "C" void sk_grouping_aggregation_destroy(
     sk_grouping_aggregation *aggregation) SK_NOEXCEPT {
     destroy_noexcept(aggregation);
@@ -5793,6 +6342,78 @@ extern "C" int32_t sk_grouping_plan_add_level(
     });
 }
 
+extern "C" int32_t sk_grouping_level_set_max_groups(
+    sk_grouping_level *level, int64_t max_groups, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "grouping level is null");
+    return invoke(error, error_capacity, [&] {
+        if (max_groups < -1) throw std::invalid_argument("grouping max groups must be -1 or non-negative");
+        level->max_groups = max_groups;
+    });
+}
+
+extern "C" int32_t sk_grouping_level_set_precision(
+    sk_grouping_level *level, int64_t precision, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                 "grouping level is null");
+    return invoke(error, error_capacity, [&] {
+        if (precision < -1) throw std::invalid_argument("grouping precision must be -1 or non-negative");
+        level->precision = precision;
+    });
+}
+
+extern "C" int32_t sk_grouping_filter_regex(
+    const char *pattern, const char *field, sk_grouping_filter **out_filter,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_filter) *out_filter = nullptr;
+    if (!pattern || !field || !out_filter) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping filter arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_string_size(pattern, MAX_RANK_PROFILE_BYTES, "grouping regex");
+        auto filter = std::make_unique<sk_grouping_filter>();
+        filter->pattern = pattern;
+        filter->expression.reset(make_grouping_attribute_expression(field)->expression->clone());
+        // Compile now so malformed patterns fail at construction time.
+        search::expression::RegexPredicateNode probe(filter->pattern,
+            std::unique_ptr<search::expression::ExpressionNode>(filter->expression->clone()));
+        (void)probe;
+        *out_filter = filter.release();
+    });
+}
+
+extern "C" void sk_grouping_filter_destroy(sk_grouping_filter *filter) SK_NOEXCEPT {
+    destroy_noexcept(filter);
+}
+
+extern "C" int32_t sk_grouping_level_set_filter(
+    sk_grouping_level *level, const sk_grouping_filter *filter,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level || !filter) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                           "grouping filter arguments are invalid");
+    return invoke(error, error_capacity, [&] {
+        sk_grouping_filter copy;
+        copy.pattern = filter->pattern;
+        copy.expression.reset(filter->expression ? filter->expression->clone() : nullptr);
+        level->filter = std::move(copy);
+    });
+}
+
+extern "C" int32_t sk_grouping_level_add_order_by(
+    sk_grouping_level *level, const sk_grouping_expression *expression,
+    uint8_t ascending, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!level || !expression || !expression->expression) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "grouping order arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        level->order_by.push_back({std::unique_ptr<search::expression::ExpressionNode>(expression->expression->clone()), ascending != 0});
+    });
+}
+
 extern "C" int32_t sk_grouping_level_add_count(
     sk_grouping_level *level, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
@@ -5815,13 +6436,20 @@ extern "C" int32_t sk_grouping_level_add_aggregation(
                          "grouping aggregation arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        if (kind != SK_AGGREGATION_AVERAGE) {
-            throw UnsupportedNativeError(
-                "grouping_aggregation_kind",
-                "only average is supported by the general grouping convenience API");
+        if (kind != SK_AGGREGATION_AVERAGE && kind != SK_AGGREGATION_SUM &&
+            kind != SK_AGGREGATION_MIN && kind != SK_AGGREGATION_MAX &&
+            kind != SK_AGGREGATION_STDDEV && kind != SK_AGGREGATION_XOR) {
+            throw UnsupportedNativeError("grouping_aggregation_kind", "unsupported grouping aggregation kind");
         }
         sk_grouping_aggregation aggregation;
-        aggregation.kind = GroupingAggregationKind::AVERAGE;
+        switch (kind) {
+        case SK_AGGREGATION_SUM: aggregation.kind = GroupingAggregationKind::SUM; break;
+        case SK_AGGREGATION_MIN: aggregation.kind = GroupingAggregationKind::MIN; break;
+        case SK_AGGREGATION_MAX: aggregation.kind = GroupingAggregationKind::MAX; break;
+        case SK_AGGREGATION_STDDEV: aggregation.kind = GroupingAggregationKind::STDDEV; break;
+        case SK_AGGREGATION_XOR: aggregation.kind = GroupingAggregationKind::XOR; break;
+        default: aggregation.kind = GroupingAggregationKind::AVERAGE; break;
+        }
         aggregation.expression.reset(
             make_grouping_attribute_expression(field)->expression->clone());
         attach_grouping_aggregation(*level, aggregation);
@@ -5837,9 +6465,13 @@ extern "C" int32_t sk_grouping_level_add_aggregation_handle(
         });
     }
     return invoke(error, error_capacity, [&] {
-        if (aggregation->kind == GroupingAggregationKind::AVERAGE &&
+        if (aggregation->kind != GroupingAggregationKind::COUNT &&
+            aggregation->kind != GroupingAggregationKind::SUMMARY &&
             !aggregation->expression) {
-            throw std::invalid_argument("average grouping aggregation expression is empty");
+            throw std::invalid_argument("grouping aggregation expression is empty");
+        }
+        if (aggregation->kind == GroupingAggregationKind::QUANTILES && aggregation->quantiles.empty()) {
+            throw std::invalid_argument("quantile grouping aggregation has no quantiles");
         }
         attach_grouping_aggregation(*level, *aggregation);
     });
@@ -6052,6 +6684,31 @@ extern "C" int32_t sk_grouping_result_value_float(
             throw std::invalid_argument("grouping result value is not a float");
         }
         *out_float = value->floating;
+    });
+}
+
+extern "C" uint32_t sk_grouping_result_value_quantile_count(
+    const sk_grouping_result_value *value) SK_NOEXCEPT {
+    return value && value->kind == SK_GROUPING_RESULT_VALUE_QUANTILES
+               ? static_cast<uint32_t>(value->quantiles.size())
+               : 0;
+}
+
+extern "C" int32_t sk_grouping_result_value_quantile(
+    const sk_grouping_result_value *value, uint32_t index,
+    double *out_quantile, double *out_value, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_quantile) *out_quantile = 0.0;
+    if (out_value) *out_value = 0.0;
+    if (!value || value->kind != SK_GROUPING_RESULT_VALUE_QUANTILES ||
+        !out_quantile || !out_value || index >= value->quantiles.size()) {
+        return invoke(error, error_capacity, [] {
+            throw std::invalid_argument("grouping quantile value arguments are invalid");
+        });
+    }
+    return invoke(error, error_capacity, [&] {
+        *out_quantile = value->quantiles[index].first;
+        *out_value = value->quantiles[index].second;
     });
 }
 
@@ -6287,6 +6944,7 @@ extern "C" int32_t sk_generic_search_request_add_sort(
                          "generic sort arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
+        if (request->raw_sort_spec) throw std::invalid_argument("structured sort is mutually exclusive with raw sort spec");
         validate_field_name(field);
         if (order != SK_SORT_ASCENDING && order != SK_SORT_DESCENDING) {
             throw std::invalid_argument("unsupported sort order");
@@ -6296,6 +6954,21 @@ extern "C" int32_t sk_generic_search_request_add_sort(
             throw std::invalid_argument("unsupported sort missing placement");
         }
         request->sort.push_back({field, order, missing});
+    });
+}
+
+extern "C" int32_t sk_generic_search_request_set_sort_spec(
+    sk_generic_search_request *request, const char *sort_spec,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !sort_spec) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "raw sort arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_string_size(sort_spec, MAX_RANK_PROFILE_BYTES, "raw sort spec");
+        if (*sort_spec == '\0') throw std::invalid_argument("raw sort spec must not be empty");
+        if (!request->sort.empty()) throw std::invalid_argument("raw sort is mutually exclusive with structured sort");
+        request->raw_sort_spec = sort_spec;
     });
 }
 
@@ -7482,6 +8155,70 @@ extern "C" int32_t sk_query_add_nearest_neighbor(
     });
 }
 
+extern "C" int32_t sk_nearest_neighbor_options_create(
+    sk_nearest_neighbor_options **out_options, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_options) *out_options = nullptr;
+    if (!out_options) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                       "nearest-neighbor options output is null");
+    return invoke(error, error_capacity, [&] {
+        *out_options = new sk_nearest_neighbor_options();
+    });
+}
+
+extern "C" void sk_nearest_neighbor_options_destroy(
+    sk_nearest_neighbor_options *options) SK_NOEXCEPT {
+    destroy_noexcept(options);
+}
+
+extern "C" int32_t sk_nearest_neighbor_options_set_distance_threshold(
+    sk_nearest_neighbor_options *options, double distance_threshold,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!options) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                   "nearest-neighbor options are null");
+    return invoke(error, error_capacity, [&] {
+        if (!std::isfinite(distance_threshold) && !std::isinf(distance_threshold)) {
+            throw std::invalid_argument("nearest-neighbor distance threshold must be finite or infinity");
+        }
+        if (distance_threshold < 0.0) throw std::invalid_argument("nearest-neighbor distance threshold must not be negative");
+        options->distance_threshold = distance_threshold;
+    });
+}
+
+extern "C" int32_t sk_nearest_neighbor_options_set_explore_additional_hits(
+    sk_nearest_neighbor_options *options, uint32_t explore_additional_hits,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!options) return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                                   "nearest-neighbor options are null");
+    return invoke(error, error_capacity, [&] { options->explore_additional_hits = explore_additional_hits; });
+}
+
+extern "C" int32_t sk_query_add_nearest_neighbor_with_options_handle(
+    sk_query *query, const char *document_field, const char *query_tensor,
+    uint32_t target_num_hits, uint8_t allow_approximate,
+    const sk_nearest_neighbor_options *options, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    if (!query || !document_field || !query_tensor || !options) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "nearest-neighbor handle arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(query_tensor);
+        if (*query_tensor == '\0' || target_num_hits == 0) {
+            throw std::invalid_argument("nearest-neighbor arguments are invalid");
+        }
+        validate_query_field(*query, SK_QUERY_FIELD_TENSOR, document_field);
+        search::query::NearestNeighborTerm::HnswParams params;
+        if (options->distance_threshold) params.distance_threshold = *options->distance_threshold;
+        if (options->explore_additional_hits != 0) {
+            params.explore_additional_hits = options->explore_additional_hits;
+        }
+        query->builder.add_nearest_neighbor_term(
+            query_tensor, document_field, query->allocate_term_id(), Weight(1),
+            target_num_hits, allow_approximate != 0, std::move(params));
+    });
+}
+
 extern "C" int32_t sk_query_add_nearest_neighbor_with_options(
     sk_query *query, const char *document_field, const char *query_tensor,
     uint32_t target_num_hits, uint8_t allow_approximate,
@@ -7492,23 +8229,17 @@ extern "C" int32_t sk_query_add_nearest_neighbor_with_options(
                          "nearest-neighbor arguments are invalid");
     }
     return invoke(error, error_capacity, [&] {
-        validate_field_name(query_tensor);
-        if (*query_tensor == '\0' || target_num_hits == 0 ||
-            (!std::isfinite(distance_threshold) && !std::isinf(distance_threshold)) ||
+        sk_nearest_neighbor_options options;
+        if ((!std::isfinite(distance_threshold) && !std::isinf(distance_threshold)) ||
             distance_threshold < 0.0) {
             throw std::invalid_argument("nearest-neighbor options are invalid");
         }
-        validate_query_field(*query, SK_QUERY_FIELD_TENSOR, document_field);
-        search::query::NearestNeighborTerm::HnswParams params;
-        if (std::isfinite(distance_threshold)) {
-            params.distance_threshold = distance_threshold;
-        }
-        if (explore_additional_hits != 0) {
-            params.explore_additional_hits = explore_additional_hits;
-        }
-        query->builder.add_nearest_neighbor_term(
-            query_tensor, document_field, query->allocate_term_id(), Weight(1),
-            target_num_hits, allow_approximate != 0, std::move(params));
+        if (std::isfinite(distance_threshold)) options.distance_threshold = distance_threshold;
+        options.explore_additional_hits = explore_additional_hits;
+        const auto status = sk_query_add_nearest_neighbor_with_options_handle(
+            query, document_field, query_tensor, target_num_hits, allow_approximate,
+            &options, error, error_capacity);
+        if (status != SK_NATIVE_STATUS_OK) throw std::invalid_argument("nearest-neighbor options are invalid");
     });
 }
 
