@@ -13,6 +13,7 @@ pub enum RustFieldKind {
     Int64,
     Float64,
     Bool,
+    Position,
     Tensor(String),
 }
 
@@ -282,6 +283,15 @@ fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Resul
             true,
             !field.multi,
             true,
+        ),
+        RustFieldKind::Position => (
+            DataTypeIr::Position,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
         ),
         RustFieldKind::Tensor(type_spec) => (
             DataTypeIr::Tensor { type_spec },

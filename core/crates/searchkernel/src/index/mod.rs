@@ -556,6 +556,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                     crate::schema::FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
                     crate::schema::FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
                     crate::schema::FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
+                    crate::schema::FieldKind::Position => searchkernel_ir::RustFieldKind::Position,
                     crate::schema::FieldKind::Tensor(type_spec) => {
                         searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
                     }
@@ -612,6 +613,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
             searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
         };
+        if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position) {
+            value = Field::position(field.name().as_str());
+        }
         if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
             value = Field::tensor(field.name().as_str(), type_spec);
         }

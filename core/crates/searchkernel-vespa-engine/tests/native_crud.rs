@@ -5,7 +5,7 @@ use searchkernel_vespa_engine::{
     LinguisticsOptions, NearestNeighborOptions, Query, QueryInput, RankProfile, ScalarValue,
     Schema, SearchRequest, SortField, SummaryRequest, TensorValue, Value,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -850,6 +850,83 @@ fn native_text_crud_and_query_forms_round_trip() {
     assert_eq!(typed, yql);
 
     engine.close().expect("close text engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_same_element_query_keeps_struct_members_in_one_array_element() {
+    let config = temporary_path("same-element-config");
+    let data = temporary_path("same-element-data");
+    let schema = Schema::new("typea").field(
+        Field::new(
+            "people",
+            FieldType::ArrayStruct(vec![
+                StructField {
+                    name: "first".to_owned(),
+                    field_type: StructFieldType::String,
+                },
+                StructField {
+                    name: "last".to_owned(),
+                    field_type: StructFieldType::String,
+                },
+            ]),
+        )
+        .indexed(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile same-element config");
+    let engine = Engine::open(&data, &config).expect("open same-element engine");
+    let people = |pairs: &[(&str, &str)]| {
+        FieldValue::Array(ArrayValue::Structs(
+            pairs
+                .iter()
+                .map(|(first, last)| {
+                    BTreeMap::from([
+                        ("first".to_owned(), ScalarValue::String((*first).to_owned())),
+                        ("last".to_owned(), ScalarValue::String((*last).to_owned())),
+                    ])
+                })
+                .collect(),
+        ))
+    };
+    engine
+        .put(Document::new("same-1").field(
+            "people",
+            people(&[("Ada", "Lovelace"), ("Grace", "Hopper")]),
+        ))
+        .expect("put matching array-of-struct document");
+    engine
+        .put(Document::new("same-2").field("people", people(&[("Ada", "Hopper")])))
+        .expect("put non-matching array-of-struct document");
+
+    let result = engine
+        .search(SearchRequest::new(Query::SameElement {
+            field: "people".to_owned(),
+            children: vec![
+                Query::Term {
+                    field: "people.first".to_owned(),
+                    text: "Ada".to_owned(),
+                },
+                Query::Term {
+                    field: "people.last".to_owned(),
+                    text: "Lovelace".to_owned(),
+                },
+            ],
+            element_filter: Vec::new(),
+        }))
+        .expect("execute same-element query");
+    assert_eq!(
+        result
+            .hits
+            .iter()
+            .map(|hit| hit.document_id.as_str())
+            .collect::<Vec<_>>(),
+        ["same-1"]
+    );
+
+    engine.close().expect("close same-element engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);
 }

@@ -25,6 +25,7 @@ pub(crate) enum FieldKind {
     Int64,
     Float64,
     Bool,
+    Position,
     Tensor(String),
 }
 
@@ -121,6 +122,11 @@ impl Field {
     /// Create a boolean field.
     pub fn bool(name: impl Into<String>) -> Self {
         Self::new(name, FieldKind::Bool)
+    }
+
+    /// Create a geographic position field with latitude/longitude values.
+    pub fn position(name: impl Into<String>) -> Self {
+        Self::new(name, FieldKind::Position)
     }
 
     /// Create a dense tensor field with the supplied Vespa type spec.

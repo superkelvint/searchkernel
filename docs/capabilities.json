@@ -27,6 +27,7 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "reference/vespa/m7/verify-m7.sh",
+        "core/crates/searchkernel/tests/native_e2e.rs",
         "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": []
@@ -43,6 +44,7 @@
         "api/searchkernel.fbs",
         "reference/vespa/QUERY_SOURCE_TRACE.md",
         "docs/architecture.md",
+        "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
         "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
@@ -61,6 +63,7 @@
         "api/searchkernel.fbs",
         "reference/vespa/m7/CONTRACT.md",
         "docs/architecture.md",
+        "core/crates/searchkernel/tests/native_e2e.rs",
         "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
@@ -111,6 +114,7 @@
       "verified_by": [
         "api/searchkernel.fbs",
         "reference/vespa/m12/verify-m12.sh",
+        "core/crates/searchkernel/tests/native_e2e.rs",
         "clients/python/tests/test_flatbuffers_objects.py"
       ],
       "limitations": [
@@ -124,10 +128,11 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {"rust": false, "python": true},
+      "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
         "docs/architecture.md",
+        "core/crates/searchkernel/tests/native_e2e.rs",
         "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
@@ -162,6 +167,7 @@
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
         "docs/architecture.md",
+        "core/crates/searchkernel/tests/native_e2e.rs",
         "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
@@ -577,7 +583,8 @@
       "ergonomic": {"rust": true, "python": true},
       "verified_by": [
         "api/searchkernel.fbs",
-        "docs/architecture.md"
+        "docs/architecture.md",
+        "core/crates/searchkernel/tests/native_e2e.rs"
       ],
       "limitations": [
         "The native adapter publishes Vespa-compatible derived zcurve data; Search Kernel does not implement geo matching independently."

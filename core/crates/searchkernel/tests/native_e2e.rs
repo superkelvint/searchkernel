@@ -4,9 +4,11 @@
 #![cfg(feature = "native")]
 
 use searchkernel::{
-    field, ErrorCode, Field, IndexDefinition, IndexRuntime, Ranking, SearchField, Sort,
+    field, ErrorCode, Field, IndexDefinition, IndexRuntime, NearestNeighborOptions, Query,
+    RankProfile, Ranking, SearchField, Sort, Tensor, WeightedQueryItem,
 };
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Barrier};
 
 #[test]
@@ -393,6 +395,265 @@ fn native_product_path_has_current_search_and_facet_parity() {
         .close()
         .expect("close reopened native parity index");
     std::fs::remove_dir_all(path).expect("remove native parity index");
+}
+
+#[test]
+fn native_product_path_supports_typed_query_families() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-typed-query-e2e-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+    let runtime = IndexRuntime::create(&path, definition).expect("create typed-query index");
+    let index = runtime.index();
+    for (id, title) in [
+        ("d1", "quick brown fox"),
+        ("d2", "brown quick fox"),
+        ("d3", "quick fox"),
+        ("d4", "fox"),
+    ] {
+        index
+            .upsert(id, &json!({"title": title}))
+            .expect("upsert typed-query document");
+    }
+
+    let ids = |query| {
+        index
+            .browse()
+            .typed_query(query)
+            .execute::<serde_json::Value>()
+            .expect("execute typed query")
+            .hits
+            .into_iter()
+            .map(|hit| hit.id.to_string())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(ids(Query::phrase("title", "quick brown")), ["d1"]);
+    assert_eq!(
+        ids(Query::near(
+            "title",
+            [Query::term("title", "quick"), Query::term("title", "brown"),],
+        ))
+        .into_iter()
+        .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["d1".to_owned(), "d2".to_owned()])
+    );
+    assert_eq!(
+        ids(Query::onear(
+            "title",
+            [Query::term("title", "quick"), Query::term("title", "brown"),],
+        )),
+        ["d1"]
+    );
+    assert_eq!(
+        ids(Query::fuzzy("title", "foxx"))
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "d1".to_owned(),
+            "d2".to_owned(),
+            "d3".to_owned(),
+            "d4".to_owned(),
+        ])
+    );
+    assert_eq!(
+        ids(Query::rank(
+            Query::term("title", "fox"),
+            [Query::term("title", "quick")],
+        ))
+        .into_iter()
+        .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "d1".to_owned(),
+            "d2".to_owned(),
+            "d3".to_owned(),
+            "d4".to_owned(),
+        ])
+    );
+    assert_eq!(
+        ids(Query::wand(
+            "title",
+            [
+                WeightedQueryItem::new("quick", 10),
+                WeightedQueryItem::new("fox", 1),
+            ],
+        ))
+        .into_iter()
+        .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "d1".to_owned(),
+            "d2".to_owned(),
+            "d3".to_owned(),
+            "d4".to_owned(),
+        ])
+    );
+
+    runtime.close().expect("close typed-query index");
+    std::fs::remove_dir_all(path).expect("remove typed-query index");
+}
+
+#[test]
+fn native_product_path_supports_geo_queries() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-geo-e2e-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let definition = IndexDefinition::new().field(Field::position("location"));
+    let runtime = IndexRuntime::create(&path, definition).expect("create geo index");
+    let index = runtime.index();
+    index
+        .upsert(
+            "inside",
+            &json!({"location": {"latitude": 37.3, "longitude": -121.9}}),
+        )
+        .expect("upsert inside geo document");
+    index
+        .upsert(
+            "outside",
+            &json!({"location": {"latitude": 40.7, "longitude": -74.0}}),
+        )
+        .expect("upsert outside geo document");
+
+    let location = index
+        .browse()
+        .typed_query(Query::geo_location("location", 37.3, -121.9, "10km"))
+        .execute::<serde_json::Value>()
+        .expect("execute geo-location query");
+    let bounding_box = index
+        .browse()
+        .typed_query(Query::geo_bounding_box(
+            "location", 37.0, -122.2, 37.6, -121.5,
+        ))
+        .execute::<serde_json::Value>()
+        .expect("execute geo-bounding-box query");
+    assert_eq!(location.hits[0].id.as_str(), "inside");
+    assert_eq!(bounding_box.hits[0].id.as_str(), "inside");
+    assert_eq!(location.total_hits.value, 1);
+    assert_eq!(bounding_box.total_hits.value, 1);
+
+    runtime.close().expect("close geo index");
+    std::fs::remove_dir_all(path).expect("remove geo index");
+}
+
+#[test]
+fn native_product_path_supports_8d_vector_and_hybrid_search() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkernel-native-vector-e2e-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    let tensor_type = "tensor<float>(x[8])";
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(Field::tensor("embedding", tensor_type))
+        .rank_profile(
+            RankProfile::new("hybrid")
+                .query_input("query_embedding", tensor_type)
+                .first_phase("bm25(title) + 10 * closeness(embedding)")
+                .match_feature("bm25(title)")
+                .match_feature("closeness(embedding)"),
+        );
+    let runtime = IndexRuntime::create(&path, definition).expect("create vector index");
+    let index = runtime.index();
+    let document = |title: &str, values: [f64; 8]| {
+        let embedding = serde_json::to_value(Tensor::dense(tensor_type, values))
+            .expect("serialize document tensor");
+        json!({"title": title, "embedding": embedding})
+    };
+    for (id, title, values) in [
+        (
+            "shoe-1",
+            "red running shoes",
+            [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78],
+        ),
+        (
+            "shoe-2",
+            "blue running shoes",
+            [0.74, 0.55, 0.08, 0.58, 0.42, 0.86, 0.18, 0.64],
+        ),
+        (
+            "shoe-3",
+            "trail shoes",
+            [0.10, 0.16, 0.78, 0.12, 0.24, 0.28, 0.92, 0.16],
+        ),
+        (
+            "shoe-4",
+            "lightweight shoes",
+            [0.82, 0.12, 0.06, 0.96, 0.72, 0.82, 0.10, 0.88],
+        ),
+        (
+            "shoe-5",
+            "casual shoes",
+            [0.64, 0.82, 0.07, 0.62, 0.34, 0.92, 0.16, 0.62],
+        ),
+        (
+            "bag-1",
+            "leather bag",
+            [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55],
+        ),
+    ] {
+        index
+            .upsert(id, &document(title, values))
+            .expect("upsert vector document");
+    }
+
+    let query_vector = Tensor::dense(
+        tensor_type,
+        [0.92, 0.14, 0.05, 0.74, 0.76, 0.42, 0.20, 0.78],
+    );
+    let vector = index
+        .browse()
+        .typed_query(Query::nearest_neighbor_with_options(
+            "embedding",
+            "query_embedding",
+            NearestNeighborOptions {
+                target_hits: 3,
+                approximate: true,
+                distance_threshold: None,
+                explore_additional_hits: 2,
+            },
+        ))
+        .ranking(Ranking::named("hybrid"))
+        .query_input("query_embedding", query_vector.clone())
+        .limit(3)
+        .execute::<serde_json::Value>()
+        .expect("execute 8d nearest-neighbor query");
+    assert_eq!(vector.hits[0].id.as_str(), "shoe-1");
+
+    let hybrid = index
+        .browse()
+        .typed_query(Query::or([
+            Query::term("title", "shoes"),
+            Query::nearest_neighbor("embedding", "query_embedding"),
+        ]))
+        .ranking(Ranking::named("hybrid"))
+        .query_input(
+            "query_embedding",
+            Tensor::dense(
+                tensor_type,
+                [0.45, 0.25, 0.05, 0.35, 0.95, 0.15, 0.05, 0.55],
+            ),
+        )
+        .limit(20)
+        .execute::<serde_json::Value>()
+        .expect("execute 8d hybrid query");
+    let hybrid_ids = hybrid
+        .hits
+        .iter()
+        .map(|hit| hit.id.to_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(hybrid.total_hits.value, 6);
+    assert_eq!(hybrid.hits[0].id.as_str(), "bag-1");
+    assert!(hybrid_ids.contains("bag-1"));
+    assert!(["shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5"]
+        .iter()
+        .all(|id| hybrid_ids.contains(*id)));
+
+    runtime.close().expect("close vector index");
+    std::fs::remove_dir_all(path).expect("remove vector index");
 }
 
 fn assert_search_detail<T: std::fmt::Debug>(result: searchkernel::Result<T>, expected: &str) {

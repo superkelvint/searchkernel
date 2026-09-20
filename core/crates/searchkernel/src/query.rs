@@ -131,9 +131,23 @@ pub enum Query {
         field: String,
         text: String,
     },
+    Near {
+        field: String,
+        children: Vec<Query>,
+        distance: u32,
+    },
+    ONear {
+        field: String,
+        children: Vec<Query>,
+        distance: u32,
+    },
     And(Vec<Query>),
     Or(Vec<Query>),
     Not(Box<Query>),
+    Rank {
+        matching: Box<Query>,
+        ranking: Vec<Query>,
+    },
     Equality {
         field: String,
         value: QueryValue,
@@ -225,6 +239,20 @@ impl Query {
             text: text.into(),
         }
     }
+    pub fn near<I: IntoIterator<Item = Query>>(field: impl Into<String>, children: I) -> Self {
+        Self::Near {
+            field: field.into(),
+            children: children.into_iter().collect(),
+            distance: 2,
+        }
+    }
+    pub fn onear<I: IntoIterator<Item = Query>>(field: impl Into<String>, children: I) -> Self {
+        Self::ONear {
+            field: field.into(),
+            children: children.into_iter().collect(),
+            distance: 2,
+        }
+    }
     pub fn and<I: IntoIterator<Item = Query>>(children: I) -> Self {
         Self::And(children.into_iter().collect())
     }
@@ -234,6 +262,12 @@ impl Query {
     #[allow(clippy::should_implement_trait)]
     pub fn not(query: Query) -> Self {
         Self::Not(Box::new(query))
+    }
+    pub fn rank<I: IntoIterator<Item = Query>>(matching: Query, ranking: I) -> Self {
+        Self::Rank {
+            matching: Box::new(matching),
+            ranking: ranking.into_iter().collect(),
+        }
     }
     pub fn equals(field: impl Into<String>, value: impl Into<QueryValue>) -> Self {
         Self::Equality {
@@ -328,10 +362,48 @@ impl Query {
         }
     }
     pub fn nearest_neighbor(field: impl Into<String>, query_tensor: impl Into<String>) -> Self {
+        Self::nearest_neighbor_with_options(field, query_tensor, NearestNeighborOptions::default())
+    }
+
+    /// Create an approximate or exact nearest-neighbor query with explicit
+    /// Vespa target-hit and distance controls.
+    pub fn nearest_neighbor_with_options(
+        field: impl Into<String>,
+        query_tensor: impl Into<String>,
+        options: NearestNeighborOptions,
+    ) -> Self {
         Self::NearestNeighbor {
             field: field.into(),
             query_tensor: query_tensor.into(),
-            options: NearestNeighborOptions::default(),
+            options,
+        }
+    }
+    pub fn geo_location(
+        field: impl Into<String>,
+        latitude: f64,
+        longitude: f64,
+        radius: impl Into<String>,
+    ) -> Self {
+        Self::GeoLocation {
+            field: field.into(),
+            latitude,
+            longitude,
+            radius: radius.into(),
+        }
+    }
+    pub fn geo_bounding_box(
+        field: impl Into<String>,
+        south: f64,
+        west: f64,
+        north: f64,
+        east: f64,
+    ) -> Self {
+        Self::GeoBoundingBox {
+            field: field.into(),
+            south,
+            west,
+            north,
+            east,
         }
     }
 
@@ -356,6 +428,34 @@ impl Query {
                     .collect();
                 contains(&field, QueryExprKindIr::Phrase(terms))?
             }
+            Self::Near {
+                field,
+                children,
+                distance,
+            } => contains(
+                &field,
+                QueryExprKindIr::Near {
+                    children: children
+                        .into_iter()
+                        .map(Query::into_ir)
+                        .collect::<Result<Vec<_>>>()?,
+                    distance,
+                },
+            )?,
+            Self::ONear {
+                field,
+                children,
+                distance,
+            } => contains(
+                &field,
+                QueryExprKindIr::ONear {
+                    children: children
+                        .into_iter()
+                        .map(Query::into_ir)
+                        .collect::<Result<Vec<_>>>()?,
+                    distance,
+                },
+            )?,
             Self::And(children) => QueryExprKindIr::And(
                 children
                     .into_iter()
@@ -369,6 +469,13 @@ impl Query {
                     .collect::<Result<Vec<_>>>()?,
             ),
             Self::Not(child) => QueryExprKindIr::Not(Box::new(child.into_ir()?)),
+            Self::Rank { matching, ranking } => QueryExprKindIr::Rank {
+                matching: Box::new(matching.into_ir()?),
+                ranking: ranking
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            },
             Self::Equality { field, value } => {
                 comparison(&field, searchkernel_ir::ComparisonOp::Eq, value.into_ir()?)?
             }

@@ -169,6 +169,16 @@ fn encode_data_type<'a>(
                 },
             )
         }
+        FieldKind::Position => {
+            let position = api::PositionDataType::create(builder, &api::PositionDataTypeArgs {});
+            api::DataType::create(
+                builder,
+                &api::DataTypeArgs {
+                    kind_type: api::DataTypeKind::PositionDataType,
+                    kind: Some(position.as_union_value()),
+                },
+            )
+        }
         _ => {
             let primitive = api::PrimitiveDataType::create(
                 builder,
@@ -178,6 +188,7 @@ fn encode_data_type<'a>(
                         FieldKind::Int64 => api::PrimitiveDataTypeKind::Int64,
                         FieldKind::Float64 => api::PrimitiveDataTypeKind::Float64,
                         FieldKind::Bool => api::PrimitiveDataTypeKind::Bool,
+                        FieldKind::Position => unreachable!(),
                         FieldKind::Tensor(_) => unreachable!(),
                     },
                 },
