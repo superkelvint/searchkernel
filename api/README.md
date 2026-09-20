@@ -34,7 +34,7 @@ Generated Rust protocol code belongs under
 
 The JSON transport uses the official FlatBuffers C++ parser and text generator
 from FlatBuffers 25.12.19. Install that release on the developer system. Set
-`FLATBUFFERS_ROOT` when its headers and library are outside `/usr/local`; the
+`FLATBUFFERS_CPP_ROOT` when its headers and library are outside `/usr/local`; the
 headers and library must come from the same installation. Put the matching
 `flatc` on `PATH`, or set `FLATC_PATH`, when regenerating the committed BFBS
 artifacts.
