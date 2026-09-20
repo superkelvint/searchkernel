@@ -432,29 +432,37 @@ impl Query {
                 field,
                 children,
                 distance,
-            } => contains(
+            } => contains_with_annotations(
                 &field,
                 QueryExprKindIr::Near {
                     children: children
                         .into_iter()
                         .map(Query::into_ir)
                         .collect::<Result<Vec<_>>>()?,
-                    distance,
+                    distance: 0,
                 },
+                BTreeMap::from([(
+                    "distance".to_owned(),
+                    RequestValueIr::UInt64(u64::from(distance)),
+                )]),
             )?,
             Self::ONear {
                 field,
                 children,
                 distance,
-            } => contains(
+            } => contains_with_annotations(
                 &field,
                 QueryExprKindIr::ONear {
                     children: children
                         .into_iter()
                         .map(Query::into_ir)
                         .collect::<Result<Vec<_>>>()?,
-                    distance,
+                    distance: 0,
                 },
+                BTreeMap::from([(
+                    "distance".to_owned(),
+                    RequestValueIr::UInt64(u64::from(distance)),
+                )]),
             )?,
             Self::And(children) => QueryExprKindIr::And(
                 children
@@ -504,13 +512,19 @@ impl Query {
             Self::WeakAnd {
                 children,
                 target_hits,
-            } => QueryExprKindIr::WeakAnd {
-                children: children
-                    .into_iter()
-                    .map(Query::into_ir)
-                    .collect::<Result<Vec<_>>>()?,
-                target_hits,
-            },
+            } => {
+                annotations.insert(
+                    "totalTargetHits".to_owned(),
+                    RequestValueIr::UInt64(u64::from(target_hits)),
+                );
+                QueryExprKindIr::WeakAnd {
+                    children: children
+                        .into_iter()
+                        .map(Query::into_ir)
+                        .collect::<Result<Vec<_>>>()?,
+                    target_hits: 0,
+                }
+            }
             Self::Wand {
                 field,
                 items,
@@ -545,14 +559,25 @@ impl Query {
                 max_edit_distance,
                 prefix_length,
                 prefix,
-            } => contains(
+            } => contains_with_annotations(
                 &field,
                 QueryExprKindIr::Fuzzy {
                     value: value.into_ir()?,
-                    max_edit_distance,
-                    prefix_length,
-                    prefix,
+                    max_edit_distance: 0,
+                    prefix_length: 0,
+                    prefix: false,
                 },
+                BTreeMap::from([
+                    (
+                        "maxEditDistance".to_owned(),
+                        RequestValueIr::UInt64(u64::from(max_edit_distance)),
+                    ),
+                    (
+                        "prefixLength".to_owned(),
+                        RequestValueIr::UInt64(u64::from(prefix_length)),
+                    ),
+                    ("prefix".to_owned(), RequestValueIr::Bool(prefix)),
+                ]),
             )?,
             Self::Prefix { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
@@ -645,11 +670,19 @@ fn field_ref(field: &str) -> Result<QueryFieldRefIr> {
 }
 
 fn contains(field: &str, item: QueryExprKindIr) -> Result<QueryExprKindIr> {
+    contains_with_annotations(field, item, BTreeMap::new())
+}
+
+fn contains_with_annotations(
+    field: &str,
+    item: QueryExprKindIr,
+    annotations: BTreeMap<String, RequestValueIr>,
+) -> Result<QueryExprKindIr> {
     Ok(QueryExprKindIr::Contains {
         field: field_ref(field)?,
         item: Box::new(QueryExprIr {
             kind: item,
-            annotations: BTreeMap::new(),
+            annotations,
         }),
     })
 }
