@@ -97,6 +97,12 @@ extern "C" {
 #define SK_GROUP_ORDER_COUNT_DESC 2U
 #define SK_GROUP_ORDER_VALUE_ASC 3U
 #define SK_GROUP_ORDER_VALUE_DESC 4U
+
+#define SK_GROUPING_BINARY_ADD 1U
+#define SK_GROUPING_BINARY_SUBTRACT 2U
+#define SK_GROUPING_BINARY_MULTIPLY 3U
+#define SK_GROUPING_BINARY_DIVIDE 4U
+#define SK_GROUPING_BINARY_MODULO 5U
 #define SK_NATIVE_STATUS_DEADLINE_EXCEEDED 5U
 
 #define SK_ARITHMETIC_ADD 0U
@@ -562,11 +568,6 @@ SK_API int32_t sk_query_add_nearest_neighbor(
     sk_query *query, const char *document_field, const char *query_tensor,
     uint32_t target_num_hits, uint8_t allow_approximate,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
-SK_API int32_t sk_query_add_nearest_neighbor_with_options(
-    sk_query *query, const char *document_field, const char *query_tensor,
-    uint32_t target_num_hits, uint8_t allow_approximate,
-    double distance_threshold, uint32_t explore_additional_hits,
-    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_nearest_neighbor_options_create(
     sk_nearest_neighbor_options **out_options, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -585,6 +586,10 @@ SK_API int32_t sk_query_add_nearest_neighbor_with_options_handle(
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_same_element(
     sk_query *query, const char *field, uint32_t child_count,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_query_add_same_element_with_filter(
+    sk_query *query, const char *field, uint32_t child_count,
+    const uint32_t *element_filter, uint32_t element_filter_count,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_query_add_geo_location(
     sk_query *query, const char *field, double latitude, double longitude,
@@ -850,8 +855,37 @@ SK_API int32_t sk_engine_update_attributes(
 SK_API int32_t sk_grouping_plan_create(
     sk_grouping_plan **out_plan, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_plan_set_all(
+    sk_grouping_plan *plan, uint8_t all, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_expression_attribute(
     const char *field, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_string(
+    const char *value, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_integer(
+    int64_t value, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_float(
+    double value, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_boolean(
+    uint8_t value, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_negative(
+    const sk_grouping_expression *input, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_binary(
+    uint32_t operator_kind, const sk_grouping_expression *left,
+    const sk_grouping_expression *right, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_function(
+    const char *name, const sk_grouping_expression *const *arguments,
+    uint32_t argument_count, sk_grouping_expression **out_expression,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_expression_aggregation_reference(
+    uint32_t index, sk_grouping_expression **out_expression,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_expression_destroy(
     sk_grouping_expression *expression) SK_NOEXCEPT;
@@ -899,6 +933,29 @@ SK_API int32_t sk_grouping_level_set_precision(
 SK_API int32_t sk_grouping_filter_regex(
     const char *pattern, const char *field, sk_grouping_filter **out_filter,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_regex_expression(
+    const char *pattern, const sk_grouping_expression *expression,
+    sk_grouping_filter **out_filter, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_and(
+    const sk_grouping_filter *const *filters, uint32_t filter_count,
+    sk_grouping_filter **out_filter, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_or(
+    const sk_grouping_filter *const *filters, uint32_t filter_count,
+    sk_grouping_filter **out_filter, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_not(
+    const sk_grouping_filter *filter, sk_grouping_filter **out_filter,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_range(
+    double lower, double upper, const sk_grouping_expression *expression,
+    uint8_t include_lower, uint8_t include_upper,
+    sk_grouping_filter **out_filter, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_filter_is_true(
+    const sk_grouping_expression *expression, sk_grouping_filter **out_filter,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_filter_destroy(sk_grouping_filter *filter) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_level_set_filter(
     sk_grouping_level *level, const sk_grouping_filter *filter,
@@ -914,6 +971,9 @@ SK_API int32_t sk_grouping_level_add_aggregation(
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_grouping_level_add_aggregation_handle(
     sk_grouping_level *level, const sk_grouping_aggregation *aggregation,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_plan_add_root_aggregation_handle(
+    sk_grouping_plan *plan, const sk_grouping_aggregation *aggregation,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_plan_destroy(sk_grouping_plan *plan) SK_NOEXCEPT;
 SK_API int32_t sk_engine_group_tree(
@@ -971,6 +1031,12 @@ SK_API uint32_t sk_grouping_tree_output_kind(
 SK_API int32_t sk_grouping_tree_output_value(
     const sk_grouping_tree_output *output,
     const sk_grouping_result_value **out_value, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_tree_output_hit_count(
+    const sk_grouping_tree_output *output) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_output_hit_id(
+    const sk_grouping_tree_output *output, uint32_t hit_index,
+    const char **out_id, uint32_t *out_id_length, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_tree_result_destroy(
     sk_grouping_tree_result *result) SK_NOEXCEPT;
