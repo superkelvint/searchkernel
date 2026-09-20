@@ -873,7 +873,7 @@ fn native_same_element_query_keeps_struct_members_in_one_array_element() {
                 },
             ]),
         )
-        .indexed(),
+        .attribute(),
     );
     ConfigCompiler
         .compile_to(&schema, &config)

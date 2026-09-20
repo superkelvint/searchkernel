@@ -404,17 +404,19 @@ fn native_product_path_supports_typed_query_families() {
         std::process::id(),
         unique_suffix()
     ));
-    let definition = IndexDefinition::new().field(Field::text("title").stored(true));
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(Field::keyword("brand").stored(true).filterable(true));
     let runtime = IndexRuntime::create(&path, definition).expect("create typed-query index");
     let index = runtime.index();
-    for (id, title) in [
-        ("d1", "quick brown fox"),
-        ("d2", "brown quick fox"),
-        ("d3", "quick fox"),
-        ("d4", "fox"),
+    for (id, title, brand) in [
+        ("d1", "quick brown fox", "brown"),
+        ("d2", "brown quick fox", "brown"),
+        ("d3", "quick fox", "black"),
+        ("d4", "fox", "black"),
     ] {
         index
-            .upsert(id, &json!({"title": title}))
+            .upsert(id, &json!({"title": title, "brand": brand}))
             .expect("upsert typed-query document");
     }
 
@@ -448,15 +450,16 @@ fn native_product_path_supports_typed_query_families() {
         ["d1"]
     );
     assert_eq!(
-        ids(Query::fuzzy("title", "foxx"))
+        ids(Query::term("title", "brwn"))
             .into_iter()
             .collect::<BTreeSet<_>>(),
-        BTreeSet::from([
-            "d1".to_owned(),
-            "d2".to_owned(),
-            "d3".to_owned(),
-            "d4".to_owned(),
-        ])
+        BTreeSet::new()
+    );
+    assert_eq!(
+        ids(Query::fuzzy("brand", "brwn"))
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["d1".to_owned(), "d2".to_owned()])
     );
     assert_eq!(
         ids(Query::rank(
