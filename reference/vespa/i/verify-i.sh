@@ -14,6 +14,7 @@ python3 "$SCRIPT_DIR/validate.py"
 # green. verify-through's highest frozen cumulative M target is the baseline
 # for this repository; keep that policy in one existing verifier.
 "$ROOT/reference/vespa/verify-through.sh" m10
+"$ROOT/reference/vespa/verify-through.sh" phase10
 
 if rg -n 'searchkernel-(ir-adapter|vespa-engine|vespa-bindings)|searchkernel_ir|searchkernel_vespa|RecordingBackend|ScriptedBackend' \
     "$SCRIPT_DIR/rust-driver/Cargo.toml" "$SCRIPT_DIR/rust-driver/src"; then

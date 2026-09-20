@@ -9,8 +9,8 @@
 //!   core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs
 //!
 //! This deliberately uses only the public `searchkernel` API. It does not
-//! reach into searchkernel-ir, the adapter, generated FlatBuffers types, or
-//! native bindings to paper over missing product-API capabilities.
+//! reach into implementation internals to paper over missing product-API
+//! capabilities.
 
 #[cfg(not(feature = "native"))]
 fn main() {
@@ -25,8 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "native")]
 mod showcase {
     use searchkernel::{
-        field, ErrorCode, Facet, FacetSort, Field, Filter, Index, IndexDefinition, Patch,
-        SearchResult, Sort,
+        field, ErrorCode, Facet, FacetSort, FeatureSet, FeatureValue, Field, Filter,
+        GroupingAggregation, GroupingPlan, Index, IndexDefinition, Patch, Query, QueryBound,
+        QueryValue, RankProfile, Ranking, SearchResult, Sort, Tensor, WeightedQueryItem,
     };
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
@@ -83,10 +84,17 @@ mod showcase {
                     .filterable(true)
                     .sortable(true),
             )
-            .field(
-                Field::bool("in_stock")
-                    .stored(true)
-                    .filterable(true),
+            .field(Field::bool("in_stock").stored(true).filterable(true))
+            .field(Field::tensor("embedding", "tensor<float>(x[2])").stored(true))
+            .rank_profile(
+                RankProfile::new("boosted")
+                    .first_phase("query(boost)")
+                    .match_feature("query(boost)"),
+            )
+            .rank_profile(
+                RankProfile::new("semantic")
+                    .first_phase("closeness(embedding)")
+                    .query_input("query_embedding", "tensor<float>(x[2])"),
             );
 
         let index = Index::create(&path, definition)?;
@@ -106,6 +114,7 @@ mod showcase {
                     "rating": 5,
                     "inventory": 10,
                     "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
                 }),
             ),
             (
@@ -118,6 +127,7 @@ mod showcase {
                     "rating": 5,
                     "inventory": 4,
                     "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.8, 0.2]),
                 }),
             ),
             (
@@ -130,6 +140,7 @@ mod showcase {
                     "rating": 3,
                     "inventory": 25,
                     "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
                 }),
             ),
             (
@@ -142,6 +153,7 @@ mod showcase {
                     "rating": 4,
                     "inventory": 0,
                     "in_stock": false,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.7, 0.3]),
                 }),
             ),
             (
@@ -154,6 +166,7 @@ mod showcase {
                     "rating": 4,
                     "inventory": 8,
                     "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.9, 0.1]),
                 }),
             ),
             (
@@ -166,6 +179,7 @@ mod showcase {
                     "rating": 4,
                     "inventory": 12,
                     "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.6, 0.4]),
                 }),
             ),
         ];
@@ -174,34 +188,215 @@ mod showcase {
             index.insert(*id, document)?;
             println!("insert: {id}");
         }
+        for probe in 0..200 {
+            index.insert(
+                format!("degraded-{probe}"),
+                &json!({
+                    "title": "Coverage Degradation Probe",
+                    "category": "degradation",
+                    "price": 18.0,
+                    "rating": 1,
+                    "inventory": 18,
+                    "in_stock": true,
+                    "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
+                }),
+            )?;
+        }
+        println!("inserted 200 deterministic coverage probe documents");
 
         heading("3. GET BY ID");
 
-        let doc = index
-            .get::<Value>("shoe-1")?
-            .expect("shoe-1 should exist");
+        let doc = index.get::<Value>("shoe-1")?.expect("shoe-1 should exist");
         println!("{doc:#}");
         assert_eq!(doc["price"], json!(89.0));
         assert_eq!(doc["brand"], json!("Acme"));
+        assert_eq!(
+            doc["embedding"],
+            json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(x[2])",
+                    "dense": [1.0, 0.0]
+                }
+            })
+        );
 
-        heading("4. FULL-TEXT SEARCH");
+        heading("4. DESCRIBE + GET PROJECTION");
+
+        let described = index.describe()?;
+        assert!(described
+            .fields()
+            .iter()
+            .any(|field| field.name() == "embedding"));
+        let projected = index
+            .get_with_projection::<Value>("shoe-1", ["title", "brand"])?
+            .expect("projected shoe-1 should exist");
+        assert!(projected.get("title").is_some());
+        assert!(projected.get("brand").is_some());
+        assert!(projected.get("price").is_none());
+
+        heading("5. FULL-TEXT SEARCH");
 
         let results = index.search("shoes").limit(20).execute::<Value>()?;
         print_results(&results);
-        assert_id_set(
-            &results,
-            ["shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5"],
-        );
+        assert_id_set(&results, ["shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5"]);
         assert_eq!(results.total_hits.value, 5);
 
-        heading("5. STEMMING: 'jump' -> 'Jumped'");
+        heading("6. STEMMING: 'jump' -> 'Jumped'");
 
         let results = index.search("jump").limit(20).execute::<Value>()?;
         print_results(&results);
         assert!(results.hits.iter().any(|hit| hit.id.as_str() == "shoe-1"));
         println!("STEMMING PASS");
 
-        heading("6. TYPED FILTER");
+        heading("7. TYPED QUERIES THROUGH THE PUBLIC DSL");
+
+        let term = index
+            .search("")
+            .typed_query(Query::term("title", "running"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&term, ["shoe-1", "shoe-2", "bag-1"]);
+
+        let phrase = index
+            .search("")
+            .typed_query(Query::phrase("title", "running shoes"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&phrase, ["shoe-1", "shoe-2"]);
+
+        let boolean = index
+            .search("")
+            .typed_query(Query::and([
+                Query::or([
+                    Query::equals("rating", 5_i64),
+                    Query::equals("rating", 4_i64),
+                ]),
+                Query::not(Query::equals("in_stock", false)),
+            ]))
+            .limit(20)
+            .execute::<Value>()?;
+        print_results(&boolean);
+        assert_id_set(&boolean, ["shoe-1", "shoe-2", "shoe-5", "bag-1"]);
+
+        let range = index
+            .search("")
+            .typed_query(Query::range(
+                "price",
+                QueryBound::Excluded(49.0_f64.into()),
+                QueryBound::Included(100.0_f64.into()),
+            ))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&range, ["shoe-1", "bag-1"]);
+
+        let upper_excluded = index
+            .search("")
+            .typed_query(Query::range(
+                "price",
+                QueryBound::Included(89.0_f64.into()),
+                QueryBound::Excluded(129.0_f64.into()),
+            ))
+            .sort(Sort::asc("price"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_ids(&upper_excluded, ["shoe-1", "shoe-5"]);
+
+        let in_query = index
+            .search("")
+            .typed_query(Query::in_values(
+                "brand",
+                [QueryValue::from("Acme"), QueryValue::from("Budget")],
+            ))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&in_query, ["shoe-1", "shoe-3", "shoe-4", "bag-1"]);
+
+        let weak_and = index
+            .search("")
+            .typed_query(Query::weak_and(
+                [
+                    Query::term("title", "running"),
+                    Query::term("title", "shoes"),
+                ],
+                10,
+            ))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(
+            &weak_and,
+            ["shoe-1", "shoe-2", "shoe-3", "shoe-4", "shoe-5", "bag-1"],
+        );
+
+        let fuzzy = index
+            .search("")
+            .typed_query(Query::fuzzy("title", "running"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&fuzzy, ["shoe-1", "shoe-2", "bag-1"]);
+
+        let weighted_items = [
+            WeightedQueryItem::new("Acme", 10),
+            WeightedQueryItem::new("TrailCo", 5),
+        ];
+        for (name, query) in [
+            ("WAND", Query::wand("brand", weighted_items.iter().cloned())),
+            (
+                "weighted-set",
+                Query::weighted_set("brand", weighted_items.iter().cloned()),
+            ),
+            (
+                "dot-product",
+                Query::dot_product("brand", weighted_items.iter().cloned()),
+            ),
+        ] {
+            let results = index
+                .search("")
+                .typed_query(query)
+                .limit(20)
+                .execute::<Value>()?;
+            println!("{name} IDs: {:?}", ids(&results));
+            assert_id_set(&results, ["shoe-1", "shoe-2", "shoe-4", "shoe-5", "bag-1"]);
+        }
+
+        let prefix = index
+            .search("")
+            .typed_query(Query::prefix("brand", "Ac"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&prefix, ["shoe-1", "shoe-4", "bag-1"]);
+        let substring = index
+            .search("")
+            .typed_query(Query::substring("brand", "cme"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&substring, ["shoe-1", "shoe-4", "bag-1"]);
+        let suffix = index
+            .search("")
+            .typed_query(Query::suffix("brand", "me"))
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&suffix, ["shoe-1", "shoe-4", "bag-1"]);
+        let literal_pattern = index
+            .search("")
+            .typed_query(Query::prefix("brand", "Ac."))
+            .limit(20)
+            .execute::<Value>()?;
+        assert!(literal_pattern.hits.is_empty());
+        for query in [
+            Query::substring("brand", "c.me"),
+            Query::suffix("brand", ".me"),
+        ] {
+            let literal_pattern = index
+                .search("")
+                .typed_query(query)
+                .limit(20)
+                .execute::<Value>()?;
+            assert!(literal_pattern.hits.is_empty());
+        }
+
+        println!("typed term/phrase/AND/OR/NOT/equality/inclusive-exclusive range/IN/weakAnd/WAND/weighted-set/dot-product/fuzzy/literal prefix/substring/suffix PASS");
+
+        heading("8. TYPED FILTER");
 
         let results = index
             .search("shoes")
@@ -212,7 +407,14 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-3", "shoe-1"]);
 
-        heading("7. REPEATED FILTERS ARE AND");
+        let exists = index
+            .search("shoes")
+            .filter(field("sale_price").exists())
+            .limit(20)
+            .execute::<Value>()?;
+        assert_id_set(&exists, ["shoe-1"]);
+
+        heading("9. REPEATED FILTERS ARE AND");
 
         let results = index
             .search("shoes")
@@ -225,7 +427,7 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-1", "shoe-5"]);
 
-        heading("8. BOOLEAN FILTER TREE: OR / NOT / PARENTHESES EQUIVALENT");
+        heading("10. BOOLEAN FILTER TREE: OR / NOT / PARENTHESES EQUIVALENT");
 
         // Equivalent to:
         //   (brand IN ("Acme", "TrailCo") OR rating = 3)
@@ -247,7 +449,7 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-3", "shoe-1", "shoe-5", "shoe-2"]);
 
-        heading("9. SORT + FIELD PROJECTION + HIT ACCESS");
+        heading("11. SORT + FIELD PROJECTION + HIT ACCESS");
 
         let results = index
             .search("shoes")
@@ -257,12 +459,15 @@ mod showcase {
             .execute::<Value>()?;
         print_results(&results);
         assert_ids(&results, ["shoe-4", "shoe-2"]);
-        assert_eq!(results.hits[0].document["title"], json!("Acme Racing Shoes"));
+        assert_eq!(
+            results.hits[0].document["title"],
+            json!("Acme Racing Shoes")
+        );
         assert_eq!(results.hits[0].document["brand"], json!("Acme"));
         assert_eq!(results.hits[0].document["price"], json!(159.0));
         assert!(results.hits[0].document.get("rating").is_none());
 
-        heading("10. OFFSET / LIMIT PAGINATION");
+        heading("12. OFFSET / LIMIT PAGINATION");
 
         let all_sorted = index
             .search("shoes")
@@ -291,16 +496,12 @@ mod showcase {
         // Rust's builder takes u32 for limit/offset, so negative values are
         // rejected by the type system rather than by a runtime check.
 
-        heading("11. FACETS");
+        heading("13. FACETS");
 
         let results = index
             .search("shoes")
             .facet(Facet::new("brand").limit(10).sort(FacetSort::CountDesc))
-            .facet(
-                Facet::new("category")
-                    .limit(10)
-                    .sort(FacetSort::CountDesc),
-            )
+            .facet(Facet::new("category").limit(10).sort(FacetSort::CountDesc))
             .limit(20)
             .execute::<Value>()?;
         print_results(&results);
@@ -318,7 +519,7 @@ mod showcase {
             BTreeMap::from([("shoes".to_owned(), 5)])
         );
 
-        heading("12. FILTERED FACET");
+        heading("14. FILTERED FACET");
 
         let results = index
             .search("shoes")
@@ -336,7 +537,168 @@ mod showcase {
             ])
         );
 
-        heading("13. ANALYZE / LINGUISTICS");
+        heading("15. RANKING, QUERY INPUTS, RANK PROPERTIES, FEATURES");
+
+        let query_feature_results = index
+            .search("shoes")
+            .ranking(Ranking::named("boosted"))
+            .query_input("boost", 3.0_f64)
+            .limit(20)
+            .execute::<Value>()?;
+        assert!(!query_feature_results.hits.is_empty());
+        assert!(query_feature_results.hits.iter().all(|hit| {
+            hit.score.is_some()
+                && matches!(
+                    hit.features.get("query(boost)"),
+                    Some(FeatureSet::Value(FeatureValue::Double(value)))
+                        if (*value - 3.0).abs() < f64::EPSILON
+                )
+        }));
+
+        let rank_property_results = index
+            .search("shoes")
+            .ranking(Ranking::profile("boosted"))
+            .rank_property("boost", "4.0")
+            .limit(20)
+            .execute::<Value>()?;
+        assert!(!rank_property_results.hits.is_empty());
+        assert!(rank_property_results.hits.iter().all(|hit| {
+            hit.score.is_some()
+                && matches!(
+                    hit.features.get("query(boost)"),
+                    Some(FeatureSet::Value(FeatureValue::Double(value)))
+                        if (*value - 4.0).abs() < f64::EPSILON
+                )
+        }));
+        println!("named/profile ranking, scalar query input, rank property, score, and scalar feature PASS");
+
+        heading("16. GENERAL NESTED GROUPING");
+
+        let grouping = GroupingPlan::new().level(
+            GroupingPlan::by("category")
+                .output(GroupingAggregation::count())
+                .output(GroupingAggregation::average("price"))
+                .nested(
+                    GroupingPlan::by("rating")
+                        .output(GroupingAggregation::count())
+                        .output(GroupingAggregation::average("price")),
+                ),
+        );
+        let grouped = index
+            .search("shoes")
+            .grouping(grouping)
+            .limit(0)
+            .execute::<Value>()?;
+        let category_root = grouped.groups.first().expect("grouping root");
+        let shoes_group = category_root
+            .groups
+            .iter()
+            .find(|group| group.key == Some(json!("shoes")))
+            .expect("shoes category group");
+        assert_eq!(shoes_group.aggregations["count"], json!(5));
+        assert_eq!(shoes_group.aggregations["average(price)"], json!(107.0));
+        assert_eq!(shoes_group.groups.len(), 3);
+        for (rating, count, average) in [(3, 1, 49.0), (4, 2, 134.0), (5, 2, 109.0)] {
+            let rating_group = shoes_group
+                .groups
+                .iter()
+                .find(|group| group.key == Some(json!(rating)))
+                .unwrap_or_else(|| panic!("missing rating group {rating}"));
+            assert_eq!(rating_group.aggregations["count"], json!(count));
+            assert_eq!(rating_group.aggregations["average(price)"], json!(average));
+        }
+        println!("nested grouping keys, count, and average values PASS");
+
+        heading("17. TENSOR READBACK + NEAREST NEIGHBOR");
+
+        let nearest = index
+            .search("")
+            .ranking(Ranking::named("semantic"))
+            .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
+            .query_input(
+                "query_embedding",
+                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+            )
+            .limit(3)
+            .execute::<Value>()?;
+        assert_eq!(
+            nearest.hits.first().map(|hit| hit.id.as_str()),
+            Some("shoe-1")
+        );
+        assert!(nearest.coverage.is_some());
+        println!("tensor query input and native nearest-neighbor search PASS");
+
+        heading("18. PUBLIC OPTIONS AND EXPLICITLY UNSUPPORTED HIGHLIGHTING");
+
+        let inspected = index
+            .search("shoes")
+            .search_fields(["title"])
+            .language("en")
+            .timeout(std::time::Duration::from_secs(1))
+            .sort(Sort::asc("sale_price").missing_first())
+            .inspect()?;
+        assert_eq!(inspected.query, "shoes");
+        assert_eq!(inspected.search_fields[0].field(), "title");
+        let missing_first = index
+            .search("shoes")
+            .sort(Sort::asc("sale_price").missing_first())
+            .limit(20)
+            .execute::<Value>()?;
+        assert_eq!(
+            ids(&missing_first).last().map(String::as_str),
+            Some("shoe-1")
+        );
+        let missing_last = index
+            .search("shoes")
+            .sort(Sort::asc("sale_price").missing_last())
+            .limit(20)
+            .execute::<Value>()?;
+        assert_eq!(
+            ids(&missing_last).first().map(String::as_str),
+            Some("shoe-1")
+        );
+        let highlight_error = index
+            .search("shoes")
+            .highlight(["title"])
+            .execute::<Value>()
+            .expect_err("native highlight result path should report unsupported");
+        assert_eq!(highlight_error.code(), ErrorCode::Unsupported);
+        println!("search_fields/language/timeout/inspect/missing-first PASS; highlighting is explicit UNSUPPORTED");
+
+        heading("19. COVERAGE AND DEGRADATION");
+
+        let normal = index.search("shoes").limit(20).execute::<Value>()?;
+        assert!(normal
+            .coverage
+            .as_ref()
+            .is_some_and(|coverage| coverage.full == Some(true)));
+        let degraded = index
+            .search("")
+            .typed_query(Query::equals("inventory", 18_i64))
+            .sort(Sort::asc("inventory"))
+            .rank_property("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
+            .rank_property("vespa.matchphase.degradation.attribute", "inventory")
+            .rank_property("vespa.matchphase.degradation.maxhits", "10")
+            .limit(10)
+            .execute::<Value>()?;
+        assert!(!degraded.hits.is_empty());
+        let coverage = degraded.coverage.expect("degraded result coverage");
+        assert_eq!(coverage.full, Some(false));
+        assert_eq!(degraded.hits.len(), 10);
+        let degradation = coverage.degraded.expect("degradation reason");
+        assert_eq!(degradation.match_phase, Some(true));
+        assert_eq!(degradation.timeout, Some(false));
+        println!("valid degraded result retains hits, coverage, and degradation reason PASS");
+
+        let hard_failure = index
+            .search("shoes")
+            .sort(Sort::asc("title"))
+            .execute::<Value>()
+            .expect_err("sorting on a non-attribute field should be a hard search failure");
+        assert_eq!(hard_failure.code(), ErrorCode::InvalidArgument);
+        println!("genuine invalid native request remains a hard error PASS");
+
+        heading("20. ANALYZE / LINGUISTICS");
 
         let analyzed = index.analyze("Jumped shoes").field("title").execute()?;
         for token in &analyzed.tokens {
@@ -347,7 +709,7 @@ mod showcase {
         }
         assert!(analyzed.tokens.iter().any(|token| token.term == "jump"));
 
-        heading("14. STRUCTURED FILTER ERROR");
+        heading("21. STRUCTURED FILTER ERROR");
 
         let error = index
             .search("shoes")
@@ -362,7 +724,7 @@ mod showcase {
         assert_eq!(error.details()[0].code, "unknown_field");
         assert_eq!(error.details()[0].path.as_deref(), Some("filter.field"));
 
-        heading("15. PATCH SET / UNSET");
+        heading("22. PATCH SET / UNSET");
 
         println!("before: {:#}", index.get::<Value>("shoe-1")?.unwrap());
         index.patch(
@@ -390,7 +752,7 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-3", "shoe-1"]);
 
-        heading("16. DELETE");
+        heading("23. DELETE");
 
         assert!(index.delete("shoe-3")?);
         assert!(index.get::<Value>("shoe-3")?.is_none());
@@ -410,7 +772,7 @@ mod showcase {
         assert!(!index.delete("shoe-3")?);
         println!("DELETE PASS");
 
-        heading("17. UPSERT REPLACEMENT");
+        heading("24. UPSERT REPLACEMENT");
 
         index.upsert(
             "shoe-2",
@@ -422,28 +784,44 @@ mod showcase {
                 "rating": 5,
                 "inventory": 4,
                 "in_stock": true,
+                "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.0, 1.0]),
             }),
         )?;
 
-        let doc = index
-            .get::<Value>("shoe-2")?
-            .expect("shoe-2 should exist");
+        let doc = index.get::<Value>("shoe-2")?.expect("shoe-2 should exist");
         println!("{doc:#}");
         assert_eq!(doc["price"], json!(119.0));
         assert!(doc["title"]
             .as_str()
             .expect("title should be a string")
             .contains("Updated Edition"));
+        assert_eq!(
+            doc["embedding"],
+            json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(x[2])",
+                    "dense": [0.0, 1.0]
+                }
+            })
+        );
+        let tensor_projection = index
+            .get_with_projection::<Value>("shoe-2", ["embedding"])?
+            .expect("tensor projection should exist");
+        assert_eq!(
+            tensor_projection.as_object().map(|fields| fields.len()),
+            Some(1)
+        );
+        assert_eq!(tensor_projection["embedding"], doc["embedding"]);
 
         let results = index.search("updated").limit(20).execute::<Value>()?;
         print_results(&results);
         assert_id_set(&results, ["shoe-2"]);
 
-        heading("18. INDEX CLOSED");
+        heading("25. INDEX CLOSED");
         index.close()?;
         println!("The first native Index instance has shut down.");
 
-        heading("19. REOPEN PERSISTED INDEX");
+        heading("26. REOPEN PERSISTED INDEX");
 
         let index = Index::open(&path)?;
 
@@ -456,6 +834,15 @@ mod showcase {
         assert_eq!(shoe1["price"], json!(79.0));
         assert_eq!(shoe1["rating"], json!(4));
         assert!(shoe1.get("sale_price").is_none());
+        assert_eq!(
+            shoe1["embedding"],
+            json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(x[2])",
+                    "dense": [1.0, 0.0]
+                }
+            })
+        );
 
         let shoe2 = index
             .get::<Value>("shoe-2")?
@@ -466,6 +853,15 @@ mod showcase {
             .as_str()
             .expect("title should be a string")
             .contains("Updated Edition"));
+        assert_eq!(
+            shoe2["embedding"],
+            json!({
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(x[2])",
+                    "dense": [0.0, 1.0]
+                }
+            })
+        );
 
         let results = index
             .search("shoes")
@@ -476,14 +872,88 @@ mod showcase {
         print_results(&results);
         assert_ids(&results, ["shoe-1", "shoe-5", "shoe-2"]);
 
-        heading("20. BROWSE AFTER REOPEN");
+        let reopened_ranked = index
+            .search("shoes")
+            .ranking(Ranking::named("boosted"))
+            .query_input("boost", 3.0_f64)
+            .limit(20)
+            .execute::<Value>()?;
+        assert!(reopened_ranked.hits.iter().all(|hit| {
+            hit.score.is_some()
+                && matches!(
+                    hit.features.get("query(boost)"),
+                    Some(FeatureSet::Value(FeatureValue::Double(value)))
+                        if (*value - 3.0).abs() < f64::EPSILON
+                )
+        }));
+
+        let reopened_grouping = GroupingPlan::new().level(
+            GroupingPlan::by("category")
+                .output(GroupingAggregation::count())
+                .output(GroupingAggregation::average("price"))
+                .nested(
+                    GroupingPlan::by("rating")
+                        .output(GroupingAggregation::count())
+                        .output(GroupingAggregation::average("price")),
+                ),
+        );
+        let reopened_grouped = index
+            .search("shoes")
+            .grouping(reopened_grouping)
+            .limit(0)
+            .execute::<Value>()?;
+        let reopened_category_root = reopened_grouped.groups.first().expect("grouping root");
+        let reopened_shoes_group = reopened_category_root
+            .groups
+            .iter()
+            .find(|group| group.key == Some(json!("shoes")))
+            .expect("reopened shoes category group");
+        assert_eq!(reopened_shoes_group.aggregations["count"], json!(4));
+        assert_eq!(
+            reopened_shoes_group.aggregations["average(price)"],
+            json!(116.5)
+        );
+        for (rating, count, average) in [(4, 3, 115.66666666666667), (5, 1, 119.0)] {
+            let rating_group = reopened_shoes_group
+                .groups
+                .iter()
+                .find(|group| group.key == Some(json!(rating)))
+                .unwrap_or_else(|| panic!("missing reopened rating group {rating}"));
+            assert_eq!(rating_group.aggregations["count"], json!(count));
+            let actual_average = rating_group.aggregations["average(price)"]
+                .as_f64()
+                .expect("reopened average should be numeric");
+            assert!((actual_average - average).abs() < 1e-9);
+        }
+
+        let reopened_nearest = index
+            .search("")
+            .ranking(Ranking::named("semantic"))
+            .typed_query(Query::nearest_neighbor("embedding", "query_embedding"))
+            .query_input(
+                "query_embedding",
+                Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]),
+            )
+            .limit(3)
+            .execute::<Value>()?;
+        assert_eq!(
+            reopened_nearest.hits.first().map(|hit| hit.id.as_str()),
+            Some("shoe-1")
+        );
+        println!("ranking configuration, grouping source data, tensor persistence, and ANN after reopen PASS");
+
+        heading("27. BROWSE AFTER REOPEN");
 
         let results = index
             .browse()
             .filter(field("in_stock").eq(true))
             .sort(Sort::asc("price"))
             .facet("brand".into())
-            .limit(20)
+            // The 200 degradation probes intentionally have the lowest price,
+            // so a 20-hit page cannot also contain the four expected catalog
+            // documents. Request the complete filtered set for this browse
+            // assertion while preserving the real native sort and facet path.
+            .limit(256)
             .execute::<Value>()?;
         print_results(&results);
 
@@ -491,62 +961,77 @@ mod showcase {
         assert!(!browse_ids.contains("shoe-4"));
         assert!(!browse_ids.contains("shoe-3"));
         for expected in ["shoe-1", "shoe-2", "shoe-5", "bag-1"] {
-            assert!(browse_ids.contains(expected), "missing browse hit: {expected}");
+            assert!(
+                browse_ids.contains(expected),
+                "missing browse hit: {expected}"
+            );
         }
 
         index.close()?;
 
-        heading("21. ALL CURRENT RUST CLIENT API E2E CHECKS PASSED");
+        heading("28. ALL CURRENT RUST CLIENT API E2E CHECKS PASSED");
 
         println!(
             r#"
 Successfully demonstrated through the public Rust facade:
 
-  DOCUMENTS
+  CREATE / OPEN / PERSISTENCE
   ✓ create/open persistent index
   ✓ insert
   ✓ upsert replacement
   ✓ get
   ✓ delete + duplicate delete
   ✓ Patch set/unset
-  ✓ persistence across reopen
+  ✓ scalar mutations, deletions, upserts, tensors, ranking, grouping, and ANN after reopen
 
-  SEARCH / FILTERING
+  SEARCH / QUERY DSL
   ✓ full-text search
   ✓ stemming representative
-  ✓ typed filters
-  ✓ repeated filters -> AND
-  ✓ explicit OR / NOT filter trees
+  ✓ typed term, phrase, AND, OR, NOT, equality, range, IN, and weakAnd queries
+  ✓ typed WAND, weighted-set, dot-product, fuzzy, prefix, substring, and suffix queries
+  ✓ typed filters, exists, repeated filters -> AND, and explicit OR / NOT trees
   ✓ sorting
+  ✓ missing-first / missing-last sorting
   ✓ projection
   ✓ offset/limit
-  ✓ total hits
+  ✓ total hits and relation
   ✓ structured unknown-field error
 
-  FACETS
+  RESULTS
+  ✓ stored fields and tensor readback
+  ✓ scores, scalar query/rank features, and sort values
   ✓ facet convenience
   ✓ facet ordering request
   ✓ filtered facets
+  ✓ nested grouping keys, counts, averages, and nested children
+  ✓ coverage and valid match-phase degradation metadata
+  ✓ genuine invalid native request remains an error
 
-  LINGUISTICS
+  RANKING / TENSORS
+  ✓ named rank profile and profile selection
+  ✓ scalar query input and rank property
+  ✓ tensor put/upsert/get/persistence
+  ✓ tensor query input and nearest-neighbor search before and after reopen
+
+  OTHER PUBLIC OPERATIONS
   ✓ field-aware analyze request
+  ✓ search fields, language, timeout, and inspect
 
-Rust API parity still missing versus the Python showcase:
+EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
 
-  - public string-filter parser/binding API
-  - one-based page() convenience + page/offset/limit misuse checks
-  - root aggregations
-  - structured grouping / nested groups / aliases / keep filters
-  - grouping summary-hit children and continuation tokens
-  - typed-query DSL
-  - query-input namespace
-  - rank-property namespace
-  - named rank-profile selection
-  - YQL + property substitution
-  - advanced update/increment builder
+  - highlight result generation (the public native path reports Unsupported)
+  - typed sameElement requires a public array-of-struct field definition, which
+    is not currently public
+  - typed geo and predicate require public geo/predicate field definitions,
+    which are not currently public
+  - typed exists query (public Filter::exists is covered)
+  - YQL/property-substitution
+  - opaque tensor-backed feature output
+  - page() convenience, aliases/keep-filters, summary-hit grouping children,
+    continuation tokens, root aggregations, and advanced update/increment APIs
 
-Those gaps are intentionally NOT bypassed here through IR, FlatBuffers, or
-adapter internals. This file is meant to exercise the actual public Rust API.
+Every check above uses only the public `searchkernel` facade and the real
+native Vespa backend.
 "#
         );
 
@@ -568,9 +1053,11 @@ adapter internals. This file is meant to exercise the actual public Rust API.
 
         for hit in &results.hits {
             println!(
-                "  id={:?} score={:?} document={}",
+                "  id={:?} score={:?} features={:?} sort_values={:?} document={}",
                 hit.id.as_str(),
                 hit.score,
+                hit.features,
+                hit.sort_values,
                 hit.document
             );
         }
@@ -584,14 +1071,31 @@ adapter internals. This file is meant to exercise the actual public Rust API.
                 }
             }
         }
+
+        if !results.groups.is_empty() {
+            println!("groups: {} root result group(s)", results.groups.len());
+            for group in &results.groups {
+                println!(
+                    "  key={:?} aggregations={:?}",
+                    group.key, group.aggregations
+                );
+            }
+        }
+
+        if let Some(coverage) = &results.coverage {
+            println!(
+                "coverage: percent={:?} documents={:?} full={:?} degraded={:?}",
+                coverage.coverage_percent, coverage.documents, coverage.full, coverage.degraded
+            );
+        }
+
+        if !results.issues.is_empty() {
+            println!("issues: {:?}", results.issues);
+        }
     }
 
     fn ids(results: &SearchResult<Value>) -> Vec<String> {
-        results
-            .hits
-            .iter()
-            .map(|hit| hit.id.to_string())
-            .collect()
+        results.hits.iter().map(|hit| hit.id.to_string()).collect()
     }
 
     fn assert_ids<const N: usize>(results: &SearchResult<Value>, expected: [&str; N]) {

@@ -12,7 +12,12 @@ fi
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 VESPA_ROOT=${VESPA_ROOT:-$ROOT/upstream/vespa}
-SDK=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+SDK_PACKAGE=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+# Assemble the package away from the published path. This prevents a failed
+# compile or a concurrent Cargo build from observing a half-updated SDK and,
+# importantly, means stale files cannot survive from an older package layout.
+SDK_STAGING=${SK_NATIVE_STAGING_SDK:-${SDK_PACKAGE}.staging.$$}
+SDK=$SDK_STAGING
 BUILD=${SK_NATIVE_BUILD_DIR:-$ROOT/target/native-sdk}
 CXX=${CXX:-c++}
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
@@ -88,6 +93,17 @@ if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
     EXTRA_LINK_FLAGS="$EXTRA_LINK_FLAGS -L$VESPA_EXTRA_LIB_DIR"
 fi
 
+cleanup_staging() {
+    if [ -d "$SDK_STAGING" ]; then
+        rm -rf "$SDK_STAGING"
+    fi
+}
+trap cleanup_staging EXIT
+if [ -e "$SDK_STAGING" ]; then
+    echo "SDK staging directory already exists: $SDK_STAGING" >&2
+    exit 1
+fi
+
 mkdir -p "$BUILD" "$SDK/include" "$SDK/lib" "$SDK/share/embedded_crud_cfg"
 rm -f "$BUILD/searchkernel_vespa.o" \
     "$SDK/lib/libsearchkernel_vespa.so" "$SDK/lib/libsearchkernel_vespa.so.1" \
@@ -107,7 +123,7 @@ $CXX $DEFINES $INCLUDES $CXX_FLAGS $EXTRA_CXX_FLAGS $FAILPOINT_DEFINES $COVERAGE
     -Wno-inline -std=gnu++23 -fPIC \
     $OPTIMIZATION_FLAGS -g \
     -fvisibility=hidden \
-    -I"$ROOT/core/native/vespa" -c "$ROOT/core/native/vespa/searchkernel_vespa.cpp" \
+    -I"$ROOT/core/native/vespa" -c "$ROOT/core/native/vespa/abi.cc" \
     -o "$BUILD/searchkernel_vespa.o"
 
 LINK_LINE=$(sed \
@@ -234,4 +250,28 @@ if command -v patchelf >/dev/null 2>&1; then
     patchelf --force-rpath --set-rpath '$ORIGIN' "$SDK/lib/libsearchkernel_vespa.so.2"
 fi
 
-echo "built SDK at $SDK"
+# Headers belong in include/, never beside runtime libraries. Rejecting them
+# here catches contaminated source/build trees before publication.
+if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -print -quit | grep -q .; then
+    echo "refusing to publish native headers under SDK/lib" >&2
+    exit 1
+fi
+
+# Publish only after every build, ABI, binding, and package check succeeded.
+# A uniquely named backup keeps the replacement recoverable until the new
+# directory is in place; the old generated package is then removed explicitly.
+SDK_BACKUP="${SDK_PACKAGE}.old.$$"
+if [ -e "$SDK_BACKUP" ]; then
+    echo "SDK backup path already exists: $SDK_BACKUP" >&2
+    exit 1
+fi
+if [ -e "$SDK_PACKAGE" ]; then
+    mv "$SDK_PACKAGE" "$SDK_BACKUP"
+fi
+mv "$SDK" "$SDK_PACKAGE"
+if [ -e "$SDK_BACKUP" ]; then
+    rm -rf "$SDK_BACKUP"
+fi
+trap - EXIT
+
+echo "built SDK at $SDK_PACKAGE"

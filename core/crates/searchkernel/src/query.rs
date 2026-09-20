@@ -376,13 +376,17 @@ impl Query {
                 field,
                 lower,
                 upper,
-            } => QueryExprKindIr::Range {
-                field: field_ref(&field)?,
-                lower: lower.into_ir()?,
-                upper: upper.into_ir()?,
-                include_lower: Some(true),
-                include_upper: Some(true),
-            },
+            } => {
+                let (lower, include_lower) = lower.into_ir()?;
+                let (upper, include_upper) = upper.into_ir()?;
+                QueryExprKindIr::Range {
+                    field: field_ref(&field)?,
+                    lower,
+                    upper,
+                    include_lower,
+                    include_upper,
+                }
+            }
             Self::In { field, values } => QueryExprKindIr::In {
                 field: field_ref(&field)?,
                 values: values
@@ -445,15 +449,15 @@ impl Query {
             )?,
             Self::Prefix { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
-                pattern: format!("{value}*"),
+                pattern: format!("{}.*", escape_regexp_literal(&value)),
             },
             Self::Substring { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
-                pattern: format!("*{value}*"),
+                pattern: format!(".*{}.*", escape_regexp_literal(&value)),
             },
             Self::Suffix { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
-                pattern: format!("*{value}"),
+                pattern: format!(".*{}", escape_regexp_literal(&value)),
             },
             Self::SameElement { field, children } => contains(
                 &field,
@@ -561,6 +565,22 @@ fn into_map(values: BTreeMap<String, QueryValue>) -> Result<BTreeMap<String, Req
         .collect()
 }
 
+fn escape_regexp_literal(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|character| {
+            if matches!(
+                character,
+                '.' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+            ) {
+                vec!['\\', character]
+            } else {
+                vec![character]
+            }
+        })
+        .collect()
+}
+
 fn wand_annotations(options: WandOptions) -> BTreeMap<String, RequestValueIr> {
     BTreeMap::from([
         (
@@ -614,11 +634,11 @@ impl QueryValue {
 }
 
 impl QueryBound {
-    fn into_ir(self) -> Result<QueryRangeBoundIr> {
+    fn into_ir(self) -> Result<(QueryRangeBoundIr, Option<bool>)> {
         Ok(match self {
-            Self::Unbounded => QueryRangeBoundIr::Unbounded,
-            Self::Included(value) => QueryRangeBoundIr::Finite(value.into_ir()?),
-            Self::Excluded(value) => QueryRangeBoundIr::Finite(value.into_ir()?),
+            Self::Unbounded => (QueryRangeBoundIr::Unbounded, None),
+            Self::Included(value) => (QueryRangeBoundIr::Finite(value.into_ir()?), Some(true)),
+            Self::Excluded(value) => (QueryRangeBoundIr::Finite(value.into_ir()?), Some(false)),
         })
     }
 }
@@ -629,5 +649,65 @@ impl WeightedQueryItem {
             key: self.key.into_ir()?,
             weight: self.weight,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_bounds_preserve_inclusion_flags() {
+        let query = Query::range(
+            "price",
+            QueryBound::Excluded(QueryValue::from(10_i64)),
+            QueryBound::Included(QueryValue::from(20_i64)),
+        )
+        .into_ir()
+        .expect("range should convert");
+
+        let QueryExprKindIr::Range {
+            include_lower,
+            include_upper,
+            ..
+        } = query.kind
+        else {
+            panic!("expected range IR");
+        };
+        assert_eq!(include_lower, Some(false));
+        assert_eq!(include_upper, Some(true));
+    }
+
+    #[test]
+    fn unbounded_range_sides_have_no_inclusion_flag() {
+        let query = Query::range(
+            "price",
+            QueryBound::Unbounded,
+            QueryBound::Excluded(QueryValue::from(20_i64)),
+        )
+        .into_ir()
+        .expect("range should convert");
+
+        let QueryExprKindIr::Range {
+            include_lower,
+            include_upper,
+            ..
+        } = query.kind
+        else {
+            panic!("expected range IR");
+        };
+        assert_eq!(include_lower, None);
+        assert_eq!(include_upper, Some(false));
+    }
+
+    #[test]
+    fn literal_pattern_queries_escape_regexp_metacharacters() {
+        let query = Query::prefix("brand", "A.c+")
+            .into_ir()
+            .expect("prefix should convert");
+        let QueryExprKindIr::Matches { pattern, .. } = query.kind else {
+            panic!("expected matches IR");
+        };
+        assert_eq!(pattern, r"A\.c\+.*");
     }
 }

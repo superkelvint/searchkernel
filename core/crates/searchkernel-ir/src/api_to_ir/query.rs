@@ -512,7 +512,7 @@ impl IndexContext {
                 Ok(())
             }
             QueryExprKindIr::Matches { field, .. } => {
-                self.validate_searchable_query_field(field, &child_path("matches.field"))
+                self.validate_matches_query_field(field, &child_path("matches.field"))
             }
             QueryExprKindIr::DotProduct { .. }
             | QueryExprKindIr::WeightedSet { .. }
@@ -617,6 +617,20 @@ impl IndexContext {
                 "field_not_searchable",
                 Some(path.to_owned()),
                 "query term requires a searchable field",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_matches_query_field(&self, field: &QueryFieldRefIr, path: &str) -> Result<()> {
+        let schema_field = self.query_field(field.path.as_str(), format!("{path}.path"))?;
+        let attribute_string =
+            schema_field.kind() == FieldKind::Keyword && schema_field.capabilities().filterable();
+        if !schema_field.capabilities().searchable() && !attribute_string {
+            return Err(invalid(
+                "field_not_searchable",
+                Some(path.to_owned()),
+                "matches query requires a searchable text field or filterable keyword field",
             ));
         }
         Ok(())

@@ -61,6 +61,9 @@ require_sdk_manifest() {
   expected="$(expected_vespa_revision)"
   [[ -f "$source_header" ]] || fail_verification "source native ABI header is missing: $source_header"
   [[ -f "$sdk_header" ]] || fail_verification "SDK native ABI header is missing: $sdk_header"
+  if find "$SDK/lib" -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' \) -print -quit 2>/dev/null | grep -q .; then
+    fail_verification "SDK lib directory contains native headers; rebuild the SDK from a clean staging directory"
+  fi
   [[ -f "$rust_abi" ]] || fail_verification "Rust native ABI source is missing: $rust_abi"
   [[ -f "$rust_bindings" ]] || fail_verification "generated Rust bindings are missing: $rust_bindings"
   cmp -s "$source_header" "$sdk_header" ||

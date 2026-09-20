@@ -279,7 +279,10 @@ pub fn resolve_search_with_extensions(
     mut additional_grouping: Vec<GroupingRequestIr>,
 ) -> Result<SearchRequestIr> {
     let query = match typed_query {
-        Some(query) => QueryIr::Typed(Box::new(query)),
+        Some(query) => {
+            context.validate_typed_query(&query, None, None, "typed_query")?;
+            QueryIr::Typed(Box::new(query))
+        }
         None => context.query_to_ir(&input.query, None)?,
     };
     let search_fields = match input.search_fields {

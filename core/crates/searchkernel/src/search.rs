@@ -517,6 +517,7 @@ mod tests {
     use super::*;
     use crate::index::IndexRuntime;
     use crate::schema::{Field, IndexDefinition};
+    use crate::ErrorCode;
     use searchkernel_testkit::RecordingBackend;
     use std::sync::Arc;
 
@@ -588,5 +589,27 @@ mod tests {
             .expect("inspect search");
 
         assert_eq!(inspected.timeout, Some(Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn public_typed_queries_use_schema_validation_before_backend_execution() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let error = runtime
+            .index()
+            .search("")
+            .typed_query(Query::term("missing", "value"))
+            .execute::<serde_json::Value>()
+            .expect_err("unknown typed-query field should fail validation");
+        assert_eq!(error.code(), ErrorCode::InvalidArgument);
+        assert_eq!(error.details()[0].code, "unknown_field");
+        assert_eq!(
+            error.details()[0].path.as_deref(),
+            Some("typed_query.contains.field.path")
+        );
     }
 }
