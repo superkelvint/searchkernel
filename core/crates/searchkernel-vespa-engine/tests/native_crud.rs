@@ -704,6 +704,47 @@ fn native_local_search_and_attribute_operations_round_trip() {
         FieldValue::Scalar(ScalarValue::Integer(7))
     );
 
+    let explicit_default = engine
+        .search(
+            SearchRequest::new(Query::True)
+                .summary_class("default")
+                .fields(["title"]),
+        )
+        .expect("explicit default summary class should execute");
+    assert_eq!(explicit_default.total_hits, 2);
+    let explicit_default_local_1 = explicit_default
+        .hits
+        .iter()
+        .find(|hit| hit.document_id == "local-1")
+        .expect("explicit default result should include local-1");
+    assert_eq!(explicit_default_local_1.fields.len(), 1);
+    assert_eq!(
+        explicit_default_local_1.fields["title"],
+        FieldValue::Scalar(ScalarValue::String("alpha".to_owned()))
+    );
+
+    let nonexistent = engine
+        .search(
+            SearchRequest::new(Query::True)
+                .summary_class("definitely_nonexistent_summary_class")
+                .fields(["title"]),
+        )
+        .expect_err("unknown result class must not fall back to default docsums");
+    assert!(nonexistent
+        .to_string()
+        .contains("docsum returned no result"));
+
+    let empty_class = engine
+        .search(
+            SearchRequest::new(Query::True)
+                .summary_class("")
+                .fields(["title"]),
+        )
+        .expect_err("an empty summary class must be rejected");
+    assert!(empty_class
+        .to_string()
+        .contains("summary class must not be empty"));
+
     let error = engine
         .put_attributes(&AttributeDocument::new("local-1").field("title", "not-an-attribute"))
         .expect_err("attribute puts must reject indexed-only fields");

@@ -236,6 +236,7 @@ pub struct SearchBuilder {
     pub(crate) rank_properties: std::collections::BTreeMap<String, String>,
     pub(crate) groupings: Vec<GroupingPlan>,
     pub(crate) projection: Option<Vec<String>>,
+    pub(crate) summary: Option<String>,
     pub(crate) highlighting: Option<Vec<String>>,
     pub(crate) language: Option<String>,
     pub(crate) timeout: Option<Duration>,
@@ -273,6 +274,7 @@ impl SearchBuilder {
             rank_properties: std::collections::BTreeMap::new(),
             groupings: Vec::new(),
             projection: None,
+            summary: None,
             highlighting: None,
             language: None,
             timeout: None,
@@ -379,6 +381,12 @@ impl SearchBuilder {
         I::Item: Into<String>,
     {
         self.projection = Some(fields.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Select the document summary class used for this search.
+    pub fn summary(mut self, name: impl Into<String>) -> Self {
+        self.summary = Some(name.into());
         self
     }
 
@@ -556,7 +564,10 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
         },
         projection: request.projection.clone(),
         highlighting: request.highlighting.clone(),
-        presentation: searchkernel_ir::PresentationInput::default(),
+        presentation: searchkernel_ir::PresentationInput {
+            summary: request.summary.clone(),
+            ..Default::default()
+        },
         properties: std::collections::BTreeMap::new(),
         query_profile: None,
         search_chain: None,
@@ -743,6 +754,24 @@ mod tests {
             expression.annotations.get("exploreAdditionalHits"),
             Some(&searchkernel_ir::RequestValueIr::UInt64(50))
         );
+    }
+
+    #[test]
+    fn summary_and_projection_enter_the_canonical_presentation_input() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::text("title")),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+        let request = runtime
+            .index()
+            .search("foo")
+            .summary("default")
+            .projection(["title"]);
+
+        let input = to_resolver_input(&request).expect("public query should resolve to input");
+        assert_eq!(input.presentation.summary.as_deref(), Some("default"));
+        assert_eq!(input.projection, Some(vec!["title".to_owned()]));
     }
 
     #[test]

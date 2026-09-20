@@ -1,6 +1,6 @@
 # Phase 9 additive native ABI contract
 
-Phase 9 keeps `SK_NATIVE_ABI_VERSION` at 10. Every existing public symbol and
+Phase 9 keeps `SK_NATIVE_ABI_VERSION` at 12. Every existing public symbol and
 signature remains unchanged; this phase adds only opaque, domain-specific
 handles and typed operations.
 

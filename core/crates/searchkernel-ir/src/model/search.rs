@@ -126,6 +126,12 @@ impl SearchRequestIr {
         &self.presentation
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_presentation(mut self, presentation: PresentationIr) -> Self {
+        self.presentation = presentation;
+        self
+    }
+
     pub fn properties(&self) -> &std::collections::BTreeMap<String, RequestValueIr> {
         &self.properties
     }

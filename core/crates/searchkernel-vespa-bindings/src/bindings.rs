@@ -88,7 +88,7 @@ pub const SK_FEATURE_VALUE_KIND_INVALID: u32 = 0;
 pub const SK_FEATURE_VALUE_DOUBLE: u32 = 1;
 pub const SK_FEATURE_VALUE_DATA: u32 = 2;
 pub const SK_ERROR_MESSAGE_CAPACITY: u32 = 512;
-pub const SK_NATIVE_ABI_VERSION: u32 = 11;
+pub const SK_NATIVE_ABI_VERSION: u32 = 12;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sk_engine {
@@ -1291,6 +1291,14 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_request_set_summary_class(
+        request: *mut sk_local_search_request,
+        name: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_local_search_request_add_query_feature(
         request: *mut sk_local_search_request,
         name: *const ::std::os::raw::c_char,
@@ -1468,6 +1476,14 @@ unsafe extern "C" {
     pub fn sk_generic_search_request_add_summary_field(
         request: *mut sk_generic_search_request,
         field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_set_summary_class(
+        request: *mut sk_generic_search_request,
+        name: *const ::std::os::raw::c_char,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

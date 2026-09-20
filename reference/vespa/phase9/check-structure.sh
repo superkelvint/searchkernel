@@ -8,7 +8,7 @@ MAP="$ROOT/core/native/vespa/searchkernel_vespa.map"
 BINDINGS="$ROOT/core/crates/searchkernel-vespa-bindings/src/bindings.rs"
 
 cmp -s "$HEADER" "$SDK/include/searchkernel_vespa.h"
-grep -qx '#define SK_NATIVE_ABI_VERSION 10U' "$HEADER"
+grep -qx '#define SK_NATIVE_ABI_VERSION 12U' "$HEADER"
 for symbol in \
   sk_nearest_neighbor_options_create \
   sk_nearest_neighbor_options_destroy \

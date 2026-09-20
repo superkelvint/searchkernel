@@ -215,6 +215,8 @@ void invalid_argument_surface() {
                    "local sort null");
     expect_invalid(sk_local_search_request_add_summary_field(nullptr, nullptr, error.data(), ERROR_CAPACITY),
                    "local summary null");
+    expect_invalid(sk_local_search_request_set_summary_class(nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "local summary class null");
     expect_invalid(sk_local_search_request_add_query_feature(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
                    "local feature null");
     expect_invalid(sk_local_search_request_add_rank_property(nullptr, nullptr, nullptr, error.data(), ERROR_CAPACITY),
@@ -236,6 +238,8 @@ void invalid_argument_surface() {
                    "generic sort null");
     expect_invalid(sk_generic_search_request_add_summary_field(nullptr, nullptr, error.data(), ERROR_CAPACITY),
                    "generic summary null");
+    expect_invalid(sk_generic_search_request_set_summary_class(nullptr, nullptr, error.data(), ERROR_CAPACITY),
+                   "generic summary class null");
     expect_invalid(sk_generic_search_request_add_query_feature(nullptr, nullptr, 0, error.data(), ERROR_CAPACITY),
                    "generic feature null");
     expect_invalid(sk_generic_search_request_add_rank_property(nullptr, nullptr, nullptr,

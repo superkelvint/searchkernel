@@ -126,6 +126,12 @@ fn fluent_requests_and_attribute_builders_preserve_configuration() {
     assert_eq!(search.sort, vec![descending]);
     assert_eq!(search.summary, SummaryRequest::Default);
 
+    let named = SearchRequest::new(Query::True)
+        .summary_class("named-summary")
+        .fields(["title"]);
+    assert_eq!(named.summary_class.as_deref(), Some("named-summary"));
+    assert_eq!(named.summary, SummaryRequest::Fields(vec!["title".into()]));
+
     let yql = SearchRequest::from_yql("select * from typea where title contains \"fox\"")
         .expect("supported YQL should parse");
     assert_eq!(yql.source, Source::Named("typea".into()));

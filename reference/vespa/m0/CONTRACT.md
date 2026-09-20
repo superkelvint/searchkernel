@@ -19,7 +19,7 @@ $SK_NATIVE_SDK/
 
 ```json
 {
-  "native_abi_version": 10,
+  "native_abi_version": 12,
   "vespa_commit": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
 }
 ```

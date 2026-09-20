@@ -810,6 +810,19 @@ impl Engine {
         check(status, &error)?;
         let native_request =
             NativeGenericSearchRequest(require_ptr(native_request, "generic search request")?);
+        if let Some(summary_class) = &request.summary_class {
+            let summary_class = cstring(summary_class)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_set_summary_class(
+                    native_request.0.as_ptr(),
+                    summary_class.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         let timeout_millis = u64::try_from(request.timeout.as_millis())
             .map_err(|_| Error::message("search timeout is too large to encode"))?;
         let mut error = NativeError::new();

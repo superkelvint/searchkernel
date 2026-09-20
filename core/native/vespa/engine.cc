@@ -3614,7 +3614,7 @@ public:
             }
             DocsumRequest docsum_request;
             docsum_request.setTimeout(remaining);
-            docsum_request.resultClassName = "default";
+            docsum_request.resultClassName = options.summary_class.value_or("default");
             docsum_request.ranking = options.rank_profile;
             for (const size_t row : live_hit_rows) {
                 docsum_request.hits.emplace_back(reply->hits[row].gid);

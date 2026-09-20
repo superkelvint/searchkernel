@@ -177,7 +177,7 @@ typedef struct sk_grouping_filter sk_grouping_filter;
 /* This ABI revision adds dense tensor document assignment, primitive readback,
    and document-update string-array annotations on top of the previous tensor
    query/document insertion surface. */
-#define SK_NATIVE_ABI_VERSION 11U
+#define SK_NATIVE_ABI_VERSION 12U
 
 SK_API uint32_t sk_native_abi_version(void) SK_NOEXCEPT;
 
@@ -636,6 +636,9 @@ SK_API int32_t sk_local_search_request_add_sort(
 SK_API int32_t sk_local_search_request_add_summary_field(
     sk_local_search_request *request, const char *field,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_local_search_request_set_summary_class(
+    sk_local_search_request *request, const char *name,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_local_search_request_add_query_feature(
     sk_local_search_request *request, const char *name, double value,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -712,6 +715,9 @@ SK_API int32_t sk_generic_search_request_set_sort_spec(
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_summary_field(
     sk_generic_search_request *request, const char *field,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_request_set_summary_class(
+    sk_generic_search_request *request, const char *name,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_query_feature(
     sk_generic_search_request *request, const char *name, double value,

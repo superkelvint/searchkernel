@@ -531,6 +531,18 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
             )
         self.assertEqual(error.exception.code, "unsupported")
 
+    def test_ergonomic_named_summary_and_projection_reach_native_docsums(self):
+        endpoint = self._start_server(definition=True)
+        self.client = Client(GrpcTransport(endpoint))
+        index = Index(self.client, ergonomic=True)
+        index.upsert("d1", {"title": "highlight me", "category": "a", "price": 5})
+
+        result = index.search("highlight").summary("default").fields("title").execute()
+
+        self.assertEqual(result.total_hits, 1)
+        self.assertEqual([hit.id for hit in result.hits], ["d1"])
+        self.assertEqual(result.hits[0].fields, {"title": "highlight me"})
+
 
 if __name__ == "__main__":
     unittest.main()

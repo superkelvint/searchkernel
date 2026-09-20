@@ -8,10 +8,10 @@
 extern "C" {
 #endif
 
-/* ABI v10 uses only opaque handles and fixed-width primitive arguments. */
+/* ABI v12 uses only opaque handles and fixed-width primitive arguments. */
 typedef struct sk_engine sk_engine;
 
-#define SK_NATIVE_ABI_VERSION 10U
+#define SK_NATIVE_ABI_VERSION 12U
 #define SK_NATIVE_STATUS_TYPE_ERROR 6
 
 /* Vespa FeatureSet::Value is DOUBLE or DATA. DATA is an opaque borrowed byte

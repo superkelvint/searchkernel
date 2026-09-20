@@ -101,6 +101,10 @@ pub(crate) fn lower_search_options(
         }
     }
 
+    if let Some(summary_class) = request.presentation().summary.as_deref() {
+        m_request = m_request.summary_class(summary_class);
+    }
+
     // C2 has already resolved the projection. An empty list means that no
     // summary fields should be fetched; the native API rejects an explicit
     // empty field list, so use its no-summary mode instead.
@@ -356,15 +360,14 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
             "the current native adapter supports query_model.language, query_string, and default_index only",
         ));
     }
-    if request.presentation().summary.is_some()
-        || request.presentation().format.is_some()
+    if request.presentation().format.is_some()
         || request.presentation().bolding.is_some()
         || request.presentation().timing.is_some()
     {
         return Err(PortableError::unsupported(
             "presentation_not_supported",
             Some("presentation"),
-            "the current native adapter supports only fields and highlighting presentation controls",
+            "the current native adapter supports summary, fields, and highlighting presentation controls",
         ));
     }
     if !matches!(

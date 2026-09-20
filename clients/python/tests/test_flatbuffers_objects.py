@@ -147,6 +147,26 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             ["alpha", "zeta"],
         )
 
+    def test_ergonomic_summary_and_fields_share_one_presentation(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, "wireless").summary("default").fields("title").execute()
+        presentation = index.client.request.presentation
+        self.assertEqual(presentation.summary, "default")
+        self.assertEqual(presentation.fields.fields, ["title"])
+
     def test_widened_v2_objects_pack_without_schema_mapper(self):
         tensor = TensorValueT(
             typeSpec="tensor<float>(x[2])",

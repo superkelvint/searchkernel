@@ -530,6 +530,7 @@ struct LocalSearchRequestState {
     };
     std::vector<Sort> sort;
     std::optional<std::string> raw_sort_spec;
+    std::optional<std::string> summary_class;
     std::vector<std::string> summary_fields;
     std::vector<std::pair<std::string, double>> query_features;
     std::vector<std::pair<std::string, std::string>> query_tensors;

@@ -4234,6 +4234,74 @@ fn empty_projection_lowers_to_no_summary_fields() {
 }
 
 #[test]
+fn summary_class_lowers_independently_from_projection() {
+    let title = field("title");
+    let base = SearchRequestIr::new(
+        QueryIr::Text("wireless headphones".into()),
+        vec![SearchFieldIr::new(
+            title.clone(),
+            SearchFieldWeight::new(1.0).unwrap(),
+        )],
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(vec![title]),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    );
+    let language = analysis_options(base.language()).unwrap();
+    let query = lower_search_query(&base, language).unwrap();
+
+    let default_class = lower_search_options(&base, query.clone(), language).unwrap();
+    assert_eq!(default_class.summary_class, None);
+    assert_eq!(
+        default_class.summary,
+        searchkernel_vespa_engine::SummaryRequest::Fields(vec!["title".into()])
+    );
+
+    for name in ["default", "some-class"] {
+        let request = base.clone().with_presentation(PresentationIr {
+            summary: Some(name.to_owned()),
+            ..PresentationIr::default()
+        });
+        let lowered = lower_search_options(&request, query.clone(), language).unwrap();
+        assert_eq!(lowered.summary_class.as_deref(), Some(name));
+        assert_eq!(
+            lowered.summary,
+            searchkernel_vespa_engine::SummaryRequest::Fields(vec!["title".into()])
+        );
+    }
+}
+
+#[test]
+fn summary_class_survives_explicit_empty_projection_without_fetching_docsums() {
+    let request = request(
+        vec![SearchFieldIr::new(
+            field("title"),
+            SearchFieldWeight::new(1.0).unwrap(),
+        )],
+        Vec::new(),
+        None,
+    )
+    .with_presentation(PresentationIr {
+        summary: Some("some-class".to_owned()),
+        ..PresentationIr::default()
+    });
+    let language = analysis_options(request.language()).unwrap();
+    let query = lower_search_query(&request, language).unwrap();
+    let lowered = lower_search_options(&request, query, language).unwrap();
+
+    assert_eq!(lowered.summary_class.as_deref(), Some("some-class"));
+    assert_eq!(
+        lowered.summary,
+        searchkernel_vespa_engine::SummaryRequest::None
+    );
+}
+
+#[test]
 fn every_expressible_search_option_is_lowered_to_the_generic_m_api() {
     let title = field("title");
     let description = field("description");

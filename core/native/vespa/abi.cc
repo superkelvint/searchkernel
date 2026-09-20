@@ -1061,6 +1061,20 @@ extern "C" int32_t sk_local_search_request_add_summary_field(
     });
 }
 
+extern "C" int32_t sk_local_search_request_set_summary_class(
+    sk_local_search_request *request, const char *name,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !name) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "local summary class arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_string_size(name, MAX_SCHEMA_IDENTIFIER_BYTES, "summary class");
+        if (*name == '\0') throw std::invalid_argument("summary class must not be empty");
+        request->summary_class = name;
+    });
+}
+
 extern "C" int32_t sk_local_search_request_add_query_feature(
     sk_local_search_request *request, const char *name, double value,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -2489,6 +2503,13 @@ extern "C" int32_t sk_generic_search_request_add_summary_field(
     uint32_t error_capacity) SK_NOEXCEPT {
     return sk_local_search_request_add_summary_field(
         static_cast<sk_local_search_request *>(request), field, error, error_capacity);
+}
+
+extern "C" int32_t sk_generic_search_request_set_summary_class(
+    sk_generic_search_request *request, const char *name, uint8_t *error,
+    uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_request_set_summary_class(
+        static_cast<sk_local_search_request *>(request), name, error, error_capacity);
 }
 
 extern "C" int32_t sk_generic_search_request_add_query_feature(

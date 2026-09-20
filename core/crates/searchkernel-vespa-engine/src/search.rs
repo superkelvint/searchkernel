@@ -166,6 +166,10 @@ pub struct SearchRequest {
     pub sort: Vec<SortField>,
     pub raw_sort_spec: Option<String>,
     pub summary: SummaryRequest,
+    /// Summary class selected for the native docsums request. This is
+    /// independent of `summary`, which controls whether docsums are fetched
+    /// and which fields are requested from the selected class.
+    pub summary_class: Option<String>,
     pub language: LinguisticsOptions,
     pub facets: Vec<FacetRequest>,
     pub timeout: Duration,
@@ -185,6 +189,7 @@ impl SearchRequest {
             sort: Vec::new(),
             raw_sort_spec: None,
             summary: SummaryRequest::None,
+            summary_class: None,
             language: LinguisticsOptions::default(),
             facets: Vec::new(),
             timeout: Duration::from_secs(60),
@@ -286,6 +291,11 @@ impl SearchRequest {
 
     pub fn summary(mut self, summary: SummaryRequest) -> Self {
         self.summary = summary;
+        self
+    }
+
+    pub fn summary_class(mut self, name: impl Into<String>) -> Self {
+        self.summary_class = Some(name.into());
         self
     }
 

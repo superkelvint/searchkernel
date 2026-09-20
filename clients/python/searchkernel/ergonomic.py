@@ -700,6 +700,7 @@ class SearchBuilder:
     def __init__(self, index, query):
         self.index, self.query = index, query
         self._filters, self._sort, self._fields, self._groups = [], [], None, []
+        self._summary = None
         self._aggregates, self._facets = [], []
         self._ranking, self._rank_properties, self._inputs, self._properties = None, {}, {}, {}
         self._limit = self._offset = None
@@ -710,6 +711,7 @@ class SearchBuilder:
         if direction not in {"asc", "desc"}: raise ValueError("sort direction must be 'asc' or 'desc'")
         self._sort.append(SortExprT(target=SortTargetT(targetType=SortTargetKind.FieldSortTarget, target=FieldSortTargetT(field=field)), direction=SortDirection.Asc if direction == "asc" else SortDirection.Desc)); return self
     def fields(self, *fields): self._fields = list(fields); return self
+    def summary(self, name): self._summary = name; return self
     def facet(self, field, *, name=None, limit=None, sort=None): self._facets.append((field, name or field, limit, sort)); return self
     def group(self, group): self._groups.append(group); return self
     def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
@@ -751,7 +753,10 @@ class SearchBuilder:
         elif isinstance(query, str): query = QuerySourceT(sourceType=QuerySourceKind.SearchKernelTextQuery, source=SearchKernelTextQueryT(text=query))
         inputs = [QueryInputT(name=name, inputType=QueryInputKind.LiteralQueryInput, input=LiteralQueryInputT(value=value(item))) for name, item in sorted(self._inputs.items())]
         ranking = RankingRequestT(profile=self._ranking or "default", properties=[StringEntryT(key=k, value=v) for k, v in sorted(self._rank_properties.items())]) if self._ranking is not None or self._rank_properties else None
-        presentation = PresentationRequestT(fields=FieldProjectionT(fields=self._fields)) if self._fields is not None else None
+        presentation = PresentationRequestT(
+            summary=self._summary,
+            fields=FieldProjectionT(fields=self._fields) if self._fields is not None else None,
+        ) if self._summary is not None or self._fields is not None else None
         request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
         results = SearchResults(self.index.client.search(request))
         for field, name, _limit, _sort in self._facets:

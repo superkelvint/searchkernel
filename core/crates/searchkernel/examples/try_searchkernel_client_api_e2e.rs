@@ -596,6 +596,7 @@ mod showcase {
 
         let results = index
             .search("shoes")
+            .summary("default")
             .sort(Sort::desc("price"))
             .projection(["title", "brand", "price"])
             .limit(2)
@@ -609,6 +610,7 @@ mod showcase {
         assert_eq!(results.hits[0].document["brand"], json!("Acme"));
         assert_eq!(results.hits[0].document["price"], json!(159.0));
         assert!(results.hits[0].document.get("rating").is_none());
+        println!("named summary class + projection docsums PASS");
 
         heading("12. OFFSET / LIMIT PAGINATION");
 

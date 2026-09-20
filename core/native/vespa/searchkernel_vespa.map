@@ -112,6 +112,7 @@ SEARCHKERNEL_2 {
         sk_local_search_request_create;
         sk_local_search_request_add_sort;
         sk_local_search_request_add_summary_field;
+        sk_local_search_request_set_summary_class;
         sk_local_search_request_add_query_feature;
         sk_local_search_request_add_rank_property;
         sk_local_search_request_destroy;
@@ -135,6 +136,7 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_sort;
         sk_generic_search_request_set_sort_spec;
         sk_generic_search_request_add_summary_field;
+        sk_generic_search_request_set_summary_class;
         sk_generic_search_request_add_query_feature;
         sk_generic_search_request_add_query_tensor_dense;
         sk_generic_search_request_add_rank_property;
