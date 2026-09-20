@@ -1,5 +1,6 @@
 use super::*;
 use crate::model::*;
+use crate::ErrorCode;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -205,20 +206,26 @@ fn update_resolution_enforces_target_value_and_arithmetic_policy() {
         ),
         "arithmetic_operand_type"
     );
+    let duplicate = resolve_update(
+        &context(),
+        "doc:1",
+        &[
+            UpdateOperationInput::Assign {
+                target: "price".to_owned(),
+                value: RequestValueIr::Int64(1),
+            },
+            UpdateOperationInput::Clear {
+                target: "price".to_owned(),
+            },
+        ],
+        None,
+        None,
+    )
+    .expect_err("multiple updates for one target are unsupported");
+    assert_eq!(duplicate.code, ErrorCode::Unsupported);
     assert_eq!(
-        detail_code(
-            "doc:1",
-            &[
-                UpdateOperationInput::Assign {
-                    target: "price".to_owned(),
-                    value: RequestValueIr::Int64(1),
-                },
-                UpdateOperationInput::Clear {
-                    target: "price".to_owned(),
-                },
-            ],
-        ),
-        "duplicate_update_target"
+        duplicate.details[0].code,
+        "multiple_updates_per_target_not_supported"
     );
 
     for operator in [

@@ -1353,10 +1353,10 @@ pub fn resolve_update(
             ));
         }
         if !seen.insert(target.as_str().to_owned()) {
-            return Err(invalid(
-                "duplicate_update_target",
+            return Err(PortableError::unsupported(
+                "multiple_updates_per_target_not_supported",
                 Some(path),
-                "an update may mention each target at most once",
+                "ordered multiple updates for one target are not supported",
             ));
         }
         let field = context.field_for_resolver(target.as_str(), format!("{path}.target.path"))?;

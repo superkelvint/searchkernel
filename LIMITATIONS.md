@@ -170,7 +170,7 @@ approximated.
 
 ### Document insert, upsert, patch, delete, and get (`update.document_crud`)
 
-- This row covers the ordinary unconditional operations and Patch set/unset. Conditional mutations and advanced update-operation families are tracked separately.
+- This row covers the ordinary unconditional operations and Patch set/unset. Conditional mutations and advanced update-operation families are tracked separately. Ordered multiple updates targeting the same field are represented by Vespa's model but currently return Unsupported because the portable IR does not yet preserve that ordered field-update sequence.
 
 ### Arithmetic document updates (`update.arithmetic`)
 
