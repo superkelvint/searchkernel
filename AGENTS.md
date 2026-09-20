@@ -84,7 +84,7 @@ Do not silently redefine either one.
 Before editing:
 
 1. Determine whether the current checkout is already an isolated worktree for
-   this task.
+   this task. If not, `./dev worktree create my-task`
 2. Inspect `git status --short` and the current branch.
 3. Identify pre-existing changes and treat them as belonging to someone else
    unless the task explicitly says otherwise.
@@ -142,40 +142,26 @@ encoding, generated bindings, packaging, or SDK/native ABI output.
 
 ## Worktree isolation
 
-Substantial implementation work should run in a dedicated Git worktree and task
-branch when parallel development is possible.
+Implementation agents MUST work in a dedicated task worktree.
 
-The normal model is:
+Before modifying any tracked file:
 
-```text
-task
-    -> dedicated branch/worktree
-    -> implementation
-    -> focused verification
-    -> task-owned commit(s)
-    -> serialized self-integration
-    -> combined verification
-```
+1. Determine whether the current checkout is already a dedicated worktree for
+   this task.
+2. If it is not, create a task branch and worktree from the current integration
+   HEAD.
+3. Change into that worktree before editing.
+4. Perform all implementation, verification, and commits there.
 
-If the current checkout is already a task-specific worktree, use it.
+Do not modify tracked files in the primary integration checkout.
 
-Otherwise, when isolation is useful and repository permissions allow it, create
-a dedicated worktree from the current integration baseline before editing.
+The only exception is when the user explicitly instructs you to work in the
+current checkout.
 
-Use short descriptive branch names consistent with repository history, for
-example:
+If a worktree cannot be created, stop and report the reason rather than
+silently falling back to the integration checkout.
 
-```text
-agent/fix-grouping-results
-agent/feat-document-update
-agent/refactor-search-resolution
-```
-
-The primary checkout should be treated as an integration workspace during
-parallel development, not as a shared implementation workspace.
-
-Small changes may be performed directly when no concurrent work exists and a
-separate worktree would provide no useful isolation.
+**If you are not already in a task worktree, run: ./dev worktree create <task-name>**
 
 ## Worktree safety
 
@@ -217,6 +203,84 @@ failure before the fix when practical.
 Regression tests must exercise observable behavior or the real implementation
 path. Source-text searches, naming assertions, and similar textual proxies do
 not prove runtime behavior.
+
+## Leave durable breadcrumbs
+
+When understanding or changing code requires discovering something non-obvious,
+leave the repository easier for the next human or agent to understand.
+
+If you learn a fact that would likely cause a future maintainer to repeat the
+same investigation, record it in the narrowest durable place that will be found
+when they encounter the code.
+
+Good things to document include:
+
+- why an implementation is shaped in a way that looks unnecessarily indirect;
+- invariants that are not obvious from the types;
+- behavior required by Vespa, a frozen contract, or an external compatibility
+  boundary;
+- ordering, ownership, lifetime, concurrency, or persistence assumptions;
+- tempting simplifications that are incorrect;
+- surprising failure modes or edge cases;
+- places where two apparently equivalent paths intentionally differ;
+- non-obvious verification required when changing the code;
+- a failed approach when someone is reasonably likely to try it again.
+
+Prefer, in order:
+
+1. a short comment beside the relevant code when the knowledge is local;
+2. a module/type/function doc comment when it explains an abstraction;
+3. an existing architecture or development document when the knowledge applies
+   across components;
+4. a focused new document only when the subject genuinely needs one.
+
+Write the **reason**, constraint, or invariant rather than narrating what the
+code already says.
+
+Good:
+
+```rust
+// Vespa evaluates this against the pre-update document. Do not move the
+// condition check after DocumentUpdate construction; create-if-missing then
+// acquires different semantics.
+```
+
+Bad:
+
+```rust
+// Check the condition and construct the update.
+```
+
+When useful, point to the authoritative source rather than duplicating it:
+
+```rust
+// Keep this conversion lossless. Portable defaults are resolved in
+// searchkernel-ir, not here; see docs/architecture.md "Semantic structure".
+```
+
+Do not leave:
+
+- comments about the agent's process or conversation;
+- temporary implementation plans after the work is complete;
+- speculative notes that were not verified;
+- large duplicated explanations already maintained elsewhere;
+- comments whose only purpose is to compensate for confusing code that can
+  simply be made clearer.
+
+A useful rule of thumb:
+
+> If you had to inspect several files, read upstream Vespa, run an experiment,
+> or debug a subtle failure to understand why this code must behave this way,
+> consider leaving a breadcrumb for the next person.
+
+Before completing a substantial task, ask:
+
+```text
+Did I discover anything non-obvious that the next maintainer would otherwise
+have to rediscover?
+```
+
+If yes, document it as part of the change.
 
 ## Vespa and native boundary
 
