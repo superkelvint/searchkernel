@@ -10,145 +10,217 @@ approximated.
 
 ## Query
 
+### Phrase queries (`query.phrase`)
+
+- The Python high-level q namespace does not yet expose a phrase helper; low-level generated FlatBuffers can still represent QueryPhrase.
+
+### Near and ordered-near proximity queries (`query.proximity`)
+
+- QueryNear and QueryONear execute through the adapter, but neither high-level Rust Query nor the Python q facade exposes proximity constructors yet.
+
 ### sameElement query (`query.same_element`)
 
-- Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model.
+- Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
 
 ### Fuzzy query (`query.fuzzy`)
 
-- The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path.
+- The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path. The Python high-level q facade does not yet expose fuzzy.
 
 ### Prefix, suffix, and substring queries (`query.prefix_suffix_substring`)
 
-- These typed helpers are not part of the reduced textual userInput/userQuery grammar.
+- The Rust facade lowers these conveniences through literal-safe matches patterns. They are not part of the reduced textual userInput/userQuery grammar, and the Python q facade does not yet expose them.
 
 ### Alternatives and equivalence queries (`query.alternatives`)
 
-- alternatives currently accepts term children only; more general alternatives are rejected.
+- Alternatives currently accepts term children only; more general alternatives are rejected. High-level Rust and Python facades do not expose these nodes.
 
 ### Nearest-neighbor vector search (`query.nearest_neighbor`)
 
-- The proven slice uses dense tensors and does not expose the full Vespa HNSW tuning surface.
+- The proven public path uses dense tensor query inputs and exposes only target hits, approximate mode, distance threshold, and explore-additional-hits rather than the full Vespa HNSW tuning surface.
 
 ### Geo-location and bounding-box queries (`query.geo`)
 
-- Geo matching is delegated to Vespa and is not implemented in Rust; verified bounding-box edges are inclusive.
+- Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end ergonomic SDK capability.
 
 ### Predicate queries (`query.predicate`)
 
-- Only the supported signed-integer range representation and documented predicate expression shapes are lowered.
+- Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades.
 
-### Weighted-set, dot-product, weak-and, and WAND queries (`query.weighted_and_wand`)
+### WeakAnd, weighted-set, dot-product, and WAND queries (`query.weighted_and_wand`)
 
-- Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped.
+- Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped. The Python q facade does not yet expose these weighted query constructors.
 
 ### userInput and userQuery text parsing (`query.user_input_user_query`)
 
-- The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites.
+- The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. Neither high-level facade currently exposes userInput/userQuery constructors.
 
 ### YQL query source (`query.yql`)
 
-- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the wrapper.
+- Only the existing low-level parser subset is supported; full Vespa YQL grammar, query profiles, and search chains are outside the embedded wrapper. The public Rust Index has search()/browse() but no yql() entry point.
 
-### Analyzed text and WeakAnd queries (`query.text_weak_and`)
+### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
-- text(...) is plain analyzed text with Vespa's default WeakAnd semantics; it is not a phrase.
+- Primary search(text) is analyzed text retrieval with Vespa WeakAnd-style default matching; it is not a phrase query. The low-level QueryText node is broader than the current facade helpers.
 
 ### Native in-term queries (`query.in_term`)
 
-- String and integer values use Vespa's native InTerm node rather than an OR of equality terms.
+- String and integer values use Vespa's native InTerm node rather than an OR of equality terms. The Python q facade does not yet expose in().
 
 ### NonEmpty query wrapper (`query.non_empty`)
 
-- NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker.
+- NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker. No high-level facade helper exists yet.
 
 ### Labeled query rank properties (`query.labels`)
 
-- Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties.
+- Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties. No high-level labeled-query helper exists yet.
 
 ## Filter
 
+### Structured filters (`filter.structured`)
+
+- The Python high-level facade currently uses textual filters; it does not expose a typed structured-filter helper namespace.
+
 ### Textual filter expressions (`filter.textual`)
 
-- The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR.
+- The filter expression language is a deliberate subset and is parsed and bound before entering canonical IR. The Rust SearchBuilder currently accepts typed Filter values only; it has no public textual-filter overload.
+
+## Search
+
+### First/last missing-value sort placement (`search.sort_missing_placement`)
+
+- Rust exposes missing-first and missing-last. The portable/native path also has a missing-as-value form, but it is not exposed by the Rust convenience type. Python's high-level sort() currently has no missing-value option.
+
+### Limit and offset pagination (`search.pagination`)
+
+- Python additionally exposes page() as a convenience. Rust currently exposes limit/offset but no page() helper.
+
+### Text search-field selection (`search.search_fields`)
+
+- Field selection executes, but non-default per-field weights are rejected by the current native adapter. The Python high-level SearchBuilder does not yet expose search_field/search_fields.
 
 ## Result
 
-### Document summaries and stored-field projection (`result.summaries`)
+### Stored-field projection and docsum-backed hit fields (`result.projection`)
 
-- Vespa capability: grouped summary hits carry the selected docsum payload and remain beneath their owning group. Search Kernel limitation: the native seam currently forwards only grouped hit IDs and the adapter creates default/empty Hit values. User-visible impact: summary aggregation does not yet provide promised docsum fields and is not an executable public semantic capability. Reason/status: the native summary generator and typed grouped-hit payload are not implemented; blocked pending a faithful Vespa-backed result seam.
+- Tensor fields are readable through GET but are rejected from native search-summary projection because they are not native summary fields in the current integration. Named summary-class selection is tracked separately.
 
-### Tensor feature and result readback (`result.tensor_readback`)
+### Named summary-class selection (`result.named_summary`)
 
-- Tensor decoding is a higher-layer capability and is not implied by the opaque Vespa feature container.
+- Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection.
 
-### Match-feature and summary-feature readback (`result.match_features`)
+### Highlighting (`result.highlighting`)
 
-- Match features cross the Vespa boundary as doubles or borrowed opaque data; tensor decoding is tracked separately.
+- The Rust SearchBuilder exposes highlight(), but the real Vespa-backed path deliberately returns highlighting_native_result_unavailable because generated fragments/spans do not cross the native result seam. Python has no high-level highlight method yet.
+
+### Dense tensor document readback (`result.tensor_document_readback`)
+
+- Dense tensor fields round-trip through document GET/projection and reopen. Sparse/mixed document tensors are outside the supported high-level path; Python currently exposes readback as the tagged $searchkernel_tensor object rather than reconstructing a Tensor instance.
+
+### Typed tensor feature readback (`result.tensor_feature_readback`)
+
+- Tensor-backed match features currently cross the native result seam as opaque data bytes. The adapter does not decode them into a portable TensorValue.
+
+### Match-feature readback (`result.match_features`)
+
+- Scalar match features are decoded. Tensor-backed feature output remains opaque bytes. The adapter currently leaves summary_features and rank_features empty even though the portable Hit schema represents them.
 
 ### Recursive grouping result trees (`result.grouping_tree`)
 
-- The implemented plan exposes recursive groups, keys, aggregation values, and the canonical root, not Vespa's complete result-tree surface.
+- The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Python exposes root/children losslessly. Rust currently projects recursive ResultGroup values into groups/aggregations and does not expose the canonical mixed root; nested Hit children would be dropped by that Rust projection.
 
-### Coverage, timeout, and issue metadata (`result.degradation_metadata`)
+### Coverage and degradation metadata (`result.degradation_metadata`)
 
-- Deterministic acceptance relies on real match-phase degradation; the frozen verifier does not fabricate a Vespa issue.
+- The real backend populates coverage counters and match-phase/timeout/ANN degradation flags. Portable timing, trace, arbitrary metadata, and native Vespa UniqueIssues are not currently populated by this backend; UniqueIssues are deliberately not fabricated into SearchResult.errors.
 
 ## Grouping
 
 ### Structured grouping and faceting (`grouping.structured`)
 
-- Parallel grouping branches are not representable by the current linear native grouping plan.
+- The native lowering is a linear grouping plan and cannot execute arbitrary parallel grouping branches from the full portable tree.
 
-### Grouping expressions and functions (`grouping.functions`)
+### Executable grouping expression/function subset (`grouping.functions`)
 
-- Vespa capability: grouping supports the full expression/function family accepted by the grouping parser. Search Kernel limitation: the embedded native adapter currently supports attributes, literals, arithmetic, aggregation references, and the verified function subset only; Member, MapLookup, and Bucket remain rejected. User-visible impact: valid portable requests using those forms fail with a structured unsupported error. Reason/status: the current linear ABI has no typed constructors for those Vespa expression nodes; arithmetic/literal/function lowering is implemented but needs dedicated real-engine acceptance coverage.
+- The native adapter supports attributes, literals, arithmetic, aggregation references, aliases, and the verified function subset. Member, MapLookup, and Bucket remain rejected. Rust's public GroupingExpression currently exposes attributes only; Python exposes the richer expression facade.
 
 ### Grouping aggregations (`grouping.aggregations`)
 
-- The executable expression subset is documented by the native adapter; unsupported forms fail before execution.
+- The native layer supports count, average, sum, min, max, stddev, xor, and quantiles. Rust's high-level GroupingAggregation exposes count/average/sum/min/max; Python additionally exposes stddev. Summary aggregation is tracked separately because its hit payload is not complete.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
-- Vespa capability: summary() collects grouped hits using the surrounding max/default-hit policy and the requested summary class. Search Kernel limitation: finite max propagation is now retained where the linear plan has a grouping max, but grouped docsum payloads do not cross the native ABI. User-visible impact: callers cannot receive faithful summary fields from grouped Hit children. Reason/status: native summary generation and typed grouped-hit/docsum transfer remain unfinished; status is blocked, not a passing implementation.
+- The Python facade can construct agg.summary(), and finite max propagation reaches the grouping plan, but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
 
 ### Grouping continuations (`grouping.continuations`)
 
-- Vespa capability: grouping requests and responses carry opaque continuation tokens for paged group lists. Search Kernel limitation: tokens are rejected before native execution and are not represented in GroupingPlan or GroupingResult. User-visible impact: grouping pagination cannot be requested or resumed through V2. Reason/status: the current linear native ABI has no typed continuation input/output seam; implementation remains deferred.
+- Continuation tokens are preserved in GroupingRequestIr and in the portable result tree, but native grouping lowering rejects any request with continuations. Python result objects preserve tokens if received, yet there is no production native round-trip or high-level continuation request helper.
 
 ### Raw grouping source (`grouping.raw_source`)
 
-- Raw grouping text requires a parser and normalization step before it can enter canonical IR.
+- Raw grouping text is represented as caller intent, but resolve_grouping rejects it until a parser/normalizer can produce canonical structured grouping IR.
 
 ## Update
 
+### Document insert, upsert, patch, delete, and get (`update.document_crud`)
+
+- This row covers the ordinary unconditional operations and Patch set/unset. Conditional mutations and advanced update-operation families are tracked separately.
+
 ### Arithmetic document updates (`update.arithmetic`)
 
-- Arithmetic update nodes are represented in the portable contract but are not yet proven through the complete native product path.
+- Increment, decrement, multiply, and divide execute through canonical FlatBuffers -> IR -> native DocumentUpdate in Python. The high-level Rust product API currently has Patch set/unset only and no advanced UpdateBuilder.
 
-### Conditional and matched-element updates (`update.conditional`)
+### Create-if-nonexistent document updates (`update.create_if_nonexistent`)
 
-- The portable update model represents conditional forms, but the public ergonomic and native execution paths are not complete.
+- Python UpdateBuilder.create() is proven through the real native path. The high-level Rust product API does not yet expose advanced document updates.
+
+### Conditional document mutations (`update.conditional`)
+
+- Conditions are preserved in canonical IR for upsert/delete/update, but the Vespa adapter returns conditional_mutation_not_supported. Python exposes condition arguments/builders; Rust does not.
+
+### Collection add/remove updates (`update.collection_add_remove`)
+
+- AddUpdate and RemoveUpdate are represented in FlatBuffers, but update_to_ir currently rejects them as update_operation_not_supported before canonical IR.
+
+### Matched-element updates (`update.matched_element`)
+
+- MatchUpdate is represented in FlatBuffers, but the current UpdateOperationIr has no matched-element variant and update_to_ir rejects it before canonical IR.
 
 ### Tensor modify updates (`update.tensor_modify`)
 
-- Tensor modify operations are represented but not exposed as a complete ergonomic and verified product capability.
+- TensorModifyUpdate is represented in FlatBuffers, but there is no tensor-modify UpdateOperationIr and update_to_ir rejects it before canonical IR.
 
 ## Tensor
 
 ### Dense tensor document values (`tensor.dense_document_crud`)
 
-- Sparse and mixed tensors remain unsupported in the current document and query-input paths.
+- Sparse and mixed tensors remain unsupported in the current high-level document and query-input paths.
 
 ## Schema
 
 ### Array-of-struct document fields (`schema.array_struct_fields`)
 
-- Member queries are relative to the parent element and do not form a general nested struct or map model.
+- The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field and Python field-spec facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported.
 
 ### Position fields and derived geo attributes (`schema.position_geo_fields`)
 
-- The native adapter publishes Vespa-compatible derived zcurve data; Search Kernel does not implement geo matching independently.
+- The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust or Python schema builders.
+
+## Ranking
+
+### Rank-profile selection (`ranking.profile_selection`)
+
+- The profile must exist in the compiled index schema; Search Kernel does not introduce a second ranking language.
+
+### Numeric scalar query inputs (`ranking.numeric_query_inputs`)
+
+- The public Rust QueryInputValue currently exposes integer, unsigned integer, float, and tensor values; the proven scalar real-engine path is numeric. Expression query inputs are not exposed by the high-level facades.
+
+### Dense tensor query inputs (`ranking.tensor_query_inputs`)
+
+- Only literal dense tensors are executable by the current native query-input seam; sparse/mixed tensors and expression inputs are rejected.
+
+### Rank properties (`ranking.rank_properties`)
+
+- Adapter-owned vespa.label.* properties are reserved for labeled queries and cannot be supplied by callers.
 
 ## Platform
 
