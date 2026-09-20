@@ -93,8 +93,13 @@ export interface OperationResponseMap {
   inspectQuery: InspectQueryResultT;
 }
 
+export interface ClientTransport {
+  execute(payload: Uint8Array, options?: ExecuteOptions): Promise<Uint8Array>;
+  close?(): void | Promise<void>;
+}
+
 export class Client {
-  constructor(readonly transport: Pick<GrpcWebTransport, "execute">) {}
+  constructor(readonly transport: ClientTransport) {}
 
   async execute<K extends Operation>(
     operation: K,
@@ -176,13 +181,17 @@ export class Client {
   inspectQuery(request: SearchRequestT, options?: ExecuteOptions): Promise<InspectQueryResultT> {
     return this.execute("inspectQuery", new InspectQueryRequestT(request), options);
   }
+
+  async close(): Promise<void> {
+    await this.transport.close?.();
+  }
 }
 
 /** Public remote-index façade. Browser SDK intentionally has no local daemon lifecycle. */
 export class Index {
   readonly client: Client;
 
-  private constructor(client: Client) {
+  protected constructor(client: Client) {
     this.client = client;
   }
 
@@ -298,5 +307,9 @@ export class Index {
 
   inspectQuery(request: SearchRequestT, options?: ExecuteOptions): Promise<InspectQueryResultT> {
     return this.client.inspectQuery(request, options);
+  }
+
+  async close(): Promise<void> {
+    await this.client.close();
   }
 }

@@ -15,11 +15,17 @@
       "types": "./dist/low-level.d.ts",
       "require": "./dist/low-level.js",
       "default": "./dist/low-level.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "require": "./dist/node.js",
+      "default": "./dist/node.js"
     }
   },
   "files": [
     "dist",
-    "src/generated"
+    "src/generated",
+    "examples"
   ],
   "scripts": {
     "generate:flatbuffers": "../../tools/generate-typescript-flatbuffers.sh",
@@ -27,11 +33,12 @@
     "generate": "npm run generate:flatbuffers && npm run generate:grpc-web",
     "check:generated": "npm run generate && git diff --exit-code -- src/generated",
     "build": "npm run clean && tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.all.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.all.json && tsc -p examples/tsconfig.json",
     "test": "vitest run",
     "test:package": "npm run build && node scripts/verify-package.cjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "example:e2e": "npm run build && node -e \"require('fs').rmSync('.example-dist',{recursive:true,force:true})\" && tsc -p examples/tsconfig.build.json && node .example-dist/try_searchkernel_client_api_e2e.js"
   },
   "dependencies": {
     "flatbuffers": "25.9.23",

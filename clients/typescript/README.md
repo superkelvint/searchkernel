@@ -95,3 +95,14 @@ npm run test:package
 Generation is reproducible from the canonical `.fbs` and `.proto` files. The
 SDK does not parse filter expressions or reimplement Search Kernel defaults,
 validation, ranking, grouping, or query semantics.
+
+## Managed local Node.js usage
+
+Browser code continues to use the main `@searchkernel/client` entrypoint and `Index.connect(...)`.
+Node.js can use `@searchkernel/client/node` to mirror the Python client lifecycle: `Index.create(...)` and `Index.open(...)` spawn and own a local `searchkerneld` over a private Unix-domain socket. Set `SEARCHKERNEL_LOCAL_HOST` to an explicit daemon binary when needed; the repository fallback is `target/debug/searchkerneld`.
+
+The complete managed-local showcase lives at `examples/try_searchkernel_client_api_e2e.ts`. After building `searchkerneld`, run it with:
+
+```bash
+npm run example:e2e
+```
