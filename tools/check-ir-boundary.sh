@@ -2,6 +2,7 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CORE="$ROOT/core/crates/searchkernel-ir/src"
+MODEL="$CORE/model"
 
 # `api_to_ir/resolve.rs` is the intentional semantic composition boundary.
 # `resolve_*` functions there convert validated public inputs into owned IR;
@@ -14,7 +15,7 @@ fi
 # Owned model, backend, and error types must not carry generated wire values or
 # FlatBuffer handles.  The conversion modules are checked separately below.
 if rg -n 'searchkernel_protocol|flatbuffers::|api::' \
-    "$CORE/model.rs" "$CORE/backend.rs" "$CORE/error.rs"; then
+    "$MODEL" "$CORE/backend.rs" "$CORE/error.rs"; then
   echo "wire types leaked into owned core modules" >&2; exit 1
 fi
 if rg -n 'searchkernel_protocol::.*(Insert|Upsert|Patch|Delete|Get|Search|Analyze)Result' "$CORE/backend.rs"; then
@@ -45,7 +46,7 @@ if awk '
     test_cfg = 0
   }
   END { exit bad }
-' "$CORE/model.rs"; then
+' "$MODEL"/*.rs; then
   :
 else
   echo "ungated public aggregate IR constructor" >&2; exit 1
