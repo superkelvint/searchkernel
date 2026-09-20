@@ -171,7 +171,7 @@ index.search("wireless headphones")
 
 ```python
 index.query(
-    q.and_(
+    q.all_of(
         q.contains("title", q.phrase("wireless", "headphones")),
         q.nearest_neighbor("embedding", "user_embedding"),
     )
@@ -482,7 +482,7 @@ The typed query entry point exposes advanced portable query-tree capability with
 ```python
 results = (
     index.query(
-        q.and_(
+        q.all_of(
             q.contains("title", q.phrase("wireless", "headphones")),
             q.range("price", lte=300),
         )
@@ -680,17 +680,15 @@ SDKs MUST NOT expose builder-global `.param()` or `.params()` methods for filter
 
 ---
 
-## 19. Structured filters remain available
+## 19. Structured filters at the protocol boundary
 
-Machine-generated applications may use the public typed filter helper API where useful:
+Machine-generated clients may use the generated typed filter objects where useful.
+The ergonomic Python facade currently keeps document filters in the string-based
+`.filter(source, bindings)` form, so examples should not imply an `f` namespace
+that the facade does not expose.
 
 ```python
-.filter(
-    f.and_(
-        f.lte("price", 120),
-        f.eq("in_stock", True),
-    )
-)
+.filter("price <= :max AND in_stock = true", {"max": 120})
 ```
 
 String filters remain the primary human-facing form.
@@ -1150,9 +1148,9 @@ Group.by("brand")
 Core helpers:
 
 ```python
-gf.and_(...)
-gf.or_(...)
-gf.not_(...)
+gf.all_of(...)
+gf.any_of(...)
+gf.negate(...)
 gf.regex(expr, pattern)
 gf.range(expr, lower, upper, include_lower=True, include_upper=False)
 gf.is_true(expr)
@@ -1259,9 +1257,9 @@ Examples:
 ```python
 q.contains("title", "rust")
 q.contains("title", q.phrase("search", "engine"))
-q.and_(...)
-q.or_(...)
-q.not_(...)
+q.all_of(...)
+q.any_of(...)
+q.negate(...)
 q.eq("category", "books")
 q.range("price", gte=10, lt=100)
 q.in_("brand", ["Acme", "TrailCo"])

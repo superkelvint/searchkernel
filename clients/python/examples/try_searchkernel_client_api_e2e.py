@@ -867,7 +867,7 @@ with Index.create(
 
     hybrid = (
         index.query(
-            q.and_(
+            q.all_of(
                 q.contains("title", "shoes"),
                 q.nearest_neighbor("embedding", "query_embedding"),
             )

@@ -62,6 +62,8 @@ from SearchKernel.V2.QueryExpr import QueryExprT
 from SearchKernel.V2.QueryExprKind import QueryExprKind
 from SearchKernel.V2.QueryFieldRef import QueryFieldRefT
 from SearchKernel.V2.QueryNearestNeighbor import QueryNearestNeighborT
+from SearchKernel.V2.QueryNot import QueryNotT
+from SearchKernel.V2.QueryOr import QueryOrT
 from SearchKernel.V2.QueryInput import QueryInputT
 from SearchKernel.V2.QueryInputKind import QueryInputKind
 from SearchKernel.V2.LiteralQueryInput import LiteralQueryInputT
@@ -350,9 +352,9 @@ class _GroupingFilterNamespace:
     def is_true(self, expression):
         return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterIsTrue, expr=GroupingFilterIsTrueT(expression=_as_expr(expression).model))
 
-    def and_(self, *clauses): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterAnd, expr=GroupingFilterAndT(clauses=list(clauses)))
-    def or_(self, *clauses): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterOr, expr=GroupingFilterOrT(clauses=list(clauses)))
-    def not_(self, clause): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterNot, expr=GroupingFilterNotT(clause=clause))
+    def all_of(self, *clauses): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterAnd, expr=GroupingFilterAndT(clauses=list(clauses)))
+    def any_of(self, *clauses): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterOr, expr=GroupingFilterOrT(clauses=list(clauses)))
+    def negate(self, clause): return GroupingFilterExprT(exprType=GroupingFilterExprKind.GroupingFilterNot, expr=GroupingFilterNotT(clause=clause))
 
 
 gf = _GroupingFilterNamespace()
@@ -377,14 +379,29 @@ class _QueryNamespace:
         contains = QueryExprT(exprType=QueryExprKind.QueryContains, expr=QueryContainsT(field=QueryFieldRefT(path=field), item=term))
         return self._typed(contains)
 
-    def and_(self, *clauses: QuerySourceT) -> QuerySourceT:
+    def _combine(self, expression_type: int, expression: QueryExprT) -> QuerySourceT:
+        return self._typed(QueryExprT(exprType=expression_type, expr=expression))
+
+    def all_of(self, *clauses: QuerySourceT) -> QuerySourceT:
         if not clauses:
-            raise ValueError("q.and_ requires at least one clause")
-        return self._typed(
-            QueryExprT(
-                exprType=QueryExprKind.QueryAnd,
-                expr=QueryAndT(clauses=[self._expression(clause) for clause in clauses]),
-            )
+            raise ValueError("q.all_of requires at least one clause")
+        return self._combine(
+            QueryExprKind.QueryAnd,
+            QueryAndT(clauses=[self._expression(clause) for clause in clauses]),
+        )
+
+    def any_of(self, *clauses: QuerySourceT) -> QuerySourceT:
+        if not clauses:
+            raise ValueError("q.any_of requires at least one clause")
+        return self._combine(
+            QueryExprKind.QueryOr,
+            QueryOrT(clauses=[self._expression(clause) for clause in clauses]),
+        )
+
+    def negate(self, clause: QuerySourceT) -> QuerySourceT:
+        return self._combine(
+            QueryExprKind.QueryNot,
+            QueryNotT(clause=self._expression(clause)),
         )
 
     def nearest_neighbor(self, document_field: str, query_tensor: str) -> QuerySourceT:

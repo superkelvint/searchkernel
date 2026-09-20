@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Boolean, ClientError, Float, Group, Hit, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, q  # noqa: E402
+from searchkernel import Boolean, ClientError, Float, Group, Hit, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
@@ -24,6 +24,7 @@ from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
 from SearchKernel.V2.SearchRequest import SearchRequestT  # noqa: E402
 from SearchKernel.V2.ErrorCode import ErrorCode  # noqa: E402
 from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator  # noqa: E402
+from SearchKernel.V2.GroupingFilterExprKind import GroupingFilterExprKind  # noqa: E402
 from SearchKernel.V2.GroupingOperationKind import GroupingOperationKind  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
@@ -215,7 +216,7 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(query.expr.queryTensor, "query_embedding")
 
     def test_hybrid_query_combines_text_and_nearest_neighbor(self):
-        query = q.and_(
+        query = q.all_of(
             q.contains("title", "shoes"),
             q.nearest_neighbor("embedding", "query_embedding"),
         )
@@ -224,6 +225,22 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(
             [clause.exprType for clause in query.source.query.expr.clauses],
             [QueryExprKind.QueryContains, QueryExprKind.QueryNearestNeighbor],
+        )
+
+    def test_grouping_filter_boolean_helpers_have_readable_names(self):
+        clause = gf.is_true(g.field("in_stock"))
+
+        self.assertEqual(
+            gf.all_of(clause, clause).exprType,
+            GroupingFilterExprKind.GroupingFilterAnd,
+        )
+        self.assertEqual(
+            gf.any_of(clause, clause).exprType,
+            GroupingFilterExprKind.GroupingFilterOr,
+        )
+        self.assertEqual(
+            gf.negate(clause).exprType,
+            GroupingFilterExprKind.GroupingFilterNot,
         )
 
     def test_hit_preserves_scalar_and_opaque_features(self):
