@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Analyzer, Field, SearchField};
+use crate::{Analyzer, Field, RankProfile, SearchField};
 use searchkernel_ir::{FieldCardinality, FieldKind};
 use searchkernel_testkit::RecordingBackend;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -305,6 +305,32 @@ fn manifest_preserves_rich_resolved_ir() {
         vec!["bm25(title)".to_owned(), "query(boost)".to_owned()]
     );
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn public_rank_profile_preserves_second_phase_and_rerank_count() {
+    let definition = IndexDefinition::new()
+        .field(Field::int64("rating"))
+        .field(Field::int64("inventory"))
+        .rank_profile(
+            RankProfile::new("two_phase")
+                .first_phase("attribute(rating)")
+                .second_phase("attribute(inventory)")
+                .rerank_count(3),
+        );
+
+    let resolved = definition_to_ir(&definition).unwrap();
+    let profile = &resolved.rank_profiles()[0];
+    assert_eq!(
+        profile.first_phase.as_ref().unwrap().expression.as_deref(),
+        Some("attribute(rating)")
+    );
+    let second_phase = profile.second_phase.as_ref().unwrap();
+    assert_eq!(
+        second_phase.expression.as_deref(),
+        Some("attribute(inventory)")
+    );
+    assert_eq!(second_phase.rerank_count, Some(3));
 }
 
 #[test]

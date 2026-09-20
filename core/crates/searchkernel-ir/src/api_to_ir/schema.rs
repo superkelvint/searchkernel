@@ -22,6 +22,8 @@ pub enum RustFieldKind {
 pub struct RustRankProfileInput {
     pub name: String,
     pub first_phase: String,
+    pub second_phase: Option<String>,
+    pub rerank_count: Option<u32>,
     pub match_features: Vec<String>,
     pub query_inputs: Vec<(String, String)>,
 }
@@ -211,7 +213,16 @@ pub fn resolve_rust_index_definition_with_profiles(
                     keep_rank_count: None,
                     total_keep_rank_count: None,
                 }),
-                second_phase: None,
+                second_phase: (profile.second_phase.is_some() || profile.rerank_count.is_some())
+                    .then(|| RankPhaseDefinitionIr {
+                        expression: profile.second_phase,
+                        rerank_count: profile.rerank_count,
+                        rank_score_drop_limit: None,
+                        properties: SchemaPropertiesIr::new(),
+                        total_rerank_count: None,
+                        keep_rank_count: None,
+                        total_keep_rank_count: None,
+                    }),
                 global_phase: None,
                 rank_features: Vec::new(),
                 match_features: profile.match_features,

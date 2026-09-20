@@ -164,6 +164,23 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(expression.expr.left.expr.field, "price")
         self.assertEqual(expression.expr.right.expr.value.kind.value, 1)
 
+    def test_rank_profile_preserves_second_phase_and_rerank_count(self):
+        definition = (
+            RankProfile("two-phase")
+            .first_phase("attribute(rating)")
+            .second_phase("attribute(inventory)")
+            .rerank_count(3)
+            .definition()
+        )
+
+        self.assertEqual(definition.firstPhase.expression, "attribute(rating)")
+        self.assertEqual(definition.secondPhase.expression, "attribute(inventory)")
+        self.assertEqual(definition.secondPhase.rerankCount.value, 3)
+        self.assertGreater(len(pack_object(definition)), 0)
+
+        with self.assertRaisesRegex(ValueError, "uint32"):
+            RankProfile("two-phase").rerank_count(0x1_0000_0000)
+
     def test_dense_tensor_values_round_trip_through_python_value(self):
         tensor = Tensor.dense("tensor<float>(x[2])", [1, 0])
         encoded = value(tensor)

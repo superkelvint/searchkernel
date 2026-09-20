@@ -133,6 +133,8 @@ pub struct Schema {
 pub struct RankProfile {
     name: String,
     first_phase: String,
+    second_phase: Option<String>,
+    rerank_count: Option<u32>,
     match_features: Vec<String>,
     query_inputs: Vec<(String, String)>,
 }
@@ -142,6 +144,8 @@ impl RankProfile {
         Self {
             name: name.into(),
             first_phase: String::new(),
+            second_phase: None,
+            rerank_count: None,
             match_features: Vec::new(),
             query_inputs: Vec::new(),
         }
@@ -149,6 +153,18 @@ impl RankProfile {
 
     pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
         self.first_phase = expression.into();
+        self
+    }
+
+    /// Configure the Vespa expression evaluated for second-phase reranking.
+    pub fn second_phase(mut self, expression: impl Into<String>) -> Self {
+        self.second_phase = Some(expression.into());
+        self
+    }
+
+    /// Configure how many first-phase candidates are reranked by Vespa.
+    pub fn rerank_count(mut self, count: u32) -> Self {
+        self.rerank_count = Some(count);
         self
     }
 
@@ -714,6 +730,14 @@ fn validate_schema(schema: &Schema) -> Result<()> {
         }
         profile_names.push(&profile.name);
         validate_rank_expression(&profile.first_phase, "first-phase ranking expression")?;
+        if profile.rerank_count.is_some() && profile.second_phase.is_none() {
+            return Err(Error::message(
+                "second-phase rerank count requires a second-phase ranking expression",
+            ));
+        }
+        if let Some(expression) = &profile.second_phase {
+            validate_rank_expression(expression, "second-phase ranking expression")?;
+        }
         let mut query_inputs: Vec<&String> = Vec::with_capacity(profile.query_inputs.len());
         for (name, type_spec) in &profile.query_inputs {
             validate_name(name, "query input")?;
@@ -822,7 +846,12 @@ fn rank_profiles(schema: &Schema) -> String {
         }
         for (index, profile) in schema.rank_profiles.iter().enumerate() {
             let index = index + 1 + usize::from(includes_generated_bm25);
-            let property_count = 2 + profile.match_features.len() + profile.query_inputs.len();
+            let phase_property_count = profile.second_phase.as_ref().map_or(0, |_| 2)
+                + usize::from(profile.rerank_count.is_some());
+            let property_count = 2
+                + phase_property_count
+                + profile.match_features.len()
+                + profile.query_inputs.len();
             output.push_str(&format!(
                 "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
                 quoted(&profile.name)
@@ -831,16 +860,30 @@ fn rank_profiles(schema: &Schema) -> String {
                 "rankprofile[{index}].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[{index}].fef.property[0].value \"rankingExpression({})\"\n",
                 profile.name
             ));
-            for (feature_index, feature) in profile.match_features.iter().enumerate() {
+            if let Some(expression) = &profile.second_phase {
                 output.push_str(&format!(
-                    "rankprofile[{index}].fef.property[{}].name \"vespa.match.feature\"\nrankprofile[{index}].fef.property[{}].value {}\n",
-                    feature_index + 1,
-                    feature_index + 1,
+                    "rankprofile[{index}].fef.property[1].name \"vespa.rank.secondphase\"\nrankprofile[{index}].fef.property[1].value \"rankingExpression(secondphase)\"\nrankprofile[{index}].fef.property[2].name \"rankingExpression(secondphase).rankingScript\"\nrankprofile[{index}].fef.property[2].value {}\n",
+                    quoted(expression)
+                ));
+            }
+            if let Some(rerank_count) = profile.rerank_count {
+                // Vespa's native second-phase selector reads this rank-profile
+                // heap-size property as the per-node rerank count.
+                let property_index = 1 + phase_property_count - 1;
+                output.push_str(&format!(
+                    "rankprofile[{index}].fef.property[{property_index}].name \"vespa.hitcollector.heapsize\"\nrankprofile[{index}].fef.property[{property_index}].value \"{rerank_count}\"\n"
+                ));
+            }
+            let feature_start = 1 + phase_property_count;
+            for (feature_index, feature) in profile.match_features.iter().enumerate() {
+                let property_index = feature_start + feature_index;
+                output.push_str(&format!(
+                    "rankprofile[{index}].fef.property[{property_index}].name \"vespa.match.feature\"\nrankprofile[{index}].fef.property[{property_index}].value {}\n",
                     quoted(feature)
                 ));
             }
             for (query_index, (name, type_spec)) in profile.query_inputs.iter().enumerate() {
-                let property_index = profile.match_features.len() + 1 + query_index;
+                let property_index = feature_start + profile.match_features.len() + query_index;
                 output.push_str(&format!(
                     "rankprofile[{index}].fef.property[{property_index}].name \"vespa.type.query.{}\"\nrankprofile[{index}].fef.property[{property_index}].value {}\n",
                     name,

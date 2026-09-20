@@ -4120,6 +4120,85 @@ fn supported_rank_profile_definitions_lower_to_native_config() {
 }
 
 #[test]
+fn second_phase_and_rerank_count_lower_to_native_config_independently() {
+    let mut definition = IndexDefinitionIr::new(
+        None,
+        vec![
+            FieldIr::new(
+                field("title"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
+                None,
+                FieldCapabilities::new(true, true, false, false, false),
+            ),
+            FieldIr::new(
+                field("rating"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(true, false, true, true, false),
+            ),
+            FieldIr::new(
+                field("inventory"),
+                DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
+                None,
+                FieldCapabilities::new(true, false, true, true, false),
+            ),
+        ],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    definition.set_rank_profiles(vec![RankProfileDefinitionIr {
+        name: "two_phase".to_owned(),
+        inherits: Vec::new(),
+        inputs: Vec::new(),
+        functions: Vec::new(),
+        first_phase: Some(RankPhaseDefinitionIr {
+            expression: Some("attribute(rating)".to_owned()),
+            rerank_count: None,
+            rank_score_drop_limit: None,
+            properties: std::collections::BTreeMap::new(),
+            total_rerank_count: None,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }),
+        second_phase: Some(RankPhaseDefinitionIr {
+            expression: Some("attribute(inventory)".to_owned()),
+            rerank_count: Some(3),
+            rank_score_drop_limit: None,
+            properties: std::collections::BTreeMap::new(),
+            total_rerank_count: None,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }),
+        global_phase: None,
+        rank_features: Vec::new(),
+        match_features: Vec::new(),
+        summary_features: Vec::new(),
+        sort_features: Vec::new(),
+        constants: Vec::new(),
+        onnx_models: Vec::new(),
+        rank_properties: std::collections::BTreeMap::new(),
+        strict: None,
+        properties: std::collections::BTreeMap::new(),
+    }]);
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-two-phase-rank-profile-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    compile_index_definition(&definition, &root).expect("two-phase profile compiles");
+    let config = std::fs::read_to_string(root.join("rank-profiles.cfg")).unwrap();
+    assert!(config.contains("vespa.rank.secondphase"));
+    assert!(config.contains("rankingExpression(secondphase).rankingScript"));
+    assert!(config.contains("attribute(inventory)"));
+    assert!(config.contains("vespa.hitcollector.heapsize"));
+    assert!(config.contains("value \"3\""));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn explicit_empty_projection_returns_no_document_fields() {
     let document = Document::new("doc-1")
         .field(

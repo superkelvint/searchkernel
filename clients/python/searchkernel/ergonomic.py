@@ -216,11 +216,23 @@ class RankProfile:
             raise ValueError("rank profile name must not be empty")
         self.name = name
         self._first_phase = None
+        self._second_phase = None
+        self._rerank_count = None
         self._match_features = []
         self._query_inputs = {}
 
     def first_phase(self, expression: str) -> "RankProfile":
         self._first_phase = expression
+        return self
+
+    def second_phase(self, expression: str) -> "RankProfile":
+        self._second_phase = expression
+        return self
+
+    def rerank_count(self, count: int) -> "RankProfile":
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 0xFFFF_FFFF:
+            raise ValueError("rerank count must be a uint32")
+        self._rerank_count = count
         return self
 
     def match_feature(self, expression: str) -> "RankProfile":
@@ -248,10 +260,23 @@ class RankProfile:
             if self._first_phase is not None
             else None
         )
+        second_phase = (
+            RankPhaseDefinitionT(
+                expression=self._second_phase,
+                rerankCount=(
+                    OptionalUInt32T(value=self._rerank_count)
+                    if self._rerank_count is not None
+                    else None
+                ),
+            )
+            if self._second_phase is not None or self._rerank_count is not None
+            else None
+        )
         return RankProfileDefinitionT(
             name=self.name,
             inputs=inputs or None,
             firstPhase=first_phase,
+            secondPhase=second_phase,
             matchFeatures=list(self._match_features) or None,
         )
 

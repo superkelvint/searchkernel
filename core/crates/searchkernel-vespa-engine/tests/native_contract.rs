@@ -123,6 +123,93 @@ fn native_accepts_custom_profiles_that_resemble_legacy_profiles() {
 }
 
 #[test]
+fn native_executes_second_phase_only_within_the_rerank_window() {
+    let (config, data) = compile_config(
+        "two-phase",
+        &Schema::new("typea")
+            .field(Field::new("title", FieldType::Text).indexed())
+            .field(Field::new("rating", FieldType::Integer).attribute())
+            .field(Field::new("inventory", FieldType::Integer).attribute())
+            .rank_profile(
+                RankProfile::new("two_phase")
+                    .first_phase("attribute(rating)")
+                    .second_phase("attribute(inventory)")
+                    .rerank_count(3),
+            )
+            .rank_profile(RankProfile::new("first_phase_only").first_phase("attribute(rating)")),
+    );
+    let engine = Engine::open(&data, &config).expect("open two-phase profile");
+    for (id, rating, inventory) in [
+        ("rerank-a", 100_i64, 1_i64),
+        ("rerank-b", 90_i64, 100_i64),
+        ("rerank-c", 80_i64, 90_i64),
+        ("rerank-d", 70_i64, 1000_i64),
+    ] {
+        engine
+            .put(
+                Document::new(id)
+                    .field("title", "rerank candidate")
+                    .field("rating", rating)
+                    .field("inventory", inventory),
+            )
+            .expect("put two-phase document");
+    }
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::Term {
+                field: "title".into(),
+                text: "candidate".into(),
+            })
+            .rank_profile("two_phase")
+            .limit(4),
+        )
+        .expect("execute two-phase search");
+    let first_phase = engine
+        .search(
+            SearchRequest::new(Query::Term {
+                field: "title".into(),
+                text: "candidate".into(),
+            })
+            .rank_profile("first_phase_only")
+            .limit(4),
+        )
+        .expect("execute first-phase search");
+    assert_eq!(
+        first_phase
+            .hits
+            .iter()
+            .map(|hit| hit.document_id.as_str())
+            .collect::<Vec<_>>(),
+        ["rerank-a", "rerank-b", "rerank-c", "rerank-d"]
+    );
+    assert_eq!(
+        first_phase
+            .hits
+            .iter()
+            .map(|hit| hit.score)
+            .collect::<Vec<_>>(),
+        [100.0, 90.0, 80.0, 70.0]
+    );
+    assert_eq!(
+        result
+            .hits
+            .iter()
+            .map(|hit| hit.document_id.as_str())
+            .collect::<Vec<_>>(),
+        ["rerank-b", "rerank-c", "rerank-a", "rerank-d"]
+    );
+    let two_phase_scores: Vec<_> = result.hits.iter().map(|hit| hit.score).collect();
+    assert_eq!(&two_phase_scores[..3], &[100.0, 90.0, 1.0]);
+    assert!(two_phase_scores[3].is_finite());
+    assert_ne!(two_phase_scores[3], 1000.0);
+
+    engine.close().expect("close two-phase engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
     let mutations = [
         (

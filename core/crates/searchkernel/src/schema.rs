@@ -44,10 +44,12 @@ pub struct Field {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// A first-phase Vespa rank profile exposed by the native schema compiler.
+/// A Vespa rank profile exposed by the native schema compiler.
 pub struct RankProfile {
     pub(crate) name: String,
     pub(crate) first_phase: String,
+    pub(crate) second_phase: Option<String>,
+    pub(crate) rerank_count: Option<u32>,
     pub(crate) match_features: Vec<String>,
     pub(crate) query_inputs: Vec<(String, String)>,
 }
@@ -57,6 +59,8 @@ impl RankProfile {
         Self {
             name: name.into(),
             first_phase: String::new(),
+            second_phase: None,
+            rerank_count: None,
             match_features: Vec::new(),
             query_inputs: Vec::new(),
         }
@@ -64,6 +68,18 @@ impl RankProfile {
 
     pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
         self.first_phase = expression.into();
+        self
+    }
+
+    /// Set the Vespa second-phase ranking expression.
+    pub fn second_phase(mut self, expression: impl Into<String>) -> Self {
+        self.second_phase = Some(expression.into());
+        self
+    }
+
+    /// Set the number of first-phase candidates Vespa reranks in second phase.
+    pub fn rerank_count(mut self, count: u32) -> Self {
+        self.rerank_count = Some(count);
         self
     }
 

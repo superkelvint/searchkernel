@@ -99,6 +99,14 @@ mod showcase {
                     .query_input("query_embedding", "tensor<float>(x[2])"),
             );
         let definition = definition.rank_profile(
+            RankProfile::new("two_phase")
+                .first_phase("attribute(rating)")
+                .second_phase("attribute(inventory)")
+                .rerank_count(3),
+        );
+        let definition = definition
+            .rank_profile(RankProfile::new("first_phase_only").first_phase("attribute(rating)"));
+        let definition = definition.rank_profile(
             RankProfile::new("operator")
                 .first_phase("nativeRank")
                 .match_feature("nativeRank"),
@@ -187,6 +195,42 @@ mod showcase {
                     "inventory": 12,
                     "in_stock": true,
                     "embedding": Tensor::dense("tensor<float>(x[2])", vec![0.6, 0.4]),
+                }),
+            ),
+            (
+                "rerank-a",
+                json!({
+                    "title": "Rerank Candidate A",
+                    "category": "two-phase",
+                    "rating": 100,
+                    "inventory": 1,
+                }),
+            ),
+            (
+                "rerank-b",
+                json!({
+                    "title": "Rerank Candidate B",
+                    "category": "two-phase",
+                    "rating": 90,
+                    "inventory": 100,
+                }),
+            ),
+            (
+                "rerank-c",
+                json!({
+                    "title": "Rerank Candidate C",
+                    "category": "two-phase",
+                    "rating": 80,
+                    "inventory": 90,
+                }),
+            ),
+            (
+                "rerank-d",
+                json!({
+                    "title": "Rerank Candidate D",
+                    "category": "two-phase",
+                    "rating": 70,
+                    "inventory": 1000,
                 }),
             ),
         ];
@@ -696,6 +740,43 @@ mod showcase {
         }));
         println!("named/profile ranking, scalar query input, rank property, score, and scalar feature PASS");
 
+        heading("TWO-PHASE RANKING / SECOND-PHASE RERANK");
+
+        let first_phase = index
+            .search("candidate")
+            .ranking(Ranking::named("first_phase_only"))
+            .limit(4)
+            .execute::<Value>()?;
+        assert_ids(
+            &first_phase,
+            ["rerank-a", "rerank-b", "rerank-c", "rerank-d"],
+        );
+        let first_phase_scores: Vec<f64> = first_phase
+            .hits
+            .iter()
+            .map(|hit| hit.score.expect("first-phase results expose Vespa scores"))
+            .collect();
+        assert_eq!(first_phase_scores, [100.0, 90.0, 80.0, 70.0]);
+
+        let two_phase = index
+            .search("candidate")
+            .ranking(Ranking::named("two_phase"))
+            .limit(4)
+            .execute::<Value>()?;
+        assert_ids(&two_phase, ["rerank-b", "rerank-c", "rerank-a", "rerank-d"]);
+        assert_eq!(two_phase.total_hits.value, 4);
+        let two_phase_scores: Vec<f64> = two_phase
+            .hits
+            .iter()
+            .map(|hit| hit.score.expect("two-phase results expose Vespa scores"))
+            .collect();
+        assert_eq!(&two_phase_scores[..3], &[100.0, 90.0, 1.0]);
+        assert!(two_phase_scores[3].is_finite());
+        assert_ne!(two_phase_scores[3], 1000.0);
+        println!(
+            "first phase A>B>C>D; rerank window A,B,C; second phase B>C>A; final B,C,A,D PASS"
+        );
+
         heading("16. GENERAL NESTED GROUPING");
 
         let grouping = GroupingPlan::new().level(
@@ -1157,6 +1238,7 @@ Successfully demonstrated through the public Rust facade:
 
   RANKING / TENSORS
   ✓ named rank profile and profile selection
+  ✓ real two-phase reranking with a finite candidate window and propagated scores
   ✓ scalar query input and rank property
   ✓ tensor put/upsert/get/persistence
   ✓ tensor query input and nearest-neighbor search before and after reopen

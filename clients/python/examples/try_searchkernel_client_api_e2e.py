@@ -224,6 +224,11 @@ with Index.create(
         .match_feature("bm25(title)")
         .match_feature("closeness(embedding)")
         .match_feature("query(query_embedding)"),
+        RankProfile("two_phase")
+        .first_phase("attribute(rating)")
+        .second_phase("attribute(inventory)")
+        .rerank_count(3),
+        RankProfile("first_phase_only").first_phase("attribute(rating)"),
     ],
 ) as index:
     print("created:", INDEX_PATH)
@@ -301,6 +306,34 @@ with Index.create(
             "inventory": 12,
             "in_stock": True,
             "embedding": embedding(*BAG_1_VECTOR),
+        },
+        {
+            "_id": "rerank-a",
+            "title": "Rerank Candidate A",
+            "category": "two-phase",
+            "rating": 100,
+            "inventory": 1,
+        },
+        {
+            "_id": "rerank-b",
+            "title": "Rerank Candidate B",
+            "category": "two-phase",
+            "rating": 90,
+            "inventory": 100,
+        },
+        {
+            "_id": "rerank-c",
+            "title": "Rerank Candidate C",
+            "category": "two-phase",
+            "rating": 80,
+            "inventory": 90,
+        },
+        {
+            "_id": "rerank-d",
+            "title": "Rerank Candidate D",
+            "category": "two-phase",
+            "rating": 70,
+            "inventory": 1000,
         },
     ]
 
@@ -870,6 +903,33 @@ with Index.create(
     )
     print("scalar ranking feature PASS")
 
+    heading("TWO-PHASE RANKING / SECOND-PHASE RERANK")
+
+    first_phase = (
+        index.search("candidate")
+        .ranking("first_phase_only")
+        .limit(4)
+        .execute()
+    )
+    assert_ids(first_phase, ["rerank-a", "rerank-b", "rerank-c", "rerank-d"])
+    assert [hit.score for hit in first_phase.hits] == [100.0, 90.0, 80.0, 70.0]
+
+    two_phase = (
+        index.search("candidate")
+        .ranking("two_phase")
+        .limit(4)
+        .execute()
+    )
+    assert_ids(two_phase, ["rerank-b", "rerank-c", "rerank-a", "rerank-d"])
+    assert two_phase.total_hits == 4
+    assert [hit.score for hit in two_phase.hits[:3]] == [100.0, 90.0, 1.0]
+    assert isfinite(two_phase.hits[3].score)
+    assert two_phase.hits[3].score != 1000.0
+    print(
+        "first phase A>B>C>D; rerank window A,B,C; "
+        "second phase B>C>A; final B,C,A,D PASS"
+    )
+
     heading("TENSOR READBACK + NEAREST NEIGHBOR")
 
     nearest = (
@@ -1391,6 +1451,7 @@ Successfully demonstrated through the public Python facade:
   ✓ query input namespace
   ✓ rank property namespace
   ✓ ranking profile selection
+  ✓ real two-phase reranking with a finite candidate window and propagated scores
   ✓ raw YQL
   ✓ YQL @property substitution
   ✓ YQL pagination

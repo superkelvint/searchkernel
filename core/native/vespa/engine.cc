@@ -2107,31 +2107,55 @@ class EmbeddedEngine {
             if (config_value(values, prefix + "fef.property[0].value").empty()) {
                 throw std::invalid_argument("rank profile first-phase expression is empty");
             }
-            for (size_t property = 1; property + 1 < property_count; ++property) {
+            bool has_first_phase_script = false;
+            bool has_second_phase = false;
+            bool has_second_phase_script = false;
+            bool has_rerank_count = false;
+            for (size_t property = 1; property < property_count; ++property) {
                 const auto property_prefix =
                     prefix + "fef.property[" + std::to_string(property) + "].";
                 const auto property_name = config_value(values, property_prefix + "name");
-                if (property_name.rfind("vespa.type.query.", 0) == 0) {
-                    if (config_value(values, property_prefix + "value").empty()) {
+                const auto property_value = config_value(values, property_prefix + "value");
+                if (property_name == "rankingExpression(" + name + ").rankingScript") {
+                    if (property_value.empty()) {
+                        throw std::invalid_argument("rank profile ranking script is empty");
+                    }
+                    has_first_phase_script = true;
+                } else if (property_name == "vespa.rank.secondphase") {
+                    if (property_value != "rankingExpression(secondphase)") {
+                        throw std::invalid_argument("rank profile second-phase expression reference is invalid");
+                    }
+                    has_second_phase = true;
+                } else if (property_name == "rankingExpression(secondphase).rankingScript") {
+                    if (property_value.empty()) {
+                        throw std::invalid_argument("rank profile second-phase ranking script is empty");
+                    }
+                    has_second_phase_script = true;
+                } else if (property_name == "vespa.hitcollector.heapsize") {
+                    if (property_value.empty() ||
+                        !std::all_of(property_value.begin(), property_value.end(), [](char value) {
+                            return value >= '0' && value <= '9';
+                        })) {
+                        throw std::invalid_argument("rank profile rerank count is invalid");
+                    }
+                    has_rerank_count = true;
+                } else if (property_name.rfind("vespa.type.query.", 0) == 0) {
+                    if (property_value.empty()) {
                         throw std::invalid_argument("rank profile query input type is empty");
                     }
                 } else if (property_name == "vespa.match.feature") {
-                    if (config_value(values, property_prefix + "value").empty()) {
+                    if (property_value.empty()) {
                         throw std::invalid_argument("rank profile match feature expression is empty");
                     }
                 } else {
                     throw std::invalid_argument("unsupported rank profile property: " + property_name);
                 }
             }
-            const auto script_index = property_count - 1;
-            require_config_value(
-                values,
-                prefix + "fef.property[" + std::to_string(script_index) + "].name",
-                "rankingExpression(" + name + ").rankingScript");
-            if (config_value(values,
-                             prefix + "fef.property[" + std::to_string(script_index) + "].value")
-                    .empty()) {
-                throw std::invalid_argument("rank profile ranking script is empty");
+            if (!has_first_phase_script || has_second_phase != has_second_phase_script) {
+                throw std::invalid_argument("rank profile phase configuration is incomplete");
+            }
+            if (has_rerank_count && !has_second_phase) {
+                throw std::invalid_argument("rank profile rerank count requires second-phase ranking");
             }
         }
     }

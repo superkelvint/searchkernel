@@ -423,11 +423,24 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
             "rank-profile functions are not representable by the native schema model",
         );
     }
-    if profile.second_phase.is_some() {
-        return unsupported(
-            "second_phase",
-            "second-phase ranking is outside the supported native schema subset",
-        );
+    if let Some(second_phase) = &profile.second_phase {
+        if second_phase.expression.is_none() {
+            return unsupported(
+                "second_phase.expression",
+                "a second-phase ranking expression is required when second-phase controls are set",
+            );
+        }
+        if second_phase.rank_score_drop_limit.is_some()
+            || second_phase.total_rerank_count.is_some()
+            || second_phase.keep_rank_count.is_some()
+            || second_phase.total_keep_rank_count.is_some()
+            || !second_phase.properties.is_empty()
+        {
+            return unsupported(
+                "second_phase",
+                "only a second-phase expression and per-node rerank count are supported",
+            );
+        }
     }
     if profile.global_phase.is_some() {
         return unsupported(
@@ -501,6 +514,12 @@ fn lower_rank_profile(profile: &searchkernel_ir::RankProfileDefinitionIr) -> Res
 
     let mut native = RankProfile::new(profile.name.clone())
         .first_phase(first_phase.expression.as_deref().unwrap_or_default());
+    if let Some(second_phase) = &profile.second_phase {
+        native = native.second_phase(second_phase.expression.as_deref().unwrap_or_default());
+        if let Some(rerank_count) = second_phase.rerank_count {
+            native = native.rerank_count(rerank_count);
+        }
+    }
     for input in &profile.inputs {
         let searchkernel_ir::DataTypeIr::Tensor { type_spec } = &input.data_type else {
             return unsupported(
