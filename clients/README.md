@@ -83,10 +83,38 @@ parallel full-schema DTO layer or handwritten field-by-field FlatBuffer codec.
 
 ## Adding another language SDK
 
+Before implementing a new language client, read
+[`IMPLEMENTING_NEW_CLIENTS.md`](IMPLEMENTING_NEW_CLIENTS.md).
+
+That document is the normative implementation SOP for new SDKs. It covers:
+
+- generated FlatBuffers and gRPC layers;
+- handwritten ergonomic facade boundaries;
+- request/response framing and error handling;
+- portable value encoding and decoding;
+- managed local `searchkerneld` lifecycle where the host runtime supports it;
+- browser vs native-runtime transport separation;
+- packaging, generated-code reproducibility, and publish checks;
+- cross-language conformance and end-to-end acceptance.
+
+At a high level, every new first-class SDK should:
+
 1. Generate the FlatBuffers models with `flatc`.
-2. Generate the standard gRPC client from `api/rpc/searchkernel.proto`.
-3. Add a thin idiomatic facade where useful.
-4. Run the shared protocol and semantic conformance tests.
+2. Generate or implement the standard gRPC transport from `api/rpc/searchkernel.proto`.
+3. Implement the managed local `searchkerneld` lifecycle used by `Index.create(...)`
+   and `Index.open(...)`: resolve the daemon binary, start it against the requested
+   index, use a private local endpoint, wait for readiness, and own graceful shutdown
+   and cleanup.
+4. Reuse that same transport/client stack for `Index.connect(...)` when attaching to
+   an already-running daemon.
+5. Add the thin idiomatic facade for the language.
+6. Run the shared protocol, semantic, packaging, managed-lifecycle, persistence/reopen,
+   and end-to-end conformance tests.
+
+Browser-only clients cannot spawn local processes, so they expose the connection path
+only and talk to an already-running `searchkerneld` through the browser-compatible
+transport. Native runtimes should provide the managed local-host behavior rather than
+requiring users to launch the daemon manually.
 
 Adding a language should not require changes to `searchkernel-ir`,
 `searchkernel-dispatch`, `searchkerneld` protocol semantics, or Vespa lowering
