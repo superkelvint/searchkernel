@@ -11,7 +11,8 @@ union RequestPayload {
   SearchKernel.V2.SearchRequest,
   SearchKernel.V2.AnalyzeRequest,
   SearchKernel.V2.DescribeRequest,
-  SearchKernel.V2.InspectQueryRequest
+  SearchKernel.V2.InspectQueryRequest,
+  SearchKernel.V2.UpdateRequest
 }
 
 table RequestEnvelope {

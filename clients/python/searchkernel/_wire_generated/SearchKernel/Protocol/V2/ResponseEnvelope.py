@@ -107,6 +107,8 @@ _lazy_PatchResult = _lazy_module("SearchKernel.V2.PatchResult")
 
 _lazy_SearchResult = _lazy_module("SearchKernel.V2.SearchResult")
 
+_lazy_UpdateResult = _lazy_module("SearchKernel.V2.UpdateResult")
+
 _lazy_UpsertResult = _lazy_module("SearchKernel.V2.UpsertResult")
 try:
     from typing import Union
@@ -124,7 +126,7 @@ class ResponseEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertResult.InsertResultT', 'SearchKernel.V2.UpsertResult.UpsertResultT', 'SearchKernel.V2.PatchResult.PatchResultT', 'SearchKernel.V2.DeleteResult.DeleteResultT', 'SearchKernel.V2.GetResult.GetResultT', 'SearchKernel.V2.SearchResult.SearchResultT', 'SearchKernel.V2.AnalyzeResult.AnalyzeResultT', 'SearchKernel.V2.Error.ErrorT', 'SearchKernel.V2.DescribeResult.DescribeResultT', 'SearchKernel.V2.InspectQueryResult.InspectQueryResultT', 'SearchKernel.V2.UpdateResult.UpdateResultT']
 
     @classmethod
     def InitFromBuf(cls, buf, pos):

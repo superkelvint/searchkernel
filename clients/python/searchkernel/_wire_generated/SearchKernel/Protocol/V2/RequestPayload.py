@@ -15,6 +15,7 @@ class RequestPayload(object):
     SearchKernel_V2_AnalyzeRequest = 7
     SearchKernel_V2_DescribeRequest = 8
     SearchKernel_V2_InspectQueryRequest = 9
+    SearchKernel_V2_UpdateRequest = 10
 
 def RequestPayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -47,4 +48,7 @@ def RequestPayloadCreator(unionType, table):
     if unionType == RequestPayload.SearchKernel_V2_InspectQueryRequest:
         import SearchKernel.V2.InspectQueryRequest
         return SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == RequestPayload.SearchKernel_V2_UpdateRequest:
+        import SearchKernel.V2.UpdateRequest
+        return SearchKernel.V2.UpdateRequest.UpdateRequestT.InitFromBuf(table.Bytes, table.Pos)
     return None

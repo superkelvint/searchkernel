@@ -16,6 +16,7 @@ class ResponsePayload(object):
     SearchKernel_V2_Error = 8
     SearchKernel_V2_DescribeResult = 9
     SearchKernel_V2_InspectQueryResult = 10
+    SearchKernel_V2_UpdateResult = 11
 
 def ResponsePayloadCreator(unionType, table):
     from flatbuffers.table import Table
@@ -51,4 +52,7 @@ def ResponsePayloadCreator(unionType, table):
     if unionType == ResponsePayload.SearchKernel_V2_InspectQueryResult:
         import SearchKernel.V2.InspectQueryResult
         return SearchKernel.V2.InspectQueryResult.InspectQueryResultT.InitFromBuf(table.Bytes, table.Pos)
+    if unionType == ResponsePayload.SearchKernel_V2_UpdateResult:
+        import SearchKernel.V2.UpdateResult
+        return SearchKernel.V2.UpdateResult.UpdateResultT.InitFromBuf(table.Bytes, table.Pos)
     return None

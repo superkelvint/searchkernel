@@ -13,6 +13,7 @@ from SearchKernel.V2.InsertResult import InsertResult
 from SearchKernel.V2.InspectQueryResult import InspectQueryResult
 from SearchKernel.V2.PatchResult import PatchResult
 from SearchKernel.V2.SearchResult import SearchResult
+from SearchKernel.V2.UpdateResult import UpdateResult
 from SearchKernel.V2.UpsertResult import UpsertResult
 from flatbuffers import table
 from typing import cast
@@ -31,5 +32,6 @@ class ResponsePayload(object):
   SearchKernel_V2_Error = cast(int, ...)
   SearchKernel_V2_DescribeResult = cast(int, ...)
   SearchKernel_V2_InspectQueryResult = cast(int, ...)
-def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_V2_InsertResult, ResponsePayload.SearchKernel_V2_UpsertResult, ResponsePayload.SearchKernel_V2_PatchResult, ResponsePayload.SearchKernel_V2_DeleteResult, ResponsePayload.SearchKernel_V2_GetResult, ResponsePayload.SearchKernel_V2_SearchResult, ResponsePayload.SearchKernel_V2_AnalyzeResult, ResponsePayload.SearchKernel_V2_Error, ResponsePayload.SearchKernel_V2_DescribeResult, ResponsePayload.SearchKernel_V2_InspectQueryResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult]: ...
+  SearchKernel_V2_UpdateResult = cast(int, ...)
+def ResponsePayloadCreator(union_type: typing.Literal[ResponsePayload.NONE, ResponsePayload.SearchKernel_V2_InsertResult, ResponsePayload.SearchKernel_V2_UpsertResult, ResponsePayload.SearchKernel_V2_PatchResult, ResponsePayload.SearchKernel_V2_DeleteResult, ResponsePayload.SearchKernel_V2_GetResult, ResponsePayload.SearchKernel_V2_SearchResult, ResponsePayload.SearchKernel_V2_AnalyzeResult, ResponsePayload.SearchKernel_V2_Error, ResponsePayload.SearchKernel_V2_DescribeResult, ResponsePayload.SearchKernel_V2_InspectQueryResult, ResponsePayload.SearchKernel_V2_UpdateResult], table: table.Table) -> typing.Union[None, InsertResult, UpsertResult, PatchResult, DeleteResult, GetResult, SearchResult, AnalyzeResult, Error, DescribeResult, InspectQueryResult, UpdateResult]: ...
 

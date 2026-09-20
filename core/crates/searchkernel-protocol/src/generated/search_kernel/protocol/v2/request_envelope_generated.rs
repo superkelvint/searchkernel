@@ -234,6 +234,23 @@ impl<'a> RequestEnvelope<'a> {
             None
         }
     }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    pub fn payload_as_search_kernel_v2_update_request(
+        &self,
+    ) -> Option<super::super::v2::UpdateRequest<'a>> {
+        if self.payload_type() == RequestPayload::SearchKernel_V2_UpdateRequest {
+            self.payload().map(|t| {
+                // Safety:
+                // Created from a valid Table for this object
+                // Which contains a valid union in this slot
+                unsafe { super::super::v2::UpdateRequest::init_from_table(t) }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -255,6 +272,7 @@ impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
           RequestPayload::SearchKernel_V2_AnalyzeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::AnalyzeRequest>>("RequestPayload::SearchKernel_V2_AnalyzeRequest", pos),
           RequestPayload::SearchKernel_V2_DescribeRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::DescribeRequest>>("RequestPayload::SearchKernel_V2_DescribeRequest", pos),
           RequestPayload::SearchKernel_V2_InspectQueryRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::InspectQueryRequest>>("RequestPayload::SearchKernel_V2_InspectQueryRequest", pos),
+          RequestPayload::SearchKernel_V2_UpdateRequest => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<super::super::v2::UpdateRequest>>("RequestPayload::SearchKernel_V2_UpdateRequest", pos),
           _ => Ok(()),
         }
      })?
@@ -409,6 +427,16 @@ impl ::core::fmt::Debug for RequestEnvelope<'_> {
             }
             RequestPayload::SearchKernel_V2_InspectQueryRequest => {
                 if let Some(x) = self.payload_as_search_kernel_v2_inspect_query_request() {
+                    ds.field("payload", &x)
+                } else {
+                    ds.field(
+                        "payload",
+                        &"InvalidFlatbuffer: Union discriminant does not match value.",
+                    )
+                }
+            }
+            RequestPayload::SearchKernel_V2_UpdateRequest => {
+                if let Some(x) = self.payload_as_search_kernel_v2_update_request() {
                     ds.field("payload", &x)
                 } else {
                     ds.field(

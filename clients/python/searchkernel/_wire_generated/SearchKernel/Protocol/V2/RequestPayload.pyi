@@ -12,6 +12,7 @@ from SearchKernel.V2.InsertRequest import InsertRequest
 from SearchKernel.V2.InspectQueryRequest import InspectQueryRequest
 from SearchKernel.V2.PatchRequest import PatchRequest
 from SearchKernel.V2.SearchRequest import SearchRequest
+from SearchKernel.V2.UpdateRequest import UpdateRequest
 from SearchKernel.V2.UpsertRequest import UpsertRequest
 from flatbuffers import table
 from typing import cast
@@ -29,5 +30,6 @@ class RequestPayload(object):
   SearchKernel_V2_AnalyzeRequest = cast(int, ...)
   SearchKernel_V2_DescribeRequest = cast(int, ...)
   SearchKernel_V2_InspectQueryRequest = cast(int, ...)
-def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest]: ...
+  SearchKernel_V2_UpdateRequest = cast(int, ...)
+def RequestPayloadCreator(union_type: typing.Literal[RequestPayload.NONE, RequestPayload.SearchKernel_V2_InsertRequest, RequestPayload.SearchKernel_V2_UpsertRequest, RequestPayload.SearchKernel_V2_PatchRequest, RequestPayload.SearchKernel_V2_DeleteRequest, RequestPayload.SearchKernel_V2_GetRequest, RequestPayload.SearchKernel_V2_SearchRequest, RequestPayload.SearchKernel_V2_AnalyzeRequest, RequestPayload.SearchKernel_V2_DescribeRequest, RequestPayload.SearchKernel_V2_InspectQueryRequest, RequestPayload.SearchKernel_V2_UpdateRequest], table: table.Table) -> typing.Union[None, InsertRequest, UpsertRequest, PatchRequest, DeleteRequest, GetRequest, SearchRequest, AnalyzeRequest, DescribeRequest, InspectQueryRequest, UpdateRequest]: ...
 

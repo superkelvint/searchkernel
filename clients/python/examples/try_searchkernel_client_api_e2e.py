@@ -836,11 +836,11 @@ with Index.create(
 
         assert error.details
         assert error.details[0].code == "unknown_field"
-        assert error.details[0].path == "filters[0]"
+        assert error.details[0].path == "filters.textual[0].source"
     else:
         raise AssertionError("unknown field filter should fail")
 
-    # Clause-local binding failures should also remain structured.
+    # Clause-local missing and unused binding failures should remain structured.
     try:
         (
             index.search("shoes")
@@ -850,9 +850,20 @@ with Index.create(
     except SearchKernelError as error:
         detail_codes = {detail.code for detail in error.details}
         assert "unknown_parameter" in detail_codes
+    else:
+        raise AssertionError("missing filter binding should fail")
+
+    try:
+        (
+            index.search("shoes")
+            .filter("price <= :max", {"max": 100, "unused": 200})
+            .execute()
+        )
+    except SearchKernelError as error:
+        detail_codes = {detail.code for detail in error.details}
         assert "unused_parameter" in detail_codes
     else:
-        raise AssertionError("missing/unused filter bindings should fail")
+        raise AssertionError("unused filter binding should fail")
 
     # -----------------------------------------------------------------------
     # PATCH builder: simple partial update + explicit unset.

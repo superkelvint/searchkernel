@@ -105,6 +105,8 @@ _lazy_PatchRequest = _lazy_module("SearchKernel.V2.PatchRequest")
 
 _lazy_SearchRequest = _lazy_module("SearchKernel.V2.SearchRequest")
 
+_lazy_UpdateRequest = _lazy_module("SearchKernel.V2.UpdateRequest")
+
 _lazy_UpsertRequest = _lazy_module("SearchKernel.V2.UpsertRequest")
 try:
     from typing import Union
@@ -122,7 +124,7 @@ class RequestEnvelopeT(object):
     ):
         self.protocolVersion = protocolVersion  # type: int
         self.payloadType = payloadType  # type: int
-        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT']
+        self.payload = payload  # type: Union[None, 'SearchKernel.V2.InsertRequest.InsertRequestT', 'SearchKernel.V2.UpsertRequest.UpsertRequestT', 'SearchKernel.V2.PatchRequest.PatchRequestT', 'SearchKernel.V2.DeleteRequest.DeleteRequestT', 'SearchKernel.V2.GetRequest.GetRequestT', 'SearchKernel.V2.SearchRequest.SearchRequestT', 'SearchKernel.V2.AnalyzeRequest.AnalyzeRequestT', 'SearchKernel.V2.DescribeRequest.DescribeRequestT', 'SearchKernel.V2.InspectQueryRequest.InspectQueryRequestT', 'SearchKernel.V2.UpdateRequest.UpdateRequestT']
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
