@@ -146,6 +146,10 @@ def _require_value_payload(item: ValueT, expected_type: type, label: str) -> Any
     return item.kind
 
 
+def _sequence_values(items: Sequence[Any] | None) -> list[Any]:
+    return [] if items is None else list(items)
+
+
 def _tensor_address(entries: Sequence[Any] | None) -> list[dict[str, Any]]:
     decoded = []
     for entry in entries or []:
@@ -206,7 +210,7 @@ def _python_value(item: ValueT | None) -> Any:
             return {
                 "$searchkernel_tensor": {
                     "type_spec": payload.typeSpec,
-                    "dense": list(dense.values or []),
+                    "dense": _sequence_values(dense.values),
                 }
             }
         if payload.payloadType == TensorPayloadKind.SparseTensorCells:
@@ -236,7 +240,7 @@ def _python_value(item: ValueT | None) -> Any:
                     "mixed": [
                         {
                             "address": _tensor_address(block.address),
-                            "values": list(block.values or []),
+                            "values": _sequence_values(block.values),
                         }
                         for block in (mixed.blocks or [])
                         if block is not None
