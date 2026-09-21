@@ -96,8 +96,12 @@ pub struct Field {
 /// A Vespa rank profile exposed by the native schema compiler.
 pub struct RankProfile {
     pub(crate) name: String,
-    pub(crate) first_phase: Option<String>,
-    pub(crate) second_phase: Option<String>,
+    /// The complete first-phase configuration, when one is declared.
+    pub first_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    /// The complete second-phase configuration, when one is declared.
+    pub second_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    /// The complete global-phase configuration, when one is declared.
+    pub global_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
     pub(crate) rerank_count: Option<u32>,
     pub(crate) match_features: Vec<String>,
     pub(crate) query_inputs: Vec<(String, String)>,
@@ -110,6 +114,7 @@ impl RankProfile {
             name: name.into(),
             first_phase: None,
             second_phase: None,
+            global_phase: None,
             rerank_count: None,
             match_features: Vec::new(),
             query_inputs: Vec::new(),
@@ -119,7 +124,9 @@ impl RankProfile {
 
     pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
-        self.first_phase = Some(expression.clone());
+        self.first_phase
+            .get_or_insert_with(empty_rank_phase)
+            .expression = Some(expression.clone());
         if let Some(profile) = self.canonical.as_mut() {
             profile
                 .first_phase
@@ -132,7 +139,9 @@ impl RankProfile {
     /// Set the Vespa second-phase ranking expression.
     pub fn second_phase(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
-        self.second_phase = Some(expression.clone());
+        self.second_phase
+            .get_or_insert_with(empty_rank_phase)
+            .expression = Some(expression.clone());
         if let Some(profile) = self.canonical.as_mut() {
             profile
                 .second_phase
@@ -145,6 +154,9 @@ impl RankProfile {
     /// Set the number of first-phase candidates Vespa reranks in second phase.
     pub fn rerank_count(mut self, count: u32) -> Self {
         self.rerank_count = Some(count);
+        self.second_phase
+            .get_or_insert_with(empty_rank_phase)
+            .rerank_count = Some(count);
         if let Some(profile) = self.canonical.as_mut() {
             profile
                 .second_phase
@@ -887,9 +899,20 @@ pub(crate) fn rank_profile_to_rust_input(
 ) -> searchkernel_ir::RustRankProfileInput {
     searchkernel_ir::RustRankProfileInput {
         name: profile.name.clone(),
-        first_phase: profile.first_phase.clone(),
-        second_phase: profile.second_phase.clone(),
-        rerank_count: profile.rerank_count,
+        first_phase: profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.clone()),
+        second_phase: profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.clone()),
+        rerank_count: profile.rerank_count.or_else(|| {
+            profile
+                .second_phase
+                .as_ref()
+                .and_then(|phase| phase.rerank_count)
+        }),
         match_features: profile.match_features.clone(),
         query_inputs: profile.query_inputs.clone(),
     }

@@ -625,9 +625,20 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .iter()
             .map(|profile| searchkernel_ir::RustRankProfileInput {
                 name: profile.name.clone(),
-                first_phase: profile.first_phase.clone(),
-                second_phase: profile.second_phase.clone(),
-                rerank_count: profile.rerank_count,
+                first_phase: profile
+                    .first_phase
+                    .as_ref()
+                    .and_then(|phase| phase.expression.clone()),
+                second_phase: profile
+                    .second_phase
+                    .as_ref()
+                    .and_then(|phase| phase.expression.clone()),
+                rerank_count: profile.rerank_count.or_else(|| {
+                    profile
+                        .second_phase
+                        .as_ref()
+                        .and_then(|phase| phase.rerank_count)
+                }),
                 match_features: profile.match_features.clone(),
                 query_inputs: profile.query_inputs.clone(),
             })
@@ -665,13 +676,19 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, profile)| {
-            profile
+            // Public phase members are authoritative. Overlay them while
+            // retaining the resolver's richer profile state for later slices.
+            let mut canonical = profile
                 .canonical
                 .clone()
                 .or_else(|| resolved.rank_profiles().get(index).cloned())
                 .ok_or_else(|| {
                     Error::infrastructure("resolved definition lost a public rank profile")
-                })
+                })?;
+            canonical.first_phase = profile.first_phase.clone();
+            canonical.second_phase = profile.second_phase.clone();
+            canonical.global_phase = profile.global_phase.clone();
+            Ok(canonical)
         })
         .collect::<Result<Vec<_>>>()?;
     if !canonical_profiles.is_empty() {
@@ -794,6 +811,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
                 value = value.rerank_count(rerank_count);
             }
         }
+        value.first_phase = profile.first_phase.clone();
+        value.second_phase = profile.second_phase.clone();
+        value.global_phase = profile.global_phase.clone();
         for feature in &profile.match_features {
             value = value.match_feature(feature.clone());
         }
