@@ -80,6 +80,7 @@ pub(crate) enum FieldKind {
 pub struct Field {
     pub(crate) name: String,
     pub(crate) kind: FieldKind,
+    pub data_type: searchkernel_ir::DataTypeIr,
     pub(crate) multi: bool,
     pub(crate) stored: Option<bool>,
     pub(crate) searchable: Option<bool>,
@@ -235,9 +236,11 @@ impl RankProfile {
 
 impl Field {
     fn new(name: impl Into<String>, kind: FieldKind) -> Self {
+        let data_type = data_type_from_kind(&kind);
         Self {
             name: name.into(),
             kind,
+            data_type,
             multi: false,
             stored: None,
             searchable: None,
@@ -288,9 +291,11 @@ impl Field {
 
     /// Create a dense tensor field with the supplied Vespa type spec.
     pub fn tensor(name: impl Into<String>, type_spec: impl Into<String>) -> Self {
+        let type_spec = type_spec.into();
         Self {
             name: name.into(),
-            kind: FieldKind::Tensor(type_spec.into()),
+            kind: FieldKind::Tensor(type_spec.clone()),
+            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec },
             multi: false,
             stored: None,
             searchable: None,
@@ -311,6 +316,12 @@ impl Field {
     /// Make this field contain a collection of values.
     pub fn multi(mut self) -> Self {
         self.multi = true;
+        if !matches!(
+            &self.data_type,
+            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+        ) {
+            self.data_type = searchkernel_ir::DataTypeIr::Array(Box::new(self.data_type));
+        }
         if let Some(field) = self.canonical.as_mut() {
             field.set_multi(true);
         }
@@ -458,9 +469,17 @@ impl Field {
         &self.name
     }
 
+    /// Return the complete canonical data type of this field.
+    pub fn data_type(&self) -> &searchkernel_ir::DataTypeIr {
+        &self.data_type
+    }
+
     /// Return whether this field stores multiple values.
     pub fn is_multi(&self) -> bool {
-        self.multi
+        matches!(
+            &self.data_type,
+            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+        )
     }
 
     /// Return the explicitly configured storage capability, if any.
@@ -507,6 +526,27 @@ impl Field {
     /// value, when it originated from `Index::describe()`.
     pub fn canonical_definition(&self) -> Option<&searchkernel_ir::FieldIr> {
         self.canonical.as_ref()
+    }
+}
+
+fn data_type_from_kind(kind: &FieldKind) -> searchkernel_ir::DataTypeIr {
+    match kind {
+        FieldKind::Text | FieldKind::Keyword => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String)
+        }
+        FieldKind::Int64 => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int64)
+        }
+        FieldKind::Float64 => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64)
+        }
+        FieldKind::Bool => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Bool)
+        }
+        FieldKind::Position => searchkernel_ir::DataTypeIr::Position,
+        FieldKind::Tensor(type_spec) => searchkernel_ir::DataTypeIr::Tensor {
+            type_spec: type_spec.clone(),
+        },
     }
 }
 

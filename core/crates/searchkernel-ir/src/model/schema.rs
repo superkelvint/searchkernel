@@ -306,6 +306,13 @@ impl FieldIr {
         self.analyzer = analyzer;
     }
 
+    /// Replace the resolved field data type without changing other field
+    /// configuration.
+    #[doc(hidden)]
+    pub fn set_data_type(&mut self, data_type: DataTypeIr) {
+        self.data_type = data_type;
+    }
+
     /// Update the resolved tensor attribute distance metric.
     #[doc(hidden)]
     pub fn set_distance_metric(&mut self, distance_metric: DistanceMetricIr) {
