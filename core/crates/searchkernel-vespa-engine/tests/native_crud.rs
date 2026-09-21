@@ -1090,6 +1090,31 @@ fn native_same_element_query_keeps_struct_members_in_one_array_element() {
         ["same-1"]
     );
 
+    let filtered = |element_filter| {
+        engine
+            .search(SearchRequest::new(Query::SameElement {
+                field: "people".to_owned(),
+                children: vec![
+                    Query::Term {
+                        field: "people.first".to_owned(),
+                        text: "Ada".to_owned(),
+                    },
+                    Query::Term {
+                        field: "people.last".to_owned(),
+                        text: "Lovelace".to_owned(),
+                    },
+                ],
+                element_filter,
+            }))
+            .expect("execute filtered same-element query")
+            .hits
+            .into_iter()
+            .map(|hit| hit.document_id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(filtered(vec![0]), ["same-1"]);
+    assert!(filtered(vec![1]).is_empty());
+
     engine.close().expect("close same-element engine");
     let _ = fs::remove_dir_all(config);
     let _ = fs::remove_dir_all(data);

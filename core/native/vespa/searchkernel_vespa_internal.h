@@ -74,6 +74,7 @@
 #include <vespa/searchlib/engine/searchrequest.h>
 #include <vespa/searchlib/engine/docsumreply.h>
 #include <vespa/searchlib/engine/docsumrequest.h>
+#include <vespa/searchlib/query/tree/query_to_protobuf.h>
 #include <vespa/vespalib/util/featureset.h>
 #include <vespa/searchlib/aggregation/averageaggregationresult.h>
 #include <vespa/searchlib/aggregation/countaggregationresult.h>
@@ -240,6 +241,7 @@ using search::expression::XorFunctionNode;
 using search::expression::StringResultNode;
 using search::SerializedQueryTree;
 using search::query::QueryBuilder;
+using search::query::QueryToProtobuf;
 using search::query::StringRange;
 using VespaQueryBuilder = QueryBuilder<proton::matching::ProtonNodeTypes>;
 using search::query::StackDumpCreator;
@@ -631,8 +633,12 @@ struct NativeQueryState {
             if (!tree) {
                 throw std::invalid_argument("could not build query tree");
             }
-            serialized_tree = search::SerializedQueryTree::fromStackDump(
-                search::query::StackDumpCreator::create(*tree));
+            // Vespa's stack-dump format does not carry SameElement's
+            // element_filter, so the matching path silently broadens a
+            // filtered query. The protobuf form preserves that field.
+            auto proto = std::make_unique<SerializedQueryTree::ProtobufQueryTree>(
+                QueryToProtobuf().serialize(*tree));
+            serialized_tree = search::SerializedQueryTree::fromProtobuf(std::move(proto));
         }
         return serialized_tree;
     }
