@@ -65,6 +65,54 @@ The implementation agent may claim that a pull request is ready for review. It
 does not independently declare its own work VERIFIED or CLOSED. Final review
 and merge provide that disposition.
 
+### Follow-up and CTO handoff lifecycle
+
+When the CTO/reviewer requests follow-up on an existing issue/pull request,
+use GitHub labels as the durable workflow state:
+
+```text
+needs-followup
+    ↓
+followup-in-progress
+    ↓
+needs-cto-review
+```
+
+The transitions are authoritative:
+
+- When review finds a concrete repair or missing verification, keep or convert
+  the pull request to Draft when it is not ready, remove `needs-cto-review`
+  if present, add `needs-followup` to the issue, and leave actionable review
+  feedback describing the defect, expected repair, and required verification.
+- A follow-up worker must identify the one existing open pull request before
+  claiming. To claim, remove `needs-followup`, add
+  `followup-in-progress`, and comment on the issue exactly:
+  `Claimed follow-up; working on PR #X.`
+- Follow-up work normally updates the existing pull request branch. Do not
+  create a replacement pull request merely to perform review-requested work.
+  Make only the requested correction or run the missing verification.
+- A successful follow-up handoff requires a pull request comment stating what
+  changed and the exact verification commands/results, plus the tested head
+  SHA. Then mark the pull request **Ready for review**, remove
+  `followup-in-progress`, and add `needs-cto-review` to the issue.
+- `needs-cto-review` is the durable signal that a worker claims the
+  follow-up is complete and is explicitly handing the work back to the
+  CTO/reviewer. It is not verification or acceptance by itself.
+- If follow-up is blocked or required verification still fails, keep
+  `followup-in-progress`, leave the exact blocker and next step on the issue
+  or pull request, do not add `needs-cto-review`, and do not mark the pull
+  request ready. If the claim is discovered to be invalid before meaningful
+  work begins, restore `needs-followup` and remove
+  `followup-in-progress`.
+- On `needs-cto-review`, the CTO/reviewer independently verifies the current
+  pull request head. If accepted, merge normally. If more follow-up is
+  required, remove `needs-cto-review`, add `needs-followup`, and leave
+  another actionable review request.
+
+Follow-up workers do not approve, merge, close, or declare their own work
+VERIFIED/CLOSED.
+
+
 ## Issue sizing and decomposition
 
 Actionable issues must be atomic and reviewable.
