@@ -1777,6 +1777,31 @@ Do not require byte-for-byte identical FlatBuffers unless explicitly specified.
 
 ---
 
+## 65.1 Record executable capability evidence
+
+When a client test proves a canonical capability, add an `SKC:` annotation
+beside that test or E2E scenario. Positive client support in
+[`docs/CLIENT_CAPABILITIES.md`](../docs/CLIENT_CAPABILITIES.md) is generated
+from those annotations; do not maintain a separate compatibility boolean.
+
+Use independent evidence kinds:
+
+```text
+ergonomic    handwritten high-level facade exposes it
+conformance  shared semantic/contract fixture proves parity
+e2e          real product/backend path executes it
+```
+
+A test may prove more than one kind, but do not infer `ergonomic` merely
+because a low-level E2E reaches the backend. Record the runtime explicitly.
+
+Run:
+
+```bash
+python3 tools/check-client-contracts.py --write
+python3 tools/check-client-contracts.py --check
+```
+
 ## 66. Parity checklist
 
 For every first-class client, verify parity for:

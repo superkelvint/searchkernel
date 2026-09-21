@@ -1,0 +1,1341 @@
+{
+  "version": 1,
+  "surfaces": [
+    {
+      "id": "core",
+      "title": "Core / backend",
+      "runtimes": [
+        "native"
+      ]
+    },
+    {
+      "id": "rust",
+      "title": "Rust",
+      "runtimes": [
+        "native"
+      ]
+    },
+    {
+      "id": "python",
+      "title": "Python",
+      "runtimes": [
+        "grpc",
+        "managed-local",
+        "shared"
+      ]
+    },
+    {
+      "id": "typescript",
+      "title": "TypeScript",
+      "runtimes": [
+        "shared",
+        "node",
+        "browser"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "query.boolean",
+      "title": "Boolean query operators",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.phrase",
+      "title": "Phrase queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 370
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 370
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 415
+            },
+            {
+              "capability": "query.phrase",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 415
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.proximity",
+      "title": "Near and ordered-near proximity queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 371
+            },
+            {
+              "capability": "query.proximity",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 371
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.same_element",
+      "title": "sameElement query",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.same_element",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 400
+            },
+            {
+              "capability": "query.same_element",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 400
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.fuzzy",
+      "title": "Fuzzy query",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 372
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 372
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 416
+            },
+            {
+              "capability": "query.fuzzy",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 416
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.prefix_suffix_substring",
+      "title": "Prefix, suffix, and substring queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.alternatives",
+      "title": "Alternatives and equivalence queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.nearest_neighbor",
+      "title": "Nearest-neighbor vector search",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.nearest_neighbor",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 44
+            },
+            {
+              "capability": "query.nearest_neighbor",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 44
+            },
+            {
+              "capability": "query.nearest_neighbor",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 66
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.geo",
+      "title": "Geo-location and bounding-box queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.geo",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 466
+            },
+            {
+              "capability": "query.geo",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 466
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.predicate",
+      "title": "Predicate queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.weighted_and_wand",
+      "title": "WeakAnd, weighted-set, dot-product, and WAND queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 373
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 373
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 417
+            },
+            {
+              "capability": "query.weighted_and_wand",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 417
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.user_input_user_query",
+      "title": "userInput and userQuery text parsing",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "filter.structured",
+      "title": "Structured filters",
+      "area": "filter",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "filter.textual",
+      "title": "Textual filter expressions",
+      "area": "filter",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 153
+            },
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 40
+            },
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 40
+            },
+            {
+              "capability": "filter.textual",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 27
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "search.sorting",
+      "title": "Field sorting",
+      "area": "search",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 217
+            },
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 217
+            },
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 41
+            },
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 41
+            },
+            {
+              "capability": "search.sorting",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 28
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "search.sort_missing_placement",
+      "title": "First/last missing-value sort placement",
+      "area": "search",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "search.pagination",
+      "title": "Limit and offset pagination",
+      "area": "search",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 218
+            },
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 218
+            },
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 42
+            },
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 42
+            },
+            {
+              "capability": "search.pagination",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 29
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "search.search_fields",
+      "title": "Text search-field selection",
+      "area": "search",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.docsum_field_projection",
+      "title": "Document-summary field projection",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 507
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 507
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 219
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 219
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 43
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 43
+            },
+            {
+              "capability": "result.docsum_field_projection",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 30
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.named_summary_class",
+      "title": "Named summary-class selection",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.rich_docsum_values",
+      "title": "Rich document-summary values (scalar subset)",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.summary_features",
+      "title": "Summary-feature readback",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.highlighting",
+      "title": "Highlighting",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic structured dynamic-teaser highlighting",
+          "evidence": [
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "core",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+              "line": 779
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 508
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 508
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 220
+            },
+            {
+              "capability": "result.highlighting",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 220
+            }
+          ],
+          "overrides": []
+        },
+        {
+          "id": "literal-html",
+          "title": "Literal HTML tags remain source text",
+          "evidence": [
+            {
+              "capability": "result.highlighting",
+              "scenario": "literal-html",
+              "surface": "core",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+              "line": 780
+            }
+          ],
+          "overrides": []
+        },
+        {
+          "id": "continuation-fragments",
+          "title": "Disjoint Juniper continuation regions become separate fragments",
+          "evidence": [
+            {
+              "capability": "result.highlighting",
+              "scenario": "continuation-fragments",
+              "surface": "core",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+              "line": 920
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.tensor_document_readback",
+      "title": "Dense tensor document readback",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.tensor_feature_readback",
+      "title": "Typed tensor feature readback",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.structured",
+      "title": "Structured grouping and faceting",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 45
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 45
+            },
+            {
+              "capability": "grouping.structured",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 67
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.functions",
+      "title": "Executable grouping expression/function subset",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.aggregations",
+      "title": "Grouping aggregations",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 46
+            },
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 46
+            },
+            {
+              "capability": "grouping.aggregations",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "shared",
+              "kind": "ergonomic",
+              "path": "clients/typescript/tests/facade.test.ts",
+              "line": 68
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.summary_aggregation",
+      "title": "Summary aggregation",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.continuations",
+      "title": "Grouping continuations",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "grouping.raw_source",
+      "title": "Raw grouping source",
+      "area": "grouping",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.document_crud",
+      "title": "Document insert, upsert, patch, delete, and get",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "grpc",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 152
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "managed-local",
+              "kind": "e2e",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 257
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "python",
+              "runtime": "managed-local",
+              "kind": "ergonomic",
+              "path": "clients/python/tests/test_grpc_e2e.py",
+              "line": 257
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "e2e",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 14
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "rust",
+              "runtime": "native",
+              "kind": "ergonomic",
+              "path": "core/crates/searchkernel/tests/native_e2e.rs",
+              "line": 14
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "e2e",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 39
+            },
+            {
+              "capability": "update.document_crud",
+              "scenario": "basic",
+              "surface": "typescript",
+              "runtime": "node",
+              "kind": "ergonomic",
+              "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+              "line": 39
+            }
+          ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.arithmetic",
+      "title": "Arithmetic document updates",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.create_if_nonexistent",
+      "title": "Create-if-nonexistent document updates",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.conditional",
+      "title": "Conditional document mutations",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.collection_add_remove",
+      "title": "Collection add/remove updates",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.matched_element",
+      "title": "Matched-element updates",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "update.tensor_modify",
+      "title": "Tensor modify updates",
+      "area": "update",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "tensor.dense_document_crud",
+      "title": "Dense tensor document values",
+      "area": "tensor",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.yql",
+      "title": "YQL query source",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.text_weak_and",
+      "title": "Analyzed text search with default WeakAnd semantics",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.in_term",
+      "title": "Native in-term queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.non_empty",
+      "title": "NonEmpty query wrapper",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.labels",
+      "title": "Labeled query rank properties",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "schema.document_summaries",
+      "title": "Document-summary schema definitions",
+      "area": "schema",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "schema.array_struct_fields",
+      "title": "Array-of-struct document fields",
+      "area": "schema",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "schema.position_geo_fields",
+      "title": "Position fields and derived geo attributes",
+      "area": "schema",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "ranking.profile_selection",
+      "title": "Rank-profile selection",
+      "area": "ranking",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "ranking.numeric_query_inputs",
+      "title": "Numeric scalar query inputs",
+      "area": "ranking",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "ranking.tensor_query_inputs",
+      "title": "Dense tensor query inputs",
+      "area": "ranking",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "ranking.rank_properties",
+      "title": "Rank properties",
+      "area": "ranking",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.match_features",
+      "title": "Match-feature readback",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.grouping_tree",
+      "title": "Recursive grouping result trees",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "result.degradation_metadata",
+      "title": "Coverage and degradation metadata",
+      "area": "result",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "platform.embedded_vespa_scope",
+      "title": "Embedded single-node Vespa scope",
+      "area": "platform",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    }
+  ]
+}

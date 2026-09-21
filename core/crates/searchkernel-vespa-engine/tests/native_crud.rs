@@ -776,6 +776,8 @@ fn native_local_search_and_attribute_operations_round_trip() {
     let _ = fs::remove_dir_all(data);
 }
 
+// SKC: result.highlighting/basic kinds=e2e runtime=native
+// SKC: result.highlighting/literal-html kinds=e2e runtime=native
 #[test]
 fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
     let config = temporary_path("highlight-config");
@@ -915,6 +917,7 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
     let _ = fs::remove_dir_all(data);
 }
 
+// SKC: result.highlighting/continuation-fragments kinds=e2e runtime=native
 #[test]
 fn native_dynamic_teaser_highlighting_preserves_continuation_fragments() {
     let config = temporary_path("highlight-continuation-config");

@@ -1,0 +1,52 @@
+name: Client capabilities
+
+on:
+  pull_request:
+    paths:
+      - "clients/**"
+      - "core/crates/searchkernel/**"
+      - "core/crates/searchkernel-vespa-engine/**"
+      - "docs/capabilities.json"
+      - "docs/CAPABILITIES.md"
+      - "dev"
+      - "docs/CLIENT_CAPABILITIES.md"
+      - "docs/client-capabilities.json"
+      - "reference/client-contracts/**"
+      - "tools/check-capabilities.py"
+      - "tools/check-client-contracts.py"
+      - "tools/test_check_capabilities.py"
+      - "tools/test_check_client_contracts.py"
+      - ".github/workflows/client-capabilities.yml"
+  push:
+    branches: [main]
+    paths:
+      - "clients/**"
+      - "core/crates/searchkernel/**"
+      - "core/crates/searchkernel-vespa-engine/**"
+      - "docs/capabilities.json"
+      - "docs/CAPABILITIES.md"
+      - "dev"
+      - "docs/CLIENT_CAPABILITIES.md"
+      - "docs/client-capabilities.json"
+      - "reference/client-contracts/**"
+      - "tools/check-capabilities.py"
+      - "tools/check-client-contracts.py"
+      - "tools/test_check_capabilities.py"
+      - "tools/test_check_client_contracts.py"
+      - ".github/workflows/client-capabilities.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python tools/check-capabilities.py --check
+      - run: python tools/check-client-contracts.py --check
+      - run: python tools/test_check_capabilities.py
+      - run: python tools/test_check_client_contracts.py
