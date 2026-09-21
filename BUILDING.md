@@ -99,6 +99,12 @@ publishes the SDK atomically, writes its fingerprint and manifest, and never
 requires deleting the whole target directory. Use a separate SDK/build path
 for qualification or sanitizer configurations.
 
+When a task worktree does not contain `vespa-deps`, the script looks for a
+repository-local `vespa-deps` in a sibling Git worktree before falling back to
+the absolute path recorded by the Vespa build. Passing `VESPA_DEPS` explicitly
+is still preferred when the dependency installation belongs to a different
+container or host.
+
 ## Verification
 
 Run the focused native provenance checks and the normal workspace checks:

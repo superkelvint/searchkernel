@@ -55,7 +55,8 @@ For the Vespa SDK, `core/native/vespa/build-sdk.sh` publishes atomically through
 a staging directory and records provenance with
 `tools/native-build-fingerprint.py`. The Rust bindings verify the SDK record
 and compile/link a probe that calls `sk_native_abi_version()` from the actual
-SDK library. A missing, stale, or incompatible SDK causes one automatic,
+SDK library, including its bundled transitive runtime libraries. A missing,
+stale, or incompatible SDK causes one automatic,
 targeted invocation of `build-sdk.sh`; a second failure stops before the Rust
 link step and reports the diagnostics.
 

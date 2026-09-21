@@ -343,6 +343,7 @@ fn probe_native_sdk(sdk: &Path, target: &str, host: &str) -> Result<(), String> 
         .arg("-L")
         .arg(sdk.join("lib"))
         .arg(format!("-Wl,-rpath,{}", sdk.join("lib").display()))
+        .arg(format!("-Wl,-rpath-link,{}", sdk.join("lib").display()))
         .arg("-Wl,--no-as-needed")
         .args(split_flags("LDFLAGS"))
         .args(split_flags("SK_NATIVE_EXTRA_LINK_FLAGS"))

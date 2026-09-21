@@ -74,7 +74,24 @@ if [ -z "${VESPA_DEPS:-}" ]; then
     if [ -d "$ROOT/vespa-deps" ]; then
         VESPA_DEPS=$ROOT/vespa-deps
     else
-        VESPA_DEPS=$CONFIGURED_DEPS
+        # A task worktree normally has the source checkout but not the large
+        # dependency installation. Prefer a sibling worktree's repository-
+        # local vespa-deps when the configured build recorded an unavailable
+        # absolute path (for example /opt/vespa-deps in a container).
+        WORKTREE_DEPS=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null |
+            sed -n 's/^worktree //p' |
+            while IFS= read -r WORKTREE; do
+                if [ -d "$WORKTREE/vespa-deps" ]; then
+                    printf '%s\n' "$WORKTREE/vespa-deps"
+                    break
+                fi
+            done)
+        if [ -n "$WORKTREE_DEPS" ]; then
+            VESPA_DEPS=$WORKTREE_DEPS
+            echo "using Vespa dependencies from worktree: $VESPA_DEPS" >&2
+        else
+            VESPA_DEPS=$CONFIGURED_DEPS
+        fi
     fi
 fi
 if [ -z "$VESPA_DEPS" ] || [ ! -d "$VESPA_DEPS" ]; then
@@ -97,13 +114,21 @@ else
 fi
 DEPS_INCLUDE_DIR=${VESPA_DEPS_INCLUDE_DIR:-$VESPA_DEPS/include}
 if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
-    if [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
+    if [ -f "$SDK_PACKAGE/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
+    elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
     else
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
     fi
+fi
+if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
+    echo "LLVM 21 runtime was not found for the Vespa SDK link" >&2
+    echo "looked in: $VESPA_EXTRA_LIB_DIR" >&2
+    echo "set VESPA_EXTRA_LIB_DIR to the directory containing libLLVM.so.21.1" >&2
+    exit 1
 fi
 EXTRA_LINK_FLAGS=${SK_NATIVE_EXTRA_LINK_FLAGS:-$EXTRA_CXX_FLAGS}
 if [ -f "$VESPA_EXTRA_LIB_DIR/libxxhash.so" ]; then
@@ -261,6 +286,17 @@ if [ -f "$AWS_LIB_DIR/libffi.so.6" ]; then
     if [ "$(readlink -f "$AWS_LIB_DIR/libffi.so.6")" != "$(readlink -f "$SDK/lib/libffi.so.6" 2>/dev/null || true)" ]; then
         cp -a "$AWS_LIB_DIR/libffi.so.6" "$SDK/lib/"
     fi
+elif [ -f "$SDK_PACKAGE/lib/libffi.so.6" ]; then
+    # LLVM in the pinned Vespa environment carries a libffi.so.6 dependency.
+    # Preserve it when rebuilding an existing SDK even if the AWS CLI bundle
+    # is not installed in this host environment.
+    cp -a "$SDK_PACKAGE/lib/libffi.so.6" "$SDK/lib/"
+elif [ -f "$DEPS_LIB_DIR/libffi.so.6" ]; then
+    cp -a "$DEPS_LIB_DIR/libffi.so.6" "$SDK/lib/"
+else
+    echo "libffi.so.6 required by the bundled LLVM runtime was not found" >&2
+    echo "set VESPA_AWS_LIB_DIR or provide libffi.so.6 in $DEPS_LIB_DIR" >&2
+    exit 1
 fi
 
 # Keep the checked-in Rust declarations synchronized with the public native
