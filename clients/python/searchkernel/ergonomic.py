@@ -121,6 +121,8 @@ from SearchKernel.V2.UpdateOperation import UpdateOperationT
 from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
 from SearchKernel.V2.UpdateRequest import UpdateRequestT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
+from SearchKernel.V2.Hit import HitT
+from SearchKernel.V2.ResultGroup import ResultGroupT
 
 from .client import Tensor, _python_value, value
 
@@ -919,21 +921,18 @@ class UpdateBuilder:
 
 
 def _value_entries(entries) -> dict[str, Any]:
-    return {
-        entry.key: _python_value(entry.value)
-        for entry in (entries or [])
-        if entry is not None and entry.key is not None
-    }
+    decoded: dict[str, Any] = {}
+    for entry in entries or []:
+        if entry is None or entry.key is None:
+            raise ValueError("result map entry has no key")
+        if entry.key in decoded:
+            raise ValueError(f"duplicate result map key: {entry.key}")
+        decoded[entry.key] = _python_value(entry.value)
+    return decoded
 
 
 def _feature_entries(entries) -> dict[str, Any]:
-    converted = _value_entries(entries)
-    for name, item in converted.items():
-        if isinstance(item, list) and all(
-            isinstance(cell, int) and 0 <= cell <= 255 for cell in item
-        ):
-            converted[name] = bytes(item)
-    return converted
+    return _value_entries(entries)
 
 
 def _optional_value(item):
@@ -997,7 +996,7 @@ class Hit(dict):
 
 class ResultGroup(dict):
     def __init__(self, node):
-        super().__init__({entry.key: _python_value(entry.value) for entry in (node.fields or [])})
+        super().__init__(_value_entries(node.fields))
         self.value = _python_value(node.value)
         self.label, self.fields = node.label, self
         self.children = [_node(child) for child in (node.children or [])]
@@ -1007,7 +1006,17 @@ class ResultGroup(dict):
 
 
 def _node(node):
-    return ResultGroup(node.node) if node.nodeType == ResultNodeKind.ResultGroup else Hit(node.node)
+    if node is None:
+        raise ValueError("result node is missing")
+    if node.nodeType == ResultNodeKind.ResultGroup:
+        if not isinstance(node.node, ResultGroupT):
+            raise ValueError("result-group node has a missing or mismatched payload")
+        return ResultGroup(node.node)
+    if node.nodeType == ResultNodeKind.Hit:
+        if not isinstance(node.node, HitT):
+            raise ValueError("hit node has a missing or mismatched payload")
+        return Hit(node.node)
+    raise ValueError(f"unsupported result node kind: {node.nodeType}")
 
 
 class SearchResults:
