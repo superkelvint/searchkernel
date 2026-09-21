@@ -122,6 +122,7 @@ from SearchKernel.V2.UpdateOperation import UpdateOperationT
 from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
 from SearchKernel.V2.UpdateRequest import UpdateRequestT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
+from SearchKernel.V2.ValueKind import ValueKind
 from SearchKernel.V2.Hit import HitT
 from SearchKernel.V2.ResultGroup import ResultGroupT
 
@@ -837,7 +838,10 @@ class SearchBuilder:
             else None,
         ) if self._summary is not None or self._fields is not None or self._highlighting is not None else None
         request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
-        return SearchResults(self.index.client.search(request))
+        results = SearchResults(self.index.client.search(request))
+        for _field, name, _limit, _sort in self._facets:
+            results._project_facet(name, name)
+        return results
 
 
 class YqlBuilder(SearchBuilder):
@@ -1031,7 +1035,8 @@ class Hit(dict):
 
 class ResultGroup(dict):
     def __init__(self, node):
-        super().__init__(_value_entries(node.fields))
+        self._field_entries = list(node.fields or [])
+        super().__init__(_value_entries(self._field_entries))
         self.id = node.id
         self.source = node.source
         self.types = [
@@ -1098,13 +1103,36 @@ class SearchResults:
         self.aggregations = dict(self.root) if isinstance(self.root, ResultGroup) else {}
         self.continuations = list(getattr(self.root, "continuations", []) or []) if self.root else []
         self.facets = {}
-        for group in self.groups:
-            if group.value is not None or not group.label or not group.groups:
-                continue
-            for child in group.groups:
-                self.facets.setdefault(group.label, []).append(
-                    {"value": child.value, "count": child.get("count", 0)}
-                )
+
+    def _project_facet(self, expected_label, result_name):
+        candidates = [
+            group
+            for group in self.groups
+            if group.value is None
+            and group.label == expected_label
+            and group.children
+            and len(group.groups) == len(group.children)
+        ]
+        if len(candidates) != 1:
+            return
+
+        buckets = []
+        for child in candidates[0].groups:
+            if child.children:
+                return
+            fields = child._field_entries
+            if len(fields) != 1:
+                return
+            count = fields[0]
+            if (
+                count.key != "count"
+                or count.value is None
+                or count.value.kindType != ValueKind.UInt64Value
+            ):
+                return
+            buckets.append({"value": child.value, "count": _python_value(count.value)})
+
+        self.facets[result_name] = buckets
 
 
 __all__ = [

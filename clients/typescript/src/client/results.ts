@@ -14,6 +14,7 @@ import { SearchResultT } from "../generated/flatbuffers/search-kernel/v2/search-
 import { SearchTimingT } from "../generated/flatbuffers/search-kernel/v2/search-timing.js";
 import { TotalHitsRelation } from "../generated/flatbuffers/search-kernel/v2/total-hits-relation.js";
 import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
+import { ValueKind } from "../generated/flatbuffers/search-kernel/v2/value-kind.js";
 import { fromValue } from "./values.js";
 
 export class ResultDecodeError extends Error {
@@ -153,6 +154,7 @@ export interface ResultLimits {
 }
 
 export class ResultGroup {
+  readonly raw: ResultGroupT;
   readonly id: string | null;
   readonly label: string | null;
   readonly value: unknown;
@@ -168,6 +170,7 @@ export class ResultGroup {
   readonly metadata: Record<string, unknown>;
 
   constructor(node: ResultGroupT) {
+    this.raw = node;
     this.id = text(node.id);
     this.label = text(node.label);
     this.value = fromValue(node.value);
@@ -276,20 +279,40 @@ export class SearchResults {
     this.metadata = entries(result.metadata);
     this.trace = fromValue(result.trace);
 
-    const facets: Record<string, FacetBucket[]> = {};
-    for (const group of this.groups) {
-      if (group.value != null || !group.label || !group.groups.length) continue;
-      facets[group.label] = group.groups.map((child) => ({
-        value: child.value,
-        count: child.get("count") ?? 0,
-      }));
-    }
-    this.facets = facets;
+    this.facets = {};
   }
 
-  /** Backward-compatible manual facet alias helper; facet() names are now canonical request labels. */
-  renameFacet(source: string, target: string): void {
-    if (source === target || !(source in this.facets)) return;
-    this.facets[target] = this.facets[source]!;
+  /**
+   * Project the exact canonical facet result shape for a facet the caller requested.
+   *
+   * Generic grouping results are never inferred to be facets. Each bucket must
+   * contain exactly one UInt64 `count` output and no nested children.
+   */
+  projectFacet(expectedLabel: string, resultName: string): void {
+    const candidates = this.groups.filter((group) =>
+      group.value == null
+      && group.label === expectedLabel
+      && group.children.length > 0
+      && group.groups.length === group.children.length
+    );
+    if (candidates.length !== 1) return;
+
+    const buckets: FacetBucket[] = [];
+    for (const child of candidates[0]!.groups) {
+      if (child.children.length !== 0) return;
+      const fields = child.raw.fields ?? [];
+      if (fields.length !== 1) return;
+      const count = fields[0]!;
+      if (
+        text(count.key) !== "count"
+        || count.value == null
+        || count.value.kindType !== ValueKind.UInt64Value
+      ) {
+        return;
+      }
+      buckets.push({ value: child.value, count: fromValue(count.value) });
+    }
+
+    this.facets[resultName] = buckets;
   }
 }
