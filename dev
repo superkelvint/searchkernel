@@ -46,7 +46,7 @@ native_sdk_path() {
     if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
         printf '%s\n' "$SK_NATIVE_SDK"
     else
-        "$ROOT/tools/resolve-native-sdk.sh" path
+        bash "$ROOT/tools/resolve-native-sdk.sh" path
     fi
 }
 
@@ -223,7 +223,7 @@ install_target() {
 native_sdk_command() {
     case "${1:-ensure}" in
         ensure|path|rebuild)
-            "$ROOT/tools/resolve-native-sdk.sh" "${1:-ensure}"
+            bash "$ROOT/tools/resolve-native-sdk.sh" "${1:-ensure}"
             ;;
         *)
             echo 'usage: ./dev native-sdk ensure|path|rebuild' >&2
