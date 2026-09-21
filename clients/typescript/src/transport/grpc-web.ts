@@ -1,17 +1,15 @@
 import type { RpcError } from "grpc-web";
 import { FlatBufferFrame } from "../generated/grpc/rpc/searchkernel_pb.js";
 import { SearchKernelClient } from "../generated/grpc/rpc/SearchkernelServiceClientPb.js";
+import { TransportError, type ExecuteOptions } from "./types.js";
 
-export interface ExecuteOptions { signal?: AbortSignal; timeoutMs?: number; }
 export interface Cancelable { cancel(): void; }
 export interface GeneratedRpcClient {
   execute(request: FlatBufferFrame, metadata: Record<string, string> | null,
     callback: (error: RpcError | null, response: FlatBufferFrame) => void): Cancelable;
 }
-export class TransportError extends Error {
-  override name = "TransportError";
-  constructor(message: string, readonly cause?: unknown) { super(message); }
-}
+export { TransportError } from "./types.js";
+export type { ExecuteOptions } from "./types.js";
 
 /** Deliberately opaque gRPC-Web transport: FlatBuffer bytes in, bytes out. */
 export class GrpcWebTransport {

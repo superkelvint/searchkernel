@@ -27,7 +27,8 @@ import { UpsertResultT } from "../generated/flatbuffers/search-kernel/v2/upsert-
 import { ValueEntryT } from "../generated/flatbuffers/search-kernel/v2/value-entry.js";
 import { ResponsePayload } from "../generated/flatbuffers/search-kernel/protocol/v2/response-payload.js";
 import { packRequest, unpackResponse, type Operation, type OperationRequestMap, ProtocolError } from "../protocol/envelope.js";
-import { GrpcWebTransport, TransportError, type ExecuteOptions } from "../transport/grpc-web.js";
+import { GrpcWebTransport } from "../transport/grpc-web.js";
+import { TransportError, type ExecuteOptions } from "../transport/types.js";
 import { fromValue, value, type ValueInput } from "./values.js";
 import { comparePortableKeys } from "../internal/scalars.js";
 import { PatchBuilder, SearchBuilder, UpdateBuilder, YqlBuilder } from "../ergonomic/builders.js";

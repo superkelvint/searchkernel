@@ -38,7 +38,7 @@ import { YqlQueryT } from "../generated/flatbuffers/search-kernel/v2/yql-query.j
 import { SearchResults } from "../client/results.js";
 import { value, type ValueInput } from "../client/values.js";
 import type { Index } from "../client/index.js";
-import type { ExecuteOptions } from "../transport/grpc-web.js";
+import type { ExecuteOptions } from "../transport/types.js";
 import { UINT32_MAX, assertUInt32, comparePortableKeys } from "../internal/scalars.js";
 import {
   Group,

@@ -41,6 +41,7 @@
     "example:e2e": "npm run build && node -e \"require('fs').rmSync('.example-dist',{recursive:true,force:true})\" && tsc -p examples/tsconfig.build.json && node .example-dist/try_searchkernel_client_api_e2e.js"
   },
   "dependencies": {
+    "@grpc/grpc-js": "1.13.4",
     "flatbuffers": "25.9.23",
     "google-protobuf": "3.21.4",
     "grpc-web": "1.5.0"
