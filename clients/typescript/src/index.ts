@@ -23,6 +23,8 @@ export {
   ResultDecodeError,
   type FacetBucket,
   type ResultChild,
+  type ResultContinuation,
+  type ResultLimits,
   type TotalHitsRelationName,
 } from "./client/results.js";
 export {

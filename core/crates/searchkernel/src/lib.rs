@@ -26,8 +26,8 @@ pub use query::{
 };
 pub use result::{
     Coverage, CoverageDegraded, FacetResult, FacetValue, FeatureSet, FeatureValue, GroupingResult,
-    HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult, TotalHits,
-    TotalHitsRelation,
+    HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult,
+    SearchTiming, TotalHits, TotalHitsRelation,
 };
 pub use schema::{
     Analyzer, ConstantDefinition, ConstantSource, DistanceMetric, Field, FieldCapabilities,
