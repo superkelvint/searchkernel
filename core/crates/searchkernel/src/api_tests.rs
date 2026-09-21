@@ -1,4 +1,5 @@
 use super::*;
+use crate::schema::ConstantSource;
 use crate::{
     field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor, WandOptions,
 };
@@ -3035,6 +3036,48 @@ fn describe_preserves_document_summaries() {
 fn describe_preserves_schema_constants() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.constants(), described.constants());
+}
+
+#[test]
+fn described_schema_constants_are_publicly_represented() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.constants().len(), canonical.constants().len());
+    for (public, expected) in described.constants().iter().zip(canonical.constants()) {
+        assert_eq!(public.name(), expected.name);
+        assert_eq!(public.data_type(), &expected.data_type);
+        assert_eq!(public.properties(), &expected.properties);
+        match (public.source(), &expected.source) {
+            (
+                ConstantSource::Literal(public_value),
+                searchkernel_ir::ConstantSourceIr::Literal(expected_value),
+            ) => assert_eq!(public_value, expected_value),
+            (
+                ConstantSource::File { path: public_path },
+                searchkernel_ir::ConstantSourceIr::File {
+                    path: expected_path,
+                },
+            ) => {
+                assert_eq!(public_path, expected_path)
+            }
+            _ => panic!("constant source variant changed across describe"),
+        }
+    }
+    assert_eq!(
+        definition_to_ir(&described)
+            .expect("public constants should convert back to IR")
+            .constants(),
+        canonical.constants()
+    );
+    let rebuilt = described.constants().iter().cloned().fold(
+        IndexDefinition::new().field(Field::text("title")),
+        |definition, constant| definition.constant(constant),
+    );
+    assert_eq!(
+        definition_to_ir(&rebuilt)
+            .expect("cloned public constants should convert back to IR")
+            .constants(),
+        canonical.constants()
+    );
 }
 
 #[test]

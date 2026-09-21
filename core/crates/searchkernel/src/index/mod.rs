@@ -3,7 +3,9 @@ use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
-use crate::schema::{Analyzer, Field, IndexDefinition, RankProfile, SearchField};
+use crate::schema::{
+    Analyzer, ConstantDefinition, Field, IndexDefinition, RankProfile, SearchField,
+};
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
@@ -676,6 +678,14 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         resolved.set_rank_profiles(canonical_profiles);
     }
 
+    resolved.set_constants(
+        definition
+            .constants
+            .iter()
+            .map(ConstantDefinition::to_ir)
+            .collect(),
+    );
+
     Ok(resolved)
 }
 
@@ -799,6 +809,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             .expect("rank profile was just appended")
             .canonical = Some(profile.clone());
     }
+    result.constants = definition
+        .constants()
+        .iter()
+        .map(ConstantDefinition::from_ir)
+        .collect();
     result.canonical = Some(definition.clone());
     result
 }
