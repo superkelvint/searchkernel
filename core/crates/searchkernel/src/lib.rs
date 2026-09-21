@@ -29,7 +29,9 @@ pub use result::{
     HighlightFragment, HighlightResult, HighlightSpan, Hit, ResultIssue, SearchResult, TotalHits,
     TotalHitsRelation,
 };
-pub use schema::{Analyzer, Field, IndexDefinition, RankProfile, SearchField};
+pub use schema::{
+    Analyzer, DistanceMetric, Field, HnswIndexConfig, IndexDefinition, RankProfile, SearchField,
+};
 pub use search::{
     Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,
     Sort, SortDirection,

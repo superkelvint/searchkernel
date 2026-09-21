@@ -48,6 +48,57 @@ pub enum FieldType {
     Tensor(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Distance metric used by a tensor attribute and its optional HNSW index.
+pub enum DistanceMetric {
+    Euclidean,
+    Angular,
+    DotProduct,
+    PrenormalizedAngular,
+    GeoDegrees,
+    Hamming,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Vespa HNSW construction parameters for a tensor attribute.
+pub struct HnswIndexConfig {
+    max_links_per_node: Option<u32>,
+    neighbors_to_explore_at_insert: Option<u32>,
+}
+
+impl HnswIndexConfig {
+    pub fn new() -> Self {
+        Self {
+            max_links_per_node: None,
+            neighbors_to_explore_at_insert: None,
+        }
+    }
+
+    pub fn max_links_per_node(mut self, value: u32) -> Self {
+        self.max_links_per_node = Some(value);
+        self
+    }
+
+    pub fn neighbors_to_explore_at_insert(mut self, value: u32) -> Self {
+        self.neighbors_to_explore_at_insert = Some(value);
+        self
+    }
+
+    pub fn configured_max_links_per_node(&self) -> Option<u32> {
+        self.max_links_per_node
+    }
+
+    pub fn configured_neighbors_to_explore_at_insert(&self) -> Option<u32> {
+        self.neighbors_to_explore_at_insert
+    }
+}
+
+impl Default for HnswIndexConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
     pub name: String,
@@ -73,6 +124,8 @@ pub struct Field {
     fast_search: bool,
     summary: bool,
     predicate_arity: Option<u32>,
+    distance_metric: Option<DistanceMetric>,
+    hnsw: Option<HnswIndexConfig>,
 }
 
 impl Field {
@@ -86,6 +139,8 @@ impl Field {
             fast_search: false,
             summary: false,
             predicate_arity: None,
+            distance_metric: None,
+            hnsw: None,
         }
     }
 
@@ -117,6 +172,18 @@ impl Field {
     /// configuration because it controls the predicate hash space.
     pub fn predicate_arity(mut self, arity: u32) -> Self {
         self.predicate_arity = Some(arity);
+        self
+    }
+
+    /// Configure the distance metric for a tensor attribute.
+    pub fn distance_metric(mut self, metric: DistanceMetric) -> Self {
+        self.distance_metric = Some(metric);
+        self
+    }
+
+    /// Enable Vespa's HNSW index for a tensor attribute.
+    pub fn hnsw(mut self, config: HnswIndexConfig) -> Self {
+        self.hnsw = Some(config);
         self
     }
 }
@@ -383,6 +450,25 @@ impl<'a> DerivedConfig<'a> {
                     "attribute[{index}].tensortype {}\n",
                     quoted(type_spec)
                 ));
+                if let Some(metric) = field.distance_metric {
+                    output.push_str(&format!(
+                        "attribute[{index}].distancemetric {}\n",
+                        metric.config_name()
+                    ));
+                }
+                if let Some(hnsw) = &field.hnsw {
+                    output.push_str(&format!("attribute[{index}].index.hnsw.enabled true\n"));
+                    if let Some(value) = hnsw.max_links_per_node {
+                        output.push_str(&format!(
+                            "attribute[{index}].index.hnsw.maxlinkspernode {value}\n"
+                        ));
+                    }
+                    if let Some(value) = hnsw.neighbors_to_explore_at_insert {
+                        output.push_str(&format!(
+                            "attribute[{index}].index.hnsw.neighborstoexploreatinsert {value}\n"
+                        ));
+                    }
+                }
             }
             if let FieldType::Predicate = &field.field_type {
                 output.push_str(&format!(
@@ -625,6 +711,19 @@ impl FieldType {
     }
 }
 
+impl DistanceMetric {
+    fn config_name(self) -> &'static str {
+        match self {
+            Self::Euclidean => "EUCLIDEAN",
+            Self::Angular => "ANGULAR",
+            Self::DotProduct => "DOTPRODUCT",
+            Self::PrenormalizedAngular => "PRENORMALIZED_ANGULAR",
+            Self::GeoDegrees => "GEODEGREES",
+            Self::Hamming => "HAMMING",
+        }
+    }
+}
+
 impl StructFieldType {
     fn manifest_name(&self) -> &'static str {
         match self {
@@ -670,6 +769,47 @@ fn validate_schema(schema: &Schema) -> Result<()> {
         {
             return Err(Error::message(format!(
                 "duplicate field name '{}'",
+                field.name
+            )));
+        }
+
+        if field.hnsw.is_some() {
+            if !matches!(field.field_type, FieldType::Tensor(_)) {
+                return Err(Error::message(format!(
+                    "hnsw_requires_tensor: field '{}' must be a tensor",
+                    field.name
+                )));
+            }
+            if !field.attribute {
+                return Err(Error::message(format!(
+                    "hnsw_requires_attribute: field '{}' must be an attribute",
+                    field.name
+                )));
+            }
+            if field
+                .hnsw
+                .as_ref()
+                .and_then(|value| value.max_links_per_node)
+                .is_some_and(|value| value == 0)
+            {
+                return Err(Error::message(
+                    "invalid_hnsw_max_links: max links per node must be positive",
+                ));
+            }
+            if field
+                .hnsw
+                .as_ref()
+                .and_then(|value| value.neighbors_to_explore_at_insert)
+                .is_some_and(|value| value == 0)
+            {
+                return Err(Error::message(
+                    "invalid_hnsw_neighbors_at_insert: neighbors to explore at insert must be positive",
+                ));
+            }
+        }
+        if field.distance_metric.is_some() && !matches!(field.field_type, FieldType::Tensor(_)) {
+            return Err(Error::message(format!(
+                "distance_metric_requires_tensor: field '{}' must be a tensor",
                 field.name
             )));
         }
@@ -1250,6 +1390,68 @@ mod tests {
         assert!(rank_profiles.contains("rankprofile[1].name \"bm25\""));
         assert!(rank_profiles.contains("bm25(title)"));
         let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn tensor_hnsw_configuration_is_emitted_as_an_attribute_index() {
+        let path = compile(
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::Tensor("tensor<float>(x[3])".into()))
+                    .attribute()
+                    .distance_metric(DistanceMetric::Euclidean)
+                    .hnsw(
+                        HnswIndexConfig::new()
+                            .max_links_per_node(4)
+                            .neighbors_to_explore_at_insert(16),
+                    ),
+            ),
+            "hnsw-config",
+        );
+        let attributes = fs::read_to_string(path.join("attributes.cfg")).expect("attributes");
+        let index = fs::read_to_string(path.join("indexschema.cfg")).expect("index schema");
+        assert!(attributes.contains("attribute[0].datatype TENSOR"));
+        assert!(attributes.contains("attribute[0].tensortype \"tensor<float>(x[3])\""));
+        assert!(attributes.contains("attribute[0].distancemetric EUCLIDEAN"));
+        assert!(attributes.contains("attribute[0].index.hnsw.enabled true"));
+        assert!(attributes.contains("attribute[0].index.hnsw.maxlinkspernode 4"));
+        assert!(attributes.contains("attribute[0].index.hnsw.neighborstoexploreatinsert 16"));
+        assert_eq!(index, "indexfield[0]\n");
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn tensor_hnsw_validation_rejects_invalid_combinations() {
+        let cases = [
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::String)
+                    .attribute()
+                    .hnsw(HnswIndexConfig::new()),
+            ),
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::Tensor("tensor<float>(x[3])".into()))
+                    .hnsw(HnswIndexConfig::new()),
+            ),
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::Tensor("tensor<float>(x[3])".into()))
+                    .attribute()
+                    .hnsw(HnswIndexConfig::new().max_links_per_node(0)),
+            ),
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::Tensor("tensor<float>(x[3])".into()))
+                    .attribute()
+                    .hnsw(HnswIndexConfig::new().neighbors_to_explore_at_insert(0)),
+            ),
+            Schema::new("typea").field(
+                Field::new("embedding", FieldType::String)
+                    .attribute()
+                    .distance_metric(DistanceMetric::Euclidean),
+            ),
+        ];
+        for schema in cases {
+            assert!(ConfigCompiler
+                .compile_to(&schema, temporary_path("invalid-hnsw"))
+                .is_err());
+        }
     }
 
     #[test]

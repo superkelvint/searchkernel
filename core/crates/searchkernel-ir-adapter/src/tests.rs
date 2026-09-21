@@ -2082,6 +2082,56 @@ fn portable_dense_tensor_definition_compiles_and_opens_through_adapter() {
 }
 
 #[test]
+fn portable_hnsw_tensor_definition_lowers_to_native_attribute_config() {
+    let mut embedding = FieldIr::new(
+        field("embedding"),
+        DataTypeIr::Tensor {
+            type_spec: "tensor<float>(x[3])".to_owned(),
+        },
+        None,
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    embedding.set_index_config(Some(IndexConfigIr {
+        enabled: Some(true),
+        hnsw: Some(HnswIndexConfigIr {
+            max_links_per_node: Some(4),
+            neighbors_to_explore_at_insert: Some(16),
+            options: std::collections::BTreeMap::new(),
+        }),
+        options: std::collections::BTreeMap::new(),
+    }));
+    embedding.set_attribute_config(Some(AttributeConfigIr {
+        enabled: Some(true),
+        fast_search: None,
+        fast_access: None,
+        distance_metric: DistanceMetricIr::Euclidean,
+        options: std::collections::BTreeMap::new(),
+    }));
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![embedding],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!(
+        "searchkernel-adapter-hnsw-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    compile_index_definition(&definition, &root).expect("HNSW schema compiles");
+    let attributes = std::fs::read_to_string(root.join("attributes.cfg")).unwrap();
+    assert!(attributes.contains("attribute[0].index.hnsw.enabled true"));
+    assert!(attributes.contains("attribute[0].distancemetric EUCLIDEAN"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn typed_attribute_settings_are_lowered_and_contradictions_fail_closed() {
     let mut value_field = FieldIr::new(
         field("value"),
