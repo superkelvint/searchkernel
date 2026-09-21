@@ -646,7 +646,371 @@ fn validate_grouping_request(
     value: &GroupingRequestIr,
     path: &str,
 ) -> Result<()> {
-    validate_grouping_all(context, &value.root, &format!("{path}.root"))
+    let root_path = format!("{path}.root");
+    validate_grouping_all(context, &value.root, &root_path)?;
+    validate_grouping_semantics(&value.root, &root_path)
+}
+
+#[derive(Default)]
+struct GroupingSemanticScope {
+    aliases: BTreeMap<String, GroupingExpressionIr>,
+    output_names: BTreeSet<String>,
+    has_max: bool,
+    has_summary: bool,
+}
+
+fn validate_grouping_semantics(value: &GroupingAllIr, path: &str) -> Result<()> {
+    let mut scope = GroupingSemanticScope::default();
+    validate_grouping_scope_operations(value, path, &mut scope)
+}
+
+fn validate_grouping_scope_operations(
+    value: &GroupingAllIr,
+    path: &str,
+    scope: &mut GroupingSemanticScope,
+) -> Result<()> {
+    for (index, operation) in value.operations.iter().enumerate() {
+        let operation_path = format!("{path}.operations[{index}]");
+        match operation {
+            // each(...) materializes the enclosing group and therefore belongs
+            // to the same semantic level. all(...) starts a nested level with
+            // its own aliases, outputs, and max/summary constraints.
+            GroupingOperationIr::Each(child) => {
+                validate_grouping_scope_operations(child, &operation_path, scope)?;
+            }
+            GroupingOperationIr::All(child) => {
+                validate_grouping_semantics(child, &operation_path)?;
+            }
+            GroupingOperationIr::Alias { name, expression } => {
+                validate_grouping_alias_references(
+                    expression,
+                    &scope.aliases,
+                    &format!("{operation_path}.expression"),
+                )?;
+                if scope.aliases.contains_key(name) {
+                    return Err(invalid(
+                        "duplicate_grouping_alias",
+                        Some(format!("{operation_path}.name")),
+                        "grouping alias names must be unique within their scope",
+                    ));
+                }
+                if grouping_expression_contains_summary(expression, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
+                }
+                scope.aliases.insert(name.clone(), expression.clone());
+            }
+            GroupingOperationIr::Output(outputs) => {
+                for (output_index, output) in outputs.iter().enumerate() {
+                    let output_path = format!("{operation_path}.outputs[{output_index}]");
+                    validate_grouping_alias_references(
+                        &output.expression,
+                        &scope.aliases,
+                        &format!("{output_path}.expression"),
+                    )?;
+                    if grouping_expression_contains_summary(&output.expression, &scope.aliases) {
+                        scope.has_summary = true;
+                        reject_grouping_summary_max_conflict(scope.has_max, &output_path)?;
+                    }
+                    if let Some(name) = grouping_output_name(output, &scope.aliases) {
+                        if !scope.output_names.insert(name) {
+                            return Err(invalid(
+                                "grouping_output_name_collision",
+                                Some(output_path),
+                                "grouping output names must be unique within their scope",
+                            ));
+                        }
+                    }
+                }
+            }
+            GroupingOperationIr::Group(expression) | GroupingOperationIr::Where(expression) => {
+                validate_grouping_alias_references(
+                    expression,
+                    &scope.aliases,
+                    &format!("{operation_path}.expression"),
+                )?;
+                if grouping_expression_contains_summary(expression, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
+                }
+            }
+            GroupingOperationIr::Order(expressions) => {
+                for (expression_index, expression) in expressions.iter().enumerate() {
+                    validate_grouping_alias_references(
+                        expression,
+                        &scope.aliases,
+                        &format!("{operation_path}.expressions[{expression_index}]"),
+                    )?;
+                    if grouping_expression_contains_summary(expression, &scope.aliases) {
+                        scope.has_summary = true;
+                        reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
+                    }
+                }
+            }
+            GroupingOperationIr::Filter(filter) | GroupingOperationIr::Keep(filter) => {
+                validate_grouping_filter_alias_references(filter, &scope.aliases, &operation_path)?;
+                if grouping_filter_contains_summary(filter, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
+                }
+            }
+            GroupingOperationIr::Max(_) => {
+                scope.has_max = true;
+                reject_grouping_summary_max_conflict(scope.has_summary, &operation_path)?;
+            }
+            GroupingOperationIr::Precision(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn reject_grouping_summary_max_conflict(conflict: bool, path: &str) -> Result<()> {
+    if conflict {
+        return Err(invalid(
+            "grouping_summary_max_ambiguous",
+            Some(path),
+            "summary() cannot share a grouping scope with max(); the portable API has no distinct per-group hit limit",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_grouping_alias_references(
+    value: &GroupingExpressionIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+    path: &str,
+) -> Result<()> {
+    match value {
+        GroupingExpressionIr::Alias(name) => {
+            if !aliases.contains_key(name) {
+                return Err(invalid(
+                    "grouping_alias_unknown",
+                    Some(path),
+                    format!("grouping alias `{name}` is not defined in this scope"),
+                ));
+            }
+            Ok(())
+        }
+        GroupingExpressionIr::Function { arguments, .. } => {
+            for (index, argument) in arguments.iter().enumerate() {
+                validate_grouping_alias_references(
+                    argument,
+                    aliases,
+                    &format!("{path}.arguments[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
+            validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
+        }
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            validate_grouping_aggregation_alias_references(
+                aggregation,
+                aliases,
+                &format!("{path}.aggregation"),
+            )
+        }
+        GroupingExpressionIr::Binary { left, right, .. } => {
+            validate_grouping_alias_references(left, aliases, &format!("{path}.left"))?;
+            validate_grouping_alias_references(right, aliases, &format!("{path}.right"))
+        }
+        GroupingExpressionIr::Member { base, .. } => {
+            validate_grouping_alias_references(base, aliases, &format!("{path}.base"))
+        }
+        GroupingExpressionIr::MapLookup { base, key } => {
+            validate_grouping_alias_references(base, aliases, &format!("{path}.base"))?;
+            validate_grouping_alias_references(key, aliases, &format!("{path}.key"))
+        }
+        GroupingExpressionIr::Attribute(_)
+        | GroupingExpressionIr::Literal(_)
+        | GroupingExpressionIr::Bucket(_) => Ok(()),
+    }
+}
+
+fn validate_grouping_aggregation_alias_references(
+    value: &GroupingAggregationIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+    path: &str,
+) -> Result<()> {
+    match value {
+        GroupingAggregationIr::Count | GroupingAggregationIr::Summary(_) => Ok(()),
+        GroupingAggregationIr::Sum(expression)
+        | GroupingAggregationIr::Avg(expression)
+        | GroupingAggregationIr::Min(expression)
+        | GroupingAggregationIr::Max(expression)
+        | GroupingAggregationIr::Xor(expression)
+        | GroupingAggregationIr::StdDev(expression) => {
+            validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
+        }
+        GroupingAggregationIr::Quantiles { expression, .. } => {
+            validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
+        }
+    }
+}
+
+fn validate_grouping_filter_alias_references(
+    value: &GroupingFilterIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+    path: &str,
+) -> Result<()> {
+    match value {
+        GroupingFilterIr::And(values) | GroupingFilterIr::Or(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_grouping_filter_alias_references(
+                    value,
+                    aliases,
+                    &format!("{path}.filters[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        GroupingFilterIr::Not(value) => {
+            validate_grouping_filter_alias_references(value, aliases, &format!("{path}.filter"))
+        }
+        GroupingFilterIr::Regex { expression, .. } | GroupingFilterIr::IsTrue(expression) => {
+            validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
+        }
+        GroupingFilterIr::Range {
+            expression,
+            lower,
+            upper,
+            ..
+        } => {
+            validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))?;
+            validate_grouping_alias_references(lower, aliases, &format!("{path}.lower"))?;
+            validate_grouping_alias_references(upper, aliases, &format!("{path}.upper"))
+        }
+    }
+}
+
+fn grouping_expression_contains_summary(
+    value: &GroupingExpressionIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+) -> bool {
+    match value {
+        GroupingExpressionIr::Alias(name) => aliases
+            .get(name)
+            .is_some_and(|value| grouping_expression_contains_summary(value, aliases)),
+        GroupingExpressionIr::Function { arguments, .. } => arguments
+            .iter()
+            .any(|value| grouping_expression_contains_summary(value, aliases)),
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
+            grouping_expression_contains_summary(expression, aliases)
+        }
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            grouping_aggregation_contains_summary(aggregation, aliases)
+        }
+        GroupingExpressionIr::Binary { left, right, .. } => {
+            grouping_expression_contains_summary(left, aliases)
+                || grouping_expression_contains_summary(right, aliases)
+        }
+        GroupingExpressionIr::Member { base, .. } => {
+            grouping_expression_contains_summary(base, aliases)
+        }
+        GroupingExpressionIr::MapLookup { base, key } => {
+            grouping_expression_contains_summary(base, aliases)
+                || grouping_expression_contains_summary(key, aliases)
+        }
+        GroupingExpressionIr::Attribute(_)
+        | GroupingExpressionIr::Literal(_)
+        | GroupingExpressionIr::Bucket(_) => false,
+    }
+}
+
+fn grouping_aggregation_contains_summary(
+    value: &GroupingAggregationIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+) -> bool {
+    match value {
+        GroupingAggregationIr::Summary(_) => true,
+        GroupingAggregationIr::Count => false,
+        GroupingAggregationIr::Sum(expression)
+        | GroupingAggregationIr::Avg(expression)
+        | GroupingAggregationIr::Min(expression)
+        | GroupingAggregationIr::Max(expression)
+        | GroupingAggregationIr::Xor(expression)
+        | GroupingAggregationIr::StdDev(expression) => {
+            grouping_expression_contains_summary(expression, aliases)
+        }
+        GroupingAggregationIr::Quantiles { expression, .. } => {
+            grouping_expression_contains_summary(expression, aliases)
+        }
+    }
+}
+
+fn grouping_filter_contains_summary(
+    value: &GroupingFilterIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+) -> bool {
+    match value {
+        GroupingFilterIr::And(values) | GroupingFilterIr::Or(values) => values
+            .iter()
+            .any(|value| grouping_filter_contains_summary(value, aliases)),
+        GroupingFilterIr::Not(value) => grouping_filter_contains_summary(value, aliases),
+        GroupingFilterIr::Regex { expression, .. } | GroupingFilterIr::IsTrue(expression) => {
+            grouping_expression_contains_summary(expression, aliases)
+        }
+        GroupingFilterIr::Range {
+            expression,
+            lower,
+            upper,
+            ..
+        } => {
+            grouping_expression_contains_summary(expression, aliases)
+                || grouping_expression_contains_summary(lower, aliases)
+                || grouping_expression_contains_summary(upper, aliases)
+        }
+    }
+}
+
+fn grouping_output_name(
+    output: &GroupingOutputIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+) -> Option<String> {
+    output
+        .label
+        .clone()
+        .or_else(|| grouping_expression_output_name(&output.expression, aliases))
+}
+
+fn grouping_expression_output_name(
+    value: &GroupingExpressionIr,
+    aliases: &BTreeMap<String, GroupingExpressionIr>,
+) -> Option<String> {
+    match value {
+        GroupingExpressionIr::Alias(name) => aliases
+            .get(name)
+            .and_then(|value| grouping_expression_output_name(value, aliases)),
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            Some(grouping_aggregation_output_name(aggregation))
+        }
+        _ => None,
+    }
+}
+
+fn grouping_aggregation_output_name(value: &GroupingAggregationIr) -> String {
+    let expression_name = |expression: &GroupingExpressionIr| match expression {
+        GroupingExpressionIr::Attribute(field) => field.clone(),
+        expression => format!("{expression:?}"),
+    };
+    match value {
+        GroupingAggregationIr::Count => "count".to_owned(),
+        GroupingAggregationIr::Avg(expression) => {
+            format!("average({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Sum(expression) => format!("sum({})", expression_name(expression)),
+        GroupingAggregationIr::Min(expression) => format!("min({})", expression_name(expression)),
+        GroupingAggregationIr::Max(expression) => format!("max({})", expression_name(expression)),
+        GroupingAggregationIr::Xor(expression) => format!("xor({})", expression_name(expression)),
+        GroupingAggregationIr::StdDev(expression) => {
+            format!("stddev({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Quantiles { expression, .. } => {
+            format!("quantiles({})", expression_name(expression))
+        }
+        GroupingAggregationIr::Summary(_) => "summary".to_owned(),
+    }
 }
 
 fn validate_grouping_all(context: &IndexContext, value: &GroupingAllIr, path: &str) -> Result<()> {

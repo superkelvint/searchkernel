@@ -1687,6 +1687,322 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
 }
 
 #[test]
+fn search_resolver_rejects_duplicate_grouping_aliases_at_semantic_boundary() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("duplicate grouping aliases must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
+fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![grouping]);
+    let bytes = crate::search_request_ir_to_api(&request);
+    let request =
+        crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
+
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let error = context
+        .search_to_ir(request)
+        .expect_err("portable grouping must use canonical alias validation");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
+fn search_resolver_rejects_unknown_grouping_alias_references() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("count".to_owned()),
+                        expression: GroupingExpressionIr::Alias("missing".to_owned()),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("unknown grouping aliases must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "grouping_alias_unknown");
+}
+
+#[test]
+fn search_resolver_rejects_grouping_output_name_collisions() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![
+                        GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("duplicate grouping output names must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+}
+
+#[test]
+fn search_resolver_rejects_summary_and_max_in_the_same_grouping_scope() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Max(Some(3)),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: Some("hits".to_owned()),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Summary(Some("default".to_owned())),
+                            )),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("summary and max must fail at the portable semantic boundary");
+    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
+}
+
+#[test]
+fn search_resolver_treats_group_and_each_as_one_semantic_scope() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Max(Some(3)),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("hits".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Summary(Some("default".to_owned())),
+                        )),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("group and each operations at one level must share max/summary semantics");
+    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
+}
+
+#[test]
+fn search_resolver_starts_a_new_semantic_scope_for_nested_all() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let count_output = || {
+        GroupingOperationIr::Output(vec![GroupingOutputIr {
+            label: None,
+            expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
+        }])
+    };
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        count_output(),
+                        GroupingOperationIr::All(GroupingAllIr {
+                            operations: vec![
+                                GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                                    "brand".to_owned(),
+                                )),
+                                GroupingOperationIr::Each(GroupingAllIr {
+                                    operations: vec![count_output()],
+                                    label: None,
+                                }),
+                            ],
+                            label: None,
+                        }),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("nested grouping levels may reuse output names");
+}
+
+#[test]
+fn search_resolver_keeps_parallel_grouping_branches_semantically_valid() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let branch = || GroupingAllIr {
+        operations: vec![
+            GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+            GroupingOperationIr::Each(GroupingAllIr {
+                operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                    label: None,
+                    expression: GroupingExpressionIr::Aggregation(Box::new(
+                        GroupingAggregationIr::Count,
+                    )),
+                }])],
+                label: None,
+            }),
+        ],
+        label: None,
+    };
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::All(branch()),
+                GroupingOperationIr::All(branch()),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("parallel portable grouping branches remain semantically valid");
+}
+
+#[test]
 fn search_resolver_validates_structured_grouping_fields() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;

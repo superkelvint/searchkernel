@@ -455,6 +455,8 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
@@ -511,6 +513,8 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
