@@ -748,11 +748,7 @@ fn validate_grouping_scope_operations(
                 }
             }
             GroupingOperationIr::Filter(filter) | GroupingOperationIr::Keep(filter) => {
-                validate_grouping_filter_alias_references(
-                    filter,
-                    &scope.aliases,
-                    &operation_path,
-                )?;
+                validate_grouping_filter_alias_references(filter, &scope.aliases, &operation_path)?;
                 if grouping_filter_contains_summary(filter, &scope.aliases) {
                     scope.has_summary = true;
                     reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
@@ -805,12 +801,15 @@ fn validate_grouping_alias_references(
             }
             Ok(())
         }
-        GroupingExpressionIr::Positive(expression)
-        | GroupingExpressionIr::Negative(expression) => {
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
             validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
         }
         GroupingExpressionIr::Aggregation(aggregation) => {
-            validate_grouping_aggregation_alias_references(aggregation, aliases, &format!("{path}.aggregation"))
+            validate_grouping_aggregation_alias_references(
+                aggregation,
+                aliases,
+                &format!("{path}.aggregation"),
+            )
         }
         GroupingExpressionIr::Binary { left, right, .. } => {
             validate_grouping_alias_references(left, aliases, &format!("{path}.left"))?;
@@ -869,8 +868,7 @@ fn validate_grouping_filter_alias_references(
         GroupingFilterIr::Not(value) => {
             validate_grouping_filter_alias_references(value, aliases, &format!("{path}.filter"))
         }
-        GroupingFilterIr::Regex { expression, .. }
-        | GroupingFilterIr::IsTrue(expression) => {
+        GroupingFilterIr::Regex { expression, .. } | GroupingFilterIr::IsTrue(expression) => {
             validate_grouping_alias_references(expression, aliases, &format!("{path}.expression"))
         }
         GroupingFilterIr::Range {
@@ -897,8 +895,7 @@ fn grouping_expression_contains_summary(
         GroupingExpressionIr::Function { arguments, .. } => arguments
             .iter()
             .any(|value| grouping_expression_contains_summary(value, aliases)),
-        GroupingExpressionIr::Positive(expression)
-        | GroupingExpressionIr::Negative(expression) => {
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
             grouping_expression_contains_summary(expression, aliases)
         }
         GroupingExpressionIr::Aggregation(aggregation) => {
@@ -951,8 +948,7 @@ fn grouping_filter_contains_summary(
             .iter()
             .any(|value| grouping_filter_contains_summary(value, aliases)),
         GroupingFilterIr::Not(value) => grouping_filter_contains_summary(value, aliases),
-        GroupingFilterIr::Regex { expression, .. }
-        | GroupingFilterIr::IsTrue(expression) => {
+        GroupingFilterIr::Regex { expression, .. } | GroupingFilterIr::IsTrue(expression) => {
             grouping_expression_contains_summary(expression, aliases)
         }
         GroupingFilterIr::Range {

@@ -1615,8 +1615,8 @@ fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
     )
     .with_grouping(vec![grouping]);
     let bytes = crate::search_request_ir_to_api(&request);
-    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes)
-        .expect("encoded search request");
+    let request =
+        crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
 
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;
@@ -1769,10 +1769,12 @@ fn search_resolver_starts_a_new_semantic_scope_for_nested_all() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;
 
-    let count_output = || GroupingOperationIr::Output(vec![GroupingOutputIr {
-        label: None,
-        expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
-    }]);
+    let count_output = || {
+        GroupingOperationIr::Output(vec![GroupingOutputIr {
+            label: None,
+            expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
+        }])
+    };
     let grouping = GroupingRequestIr {
         root: GroupingAllIr {
             operations: vec![
