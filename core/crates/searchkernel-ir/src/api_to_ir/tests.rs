@@ -1573,6 +1573,60 @@ fn search_resolver_rejects_duplicate_grouping_aliases_at_semantic_boundary() {
 }
 
 #[test]
+fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![grouping]);
+    let bytes = crate::search_request_ir_to_api(&request);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("encoded search request");
+
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let error = context
+        .search_to_ir(request)
+        .expect_err("portable grouping must use canonical alias validation");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
 fn search_resolver_rejects_unknown_grouping_alias_references() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;
