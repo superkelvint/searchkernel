@@ -272,7 +272,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 66
+              "line": 67
             }
           ],
           "overrides": []
@@ -443,7 +443,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 27
+              "line": 28
             }
           ],
           "overrides": []
@@ -502,7 +502,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 28
+              "line": 29
             }
           ],
           "overrides": []
@@ -574,7 +574,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 29
+              "line": 30
             }
           ],
           "overrides": []
@@ -664,7 +664,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 30
+              "line": 31
             }
           ],
           "overrides": []
@@ -861,7 +861,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 67
+              "line": 68
             }
           ],
           "overrides": []
@@ -915,7 +915,7 @@
               "runtime": "shared",
               "kind": "ergonomic",
               "path": "clients/typescript/tests/facade.test.ts",
-              "line": 68
+              "line": 69
             }
           ],
           "overrides": []
