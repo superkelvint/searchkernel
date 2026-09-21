@@ -318,6 +318,25 @@ and must never be rebuilt in place. Use `./dev native-sdk ensure` (or normal
 all-features Cargo commands, which do this automatically) rather than copying
 SDK directories between worktrees.
 
+If native SDK setup reports `LLVM 21 runtime was not found for the Vespa SDK
+link`, set `VESPA_EXTRA_LIB_DIR` to the canonical LLVM runtime directory for
+the command:
+
+```bash
+VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
+  ./dev doctor
+VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
+  ./dev native-sdk ensure
+```
+
+The default resolver checks the container-style fallback
+`$VESPA_DEPS/../../usr/lib64` for the versioned `libLLVM.so.21.1`, while
+`vespa-deps/lib64/libLLVM-21.so` is only a link-name symlink to the canonical
+runtime under `core/native/sdk`. Do not copy or rebuild an immutable SDK cache
+object; use the existing runtime and explicit override. If the checkout path
+differs, use `readlink -f vespa-deps/lib64/libLLVM-21.so` and set the override
+to its containing directory.
+
 Start with `./dev doctor` when entering an unfamiliar checkout or when a build
 fails for an environment-related reason. It reports each prerequisite
 separately; fix or report failed prerequisites before diagnosing product code.
