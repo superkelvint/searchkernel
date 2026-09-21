@@ -8,8 +8,8 @@ use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
 
 pub(crate) fn encode_portable_definition(definition: &IndexDefinition) -> Vec<u8> {
-    if let Some(canonical) = definition.canonical_definition() {
-        return searchkernel_ir::index_definition_ir_to_api(canonical);
+    if let Some(schema) = definition.schema.as_ref() {
+        return searchkernel_ir::index_definition_ir_to_api(schema);
     }
 
     let mut builder = flatbuffers::FlatBufferBuilder::new();

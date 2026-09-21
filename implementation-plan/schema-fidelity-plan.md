@@ -338,10 +338,9 @@ Finally:
 
 Implementation status: complete for the `Index::describe()` representation.
 The canonical IR is the single authoritative state for described values and is
-exposed through the public `canonical_definition()` accessors on
-`IndexDefinition`, `Field`, and `RankProfile`; the ergonomic fields remain
-convenience projections. The direct public-state regressions below are the
-acceptance evidence for this status.
+stored in the public `schema` members on `IndexDefinition`, `Field`, and
+`RankProfile`; the ergonomic fields remain convenience projections. The direct
+public-state regressions below are the acceptance evidence for this status.
 
 -  [x] `IndexDefinition` exposes complete canonical top-level schema state.
 -  [x] `Field` exposes complete canonical field/data-type state.
@@ -402,12 +401,12 @@ Do not require ordinary users to populate every advanced field.
 # Phase 3 — Make Rust → IR conversion lossless
 
 -  [x] `definition_to_ir()` validates the ergonomic projection and restores
-       canonical state from public described values without an immediate
-       hidden-sidecar return.
--  [x] Cloned fields and rank profiles convert from their own public canonical
+       state from public described values without an immediate hidden-sidecar
+       return.
+-  [x] Cloned fields and rank profiles convert from their own public schema
        state.
--  [x] Rich public mutations update canonical state while preserving untouched
-       members.
+-  [x] Rich public mutations update the authoritative schema while preserving
+       untouched members.
 
 Update the production Rust schema conversion path.
 

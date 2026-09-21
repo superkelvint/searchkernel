@@ -525,6 +525,13 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
 }
 
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
+    // `schema` is a public authoritative member of the described definition,
+    // not an opaque implementation sidecar. Use it directly when present so
+    // direct public edits cannot be overwritten by the ergonomic projections.
+    if let Some(schema) = &definition.schema {
+        return Ok(schema.clone());
+    }
+
     let fields = definition
         .fields
         .iter()
@@ -633,22 +640,13 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     )
     .map_err(Error::from_ir)?;
 
-    // A described definition retains the complete canonical IR publicly on the
-    // definition and on each nested value. Resolve the ergonomic projection
-    // as a validation/fallback path, then restore those public canonical
-    // values so cloning a described Field or RankProfile cannot discard
-    // schema members that the builders do not model individually.
-    if let Some(canonical) = &definition.canonical {
-        resolved = canonical.clone();
-    }
-
     let canonical_fields = definition
         .fields
         .iter()
         .enumerate()
         .map(|(index, field)| {
             field
-                .canonical
+                .schema
                 .clone()
                 .or_else(|| resolved.fields().get(index).cloned())
                 .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))
@@ -664,7 +662,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .enumerate()
         .map(|(index, profile)| {
             profile
-                .canonical
+                .schema
                 .clone()
                 .or_else(|| resolved.rank_profiles().get(index).cloned())
                 .ok_or_else(|| {
@@ -759,7 +757,7 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             .fields
             .last_mut()
             .expect("field was just appended")
-            .canonical = Some(field.clone());
+            .schema = Some(field.clone());
     }
     result = result.default_search_fields(
         definition
@@ -797,8 +795,8 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             .rank_profiles
             .last_mut()
             .expect("rank profile was just appended")
-            .canonical = Some(profile.clone());
+            .schema = Some(profile.clone());
     }
-    result.canonical = Some(definition.clone());
+    result.schema = Some(definition.clone());
     result
 }
