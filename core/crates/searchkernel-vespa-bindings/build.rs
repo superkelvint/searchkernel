@@ -100,12 +100,9 @@ fn main() {
                 "cargo:warning=searchkernel: native Vespa SDK link probe failed; rebuilding the affected SDK once"
             );
             if using_shared_sdk {
-                sdk = resolve_shared_native_sdk(&manifest_dir, &target, "rebuild").unwrap_or_else(
-                    |rebuild_error| {
-                        panic!(
-                            "native Vespa SDK link probe failed and shared cache rebuild could not start:\n{error}\n{rebuild_error}"
-                        )
-                    },
+                panic!(
+                    "immutable shared native Vespa SDK '{}' failed its link probe:\n{error}\nrefusing to rebuild a published cache object in place",
+                    sdk.display()
                 );
             } else {
                 rebuild_native_sdk(&manifest_dir, &sdk).unwrap_or_else(|rebuild_error| {
@@ -249,10 +246,10 @@ fn prepare_native_sdk(
                 "cargo:warning=searchkernel: native Vespa SDK is missing or stale; rebuilding the affected SDK once"
             );
             if using_shared_sdk {
-                return resolve_shared_native_sdk(manifest_dir, target, "rebuild").unwrap_or_else(
+                return resolve_shared_native_sdk(manifest_dir, target, "ensure").unwrap_or_else(
                     |error| {
                         panic!(
-                            "native Vespa SDK is missing or stale and shared cache rebuild failed:\n{last_error}\n{error}"
+                            "native Vespa SDK is missing or stale and shared cache resolution failed:\n{last_error}\n{error}"
                         )
                     },
                 );
