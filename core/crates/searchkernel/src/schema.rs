@@ -99,7 +99,20 @@ pub struct RankProfile {
     pub(crate) first_phase: Option<String>,
     pub(crate) second_phase: Option<String>,
     pub(crate) rerank_count: Option<u32>,
-    pub(crate) match_features: Vec<String>,
+    /// Rank features exposed by this profile, in Vespa's declared order.
+    pub rank_features: Vec<String>,
+    /// Match features exposed by this profile, in Vespa's declared order.
+    pub match_features: Vec<String>,
+    /// Summary features exposed by this profile, in Vespa's declared order.
+    pub summary_features: Vec<String>,
+    /// Sort features exposed by this profile, in Vespa's declared order.
+    pub sort_features: Vec<String>,
+    /// Rank properties exposed by this profile.
+    pub rank_properties: BTreeMap<String, String>,
+    /// Whether strict rank-profile validation is enabled.
+    pub strict: Option<bool>,
+    /// Generic rank-profile properties not covered by dedicated fields.
+    pub properties: searchkernel_ir::SchemaPropertiesIr,
     pub(crate) query_inputs: Vec<(String, String)>,
     pub(crate) canonical: Option<searchkernel_ir::RankProfileDefinitionIr>,
 }
@@ -111,7 +124,13 @@ impl RankProfile {
             first_phase: None,
             second_phase: None,
             rerank_count: None,
+            rank_features: Vec::new(),
             match_features: Vec::new(),
+            summary_features: Vec::new(),
+            sort_features: Vec::new(),
+            rank_properties: BTreeMap::new(),
+            strict: None,
+            properties: BTreeMap::new(),
             query_inputs: Vec::new(),
             canonical: None,
         }

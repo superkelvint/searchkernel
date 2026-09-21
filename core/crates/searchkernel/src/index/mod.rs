@@ -665,13 +665,24 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, profile)| {
-            profile
+            // These metadata members are public API state. Overlay them on
+            // the canonical profile so direct edits remain authoritative
+            // while richer, out-of-scope members stay lossless.
+            let mut canonical = profile
                 .canonical
                 .clone()
                 .or_else(|| resolved.rank_profiles().get(index).cloned())
                 .ok_or_else(|| {
                     Error::infrastructure("resolved definition lost a public rank profile")
-                })
+                })?;
+            canonical.rank_features = profile.rank_features.clone();
+            canonical.match_features = profile.match_features.clone();
+            canonical.summary_features = profile.summary_features.clone();
+            canonical.sort_features = profile.sort_features.clone();
+            canonical.rank_properties = profile.rank_properties.clone();
+            canonical.strict = profile.strict;
+            canonical.properties = profile.properties.clone();
+            Ok(canonical)
         })
         .collect::<Result<Vec<_>>>()?;
     if !canonical_profiles.is_empty() {
@@ -802,6 +813,12 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
                 value = value.query_input(input.name.clone(), type_spec.clone());
             }
         }
+        value.rank_features = profile.rank_features.clone();
+        value.summary_features = profile.summary_features.clone();
+        value.sort_features = profile.sort_features.clone();
+        value.rank_properties = profile.rank_properties.clone();
+        value.strict = profile.strict;
+        value.properties = profile.properties.clone();
         result = result.rank_profile(value);
         result
             .rank_profiles

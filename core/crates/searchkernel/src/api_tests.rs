@@ -2825,6 +2825,55 @@ fn described_public_values_expose_the_complete_canonical_schema_state() {
 }
 
 #[test]
+fn described_rank_profile_exposes_feature_and_property_metadata() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = &canonical.rank_profiles()[0];
+    let actual = &described.rank_profiles()[0];
+
+    assert_eq!(actual.rank_features, expected.rank_features);
+    assert_eq!(actual.match_features, expected.match_features);
+    assert_eq!(actual.summary_features, expected.summary_features);
+    assert_eq!(actual.sort_features, expected.sort_features);
+    assert_eq!(actual.rank_properties, expected.rank_properties);
+    assert_eq!(actual.strict, expected.strict);
+    assert_eq!(actual.properties, expected.properties);
+}
+
+#[test]
+fn public_rank_profile_metadata_round_trips_to_ir() {
+    let mut profile = RankProfile::new("edited");
+    profile.rank_features = vec!["rank_feature".to_owned()];
+    profile.match_features = vec!["match_feature".to_owned()];
+    profile.summary_features = vec!["summary_feature".to_owned()];
+    profile.sort_features = vec!["sort_feature".to_owned()];
+    profile.rank_properties = BTreeMap::from([("rank.property".to_owned(), "value".to_owned())]);
+    profile.strict = Some(true);
+    profile.properties = BTreeMap::from([(
+        "generic.property".to_owned(),
+        searchkernel_ir::RequestValueIr::String("value".to_owned()),
+    )]);
+
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("public rank-profile metadata should resolve");
+    let resolved = &resolved.rank_profiles()[0];
+
+    assert_eq!(resolved.rank_features, ["rank_feature"]);
+    assert_eq!(resolved.match_features, ["match_feature"]);
+    assert_eq!(resolved.summary_features, ["summary_feature"]);
+    assert_eq!(resolved.sort_features, ["sort_feature"]);
+    assert_eq!(resolved.rank_properties["rank.property"], "value");
+    assert_eq!(resolved.strict, Some(true));
+    assert_eq!(
+        resolved.properties["generic.property"],
+        searchkernel_ir::RequestValueIr::String("value".to_owned())
+    );
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
