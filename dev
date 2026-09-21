@@ -20,6 +20,8 @@ Search Kernel development commands
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
   ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
+  ./dev native-sdk ensure     Resolve/build the immutable shared Vespa SDK
+  ./dev native-sdk path       Print the SDK object selected for this worktree
   ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Diagnose local build and verification prerequisites
@@ -44,7 +46,7 @@ native_sdk_path() {
     if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
         printf '%s\n' "$SK_NATIVE_SDK"
     else
-        printf '%s/native-sdk/linux-x86_64\n' "$(native_target_root)"
+        "$ROOT/tools/resolve-native-sdk.sh" path
     fi
 }
 
@@ -213,6 +215,18 @@ install_target() {
             ;;
         *)
             echo 'usage: ./dev install flatbuffers' >&2
+            return 2
+            ;;
+    esac
+}
+
+native_sdk_command() {
+    case "${1:-ensure}" in
+        ensure|path|rebuild)
+            "$ROOT/tools/resolve-native-sdk.sh" "${1:-ensure}"
+            ;;
+        *)
+            echo 'usage: ./dev native-sdk ensure|path|rebuild' >&2
             return 2
             ;;
     esac
@@ -430,6 +444,10 @@ case "${1:-help}" in
     install)
         shift
         install_target "$@"
+        ;;
+    native-sdk)
+        shift
+        native_sdk_command "${1:-ensure}"
         ;;
     worktree)
         [[ "${2:-}" == create ]] || {
