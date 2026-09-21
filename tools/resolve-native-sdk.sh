@@ -21,9 +21,16 @@ configured_marker() {
 
 vespa_identity() {
     local worktree=$1
-    if git -C "$worktree/upstream/vespa" rev-parse HEAD >/dev/null 2>&1; then
-        git -C "$worktree/upstream/vespa" rev-parse HEAD
+    local vespa_root="$worktree/upstream/vespa"
+    local top
+
+    top=$(git -C "$vespa_root" rev-parse --show-toplevel 2>/dev/null || true)
+    if [[ -n "$top" && "$(cd -- "$top" && pwd)" == "$(cd -- "$vespa_root" && pwd)" ]]; then
+        git -C "$vespa_root" rev-parse HEAD
     else
+        # upstream/vespa may be an ordinary tracked directory rather than its
+        # own checkout. Compare that tree, not the parent worktree HEAD, so
+        # unrelated Rust/API commits do not prevent safe SDK reuse.
         git -C "$worktree" rev-parse HEAD:upstream/vespa 2>/dev/null || true
     fi
 }
