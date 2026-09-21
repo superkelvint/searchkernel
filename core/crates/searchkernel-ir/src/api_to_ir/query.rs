@@ -34,10 +34,12 @@ fn resolve_typed_query_annotations(
 ) -> Result<()> {
     match kind {
         QueryExprKindIr::Near { distance, .. } | QueryExprKindIr::ONear { distance, .. } => {
+            reject_unknown_typed_annotations(annotations, &["distance"], path)?;
             *distance = annotation_u32(annotations, "distance", path, 1)?
                 .unwrap_or(DEFAULT_PROXIMITY_DISTANCE);
         }
         QueryExprKindIr::WeakAnd { target_hits, .. } => {
+            reject_unknown_typed_annotations(annotations, &["totalTargetHits"], path)?;
             *target_hits = annotation_u32(annotations, "totalTargetHits", path, 1)?
                 .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
         }
@@ -47,11 +49,23 @@ fn resolve_typed_query_annotations(
             prefix,
             ..
         } => {
+            reject_unknown_typed_annotations(
+                annotations,
+                &["maxEditDistance", "prefixLength", "prefix"],
+                path,
+            )?;
             *max_edit_distance = annotation_u32(annotations, "maxEditDistance", path, 0)?
                 .unwrap_or(DEFAULT_FUZZY_MAX_EDIT_DISTANCE);
             *prefix_length = annotation_u32(annotations, "prefixLength", path, 0)?
                 .unwrap_or(DEFAULT_FUZZY_PREFIX_LENGTH);
             *prefix = annotation_bool(annotations, "prefix", path)?.unwrap_or(DEFAULT_FUZZY_PREFIX);
+            if *max_edit_distance == 0 && *prefix_length > 0 {
+                return Err(invalid(
+                    "invalid_typed_query_annotation",
+                    Some(format!("{path}.annotations.prefixLength")),
+                    "prefixLength requires a positive maxEditDistance",
+                ));
+            }
         }
         QueryExprKindIr::UserInput {
             default_index,
@@ -62,6 +76,7 @@ fn resolve_typed_query_annotations(
             default_index,
             target_hits,
         } => {
+            reject_unknown_typed_annotations(annotations, &["defaultIndex"], path)?;
             *default_index = annotation_string(annotations, "defaultIndex", path)?;
             *target_hits = DEFAULT_WEAK_AND_TARGET_HITS;
         }
@@ -158,7 +173,7 @@ fn resolve_typed_query_annotations(
                 );
             }
         }
-        _ => {}
+        _ => reject_unknown_typed_annotations(annotations, &[], path)?,
     }
     Ok(())
 }
@@ -764,6 +779,20 @@ impl IndexContext {
                     schema_field.kind(),
                     &child_path("range.upper"),
                 )?;
+                if matches!(lower, QueryRangeBoundIr::PositiveInfinity) {
+                    return Err(invalid(
+                        "invalid_range",
+                        Some(child_path("range.lower")),
+                        "positive infinity is only valid as an upper bound",
+                    ));
+                }
+                if matches!(upper, QueryRangeBoundIr::NegativeInfinity) {
+                    return Err(invalid(
+                        "invalid_range",
+                        Some(child_path("range.upper")),
+                        "negative infinity is only valid as a lower bound",
+                    ));
+                }
                 if matches!(lower, QueryRangeBoundIr::Unbounded)
                     && matches!(upper, QueryRangeBoundIr::Unbounded)
                 {
@@ -950,7 +979,17 @@ impl IndexContext {
                 }
                 Ok(())
             }
-            QueryExprKindIr::NearestNeighbor { document_field, .. } => {
+            QueryExprKindIr::NearestNeighbor {
+                document_field,
+                query_tensor,
+            } => {
+                if query_tensor.is_empty() {
+                    return Err(invalid(
+                        "missing_value",
+                        Some(format!("{path}.nearest_neighbor.query_tensor")),
+                        "nearest-neighbor query tensor name must not be empty",
+                    ));
+                }
                 let schema_field = self.validate_query_field_reference(document_field, path)?;
                 if !matches!(schema_field.data_type(), DataTypeIr::Tensor { .. }) {
                     return Err(invalid(
@@ -1388,14 +1427,21 @@ impl IndexContext {
         kind: FieldKind,
         path: &str,
     ) -> Result<()> {
-        let valid = matches!(
-            (&item.key, kind),
-            (
-                RequestValueIr::String(_),
-                FieldKind::Text | FieldKind::Keyword
-            ) | (RequestValueIr::Int64(_), FieldKind::Int64)
-        );
+        let valid = match (&item.key, kind) {
+            (RequestValueIr::String(value), FieldKind::Text | FieldKind::Keyword) => {
+                !value.is_empty()
+            }
+            (RequestValueIr::Int64(_), FieldKind::Int64) => true,
+            _ => false,
+        };
         if !valid {
+            if matches!(&item.key, RequestValueIr::String(value) if value.is_empty()) {
+                return Err(invalid(
+                    "invalid_typed_query",
+                    Some(path.to_owned()),
+                    "weighted query string keys must not be empty",
+                ));
+            }
             return Err(invalid(
                 "type_mismatch",
                 Some(path.to_owned()),

@@ -150,21 +150,6 @@ fn lower_typed_query(
     rank_properties: &std::collections::BTreeMap<String, String>,
     path: &str,
 ) -> Result<Query> {
-    if !expression.annotations.is_empty()
-        && !matches!(
-            expression.kind,
-            QueryExprKindIr::Wand { .. }
-                | QueryExprKindIr::NearestNeighbor { .. }
-                | QueryExprKindIr::SameElement(_)
-        )
-    {
-        return Err(PortableError::unsupported(
-            "typed_query_annotations_not_supported",
-            Some(format!("{path}.annotations")),
-            "the IR contains annotations without a resolved adapter lowering",
-        ));
-    }
-
     match &expression.kind {
         QueryExprKindIr::Term { value } => {
             let field = typed_query_field(field_context, path)?;
@@ -433,13 +418,6 @@ fn lower_typed_query(
                             "alternatives currently require term children",
                         ));
                     };
-                    if !value.query.annotations.is_empty() {
-                        return Err(PortableError::unsupported(
-                            "typed_query_annotations_not_supported",
-                            Some(format!("{path}.alternatives[{index}].query.annotations")),
-                            "alternative term annotations are not supported",
-                        ));
-                    }
                     Ok(QueryAlternative {
                         text: typed_term_text(
                             term_value,

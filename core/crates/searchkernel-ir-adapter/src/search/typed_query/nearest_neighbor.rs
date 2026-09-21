@@ -2,7 +2,6 @@
 
 use super::annotations::{
     annotation_bool, annotation_f64, annotation_nonnegative_u32, annotation_u32,
-    reject_unknown_annotations,
 };
 use super::typed_query_field;
 use super::DEFAULT_WEAK_AND_TARGET_HITS;
@@ -13,17 +12,6 @@ pub(super) fn lower_nearest_neighbor_options(
     annotations: &std::collections::BTreeMap<String, RequestValueIr>,
     path: &str,
 ) -> Result<NearestNeighborOptions> {
-    reject_unknown_annotations(
-        annotations,
-        &[
-            "targetNumHits",
-            "totalTargetHits",
-            "approximate",
-            "distanceThreshold",
-            "exploreAdditionalHits",
-        ],
-        path,
-    )?;
     let target_num_hits = match (
         annotation_u32(annotations, "targetNumHits", path)?,
         annotation_u32(annotations, "totalTargetHits", path)?,

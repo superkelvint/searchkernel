@@ -1,9 +1,7 @@
 //! Weighted query lowering.
 
 use super::super::filter::integer_query_value;
-use super::annotations::{
-    annotation_f64, annotation_i64, annotation_u32, reject_unknown_annotations,
-};
+use super::annotations::{annotation_f64, annotation_i64, annotation_u32};
 use super::DEFAULT_WEAK_AND_TARGET_HITS;
 use searchkernel_ir::{PortableError, RequestValueIr, Result};
 use searchkernel_vespa_engine::{WandOptions, WeightedQueryItem};
@@ -12,16 +10,6 @@ pub(super) fn lower_wand_options(
     annotations: &std::collections::BTreeMap<String, RequestValueIr>,
     path: &str,
 ) -> Result<WandOptions> {
-    reject_unknown_annotations(
-        annotations,
-        &[
-            "targetNumHits",
-            "totalTargetHits",
-            "scoreThreshold",
-            "thresholdBoostFactor",
-        ],
-        path,
-    )?;
     let target_num_hits = match (
         annotation_u32(annotations, "targetNumHits", path)?,
         annotation_u32(annotations, "totalTargetHits", path)?,
