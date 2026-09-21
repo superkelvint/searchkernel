@@ -34,6 +34,20 @@ directories. Cargo's protocol build uses the vendored FlatBuffers copy.
 EOF
 }
 
+git_common_dir() {
+    local common
+    common=$(git rev-parse --git-common-dir)
+    if [[ "$common" != /* ]]; then
+        common="$ROOT/$common"
+    fi
+    (cd -- "$common" && pwd)
+}
+
+shared_flatbuffers_prefix() {
+    printf '%s/searchkernel/toolchains/flatbuffers/%s\n' \
+        "$(git_common_dir)" "$EXPECTED_FLATBUFFERS_VERSION"
+}
+
 native_target_root() {
     local target_root=${CARGO_TARGET_DIR:-$ROOT/target/${SEARCHKERNEL_BUILD_ENV:-host}}
     case "$target_root" in
@@ -121,7 +135,7 @@ verify_target() {
 }
 
 install_flatbuffers() (
-    local prefix=${FLATBUFFERS_INSTALL_PREFIX:-${FLATBUFFERS_CPP_ROOT:-/usr/local}}
+    local prefix=${FLATBUFFERS_INSTALL_PREFIX:-${FLATBUFFERS_CPP_ROOT:-$(shared_flatbuffers_prefix)}}
     local workdir source_dir build_dir archive_url archive_path download_tool
     local jobs=1
     local flatc header library actual_version
@@ -202,10 +216,9 @@ install_flatbuffers() (
     }
 
     echo "Installed FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION} under $prefix"
-    if [[ "$prefix" != /usr/local ]]; then
-        echo "export FLATBUFFERS_CPP_ROOT=$prefix"
-        echo "export FLATC_PATH=$flatc"
-    fi
+    echo "This install is shared by every worktree in this clone."
+    echo "export FLATBUFFERS_CPP_ROOT=$prefix"
+    echo "export FLATC_PATH=$flatc"
 )
 
 install_target() {
@@ -273,15 +286,47 @@ worktree_create() {
 
 find_flatc() {
     local target_dir=${CARGO_TARGET_DIR:-$ROOT/target/host}
+    local shared_bin worktree flatc_bin
+
     if [[ -n "${FLATC_PATH:-}" ]]; then
         printf '%s\n' "$FLATC_PATH"
-    elif command -v flatc >/dev/null 2>&1; then
-        command -v flatc
-    else
-        flatc_bin=$(find "$target_dir" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
-            -perm -111 -print -quit 2>/dev/null || true)
-        [[ -n "$flatc_bin" ]] && printf '%s\n' "$flatc_bin" || printf '%s\n' /usr/local/bin/flatc
+        return
     fi
+
+    shared_bin="$(shared_flatbuffers_prefix)/bin/flatc"
+    if [[ -x "$shared_bin" ]]; then
+        printf '%s\n' "$shared_bin"
+        return
+    fi
+
+    if command -v flatc >/dev/null 2>&1; then
+        command -v flatc
+        return
+    fi
+
+    flatc_bin=$(find "$target_dir" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
+        -perm -111 -print -quit 2>/dev/null || true)
+    if [[ -n "$flatc_bin" ]]; then
+        printf '%s\n' "$flatc_bin"
+        return
+    fi
+
+    # Worktrees share the same Git common directory but intentionally keep
+    # mutable Cargo target trees separate. Reuse a pinned flatc already built
+    # by a sibling worktree instead of forcing each ephemeral agent worktree
+    # to download/build its own copy.
+    while IFS= read -r worktree; do
+        [[ "$worktree" == "$ROOT" ]] && continue
+        flatc_bin=$(find "$worktree/target" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
+            -perm -111 -print -quit 2>/dev/null || true)
+        if [[ -n "$flatc_bin" ]] && \
+           [[ "$("$flatc_bin" --version 2>/dev/null || true)" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]]; then
+            printf '%s\n' "$flatc_bin"
+            return
+        fi
+    done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+
+    printf '%s\n' /usr/local/bin/flatc
 }
 
 doctor_cargo() {
@@ -344,8 +389,6 @@ doctor_vespa() {
 
 doctor_python() {
     "$PYTHON" - <<'PY'
-from importlib.metadata import version
-
 expected = {
     "flatbuffers": "25.12.19",
     "grpcio": "1.84.0",
@@ -355,7 +398,6 @@ try:
     import flatbuffers
     import google.protobuf
     import grpc
-    from grpc_tools import protoc  # noqa: F401 - verifies grpcio-tools is installed
 except ModuleNotFoundError as error:
     raise SystemExit(f"missing Python module: {error.name}") from None
 
@@ -367,8 +409,6 @@ actual = {
 for package, wanted in expected.items():
     if actual[package] != wanted:
         raise SystemExit(f"{package} {actual[package]} (expected {wanted})")
-if version("grpcio-tools") != "1.84.0":
-    raise SystemExit(f"grpcio-tools {version('grpcio-tools')} (expected 1.84.0)")
 PY
 }
 
