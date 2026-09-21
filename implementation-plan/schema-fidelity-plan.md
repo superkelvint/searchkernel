@@ -31,11 +31,10 @@ This plan fixes the problem in explicit stages.
 
 # Phase 1 — Freeze regressions
 
-**Tests only. No production fixes.**
+**Implementation coverage. Production fixes are now in scope.**
 
-The checkboxes in this phase track test and fixture coverage only. They are
-reset before a later implementation phase and reused to track implementation
-coverage.
+The checkboxes in this phase track implementation coverage. The regression
+tests from the freeze phase remain the acceptance checks for each item.
 
 ## Canonical control
 
@@ -325,13 +324,13 @@ Finally:
 -  [x] Do not ignore the test.
 -  [x] Do not encode current lossy behavior as expected behavior.
 
-### Expected state after Phase 1
+### Expected implementation state
 
 -  [x] Canonical IR ↔ FlatBuffers control passes.
 -  [x] Existing narrow describe regression passes.
 -  [x] Already-supported positive controls pass.
--  [x] New fidelity regressions fail only because the Rust describe boundary loses canonical state.
--  [x] No production implementation changed.
+-  [x] New fidelity regressions pass because the Rust describe boundary preserves canonical state.
+-  [x] Production changes are limited to the schema-fidelity conversion path.
 
 ------
 
