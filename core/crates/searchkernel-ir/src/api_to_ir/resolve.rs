@@ -738,7 +738,10 @@ fn resolve_query_model(input: QueryModelInput, language: Option<LanguageHint>) -
 
 fn resolve_presentation(input: PresentationInput) -> PresentationIr {
     PresentationIr {
-        summary: input.summary,
+        // An empty summary name is the portable spelling for an unspecified
+        // summary class. Keep this normalization here so direct Rust input
+        // and FlatBuffers input share the same presentation semantics.
+        summary: input.summary.filter(|value| !value.is_empty()),
         format: input.format,
         bolding: input.bolding,
         timing: input.timing,

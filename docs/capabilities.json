@@ -388,18 +388,24 @@
       "area": "result",
       "represented": true,
       "semantic": true,
-      "executable": false,
+      "executable": true,
       "ergonomic": {
-        "rust": false,
-        "python": false
+        "rust": true,
+        "python": true
       },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
-        "core/crates/searchkernel-ir-adapter/src/search/mod.rs"
+        "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
+        "core/native/vespa/abi.cc",
+        "core/native/vespa/engine.cc",
+        "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/searchkernel/ergonomic.py",
+        "clients/python/tests/test_grpc_e2e.py"
       ],
       "limitations": [
-        "Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection."
+        "Pass 1 selects an existing Vespa summary class. Custom DocumentSummaryDefinition lowering, rich or recursive docsum values, and summary-feature readback remain separate capabilities."
       ]
     },
     {

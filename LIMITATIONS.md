@@ -110,7 +110,7 @@ approximated.
 
 ### Named summary-class selection (`result.named_summary_class`)
 
-- Presentation.summary survives canonical semantics, but validate_search_request rejects it with presentation_not_supported. Neither high-level facade currently exposes summary-class selection.
+- Pass 1 selects an existing Vespa summary class. Custom DocumentSummaryDefinition lowering, rich or recursive docsum values, and summary-feature readback remain separate capabilities.
 
 ### Rich document-summary values (scalar subset) (`result.rich_docsum_values`)
 

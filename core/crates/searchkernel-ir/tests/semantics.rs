@@ -577,6 +577,49 @@ fn assert_ingress_equivalent(context: &IndexContext, rust: SearchInput, portable
 }
 
 #[test]
+fn rust_and_portable_ingress_normalize_empty_summary_identically() {
+    let context = index_context();
+
+    let mut rust = rust_search(QuerySourceInput::Text("fox".to_owned()));
+    rust.presentation.summary = Some(String::new());
+
+    let mut portable = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let source = text_query(&mut portable, "fox");
+    let summary = portable.create_string("");
+    let presentation = api::PresentationRequest::create(
+        &mut portable,
+        &api::PresentationRequestArgs {
+            summary: Some(summary),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut portable,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            presentation: Some(presentation),
+            ..Default::default()
+        },
+    );
+    portable.finish(request, None);
+
+    let rust_result = resolve_search(&context, rust);
+    let request =
+        searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(portable.finished_data())
+            .unwrap();
+    let portable_result = context.search_to_ir(request);
+
+    assert_eq!(rust_result, portable_result);
+    assert_eq!(
+        rust_result
+            .expect("empty summary should resolve successfully")
+            .presentation()
+            .summary,
+        None
+    );
+}
+
+#[test]
 fn rust_and_portable_ingress_share_typed_query_validation() {
     let context = index_context();
     assert_ingress_equivalent(
