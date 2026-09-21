@@ -178,12 +178,9 @@ it("decodes timing and result issues into facade values", () => {
     transient: new OptionalBoolT(true),
     metadata: [new ValueEntryT("retry", value(false))],
   };
-  const raw = new SearchResultT(node(root)) as SearchResultT & {
-    timing: typeof timingWire;
-    errors: typeof issueWire[];
-  };
-  raw.timing = timingWire;
-  raw.errors = [issueWire];
+  const raw = new SearchResultT(node(root));
+  (raw as any).timing = timingWire;
+  (raw as any).errors = [issueWire];
 
   const result = new SearchResults(raw);
 
