@@ -663,7 +663,7 @@ fn portable_values_and_serialization_errors_are_preserved() {
 
 #[test]
 fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
-    let expected = expected_search_with_facet("ratio");
+    let expected = expected_search_with_facet("brand");
     let bad_document = SearchResult {
         root: searchkernel_ir::ResultNode::Group(searchkernel_ir::ResultGroup::root(vec![
             searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
@@ -721,13 +721,13 @@ fn result_conversion_reports_bad_documents_and_non_finite_numbers() {
     let index = index_with(backend.clone());
     let error = index
         .browse()
-        .facet(Facet::new("ratio"))
+        .facet(Facet::new("brand"))
         .execute::<String>()
         .unwrap_err();
     assert!(matches!(error, Error::Deserialization(_)));
     let error = index
         .browse()
-        .facet(Facet::new("ratio"))
+        .facet(Facet::new("brand"))
         .execute::<serde_json::Value>()
         .unwrap_err();
     assert!(matches!(error, Error::Infrastructure(message) if message.contains("non-finite")));

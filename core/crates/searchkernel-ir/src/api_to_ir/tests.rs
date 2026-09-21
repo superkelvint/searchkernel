@@ -999,6 +999,53 @@ fn search_resolver_validates_structured_grouping_fields() {
 }
 
 #[test]
+fn search_resolver_allows_numeric_aggregations_on_attribute_fields() {
+    let context = context();
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                label: None,
+                expression: GroupingExpressionIr::Aggregation(Box::new(
+                    GroupingAggregationIr::Avg(GroupingExpressionIr::Attribute("price".to_owned())),
+                )),
+            }])],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("numeric aggregation expressions should not require facetable group keys");
+}
+
+#[test]
+fn search_resolver_rejects_non_numeric_grouping_aggregations() {
+    let context = context();
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                label: None,
+                expression: GroupingExpressionIr::Aggregation(Box::new(
+                    GroupingAggregationIr::Avg(GroupingExpressionIr::Attribute("brand".to_owned())),
+                )),
+            }])],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("string aggregation expressions must be rejected in the canonical resolver");
+    assert_eq!(error.details[0].code, "field_not_numeric");
+}
+
+#[test]
 fn search_resolver_owns_portable_grouping_function_and_quantile_validation() {
     let context = context();
     let invalid_groupings = [

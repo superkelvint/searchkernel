@@ -79,7 +79,8 @@ mod showcase {
                 Field::int64("rating")
                     .stored(true)
                     .filterable(true)
-                    .sortable(true),
+                    .sortable(true)
+                    .facetable(true),
             )
             .field(
                 Field::int64("inventory")

@@ -626,7 +626,7 @@ fn validate_grouping_all(context: &IndexContext, value: &GroupingAllIr, path: &s
             }
             GroupingOperationIr::Output(outputs) => {
                 for (index, output) in outputs.iter().enumerate() {
-                    validate_grouping_expression(
+                    validate_grouping_output_expression(
                         context,
                         &output.expression,
                         &format!("{operation_path}.outputs[{index}].expression"),
@@ -707,6 +707,19 @@ fn validate_grouping_expression(
     }
 }
 
+fn validate_grouping_output_expression(
+    context: &IndexContext,
+    value: &GroupingExpressionIr,
+    path: &str,
+) -> Result<()> {
+    match value {
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            validate_grouping_aggregation(context, aggregation, &format!("{path}.aggregation"))
+        }
+        _ => validate_grouping_expression(context, value, path),
+    }
+}
+
 fn validate_grouping_aggregation(
     context: &IndexContext,
     value: &GroupingAggregationIr,
@@ -719,9 +732,11 @@ fn validate_grouping_aggregation(
         | GroupingAggregationIr::Min(expression)
         | GroupingAggregationIr::Max(expression)
         | GroupingAggregationIr::Xor(expression)
-        | GroupingAggregationIr::StdDev(expression) => {
-            validate_grouping_expression(context, expression, &format!("{path}.expression"))
-        }
+        | GroupingAggregationIr::StdDev(expression) => validate_grouping_aggregation_expression(
+            context,
+            expression,
+            &format!("{path}.expression"),
+        ),
         GroupingAggregationIr::Quantiles {
             quantiles,
             expression,
@@ -736,7 +751,75 @@ fn validate_grouping_aggregation(
                     "quantiles must be finite values in the inclusive range [0, 1]",
                 ));
             }
-            validate_grouping_expression(context, expression, &format!("{path}.expression"))
+            validate_grouping_aggregation_expression(
+                context,
+                expression,
+                &format!("{path}.expression"),
+            )
+        }
+    }
+}
+
+fn validate_grouping_aggregation_expression(
+    context: &IndexContext,
+    value: &GroupingExpressionIr,
+    path: &str,
+) -> Result<()> {
+    match value {
+        GroupingExpressionIr::Attribute(name) => {
+            validate_non_empty_grouping_name(name, path, "attribute")?;
+            let field = context.field_for_resolver(name, path.to_owned())?;
+            if !matches!(field.kind(), FieldKind::Int64 | FieldKind::Float64) {
+                return Err(invalid(
+                    "field_not_numeric",
+                    Some(path),
+                    "numeric grouping aggregations require an integer or floating-point field",
+                ));
+            }
+            Ok(())
+        }
+        GroupingExpressionIr::Literal(_)
+        | GroupingExpressionIr::Bucket(_)
+        | GroupingExpressionIr::Alias(_) => Ok(()),
+        GroupingExpressionIr::Function { name, arguments } => {
+            validate_non_empty_grouping_name(name, &format!("{path}.name"), "function")?;
+            if !supported_grouping_function(name) {
+                return Err(PortableError::unsupported(
+                    "unsupported_grouping_function",
+                    Some(format!("{path}.name")),
+                    format!("grouping function `{name}` is not supported by the portable grouping grammar"),
+                ));
+            }
+            for (index, argument) in arguments.iter().enumerate() {
+                validate_grouping_aggregation_expression(
+                    context,
+                    argument,
+                    &format!("{path}.arguments[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
+            validate_grouping_aggregation_expression(
+                context,
+                expression,
+                &format!("{path}.expression"),
+            )
+        }
+        GroupingExpressionIr::Aggregation(aggregation) => {
+            validate_grouping_aggregation(context, aggregation, &format!("{path}.aggregation"))
+        }
+        GroupingExpressionIr::Binary { left, right, .. } => {
+            validate_grouping_aggregation_expression(context, left, &format!("{path}.left"))?;
+            validate_grouping_aggregation_expression(context, right, &format!("{path}.right"))
+        }
+        GroupingExpressionIr::Member { base, member } => {
+            validate_grouping_aggregation_expression(context, base, &format!("{path}.base"))?;
+            validate_non_empty_grouping_name(member, &format!("{path}.member"), "member")
+        }
+        GroupingExpressionIr::MapLookup { base, key } => {
+            validate_grouping_aggregation_expression(context, base, &format!("{path}.base"))?;
+            validate_grouping_aggregation_expression(context, key, &format!("{path}.key"))
         }
     }
 }
