@@ -107,15 +107,27 @@ Verify:
 
 A historical pass is not sufficient if relevant code changed afterward.
 
-### 0D. Highlighting closure
+### 0D. Highlighting correctness and closure
 
-The first supported slice is Vespa-generated dynamic teaser output for stored,
-indexed text fields.
+The first supported slice remains Vespa-generated dynamic teaser output. Before
+closure, resolve the highlighting correctness dispatches:
+
+- `highlighting-teaser-decoder-correctness`;
+- `highlighting-field-shape-boundary`;
+- `highlighting-query-shape-truthfulness`.
 
 Acceptance must prove:
 
 - real Vespa-generated fragment text;
-- match spans, including linguistically analyzed/stemmed matches;
+- no synthetic continuation control bytes in public text;
+- literal source markup is preserved rather than interpreted as highlight
+  framing;
+- disjoint teaser regions have correct fragment boundaries;
+- byte spans remain valid on non-ASCII text;
+- only field shapes actually executable by the native path are accepted;
+- query forms unsupported by pinned Juniper highlighting fail explicitly rather
+  than silently omitting spans;
+- match spans still cover linguistically analyzed/stemmed matches;
 - projection interaction;
 - Rust/Python/TypeScript behavior where the feature is promised.
 
