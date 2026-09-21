@@ -2,29 +2,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-target_dir=${CARGO_TARGET_DIR:-$repo_root/target/host}
-if [[ "$target_dir" != /* ]]; then target_dir="$repo_root/$target_dir"; fi
-expected_version='25.12.19'
-if [[ -n "${FLATC_PATH:-}" ]]; then
-    flatc_bin=$FLATC_PATH
-elif command -v flatc >/dev/null 2>&1; then
-    flatc_bin=flatc
-else
-    flatc_bin=$(find "$target_dir/debug/build" -path '*/flatbuffers-build-*/out/bin/flatc' -type f -print -quit 2>/dev/null || true)
-    if [[ -z "$flatc_bin" && -x /usr/local/bin/flatc ]]; then flatc_bin=/usr/local/bin/flatc; fi
-fi
-
-if [[ ! -x "$flatc_bin" ]]; then
-    echo "error: FlatBuffers 25.12.19 flatc is required" >&2
-    exit 1
-fi
-
-actual_version=$($flatc_bin --version)
-expected_output="flatc version ${expected_version}"
-if [[ "$actual_version" != "$expected_output" ]]; then
-    printf 'error: expected %s, got %s\n' "$expected_output" "$actual_version" >&2
-    exit 1
-fi
+flatc_bin=$(bash "$repo_root/tools/resolve-flatc.sh")
 
 # The output directory contains only FlatBuffers-generated files.
 rm -rf "$repo_root/core/crates/searchkernel-protocol/src/generated/search_kernel"

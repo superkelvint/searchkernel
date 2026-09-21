@@ -125,17 +125,49 @@ runtime, Vespa source, and native flags as the consuming build.
 
 `./dev install flatbuffers` installs the pinned official FlatBuffers C++ tools
 for standalone schema tooling and doctor checks. The pinned version is
-`25.12.19`; the default `/usr/local` prefix may require `sudo`. For a custom
-prefix, set `FLATBUFFERS_INSTALL_PREFIX`, then use the `FLATBUFFERS_CPP_ROOT`
-and `FLATC_PATH` exports printed by the command. Cargo's protocol build uses
-its matching pinned vendored FlatBuffers build under the active target root;
-the installed `/usr/local` copy is not silently mixed with Cargo's headers or
-archive.
+`25.12.19`. By default the install is clone-wide and versioned under the Git
+common directory:
+
+```text
+<git-common-dir>/searchkernel/toolchains/flatbuffers/25.12.19/
+```
+
+All worktrees in the clone resolve that installation automatically, so an
+agent worktree must not download or rebuild its own `flatc` merely because its
+local `target/` is empty. The resolver also reuses a matching `flatc` already
+built in a sibling worktree before falling back to `/usr/local`.
+
+Run `./dev install flatbuffers` once per clone/version when no matching toolchain
+exists. Concurrent installs are serialized and a healthy existing install is
+reused without rebuilding. For a deliberate custom prefix, set
+`FLATBUFFERS_INSTALL_PREFIX`; explicit `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH`
+overrides remain supported.
+
+Cargo's protocol build still uses its matching pinned vendored FlatBuffers
+build under the active target root. The shared standalone toolchain is for
+schema generation, reproducibility checks, and doctor; it is not silently
+mixed into Cargo's native build outputs.
 
 The FlatBuffers build records a deterministic fingerprint and compiles a
 parser/link probe against the actual static archive. A changed fingerprint or
 failed probe invalidates only that FlatBuffers sub-build. Rust incremental
 outputs and unrelated native components remain intact.
+
+## Python runtime vs code-generation dependencies
+
+Baseline Python runtime checks require the dependencies needed to import and
+use the checked-in client/runtime code: pinned `flatbuffers`, `grpcio`, and
+`protobuf`.
+
+`grpcio-tools` (`grpc_tools`) is a code-generation dependency only. It is
+required by `./dev regen protocol` and `tools/check-python-grpc.sh`, but its
+absence does not make ordinary `./dev doctor`, Rust builds, or SDK-independent
+verification unhealthy. Install the Python `codegen` extra only when changing
+or verifying generated gRPC sources:
+
+```bash
+python3 -m pip install -e 'clients/python[codegen]'
+```
 
 ## Vespa SDK builds
 
