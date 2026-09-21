@@ -368,7 +368,8 @@ impl IndexManifest {
         // apply defaults.  The persisted IR snapshot makes that replay
         // explicit: any changed default or normalization is rejected before
         // the decoded definition can become the reopened context.
-        let resolved = searchkernel_ir::index_definition_to_ir(root).map_err(Error::from_ir)?;
+        let resolved = searchkernel_ir::index_definition_to_ir(root)
+            .map_err(|_| Error::incompatible_index("resolved schema snapshot is not compatible"))?;
         let expected = self
             .value
             .get("resolved_schema_snapshot")

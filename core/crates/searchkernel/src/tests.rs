@@ -581,6 +581,56 @@ fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
 }
 
 #[test]
+fn semantically_invalid_resolved_snapshot_is_reported_as_compatibility_error() {
+    let root = temporary_path("manifest-invalid-resolved-snapshot");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string("title");
+    let field = searchkernel_ir::api::FieldDefinition::create(
+        &mut builder,
+        &searchkernel_ir::api::FieldDefinitionArgs {
+            name: Some(field_name),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let invalid_snapshot = searchkernel_ir::api::IndexDefinition::create(
+        &mut builder,
+        &searchkernel_ir::api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(invalid_snapshot, None);
+    std::fs::write(
+        root.join("manifest/index-definition.bfbs"),
+        builder.finished_data(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        IndexManifest::read(&root),
+        Err(Error::Search {
+            code: crate::ErrorCode::IncompatibleIndex,
+            message,
+            ..
+        }) if message == "incompatible index: resolved schema snapshot is not compatible"
+    ));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 #[cfg(feature = "native")]
 fn staged_creation_publishes_only_a_complete_index_directory() {
     let root = temporary_path("staged-create");
