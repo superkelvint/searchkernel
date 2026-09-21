@@ -14,6 +14,7 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    #[cfg(feature = "native")]
     let using_shared_sdk = env::var_os("SK_NATIVE_SDK").is_none();
     #[cfg(feature = "native")]
     let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
@@ -34,7 +35,7 @@ fn main() {
         }
     };
     #[cfg(feature = "native")]
-    let mut sdk = prepare_native_sdk(&manifest_dir, sdk, &target, using_shared_sdk);
+    let sdk = prepare_native_sdk(&manifest_dir, sdk, &target, using_shared_sdk);
     #[cfg(not(feature = "native"))]
     let sdk = fs::canonicalize(&sdk)
         .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
@@ -97,7 +98,7 @@ fn main() {
     {
         if let Err(error) = probe_native_sdk(&sdk, &target, &host) {
             println!(
-                "cargo:warning=searchkernel: native Vespa SDK link probe failed; rebuilding the affected SDK once"
+                "cargo:warning=searchkernel: native Vespa SDK link probe failed"
             );
             if using_shared_sdk {
                 panic!(
@@ -200,6 +201,7 @@ fn main() {
     compile_contract_tests(&manifest_dir, &sdk);
 }
 
+#[cfg(not(feature = "native"))]
 fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
     // OUT_DIR is the one Cargo-provided path that reflects an explicit
     // CARGO_TARGET_DIR override. Deriving from it keeps custom target roots
