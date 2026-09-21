@@ -31,10 +31,12 @@ This plan fixes the problem in explicit stages.
 
 # Phase 1 — Freeze regressions
 
-**Implementation coverage. Production fixes are now in scope.**
+**Tests-only regression freeze. Production fidelity remains open.**
 
-The checkboxes in this phase track implementation coverage. The regression
-tests from the freeze phase remain the acceptance checks for each item.
+The canonical fixture and the independent FlatBuffers ↔ IR control are
+implemented. The regression tests from this phase do not establish public Rust
+fidelity when the conversion can retain or return an opaque canonical IR
+sidecar. Public-schema implementation remains open in Phases 2–5.
 
 ## Canonical control
 
@@ -329,24 +331,25 @@ Finally:
 -  [x] Canonical IR ↔ FlatBuffers control passes.
 -  [x] Existing narrow describe regression passes.
 -  [x] Already-supported positive controls pass.
--  [x] New fidelity regressions pass because the Rust describe boundary preserves canonical state.
--  [x] Production changes are limited to the schema-fidelity conversion path.
+-  [ ] New fidelity regressions pass because the public Rust describe boundary
+       itself preserves canonical state; sidecar-backed round trips do not
+       count as evidence.
+-  [ ] Production changes complete the schema-fidelity conversion path.
 
 ------
 
 # Phase 2 — Make the public Rust schema representation lossless
 
-Implementation status: complete for the `Index::describe()` representation.
-The canonical IR is the single authoritative state for described values and is
-exposed through the public `canonical_definition()` accessors on
-`IndexDefinition`, `Field`, and `RankProfile`; the ergonomic fields remain
-convenience projections. The direct public-state regressions below are the
-acceptance evidence for this status.
+Implementation status: open. The current public representation remains a
+lossy ergonomic projection with an opaque canonical-IR sidecar. Exposing that
+sidecar or returning it from conversion is not public-schema fidelity evidence.
+This phase remains open until `Index::describe()` returns one truthful public
+representation that directly exposes the canonical concepts below.
 
--  [x] `IndexDefinition` exposes complete canonical top-level schema state.
--  [x] `Field` exposes complete canonical field/data-type state.
--  [x] `RankProfile` exposes complete canonical rank-profile and phase state.
--  [x] Public described values retain absence/presence semantics.
+-  [ ] `IndexDefinition` exposes complete canonical top-level schema state.
+-  [ ] `Field` exposes complete canonical field/data-type state.
+-  [ ] `RankProfile` exposes complete canonical rank-profile and phase state.
+-  [ ] Public described values retain absence/presence semantics.
 
 Do not solve this by adding special cases inside `describe()`.
 
@@ -401,13 +404,15 @@ Do not require ordinary users to populate every advanced field.
 
 # Phase 3 — Make Rust → IR conversion lossless
 
--  [x] `definition_to_ir()` validates the ergonomic projection and restores
-       canonical state from public described values without an immediate
-       hidden-sidecar return.
--  [x] Cloned fields and rank profiles convert from their own public canonical
-       state.
--  [x] Rich public mutations update canonical state while preserving untouched
-       members.
+Implementation status: open. `definition_to_ir()` currently has a hidden
+canonical-state escape hatch, so full equality after describe does not prove
+that conversion reads the public Rust representation.
+
+-  [ ] `definition_to_ir()` converts the complete public representation without
+       an immediate hidden-sidecar return.
+-  [ ] Cloned fields and rank profiles convert from their own public state.
+-  [ ] Rich public mutations update one authoritative public representation
+       while preserving untouched members.
 
 Update the production Rust schema conversion path.
 
@@ -439,11 +444,16 @@ Remove any construction of artificial canonical defaults where the public type c
 
 # Phase 4 — Make IR → Rust conversion lossless
 
--  [x] `definition_from_ir()` retains complete field and rank-profile state on
+Implementation status: open. `definition_from_ir()` still materializes a
+narrow public projection and retains canonical state separately; the public
+projection must be made complete before this phase can be checked off.
+
+-  [ ] `definition_from_ir()` retains complete field and rank-profile state on
        the returned public values.
--  [x] Optional rank phases are represented without manufacturing an empty
+-  [ ] Optional rank phases are represented without manufacturing an empty
        first phase.
--  [x] Top-level canonical state is retained and publicly observable.
+-  [ ] Top-level canonical state is retained and publicly observable through
+       the public representation itself.
 
 Update:
 
@@ -474,11 +484,15 @@ No fake tensor defaults.
 
 # Phase 5 — Make describe round-trip lossless
 
--  [x] `Index::describe()` exposes the complete canonical state through the
+Implementation status: open. The describe round trip remains unproven until
+the public representation itself is lossless and persistence uses that same
+authoritative state.
+
+-  [ ] `Index::describe()` exposes the complete canonical state through the
        public Rust representation.
--  [x] Full canonical equality passes after describe, clone/reuse, and rich
-       mutation paths.
--  [x] Rich described definitions use canonical FlatBuffers provenance for
+-  [ ] Full canonical equality passes after describe, clone/reuse, and rich
+       mutation paths without a sidecar bypass.
+-  [ ] Rich described definitions use canonical FlatBuffers provenance for
        portable persistence.
 
 After Phases 2–4:
