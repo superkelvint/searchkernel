@@ -18,6 +18,21 @@ from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
 from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind  # noqa: E402
 from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT  # noqa: E402
+from SearchKernel.V2.SparseTensorCells import SparseTensorCellsT  # noqa: E402
+from SearchKernel.V2.MixedTensorBlocks import MixedTensorBlocksT  # noqa: E402
+from SearchKernel.V2.TensorCell import TensorCellT  # noqa: E402
+from SearchKernel.V2.TensorBlock import TensorBlockT  # noqa: E402
+from SearchKernel.V2.TensorAddressEntry import TensorAddressEntryT  # noqa: E402
+from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValueT  # noqa: E402
+from SearchKernel.V2.NonFiniteFloatKind import NonFiniteFloatKind  # noqa: E402
+from SearchKernel.V2.Value import ValueT  # noqa: E402
+from SearchKernel.V2.ValueKind import ValueKind  # noqa: E402
+from SearchKernel.V2.ValueList import ValueListT  # noqa: E402
+from SearchKernel.V2.BytesValue import BytesValueT  # noqa: E402
+from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
+from SearchKernel.V2.ResultNode import ResultNodeT  # noqa: E402
+from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
+from SearchKernel.V2.Hit import HitT  # noqa: E402
 from SearchKernel.V2.DistanceMetric import DistanceMetric  # noqa: E402
 from SearchKernel.V2.HnswIndexConfig import HnswIndexConfigT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
@@ -31,7 +46,7 @@ from SearchKernel.V2.GroupingOperationKind import GroupingOperationKind  # noqa:
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
 from SearchKernel.V2.QueryExprKind import QueryExprKind  # noqa: E402
-from searchkernel.ergonomic import SearchBuilder  # noqa: E402
+from searchkernel.ergonomic import SearchBuilder, _node, _value_entries  # noqa: E402
 
 
 class FlatBuffersObjectApiTest(unittest.TestCase):
@@ -219,6 +234,129 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         )
         definition = TensorField("tensor<float>(x[2])", stored=True).definition("embedding")
         self.assertEqual(definition.dataType.kind.typeSpec, "tensor<float>(x[2])")
+
+    def test_non_finite_values_decode_by_union_discriminator(self):
+        values = [
+            (NonFiniteFloatKind.NaN, float("nan")),
+            (NonFiniteFloatKind.PositiveInfinity, float("inf")),
+            (NonFiniteFloatKind.NegativeInfinity, float("-inf")),
+        ]
+        for kind, expected in values:
+            decoded = _python_value(
+                ValueT(
+                    kindType=ValueKind.NonFiniteFloatValue,
+                    kind=NonFiniteFloatValueT(kind=kind),
+                )
+            )
+            if kind == NonFiniteFloatKind.NaN:
+                self.assertNotEqual(decoded, decoded)
+            else:
+                self.assertEqual(decoded, expected)
+
+    def test_feature_lists_are_not_reinterpreted_as_bytes(self):
+        node = SimpleNamespace(
+            id="doc:1",
+            fields=[],
+            relevance=None,
+            matchFeatures=[
+                ValueEntryT(
+                    key="list",
+                    value=ValueT(
+                        kindType=ValueKind.ValueList,
+                        kind=ValueListT(values=[value(1), value(2)]),
+                    ),
+                ),
+                ValueEntryT(
+                    key="bytes",
+                    value=ValueT(
+                        kindType=ValueKind.BytesValue,
+                        kind=BytesValueT(value=[1, 2]),
+                    ),
+                ),
+            ],
+            summaryFeatures=[],
+            rankFeatures=[],
+            sortValues=[],
+            highlights=[],
+        )
+        hit = Hit(node)
+        self.assertEqual(hit.match_features["list"], [1, 2])
+        self.assertEqual(hit.match_features["bytes"], b"\x01\x02")
+
+    def test_sparse_and_mixed_tensor_values_decode_losslessly(self):
+        sparse = ValueT(
+            kindType=ValueKind.TensorValue,
+            kind=TensorValueT(
+                typeSpec="tensor<float>(term{})",
+                payloadType=TensorPayloadKind.SparseTensorCells,
+                payload=SparseTensorCellsT(
+                    cells=[
+                        TensorCellT(
+                            address=[TensorAddressEntryT(dimension="term", label="rust")],
+                            value=1.5,
+                        )
+                    ]
+                ),
+            ),
+        )
+        mixed = ValueT(
+            kindType=ValueKind.TensorValue,
+            kind=TensorValueT(
+                typeSpec="tensor<float>(term{},x[2])",
+                payloadType=TensorPayloadKind.MixedTensorBlocks,
+                payload=MixedTensorBlocksT(
+                    blocks=[
+                        TensorBlockT(
+                            address=[TensorAddressEntryT(dimension="term", label="rust")],
+                            values=[1.0, 2.0],
+                        )
+                    ]
+                ),
+            ),
+        )
+        self.assertEqual(
+            _python_value(sparse),
+            {
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(term{})",
+                    "sparse": [
+                        {
+                            "address": [{"dimension": "term", "label": "rust"}],
+                            "value": 1.5,
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertEqual(
+            _python_value(mixed),
+            {
+                "$searchkernel_tensor": {
+                    "type_spec": "tensor<float>(term{},x[2])",
+                    "mixed": [
+                        {
+                            "address": [{"dimension": "term", "label": "rust"}],
+                            "values": [1.0, 2.0],
+                        }
+                    ],
+                }
+            },
+        )
+
+    def test_result_maps_reject_duplicate_keys(self):
+        with self.assertRaisesRegex(ValueError, "duplicate result map key"):
+            _value_entries([
+                ValueEntryT(key="same", value=value(1)),
+                ValueEntryT(key="same", value=value(2)),
+            ])
+
+    def test_result_node_union_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "unsupported result node kind"):
+            _node(ResultNodeT(nodeType=99, node=None))
+        with self.assertRaisesRegex(ValueError, "missing or mismatched payload"):
+            _node(ResultNodeT(nodeType=ResultNodeKind.Hit, node=None))
+        with self.assertRaisesRegex(ValueError, "missing or mismatched payload"):
+            _node(ResultNodeT(nodeType=ResultNodeKind.ResultGroup, node=HitT(id="wrong")))
 
     def test_tensor_field_hnsw_configuration_lowers_to_canonical_objects(self):
         definition = TensorField(
