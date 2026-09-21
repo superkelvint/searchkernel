@@ -18,7 +18,7 @@ namespace {
 
 void highlighting_decoder_unit() {
     const auto decoded = searchkernel::native_highlighting::decode(
-        "prefix<b>Brown</b> \x1f" "fox" "\x1f");
+        "prefix\x1f" "Brown" "\x1f " "\x1f" "fox" "\x1f");
     assert(decoded);
     assert(decoded->text == "prefixBrown fox");
     assert(decoded->matches.size() == 2);
@@ -26,6 +26,12 @@ void highlighting_decoder_unit() {
     assert(decoded->matches[0].end_byte == 11);
     assert(decoded->matches[1].start_byte == 12);
     assert(decoded->matches[1].end_byte == 15);
+
+    const auto literal_markup = searchkernel::native_highlighting::decode(
+        "stored <b>text</b>");
+    assert(literal_markup);
+    assert(literal_markup->text == "stored <b>text</b>");
+    assert(literal_markup->matches.empty());
 
     const auto annotated = searchkernel::native_highlighting::decode(
         "\xEF\xBF\xB9The\xEF\xBF\xBAthe\xEF\xBF\xBB quick");
@@ -35,7 +41,7 @@ void highlighting_decoder_unit() {
 
     bool rejected = false;
     try {
-        (void)searchkernel::native_highlighting::decode("broken</b>");
+        (void)searchkernel::native_highlighting::decode("broken\x1f");
     } catch (const std::runtime_error &) {
         rejected = true;
     }
