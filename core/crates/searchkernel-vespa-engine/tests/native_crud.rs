@@ -897,6 +897,80 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
 }
 
 #[test]
+fn native_juniper_highlighting_is_field_aware_for_unsupported_query_shapes() {
+    let config = temporary_path("highlight-query-shape-config");
+    let data = temporary_path("highlight-query-shape-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile highlight query-shape config");
+    let engine = Engine::open(&data, &config).expect("open highlight query-shape engine");
+    engine
+        .put(
+            Document::new("highlight-query-shape-1")
+                .field("title", "The quick brown fox")
+                .field("category", "animal"),
+        )
+        .expect("put highlight query-shape document");
+
+    for query in [
+        Query::Fuzzy {
+            field: "title".to_owned(),
+            text: "brown".to_owned(),
+            max_edit_distance: 1,
+            prefix_lock_length: 0,
+            prefix_match: false,
+        },
+        Query::Matches {
+            field: "title".to_owned(),
+            pattern: "brown".to_owned(),
+        },
+    ] {
+        let result = engine
+            .search(SearchRequest::new(query).highlight(["title"]))
+            .expect("same-field unsupported query shape should execute natively");
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].highlights.len(), 1);
+        assert!(result.hits[0].highlights[0]
+            .fragments
+            .iter()
+            .all(|fragment| fragment.matches.is_empty()));
+    }
+
+    let mixed = engine
+        .search(
+            SearchRequest::new(Query::And(vec![
+                Query::term("title", "brown"),
+                Query::In {
+                    field: "category".to_owned(),
+                    values: vec![InQueryValue::String("animal".to_owned())],
+                },
+            ]))
+            .highlight(["title"]),
+        )
+        .expect("an unrelated attribute query must preserve title highlighting");
+    assert_eq!(mixed.hits.len(), 1);
+    assert_eq!(mixed.hits[0].highlights.len(), 1);
+    assert_eq!(
+        mixed.hits[0].highlights[0].fragments[0].matches,
+        vec![searchkernel_vespa_engine::HighlightSpan {
+            start_byte: 10,
+            end_byte: 15,
+        }]
+    );
+
+    engine.close().expect("close highlight query-shape engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_attribute_exists_matches_keyword_and_boolean_vespa_semantics() {
     let config = temporary_path("exists-config");
     let data = temporary_path("exists-data");
