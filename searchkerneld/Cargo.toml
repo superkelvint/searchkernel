@@ -17,6 +17,9 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.12", features = ["transport"] }
 tonic-web = "0.12"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 flatbuffers = "=25.12.19"
 http-body-util = "0.1"

@@ -15,6 +15,8 @@ use searchkernel_testkit::RecordingBackend;
 use searchkerneld::ServerError;
 use searchkerneld::{rpc, start, ServerConfig};
 #[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 use tonic::{Code, Request};
 
@@ -418,6 +420,39 @@ async fn stale_unix_socket_is_removed_before_binding() {
     server.shutdown().await.expect("shutdown UDS server");
     index.close().expect("close test index");
     assert!(!path.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn inaccessible_unix_socket_is_not_removed_before_binding() {
+    let path = std::env::temp_dir().join(format!(
+        "searchkerneld-inaccessible-uds-{}.sock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).expect("create inaccessible UDS listener");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
+        .expect("make UDS inaccessible");
+
+    let backend = Arc::new(RecordingBackend::new());
+    let (index, dispatcher) = dispatcher(backend);
+    let error = start(ServerConfig::unix(&path), dispatcher)
+        .await
+        .expect_err("inaccessible UDS must not be treated as stale");
+    assert!(matches!(
+        error,
+        ServerError::Bind(error) if error.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+    assert!(path.exists(), "permission failure removed the UDS path");
+
+    drop(listener);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .expect("restore UDS permissions");
+    std::fs::remove_file(&path).expect("remove inaccessible UDS");
+    let mut lock_path = path.as_os_str().to_os_string();
+    lock_path.push(".lock");
+    let _ = std::fs::remove_file(lock_path);
+    index.close().expect("close test index");
 }
 
 #[cfg(unix)]

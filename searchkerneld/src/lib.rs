@@ -5,7 +5,9 @@
 //! dispatcher.
 
 #[cfg(unix)]
-use std::os::unix::fs::FileTypeExt;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+#[cfg(unix)]
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::{fmt, net::SocketAddr, sync::Arc};
@@ -259,6 +261,87 @@ pub struct RunningServer {
     shutdown: Option<watch::Sender<bool>>,
     task: JoinHandle<Result<(), tonic::transport::Error>>,
     web_task: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
+    #[cfg(unix)]
+    unix_socket_ownership: Option<UnixSocketOwnership>,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct UnixSocketIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(unix)]
+struct UnixSocketOwnership {
+    identity: UnixSocketIdentity,
+    lock: UnixSocketLock,
+    // Keep the original socket inode alive until pathname cleanup. Otherwise
+    // a replacement socket can immediately reuse the same (device, inode)
+    // pair after the serving task drops its listener.
+    _listener_fd: OwnedFd,
+}
+
+#[cfg(unix)]
+impl UnixSocketIdentity {
+    fn from_path(path: &Path) -> std::io::Result<Option<Self>> {
+        let metadata = match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if !metadata.file_type().is_socket() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        }))
+    }
+}
+
+#[cfg(unix)]
+struct UnixSocketLock {
+    _file: std::fs::File,
+}
+
+#[cfg(unix)]
+impl UnixSocketLock {
+    fn try_acquire(path: &Path) -> std::io::Result<Self> {
+        let mut lock_path = path.as_os_str().to_os_string();
+        lock_path.push(".lock");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(PathBuf::from(lock_path))?;
+        loop {
+            // All Search Kernel daemon instances serialize probe/remove/bind
+            // and ownership-checked cleanup through this sidecar lock. The
+            // lock file intentionally remains after shutdown: removing it
+            // while another process holds it could let a later process lock a
+            // new inode and reintroduce the pathname race.
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+                return Ok(Self { _file: file });
+            }
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn duplicate_unix_listener(listener: &UnixListener) -> std::io::Result<OwnedFd> {
+    let duplicated = unsafe { libc::dup(listener.as_raw_fd()) };
+    if duplicated == -1 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        // SAFETY: dup returned a new, owned file descriptor on success.
+        Ok(unsafe { OwnedFd::from_raw_fd(duplicated) })
+    }
 }
 
 impl fmt::Debug for RunningServer {
@@ -361,13 +444,26 @@ impl RunningServer {
         }
     }
 
-    fn cleanup_socket(&self) -> Result<(), ServerError> {
+    fn cleanup_socket(&mut self) -> Result<(), ServerError> {
         #[cfg(unix)]
         if let ListenAddress::Unix(path) = &self.local_addr {
-            match std::fs::remove_file(path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(ServerError::Cleanup(error)),
+            let Some(ownership) = self.unix_socket_ownership.take() else {
+                return Ok(());
+            };
+            let UnixSocketOwnership {
+                identity,
+                lock: _lock,
+                _listener_fd,
+            } = ownership;
+            if UnixSocketIdentity::from_path(path)
+                .map_err(ServerError::Cleanup)?
+                .is_some_and(|current| current == identity)
+            {
+                match std::fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(ServerError::Cleanup(error)),
+                }
             }
         }
         Ok(())
@@ -377,10 +473,7 @@ impl RunningServer {
 impl Drop for RunningServer {
     fn drop(&mut self) {
         self.abort_remaining_tasks();
-        #[cfg(unix)]
-        if let ListenAddress::Unix(path) = &self.local_addr {
-            let _ = std::fs::remove_file(path);
-        }
+        let _ = self.cleanup_socket();
     }
 }
 
@@ -418,7 +511,7 @@ async fn start_with_service(
         None => None,
     };
 
-    let (local_addr, task) = match config.listen_addr {
+    let (local_addr, task, _unix_socket_ownership) = match config.listen_addr {
         ListenAddress::Tcp(listen_addr) => {
             let listener = TcpListener::bind(listen_addr)
                 .await
@@ -426,14 +519,14 @@ async fn start_with_service(
             let local_addr = listener.local_addr().map_err(ServerError::Bind)?;
             let incoming = TcpListenerStream::new(listener);
             let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
-            (ListenAddress::Tcp(local_addr), task)
+            (ListenAddress::Tcp(local_addr), task, None)
         }
         #[cfg(unix)]
         ListenAddress::Unix(path) => {
-            let listener = bind_unix_listener(&path).await?;
+            let (listener, ownership) = bind_unix_listener(&path).await?;
             let incoming = UnixListenerStream::new(listener);
             let task = serve(incoming, service.clone(), shutdown.subscribe(), false);
-            (ListenAddress::Unix(path), task)
+            (ListenAddress::Unix(path), task, Some(ownership))
         }
     };
 
@@ -452,6 +545,8 @@ async fn start_with_service(
         shutdown: Some(shutdown),
         task,
         web_task,
+        #[cfg(unix)]
+        unix_socket_ownership: _unix_socket_ownership,
     })
 }
 
@@ -495,20 +590,37 @@ where
 }
 
 #[cfg(unix)]
-async fn bind_unix_listener(path: &Path) -> Result<UnixListener, ServerError> {
+async fn bind_unix_listener(
+    path: &Path,
+) -> Result<(UnixListener, UnixSocketOwnership), ServerError> {
+    let lock = UnixSocketLock::try_acquire(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            ServerError::Bind(std::io::Error::new(
+                std::io::ErrorKind::AddrInUse,
+                format!("Unix socket {path:?} is already in use by a live server"),
+            ))
+        } else {
+            ServerError::Bind(error)
+        }
+    })?;
     // Probe an existing socket before removing it. Non-socket paths are left
     // untouched so a bind error cannot destroy an unrelated file.
-    let stale_socket = match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_socket() => match UnixStream::connect(path).await {
+    let stale_socket = match UnixSocketIdentity::from_path(path).map_err(ServerError::Bind)? {
+        Some(identity) => match UnixStream::connect(path).await {
             Ok(_) => {
                 return Err(ServerError::Bind(std::io::Error::new(
                     std::io::ErrorKind::AddrInUse,
                     format!("Unix socket {path:?} is already in use by a live server"),
                 )))
             }
-            Err(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+                UnixSocketIdentity::from_path(path)
+                    .map_err(ServerError::Bind)?
+                    .is_some_and(|current| current == identity)
+            }
+            Err(error) => return Err(ServerError::Bind(error)),
         },
-        Ok(_) | Err(_) => false,
+        None => false,
     };
 
     if stale_socket {
@@ -519,19 +631,43 @@ async fn bind_unix_listener(path: &Path) -> Result<UnixListener, ServerError> {
         }
     }
 
-    UnixListener::bind(path).map_err(ServerError::Bind)
+    let listener = UnixListener::bind(path).map_err(ServerError::Bind)?;
+    let identity = UnixSocketIdentity::from_path(path)
+        .map_err(ServerError::Bind)?
+        .ok_or_else(|| {
+            ServerError::Bind(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Unix socket {path:?} disappeared after binding"),
+            ))
+        })?;
+    let listener_fd = duplicate_unix_listener(&listener).map_err(ServerError::Bind)?;
+    Ok((
+        listener,
+        UnixSocketOwnership {
+            identity,
+            lock,
+            _listener_fd: listener_fd,
+        },
+    ))
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::path::PathBuf;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     };
 
+    #[cfg(unix)]
+    use tokio::net::UnixListener;
     use tokio::sync::Semaphore;
 
-    use super::run_blocking;
+    use super::{
+        duplicate_unix_listener, run_blocking, ListenAddress, RunningServer, UnixSocketIdentity,
+        UnixSocketLock, UnixSocketOwnership,
+    };
 
     #[tokio::test]
     async fn blocking_work_waits_for_an_execution_permit() {
@@ -558,5 +694,45 @@ mod tests {
             42
         );
         assert!(started.load(Ordering::Acquire));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn drop_does_not_remove_a_replacement_unix_socket() {
+        let path = std::env::temp_dir().join(format!(
+            "searchkerneld-cleanup-race-{}.sock",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let original_listener = UnixListener::bind(&path).expect("bind original UDS");
+        let original_identity = UnixSocketIdentity::from_path(&path)
+            .expect("read original UDS identity")
+            .expect("original UDS identity");
+        let original_fd = duplicate_unix_listener(&original_listener).expect("duplicate UDS");
+        let original_lock = UnixSocketLock::try_acquire(&path).expect("lock original UDS");
+        drop(original_listener);
+        std::fs::remove_file(&path).expect("remove stale original UDS");
+
+        let task = tokio::spawn(async { Ok::<(), tonic::transport::Error>(()) });
+        let server = RunningServer {
+            local_addr: ListenAddress::Unix(PathBuf::from(&path)),
+            web_local_addr: None,
+            shutdown: None,
+            task,
+            web_task: None,
+            unix_socket_ownership: Some(UnixSocketOwnership {
+                identity: original_identity,
+                lock: original_lock,
+                _listener_fd: original_fd,
+            }),
+        };
+
+        let replacement_listener = UnixListener::bind(&path).expect("bind replacement UDS");
+        drop(server);
+        assert!(path.exists(), "cleanup removed the replacement socket");
+
+        drop(replacement_listener);
+        let _ = std::fs::remove_file(path);
     }
 }
