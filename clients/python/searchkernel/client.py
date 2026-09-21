@@ -32,6 +32,10 @@ from SearchKernel.V2.ErrorCode import ErrorCode
 from SearchKernel.V2.FieldDefinition import FieldDefinitionT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
 from SearchKernel.V2.Float64Value import Float64ValueT
+from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValueT
+from SearchKernel.V2.NonFiniteFloatKind import NonFiniteFloatKind
+from SearchKernel.V2.NullValue import NullValue
+from SearchKernel.V2.NullValueValue import NullValueValueT
 from SearchKernel.V2.GetRequest import GetRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
@@ -42,6 +46,8 @@ from SearchKernel.V2.OptionalBool import OptionalBoolT
 from SearchKernel.V2.PatchRequest import PatchRequestT
 from SearchKernel.V2.StringValue import StringValueT
 from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT
+from SearchKernel.V2.SparseTensorCells import SparseTensorCellsT
+from SearchKernel.V2.MixedTensorBlocks import MixedTensorBlocksT
 from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind
 from SearchKernel.V2.TensorValue import TensorValueT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
@@ -82,7 +88,7 @@ def value(item: Any) -> ValueT:
     if isinstance(item, ValueT):
         return item
     if item is None:
-        return ValueT(kindType=ValueKind.NullValueValue)
+        return ValueT(kindType=ValueKind.NullValueValue, kind=NullValueValueT(value=NullValue.Null))
     if isinstance(item, bool):
         return ValueT(kindType=ValueKind.BoolValue, kind=BoolValueT(value=item))
     if isinstance(item, int):
@@ -124,37 +130,122 @@ def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
 
 
 def _entries(entries: Sequence[ValueEntryT] | None) -> dict[str, ValueT]:
-    return {
-        entry.key: entry.value
-        for entry in entries or []
-        if entry is not None and entry.key is not None
-    }
+    decoded: dict[str, ValueT] = {}
+    for entry in entries or []:
+        if entry is None or entry.key is None:
+            raise ValueError("result map entry has no key")
+        if entry.key in decoded:
+            raise ValueError(f"duplicate result map key: {entry.key}")
+        decoded[entry.key] = entry.value
+    return decoded
+
+
+def _require_value_payload(item: ValueT, expected_type: type, label: str) -> Any:
+    if not isinstance(item.kind, expected_type):
+        raise ValueError(f"{label} value has a missing or mismatched payload")
+    return item.kind
+
+
+def _tensor_address(entries: Sequence[Any] | None) -> list[dict[str, Any]]:
+    decoded = []
+    for entry in entries or []:
+        if entry is None or entry.dimension is None:
+            raise ValueError("tensor address entry has no dimension")
+        decoded.append({"dimension": entry.dimension, "label": entry.label})
+    return decoded
 
 
 def _python_value(item: ValueT | None) -> Any:
     if item is None:
         return None
+
+    if item.kindType == ValueKind.NullValueValue:
+        payload = _require_value_payload(item, NullValueValueT, "null")
+        if payload.value != NullValue.Null:
+            raise ValueError(f"unsupported null value kind: {payload.value}")
+        return None
+    if item.kindType == ValueKind.BoolValue:
+        return _require_value_payload(item, BoolValueT, "bool").value
+    if item.kindType == ValueKind.Int64Value:
+        return _require_value_payload(item, Int64ValueT, "int64").value
+    if item.kindType == ValueKind.UInt64Value:
+        return _require_value_payload(item, UInt64ValueT, "uint64").value
+    if item.kindType == ValueKind.Float64Value:
+        return _require_value_payload(item, Float64ValueT, "float64").value
+    if item.kindType == ValueKind.NonFiniteFloatValue:
+        kind = _require_value_payload(item, NonFiniteFloatValueT, "non-finite float").kind
+        if kind == NonFiniteFloatKind.NaN:
+            return float("nan")
+        if kind == NonFiniteFloatKind.PositiveInfinity:
+            return float("inf")
+        if kind == NonFiniteFloatKind.NegativeInfinity:
+            return float("-inf")
+        raise ValueError(f"unsupported non-finite float kind: {kind}")
+    if item.kindType == ValueKind.StringValue:
+        payload = _require_value_payload(item, StringValueT, "string")
+        if payload.value is None:
+            raise ValueError("string value has no string payload")
+        return payload.value
+    if item.kindType == ValueKind.BytesValue:
+        payload = _require_value_payload(item, BytesValueT, "bytes")
+        return bytes(payload.value) if payload.value is not None else b""
     if item.kindType == ValueKind.ValueList:
-        payload = item.kind
-        return [_python_value(child) for child in (payload.values if payload else [])]
+        payload = _require_value_payload(item, ValueListT, "list")
+        return [_python_value(child) for child in (payload.values or [])]
     if item.kindType == ValueKind.ValueObject:
-        payload = item.kind
-        return {
-            entry.key: _python_value(entry.value)
-            for entry in (payload.fields if payload else [])
-            if entry is not None
-        }
+        payload = _require_value_payload(item, ValueObjectT, "object")
+        return {key: _python_value(value) for key, value in _entries(payload.fields).items()}
     if item.kindType == ValueKind.TensorValue:
-        payload = item.kind
-        dense = getattr(payload, "payload", None) if payload else None
-        cells = getattr(dense, "values", None) if dense else None
-        return {
-            "$searchkernel_tensor": {
-                "type_spec": getattr(payload, "typeSpec", None) if payload else None,
-                "dense": list(cells or []),
+        payload = _require_value_payload(item, TensorValueT, "tensor")
+        if payload.typeSpec is None:
+            raise ValueError("tensor value has no type spec")
+        if payload.payloadType == TensorPayloadKind.DenseTensorValues:
+            dense = payload.payload
+            if not isinstance(dense, DenseTensorValuesT):
+                raise ValueError("dense tensor has a missing or mismatched payload")
+            return {
+                "$searchkernel_tensor": {
+                    "type_spec": payload.typeSpec,
+                    "dense": list(dense.values or []),
+                }
             }
-        }
-    return getattr(item.kind, "value", None)
+        if payload.payloadType == TensorPayloadKind.SparseTensorCells:
+            sparse = payload.payload
+            if not isinstance(sparse, SparseTensorCellsT):
+                raise ValueError("sparse tensor has a missing or mismatched payload")
+            return {
+                "$searchkernel_tensor": {
+                    "type_spec": payload.typeSpec,
+                    "sparse": [
+                        {
+                            "address": _tensor_address(cell.address),
+                            "value": cell.value,
+                        }
+                        for cell in (sparse.cells or [])
+                        if cell is not None
+                    ],
+                }
+            }
+        if payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
+            mixed = payload.payload
+            if not isinstance(mixed, MixedTensorBlocksT):
+                raise ValueError("mixed tensor has a missing or mismatched payload")
+            return {
+                "$searchkernel_tensor": {
+                    "type_spec": payload.typeSpec,
+                    "mixed": [
+                        {
+                            "address": _tensor_address(block.address),
+                            "values": list(block.values or []),
+                        }
+                        for block in (mixed.blocks or [])
+                        if block is not None
+                    ],
+                }
+            }
+        raise ValueError(f"unsupported tensor payload kind: {payload.payloadType}")
+
+    raise ValueError(f"unsupported value kind: {item.kindType}")
 
 
 class ClientError(RuntimeError):
