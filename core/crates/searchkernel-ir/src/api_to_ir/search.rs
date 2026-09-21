@@ -89,7 +89,7 @@ impl IndexContext {
                         "query and query_expr cannot both be supplied",
                     ));
                 }
-                self.query_expr_to_ir(expression, "query_expr")
+                self.typed_query_to_ir(expression, "query_expr", None)
             }
             None if text.trim().is_empty() => Err(invalid(
                 "invalid_query",

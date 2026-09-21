@@ -374,174 +374,6 @@ fn annotation_string(
 }
 
 impl IndexContext {
-    pub(crate) fn query_expr_to_ir(
-        &self,
-        expression: api::QueryExpr<'_>,
-        path: &str,
-    ) -> Result<QueryIr> {
-        self.query_expr_to_ir_with_default_index(expression, path, None)
-    }
-
-    pub(crate) fn query_expr_to_ir_with_default_index(
-        &self,
-        expression: api::QueryExpr<'_>,
-        path: &str,
-        default_index: Option<&str>,
-    ) -> Result<QueryIr> {
-        let tag = expression.expr_type();
-        match tag {
-            api::QueryExprKind::TermQuery => {
-                self.typed_query_to_ir(expression, path, default_index)
-            }
-            api::QueryExprKind::QueryContains => {
-                let contains = expression.expr_as_query_contains().ok_or_else(|| {
-                    invalid(
-                        "invalid_query",
-                        Some(path),
-                        "query expression must select an operation",
-                    )
-                })?;
-                let field_name = contains.field().ok_or_else(|| {
-                    invalid(
-                        "missing_query_field",
-                        Some(format!("{path}.contains.field")),
-                        "query contains requires a field",
-                    )
-                })?;
-                let field = self.query_field(
-                    field_name.path().unwrap_or_default(),
-                    format!("{path}.contains.field.path"),
-                )?;
-                let item = contains.item().ok_or_else(|| {
-                    invalid(
-                        "missing_query_item",
-                        Some(format!("{path}.contains.item")),
-                        "query contains requires an item",
-                    )
-                })?;
-                let fuzzy_on_string_attribute = item.expr_type() == api::QueryExprKind::QueryFuzzy
-                    && field.kind() == FieldKind::Keyword
-                    && field.capabilities().filterable();
-                let same_element_on_struct_array = item.expr_type()
-                    == api::QueryExprKind::QuerySameElement
-                    && matches!(
-                        field.data_type(),
-                        DataTypeIr::Array(element)
-                            if matches!(
-                                element.as_ref(),
-                                DataTypeIr::Struct { .. } | DataTypeIr::StructReference { .. }
-                            )
-                    );
-                if !field.capabilities().searchable()
-                    && !fuzzy_on_string_attribute
-                    && !same_element_on_struct_array
-                {
-                    return Err(invalid(
-                        "field_not_searchable",
-                        Some(format!("{path}.contains.field")),
-                        "query term requires a searchable field",
-                    ));
-                }
-                let Some(term) = item.expr_as_term_query() else {
-                    return self.typed_query_to_ir(expression, path, default_index);
-                };
-                if expression.annotations().is_some()
-                    || item.annotations().is_some()
-                    || contains
-                        .field()
-                        .and_then(|field| field.element_index())
-                        .is_some()
-                {
-                    return self.typed_query_to_ir(expression, path, default_index);
-                }
-                let value = term.value().ok_or_else(|| {
-                    invalid(
-                        "missing_value",
-                        Some(format!("{path}.contains.item.value")),
-                        "query term requires a value",
-                    )
-                })?;
-                match scalar_to_ir(value, field.kind(), format!("{path}.contains.item.value")) {
-                    Ok(value) => Ok(QueryIr::Term {
-                        field: field.name.clone(),
-                        value,
-                    }),
-                    Err(_) => self
-                        .typed_query_expr_to_ir(expression, path)
-                        .map(|query| QueryIr::Typed(Box::new(query))),
-                }
-            }
-            api::QueryExprKind::QueryAnd => {
-                let node = expression.expr_as_query_and().ok_or_else(|| {
-                    invalid(
-                        "invalid_query",
-                        Some(path),
-                        "query expression must select an operation",
-                    )
-                })?;
-                let clauses = query_children(node.clauses(), self, path, "all", default_index)?;
-                if clauses.is_empty() {
-                    return Err(invalid(
-                        "invalid_query",
-                        Some(format!("{path}.all")),
-                        "query all requires at least one clause",
-                    ));
-                }
-                if expression.annotations().is_some() || clauses.iter().any(query_ir_is_typed) {
-                    return self.typed_query_to_ir(expression, path, default_index);
-                }
-                Ok(flatten_query_and(clauses))
-            }
-            api::QueryExprKind::QueryOr => {
-                let node = expression.expr_as_query_or().ok_or_else(|| {
-                    invalid(
-                        "invalid_query",
-                        Some(path),
-                        "query expression must select an operation",
-                    )
-                })?;
-                let clauses = query_children(node.clauses(), self, path, "any", default_index)?;
-                if clauses.is_empty() {
-                    return Err(invalid(
-                        "invalid_query",
-                        Some(format!("{path}.any")),
-                        "query any requires at least one clause",
-                    ));
-                }
-                if expression.annotations().is_some() || clauses.iter().any(query_ir_is_typed) {
-                    return self.typed_query_to_ir(expression, path, default_index);
-                }
-                Ok(flatten_query_or(clauses))
-            }
-            api::QueryExprKind::QueryNot => {
-                let node = expression.expr_as_query_not().ok_or_else(|| {
-                    invalid(
-                        "invalid_query",
-                        Some(path),
-                        "query expression must select an operation",
-                    )
-                })?;
-                let clause = node.clause().ok_or_else(|| {
-                    invalid(
-                        "invalid_query",
-                        Some(format!("{path}.negation.clause")),
-                        "query negation requires a clause",
-                    )
-                })?;
-                let clause = self.query_expr_to_ir_with_default_index(
-                    clause,
-                    &format!("{path}.negation.clause"),
-                    default_index,
-                )?;
-                if expression.annotations().is_some() || query_ir_is_typed(&clause) {
-                    return self.typed_query_to_ir(expression, path, default_index);
-                }
-                Ok(QueryIr::Not(Box::new(clause)))
-            }
-            _ => self.typed_query_to_ir(expression, path, default_index),
-        }
-    }
-
     pub(crate) fn typed_query_to_ir(
         &self,
         expression: api::QueryExpr<'_>,
@@ -2145,27 +1977,6 @@ fn validate_geo_radius(radius: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn query_children(
-    children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
-    context: &IndexContext,
-    parent_path: &str,
-    operation_name: &str,
-    default_index: Option<&str>,
-) -> Result<Vec<QueryIr>> {
-    let mut converted = Vec::new();
-    if let Some(children) = children {
-        for (index, child) in children.iter().enumerate() {
-            let child_path = format!("{parent_path}.{operation_name}.clauses[{index}]");
-            converted.push(context.query_expr_to_ir_with_default_index(
-                child,
-                &child_path,
-                default_index,
-            )?);
-        }
-    }
-    Ok(converted)
-}
-
 fn validate_predicate_features(
     values: &BTreeMap<String, RequestValueIr>,
     path: &str,
@@ -2289,9 +2100,6 @@ fn parse_predicate_bitmap(value: &str, path: &str) -> Result<u64> {
     })
 }
 
-pub(crate) fn query_ir_is_typed(value: &QueryIr) -> bool {
-    matches!(value, QueryIr::Typed(_))
-}
 pub(crate) fn query_comparison_op(value: u8, path: &str) -> Result<ComparisonOp> {
     match value {
         1 => Ok(ComparisonOp::Eq),
@@ -2402,34 +2210,4 @@ pub(crate) fn query_value_object_to_ir(
         }
     }
     Ok(output)
-}
-pub(crate) fn flatten_query_and(clauses: Vec<QueryIr>) -> QueryIr {
-    let mut flattened = Vec::new();
-    for clause in clauses {
-        if let QueryIr::And(nested_clauses) = clause {
-            flattened.extend(nested_clauses)
-        } else {
-            flattened.push(clause)
-        }
-    }
-    if flattened.len() == 1 {
-        flattened.pop().expect("one clause was checked")
-    } else {
-        QueryIr::And(flattened)
-    }
-}
-pub(crate) fn flatten_query_or(clauses: Vec<QueryIr>) -> QueryIr {
-    let mut flattened = Vec::new();
-    for clause in clauses {
-        if let QueryIr::Or(nested_clauses) = clause {
-            flattened.extend(nested_clauses)
-        } else {
-            flattened.push(clause)
-        }
-    }
-    if flattened.len() == 1 {
-        flattened.pop().expect("one clause was checked")
-    } else {
-        QueryIr::Or(flattened)
-    }
 }
