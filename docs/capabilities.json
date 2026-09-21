@@ -1,11 +1,93 @@
 {
   "version": 1,
-  "snapshot": "2026-09-20",
+  "snapshot": "2026-09-21",
   "capabilities": [
+    {
+      "id": "query.term",
+      "title": "Term and fielded contains queries",
+      "area": "query",
+      "query_expr_kinds": [
+        "TermQuery",
+        "QueryContains"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs",
+        "clients/python/searchkernel/ergonomic.py",
+        "clients/typescript/tests/facade.test.ts"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "query.boolean_constants",
+      "title": "True and false query constants",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryTrue",
+        "QueryFalse"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+      ],
+      "limitations": [
+        "No high-level Rust, Python, or TypeScript facade helper currently constructs these constants."
+      ]
+    },
+    {
+      "id": "query.comparison",
+      "title": "Comparison queries",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryComparison"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs"
+      ],
+      "limitations": [
+        "The Python and TypeScript q facades do not yet expose comparison constructors."
+      ]
+    },
+    {
+      "id": "query.range",
+      "title": "Range queries",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryRange"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs"
+      ],
+      "limitations": [
+        "The Python and TypeScript q facades do not yet expose range constructors."
+      ]
+    },
     {
       "id": "query.boolean",
       "title": "Boolean query operators",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryAnd",
+        "QueryOr",
+        "QueryNot"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -22,6 +104,9 @@
       "id": "query.phrase",
       "title": "Phrase queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryPhrase"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -32,13 +117,17 @@
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "The Python and TypeScript high-level q namespaces do not yet expose"
+        "The TypeScript high-level q namespace does not yet expose a phrase helper."
       ]
     },
     {
       "id": "query.proximity",
       "title": "Near and ordered-near proximity queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryNear",
+        "QueryONear"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -47,13 +136,16 @@
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "the high-level Rust Query, Python q, or TypeScript q facades expose proximity constructors yet"
+        "The high-level Rust Query and TypeScript q facades do not expose proximity constructors yet."
       ]
     },
     {
       "id": "query.same_element",
       "title": "sameElement query",
       "area": "query",
+      "query_expr_kinds": [
+        "QuerySameElement"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -71,6 +163,9 @@
       "id": "query.fuzzy",
       "title": "Fuzzy query",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryFuzzy"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -80,13 +175,16 @@
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
       ],
       "limitations": [
-        "The Python and TypeScript high-level q facades do not yet expose"
+        "The TypeScript high-level q facade does not yet expose a fuzzy helper."
       ]
     },
     {
       "id": "query.prefix_suffix_substring",
       "title": "Prefix, suffix, and substring queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryMatches"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -101,24 +199,29 @@
     },
     {
       "id": "query.alternatives",
-      "title": "Alternatives and equivalence queries",
+      "title": "Alternatives queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryAlternatives"
+      ],
       "represented": true,
       "semantic": true,
-      "executable": true,
+      "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Alternatives currently accepts term children only; more general alternatives are rejected. High-level Rust and Python facades do not expose these nodes.",
-        "The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available."
+        "Alternatives currently executes only when every child is a term; general alternatives are rejected by the adapter. High-level Rust, Python, and TypeScript facades do not expose this node."
       ]
     },
     {
       "id": "query.nearest_neighbor",
       "title": "Nearest-neighbor vector search",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryNearestNeighbor"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -138,6 +241,10 @@
       "id": "query.geo",
       "title": "Geo-location and bounding-box queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryGeoLocation",
+        "QueryGeoBoundingBox"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -146,7 +253,7 @@
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end ergonomic SDK capability.",
+        "Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end schema-and-query ergonomic SDK capability.",
         "The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available."
       ]
     },
@@ -154,6 +261,9 @@
       "id": "query.predicate",
       "title": "Predicate queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryPredicate"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -168,8 +278,12 @@
     },
     {
       "id": "query.weighted_and_wand",
-      "title": "WeakAnd, weighted-set, dot-product, and WAND queries",
+      "title": "WeakAnd and WAND queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryWeakAnd",
+        "QueryWand"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -183,9 +297,32 @@
       ]
     },
     {
-      "id": "query.user_input_user_query",
-      "title": "userInput and userQuery text parsing",
+      "id": "query.weighted_set_dot_product",
+      "title": "Weighted-set and dot-product queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryWeightedSet",
+        "QueryDotProduct"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs"
+      ],
+      "limitations": [
+        "The Python and TypeScript q facades do not yet expose weighted-set or dot-product helpers."
+      ]
+    },
+    {
+      "id": "query.equivalence",
+      "title": "Equivalence queries",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryEquiv"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -194,8 +331,46 @@
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
       ],
       "limitations": [
-        "The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. No high-level facade currently exposes userInput/userQuery constructors.",
-        "The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available."
+        "No high-level Rust, Python, or TypeScript facade helper currently constructs equivalence queries."
+      ]
+    },
+    {
+      "id": "query.rank",
+      "title": "Rank query composition",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryRank"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
+        "core/crates/searchkernel/src/query.rs",
+        "clients/python/searchkernel/ergonomic.py"
+      ],
+      "limitations": [
+        "The TypeScript q facade does not yet expose rank composition."
+      ]
+    },
+    {
+      "id": "query.user_input_user_query",
+      "title": "userInput and userQuery text parsing",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryUserInput",
+        "QueryUserQuery"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": false,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+      ],
+      "limitations": [
+        "The parser intentionally supports only a reduced grammar; full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites are rejected. No high-level facade currently exposes userInput/userQuery constructors."
       ]
     },
     {
@@ -455,8 +630,6 @@
       "executable": true,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
-        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
@@ -513,8 +686,6 @@
       "executable": false,
       "verified_by": [
         "api/searchkernel.fbs",
-        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
-        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
@@ -730,9 +901,30 @@
       ]
     },
     {
+      "id": "query.typed_text",
+      "title": "Typed analyzed-text query nodes",
+      "area": "query",
+      "query_expr_kinds": [
+        "QueryText"
+      ],
+      "represented": true,
+      "semantic": true,
+      "executable": true,
+      "verified_by": [
+        "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs"
+      ],
+      "limitations": [
+        "The typed QueryText node executes through the adapter, but no high-level Rust, Python, or TypeScript q facade helper constructs it."
+      ]
+    },
+    {
       "id": "query.in_term",
       "title": "Native in-term queries",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryIn"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -749,6 +941,9 @@
       "id": "query.non_empty",
       "title": "NonEmpty query wrapper",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryNonEmpty"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,
@@ -765,6 +960,9 @@
       "id": "query.labels",
       "title": "Labeled query rank properties",
       "area": "query",
+      "query_expr_kinds": [
+        "QueryLabeled"
+      ],
       "represented": true,
       "semantic": true,
       "executable": true,

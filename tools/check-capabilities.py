@@ -15,7 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER_PATH = ROOT / "docs" / "capabilities.json"
 CAPABILITIES_DOC = ROOT / "docs" / "CAPABILITIES.md"
 LIMITATIONS_DOC = ROOT / "LIMITATIONS.md"
+QUERY_SCHEMA_PATH = ROOT / "api" / "searchkernel.fbs"
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+$")
+QUERY_EXPR_UNION_PATTERN = re.compile(
+    r"\bunion\s+QueryExprKind\s*\{(?P<body>.*?)\}",
+    re.DOTALL,
+)
 REQUIRED_FIELDS = {
     "id",
     "title",
@@ -65,6 +70,33 @@ def _require_string_list(value: Any, label: str) -> list[str]:
     return result
 
 
+def load_query_expr_kinds(path: Path = QUERY_SCHEMA_PATH) -> list[str]:
+    try:
+        schema = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise LedgerError(f"cannot read query schema {path}: {error}") from error
+    match = QUERY_EXPR_UNION_PATTERN.search(schema)
+    if match is None:
+        raise LedgerError(f"cannot find QueryExprKind union in {path}")
+
+    body = "\n".join(
+        line.split("//", 1)[0] for line in match.group("body").splitlines()
+    )
+    kinds: list[str] = []
+    for entry in body.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", entry):
+            raise LedgerError(f"invalid QueryExprKind entry in {path}: {entry}")
+        kinds.append(entry)
+    if not kinds:
+        raise LedgerError(f"QueryExprKind union in {path} is empty")
+    if len(kinds) != len(set(kinds)):
+        raise LedgerError(f"duplicate QueryExprKind entry in {path}")
+    return kinds
+
+
 def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str, Any]]:
     if ledger.get("version") != 1:
         raise LedgerError("ledger version must be 1")
@@ -73,6 +105,11 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
     if not isinstance(capabilities, list) or not capabilities:
         raise LedgerError("capabilities must be a non-empty list")
 
+    # Read the union from the canonical schema so adding a typed-query variant
+    # forces an explicit capability classification instead of silently passing
+    # with an incomplete hand-maintained inventory.
+    query_expr_kinds = set(load_query_expr_kinds(root / "api" / "searchkernel.fbs"))
+    query_expr_owners: dict[str, str] = {}
     validated: list[dict[str, Any]] = []
     seen: set[str] = set()
     for index, capability in enumerate(capabilities):
@@ -90,6 +127,27 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
         seen.add(identifier)
         _require_string(capability["title"], f"{label}.title")
         _require_string(capability["area"], f"{label}.area")
+
+        if "query_expr_kinds" in capability:
+            if capability["area"] != "query":
+                raise LedgerError(
+                    f"{identifier}: query_expr_kinds is only valid for query capabilities"
+                )
+            kinds = _require_string_list(
+                capability.get("query_expr_kinds"),
+                f"{label}.query_expr_kinds",
+            )
+            for kind in kinds:
+                if kind not in query_expr_kinds:
+                    raise LedgerError(
+                        f"{identifier}: unknown QueryExprKind: {kind}"
+                    )
+                previous = query_expr_owners.get(kind)
+                if previous is not None:
+                    raise LedgerError(
+                        f"{kind} is assigned to both {previous} and {identifier}"
+                    )
+                query_expr_owners[kind] = identifier
 
         represented = _require_bool(capability["represented"], f"{label}.represented")
         semantic = _require_bool(capability["semantic"], f"{label}.semantic")
@@ -120,6 +178,11 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
             raise LedgerError(f"{identifier}: unsupported capability needs a limitation")
 
         validated.append(capability)
+
+    missing_query_expr_kinds = query_expr_kinds - query_expr_owners.keys()
+    if missing_query_expr_kinds:
+        missing = ", ".join(sorted(missing_query_expr_kinds))
+        raise LedgerError(f"unclassified QueryExprKind variants: {missing}")
     return validated
 
 
