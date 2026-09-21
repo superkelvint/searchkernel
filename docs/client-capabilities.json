@@ -36,6 +36,58 @@
   ],
   "capabilities": [
     {
+      "id": "query.term",
+      "title": "Term and fielded contains queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.boolean_constants",
+      "title": "True and false query constants",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.comparison",
+      "title": "Comparison queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.range",
+      "title": "Range queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
       "id": "query.boolean",
       "title": "Boolean query operators",
       "area": "query",
@@ -227,7 +279,7 @@
     },
     {
       "id": "query.alternatives",
-      "title": "Alternatives and equivalence queries",
+      "title": "Alternatives queries",
       "area": "query",
       "scenarios": [
         {
@@ -326,7 +378,7 @@
     },
     {
       "id": "query.weighted_and_wand",
-      "title": "WeakAnd, weighted-set, dot-product, and WAND queries",
+      "title": "WeakAnd and WAND queries",
       "area": "query",
       "scenarios": [
         {
@@ -370,6 +422,45 @@
               "line": 417
             }
           ],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.weighted_set_dot_product",
+      "title": "Weighted-set and dot-product queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.equivalence",
+      "title": "Equivalence queries",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.rank",
+      "title": "Rank query composition",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
           "overrides": []
         }
       ]
@@ -1145,6 +1236,19 @@
     {
       "id": "query.text_weak_and",
       "title": "Analyzed text search with default WeakAnd semantics",
+      "area": "query",
+      "scenarios": [
+        {
+          "id": "basic",
+          "title": "Basic behavior",
+          "evidence": [],
+          "overrides": []
+        }
+      ]
+    },
+    {
+      "id": "query.typed_text",
+      "title": "Typed analyzed-text query nodes",
       "area": "query",
       "scenarios": [
         {
