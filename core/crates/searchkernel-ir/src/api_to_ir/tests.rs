@@ -495,6 +495,212 @@ fn rust_rank_profiles_preserve_phase_presence_and_second_phase_expression() {
     );
 }
 
+#[test]
+fn rust_rank_profile_empty_phase_matches_portable_normalization() {
+    let rust_definition = resolve_rust_index_definition_with_profiles(
+        RustIndexDefinitionInput {
+            name: Some("ranked".to_owned()),
+            fields: vec![RustFieldInput {
+                name: "title".to_owned(),
+                kind: RustFieldKind::Text,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        },
+        vec![RustRankProfileInput {
+            name: "custom".to_owned(),
+            first_phase: Some(String::new()),
+            second_phase: None,
+            rerank_count: None,
+            match_features: Vec::new(),
+            query_inputs: Vec::new(),
+        }],
+    )
+    .expect("Rust rank profile should resolve");
+    let bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::index_definition_to_ir(
+        crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("encoded Rust definition should parse"),
+    )
+    .expect("portable rank profile should resolve");
+
+    assert_eq!(rust_definition, portable_definition);
+}
+
+#[test]
+fn rust_rank_profile_resolution_matches_portable_resolution() {
+    let rust_definition = resolve_rust_index_definition_with_profiles(
+        RustIndexDefinitionInput {
+            name: Some("ranked".to_owned()),
+            fields: vec![RustFieldInput {
+                name: "title".to_owned(),
+                kind: RustFieldKind::Text,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        },
+        vec![RustRankProfileInput {
+            name: "custom".to_owned(),
+            first_phase: Some("nativeRank(title)".to_owned()),
+            second_phase: Some("attribute(score)".to_owned()),
+            rerank_count: Some(7),
+            match_features: vec!["nativeRank(title)".to_owned()],
+            query_inputs: vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())],
+        }],
+    )
+    .expect("Rust rank profile should resolve");
+    let bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::index_definition_to_ir(
+        crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("encoded Rust definition should parse"),
+    )
+    .expect("portable rank profile should resolve");
+
+    assert_eq!(rust_definition, portable_definition);
+}
+
+#[test]
+fn rust_rank_profile_rerank_count_without_second_phase_matches_portable_resolution() {
+    let rust_definition = resolve_rust_index_definition_with_profiles(
+        RustIndexDefinitionInput {
+            name: Some("ranked".to_owned()),
+            fields: vec![RustFieldInput {
+                name: "title".to_owned(),
+                kind: RustFieldKind::Text,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        },
+        vec![RustRankProfileInput {
+            name: "custom".to_owned(),
+            first_phase: None,
+            second_phase: None,
+            rerank_count: Some(7),
+            match_features: Vec::new(),
+            query_inputs: Vec::new(),
+        }],
+    )
+    .expect("Rust rank profile should resolve");
+    let bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::index_definition_to_ir(
+        crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("encoded Rust definition should parse"),
+    )
+    .expect("portable rank profile should resolve");
+
+    assert_eq!(rust_definition, portable_definition);
+    let phase = portable_definition.rank_profiles()[0]
+        .second_phase
+        .as_ref()
+        .expect("rerank count should retain second-phase presence");
+    assert_eq!(phase.expression, None);
+    assert_eq!(phase.rerank_count, Some(7));
+}
+
+#[test]
+fn rust_rank_profile_validation_matches_portable_errors() {
+    let schema = || RustIndexDefinitionInput {
+        name: Some("ranked".to_owned()),
+        fields: vec![RustFieldInput {
+            name: "title".to_owned(),
+            kind: RustFieldKind::Text,
+            multi: false,
+            stored: None,
+            searchable: None,
+            filterable: None,
+            sortable: None,
+            facetable: None,
+            analyzer: None,
+            distance_metric: None,
+            hnsw: None,
+        }],
+        default_search_fields: None,
+    };
+    let profile = || RustRankProfileInput {
+        name: "custom".to_owned(),
+        first_phase: None,
+        second_phase: None,
+        rerank_count: None,
+        match_features: Vec::new(),
+        query_inputs: vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())],
+    };
+    let portable_error_code = |definition: IndexDefinitionIr| {
+        let bytes = crate::index_definition_ir_to_api(&definition);
+        crate::index_definition_to_ir(
+            crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+                .expect("encoded definition should parse"),
+        )
+        .expect_err("portable definition should be rejected")
+        .details[0]
+            .code
+            .clone()
+    };
+
+    let duplicate_profiles = vec![profile(), profile()];
+    let rust_error = resolve_rust_index_definition_with_profiles(schema(), duplicate_profiles)
+        .expect_err("duplicate Rust profiles should be rejected");
+    let valid_profile = resolve_rust_index_definition_with_profiles(schema(), vec![profile()])
+        .expect("single Rust profile should resolve")
+        .rank_profiles()[0]
+        .clone();
+    let mut portable_definition = resolve_rust_index_definition(schema()).unwrap();
+    portable_definition.set_rank_profiles(vec![valid_profile.clone(), valid_profile]);
+    assert_eq!(rust_error.details[0].code, "duplicate_rank_profile");
+    assert_eq!(
+        rust_error.details[0].code,
+        portable_error_code(portable_definition)
+    );
+
+    let duplicate_inputs = RustRankProfileInput {
+        query_inputs: vec![
+            ("query_vector".to_owned(), "tensor<float>(x[3])".to_owned()),
+            ("query_vector".to_owned(), "tensor<float>(x[3])".to_owned()),
+        ],
+        ..profile()
+    };
+    let rust_error = resolve_rust_index_definition_with_profiles(schema(), vec![duplicate_inputs])
+        .expect_err("duplicate Rust inputs should be rejected");
+    let mut portable_profile =
+        resolve_rust_index_definition_with_profiles(schema(), vec![profile()])
+            .expect("single Rust profile should resolve")
+            .rank_profiles()[0]
+            .clone();
+    portable_profile
+        .inputs
+        .push(portable_profile.inputs[0].clone());
+    let mut portable_definition = resolve_rust_index_definition(schema()).unwrap();
+    portable_definition.set_rank_profiles(vec![portable_profile]);
+    assert_eq!(rust_error.details[0].code, "duplicate_rank_input");
+    assert_eq!(
+        rust_error.details[0].code,
+        portable_error_code(portable_definition)
+    );
+}
+
 fn parity_document_input() -> DocumentInput {
     DocumentInput {
         id: "doc-7".to_owned(),
