@@ -89,22 +89,47 @@ Requirements:
 - unsupported Vespa execution remains explicit `Unsupported` and is not
   confused with schema representation fidelity.
 
-### 0B. Canonical search resolution and typed queries
+### 0B. Canonical semantic resolution and typed queries
 
-Prove that Rust and portable ingress converge before resolved search IR exists.
+Status: **BLOCKED** after adversarial audit.
 
-Requirements:
+The normal full SearchRequest path already converges through
+`SearchInput -> resolve_search()`. Do not replace that working structure.
 
-- one canonical unresolved search representation;
-- one canonical resolver;
-- no public/ungated constructor that permits a second resolved-search path;
-- typed-query annotations, ranking state, query inputs, grouping, search fields,
-  filters, sorting, and presentation controls all pass through the shared
-  semantic resolution boundary;
-- focused typed-query tests remain green;
+Required remediation:
+
+#### Schema/ranking ingress
+
+- introduce one shared unresolved schema-input representation for Rust and
+  FlatBuffers ingress;
+- resolve field capability defaults once;
+- resolve rank-profile/rank-phase presence, normalization and validation once;
+- prove full canonical equality for equivalent Rust/portable two-phase profiles,
+  including absent/empty/invalid phase cases;
+- prove field-default parity for text, keyword, numeric, bool, Position, Tensor,
+  HNSW and supported multi-valued shapes;
+- do not serialize Rust through FlatBuffers merely to share semantics.
+
+#### SearchRequest bypasses
+
+- make `search_to_ir() -> decode_search_input() -> resolve_search()` the sole
+  production semantic route for a portable SearchRequest;
+- remove, restrict or delegate legacy component-level query/ranking/sort
+  resolvers that apply their own defaults/normalization/error meaning;
+- add regressions for the known empty-ranking, typed Contains/Term and invalid-
+  sort divergences;
+- add a structural guard against reintroducing a second portable semantic path.
+
+#### Preserve the good shared path
+
+- typed-query annotations/defaults continue through
+  `normalize_typed_query()` and `validate_typed_query()`;
+- grouping, filters, search fields, sorting and presentation controls continue
+  to converge at the shared resolver;
+- focused typed-query tests and two-phase real-engine tests remain green;
 - structural IR-boundary checks are green.
 
-Do not widen the typed-query surface while fixing boundary correctness.
+Do not widen the typed-query or ranking contract while fixing ownership.
 
 ### 0C. Phase 9 / additive / YQL / grouping closure
 
