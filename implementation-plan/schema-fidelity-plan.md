@@ -336,6 +336,18 @@ Finally:
 
 # Phase 2 — Make the public Rust schema representation lossless
 
+Implementation status: complete for the `Index::describe()` representation.
+The canonical IR is the single authoritative state for described values and is
+exposed through the public `canonical_definition()` accessors on
+`IndexDefinition`, `Field`, and `RankProfile`; the ergonomic fields remain
+convenience projections. The direct public-state regressions below are the
+acceptance evidence for this status.
+
+-  [x] `IndexDefinition` exposes complete canonical top-level schema state.
+-  [x] `Field` exposes complete canonical field/data-type state.
+-  [x] `RankProfile` exposes complete canonical rank-profile and phase state.
+-  [x] Public described values retain absence/presence semantics.
+
 Do not solve this by adding special cases inside `describe()`.
 
 The public Rust representation must be capable of preserving every canonical schema concept.
@@ -389,6 +401,14 @@ Do not require ordinary users to populate every advanced field.
 
 # Phase 3 — Make Rust → IR conversion lossless
 
+-  [x] `definition_to_ir()` validates the ergonomic projection and restores
+       canonical state from public described values without an immediate
+       hidden-sidecar return.
+-  [x] Cloned fields and rank profiles convert from their own public canonical
+       state.
+-  [x] Rich public mutations update canonical state while preserving untouched
+       members.
+
 Update the production Rust schema conversion path.
 
 Required invariant:
@@ -419,6 +439,12 @@ Remove any construction of artificial canonical defaults where the public type c
 
 # Phase 4 — Make IR → Rust conversion lossless
 
+-  [x] `definition_from_ir()` retains complete field and rank-profile state on
+       the returned public values.
+-  [x] Optional rank phases are represented without manufacturing an empty
+       first phase.
+-  [x] Top-level canonical state is retained and publicly observable.
+
 Update:
 
 ```text
@@ -447,6 +473,13 @@ No fake tensor defaults.
 ------
 
 # Phase 5 — Make describe round-trip lossless
+
+-  [x] `Index::describe()` exposes the complete canonical state through the
+       public Rust representation.
+-  [x] Full canonical equality passes after describe, clone/reuse, and rich
+       mutation paths.
+-  [x] Rich described definitions use canonical FlatBuffers provenance for
+       portable persistence.
 
 After Phases 2–4:
 

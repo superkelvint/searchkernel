@@ -89,61 +89,110 @@ pub struct Field {
     pub(crate) analyzer: Option<Analyzer>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
+    pub(crate) canonical: Option<searchkernel_ir::FieldIr>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 /// A Vespa rank profile exposed by the native schema compiler.
 pub struct RankProfile {
     pub(crate) name: String,
-    pub(crate) first_phase: String,
+    pub(crate) first_phase: Option<String>,
     pub(crate) second_phase: Option<String>,
     pub(crate) rerank_count: Option<u32>,
     pub(crate) match_features: Vec<String>,
     pub(crate) query_inputs: Vec<(String, String)>,
+    pub(crate) canonical: Option<searchkernel_ir::RankProfileDefinitionIr>,
 }
 
 impl RankProfile {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            first_phase: String::new(),
+            first_phase: None,
             second_phase: None,
             rerank_count: None,
             match_features: Vec::new(),
             query_inputs: Vec::new(),
+            canonical: None,
         }
     }
 
     pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
-        self.first_phase = expression.into();
+        let expression = expression.into();
+        self.first_phase = Some(expression.clone());
+        if let Some(profile) = self.canonical.as_mut() {
+            profile
+                .first_phase
+                .get_or_insert_with(empty_rank_phase)
+                .expression = Some(expression);
+        }
         self
     }
 
     /// Set the Vespa second-phase ranking expression.
     pub fn second_phase(mut self, expression: impl Into<String>) -> Self {
-        self.second_phase = Some(expression.into());
+        let expression = expression.into();
+        self.second_phase = Some(expression.clone());
+        if let Some(profile) = self.canonical.as_mut() {
+            profile
+                .second_phase
+                .get_or_insert_with(empty_rank_phase)
+                .expression = Some(expression);
+        }
         self
     }
 
     /// Set the number of first-phase candidates Vespa reranks in second phase.
     pub fn rerank_count(mut self, count: u32) -> Self {
         self.rerank_count = Some(count);
+        if let Some(profile) = self.canonical.as_mut() {
+            profile
+                .second_phase
+                .get_or_insert_with(empty_rank_phase)
+                .rerank_count = Some(count);
+        }
         self
     }
 
     pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
-        self.match_features.push(expression.into());
+        let expression = expression.into();
+        self.match_features.push(expression.clone());
+        if let Some(profile) = self.canonical.as_mut() {
+            profile.match_features.push(expression);
+        }
         self
     }
 
     /// Declare a tensor query input used by this rank profile.
     pub fn query_input(mut self, name: impl Into<String>, type_spec: impl Into<String>) -> Self {
-        self.query_inputs.push((name.into(), type_spec.into()));
+        let name = name.into();
+        let type_spec = type_spec.into();
+        self.query_inputs.push((name.clone(), type_spec.clone()));
+        if let Some(profile) = self.canonical.as_mut() {
+            profile.inputs.push(searchkernel_ir::RankProfileInputIr {
+                name,
+                data_type: searchkernel_ir::DataTypeIr::Tensor {
+                    type_spec: type_spec.clone(),
+                },
+                default_value: searchkernel_ir::RequestValueIr::Tensor(
+                    searchkernel_ir::RequestTensorIr {
+                        type_spec,
+                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
+                    },
+                ),
+            });
+        }
         self
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Return the complete canonical rank-profile state represented by this
+    /// public value, when it originated from `Index::describe()`.
+    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::RankProfileDefinitionIr> {
+        self.canonical.as_ref()
     }
 }
 
@@ -161,6 +210,7 @@ impl Field {
             analyzer: None,
             distance_metric: None,
             hnsw: None,
+            canonical: None,
         }
     }
 
@@ -209,54 +259,123 @@ impl Field {
             analyzer: None,
             distance_metric: None,
             hnsw: None,
+            canonical: None,
         }
     }
 
     /// Make this field contain a collection of values.
     pub fn multi(mut self) -> Self {
         self.multi = true;
+        if let Some(field) = self.canonical.as_mut() {
+            field.set_multi(true);
+        }
         self
     }
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            let capabilities = field.capabilities();
+            field.set_capabilities(
+                value,
+                capabilities.searchable(),
+                capabilities.filterable(),
+                capabilities.sortable(),
+                capabilities.groupable(),
+            );
+        }
         self
     }
     /// Explicitly set whether this field can be searched with text queries.
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            let capabilities = field.capabilities();
+            field.set_capabilities(
+                capabilities.stored(),
+                value,
+                capabilities.filterable(),
+                capabilities.sortable(),
+                capabilities.groupable(),
+            );
+        }
         self
     }
     /// Explicitly set whether this field can be used in filters.
     pub fn filterable(mut self, value: bool) -> Self {
         self.filterable = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            let capabilities = field.capabilities();
+            field.set_capabilities(
+                capabilities.stored(),
+                capabilities.searchable(),
+                value,
+                capabilities.sortable(),
+                capabilities.groupable(),
+            );
+        }
         self
     }
     /// Explicitly set whether this field can be used for sorting.
     pub fn sortable(mut self, value: bool) -> Self {
         self.sortable = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            let capabilities = field.capabilities();
+            field.set_capabilities(
+                capabilities.stored(),
+                capabilities.searchable(),
+                capabilities.filterable(),
+                value,
+                capabilities.groupable(),
+            );
+        }
         self
     }
     /// Explicitly set whether this field can be used for facets.
     pub fn facetable(mut self, value: bool) -> Self {
         self.facetable = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            let capabilities = field.capabilities();
+            field.set_capabilities(
+                capabilities.stored(),
+                capabilities.searchable(),
+                capabilities.filterable(),
+                capabilities.sortable(),
+                value,
+            );
+        }
         self
     }
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
+        let canonical = analyzer_to_ir(&value).ok();
         self.analyzer = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            if let Some(analyzer) = canonical {
+                field.set_analyzer(Some(analyzer));
+            } else {
+                self.canonical = None;
+            }
+        }
         self
     }
 
     /// Configure the tensor attribute distance metric.
     pub fn distance_metric(mut self, value: DistanceMetric) -> Self {
         self.distance_metric = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            field.set_distance_metric(distance_metric_to_ir(value));
+        }
         self
     }
 
     /// Configure HNSW indexing for this tensor field.
     pub fn hnsw(mut self, value: HnswIndexConfig) -> Self {
+        let hnsw = hnsw_to_ir(&value);
         self.hnsw = Some(value);
+        if let Some(field) = self.canonical.as_mut() {
+            field.set_hnsw(hnsw);
+        }
         self
     }
 
@@ -298,6 +417,12 @@ impl Field {
     /// Return the configured analyzer, if any.
     pub fn configured_analyzer(&self) -> Option<Analyzer> {
         self.analyzer.clone()
+    }
+
+    /// Return the complete canonical field state represented by this public
+    /// value, when it originated from `Index::describe()`.
+    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::FieldIr> {
+        self.canonical.as_ref()
     }
 }
 
@@ -352,10 +477,10 @@ pub struct IndexDefinition {
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
-    // A described definition may contain canonical schema state that the
-    // ergonomic Rust builders intentionally do not expose yet. Retain that
-    // state so the IndexContext can be reconstructed without silently
-    // resolving it through the narrower builder representation.
+    // For values returned by Index::describe(), this is the authoritative
+    // canonical schema state. The ergonomic members above are projections for
+    // the common builder path; canonical_definition() makes the complete
+    // state observable instead of silently narrowing it at the Rust boundary.
     pub(crate) canonical: Option<searchkernel_ir::IndexDefinitionIr>,
 }
 
@@ -395,19 +520,21 @@ impl IndexDefinition {
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
         if self.canonical.is_some() {
-            let canonical_field = field_to_rust_input(&value)
-                .and_then(|field| {
-                    searchkernel_ir::resolve_rust_index_definition(
-                        searchkernel_ir::RustIndexDefinitionInput {
-                            name: None,
-                            fields: vec![field],
-                            default_search_fields: None,
-                        },
-                    )
-                    .map_err(Error::from_ir)
-                })
-                .ok()
-                .and_then(|definition| definition.fields().first().cloned());
+            let canonical_field = value.canonical.clone().or_else(|| {
+                field_to_rust_input(&value)
+                    .and_then(|field| {
+                        searchkernel_ir::resolve_rust_index_definition(
+                            searchkernel_ir::RustIndexDefinitionInput {
+                                name: None,
+                                fields: vec![field],
+                                default_search_fields: None,
+                            },
+                        )
+                        .map_err(Error::from_ir)
+                    })
+                    .ok()
+                    .and_then(|definition| definition.fields().first().cloned())
+            });
             if let Some(canonical_field) = canonical_field {
                 apply_canonical_mutation(&mut self.canonical, |canonical| {
                     canonical.push_field(canonical_field)
@@ -447,31 +574,35 @@ impl IndexDefinition {
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
         if self.canonical.is_some() {
-            let rust_profile = rank_profile_to_rust_input(&profile);
-            let placeholder = searchkernel_ir::RustFieldInput {
-                name: "rank_profile_placeholder".to_owned(),
-                kind: searchkernel_ir::RustFieldKind::Keyword,
-                multi: false,
-                stored: None,
-                searchable: None,
-                filterable: None,
-                sortable: None,
-                facetable: None,
-                analyzer: None,
-                distance_metric: None,
-                hnsw: None,
-            };
-            let canonical_profile = searchkernel_ir::resolve_rust_index_definition_with_profiles(
-                searchkernel_ir::RustIndexDefinitionInput {
-                    name: None,
-                    fields: vec![placeholder],
-                    default_search_fields: None,
-                },
-                vec![rust_profile],
-            )
-            .map_err(Error::from_ir)
-            .ok()
-            .and_then(|definition| definition.rank_profiles().first().cloned());
+            let canonical_profile = profile.canonical.clone().or_else(|| {
+                let rust_profile = rank_profile_to_rust_input(&profile);
+                let placeholder = searchkernel_ir::RustFieldInput {
+                    name: "rank_profile_placeholder".to_owned(),
+                    kind: searchkernel_ir::RustFieldKind::Keyword,
+                    multi: false,
+                    stored: None,
+                    searchable: None,
+                    filterable: None,
+                    sortable: None,
+                    facetable: None,
+                    analyzer: None,
+                    distance_metric: None,
+                    hnsw: None,
+                };
+                let canonical_profile =
+                    searchkernel_ir::resolve_rust_index_definition_with_profiles(
+                        searchkernel_ir::RustIndexDefinitionInput {
+                            name: None,
+                            fields: vec![placeholder],
+                            default_search_fields: None,
+                        },
+                        vec![rust_profile],
+                    )
+                    .map_err(Error::from_ir)
+                    .ok()
+                    .and_then(|definition| definition.rank_profiles().first().cloned());
+                canonical_profile
+            });
             if let Some(canonical_profile) = canonical_profile {
                 apply_canonical_mutation(&mut self.canonical, |canonical| {
                     canonical.push_rank_profile(canonical_profile)
@@ -501,6 +632,49 @@ impl IndexDefinition {
 
     pub fn rank_profiles(&self) -> &[RankProfile] {
         &self.rank_profiles
+    }
+
+    /// Return the complete canonical schema state represented by this public
+    /// value, when it originated from `Index::describe()`.
+    pub fn canonical_definition(&self) -> Option<&searchkernel_ir::IndexDefinitionIr> {
+        self.canonical.as_ref()
+    }
+}
+
+fn empty_rank_phase() -> searchkernel_ir::RankPhaseDefinitionIr {
+    searchkernel_ir::RankPhaseDefinitionIr {
+        expression: None,
+        rerank_count: None,
+        rank_score_drop_limit: None,
+        properties: BTreeMap::new(),
+        total_rerank_count: None,
+        keep_rank_count: None,
+        total_keep_rank_count: None,
+    }
+}
+
+fn analyzer_to_ir(value: &Analyzer) -> Result<searchkernel_ir::AnalyzerIr> {
+    let options = value
+        .options
+        .iter()
+        .map(|(key, option)| {
+            searchkernel_ir::request_value_from_json(option, format!("analyzer.options.{key}"))
+                .map(|value| (key.clone(), value))
+                .map_err(Error::from_ir)
+        })
+        .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()?;
+    Ok(searchkernel_ir::AnalyzerIr {
+        name: value.name.clone(),
+        version: value.version,
+        options,
+    })
+}
+
+fn hnsw_to_ir(value: &HnswIndexConfig) -> searchkernel_ir::HnswIndexConfigIr {
+    searchkernel_ir::HnswIndexConfigIr {
+        max_links_per_node: value.max_links_per_node,
+        neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
+        options: BTreeMap::new(),
     }
 }
 
@@ -599,7 +773,7 @@ pub(crate) fn rank_profile_to_rust_input(
 ) -> searchkernel_ir::RustRankProfileInput {
     searchkernel_ir::RustRankProfileInput {
         name: profile.name.clone(),
-        first_phase: profile.first_phase.clone(),
+        first_phase: profile.first_phase.clone().unwrap_or_default(),
         second_phase: profile.second_phase.clone(),
         rerank_count: profile.rerank_count,
         match_features: profile.match_features.clone(),
