@@ -91,6 +91,10 @@ pub struct Field {
     pub(crate) matching_config: Option<searchkernel_ir::MatchingConfigIr>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
+    /// Complete native index configuration returned by `Index::describe`.
+    pub index_config: Option<searchkernel_ir::IndexConfigIr>,
+    /// Complete native attribute configuration returned by `Index::describe`.
+    pub attribute_config: Option<searchkernel_ir::AttributeConfigIr>,
     pub(crate) canonical: Option<searchkernel_ir::FieldIr>,
 }
 
@@ -245,6 +249,8 @@ impl Field {
             matching_config: None,
             distance_metric: None,
             hnsw: None,
+            index_config: None,
+            attribute_config: None,
             canonical: None,
         }
     }
@@ -296,6 +302,8 @@ impl Field {
             matching_config: None,
             distance_metric: None,
             hnsw: None,
+            index_config: None,
+            attribute_config: None,
             canonical: None,
         }
     }
@@ -410,6 +418,16 @@ impl Field {
     /// Configure the tensor attribute distance metric.
     pub fn distance_metric(mut self, value: DistanceMetric) -> Self {
         self.distance_metric = Some(value);
+        let attribute =
+            self.attribute_config
+                .get_or_insert_with(|| searchkernel_ir::AttributeConfigIr {
+                    enabled: Some(true),
+                    fast_search: None,
+                    fast_access: None,
+                    distance_metric: searchkernel_ir::DistanceMetricIr::Unspecified,
+                    options: BTreeMap::new(),
+                });
+        attribute.distance_metric = distance_metric_to_ir(value);
         if let Some(field) = self.canonical.as_mut() {
             field.set_distance_metric(distance_metric_to_ir(value));
         }
@@ -420,6 +438,15 @@ impl Field {
     pub fn hnsw(mut self, value: HnswIndexConfig) -> Self {
         let hnsw = hnsw_to_ir(&value);
         self.hnsw = Some(value);
+        let index = self
+            .index_config
+            .get_or_insert_with(|| searchkernel_ir::IndexConfigIr {
+                enabled: Some(true),
+                hnsw: None,
+                options: BTreeMap::new(),
+            });
+        index.enabled = Some(true);
+        index.hnsw = Some(hnsw.clone());
         if let Some(field) = self.canonical.as_mut() {
             field.set_hnsw(hnsw);
         }

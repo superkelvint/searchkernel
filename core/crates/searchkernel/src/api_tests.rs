@@ -3007,6 +3007,75 @@ fn public_rank_profile_metadata_round_trips_to_ir() {
 }
 
 #[test]
+fn described_field_exposes_index_and_attribute_configuration_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let described_field = described
+        .fields()
+        .iter()
+        .find(|field| field.name() == "embedding")
+        .expect("embedding field should be described");
+    let canonical_field = canonical
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == "embedding")
+        .expect("canonical embedding field should exist");
+
+    assert_eq!(
+        described_field.index_config.as_ref(),
+        canonical_field.index()
+    );
+    assert_eq!(
+        described_field.attribute_config.as_ref(),
+        canonical_field.attribute()
+    );
+}
+
+#[test]
+fn tensor_builder_populates_public_index_and_attribute_configuration() {
+    let field = Field::tensor("embedding", "tensor<float>(x[3])")
+        .distance_metric(crate::DistanceMetric::Angular)
+        .hnsw(crate::HnswIndexConfig::new().max_links_per_node(8));
+
+    assert_eq!(
+        field
+            .attribute_config
+            .as_ref()
+            .map(|config| config.distance_metric),
+        Some(searchkernel_ir::DistanceMetricIr::Angular)
+    );
+    let hnsw = field
+        .index_config
+        .as_ref()
+        .and_then(|config| config.hnsw.as_ref())
+        .expect("builder HNSW config should be public");
+    assert_eq!(hnsw.max_links_per_node, Some(8));
+}
+
+#[test]
+fn public_field_configurations_round_trip_without_canonical_sidecar() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let mut field = described
+        .fields()
+        .iter()
+        .find(|field| field.name() == "embedding")
+        .expect("embedding field should be described")
+        .clone();
+    field.canonical = None;
+
+    let resolved = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect("public field configuration should resolve");
+    let expected = canonical
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == "embedding")
+        .expect("canonical embedding field should exist");
+    let actual = &resolved.fields()[0];
+
+    assert_eq!(actual.index(), expected.index());
+    assert_eq!(actual.attribute(), expected.attribute());
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
