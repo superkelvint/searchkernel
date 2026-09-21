@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/document.js";
 import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
 import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
+import { GetResultT } from "../src/generated/flatbuffers/search-kernel/v2/get-result.js";
 import { InsertRequestT } from "../src/generated/flatbuffers/search-kernel/v2/insert-request.js";
 import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
 import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
@@ -54,6 +55,18 @@ describe("V2 protocol envelopes", () => {
     );
     expect(decoded.payloadType).toBe(ResponsePayload.SearchKernel_V2_Error);
     expect((decoded.payload as ErrorT).code).toBe(ErrorCode.Unsupported);
+  });
+
+  it("accepts nested tables whose vtable follows the table", () => {
+    const decoded = unpackResponse(
+      response(
+        new GetResultT(new DocumentT("d", [])),
+        PROTOCOL_VERSION,
+        ResponsePayload.SearchKernel_V2_GetResult,
+      ),
+      "get",
+    );
+    expect((decoded.payload as GetResultT).document?.id).toBe("d");
   });
 
   it("rejects wrong-root and malformed responses deterministically", () => {

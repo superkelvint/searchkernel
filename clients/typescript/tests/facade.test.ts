@@ -11,9 +11,13 @@ import { GroupingOperationKind } from "../src/generated/flatbuffers/search-kerne
 import { GroupingSourceKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-source-kind.js";
 import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
 import { SearchRequestT } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
+import { RequestEnvelope } from "../src/generated/flatbuffers/search-kernel/protocol/v2/request-envelope.js";
+import { SearchRequest } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
 import { QuerySourceKind } from "../src/generated/flatbuffers/search-kernel/v2/query-source-kind.js";
 import { ValueKind } from "../src/generated/flatbuffers/search-kernel/v2/value-kind.js";
 import type { GrpcWebTransport } from "../src/transport/grpc-web.js";
+import { ByteBuffer } from "flatbuffers";
+import { packRequest } from "../src/protocol/envelope.js";
 
 function index(): Index {
   return Index.connect("unused", { execute: async () => new Uint8Array() } as unknown as GrpcWebTransport);
@@ -41,6 +45,18 @@ describe("ergonomic facade", () => {
     expect(request.presentation?.fields?.fields).toEqual(["title", "price"]);
     expect(request.offset?.value).toBe(20);
     expect(request.limit?.value).toBe(20);
+  });
+
+  it("omits deprecated filter vectors when packing textual filters", () => {
+    const request = index().search("running shoes").filter("price <= :max", { max: 120 }).build();
+    const bytes = packRequest("search", request);
+    const envelope = RequestEnvelope.getRootAsRequestEnvelope(new ByteBuffer(bytes));
+    const search = envelope.payload(new SearchRequest());
+    const filters = search?.filters();
+    expect(filters).not.toBeNull();
+    expect(filters?.bb?.__offset(filters.bb_pos, 6)).toBe(0);
+    expect(filters?.bb?.__offset(filters.bb_pos, 8)).toBe(0);
+    expect(filters?.bb?.__offset(filters.bb_pos, 10)).not.toBe(0);
   });
 
   it("ports typed query, group, facet and root aggregation construction", () => {

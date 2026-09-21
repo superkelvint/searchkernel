@@ -15,6 +15,7 @@
 **/*.egg-info/
 **/node_modules/*
 **/dist/**
+**/.example-dist/
 **/generated/**
 !searchkerneld/src/generated/
 !searchkerneld/src/generated/rpc.rs

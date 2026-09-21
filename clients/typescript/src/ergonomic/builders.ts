@@ -1,3 +1,4 @@
+import { Builder, type Offset } from "flatbuffers";
 import { ArithmeticUpdateT } from "../generated/flatbuffers/search-kernel/v2/arithmetic-update.js";
 import { ArithmeticUpdateOperator } from "../generated/flatbuffers/search-kernel/v2/arithmetic-update-operator.js";
 import { AssignUpdateT } from "../generated/flatbuffers/search-kernel/v2/assign-update.js";
@@ -5,7 +6,7 @@ import { ClearUpdateT } from "../generated/flatbuffers/search-kernel/v2/clear-up
 import { FieldPathT } from "../generated/flatbuffers/search-kernel/v2/field-path.js";
 import { FieldProjectionT } from "../generated/flatbuffers/search-kernel/v2/field-projection.js";
 import { FilterClauseT } from "../generated/flatbuffers/search-kernel/v2/filter-clause.js";
-import { FilterRequestT } from "../generated/flatbuffers/search-kernel/v2/filter-request.js";
+import { FilterRequest, FilterRequestT } from "../generated/flatbuffers/search-kernel/v2/filter-request.js";
 import { LiteralQueryInputT } from "../generated/flatbuffers/search-kernel/v2/literal-query-input.js";
 import { MatchAllQueryT } from "../generated/flatbuffers/search-kernel/v2/match-all-query.js";
 import { OptionalBoolT } from "../generated/flatbuffers/search-kernel/v2/optional-bool.js";
@@ -53,6 +54,26 @@ interface FacetSpec {
   name: string;
   limit?: number;
   sort?: FacetSort;
+}
+
+// The generated object packer emits every vector, including empty deprecated
+// vectors. The IR distinguishes an absent legacy filter field from a present
+// one, so textual-only requests need a packer that omits those fields on the
+// wire.
+class TextualFilterRequest extends FilterRequestT {
+  constructor(textual: FilterClauseT[]) {
+    super([], [], [], textual);
+  }
+
+  override pack(builder: Builder): Offset {
+    const textual = FilterRequest.createTextualVector(
+      builder,
+      builder.createObjectOffsetList(this.textual),
+    );
+    FilterRequest.startFilterRequest(builder);
+    FilterRequest.addTextual(builder, textual);
+    return FilterRequest.endFilterRequest(builder);
+  }
 }
 
 export interface FacetOptions {
@@ -177,10 +198,7 @@ export class SearchBuilder {
         : this.queryValue as QuerySourceT;
 
     const filters = this.filters.length
-      ? new FilterRequestT(
-          [],
-          [],
-          [],
+      ? new TextualFilterRequest(
           this.filters.map(
             ([source, bindings]) => new FilterClauseT(
               source,

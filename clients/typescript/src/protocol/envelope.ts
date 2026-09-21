@@ -105,7 +105,6 @@ class CheckedByteBuffer extends ByteBuffer {
     this.assertRange(bbPos, 4);
     const vtable = bbPos - super.readInt32(bbPos);
     this.assertRange(vtable, 4);
-    if (vtable > bbPos) throw new RangeError("FlatBuffer vtable is out of order");
 
     const vtableLength = super.readUint16(vtable);
     const objectLength = super.readUint16(vtable + 2);

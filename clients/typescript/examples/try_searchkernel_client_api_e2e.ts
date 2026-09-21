@@ -444,7 +444,7 @@ async function main(): Promise<void> {
       heading("COVERAGE AND DEGRADATION");
       const normal = await index.search("shoes").limit(20).execute();
       assert(normal.coverage?.full === true);
-      const degraded = await index.search("")
+      const degraded = await index.browse()
         .filter("inventory = :value", { value: 18n })
         .sort("inventory", "asc")
         .rankProperty("vespa.matchphase.degradation.maxfiltercoverage", "0.9")
