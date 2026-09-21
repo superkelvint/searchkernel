@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SearchResults } from "../src/client/results.js";
-import { value } from "../src/client/values.js";
+import { uint64, value } from "../src/client/values.js";
 import { CoverageDegradedT } from "../src/generated/flatbuffers/search-kernel/v2/coverage-degraded.js";
 import { CoverageT } from "../src/generated/flatbuffers/search-kernel/v2/coverage.js";
 import { FiniteRelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/finite-relevance.js";
@@ -12,7 +12,6 @@ import { OptionalUInt64T } from "../src/generated/flatbuffers/search-kernel/v2/o
 import { RelevanceKind } from "../src/generated/flatbuffers/search-kernel/v2/relevance-kind.js";
 import { RelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/relevance.js";
 import { ResultGroupT } from "../src/generated/flatbuffers/search-kernel/v2/result-group.js";
-import { ResultLimitsT } from "../src/generated/flatbuffers/search-kernel/v2/result-limits.js";
 import { ResultNodeKind } from "../src/generated/flatbuffers/search-kernel/v2/result-node-kind.js";
 import { ResultNodeT } from "../src/generated/flatbuffers/search-kernel/v2/result-node.js";
 import { SearchResultT } from "../src/generated/flatbuffers/search-kernel/v2/search-result.js";
@@ -39,13 +38,7 @@ describe("ergonomic search results", () => {
       null,
       null,
       value("Acme"),
-      [new ValueEntryT("count", value(3))],
-      [],
-      [],
-      null,
-      [],
-      null,
-      new ResultLimitsT(value(1), value(10)),
+      [new ValueEntryT("count", value(uint64("3")))],
     );
     const facetGroup = new ResultGroupT(
       null,
@@ -88,13 +81,14 @@ describe("ergonomic search results", () => {
     expect(result.hits[0]?.get("title")).toBe("Rust");
     expect(result.hits[0]?.matchFeatures.blob).toEqual(new Uint8Array([1, 2]));
     expect(result.groups[0]?.label).toBe("brand");
-    expect(result.groups[0]?.groups[0]?.limits).toEqual({ from: 1n, to: 10n });
+    expect(result.facets).toEqual({});
+    result.projectFacet("brand", "brand");
     expect(result.facets.brand).toEqual([{ value: "Acme", count: 3n }]);
     expect(result.aggregations.avg_price).toBe(12.5);
     expect(result.totalHits).toBe(10n);
     expect(result.totalHitsRelation).toBe("exact");
     expect(result.coverage?.full).toBe(true);
-    expect(result.continuations).toEqual([{ key: "next", value: "token-1" }]);
+    expect(result.continuations).toEqual(["token-1"]);
     expect(result.root).not.toBeNull();
   });
 });
@@ -118,4 +112,47 @@ it("rejects duplicate semantic-map keys in result fields", () => {
   );
   const root = new ResultGroupT(null, null, null, [], [new ResultNodeT(ResultNodeKind.Hit, malformed)]);
   expect(() => new SearchResults(new SearchResultT(node(root)))).toThrow(/duplicate result map key/);
+});
+
+
+it("does not infer arbitrary labeled groups or synthesize malformed facet counts", () => {
+  const exactBucket = new ResultGroupT(
+    null,
+    null,
+    value("Acme"),
+    [new ValueEntryT("count", value(uint64("3")))],
+  );
+  const wrongBucket = new ResultGroupT(
+    null,
+    null,
+    value("Acme"),
+    [new ValueEntryT("count", value(3))],
+  );
+  const arbitrary = new ResultGroupT(null, "brand", null, [], [node(exactBucket)]);
+  const malformed = new ResultGroupT(null, "brand", null, [], [node(wrongBucket)]);
+
+  const arbitraryRoot = new ResultGroupT(null, null, null, [], [node(arbitrary)]);
+  const malformedRoot = new ResultGroupT(null, null, null, [], [node(malformed)]);
+
+  const generic = new SearchResults(new SearchResultT(node(arbitraryRoot)));
+  expect(generic.facets).toEqual({});
+
+  const wrong = new SearchResults(new SearchResultT(node(malformedRoot)));
+  wrong.projectFacet("brand", "brand");
+  expect(wrong.facets).toEqual({});
+});
+
+it("projects named facets only when explicitly requested", () => {
+  const bucket = new ResultGroupT(
+    null,
+    null,
+    value("Acme"),
+    [new ValueEntryT("count", value(uint64("3")))],
+  );
+  const facet = new ResultGroupT(null, "brands", null, [], [node(bucket)]);
+  const root = new ResultGroupT(null, null, null, [], [node(facet)]);
+  const result = new SearchResults(new SearchResultT(node(root)));
+
+  result.projectFacet("brands", "brands");
+  expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
 });
