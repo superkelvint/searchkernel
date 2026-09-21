@@ -12,27 +12,29 @@ approximated.
 
 ### Phrase queries (`query.phrase`)
 
-- The Python high-level q namespace does not yet expose a phrase helper; low-level generated FlatBuffers can still represent QueryPhrase.
+- The Python and TypeScript high-level q namespaces do not yet expose
 
 ### Near and ordered-near proximity queries (`query.proximity`)
 
-- QueryNear and QueryONear execute through the adapter, but neither high-level Rust Query nor the Python q facade exposes proximity constructors yet.
+- the high-level Rust Query, Python q, or TypeScript q facades expose proximity constructors yet
 
 ### sameElement query (`query.same_element`)
 
 - Requires supported array-of-struct fields and native elementFilter; it is not a general nested struct or map model. The Rust query helper exists, but the current high-level Rust schema facade cannot itself define the required array-of-struct field.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Fuzzy query (`query.fuzzy`)
 
-- The reduced userInput/userQuery grammar does not accept full Vespa fuzzy syntax; use the typed query path. The Python high-level q facade does not yet expose fuzzy.
+- The Python and TypeScript high-level q facades do not yet expose
 
 ### Prefix, suffix, and substring queries (`query.prefix_suffix_substring`)
 
-- The Rust facade lowers these conveniences through literal-safe matches patterns. They are not part of the reduced textual userInput/userQuery grammar, and the Python q facade does not yet expose them.
+- the Python and TypeScript q facades do not yet expose
 
 ### Alternatives and equivalence queries (`query.alternatives`)
 
 - Alternatives currently accepts term children only; more general alternatives are rejected. High-level Rust and Python facades do not expose these nodes.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Nearest-neighbor vector search (`query.nearest_neighbor`)
 
@@ -41,18 +43,21 @@ approximated.
 ### Geo-location and bounding-box queries (`query.geo`)
 
 - Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end ergonomic SDK capability.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Predicate queries (`query.predicate`)
 
 - Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### WeakAnd, weighted-set, dot-product, and WAND queries (`query.weighted_and_wand`)
 
-- Only the currently supported typed annotations are exposed; unknown controls are rejected rather than dropped. The Python q facade does not yet expose these weighted query constructors.
+- The Python and TypeScript q facades do not yet expose
 
 ### userInput and userQuery text parsing (`query.user_input_user_query`)
 
-- The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. Neither high-level facade currently exposes userInput/userQuery constructors.
+- The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. No high-level facade currently exposes userInput/userQuery constructors.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### YQL query source (`query.yql`)
 
@@ -64,21 +69,24 @@ approximated.
 
 ### Native in-term queries (`query.in_term`)
 
-- String and integer values use Vespa's native InTerm node rather than an OR of equality terms. The Python q facade does not yet expose in().
+- The Python and TypeScript q facades do not yet expose
 
 ### NonEmpty query wrapper (`query.non_empty`)
 
 - NonEmpty validates its lowered child and rejects statically empty boolean operators; it does not reproduce every parser-generated empty marker. No high-level facade helper exists yet.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Labeled query rank properties (`query.labels`)
 
 - Labels are allocated by the adapter and exported as internal vespa.label.* rank properties; callers must not provide those properties. No high-level labeled-query helper exists yet.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ## Filter
 
 ### Structured filters (`filter.structured`)
 
 - The Python high-level facade currently uses textual filters; it does not expose a typed structured-filter helper namespace.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Textual filter expressions (`filter.textual`)
 
@@ -92,7 +100,7 @@ approximated.
 
 ### First/last missing-value sort placement (`search.sort_missing_placement`)
 
-- Rust exposes missing-first and missing-last. The portable/native path also has a missing-as-value form, but it is not exposed by the Rust convenience type. Python's high-level sort() currently has no missing-value option.
+- Python and TypeScript high-level sort() helpers
 
 ### Limit and offset pagination (`search.pagination`)
 
@@ -111,6 +119,7 @@ approximated.
 ### Named summary-class selection (`result.named_summary_class`)
 
 - The public E2E proves default summary selection and field projection only. Native schema generation does not install application-defined named DocumentSummaryDefinition classes, so custom named summary execution is not yet available.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Rich document-summary values (scalar subset) (`result.rich_docsum_values`)
 
@@ -119,10 +128,11 @@ approximated.
 ### Summary-feature readback (`result.summary_features`)
 
 - The portable Hit schema and IR represent summary features, but the current adapter leaves summary_features empty instead of decoding native summary-feature values.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Highlighting (`result.highlighting`)
 
-- This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities.
+- This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. The TypeScript SearchBuilder does not expose highlighting controls. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities.
 
 ### Dense tensor document readback (`result.tensor_document_readback`)
 
@@ -131,6 +141,7 @@ approximated.
 ### Typed tensor feature readback (`result.tensor_feature_readback`)
 
 - Tensor-backed match features currently cross the native result seam as opaque data bytes. The adapter does not decode them into a portable TensorValue.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Match-feature readback (`result.match_features`)
 
@@ -160,15 +171,16 @@ approximated.
 
 ### Summary aggregation (`grouping.summary_aggregation`)
 
-- The native grouping skeleton preserves summary() and finite max propagation, and the Python facade can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
+- The native grouping skeleton preserves summary() and finite max propagation, and the Python and TypeScript facades can construct agg.summary(), but grouped docsum payloads do not cross the native ABI. The Python E2E keeps this case explicitly blocked. Rust's current GroupingAggregation facade has no summary variant.
 
 ### Grouping continuations (`grouping.continuations`)
 
-- Continuation tokens are preserved in GroupingRequestIr and in the portable result tree, but native grouping lowering rejects any request with continuations. Python result objects preserve tokens if received, yet there is no production native round-trip or high-level continuation request helper.
+- Continuation tokens are preserved in GroupingRequestIr and in the portable result tree, but native grouping lowering rejects any request with continuations. Python and TypeScript result objects preserve tokens if received, yet there is no production native round-trip or high-level continuation request helper.
 
 ### Raw grouping source (`grouping.raw_source`)
 
 - Raw grouping text is represented as caller intent, but resolve_grouping rejects it until a parser/normalizer can produce canonical structured grouping IR.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ## Update
 
@@ -186,19 +198,22 @@ approximated.
 
 ### Conditional document mutations (`update.conditional`)
 
-- Conditions are preserved in canonical IR for upsert/delete/update, but the Vespa adapter returns conditional_mutation_not_supported. Python exposes condition arguments/builders; Rust does not.
+- Conditions are preserved in canonical IR for upsert/delete/update, but the Vespa adapter returns conditional_mutation_not_supported. Python and TypeScript expose condition arguments/builders; Rust does not.
 
 ### Collection add/remove updates (`update.collection_add_remove`)
 
 - AddUpdate and RemoveUpdate are represented in FlatBuffers, but update_to_ir currently rejects them as update_operation_not_supported before canonical IR.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Matched-element updates (`update.matched_element`)
 
 - MatchUpdate is represented in FlatBuffers, but the current UpdateOperationIr has no matched-element variant and update_to_ir rejects it before canonical IR.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Tensor modify updates (`update.tensor_modify`)
 
 - TensorModifyUpdate is represented in FlatBuffers, but there is no tensor-modify UpdateOperationIr and update_to_ir rejects it before canonical IR.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ## Tensor
 
@@ -211,14 +226,15 @@ approximated.
 ### Document-summary schema definitions (`schema.document_summaries`)
 
 - Document-summary definitions and fields survive FlatBuffers-to-IR semantic conversion, but native schema generation does not install named document summaries for execution.
+- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Array-of-struct document fields (`schema.array_struct_fields`)
 
-- The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field and Python field-spec facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported.
+- The portable/native path supports the existing array<object> shape used by SameElement. The high-level Rust Field, Python field-spec, and TypeScript schema facades expose only primitive/tensor kinds today; nested structs, maps, and heterogeneous object members remain unsupported.
 
 ### Position fields and derived geo attributes (`schema.position_geo_fields`)
 
-- The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust or Python schema builders.
+- The native adapter publishes Vespa-compatible derived zcurve data and real geo queries are verified. Position is not exposed by the high-level Rust, Python, or TypeScript schema builders.
 
 ## Ranking
 

@@ -27,7 +27,11 @@ REQUIRED_FIELDS = {
     "verified_by",
     "limitations",
 }
-LANGUAGES = {"rust", "python"}
+LANGUAGES = ("rust", "python", "typescript")
+TYPESCRIPT_EVIDENCE_PREFIXES = (
+    "clients/typescript/tests/",
+    "clients/typescript/examples/",
+)
 
 
 class LedgerError(ValueError):
@@ -102,11 +106,11 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
             raise LedgerError(f"{identifier}: executable support requires semantic support")
 
         ergonomic = capability["ergonomic"]
-        if not isinstance(ergonomic, dict) or set(ergonomic) != LANGUAGES:
+        if not isinstance(ergonomic, dict) or set(ergonomic) != set(LANGUAGES):
             raise LedgerError(
-                f"{identifier}.ergonomic must contain exactly rust and python"
+                f"{identifier}.ergonomic must contain exactly {', '.join(LANGUAGES)}"
             )
-        for language in sorted(LANGUAGES):
+        for language in LANGUAGES:
             _require_bool(ergonomic[language], f"{label}.ergonomic.{language}")
 
         verified_by = _require_string_list(capability["verified_by"], f"{label}.verified_by")
@@ -118,6 +122,17 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
                 raise LedgerError(f"{identifier}: evidence path must be repository-relative: {reference}")
             if not (root / reference_path).is_file():
                 raise LedgerError(f"{identifier}: evidence path does not exist: {reference}")
+        # Generated protocol modules are not ergonomic support evidence. Keep
+        # executable TypeScript claims tied to a client test or managed-local
+        # E2E so the ledger cannot silently drift from the facade.
+        if executable and ergonomic["typescript"] and not any(
+            any(reference.startswith(prefix) for prefix in TYPESCRIPT_EVIDENCE_PREFIXES)
+            for reference in verified_by
+        ):
+            raise LedgerError(
+                f"{identifier}: TypeScript evidence is required for executable "
+                "TypeScript ergonomic support"
+            )
 
         limitations = _require_string_list(capability["limitations"], f"{label}.limitations")
         if not represented and not limitations:
@@ -155,8 +170,8 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
         "canonical semantics, executable through the backend, and ergonomic in the",
         "named language facade.",
         "",
-        "| Capability | Area | Represented | Semantic | Executable | Rust | Python | Evidence |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Capability | Area | Represented | Semantic | Executable | Rust | Python | TypeScript | Evidence |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for capability in capabilities:
         evidence = ", ".join(
@@ -165,7 +180,7 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
         ergonomic = capability["ergonomic"]
         lines.append(
             "| {title} (`{identifier}`) | {area} | {represented} | {semantic} | "
-            "{executable} | {rust} | {python} | {evidence} |".format(
+            "{executable} | {rust} | {python} | {typescript} | {evidence} |".format(
                 title=_markdown_text(capability["title"]),
                 identifier=capability["id"],
                 area=_markdown_text(capability["area"]),
@@ -174,6 +189,7 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
                 executable=_status(capability["executable"]),
                 rust=_status(ergonomic["rust"]),
                 python=_status(ergonomic["python"]),
+                typescript=_status(ergonomic["typescript"]),
                 evidence=evidence,
             )
         )

@@ -38,6 +38,31 @@ class CapabilityLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.LedgerError, "does not exist"):
             MODULE.validate_ledger(ledger)
 
+    def test_missing_typescript_ergonomic_state_is_rejected(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        for capability in ledger["capabilities"]:
+            capability["ergonomic"].pop("typescript", None)
+        with self.assertRaisesRegex(MODULE.LedgerError, "typescript"):
+            MODULE.validate_ledger(ledger)
+
+    def test_generated_capability_document_has_typescript_state_column(self) -> None:
+        document = MODULE.render_capabilities(
+            self.ledger,
+            MODULE.validate_ledger(self.ledger),
+        )
+        self.assertIn("| TypeScript |", document)
+
+    def test_typescript_ergonomic_support_requires_typescript_evidence(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        ledger["capabilities"][0]["ergonomic"]["typescript"] = True
+        ledger["capabilities"][0]["verified_by"] = [
+            path
+            for path in ledger["capabilities"][0]["verified_by"]
+            if not path.startswith("clients/typescript/")
+        ]
+        with self.assertRaisesRegex(MODULE.LedgerError, "TypeScript evidence"):
+            MODULE.validate_ledger(ledger)
+
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "generated.md"
