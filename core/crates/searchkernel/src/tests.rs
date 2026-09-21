@@ -217,6 +217,11 @@ fn manifest_round_trips_definition_and_config_identity() {
         loaded.value["storage_compatibility_generation"],
         STORAGE_COMPATIBILITY_GENERATION
     );
+    assert_eq!(
+        loaded.value["resolved_schema_snapshot_version"],
+        RESOLVED_SCHEMA_SNAPSHOT_VERSION
+    );
+    assert!(loaded.value["resolved_schema_snapshot"].is_object());
     assert!(root.join("manifest/index-definition.bfbs").is_file());
     assert!(root
         .join("manifest/portable-index-definition.bfbs")
@@ -512,6 +517,70 @@ fn semantically_invalid_portable_provenance_does_not_block_reopen() {
 }
 
 #[test]
+fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
+    let root = temporary_path("manifest-sparse-resolved-snapshot");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let field_name = builder.create_string("title");
+    let primitive = searchkernel_ir::api::PrimitiveDataType::create(
+        &mut builder,
+        &searchkernel_ir::api::PrimitiveDataTypeArgs {
+            kind: searchkernel_ir::api::PrimitiveDataTypeKind::String,
+        },
+    );
+    let data_type = searchkernel_ir::api::DataType::create(
+        &mut builder,
+        &searchkernel_ir::api::DataTypeArgs {
+            kind_type: searchkernel_ir::api::DataTypeKind::PrimitiveDataType,
+            kind: Some(primitive.as_union_value()),
+        },
+    );
+    let field = searchkernel_ir::api::FieldDefinition::create(
+        &mut builder,
+        &searchkernel_ir::api::FieldDefinitionArgs {
+            name: Some(field_name),
+            data_type: Some(data_type),
+            ..Default::default()
+        },
+    );
+    let fields = builder.create_vector(&[field]);
+    let sparse_snapshot = searchkernel_ir::api::IndexDefinition::create(
+        &mut builder,
+        &searchkernel_ir::api::IndexDefinitionArgs {
+            fields: Some(fields),
+            ..Default::default()
+        },
+    );
+    builder.finish(sparse_snapshot, None);
+    std::fs::write(
+        root.join("manifest/index-definition.bfbs"),
+        builder.finished_data(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        IndexManifest::read(&root),
+        Err(Error::Search {
+            code: crate::ErrorCode::IncompatibleIndex,
+            message,
+            ..
+        }) if message == "incompatible index: resolved schema snapshot is not compatible"
+    ));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 #[cfg(feature = "native")]
 fn staged_creation_publishes_only_a_complete_index_directory() {
     let root = temporary_path("staged-create");
@@ -704,6 +773,16 @@ fn manifest_validation_rejects_identity_and_structure_corruption() {
     generation.value["storage_compatibility_generation"] = serde_json::json!(999);
     assert!(matches!(
         generation.validate_identity(),
+        Err(Error::Search {
+            code: crate::ErrorCode::IncompatibleIndex,
+            ..
+        })
+    ));
+
+    let mut snapshot_version = manifest.clone();
+    snapshot_version.value["resolved_schema_snapshot_version"] = serde_json::json!(999);
+    assert!(matches!(
+        snapshot_version.validate_identity(),
         Err(Error::Search {
             code: crate::ErrorCode::IncompatibleIndex,
             ..
