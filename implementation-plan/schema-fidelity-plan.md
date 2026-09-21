@@ -33,186 +33,190 @@ This plan fixes the problem in explicit stages.
 
 **Tests only. No production fixes.**
 
+The checkboxes in this phase track test and fixture coverage only. They are
+reset before a later implementation phase and reused to track implementation
+coverage.
+
 ## Canonical control
 
--  Build one comprehensive canonical `IndexDefinition` fixture.
--  Resolve it through the real FlatBuffers → IR path.
--  Prove `IndexDefinitionIr -> FlatBuffers -> IndexDefinitionIr` is lossless.
--  Keep the existing `describe_preserves_configured_rank_profiles` test green.
+-  [x] Build one comprehensive canonical `IndexDefinition` fixture.
+-  [x] Resolve it through the real FlatBuffers → IR path.
+-  [x] Prove `IndexDefinitionIr -> FlatBuffers -> IndexDefinitionIr` is lossless.
+-  [x] Keep the existing `describe_preserves_configured_rank_profiles` test green.
 
 ## IndexDefinitionIr coverage
 
 The comprehensive fixture must cover every current top-level field:
 
--  `name`
--  `fields`
--  `default_search_fields`
--  `default_ranking`
--  `default_prefix_policy`
--  `default_typo_policy`
--  `properties`
--  `document_type`
--  `schema_inherits`
--  `document_inherits`
--  `structs`
--  `fieldsets`
--  `schema_fields`
--  `imported_fields`
--  `document_summaries`
--  `rank_profiles`
--  `constants`
--  `onnx_models`
+-  [x] `name`
+-  [x] `fields`
+-  [x] `default_search_fields`
+-  [x] `default_ranking`
+-  [x] `default_prefix_policy`
+-  [x] `default_typo_policy`
+-  [x] `properties`
+-  [x] `document_type`
+-  [x] `schema_inherits`
+-  [x] `document_inherits`
+-  [x] `structs`
+-  [x] `fieldsets`
+-  [x] `schema_fields`
+-  [x] `imported_fields`
+-  [x] `document_summaries`
+-  [x] `rank_profiles`
+-  [x] `constants`
+-  [x] `onnx_models`
 
 ## DataTypeIr coverage
 
 The fixture must contain fields exercising:
 
--  `Primitive(String)`
--  `Primitive(Bool)`
--  `Primitive(Byte)`
--  `Primitive(Int32)`
--  `Primitive(Int64)`
--  `Primitive(Float32)`
--  `Primitive(Float64)`
--  `Primitive(Raw)`
--  `Tensor`
--  `Array`
--  `Map`
--  `WeightedSet`
--  `Struct`
--  `StructReference`
--  `Predicate`
--  `Position`
--  `Reference`
+-  [x] `Primitive(String)`
+-  [x] `Primitive(Bool)`
+-  [x] `Primitive(Byte)`
+-  [x] `Primitive(Int32)`
+-  [x] `Primitive(Int64)`
+-  [x] `Primitive(Float32)`
+-  [x] `Primitive(Float64)`
+-  [x] `Primitive(Raw)`
+-  [x] `Tensor`
+-  [x] `Array`
+-  [x] `Map`
+-  [x] `WeightedSet`
+-  [x] `Struct`
+-  [x] `StructReference`
+-  [x] `Predicate`
+-  [x] `Position`
+-  [x] `Reference`
 
 ## FieldIr coverage
 
 Exercise every field:
 
--  `name`
--  `data_type`
--  `analyzer`
--  `capabilities`
--  `matching`
--  `index`
--  `attribute`
--  `summary`
--  `indexing_script`
--  `properties`
--  `struct_fields`
+-  [x] `name`
+-  [x] `data_type`
+-  [x] `analyzer`
+-  [x] `capabilities`
+-  [x] `matching`
+-  [x] `index`
+-  [x] `attribute`
+-  [x] `summary`
+-  [x] `indexing_script`
+-  [x] `properties`
+-  [x] `struct_fields`
 
 ## FieldCapabilities coverage
 
--  `stored`
--  `searchable`
--  `filterable`
--  `sortable`
--  `groupable`
+-  [x] `stored`
+-  [x] `searchable`
+-  [x] `filterable`
+-  [x] `sortable`
+-  [x] `groupable`
 
 ## MatchingConfigIr coverage
 
--  `mode`
--  `options`
+-  [x] `mode`
+-  [x] `options`
 
 ## IndexConfigIr coverage
 
--  `enabled`
--  `hnsw`
--  `options`
+-  [x] `enabled`
+-  [x] `hnsw`
+-  [x] `options`
 
 ### HnswIndexConfigIr
 
--  `max_links_per_node`
--  `neighbors_to_explore_at_insert`
--  `options`
+-  [x] `max_links_per_node`
+-  [x] `neighbors_to_explore_at_insert`
+-  [x] `options`
 
 ## AttributeConfigIr coverage
 
--  `enabled`
--  `fast_search`
--  `fast_access`
--  `distance_metric`
--  `options`
+-  [x] `enabled`
+-  [x] `fast_search`
+-  [x] `fast_access`
+-  [x] `distance_metric`
+-  [x] `options`
 
 ## SummaryConfigIr coverage
 
--  `enabled`
--  `options`
+-  [x] `enabled`
+-  [x] `options`
 
 ## StructFieldConfigIr coverage
 
--  `path`
--  `indexing_script`
--  `matching`
--  `index`
--  `attribute`
--  `summary`
--  `rank`
--  `query_commands`
--  `properties`
+-  [x] `path`
+-  [x] `indexing_script`
+-  [x] `matching`
+-  [x] `index`
+-  [x] `attribute`
+-  [x] `summary`
+-  [x] `rank`
+-  [x] `query_commands`
+-  [x] `properties`
 
 ## SearchFieldIr coverage
 
--  `field`
--  `weight`
+-  [x] `field`
+-  [x] `weight`
 
 ## NamedStructDefinitionIr coverage
 
--  `name`
--  `fields`
--  `properties`
+-  [x] `name`
+-  [x] `fields`
+-  [x] `properties`
 
 ## FieldSetDefinitionIr coverage
 
--  `name`
--  `fields`
--  `matching`
--  `query_commands`
--  `properties`
+-  [x] `name`
+-  [x] `fields`
+-  [x] `matching`
+-  [x] `query_commands`
+-  [x] `properties`
 
 ## ImportedFieldDefinitionIr coverage
 
--  `reference_field`
--  `target_field`
--  `alias`
--  `properties`
+-  [x] `reference_field`
+-  [x] `target_field`
+-  [x] `alias`
+-  [x] `properties`
 
 ## DocumentSummaryDefinitionIr coverage
 
--  `name`
--  `inherits`
--  `fields`
--  `from_disk`
--  `omit_summary_features`
--  `properties`
+-  [x] `name`
+-  [x] `inherits`
+-  [x] `fields`
+-  [x] `from_disk`
+-  [x] `omit_summary_features`
+-  [x] `properties`
 
 ### DocumentSummaryFieldDefinitionIr
 
--  `name`
--  `source`
--  `data_type`
--  `struct_fields`
--  `properties`
+-  [x] `name`
+-  [x] `source`
+-  [x] `data_type`
+-  [x] `struct_fields`
+-  [x] `properties`
 
 ## ConstantDefinitionIr coverage
 
--  `name`
--  `data_type`
--  `source`
--  `properties`
--  literal source
--  file source
+-  [x] `name`
+-  [x] `data_type`
+-  [x] `source`
+-  [x] `properties`
+-  [x] literal source
+-  [x] file source
 
 ## OnnxModelDefinitionIr coverage
 
--  `name`
--  `file`
--  `inputs`
--  `outputs`
--  `gpu_device`
--  `intraop_threads`
--  `interop_threads`
--  `properties`
+-  [x] `name`
+-  [x] `file`
+-  [x] `inputs`
+-  [x] `outputs`
+-  [x] `gpu_device`
+-  [x] `intraop_threads`
+-  [x] `interop_threads`
+-  [x] `properties`
 
 ------
 
@@ -222,65 +226,65 @@ Use multiple profiles because mutually exclusive phase-count fields cannot all c
 
 Required profiles:
 
--  `complete_profile`
--  `alternate_counts_profile`
--  `sparse_profile`
+-  [x] `complete_profile`
+-  [x] `alternate_counts_profile`
+-  [x] `sparse_profile`
 
 ## RankProfileDefinitionIr coverage
 
 Collectively exercise:
 
--  `name`
--  `inherits`
--  `inputs`
--  `functions`
--  `first_phase`
--  `second_phase`
--  `global_phase`
--  `rank_features`
--  `match_features`
--  `summary_features`
--  `sort_features`
--  `constants`
--  `onnx_models`
--  `rank_properties`
--  `strict`
--  `properties`
+-  [x] `name`
+-  [x] `inherits`
+-  [x] `inputs`
+-  [x] `functions`
+-  [x] `first_phase`
+-  [x] `second_phase`
+-  [x] `global_phase`
+-  [x] `rank_features`
+-  [x] `match_features`
+-  [x] `summary_features`
+-  [x] `sort_features`
+-  [x] `constants`
+-  [x] `onnx_models`
+-  [x] `rank_properties`
+-  [x] `strict`
+-  [x] `properties`
 
 ## RankProfileInputIr coverage
 
--  `name`
--  `data_type`
--  `default_value`
--  scalar input/default
--  tensor input/default
+-  [x] `name`
+-  [x] `data_type`
+-  [x] `default_value`
+-  [x] scalar input/default
+-  [x] tensor input/default
 
 ## RankFunctionDefinitionIr coverage
 
--  `name`
--  `arguments`
--  `expression`
--  `inline = Some(true)`
--  `inline = Some(false)`
--  `inline = None`
+-  [x] `name`
+-  [x] `arguments`
+-  [x] `expression`
+-  [x] `inline = Some(true)`
+-  [x] `inline = Some(false)`
+-  [x] `inline = None`
 
 ## RankPhaseDefinitionIr coverage
 
 Collectively exercise:
 
--  `expression`
--  `rerank_count`
--  `rank_score_drop_limit`
--  `properties`
--  `total_rerank_count`
--  `keep_rank_count`
--  `total_keep_rank_count`
+-  [x] `expression`
+-  [x] `rerank_count`
+-  [x] `rank_score_drop_limit`
+-  [x] `properties`
+-  [x] `total_rerank_count`
+-  [x] `keep_rank_count`
+-  [x] `total_keep_rank_count`
 
 Also test:
 
--  absent `first_phase`
--  absent `second_phase`
--  absent `global_phase`
+-  [x] absent `first_phase`
+-  [x] absent `second_phase`
+-  [x] absent `global_phase`
 
 ------
 
@@ -288,46 +292,46 @@ Also test:
 
 Add focused tests for:
 
--  rank-profile inheritance
--  rank-profile inputs and default values
--  rank-profile functions
--  complete rank-phase state
--  absent rank phases
--  all rank feature lists
--  rank-profile constants
--  rank-profile ONNX models
--  rank properties / strict / generic properties
--  all document data types
--  complete field configuration
--  struct-field configuration
--  default search fields and weights
--  schema properties
--  document type
--  schema inheritance
--  document inheritance
--  named structs
--  fieldsets
--  schema-only fields
--  imported fields
--  document summaries
--  schema constants
--  schema ONNX models
+-  [x] rank-profile inheritance
+-  [x] rank-profile inputs and default values
+-  [x] rank-profile functions
+-  [x] complete rank-phase state
+-  [x] absent rank phases
+-  [x] all rank feature lists
+-  [x] rank-profile constants
+-  [x] rank-profile ONNX models
+-  [x] rank properties / strict / generic properties
+-  [x] all document data types
+-  [x] complete field configuration
+-  [x] struct-field configuration
+-  [x] default search fields and weights
+-  [x] schema properties
+-  [x] document type
+-  [x] schema inheritance
+-  [x] document inheritance
+-  [x] named structs
+-  [x] fieldsets
+-  [x] schema-only fields
+-  [x] imported fields
+-  [x] document summaries
+-  [x] schema constants
+-  [x] schema ONNX models
 
 Finally:
 
--  Add `describe_round_trips_complete_index_definition_without_semantic_loss`.
--  Compare full `IndexDefinitionIr` equality.
--  Do not normalize away differences.
--  Do not ignore the test.
--  Do not encode current lossy behavior as expected behavior.
+-  [x] Add `describe_round_trips_complete_index_definition_without_semantic_loss`.
+-  [x] Compare full `IndexDefinitionIr` equality.
+-  [x] Do not normalize away differences.
+-  [x] Do not ignore the test.
+-  [x] Do not encode current lossy behavior as expected behavior.
 
 ### Expected state after Phase 1
 
--  Canonical IR ↔ FlatBuffers control passes.
--  Existing narrow describe regression passes.
--  Already-supported positive controls pass.
--  New fidelity regressions fail only because the Rust describe boundary loses canonical state.
--  No production implementation changed.
+-  [x] Canonical IR ↔ FlatBuffers control passes.
+-  [x] Existing narrow describe regression passes.
+-  [x] Already-supported positive controls pass.
+-  [x] New fidelity regressions fail only because the Rust describe boundary loses canonical state.
+-  [x] No production implementation changed.
 
 ------
 
