@@ -1005,9 +1005,13 @@ class Hit(dict):
     def __init__(self, node):
         super().__init__(_value_entries(node.fields))
         self.id, self.fields = node.id or "", self
-        relevance = node.relevance.value if node.relevance is not None else None
-        self.relevance = getattr(relevance, "value", relevance)
+        self.relevance = _relevance_value(getattr(node, "relevance", None))
         self.score = self.relevance
+        self.source = getattr(node, "source", None)
+        self.types = [
+            item.decode("utf-8") if isinstance(item, bytes) else item
+            for item in (getattr(node, "types", None) or [])
+        ]
         self.match_features = _feature_entries(getattr(node, "matchFeatures", None))
         self.summary_features = _feature_entries(getattr(node, "summaryFeatures", None))
         self.rank_features = _feature_entries(getattr(node, "rankFeatures", None))

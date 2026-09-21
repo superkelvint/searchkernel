@@ -44,7 +44,13 @@ pub struct Hit<T> {
     pub score: Option<f64>,
     pub document: T,
     pub highlights: Vec<HighlightResult>,
+    pub source: Option<String>,
+    pub types: Vec<String>,
+    /// Backward-compatible alias of `match_features`.
     pub features: std::collections::BTreeMap<String, FeatureSet>,
+    pub match_features: std::collections::BTreeMap<String, FeatureValue>,
+    pub summary_features: std::collections::BTreeMap<String, FeatureValue>,
+    pub rank_features: std::collections::BTreeMap<String, FeatureValue>,
     pub sort_values: Vec<serde_json::Value>,
 }
 
@@ -57,6 +63,8 @@ pub enum FeatureSet {
 pub enum FeatureValue {
     Double(f64),
     Data(Vec<u8>),
+    /// Canonical non-binary feature values represented without debug-string coercion.
+    Json(serde_json::Value),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -226,28 +234,44 @@ pub(crate) fn document<T: serde::de::DeserializeOwned>(
 fn convert_hit<T: serde::de::DeserializeOwned>(hit: core::Hit) -> Result<Hit<T>> {
     let document = serde_json::from_value(fields_to_json(hit.fields)?)
         .map_err(|error| Error::Deserialization(error.to_string()))?;
+    let match_features = convert_feature_map(hit.match_features)?;
+    let features = match_features
+        .iter()
+        .map(|(name, value)| (name.clone(), FeatureSet::Value(value.clone())))
+        .collect();
     Ok(Hit {
         id: DocumentId::from(hit.id),
         score: hit.score,
         document,
         highlights: hit.highlights.into_iter().map(convert_highlight).collect(),
-        features: hit
-            .match_features
-            .into_iter()
-            .map(|(name, value)| {
-                let value = match value {
-                    core::Value::Float64(value) => FeatureValue::Double(value),
-                    core::Value::Bytes(value) => FeatureValue::Data(value),
-                    other => FeatureValue::Data(json_bytes(other)),
-                };
-                (name, FeatureSet::Value(value))
-            })
-            .collect(),
+        source: hit.source,
+        types: hit.types,
+        features,
+        match_features,
+        summary_features: convert_feature_map(hit.summary_features)?,
+        rank_features: convert_feature_map(hit.rank_features)?,
         sort_values: hit
             .sort_values
             .into_iter()
             .map(json_value)
             .collect::<Result<Vec<_>>>()?,
+    })
+}
+
+fn convert_feature_map(
+    values: std::collections::BTreeMap<String, core::Value>,
+) -> Result<std::collections::BTreeMap<String, FeatureValue>> {
+    values
+        .into_iter()
+        .map(|(name, value)| convert_feature_value(value).map(|value| (name, value)))
+        .collect()
+}
+
+fn convert_feature_value(value: core::Value) -> Result<FeatureValue> {
+    Ok(match value {
+        core::Value::Float64(value) => FeatureValue::Double(value),
+        core::Value::Bytes(value) => FeatureValue::Data(value),
+        other => FeatureValue::Json(json_value(other)?),
     })
 }
 
@@ -319,9 +343,6 @@ fn search_timing(value: core::SearchTiming) -> Result<SearchTiming> {
     })
 }
 
-fn json_bytes(value: core::Value) -> Vec<u8> {
-    format!("{value:?}").into_bytes()
-}
 
 fn total_hits(total_hits: core::TotalHits) -> TotalHits {
     TotalHits {
@@ -663,6 +684,70 @@ mod tests {
         assert_eq!(converted.issues[0].metadata["error"], "yes");
         assert_eq!(converted.trace, Some(serde_json::json!("trace")));
         assert_eq!(converted.metadata["result"], "yes");
+    }
+
+    #[test]
+    fn result_conversion_preserves_complete_hit_metadata_and_feature_maps() {
+        let hit = core::Hit {
+            id: "doc-1".into(),
+            score: Some(2.5),
+            fields: BTreeMap::from([("title".into(), Value::String("hello".into()))]),
+            source: Some("catalog".into()),
+            types: vec!["product".into(), "featured".into()],
+            match_features: BTreeMap::from([
+                ("scalar".into(), Value::Float64(1.5)),
+                ("bytes".into(), Value::Bytes(vec![1, 2])),
+                (
+                    "list".into(),
+                    Value::List(vec![Value::Int64(1), Value::Bool(true)]),
+                ),
+            ]),
+            summary_features: BTreeMap::from([(
+                "summary".into(),
+                Value::Object(BTreeMap::from([("ready".into(), Value::Bool(true))])),
+            )]),
+            rank_features: BTreeMap::from([("rank".into(), Value::UInt64(7))]),
+            sort_values: vec![Value::String("a".into()), Value::UInt64(9)],
+            highlights: vec![core::HighlightResult {
+                field: "title".into(),
+                fragments: vec![core::HighlightFragment {
+                    text: "hello".into(),
+                    matches: vec![core::HighlightSpan {
+                        start_byte: 0,
+                        end_byte: 5,
+                    }],
+                }],
+            }],
+        };
+        let converted: Hit<serde_json::Value> = convert_hit(hit).unwrap();
+
+        assert_eq!(converted.source.as_deref(), Some("catalog"));
+        assert_eq!(converted.types, ["product", "featured"]);
+        assert_eq!(
+            converted.match_features["scalar"],
+            FeatureValue::Double(1.5)
+        );
+        assert_eq!(
+            converted.match_features["bytes"],
+            FeatureValue::Data(vec![1, 2])
+        );
+        assert_eq!(
+            converted.match_features["list"],
+            FeatureValue::Json(serde_json::json!([1, true]))
+        );
+        assert_eq!(
+            converted.summary_features["summary"],
+            FeatureValue::Json(serde_json::json!({"ready": true}))
+        );
+        assert_eq!(
+            converted.rank_features["rank"],
+            FeatureValue::Json(serde_json::json!(7))
+        );
+        assert_eq!(
+            converted.sort_values,
+            [serde_json::json!("a"), serde_json::json!(9)]
+        );
+        assert_eq!(converted.highlights[0].fragments[0].matches[0].end_byte, 5);
     }
 
     #[test]

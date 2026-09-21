@@ -153,8 +153,8 @@ approximated.
 
 ### Summary-feature readback (`result.summary_features`)
 
-- The portable Hit schema and IR represent summary features, but the current adapter leaves summary_features empty instead of decoding native summary-feature values.
-- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
+- Rust, Python, and TypeScript preserve canonical summary-feature values when they are present in a portable or scripted Hit, but the current native adapter leaves summary_features empty instead of decoding native summary-feature values.
+- Rank-feature projection is likewise preserved when present, but the current native adapter does not populate rank_features.
 
 ### Highlighting (`result.highlighting`)
 
@@ -171,7 +171,7 @@ approximated.
 
 ### Match-feature readback (`result.match_features`)
 
-- Scalar match features are decoded. Tensor-backed feature output remains opaque bytes; summary-feature readback is tracked separately. Rank features remain unpopulated.
+- Scalar native match features are decoded. Rust, Python, and TypeScript preserve typed canonical match, summary, and rank feature maps when those values are present in a portable Hit. Tensor-backed native match-feature output remains opaque bytes, and the native adapter currently leaves summary_features and rank_features unpopulated.
 
 ### Recursive grouping result trees (`result.grouping_tree`)
 
