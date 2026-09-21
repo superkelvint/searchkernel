@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol" }
-searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir", features = ["test-support"] }
+searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir", features = ["test"] }
 
 [dev-dependencies]
 flatbuffers = "=25.12.19"

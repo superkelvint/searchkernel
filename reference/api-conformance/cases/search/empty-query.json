@@ -1,6 +1,6 @@
 {
   "category": "search",
-  "description": "Empty text query resolves to MatchAll.",
+  "description": "Empty text query is invalid; MatchAll must be explicit.",
   "id": "search.empty-query",
   "index_fixture": "product-v2",
   "input": {

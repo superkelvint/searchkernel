@@ -1,9 +1,20 @@
 {
   "ok": {
-    "field": "title",
-    "kind": "term",
-    "value": {
-      "string": "headphones"
+    "kind": "typed",
+    "query": {
+      "annotations": {},
+      "field": {
+        "element_index": null,
+        "path": "title"
+      },
+      "item": {
+        "annotations": {},
+        "kind": "term",
+        "value": {
+          "string": "headphones"
+        }
+      },
+      "kind": "contains"
     }
   }
 }

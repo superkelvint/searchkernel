@@ -3,8 +3,8 @@
     "code": "invalid_argument",
     "details": [
       {
-        "code": "invalid_query",
-        "path": "query_expr.all"
+        "code": "empty_query_children",
+        "path": "query_expr.and"
       }
     ],
     "retryable": false

@@ -21,7 +21,7 @@ pub enum RustFieldKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustRankProfileInput {
     pub name: String,
-    pub first_phase: String,
+    pub first_phase: Option<String>,
     pub second_phase: Option<String>,
     pub rerank_count: Option<u32>,
     pub match_features: Vec<String>,
@@ -190,8 +190,8 @@ pub fn resolve_rust_index_definition_with_profiles(
                 })
                 .collect(),
             functions: Vec::new(),
-            first_phase: Some(RankPhaseDefinitionIr {
-                expression: Some(profile.first_phase),
+            first_phase: profile.first_phase.map(|expression| RankPhaseDefinitionIr {
+                expression: Some(expression),
                 rerank_count: None,
                 rank_score_drop_limit: None,
                 properties: SchemaPropertiesIr::new(),
@@ -247,84 +247,42 @@ pub fn resolve_rust_index_definition_with_profiles(
 
 fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Result<FieldIr> {
     let hnsw_enabled = field.hnsw.is_some();
-    let (
-        data_type,
-        string_type,
-        keyword,
-        default_searchable,
-        default_filterable,
-        default_sortable,
-        default_groupable,
-    ) = match field.kind {
+    let (data_type, string_type, keyword) = match field.kind {
         RustFieldKind::Text => (
             DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
             true,
-            false,
-            true,
-            false,
-            false,
             false,
         ),
         RustFieldKind::Keyword => (
             DataTypeIr::Primitive(PrimitiveDataTypeIr::String),
             true,
             true,
-            false,
-            true,
-            !field.multi,
-            true,
         ),
         RustFieldKind::Int64 => (
             DataTypeIr::Primitive(PrimitiveDataTypeIr::Int64),
             false,
-            false,
-            false,
-            true,
-            !field.multi,
             false,
         ),
         RustFieldKind::Float64 => (
             DataTypeIr::Primitive(PrimitiveDataTypeIr::Float64),
             false,
             false,
-            false,
-            true,
-            !field.multi,
-            false,
         ),
         RustFieldKind::Bool => (
             DataTypeIr::Primitive(PrimitiveDataTypeIr::Bool),
             false,
             false,
-            false,
-            true,
-            !field.multi,
-            true,
         ),
-        RustFieldKind::Position => (
-            DataTypeIr::Position,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-        ),
-        RustFieldKind::Tensor(type_spec) => (
-            DataTypeIr::Tensor { type_spec },
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-        ),
+        RustFieldKind::Position => (DataTypeIr::Position, false, false),
+        RustFieldKind::Tensor(type_spec) => (DataTypeIr::Tensor { type_spec }, false, false),
     };
     let data_type = if field.multi {
         DataTypeIr::Array(Box::new(data_type))
     } else {
         data_type
     };
+    let (default_searchable, default_filterable, default_sortable, default_groupable) =
+        field_capability_defaults(&data_type, keyword, false);
     if keyword && field.searchable == Some(true) {
         return Err(invalid(
             "invalid_capability",
@@ -407,6 +365,40 @@ fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Resul
         properties: SchemaPropertiesIr::new(),
         struct_fields: Vec::new(),
     })
+}
+
+fn field_capability_defaults(
+    data_type: &DataTypeIr,
+    keyword: bool,
+    indexing_script: bool,
+) -> (bool, bool, bool, bool) {
+    let string_type = data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::String);
+    let default_searchable = string_type && !keyword && !indexing_script;
+    let default_filterable = if indexing_script {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        true
+    };
+    let default_sortable = if indexing_script {
+        false
+    } else {
+        !data_type.is_multi_valued() && (!string_type || keyword)
+    };
+    let default_groupable = if indexing_script {
+        false
+    } else if string_type {
+        keyword
+    } else {
+        data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::Bool)
+    };
+    (
+        default_searchable,
+        default_filterable,
+        default_sortable,
+        default_groupable,
+    )
 }
 
 pub fn index_definition_to_ir(definition: api::IndexDefinition<'_>) -> Result<IndexDefinitionIr> {
@@ -744,26 +736,8 @@ pub(crate) fn field_to_ir_at(
         string_type && !keyword,
         &format!("{path}.analyzer"),
     )?;
-    let default_searchable = string_type && !keyword && indexing_script.is_none();
-    let default_filterable = if indexing_script.is_some() {
-        false
-    } else if string_type {
-        keyword
-    } else {
-        true
-    };
-    let default_sortable = if indexing_script.is_some() {
-        false
-    } else {
-        !data_type.is_multi_valued() && (!string_type || keyword)
-    };
-    let default_groupable = if indexing_script.is_some() {
-        false
-    } else if string_type {
-        keyword
-    } else {
-        data_type.scalar_primitive() == Some(PrimitiveDataTypeIr::Bool)
-    };
+    let (default_searchable, default_filterable, default_sortable, default_groupable) =
+        field_capability_defaults(&data_type, keyword, indexing_script.is_some());
     let analyzer = if string_type && !keyword && indexing_script.is_none() {
         Some(analyzer.unwrap_or(AnalyzerIr {
             name: "standard".to_owned(),

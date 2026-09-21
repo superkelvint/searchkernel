@@ -89,7 +89,7 @@ impl IndexContext {
                         "query and query_expr cannot both be supplied",
                     ));
                 }
-                self.query_expr_to_ir(expression, "query_expr")
+                self.typed_query_to_ir(expression, "query_expr", None)
             }
             None if text.trim().is_empty() => Err(invalid(
                 "invalid_query",
@@ -179,100 +179,104 @@ impl IndexContext {
         if let Some(sorts) = sorts {
             for (index, value) in sorts.iter().enumerate() {
                 let path = format!("sort[{index}]");
-                let direction = match value.direction().0 {
-                    0 | 1 => SortDirection::Asc,
-                    2 => SortDirection::Desc,
-                    _ => {
-                        return Err(invalid(
-                            "invalid_sort",
-                            Some(format!("{path}.direction")),
-                            "sort direction is unknown",
-                        ));
-                    }
-                };
-                let missing = match value.missing() {
-                    None => None,
-                    Some(policy) => match policy.policy_type() {
-                        api::MissingPolicyKind::MissingFirst
-                            if policy.policy_as_missing_first().is_some() =>
-                        {
-                            Some(MissingPlacement::First)
-                        }
-                        api::MissingPolicyKind::MissingLast
-                            if policy.policy_as_missing_last().is_some() =>
-                        {
-                            Some(MissingPlacement::Last)
-                        }
-                        api::MissingPolicyKind::MissingAs => {
-                            Some(MissingPlacement::As(RequestValueIr::from_api(
-                                policy
-                                    .policy_as_missing_as()
-                                    .and_then(|value| value.value())
-                                    .ok_or_else(|| {
-                                        invalid(
-                                            "invalid_sort",
-                                            Some(format!("{path}.missing")),
-                                            "missing-as policy requires a value",
-                                        )
-                                    })?,
-                                format!("{path}.missing.value"),
-                            )?))
-                        }
-                        _ => {
-                            return Err(invalid(
-                                "invalid_sort",
-                                Some(format!("{path}.missing")),
-                                "missing policy is unsupported or missing its payload",
-                            ));
-                        }
-                    },
-                };
-                let annotations =
-                    request_values_to_map(value.annotations(), &format!("{path}.annotations"))?;
-                let target = value.target().ok_or_else(|| {
-                    invalid(
-                        "invalid_sort",
-                        Some(path.clone()),
-                        "sort expression requires a target",
-                    )
-                })?;
-                let target = match target.target_type() {
-                    api::SortTargetKind::FieldSortTarget => SortTargetInput::Field(
-                        target
-                            .target_as_field_sort_target()
-                            .and_then(|value| value.field())
-                            .unwrap_or_default()
-                            .to_owned(),
-                    ),
-                    api::SortTargetKind::RelevanceSortTarget => SortTargetInput::Relevance,
-                    api::SortTargetKind::RankFeatureSortTarget => SortTargetInput::RankFeature(
-                        target
-                            .target_as_rank_feature_sort_target()
-                            .and_then(|value| value.feature())
-                            .unwrap_or_default()
-                            .to_owned(),
-                    ),
-                    api::SortTargetKind::RawSortTarget => SortTargetInput::Raw,
-                    _ => {
-                        return Err(invalid(
-                            "invalid_sort",
-                            Some(format!("{path}.target")),
-                            "sort target must select a known variant",
-                        ));
-                    }
-                };
-                output.push(SortInput {
-                    target,
-                    direction,
-                    missing,
-                    annotations,
-                });
+                output.push(self.sort_to_input(value, &path)?);
             }
         }
         Ok(output)
     }
+    pub(crate) fn sort_to_input(&self, value: api::SortExpr<'_>, path: &str) -> Result<SortInput> {
+        let direction = match value.direction().0 {
+            0 | 1 => SortDirection::Asc,
+            2 => SortDirection::Desc,
+            _ => {
+                return Err(invalid(
+                    "invalid_sort",
+                    Some(format!("{path}.direction")),
+                    "sort direction is unknown",
+                ));
+            }
+        };
+        let missing = match value.missing() {
+            None => None,
+            Some(policy) => match policy.policy_type() {
+                api::MissingPolicyKind::MissingFirst
+                    if policy.policy_as_missing_first().is_some() =>
+                {
+                    Some(MissingPlacement::First)
+                }
+                api::MissingPolicyKind::MissingLast
+                    if policy.policy_as_missing_last().is_some() =>
+                {
+                    Some(MissingPlacement::Last)
+                }
+                api::MissingPolicyKind::MissingAs => {
+                    Some(MissingPlacement::As(RequestValueIr::from_api(
+                        policy
+                            .policy_as_missing_as()
+                            .and_then(|value| value.value())
+                            .ok_or_else(|| {
+                                invalid(
+                                    "invalid_sort",
+                                    Some(format!("{path}.missing")),
+                                    "missing-as policy requires a value",
+                                )
+                            })?,
+                        format!("{path}.missing.value"),
+                    )?))
+                }
+                _ => {
+                    return Err(invalid(
+                        "invalid_sort",
+                        Some(format!("{path}.missing")),
+                        "missing policy is unsupported or missing its payload",
+                    ));
+                }
+            },
+        };
+        let annotations =
+            request_values_to_map(value.annotations(), &format!("{path}.annotations"))?;
+        let target = value.target().ok_or_else(|| {
+            invalid(
+                "invalid_sort",
+                Some(path),
+                "sort expression requires a target",
+            )
+        })?;
+        let target = match target.target_type() {
+            api::SortTargetKind::FieldSortTarget => SortTargetInput::Field(
+                target
+                    .target_as_field_sort_target()
+                    .and_then(|value| value.field())
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+            api::SortTargetKind::RelevanceSortTarget => SortTargetInput::Relevance,
+            api::SortTargetKind::RankFeatureSortTarget => SortTargetInput::RankFeature(
+                target
+                    .target_as_rank_feature_sort_target()
+                    .and_then(|value| value.feature())
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+            api::SortTargetKind::RawSortTarget => SortTargetInput::Raw,
+            _ => {
+                return Err(invalid(
+                    "invalid_sort",
+                    Some(format!("{path}.target")),
+                    "sort target must select a known variant",
+                ));
+            }
+        };
+        Ok(SortInput {
+            target,
+            direction,
+            missing,
+            annotations,
+        })
+    }
     pub fn sort_to_ir(&self, sort: api::SortExpr<'_>) -> Result<SortIr> {
-        self.sort_to_ir_at(sort, "sort")
+        let input = self.sort_to_input(sort, "sort")?;
+        resolve_sort(self, &input, "sort")
     }
     pub fn projection_to_ir(
         &self,
@@ -297,122 +301,6 @@ impl IndexContext {
                 .unwrap_or_default()
         });
         resolve_highlighting(self, fields.as_deref())
-    }
-    pub(crate) fn sort_to_ir_at(&self, s: api::SortExpr<'_>, path: &str) -> Result<SortIr> {
-        let direction = match s.direction().0 {
-            0 | 1 => SortDirection::Asc,
-            2 => SortDirection::Desc,
-            _ => {
-                return Err(invalid(
-                    "invalid_filter",
-                    Some(format!("{path}.direction")),
-                    "sort direction is unknown",
-                ))
-            }
-        };
-        let missing = match s.missing() {
-            None => MissingPlacement::Last,
-            Some(v) => match v.policy_type() {
-                api::MissingPolicyKind::MissingFirst if v.policy_as_missing_first().is_some() => {
-                    MissingPlacement::First
-                }
-                api::MissingPolicyKind::MissingLast if v.policy_as_missing_last().is_some() => {
-                    MissingPlacement::Last
-                }
-                api::MissingPolicyKind::MissingAs => {
-                    let value = v
-                        .policy_as_missing_as()
-                        .and_then(|value| value.value())
-                        .ok_or_else(|| {
-                            invalid(
-                                "invalid_sort",
-                                Some(format!("{path}.missing")),
-                                "missing-as policy requires a value",
-                            )
-                        })?;
-                    MissingPlacement::As(RequestValueIr::from_api(
-                        value,
-                        format!("{path}.missing.value"),
-                    )?)
-                }
-                _ => {
-                    return Err(invalid(
-                        "invalid_sort",
-                        Some(format!("{path}.missing")),
-                        "missing policy is unsupported or missing its payload",
-                    ))
-                }
-            },
-        };
-        let annotations = request_values_to_map(s.annotations(), &format!("{path}.annotations"))?;
-        let target = s.target().ok_or_else(|| {
-            invalid(
-                "invalid_sort",
-                Some(path),
-                "sort expression requires a target",
-            )
-        })?;
-        let target = match target.target_type() {
-            api::SortTargetKind::FieldSortTarget => {
-                let field = target
-                    .target_as_field_sort_target()
-                    .and_then(|target| target.field())
-                    .unwrap_or_default()
-                    .to_owned();
-                let sort = resolve_sort(
-                    self,
-                    &SortInput {
-                        target: SortTargetInput::Field(field),
-                        direction,
-                        missing: Some(missing),
-                        annotations,
-                    },
-                    &format!("{path}.target"),
-                )?;
-                return Ok(sort);
-            }
-            api::SortTargetKind::RelevanceSortTarget => SortTargetIr::Relevance,
-            api::SortTargetKind::RankFeatureSortTarget => {
-                let feature = target
-                    .target_as_rank_feature_sort_target()
-                    .and_then(|target| target.feature())
-                    .ok_or_else(|| {
-                        invalid(
-                            "invalid_sort",
-                            Some(format!("{path}.target.feature")),
-                            "rank-feature sort requires a feature name",
-                        )
-                    })?;
-                if feature.is_empty() {
-                    return Err(invalid(
-                        "invalid_sort",
-                        Some(format!("{path}.target.feature")),
-                        "rank-feature sort requires a non-empty feature name",
-                    ));
-                }
-                SortTargetIr::RankFeature(feature.to_owned())
-            }
-            api::SortTargetKind::RawSortTarget => {
-                return Err(PortableError::unsupported(
-                    "raw_sort_not_supported",
-                    Some(format!("{path}.target")),
-                    "raw sort expressions must be normalized before entering resolved IR",
-                ));
-            }
-            _ => {
-                return Err(invalid(
-                    "invalid_sort",
-                    Some(format!("{path}.target")),
-                    "sort target must select a known variant",
-                ));
-            }
-        };
-        Ok(SortIr {
-            target,
-            direction,
-            missing,
-            annotations,
-        })
     }
 }
 
@@ -478,8 +366,10 @@ fn decode_search_input(
         highlighting,
         presentation,
         properties: request_values_to_map(request.properties(), "properties")?,
-        query_profile: normalized_optional_string(request.query_profile()),
-        search_chain: normalized_optional_string(request.search_chain()),
+        // Keep present-empty controls intact until resolve_search decides
+        // whether they mean default or invalid input.
+        query_profile: request.query_profile().map(ToOwned::to_owned),
+        search_chain: request.search_chain().map(ToOwned::to_owned),
         timeout,
         limit: request.limit().map(|value| value.value()),
         offset: request.offset().map(|value| value.value()),
@@ -528,13 +418,13 @@ fn presentation_to_input(
     };
     crate::api_to_ir::resolve::PresentationInput {
         summary: value.summary().map(ToOwned::to_owned),
-        format: normalized_optional_string(value.format()),
+        format: value.format().map(ToOwned::to_owned),
         bolding: value.bolding().map(|value| value.value()),
         timing: value.timing().map(|value| value.value()),
     }
 }
 
-fn ranking_to_input(
+pub(crate) fn ranking_to_input(
     value: Option<api::RankingRequest<'_>>,
 ) -> Result<(Option<RankingInput>, BTreeMap<String, String>)> {
     let Some(value) = value else {

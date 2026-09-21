@@ -623,7 +623,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .iter()
             .map(|profile| searchkernel_ir::RustRankProfileInput {
                 name: profile.name.clone(),
-                first_phase: profile.first_phase.clone().unwrap_or_default(),
+                first_phase: profile.first_phase.clone(),
                 second_phase: profile.second_phase.clone(),
                 rerank_count: profile.rerank_count,
                 match_features: profile.match_features.clone(),

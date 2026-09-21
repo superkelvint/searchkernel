@@ -1,6 +1,6 @@
 {
   "category": "search",
-  "description": "MatchAll is valid with explicitly no search fields.",
+  "description": "Blank text is invalid even with explicitly no search fields.",
   "id": "search.explicit-empty-fields-match-all",
   "index_fixture": "product-v2",
   "input": {

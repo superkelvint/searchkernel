@@ -1,21 +1,47 @@
 {
   "ok": {
-    "children": [
-      {
-        "field": "title",
-        "kind": "term",
-        "value": {
-          "string": "a"
+    "kind": "typed",
+    "query": {
+      "annotations": {},
+      "children": [
+        {
+          "annotations": {},
+          "field": {
+            "element_index": null,
+            "path": "title"
+          },
+          "item": {
+            "annotations": {},
+            "kind": "term",
+            "value": {
+              "string": "a"
+            }
+          },
+          "kind": "contains"
+        },
+        {
+          "annotations": {},
+          "children": [
+            {
+              "annotations": {},
+              "field": {
+                "element_index": null,
+                "path": "description"
+              },
+              "item": {
+                "annotations": {},
+                "kind": "term",
+                "value": {
+                  "string": "b"
+                }
+              },
+              "kind": "contains"
+            }
+          ],
+          "kind": "and"
         }
-      },
-      {
-        "field": "description",
-        "kind": "term",
-        "value": {
-          "string": "b"
-        }
-      }
-    ],
-    "kind": "and"
+      ],
+      "kind": "and"
+    }
   }
 }

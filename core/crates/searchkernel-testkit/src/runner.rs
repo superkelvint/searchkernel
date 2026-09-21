@@ -1,13 +1,13 @@
 //! Corpus-runner API.
 
 use searchkernel_ir::{
-    analyzer_to_ir, api, error_to_api, field_to_ir, index_definition_to_ir, AnalyzeRequestIr,
-    AnalyzerIdentity, ComparisonIr, ComparisonOp, DeleteRequestIr, DocumentIr, FieldIr, FieldKind,
-    FieldValueIr, FilterIr, GetRequestIr, HighlightingIr, IndexContext, IndexDefinitionIr,
-    InsertRequestIr, LanguageHint, PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr,
-    QueryIr, RangeIr, ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr,
-    UpdateArithmeticOperatorIr, UpdateOperationIr, UpdateRequestIr, UpsertRequestIr,
-    WriteRequestIr, WriteRequestRef,
+    analyzer_to_ir, api, error_to_api, field_to_ir, index_definition_to_ir, resolve_facets,
+    resolve_facets_at, AnalyzeRequestIr, AnalyzerIdentity, ComparisonIr, ComparisonOp,
+    DeleteRequestIr, DocumentIr, FacetInput, FacetSortInput, FieldIr, FieldKind, FieldValueIr,
+    FilterIr, GetRequestIr, HighlightingIr, IndexContext, IndexDefinitionIr, InsertRequestIr,
+    LanguageHint, PatchOperationIr, PatchRequestIr, PortableError, ProjectionIr, QueryIr, RangeIr,
+    ScalarValueIr, SearchFieldIr, SearchRequestIr, SortIr, UpdateArithmeticOperatorIr,
+    UpdateOperationIr, UpdateRequestIr, UpsertRequestIr, WriteRequestIr, WriteRequestRef,
 };
 use searchkernel_protocol::{protocol::v2 as transport, PROTOCOL_VERSION};
 use serde_json::{json, Map, Value as JsonValue};
@@ -234,6 +234,14 @@ fn component_search_input(operation: &str, input: &JsonValue) -> JsonValue {
             }
         }
         _ => {}
+    }
+    if operation != "query_to_ir"
+        && !object.contains_key("query")
+        && !object.contains_key("query_expr")
+    {
+        // Component cases need a valid enclosing request. Use the explicit
+        // MatchAll source; an empty text source is intentionally invalid.
+        object.insert("match_all".to_owned(), JsonValue::Bool(true));
     }
     JsonValue::Object(object)
 }
@@ -666,27 +674,21 @@ fn execute(
                 .map_err(|error| error.to_string())?;
             let mut output = search_json(&context.search_to_ir(root).map_err(ExecError::Portable)?);
             if let Some(items) = input.get("facets").and_then(JsonValue::as_array) {
-                let mut seen = std::collections::BTreeSet::new();
-                let facets = items
+                let parsed = items
                     .iter()
                     .enumerate()
                     .map(|(index, item)| {
-                        let facet = facet_from_json_at(item, &context, &format!("facets[{index}]"))
-                            .map_err(ExecError::Portable)?;
-                        let field = facet
-                            .get("field")
-                            .and_then(JsonValue::as_str)
-                            .unwrap_or_default();
-                        if !seen.insert(field.to_owned()) {
-                            return Err(ExecError::Portable(PortableError::invalid(
-                                "duplicate_facet_field",
-                                Some(format!("facets[{index}].field")),
-                                "facet fields must be unique",
-                            )));
-                        }
-                        Ok(facet)
+                        facet_spec_from_json(item, &format!("facets[{index}]"))
+                            .map_err(ExecError::Portable)
                     })
                     .collect::<StdResult<Vec<_>, ExecError>>()?;
+                resolve_facets_at(
+                    &context,
+                    parsed.iter().map(|(facet, _)| facet.clone()).collect(),
+                    "facets",
+                )
+                .map_err(ExecError::Portable)?;
+                let facets = parsed.into_iter().map(|(_, json)| json).collect();
                 output["facets"] = JsonValue::Array(facets);
             }
             ok(output)
@@ -1034,43 +1036,24 @@ fn facet_from_json(
     input: &JsonValue,
     context: &IndexContext,
 ) -> StdResult<JsonValue, PortableError> {
-    facet_from_json_at(input, context, "facet")
+    let (facet, json) = facet_spec_from_json(input, "facet")?;
+    resolve_facets(context, vec![facet])?;
+    Ok(json)
 }
 
-fn facet_from_json_at(
+fn facet_spec_from_json(
     input: &JsonValue,
-    context: &IndexContext,
     path: &str,
-) -> StdResult<JsonValue, PortableError> {
+) -> StdResult<(FacetInput, JsonValue), PortableError> {
     let field_name = input
         .get("field")
         .and_then(JsonValue::as_str)
         .unwrap_or_default();
-    let field = context
-        .definition()
-        .fields()
-        .iter()
-        .find(|field| field.name().as_str() == field_name)
-        .ok_or_else(|| {
-            PortableError::invalid(
-                "unknown_field",
-                Some(format!("{path}.field")),
-                "facet field does not exist",
-            )
-        })?;
-    if !field.capabilities().facetable() {
-        return Err(PortableError::invalid(
-            "field_not_facetable",
-            Some(format!("{path}.field")),
-            "field is not facetable",
-        ));
-    }
-    let sort = match input.get("sort").and_then(JsonValue::as_str) {
-        None => "count_desc",
-        Some("count_desc") => "count_desc",
-        Some("count_asc") => "count_asc",
-        Some("value_asc") => "value_asc",
-        Some("value_desc") => "value_desc",
+    let (sort_name, sort) = match input.get("sort").and_then(JsonValue::as_str) {
+        None | Some("count_desc") => ("count_desc", Some(FacetSortInput::CountDesc)),
+        Some("count_asc") => ("count_asc", Some(FacetSortInput::CountAsc)),
+        Some("value_asc") => ("value_asc", Some(FacetSortInput::ValueAsc)),
+        Some("value_desc") => ("value_desc", Some(FacetSortInput::ValueDesc)),
         Some(_) => {
             return Err(PortableError::invalid(
                 "invalid_facet",
@@ -1087,7 +1070,14 @@ fn facet_from_json_at(
             "facet limit is out of range",
         )
     })?;
-    Ok(json!({"field": field.name().as_str(), "limit": limit, "sort": sort}))
+    Ok((
+        FacetInput {
+            field: field_name.to_owned(),
+            limit: Some(limit),
+            sort,
+        },
+        json!({"field": field_name, "limit": limit, "sort": sort_name}),
+    ))
 }
 fn analyze_json(value: &AnalyzeRequestIr) -> JsonValue {
     json!({"analyzer":analyzer_name(Some(value.analyzer())),"text":value.text(),"language":value.language().map(LanguageHint::as_str)})
@@ -1181,7 +1171,9 @@ impl WireBuilder {
                 self.finish(root)
             }
             "filters_to_ir" => {
-                let root = self.search(input)?;
+                let mut request = input.as_object().cloned().unwrap_or_default();
+                request.insert("match_all".to_owned(), JsonValue::Bool(true));
+                let root = self.search(&JsonValue::Object(request))?;
                 self.finish(root)
             }
             "filter_to_ir" => {
@@ -2741,7 +2733,21 @@ impl WireBuilder {
             .get("query_expr")
             .map(|v| self.query_expr(v))
             .transpose()?;
-        let query_source = if let Some(query_expr) = query_expr {
+        let query_source = if input
+            .get("match_all")
+            .and_then(JsonValue::as_bool)
+            .unwrap_or(false)
+        {
+            let match_all =
+                api::MatchAllQuery::create(&mut self.builder, &api::MatchAllQueryArgs {});
+            Some(api::QuerySource::create(
+                &mut self.builder,
+                &api::QuerySourceArgs {
+                    source_type: api::QuerySourceKind::MatchAllQuery,
+                    source: Some(match_all.as_union_value()),
+                },
+            ))
+        } else if let Some(query_expr) = query_expr {
             let typed = api::TypedQuery::create(
                 &mut self.builder,
                 &api::TypedQueryArgs {

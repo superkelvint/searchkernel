@@ -1,12 +1,24 @@
 {
   "ok": {
-    "child": {
-      "field": "title",
-      "kind": "term",
-      "value": {
-        "string": "a"
-      }
-    },
-    "kind": "not"
+    "kind": "typed",
+    "query": {
+      "annotations": {},
+      "child": {
+        "annotations": {},
+        "field": {
+          "element_index": null,
+          "path": "title"
+        },
+        "item": {
+          "annotations": {},
+          "kind": "term",
+          "value": {
+            "string": "a"
+          }
+        },
+        "kind": "contains"
+      },
+      "kind": "not"
+    }
   }
 }

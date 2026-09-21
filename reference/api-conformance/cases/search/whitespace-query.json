@@ -1,6 +1,6 @@
 {
   "category": "search",
-  "description": "Whitespace text query resolves to MatchAll.",
+  "description": "Whitespace text query is invalid; MatchAll must be explicit.",
   "id": "search.whitespace-query",
   "index_fixture": "product-v2",
   "input": {

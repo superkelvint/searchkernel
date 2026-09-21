@@ -416,6 +416,33 @@ pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<Sear
     })
 }
 
+/// Resolve the facet shorthand through the same grouping semantics used by a
+/// complete search request. This is exposed for verifier/component callers so
+/// they cannot reimplement schema and duplicate-field validation.
+#[doc(hidden)]
+pub fn resolve_facets(
+    context: &IndexContext,
+    facets: Vec<FacetInput>,
+) -> Result<Vec<GroupingRequestIr>> {
+    resolve_facets_at(context, facets, "facet")
+}
+
+#[doc(hidden)]
+pub fn resolve_facets_at(
+    context: &IndexContext,
+    facets: Vec<FacetInput>,
+    path: &str,
+) -> Result<Vec<GroupingRequestIr>> {
+    resolve_grouping_at(
+        context,
+        &facets
+            .into_iter()
+            .map(GroupingInput::Facet)
+            .collect::<Vec<_>>(),
+        path,
+    )
+}
+
 fn resolve_query_source(context: &IndexContext, input: &SearchInput) -> Result<QueryIr> {
     match &input.query {
         QuerySourceInput::Text(text) if text.trim().is_empty() => Err(invalid(
@@ -572,13 +599,25 @@ fn resolve_grouping(
     context: &IndexContext,
     input: &[GroupingInput],
 ) -> Result<Vec<GroupingRequestIr>> {
+    resolve_grouping_at(context, input, "facets")
+}
+
+fn resolve_grouping_at(
+    context: &IndexContext,
+    input: &[GroupingInput],
+    facet_path: &str,
+) -> Result<Vec<GroupingRequestIr>> {
     let mut facet_fields = BTreeSet::new();
     input
         .iter()
         .enumerate()
         .map(|(index, value)| match value {
             GroupingInput::Facet(value) => {
-                let path = format!("facets[{index}].field");
+                let path = if facet_path == "facet" {
+                    "facet.field".to_owned()
+                } else {
+                    format!("{facet_path}[{index}].field")
+                };
                 validate_grouping_field(context, &value.field, &path)?;
                 if !facet_fields.insert(value.field.clone()) {
                     return Err(invalid(
@@ -904,7 +943,7 @@ fn resolve_presentation(input: PresentationInput) -> PresentationIr {
         // summary class. Keep this normalization here so direct Rust input
         // and FlatBuffers input share the same presentation semantics.
         summary: input.summary.filter(|value| !value.is_empty()),
-        format: input.format,
+        format: input.format.filter(|value| !value.is_empty()),
         bolding: input.bolding,
         timing: input.timing,
     }

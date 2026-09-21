@@ -446,6 +446,55 @@ fn rust_tensor_hnsw_fields_preserve_metric_and_graph_configuration() {
     assert_eq!(hnsw.neighbors_to_explore_at_insert, Some(16));
 }
 
+#[test]
+fn rust_rank_profiles_preserve_phase_presence_and_second_phase_expression() {
+    let definition = resolve_rust_index_definition_with_profiles(
+        RustIndexDefinitionInput {
+            name: Some("ranked".to_owned()),
+            fields: vec![RustFieldInput {
+                name: "title".to_owned(),
+                kind: RustFieldKind::Text,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        },
+        vec![RustRankProfileInput {
+            name: "custom".to_owned(),
+            first_phase: None,
+            second_phase: Some("attribute(score)".to_owned()),
+            rerank_count: Some(7),
+            match_features: Vec::new(),
+            query_inputs: Vec::new(),
+        }],
+    )
+    .expect("rank profile should resolve");
+
+    let profile = &definition.rank_profiles()[0];
+    assert_eq!(profile.first_phase, None);
+    assert_eq!(
+        profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("attribute(score)")
+    );
+    assert_eq!(
+        profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.rerank_count),
+        Some(7)
+    );
+}
+
 fn parity_document_input() -> DocumentInput {
     DocumentInput {
         id: "doc-7".to_owned(),
@@ -939,6 +988,274 @@ fn unknown_ranking_profile_is_rejected_before_backend_lowering() {
 
     assert_eq!(error.code, crate::ErrorCode::InvalidArgument);
     assert_eq!(error.details[0].code, "invalid_rank_profile");
+}
+
+#[test]
+fn component_ranking_resolution_does_not_bypass_search_semantics() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let profile = builder.create_string("");
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            ..Default::default()
+        },
+    );
+    builder.finish(ranking, None);
+    let ranking_bytes = builder.finished_data().to_vec();
+    let ranking = crate::__flatbuffers::root::<api::RankingRequest>(&ranking_bytes).unwrap();
+    let direct = context()
+        .ranking_request_to_ir(Some(ranking))
+        .expect_err("empty named profiles must be rejected by component conversion");
+    assert_eq!(direct.details[0].code, "invalid_ranking");
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let profile = builder.create_string("");
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ranking: Some(ranking),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid search request");
+    let error = context()
+        .search_to_ir(request)
+        .expect_err("full search resolution must reject an empty named profile");
+    assert_eq!(error.details[0].code, "invalid_ranking");
+}
+
+#[test]
+fn component_query_resolution_does_not_simplify_typed_search_semantics() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let value = builder.create_string("Acme");
+    let string_value =
+        api::StringValue::create(&mut builder, &api::StringValueArgs { value: Some(value) });
+    let term_value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::StringValue,
+            kind: Some(string_value.as_union_value()),
+        },
+    );
+    let term = api::TermQuery::create(
+        &mut builder,
+        &api::TermQueryArgs {
+            value: Some(term_value),
+        },
+    );
+    let field = builder.create_string("brand");
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field),
+            element_index: None,
+        },
+    );
+    let item = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::TermQuery,
+            expr: Some(term.as_union_value()),
+            annotations: None,
+        },
+    );
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(item),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    builder.finish(expression, None);
+    let expression_bytes = builder.finished_data().to_vec();
+    let expression = crate::__flatbuffers::root::<api::QueryExpr>(&expression_bytes).unwrap();
+
+    let mut context = context();
+    context.definition.fields[0].capabilities.searchable = true;
+    let direct = context
+        .query_to_ir("", Some(expression))
+        .expect("component query conversion should succeed");
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let value = builder.create_string("Acme");
+    let string_value =
+        api::StringValue::create(&mut builder, &api::StringValueArgs { value: Some(value) });
+    let term_value = api::Value::create(
+        &mut builder,
+        &api::ValueArgs {
+            kind_type: api::ValueKind::StringValue,
+            kind: Some(string_value.as_union_value()),
+        },
+    );
+    let term = api::TermQuery::create(
+        &mut builder,
+        &api::TermQueryArgs {
+            value: Some(term_value),
+        },
+    );
+    let field = builder.create_string("brand");
+    let field = api::QueryFieldRef::create(
+        &mut builder,
+        &api::QueryFieldRefArgs {
+            path: Some(field),
+            element_index: None,
+        },
+    );
+    let item = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::TermQuery,
+            expr: Some(term.as_union_value()),
+            annotations: None,
+        },
+    );
+    let contains = api::QueryContains::create(
+        &mut builder,
+        &api::QueryContainsArgs {
+            field: Some(field),
+            item: Some(item),
+        },
+    );
+    let expression = api::QueryExpr::create(
+        &mut builder,
+        &api::QueryExprArgs {
+            expr_type: api::QueryExprKind::QueryContains,
+            expr: Some(contains.as_union_value()),
+            annotations: None,
+        },
+    );
+    let typed = api::TypedQuery::create(
+        &mut builder,
+        &api::TypedQueryArgs {
+            query: Some(expression),
+        },
+    );
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::TypedQuery,
+            source: Some(typed.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid search request");
+    let canonical = context.search_to_ir(request).unwrap();
+
+    assert!(matches!(direct, QueryIr::Typed(_)));
+    assert!(matches!(canonical.query(), QueryIr::Typed(_)));
+}
+
+#[test]
+fn component_sort_resolution_uses_search_error_semantics() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let field = builder.create_string("price");
+    let field = api::FieldSortTarget::create(
+        &mut builder,
+        &api::FieldSortTargetArgs { field: Some(field) },
+    );
+    let target = api::SortTarget::create(
+        &mut builder,
+        &api::SortTargetArgs {
+            target_type: api::SortTargetKind::FieldSortTarget,
+            target: Some(field.as_union_value()),
+        },
+    );
+    let sort = api::SortExpr::create(
+        &mut builder,
+        &api::SortExprArgs {
+            target: Some(target),
+            direction: api::SortDirection(3),
+            ..Default::default()
+        },
+    );
+    builder.finish(sort, None);
+    let sort_bytes = builder.finished_data().to_vec();
+    let sort = crate::__flatbuffers::root::<api::SortExpr>(&sort_bytes).unwrap();
+    let direct_error = context()
+        .sort_to_ir(sort)
+        .expect_err("component sort conversion should reject the invalid direction");
+    assert_eq!(direct_error.details[0].code, "invalid_sort");
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let field = builder.create_string("price");
+    let field = api::FieldSortTarget::create(
+        &mut builder,
+        &api::FieldSortTargetArgs { field: Some(field) },
+    );
+    let target = api::SortTarget::create(
+        &mut builder,
+        &api::SortTargetArgs {
+            target_type: api::SortTargetKind::FieldSortTarget,
+            target: Some(field.as_union_value()),
+        },
+    );
+    let sort = api::SortExpr::create(
+        &mut builder,
+        &api::SortExprArgs {
+            target: Some(target),
+            direction: api::SortDirection(3),
+            ..Default::default()
+        },
+    );
+    let sorts = builder.create_vector(&[sort]);
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            sort: Some(sorts),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid search request");
+    let full_error = context()
+        .search_to_ir(request)
+        .expect_err("full search conversion should reject the invalid direction");
+    assert_eq!(full_error.details[0].code, "invalid_sort");
 }
 
 fn match_all_search(grouping: Vec<GroupingInput>) -> SearchIntent {
@@ -1913,7 +2230,9 @@ fn v2_query_variant_malformed_payloads_are_rejected_explicitly() {
     for (name, bytes) in &supported {
         let expression = crate::__flatbuffers::root::<api::QueryExpr>(bytes).unwrap();
         assert!(
-            query_context.query_expr_to_ir(expression, "query").is_ok(),
+            query_context
+                .typed_query_to_ir(expression, "query", None)
+                .is_ok(),
             "{name} should be in the characterized supported subset"
         );
     }
@@ -1958,7 +2277,7 @@ fn v2_query_variant_malformed_payloads_are_rejected_explicitly() {
     for (name, kind) in unsupported {
         let bytes = bare_expression(kind);
         let expression = crate::__flatbuffers::root::<api::QueryExpr>(&bytes).unwrap();
-        if let Err(error) = query_context.query_expr_to_ir(expression, "query") {
+        if let Err(error) = query_context.typed_query_to_ir(expression, "query", None) {
             assert!(
                 error
                     .details

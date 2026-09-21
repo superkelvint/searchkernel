@@ -1,5 +1,12 @@
 {
-  "ok": {
-    "kind": "match_all"
+  "error": {
+    "code": "invalid_argument",
+    "details": [
+      {
+        "code": "invalid_query",
+        "path": "query"
+      }
+    ],
+    "retryable": false
   }
 }

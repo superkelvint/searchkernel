@@ -1,6 +1,6 @@
 {
   "category": "wire",
-  "description": "Ordinary nullable query string null normalizes to empty/MatchAll.",
+  "description": "A missing text query must not broaden into MatchAll.",
   "id": "wire.query-null-equals-empty",
   "index_fixture": "product-v2",
   "input": {
