@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace searchkernel::native_highlighting {
@@ -19,19 +20,27 @@ struct Fragment {
     std::vector<Span> matches;
 };
 
-// Vespa's embedded docsum configuration uses control-byte highlight markers
-// and preserves linguistics annotations using U+FFF9/U+FFFA/U+FFFB. Decode
-// those backend-owned delimiters here; do not search the returned source text
-// for query terms in Search Kernel.
-inline std::optional<Fragment> decode(std::string_view teaser) {
+// Vespa's embedded docsum configuration uses 0x1f highlight markers and 0x1e
+// continuation markers between disjoint teaser regions. It preserves
+// linguistics annotations using U+FFF9/U+FFFA/U+FFFB. Decode those backend-
+// owned delimiters here; do not search the returned source text for query
+// terms in Search Kernel.
+inline std::optional<std::vector<Fragment>> decode(std::string_view teaser) {
     if (teaser.empty()) return std::nullopt;
     constexpr std::string_view annotation_anchor = "\xEF\xBF\xB9";
     constexpr std::string_view annotation_separator = "\xEF\xBF\xBA";
     constexpr std::string_view annotation_terminator = "\xEF\xBF\xBB";
 
+    std::vector<Fragment> fragments;
     Fragment fragment;
     bool highlighted = false;
     uint32_t highlight_start = 0;
+    const auto flush_fragment = [&]() {
+        if (!fragment.text.empty() || !fragment.matches.empty()) {
+            fragments.push_back(std::move(fragment));
+            fragment = Fragment{};
+        }
+    };
     for (size_t index = 0; index < teaser.size();) {
         if (teaser.substr(index, 3) == "<b>") {
             if (highlighted) throw std::runtime_error("Vespa teaser contains nested highlight markup");
@@ -52,6 +61,12 @@ inline std::optional<Fragment> decode(std::string_view teaser) {
                 highlighted = false;
             }
             ++index;
+        } else if (teaser[index] == '\x1e') {
+            if (highlighted) {
+                throw std::runtime_error("Vespa teaser continuation interrupts highlight markup");
+            }
+            flush_fragment();
+            ++index;
         } else if (teaser.substr(index, annotation_anchor.size()) == annotation_anchor) {
             const auto separator = teaser.find(annotation_separator, index + annotation_anchor.size());
             const auto terminator = separator == std::string_view::npos
@@ -68,7 +83,9 @@ inline std::optional<Fragment> decode(std::string_view teaser) {
         }
     }
     if (highlighted) throw std::runtime_error("Vespa teaser contains unterminated highlight markup");
-    return fragment;
+    flush_fragment();
+    if (fragments.empty()) return std::nullopt;
+    return fragments;
 }
 
 } // namespace searchkernel::native_highlighting

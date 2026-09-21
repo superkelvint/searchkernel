@@ -19,8 +19,10 @@ path, not a Search Kernel text post-processor:
   configures dynamic-teaser highlight markers as the control byte `0x1f`.
 - `searchsummary/src/vespa/juniper/sumdesc.cpp` and
   `searchsummary/src/vespa/juniper/config.cpp` implement teaser selection and
-  marker emission. `searchsummary/src/vespa/juniper/matchobject.cpp` handles
-  matching through the linguistic annotations.
+  marker emission. Juniper uses `0x1e` between disjoint selected teaser
+  regions; Search Kernel maps those boundaries to separate highlight
+  fragments. `searchsummary/src/vespa/juniper/matchobject.cpp` handles matching
+  through the linguistic annotations.
 
 Search Kernel generates one hidden `dynamicteaser` summary field per eligible
 stored/indexed text field. The native adapter asks `DocumentDB::getDocsums()`

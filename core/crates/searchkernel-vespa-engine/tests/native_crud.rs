@@ -897,6 +897,76 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
 }
 
 #[test]
+fn native_dynamic_teaser_highlighting_preserves_continuation_fragments() {
+    let config = temporary_path("highlight-continuation-config");
+    let data = temporary_path("highlight-continuation-data");
+    let schema = Schema::new("highlight_continuation")
+        .field(Field::new("title", FieldType::Text).indexed().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile continuation highlight config");
+    fs::write(
+        config.join("juniperrc.cfg"),
+        "length 128\nmax_matches 3\nmin_length 0\nsurround_max 24\n",
+    )
+    .expect("write continuation highlight Juniper configuration");
+    let engine = Engine::open(&data, &config).expect("open continuation highlight engine");
+
+    let title = format!(
+        "brown {} fox {} café",
+        "unrelated ".repeat(60),
+        "context ".repeat(60)
+    );
+    engine
+        .put(Document::new("highlight-continuation-1").field("title", title))
+        .expect("put continuation highlight document");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::Or(vec![
+                Query::term("title", "brown"),
+                Query::term("title", "fox"),
+                Query::term("title", "café"),
+            ]))
+            .highlight(["title"]),
+        )
+        .expect("execute continuation highlight search");
+    let highlight = &result.hits[0].highlights[0];
+    assert!(
+        highlight.fragments.len() >= 2,
+        "expected continuation fragments, got {:#?}",
+        highlight.fragments
+    );
+    assert!(highlight.fragments.iter().all(|fragment| {
+        !fragment.text.contains('\u{1e}')
+            && fragment.matches.iter().all(|span| {
+                let start = span.start_byte as usize;
+                let end = span.end_byte as usize;
+                start < end
+                    && end <= fragment.text.len()
+                    && fragment.text.is_char_boundary(start)
+                    && fragment.text.is_char_boundary(end)
+            })
+    }));
+    assert!(highlight.fragments.iter().any(|fragment| {
+        fragment
+            .matches
+            .iter()
+            .any(|span| &fragment.text[span.start_byte as usize..span.end_byte as usize] == "brown")
+    }));
+    assert!(highlight.fragments.iter().any(|fragment| {
+        fragment
+            .matches
+            .iter()
+            .any(|span| &fragment.text[span.start_byte as usize..span.end_byte as usize] == "café")
+    }));
+
+    engine.close().expect("close continuation highlight engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_attribute_exists_matches_keyword_and_boolean_vespa_semantics() {
     let config = temporary_path("exists-config");
     let data = temporary_path("exists-data");
