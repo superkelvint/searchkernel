@@ -5,6 +5,17 @@ ROOT="$(cd "$M14/../../.." && pwd)"
 bad=0
 fail(){ echo "M14 structural check: $*" >&2; bad=1; }
 
+# Keep the native-driver assertions aligned with the frozen ABI.  This is a
+# verifier-only contract: the implementation exports sk_engine_remove, so a
+# stale delete name would make the acceptance lane reject valid drivers.
+if rg -n 'sk_engine_delete' "$M14/verify-m14.sh" >/dev/null; then
+  fail 'M14 verifier requires removed sk_engine_delete'
+fi
+remove_count="$(rg -o 'sk_engine_remove' "$M14/verify-m14.sh" | wc -l || true)"
+if [[ "$remove_count" -ne 2 ]]; then
+  fail "M14 verifier must require sk_engine_remove for both native drivers (found $remove_count)"
+fi
+
 # M-layer dependency firewall remains intact.
 if rg -n --glob '*.rs' --glob '*.toml' \
   'searchkernel-ir|searchkernel_ir|searchkernel-testkit|searchkernel_testkit' \

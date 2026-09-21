@@ -10,6 +10,7 @@ require_sdk_manifest "$SDK/manifest.json"
 "$M14/validate_scenarios.py"
 "$M14/validate_expected.py"
 python3 "$M14/test_execution_evidence.py"
+python3 "$M14/test_symbol_expectations.py"
 
 # M14 is cumulative.
 "$ROOT/reference/vespa/m13/verify-m13.sh"
@@ -29,14 +30,14 @@ require_native_driver "$LOW" \
   sk_engine_open \
   sk_engine_put \
   sk_engine_update \
-  sk_engine_delete \
+  sk_engine_remove \
   sk_generic_search_request_add_query_tensor_dense \
   sk_query_add_nearest_neighbor_with_options_handle
 require_native_driver "$ADAPTER" \
   sk_engine_open \
   sk_engine_put \
   sk_engine_update \
-  sk_engine_delete \
+  sk_engine_remove \
   sk_generic_search_request_add_query_tensor_dense \
   sk_query_add_nearest_neighbor_with_options_handle
 
