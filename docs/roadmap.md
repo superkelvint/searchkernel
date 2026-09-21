@@ -1,98 +1,197 @@
 # Roadmap
 
-This document contains only the current baseline and work that is still worth
-planning. Completed milestone definitions have been removed; their contracts,
-oracles, and verification history remain under [`reference/vespa/`](../reference/vespa/)
-and [`history.md`](history.md).
+This document describes the current baseline and the work that is still worth
+planning. Completed milestone definitions live under
+[`reference/vespa/`](../reference/vespa/) and historical context lives in
+[`history.md`](history.md).
 
-For architectural invariants, read [`architecture.md`](architecture.md). For a
-repository inventory, read [`status.md`](status.md).
+For architectural invariants, read [`architecture.md`](architecture.md). For
+the factual repository inventory, read [`status.md`](status.md).
 
 ## Current baseline
 
-The following is already implemented and should be treated as foundation, not
-future roadmap work:
+The following is already present in the repository and should be treated as
+foundation rather than future design work:
 
-- cumulative native Vespa baseline through M13;
+- native Vespa capability through the M14 implementation surface;
 - Phase 9 additive native/query coverage and Phase 10 public Rust real-engine E2E;
 - the integrated public product path and `reference/vespa/i` release gate;
-- one canonical FlatBuffers V2 -> Search Kernel IR -> Vespa adapter path;
+- one canonical FlatBuffers V2 -> Search Kernel IR -> Vespa adapter architecture;
 - shared dispatcher used by non-Rust transports;
 - direct in-process Rust product API;
 - `searchkerneld` over UDS/TCP plus the gRPC-Web listener;
 - Python gRPC client, managed local daemon lifecycle, ergonomic facade, and E2E;
 - TypeScript browser client plus managed-local Node facade and E2E;
-- textual filter parser/binder with clause-local bindings and structured-filter equivalence;
-- typed queries, YQL subset, sorting, projection, facets/grouping, ranking, two-phase reranking,
-  dense tensors, persistence, nearest-neighbor search, and degradation metadata;
-- default summary-class selection and projected scalar docsums through the real engine.
+- textual filter parsing/binding with clause-local parameters;
+- typed queries, YQL subset, sorting, projection, facets/grouping, ranking,
+  two-phase reranking, dense tensors, persistence, and nearest-neighbor search;
+- HNSW schema/configuration and approximate nearest-neighbor implementation for
+  the M14 slice;
+- default summary selection, scalar projected docsums, and the first real
+  Vespa-generated highlighting path.
 
-The old portable client FFI / `NativeTransport` architecture is retired and must
-not return.
+Implementation presence is not acceptance. A newly merged capability stays open
+until its frozen verifier and required real-engine acceptance evidence pass.
 
-## Current frontier
+The retired portable client FFI / `NativeTransport` architecture must not
+return.
 
-### 1. Finish the native result/docsum seam
+## Current frontier — close the semantic/schema correctness work
 
-This is the largest remaining execution gap because the request side is ahead of
-what the native result ABI can return.
+Do not start another broad capability family until the following in-flight work
+has converged and its acceptance state is explicit.
 
-Complete, in roughly this order:
+### 1. Schema fidelity
 
-- non-scalar/richer docsum value decoding;
+Finish the work tracked in
+[`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md).
+
+The required invariant is lossless canonical schema preservation across Rust
+introspection/describe boundaries. Do not treat backend executability as a
+reason to discard canonical schema information.
+
+Closure requires:
+
+- the comprehensive schema-fidelity regression corpus green;
+- Rust -> IR and IR -> Rust preservation for the promised surface;
+- `Index::describe()` semantic round-trip fidelity;
+- unsupported backend execution remaining explicit rather than silently lost.
+
+### 2. Canonical search resolution and typed-query boundary
+
+Keep exactly one semantic orchestration path for search intent.
+
+Rust facade ingress and FlatBuffers ingress may decode differently, but both
+must converge on the same unresolved representation and canonical resolver
+before resolved Search Kernel IR exists.
+
+Close remaining typed-query boundary leaks and structural checks without
+redesigning the frozen typed-query model.
+
+### 3. Phase 9 / additive / YQL / grouping acceptance
+
+Re-establish the current cumulative acceptance state rather than assuming the
+older audit work is closed.
+
+In particular, verify:
+
+- additive ABI/query behavior;
+- portable summary-hit and exact-ID semantics;
+- YQL/additive combination rules;
+- grouping interactions;
+- specialized Phase 9 checks and the cumulative verifier on the actual native
+  environment.
+
+### 4. Highlighting closure
+
+The first real Vespa-generated dynamic teaser path is now implemented. Close
+that slice with real-engine and client E2E evidence.
+
+Keep these as separate future capabilities unless intentionally scheduled:
+
+- custom document-summary definitions;
+- arbitrary Juniper rendering controls;
+- grouped highlights;
+- richer docsum value shapes.
+
+### 5. M14 HNSW acceptance
+
+The M14 implementation is present. Closure still requires the frozen M14
+contract to pass against the real engine, including:
+
+- emitted HNSW tensor attribute configuration;
+- exact control on the HNSW-enabled field;
+- approximate search;
+- explore-additional-hits and distance-threshold controls;
+- mutable vector updates;
+- close/reopen persistence;
+- delete/reopen behavior;
+- no Rust-side ANN fallback or shadow graph.
+
+### Frontier exit criteria
+
+The closure frontier is complete only when:
+
+- previously red structural/capability checks are green;
+- all relevant unit/regression tests exist and pass;
+- Phase 9 and M14 real-engine verifier results are recorded;
+- no second search semantic path remains;
+- the capability/limitations ledger matches executable reality;
+- blocker-focused review finds no remaining correctness blocker.
+
+## Next — make the current release state mechanically reproducible
+
+After the closure frontier is stable, create one current-tree verification entry
+point that runs the supported release surface from a clean checkout.
+
+It should cover at least:
+
+- cumulative native gate through M14;
+- Phase 9 specialized gate;
+- I-series / Phase 10 product gate;
+- SearchReply and recovery gates;
+- workspace fmt/clippy/tests;
+- generated-artifact drift checks;
+- `searchkerneld` transport tests;
+- Python unit/package/gRPC/E2E;
+- TypeScript generate/typecheck/unit/package/managed-local E2E;
+- capability/status documentation consistency.
+
+The goal is one documented command whose success means the current release
+baseline is reproducible rather than remembered.
+
+## After that — finish the native result/docsum seam
+
+The request side still exposes more than the native result path can faithfully
+return.
+
+Complete in small slices:
+
+- richer/non-scalar docsum value decoding;
 - custom document-summary definitions in native schema generation;
 - grouped `summary()` aggregation hit payloads;
 - `Hit.sort_values` from the real engine;
 - summary-feature and rank-feature readback;
-- typed tensor-valued feature readback instead of opaque bytes;
-- native highlighting fragments/spans.
+- typed tensor-valued feature readback.
 
-Do not invent result data in Rust. Every item above must cross the real Vespa
+Do not invent result data in Rust. Every value must cross the real Vespa
 result/docsum path.
 
-### 2. Finish advanced mutation semantics
+## Advanced mutation semantics
 
-The basic mutation path and arithmetic updates are already real-engine features.
-The remaining portable update surface is:
+The remaining portable update surface includes:
 
 - conditional insert/upsert/update/delete;
 - collection add/remove;
 - matched-element updates;
 - tensor modify operations;
-- ordered multiple updates to the same target/field where the portable contract
-  can represent Vespa's ordering faithfully;
-- richer field-path forms that are currently rejected.
+- ordered multiple updates to the same target/field where the contract can
+  preserve Vespa ordering faithfully;
+- richer field-path forms currently rejected.
 
-After backend support exists, expose the same capability ergonomically in Rust,
-Python, and TypeScript rather than adding SDK-local semantics.
+Implement backend semantics first, then add ergonomic parity in Rust, Python,
+and TypeScript.
 
-### 3. Close the public schema/query facade gaps
+## Public schema/query facade gaps
 
-The backend can execute more query shapes than the public high-level schema
-facades can currently construct. Close that mismatch before widening the
-portable contract again.
+Prefer exposing already-proven backend capability over widening the portable
+contract again.
 
-Priority gaps:
+Priority gaps include:
 
 - public array-of-struct definitions needed by `sameElement`;
 - public position/geo field definitions;
 - public predicate field definitions;
-- high-level helpers for already-supported typed query nodes such as proximity,
-  alternatives, `userInput`/`userQuery`, `nonEmpty`, labels, and other missing
-  SDK-specific constructors;
+- missing high-level helpers for already-supported query nodes;
 - non-default search-field weighting;
-- Rust parity for advanced update/YQL conveniences and Python/TypeScript parity
-  where generated low-level support exists but ergonomic sugar does not.
+- Rust/Python/TypeScript ergonomic parity where generated low-level support
+  already exists.
 
-The rule remains: representation and semantics stay centralized; facades add
-syntax only.
+Facades add syntax only. They do not define semantics.
 
-### 4. Make cross-language conformance a release gate
+## Cross-language product conformance
 
-Python and TypeScript now have substantial real-engine E2E coverage, but the
-repository still needs one explicit shared conformance gate.
-
-Build a single canonical scenario corpus and run it through:
+Build one canonical real-engine corpus and run it through:
 
 ```text
 Rust direct embedded API
@@ -102,69 +201,61 @@ TypeScript/browser -> gRPC-Web -> searchkerneld
 ```
 
 Require equivalent portable meaning and equivalent real-engine outcomes for the
-shared capability set. Keep language-specific ergonomic tests in addition to
-this corpus.
+shared supported surface.
 
-The capability ledger must include TypeScript and must be generated or checked
-against executable evidence so it cannot silently fall behind the code again.
+## Packaging and release hardening
 
-### 5. Packaging and release hardening
+Once the semantic/result gaps and shared conformance gate are solid:
 
-Once the result seam and cross-language gate are solid, finish the product-level
-release work:
+- produce clean-machine Rust embedded and `searchkerneld` packages;
+- package Python managed-local mode;
+- package TypeScript/Node and browser builds;
+- verify reproducible FlatBuffers/protobuf generation;
+- run crash/recovery and reopen tests through supported public entry points;
+- run sanitizers and resource/leak testing;
+- measure startup, RSS/PSS, indexing throughput, query latency, UDS overhead,
+  TCP overhead, and gRPC-Web overhead;
+- slim dependencies only where measurements justify it.
 
-- clean-machine Rust embedded package;
-- clean-machine `searchkerneld` package;
-- Python package with managed-local daemon support;
-- TypeScript/Node package and browser build;
-- reproducible FlatBuffers/protobuf generation and drift checks;
-- crash/recovery and reopen tests through supported public entry points;
-- sanitizer/resource/leak runs;
-- startup, RSS/PSS, indexing throughput, query latency, UDS RPC overhead, and
-  gRPC-Web/TCP overhead measurements;
-- dependency/runtime slimming where measurements justify it.
-
-### 6. Additional language SDKs only on demand
+## Additional language SDKs only on demand
 
 Go, PHP, Java, and other SDKs are not prerequisites for stabilizing the core
-product. Add one only when there is a concrete user/product requirement, using
-the existing pattern:
+product.
+
+A new first-party SDK must use:
 
 ```text
 flatc-generated models
 + standard gRPC stub
 + thin idiomatic facade
++ shared conformance corpus
 ```
 
-No new first-party native transport or custom client runtime should be created.
+No first-party custom native transport or custom RPC runtime should be added.
 
 ## Explicitly deferred or out of scope
 
-The following must not accidentally reappear as near-term roadmap work:
+Do not accidentally pull these into the active frontier:
 
-- **Grouping continuations:** deliberately deferred. Preserve protocol/result
-  compatibility, but do not implement native continuation execution now.
-- **Raw grouping parser/normalizer:** optional expert work; structured grouping
-  is the supported product path.
-- **Full Vespa container platform:** distributed dispatch, replication,
-  federation, Config Server/Proxy, MessageBus, Slobrok, search chains, and
-  container query profiles remain outside the embedded product.
-- **A second query/filter/ranking language:** do not create one.
-- **A second semantic path in an SDK or transport:** do not create one.
+- grouping continuations;
+- raw grouping parser/normalizer;
+- full Vespa container/distributed platform;
+- another query/filter/ranking language;
+- another SDK/transport semantic implementation;
+- broad adversarial audit pass while the current closure frontier is still
+  moving.
 
 ## Current verification gates
 
-The repository's existing authority remains the checked-in contracts and
-verifiers. The important top-level gates are:
+Acceptance authority remains the checked-in contracts and verifiers. Important
+top-level commands include:
 
 ```bash
-./reference/vespa/verify-through.sh m13
+./reference/vespa/verify-through.sh m14
 ./reference/vespa/phase9/verify-phase9.sh
 ./reference/vespa/verify-through.sh i
 ./reference/vespa/verify-through.sh searchreply
 ./reference/vespa/recovery/verify-recovery.sh
 ```
 
-The client release gate should additionally run the Python and TypeScript test,
-package, generation, and managed-local E2E suites. The roadmap item above is to
-make that one explicit, repeatable command rather than relying on human memory.
+Do not infer a passing milestone from implementation presence alone.
