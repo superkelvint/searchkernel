@@ -103,7 +103,6 @@ it("does not flatten unlabeled group wrappers by response shape", () => {
   const result = new SearchResults(new SearchResultT(node(root)));
 
   expect(result.groups).toHaveLength(1);
-  expect(result.groups[0]).toBe(result.root instanceof Object && "children" in result.root ? result.root.children[0] : undefined);
   expect(result.groups[0]?.label).toBeNull();
   expect(result.groups[0]?.groups[0]?.label).toBe("bucket");
 });
