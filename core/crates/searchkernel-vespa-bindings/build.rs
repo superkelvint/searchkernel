@@ -14,20 +14,30 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let default_sdk = default_native_sdk(&manifest_dir);
-    let sdk = env::var_os("SK_NATIVE_SDK")
-        .map(PathBuf::from)
-        .unwrap_or(default_sdk);
+    let using_shared_sdk = env::var_os("SK_NATIVE_SDK").is_none();
     #[cfg(feature = "native")]
     let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
     #[cfg(feature = "native")]
     let host = env::var("HOST").expect("Cargo must provide HOST to native build scripts");
+    let sdk = if let Some(configured) = env::var_os("SK_NATIVE_SDK") {
+        PathBuf::from(configured)
+    } else {
+        #[cfg(feature = "native")]
+        {
+            resolve_shared_native_sdk(&manifest_dir, &target, "ensure").unwrap_or_else(|error| {
+                panic!("resolve shared native Vespa SDK: {error}")
+            })
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            default_native_sdk(&manifest_dir)
+        }
+    };
     #[cfg(feature = "native")]
-    let sdk = prepare_native_sdk(&manifest_dir, sdk, &target);
+    let mut sdk = prepare_native_sdk(&manifest_dir, sdk, &target, using_shared_sdk);
     #[cfg(not(feature = "native"))]
     let sdk = fs::canonicalize(&sdk)
         .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
-    let lib_dir = sdk.join("lib");
     let source_header = manifest_dir.join("../../native/vespa/searchkernel_vespa.h");
     let source_header = fs::canonicalize(&source_header).unwrap_or_else(|error| {
         panic!(
@@ -89,16 +99,28 @@ fn main() {
             println!(
                 "cargo:warning=searchkernel: native Vespa SDK link probe failed; rebuilding the affected SDK once"
             );
-            rebuild_native_sdk(&manifest_dir, &sdk).unwrap_or_else(|rebuild_error| {
-                panic!(
-                    "native Vespa SDK link probe failed and automatic rebuild could not start:\n{error}\n{rebuild_error}"
-                )
-            });
-            verify_native_provenance(&manifest_dir, &sdk, &target).unwrap_or_else(|verify_error| {
-                panic!(
-                    "native Vespa SDK remained incompatible after one automatic rebuild:\n{error}\n{verify_error}"
-                )
-            });
+            if using_shared_sdk {
+                sdk = resolve_shared_native_sdk(&manifest_dir, &target, "rebuild").unwrap_or_else(
+                    |rebuild_error| {
+                        panic!(
+                            "native Vespa SDK link probe failed and shared cache rebuild could not start:\n{error}\n{rebuild_error}"
+                        )
+                    },
+                );
+            } else {
+                rebuild_native_sdk(&manifest_dir, &sdk).unwrap_or_else(|rebuild_error| {
+                    panic!(
+                        "native Vespa SDK link probe failed and automatic rebuild could not start:\n{error}\n{rebuild_error}"
+                    )
+                });
+                verify_native_provenance(&manifest_dir, &sdk, &target).unwrap_or_else(
+                    |verify_error| {
+                        panic!(
+                            "native Vespa SDK remained incompatible after one automatic rebuild:\n{error}\n{verify_error}"
+                        )
+                    },
+                );
+            }
             probe_native_sdk(&sdk, &target, &host).unwrap_or_else(|retry_error| {
                 panic!(
                     "native Vespa SDK link probe failed after one automatic rebuild:\n{error}\n{retry_error}"
@@ -107,6 +129,7 @@ fn main() {
         }
     }
 
+    let lib_dir = sdk.join("lib");
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
     // Make binaries using the raw bindings crate runnable without requiring
@@ -194,7 +217,12 @@ fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
 }
 
 #[cfg(feature = "native")]
-fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) -> PathBuf {
+fn prepare_native_sdk(
+    manifest_dir: &Path,
+    configured: PathBuf,
+    target: &str,
+    using_shared_sdk: bool,
+) -> PathBuf {
     let root = manifest_dir.join("../../..");
     let configured = if configured.is_absolute() {
         configured
@@ -204,7 +232,12 @@ fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) ->
     let mut last_error = String::new();
     for attempt in 0..=1 {
         if let Ok(sdk) = fs::canonicalize(&configured) {
-            match verify_native_provenance(manifest_dir, &sdk, target) {
+            let verification = if using_shared_sdk {
+                verify_shared_cache_object(&sdk)
+            } else {
+                verify_native_provenance(manifest_dir, &sdk, target)
+            };
+            match verification {
                 Ok(()) => return sdk,
                 Err(error) => last_error = error,
             }
@@ -215,6 +248,15 @@ fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) ->
             println!(
                 "cargo:warning=searchkernel: native Vespa SDK is missing or stale; rebuilding the affected SDK once"
             );
+            if using_shared_sdk {
+                return resolve_shared_native_sdk(manifest_dir, target, "rebuild").unwrap_or_else(
+                    |error| {
+                        panic!(
+                            "native Vespa SDK is missing or stale and shared cache rebuild failed:\n{last_error}\n{error}"
+                        )
+                    },
+                );
+            }
             rebuild_native_sdk(manifest_dir, &configured).unwrap_or_else(|error| {
                 panic!(
                     "native Vespa SDK is missing or stale and automatic rebuild failed:\n{last_error}\n{error}"
@@ -223,6 +265,64 @@ fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) ->
         }
     }
     panic!("native Vespa SDK is incompatible after one automatic rebuild:\n{last_error}")
+}
+
+#[cfg(feature = "native")]
+fn resolve_shared_native_sdk(
+    manifest_dir: &Path,
+    target: &str,
+    mode: &str,
+) -> Result<PathBuf, String> {
+    let root = manifest_dir.join("../../..");
+    let output = Command::new("bash")
+        .arg(root.join("tools/resolve-native-sdk.sh"))
+        .arg(mode)
+        .env("SK_NATIVE_TARGET", target)
+        .output()
+        .map_err(|error| format!("spawn shared native SDK resolver: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "shared native SDK resolver exited with {}\nstdout={}\nstderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| "shared native SDK resolver returned no path".to_owned())?;
+    Ok(PathBuf::from(path))
+}
+
+#[cfg(feature = "native")]
+fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
+    let fingerprint_path = sdk.join("native-build-fingerprint-v2.txt");
+    let recorded = fs::read_to_string(&fingerprint_path).map_err(|error| {
+        format!(
+            "read shared native SDK provenance '{}': {error}",
+            fingerprint_path.display()
+        )
+    })?;
+    let digest = fingerprint_digest(&recorded).ok_or_else(|| {
+        format!(
+            "shared native SDK provenance '{}' is malformed",
+            fingerprint_path.display()
+        )
+    })?;
+    let object_name = sdk
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("shared native SDK path '{}' has no object key", sdk.display()))?;
+    if object_name != digest {
+        return Err(format!(
+            "shared native SDK object '{}' does not match recorded fingerprint {digest}",
+            sdk.display()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "native")]
