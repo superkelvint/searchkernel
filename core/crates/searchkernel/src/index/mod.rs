@@ -525,10 +525,6 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
 }
 
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
-    if let Some(canonical) = &definition.canonical {
-        return Ok(canonical.clone());
-    }
-
     let fields = definition
         .fields
         .iter()
@@ -616,7 +612,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             })
             .collect()
     });
-    searchkernel_ir::resolve_rust_index_definition_with_profiles(
+    let mut resolved = searchkernel_ir::resolve_rust_index_definition_with_profiles(
         searchkernel_ir::RustIndexDefinitionInput {
             name: definition.name.clone(),
             fields,
@@ -627,7 +623,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .iter()
             .map(|profile| searchkernel_ir::RustRankProfileInput {
                 name: profile.name.clone(),
-                first_phase: profile.first_phase.clone(),
+                first_phase: profile.first_phase.clone().unwrap_or_default(),
                 second_phase: profile.second_phase.clone(),
                 rerank_count: profile.rerank_count,
                 match_features: profile.match_features.clone(),
@@ -635,7 +631,52 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             })
             .collect(),
     )
-    .map_err(Error::from_ir)
+    .map_err(Error::from_ir)?;
+
+    // A described definition retains the complete canonical IR publicly on the
+    // definition and on each nested value. Resolve the ergonomic projection
+    // as a validation/fallback path, then restore those public canonical
+    // values so cloning a described Field or RankProfile cannot discard
+    // schema members that the builders do not model individually.
+    if let Some(canonical) = &definition.canonical {
+        resolved = canonical.clone();
+    }
+
+    let canonical_fields = definition
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            field
+                .canonical
+                .clone()
+                .or_else(|| resolved.fields().get(index).cloned())
+                .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if !canonical_fields.is_empty() {
+        resolved.set_fields(canonical_fields);
+    }
+
+    let canonical_profiles = definition
+        .rank_profiles
+        .iter()
+        .enumerate()
+        .map(|(index, profile)| {
+            profile
+                .canonical
+                .clone()
+                .or_else(|| resolved.rank_profiles().get(index).cloned())
+                .ok_or_else(|| {
+                    Error::infrastructure("resolved definition lost a public rank profile")
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if !canonical_profiles.is_empty() {
+        resolved.set_rank_profiles(canonical_profiles);
+    }
+
+    Ok(resolved)
 }
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
@@ -714,6 +755,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             value = value.hnsw(hnsw);
         }
         result = result.field(value);
+        result
+            .fields
+            .last_mut()
+            .expect("field was just appended")
+            .canonical = Some(field.clone());
     }
     result = result.default_search_fields(
         definition
@@ -747,6 +793,11 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             }
         }
         result = result.rank_profile(value);
+        result
+            .rank_profiles
+            .last_mut()
+            .expect("rank profile was just appended")
+            .canonical = Some(profile.clone());
     }
     result.canonical = Some(definition.clone());
     result

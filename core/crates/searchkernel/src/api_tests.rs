@@ -1529,6 +1529,14 @@ fn described_canonical_fixture() -> (
     (canonical, described)
 }
 
+pub(super) fn public_described_canonical_fixture(
+) -> (searchkernel_ir::IndexDefinitionIr, IndexDefinition) {
+    let canonical = canonical_fixture_ir();
+    let index = index_from_canonical_ir(canonical.clone());
+    let described = index.describe().expect("describe should succeed");
+    (canonical, described)
+}
+
 fn context_for(definition: &IndexDefinition) -> Arc<IndexContext> {
     let (_probe_runtime, probe) =
         runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));
@@ -2348,7 +2356,7 @@ fn describe_preserves_configured_rank_profiles() {
     assert_eq!(described.rank_profiles().len(), 1);
     let profile = &described.rank_profiles()[0];
     assert_eq!(profile.name(), "two_phase");
-    assert_eq!(profile.first_phase, "bm25(title)");
+    assert_eq!(profile.first_phase.as_deref(), Some("bm25(title)"));
     assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
     assert_eq!(profile.rerank_count, Some(7));
     assert_eq!(profile.match_features, vec!["bm25(title)"]);
@@ -2597,8 +2605,18 @@ fn canonical_fixture_covers_the_complete_schema_surface() {
     assert!(definition.rank_profiles()[2].global_phase.is_none());
 }
 
+#[cfg(feature = "native")]
 #[test]
-fn describe_loses_field_properties() {
+fn described_rich_definition_preserves_canonical_portable_provenance() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let described_bytes = crate::portable_definition::encode_portable_definition(&described);
+    let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+
+    assert_eq!(described_bytes, canonical_bytes);
+}
+
+#[test]
+fn describe_preserves_field_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.fields()[0].properties(),
@@ -2607,7 +2625,7 @@ fn describe_loses_field_properties() {
 }
 
 #[test]
-fn describe_loses_rank_profile_inheritance() {
+fn describe_preserves_rank_profile_inheritance() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].inherits,
@@ -2616,7 +2634,7 @@ fn describe_loses_rank_profile_inheritance() {
 }
 
 #[test]
-fn describe_loses_rank_profile_inputs_and_defaults() {
+fn describe_preserves_rank_profile_inputs_and_defaults() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].inputs,
@@ -2625,7 +2643,7 @@ fn describe_loses_rank_profile_inputs_and_defaults() {
 }
 
 #[test]
-fn describe_loses_rank_profile_functions() {
+fn describe_preserves_rank_profile_functions() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].functions,
@@ -2634,7 +2652,7 @@ fn describe_loses_rank_profile_functions() {
 }
 
 #[test]
-fn describe_loses_complete_rank_phase_state() {
+fn describe_preserves_complete_rank_phase_state() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].first_phase,
@@ -2651,7 +2669,7 @@ fn describe_loses_complete_rank_phase_state() {
 }
 
 #[test]
-fn describe_loses_absent_rank_phases() {
+fn describe_preserves_absent_rank_phases() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[2].first_phase,
@@ -2668,7 +2686,7 @@ fn describe_loses_absent_rank_phases() {
 }
 
 #[test]
-fn describe_loses_rank_feature_lists() {
+fn describe_preserves_rank_feature_lists() {
     let (canonical, described) = described_canonical_fixture();
     let expected = (
         &canonical.rank_profiles()[0].rank_features,
@@ -2686,7 +2704,7 @@ fn describe_loses_rank_feature_lists() {
 }
 
 #[test]
-fn describe_loses_rank_profile_constants() {
+fn describe_preserves_rank_profile_constants() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].constants,
@@ -2695,7 +2713,7 @@ fn describe_loses_rank_profile_constants() {
 }
 
 #[test]
-fn describe_loses_rank_profile_onnx_models() {
+fn describe_preserves_rank_profile_onnx_models() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.rank_profiles()[0].onnx_models,
@@ -2704,7 +2722,7 @@ fn describe_loses_rank_profile_onnx_models() {
 }
 
 #[test]
-fn describe_loses_rank_properties_strict_and_generic_properties() {
+fn describe_preserves_rank_properties_strict_and_generic_properties() {
     let (canonical, described) = described_canonical_fixture();
     let expected = (
         &canonical.rank_profiles()[0].rank_properties,
@@ -2720,7 +2738,7 @@ fn describe_loses_rank_properties_strict_and_generic_properties() {
 }
 
 #[test]
-fn describe_loses_all_document_data_types() {
+fn describe_preserves_all_document_data_types() {
     let (canonical, described) = described_canonical_fixture();
     let expected = canonical
         .fields()
@@ -2736,13 +2754,13 @@ fn describe_loses_all_document_data_types() {
 }
 
 #[test]
-fn describe_loses_complete_field_configuration() {
+fn describe_preserves_complete_field_configuration() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.fields()[0], described.fields()[0]);
 }
 
 #[test]
-fn describe_loses_struct_field_configuration() {
+fn describe_preserves_struct_field_configuration() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.fields()[0].struct_fields(),
@@ -2757,6 +2775,108 @@ fn describe_preserves_default_search_fields_and_weights() {
         canonical.default_search_fields(),
         described.default_search_fields()
     );
+}
+
+#[test]
+fn described_public_values_expose_the_complete_canonical_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    assert_eq!(described.canonical_definition(), Some(&canonical));
+    assert_eq!(
+        described.fields()[0].canonical_definition(),
+        Some(&canonical.fields()[0])
+    );
+    assert_eq!(
+        described.rank_profiles()[0].canonical_definition(),
+        Some(&canonical.rank_profiles()[0])
+    );
+    assert_eq!(described.rank_profiles()[2].first_phase, None);
+    assert_eq!(described.rank_profiles()[2].second_phase, None);
+    assert_eq!(
+        described.rank_profiles()[2].canonical_definition(),
+        Some(&canonical.rank_profiles()[2])
+    );
+}
+
+#[test]
+fn cloning_described_rich_field_preserves_its_public_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let extracted = described.fields()[0].clone();
+    let resolved = definition_to_ir(&IndexDefinition::new().field(extracted))
+        .expect("cloned field should resolve");
+
+    assert_eq!(canonical.fields()[0], resolved.fields()[0]);
+}
+
+#[test]
+fn mutating_a_described_field_preserves_untouched_canonical_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let modified = described.fields()[0].clone().stored(false);
+    let public = modified
+        .canonical_definition()
+        .expect("mutated described field should retain canonical state")
+        .clone();
+
+    assert!(!public.capabilities().stored());
+    assert_eq!(public.properties(), canonical.fields()[0].properties());
+    assert_eq!(
+        public.struct_fields(),
+        canonical.fields()[0].struct_fields()
+    );
+
+    let resolved = definition_to_ir(&IndexDefinition::new().field(modified))
+        .expect("mutated field should resolve");
+    assert_eq!(resolved.fields()[0], public);
+}
+
+#[test]
+fn cloning_described_rich_rank_profile_preserves_its_public_schema_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let extracted = described.rank_profiles()[0].clone();
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(extracted),
+    )
+    .expect("cloned rank profile should resolve");
+
+    assert_eq!(canonical.rank_profiles()[0], resolved.rank_profiles()[0]);
+}
+
+#[test]
+fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let modified = described.rank_profiles()[0]
+        .clone()
+        .first_phase("new_rank_expression")
+        .match_feature("new_feature");
+    let public = modified
+        .canonical_definition()
+        .expect("mutated described profile should retain canonical state")
+        .clone();
+
+    assert_eq!(public.inherits, canonical.rank_profiles()[0].inherits);
+    assert_eq!(public.functions, canonical.rank_profiles()[0].functions);
+    assert_eq!(public.constants, canonical.rank_profiles()[0].constants);
+    assert_eq!(
+        public
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("new_rank_expression")
+    );
+    assert!(public
+        .match_features
+        .iter()
+        .any(|feature| feature == "new_feature"));
+
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(modified),
+    )
+    .expect("mutated profile should resolve");
+    assert_eq!(resolved.rank_profiles()[0], public);
 }
 
 #[test]
@@ -2830,55 +2950,55 @@ fn modifying_rich_described_definition_merges_append_operations() {
 }
 
 #[test]
-fn describe_loses_schema_properties() {
+fn describe_preserves_schema_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.properties(), described.properties());
 }
 
 #[test]
-fn describe_loses_document_type() {
+fn describe_preserves_document_type() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.document_type(), described.document_type());
 }
 
 #[test]
-fn describe_loses_schema_inheritance() {
+fn describe_preserves_schema_inheritance() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.schema_inherits(), described.schema_inherits());
 }
 
 #[test]
-fn describe_loses_document_inheritance() {
+fn describe_preserves_document_inheritance() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.document_inherits(), described.document_inherits());
 }
 
 #[test]
-fn describe_loses_named_structs() {
+fn describe_preserves_named_structs() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.structs(), described.structs());
 }
 
 #[test]
-fn describe_loses_fieldsets() {
+fn describe_preserves_fieldsets() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.fieldsets(), described.fieldsets());
 }
 
 #[test]
-fn describe_loses_schema_only_fields() {
+fn describe_preserves_schema_only_fields() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.schema_fields(), described.schema_fields());
 }
 
 #[test]
-fn describe_loses_imported_fields() {
+fn describe_preserves_imported_fields() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.imported_fields(), described.imported_fields());
 }
 
 #[test]
-fn describe_loses_document_summaries() {
+fn describe_preserves_document_summaries() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(
         canonical.document_summaries(),
@@ -2887,13 +3007,13 @@ fn describe_loses_document_summaries() {
 }
 
 #[test]
-fn describe_loses_schema_constants() {
+fn describe_preserves_schema_constants() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.constants(), described.constants());
 }
 
 #[test]
-fn describe_loses_schema_onnx_models() {
+fn describe_preserves_schema_onnx_models() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.onnx_models(), described.onnx_models());
 }

@@ -357,6 +357,27 @@ fn manifest_preserves_rich_resolved_ir() {
 }
 
 #[test]
+fn manifest_preserves_rich_described_schema_provenance() {
+    let root = temporary_path("manifest-rich-described-schema");
+    let config = root.join("config");
+    write_config(&config);
+    let (canonical, described) = super::api_tests::public_described_canonical_fixture();
+    let portable_bytes = crate::portable_definition::encode_portable_definition(&described);
+    let canonical_bytes = searchkernel_ir::index_definition_ir_to_api(&canonical);
+
+    let manifest =
+        IndexManifest::for_definitions(&portable_bytes, &resolved_context(&described), &config)
+            .unwrap();
+    manifest.write(&root).unwrap();
+    let loaded = IndexManifest::read(&root).unwrap();
+
+    assert_eq!(loaded.portable_definition_bytes, canonical_bytes);
+    assert_eq!(loaded.resolved_definition_bytes, canonical_bytes);
+    assert_eq!(loaded.definition().unwrap(), described);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn public_rank_profile_preserves_second_phase_and_rerank_count() {
     let definition = IndexDefinition::new()
         .field(Field::int64("rating"))
@@ -400,7 +421,7 @@ fn public_describe_preserves_rank_profiles_from_resolved_ir() {
     assert_eq!(described.rank_profiles().len(), 1);
     let profile = &described.rank_profiles()[0];
     assert_eq!(profile.name(), "two_phase");
-    assert_eq!(profile.first_phase, "bm25(title)");
+    assert_eq!(profile.first_phase.as_deref(), Some("bm25(title)"));
     assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
     assert_eq!(profile.rerank_count, Some(7));
     assert_eq!(profile.match_features, vec!["bm25(title)"]);

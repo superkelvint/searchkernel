@@ -241,24 +241,94 @@ impl FieldIr {
         }
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_attribute_config(&mut self, config: Option<AttributeConfigIr>) {
         self.attribute = config;
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_index_config(&mut self, config: Option<IndexConfigIr>) {
         self.index = config;
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_summary_config(&mut self, config: Option<SummaryConfigIr>) {
         self.summary = config;
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_matching_config(&mut self, config: Option<MatchingConfigIr>) {
         self.matching = config;
+    }
+
+    /// Update the resolved collection shape without changing other field
+    /// configuration.
+    #[doc(hidden)]
+    pub fn set_multi(&mut self, multi: bool) {
+        let current = self.data_type.clone();
+        self.data_type = if multi {
+            if current.is_multi_valued() {
+                current
+            } else {
+                DataTypeIr::Array(Box::new(current))
+            }
+        } else {
+            match current {
+                DataTypeIr::Array(value) => *value,
+                value => value,
+            }
+        };
+    }
+
+    /// Update the resolved field capabilities without changing other field
+    /// configuration.
+    #[doc(hidden)]
+    pub fn set_capabilities(
+        &mut self,
+        stored: bool,
+        searchable: bool,
+        filterable: bool,
+        sortable: bool,
+        groupable: bool,
+    ) {
+        self.capabilities = FieldCapabilities {
+            stored,
+            searchable,
+            filterable,
+            sortable,
+            groupable,
+        };
+    }
+
+    /// Update the analyzer while retaining every other resolved field member.
+    #[doc(hidden)]
+    pub fn set_analyzer(&mut self, analyzer: Option<AnalyzerIr>) {
+        self.analyzer = analyzer;
+    }
+
+    /// Update the resolved tensor attribute distance metric.
+    #[doc(hidden)]
+    pub fn set_distance_metric(&mut self, distance_metric: DistanceMetricIr) {
+        let attribute = self.attribute.get_or_insert_with(|| AttributeConfigIr {
+            enabled: Some(true),
+            fast_search: None,
+            fast_access: None,
+            distance_metric: DistanceMetricIr::Unspecified,
+            options: SchemaPropertiesIr::new(),
+        });
+        attribute.distance_metric = distance_metric;
+    }
+
+    /// Update the resolved HNSW configuration.
+    #[doc(hidden)]
+    pub fn set_hnsw(&mut self, hnsw: HnswIndexConfigIr) {
+        let index = self.index.get_or_insert_with(|| IndexConfigIr {
+            enabled: Some(true),
+            hnsw: None,
+            options: SchemaPropertiesIr::new(),
+        });
+        index.enabled = Some(true);
+        index.hnsw = Some(hnsw);
     }
 
     pub fn name(&self) -> &FieldName {
@@ -505,6 +575,11 @@ impl IndexDefinitionIr {
         })
     }
 
+    #[doc(hidden)]
+    pub fn set_fields(&mut self, fields: Vec<FieldIr>) {
+        self.fields = fields;
+    }
+
     #[cfg(any(test, feature = "test"))]
     pub fn set_document_type(&mut self, document_type: impl Into<String>) {
         self.document_type = Some(document_type.into());
@@ -515,7 +590,7 @@ impl IndexDefinitionIr {
         self.schema_fields = fields;
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_rank_profiles(&mut self, profiles: Vec<RankProfileDefinitionIr>) {
         self.rank_profiles = profiles;
     }
