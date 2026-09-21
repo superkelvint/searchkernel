@@ -470,6 +470,98 @@ impl From<String> for SearchField {
     }
 }
 
+/// The source of a schema constant.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConstantSource {
+    Literal(searchkernel_ir::RequestValueIr),
+    File { path: String },
+}
+
+/// A schema constant exposed by `Index::describe()`.
+///
+/// Constants use the IR value and data-type domains directly because those
+/// domains are already the canonical, lossless representation. Keeping these
+/// members on the public value lets Rust-to-IR conversion consume the same
+/// state that callers inspect, rather than recovering it from a hidden parent
+/// definition.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConstantDefinition {
+    name: String,
+    data_type: searchkernel_ir::DataTypeIr,
+    source: ConstantSource,
+    properties: searchkernel_ir::SchemaPropertiesIr,
+}
+
+impl ConstantDefinition {
+    /// Construct a schema constant from its complete canonical members.
+    pub fn new(
+        name: impl Into<String>,
+        data_type: searchkernel_ir::DataTypeIr,
+        source: ConstantSource,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            data_type,
+            source,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    pub(crate) fn from_ir(value: &searchkernel_ir::ConstantDefinitionIr) -> Self {
+        let source = match &value.source {
+            searchkernel_ir::ConstantSourceIr::Literal(value) => {
+                ConstantSource::Literal(value.clone())
+            }
+            searchkernel_ir::ConstantSourceIr::File { path } => {
+                ConstantSource::File { path: path.clone() }
+            }
+        };
+        Self {
+            name: value.name.clone(),
+            data_type: value.data_type.clone(),
+            source,
+            properties: value.properties.clone(),
+        }
+    }
+
+    pub(crate) fn to_ir(&self) -> searchkernel_ir::ConstantDefinitionIr {
+        let source = match &self.source {
+            ConstantSource::Literal(value) => {
+                searchkernel_ir::ConstantSourceIr::Literal(value.clone())
+            }
+            ConstantSource::File { path } => {
+                searchkernel_ir::ConstantSourceIr::File { path: path.clone() }
+            }
+        };
+        searchkernel_ir::ConstantDefinitionIr {
+            name: self.name.clone(),
+            data_type: self.data_type.clone(),
+            source,
+            properties: self.properties.clone(),
+        }
+    }
+
+    /// Return the canonical constant name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Return the canonical constant data type.
+    pub fn data_type(&self) -> &searchkernel_ir::DataTypeIr {
+        &self.data_type
+    }
+
+    /// Return the canonical constant source.
+    pub fn source(&self) -> &ConstantSource {
+        &self.source
+    }
+
+    /// Return the canonical constant properties.
+    pub fn properties(&self) -> &searchkernel_ir::SchemaPropertiesIr {
+        &self.properties
+    }
+}
+
 #[derive(Clone, Default, PartialEq)]
 /// The schema and default search settings for an index.
 pub struct IndexDefinition {
@@ -477,6 +569,7 @@ pub struct IndexDefinition {
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
+    pub(crate) constants: Vec<ConstantDefinition>,
     // For values returned by Index::describe(), this is the authoritative
     // canonical schema state. The ergonomic members above are projections for
     // the common builder path; canonical_definition() makes the complete
@@ -492,6 +585,7 @@ impl fmt::Debug for IndexDefinition {
             .field("fields", &self.fields)
             .field("default_search_fields", &self.default_search_fields)
             .field("rank_profiles", &self.rank_profiles)
+            .field("constants", &self.constants)
             .finish()
     }
 }
@@ -632,6 +726,26 @@ impl IndexDefinition {
 
     pub fn rank_profiles(&self) -> &[RankProfile] {
         &self.rank_profiles
+    }
+
+    /// Return schema constants represented by this definition.
+    pub fn constants(&self) -> &[ConstantDefinition] {
+        &self.constants
+    }
+
+    /// Add a schema constant to this definition.
+    pub fn constant(mut self, value: ConstantDefinition) -> Self {
+        if self.canonical.is_some() {
+            let constant = value.to_ir();
+            apply_canonical_mutation(&mut self.canonical, |canonical| {
+                let mut constants = canonical.constants().to_vec();
+                constants.push(constant);
+                canonical.set_constants(constants);
+                true
+            });
+        }
+        self.constants.push(value);
+        self
     }
 
     /// Return the complete canonical schema state represented by this public

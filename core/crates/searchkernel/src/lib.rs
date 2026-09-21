@@ -30,7 +30,8 @@ pub use result::{
     TotalHitsRelation,
 };
 pub use schema::{
-    Analyzer, DistanceMetric, Field, HnswIndexConfig, IndexDefinition, RankProfile, SearchField,
+    Analyzer, ConstantDefinition, ConstantSource, DistanceMetric, Field, HnswIndexConfig,
+    IndexDefinition, RankProfile, SearchField,
 };
 pub use search::{
     Facet, FacetSort, InspectedQuery, MissingPlacement, QueryInputValue, Ranking, SearchBuilder,
