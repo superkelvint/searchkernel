@@ -175,7 +175,7 @@ approximated.
 
 ### Recursive grouping result trees (`result.grouping_tree`)
 
-- The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Python exposes root/children losslessly. Rust currently projects recursive ResultGroup values into groups/aggregations and does not expose the canonical mixed root; nested Hit children would be dropped by that Rust projection.
+- The canonical IR/result protocol is a heterogeneous recursive ResultNode tree. Rust now preserves nested Hit children with the same Hit decoder used at the root, but its GroupingResult convenience separates nested groups and hits into distinct vectors and does not expose the canonical mixed-child ordering or canonical root directly.
 
 ### Coverage and degradation metadata (`result.degradation_metadata`)
 

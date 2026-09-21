@@ -28,7 +28,7 @@ pub struct SearchResult<T> {
     pub hits: Vec<Hit<T>>,
     pub total_hits: TotalHits,
     pub facets: Vec<FacetResult>,
-    pub groups: Vec<GroupingResult>,
+    pub groups: Vec<GroupingResult<T>>,
     pub coverage: Option<Coverage>,
     pub timing: Option<SearchTiming>,
     pub issues: Vec<ResultIssue>,
@@ -68,10 +68,11 @@ pub enum FeatureValue {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct GroupingResult {
+pub struct GroupingResult<T = serde_json::Value> {
     pub key: Option<serde_json::Value>,
     pub aggregations: std::collections::BTreeMap<String, serde_json::Value>,
-    pub groups: Vec<GroupingResult>,
+    pub groups: Vec<GroupingResult<T>>,
+    pub hits: Vec<Hit<T>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -199,7 +200,7 @@ fn project_root<T: serde::de::DeserializeOwned>(
     requested_facets: &[(&str, &str)],
     hits: &mut Vec<Hit<T>>,
     facets: &mut Vec<FacetResult>,
-    groups: &mut Vec<GroupingResult>,
+    groups: &mut Vec<GroupingResult<T>>,
 ) -> Result<()> {
     match root {
         core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
@@ -275,11 +276,15 @@ fn convert_feature_value(value: core::Value) -> Result<FeatureValue> {
     })
 }
 
-fn convert_group(group: core::ResultGroup) -> Result<GroupingResult> {
+fn convert_group<T: serde::de::DeserializeOwned>(
+    group: core::ResultGroup,
+) -> Result<GroupingResult<T>> {
     let mut nested = Vec::new();
+    let mut hits = Vec::new();
     for child in group.children {
-        if let core::ResultNode::Group(child) = child {
-            nested.push(convert_group(child)?);
+        match child {
+            core::ResultNode::Group(child) => nested.push(convert_group(child)?),
+            core::ResultNode::Hit(hit) => hits.push(convert_hit(hit)?),
         }
     }
     let aggregations = group
@@ -291,6 +296,7 @@ fn convert_group(group: core::ResultGroup) -> Result<GroupingResult> {
         key: group.value.map(json_value).transpose()?,
         aggregations,
         groups: nested,
+        hits,
     })
 }
 
@@ -748,6 +754,36 @@ mod tests {
             [serde_json::json!("a"), serde_json::json!(9)]
         );
         assert_eq!(converted.highlights[0].fragments[0].matches[0].end_byte, 5);
+    }
+
+    #[test]
+    fn nested_group_hits_use_the_same_hit_decoder() {
+        let group = core::ResultGroup {
+            children: vec![core::ResultNode::Hit(core::Hit {
+                id: "nested-1".into(),
+                score: Some(3.0),
+                fields: BTreeMap::from([("title".into(), Value::String("nested".into()))]),
+                source: Some("catalog".into()),
+                types: vec!["product".into()],
+                match_features: BTreeMap::from([(
+                    "typed".into(),
+                    Value::List(vec![Value::Int64(1), Value::Bool(true)]),
+                )]),
+                ..Default::default()
+            })],
+            ..core::ResultGroup::root(vec![])
+        };
+
+        let converted: GroupingResult<serde_json::Value> = convert_group(group).unwrap();
+        assert_eq!(converted.hits.len(), 1);
+        assert_eq!(converted.hits[0].id.as_str(), "nested-1");
+        assert_eq!(converted.hits[0].source.as_deref(), Some("catalog"));
+        assert_eq!(converted.hits[0].types, ["product"]);
+        assert_eq!(converted.hits[0].document["title"], "nested");
+        assert_eq!(
+            converted.hits[0].match_features["typed"],
+            FeatureValue::Json(serde_json::json!([1, true]))
+        );
     }
 
     #[test]
