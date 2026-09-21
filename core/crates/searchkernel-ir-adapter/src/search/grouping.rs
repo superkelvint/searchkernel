@@ -221,12 +221,9 @@ impl GroupingCompiler {
         });
         self.lower_level_operations(local_operations, level, &mut aliases)?;
         if let Some(child) = materializer {
-            for nested in self.lower_level_operations(
-                child.operations.iter(),
-                level,
-                &mut aliases,
-                &mut aliases,
-            )? {
+            for nested in
+                self.lower_level_operations(child.operations.iter(), level, &mut aliases)?
+            {
                 self.lower_grouping_scope(nested)?;
             }
         }
