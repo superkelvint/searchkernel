@@ -95,6 +95,19 @@ describe("ergonomic search results", () => {
   });
 });
 
+it("does not flatten unlabeled group wrappers by response shape", () => {
+  const bucket = new ResultGroupT(null, "bucket");
+  const wrapper = new ResultGroupT(null, null, null, [], [node(bucket)]);
+  const root = new ResultGroupT(null, null, null, [], [node(wrapper)]);
+
+  const result = new SearchResults(new SearchResultT(node(root)));
+
+  expect(result.groups).toHaveLength(1);
+  expect(result.groups[0]).toBe(result.root instanceof Object && "children" in result.root ? result.root.children[0] : undefined);
+  expect(result.groups[0]?.label).toBeNull();
+  expect(result.groups[0]?.groups[0]?.label).toBe("bucket");
+});
+
 it("fails closed for mismatched result-node unions", () => {
   const malformed = new ResultGroupT(
     null,
