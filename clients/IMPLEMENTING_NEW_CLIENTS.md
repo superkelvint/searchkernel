@@ -387,6 +387,92 @@ close()
 
 The transport must not know whether the bytes represent Search, Get, Update, or any other Search Kernel operation.
 
+### No client may implement gRPC itself
+
+This is a client-wide architectural rule, not a TypeScript-specific one.
+
+**No Search Kernel client may implement any part of the gRPC protocol itself.**
+
+All non-Rust clients MUST use the standard client code generated from:
+
+```text
+api/rpc/searchkernel.proto
+```
+
+using the normal gRPC code generator and runtime for that language.
+
+The required architecture for every non-Rust SDK is:
+
+```text
+idiomatic language facade
+        ↓
+flatc-generated FlatBuffer models
+        ↓
+canonical RequestEnvelope bytes
+        ↓
+auto-generated gRPC client stub
+        ↓
+standard language gRPC runtime
+        ↓
+searchkerneld
+```
+
+Search Kernel client code MUST NOT hand-write or reimplement:
+
+```text
+HTTP/2 connection management
+gRPC message framing
+5-byte frame headers
+grpc-timeout encoding
+metadata handling
+compression handling
+status handling
+trailers
+stream/frame decoding
+cancellation protocol
+connection lifecycle
+gRPC wire-format behavior
+```
+
+Those responsibilities belong entirely to the generated gRPC client and its standard runtime.
+
+This applies equally to:
+
+```text
+Python
+TypeScript / Node.js
+Go
+Java
+PHP
+C#
+Ruby
+Swift
+future first-party clients
+```
+
+A language SDK may wrap the generated client to provide Search Kernel-specific behavior such as:
+
+```text
+UDS/TCP endpoint configuration
+managed searchkerneld lifecycle
+FlatBuffer request construction
+FlatBuffer response decoding
+portable Search Kernel error mapping
+language-idiomatic facade methods
+```
+
+But that wrapper must call the generated gRPC stub. It must never replace it.
+
+Therefore, any existing client code that manually implements gRPC framing or HTTP/2 transport — such as the current TypeScript Node implementation — is not something to harden. It should be removed and replaced with the generated client for that language.
+
+Problems such as unsupported compressed frames, assumptions about unary frame layout, trailer handling, or timeout encoding are not bugs Search Kernel should fix individually. Their existence indicates that the client is incorrectly owning protocol machinery that belongs to the gRPC runtime.
+
+The invariant is:
+
+> **Search Kernel owns the payload. The generated gRPC client and standard gRPC runtime own the transport.**
+
+There should be **zero hand-written gRPC protocol implementations anywhere under `clients/`.**
+
 ## 12. Browser environments use gRPC-Web
 
 A browser cannot connect to a Unix socket or spawn `searchkerneld`.
