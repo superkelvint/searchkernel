@@ -3,7 +3,7 @@ use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
-use crate::schema::{Analyzer, Field, IndexDefinition, SearchField};
+use crate::schema::{Analyzer, Field, IndexDefinition, RankProfile, SearchField};
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
@@ -644,10 +644,38 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         }
         result = result.field(value);
     }
-    result.default_search_fields(
+    result = result.default_search_fields(
         definition
             .default_search_fields()
             .iter()
             .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get())),
-    )
+    );
+    for profile in definition.rank_profiles() {
+        let mut value = RankProfile::new(profile.name.clone());
+        if let Some(expression) = profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_ref())
+        {
+            value = value.first_phase(expression.clone());
+        }
+        if let Some(phase) = profile.second_phase.as_ref() {
+            if let Some(expression) = phase.expression.as_ref() {
+                value = value.second_phase(expression.clone());
+            }
+            if let Some(rerank_count) = phase.rerank_count {
+                value = value.rerank_count(rerank_count);
+            }
+        }
+        for feature in &profile.match_features {
+            value = value.match_feature(feature.clone());
+        }
+        for input in &profile.inputs {
+            if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = &input.data_type {
+                value = value.query_input(input.name.clone(), type_spec.clone());
+            }
+        }
+        result = result.rank_profile(value);
+    }
+    result
 }

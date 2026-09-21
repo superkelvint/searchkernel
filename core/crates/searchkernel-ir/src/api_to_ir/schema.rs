@@ -168,6 +168,59 @@ pub fn resolve_rust_index_definition_with_profiles(
             })
             .collect(),
     };
+    let rank_profiles = rank_profiles
+        .into_iter()
+        .map(|profile| RankProfileDefinitionIr {
+            name: profile.name,
+            inherits: Vec::new(),
+            inputs: profile
+                .query_inputs
+                .into_iter()
+                .map(|(name, type_spec)| RankProfileInputIr {
+                    name,
+                    data_type: DataTypeIr::Tensor {
+                        type_spec: type_spec.clone(),
+                    },
+                    default_value: RequestValueIr::Tensor(RequestTensorIr {
+                        type_spec,
+                        payload: RequestTensorPayloadIr::Dense(Vec::new()),
+                    }),
+                })
+                .collect(),
+            functions: Vec::new(),
+            first_phase: Some(RankPhaseDefinitionIr {
+                expression: Some(profile.first_phase),
+                rerank_count: None,
+                rank_score_drop_limit: None,
+                properties: SchemaPropertiesIr::new(),
+                total_rerank_count: None,
+                keep_rank_count: None,
+                total_keep_rank_count: None,
+            }),
+            second_phase: (profile.second_phase.is_some() || profile.rerank_count.is_some()).then(
+                || RankPhaseDefinitionIr {
+                    expression: profile.second_phase,
+                    rerank_count: profile.rerank_count,
+                    rank_score_drop_limit: None,
+                    properties: SchemaPropertiesIr::new(),
+                    total_rerank_count: None,
+                    keep_rank_count: None,
+                    total_keep_rank_count: None,
+                },
+            ),
+            global_phase: None,
+            rank_features: Vec::new(),
+            match_features: profile.match_features,
+            summary_features: Vec::new(),
+            sort_features: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
+            rank_properties: BTreeMap::new(),
+            strict: None,
+            properties: SchemaPropertiesIr::new(),
+        })
+        .collect::<Vec<_>>();
+    validate_rank_profiles(&rank_profiles, "rank_profiles")?;
     Ok(IndexDefinitionIr {
         name,
         fields,
@@ -184,57 +237,7 @@ pub fn resolve_rust_index_definition_with_profiles(
         schema_fields: Vec::new(),
         imported_fields: Vec::new(),
         document_summaries: Vec::new(),
-        rank_profiles: rank_profiles
-            .into_iter()
-            .map(|profile| RankProfileDefinitionIr {
-                name: profile.name,
-                inherits: Vec::new(),
-                inputs: profile
-                    .query_inputs
-                    .into_iter()
-                    .map(|(name, type_spec)| RankProfileInputIr {
-                        name,
-                        data_type: DataTypeIr::Tensor {
-                            type_spec: type_spec.clone(),
-                        },
-                        default_value: RequestValueIr::Tensor(RequestTensorIr {
-                            type_spec,
-                            payload: RequestTensorPayloadIr::Dense(Vec::new()),
-                        }),
-                    })
-                    .collect(),
-                functions: Vec::new(),
-                first_phase: Some(RankPhaseDefinitionIr {
-                    expression: Some(profile.first_phase),
-                    rerank_count: None,
-                    rank_score_drop_limit: None,
-                    properties: SchemaPropertiesIr::new(),
-                    total_rerank_count: None,
-                    keep_rank_count: None,
-                    total_keep_rank_count: None,
-                }),
-                second_phase: (profile.second_phase.is_some() || profile.rerank_count.is_some())
-                    .then(|| RankPhaseDefinitionIr {
-                        expression: profile.second_phase,
-                        rerank_count: profile.rerank_count,
-                        rank_score_drop_limit: None,
-                        properties: SchemaPropertiesIr::new(),
-                        total_rerank_count: None,
-                        keep_rank_count: None,
-                        total_keep_rank_count: None,
-                    }),
-                global_phase: None,
-                rank_features: Vec::new(),
-                match_features: profile.match_features,
-                summary_features: Vec::new(),
-                sort_features: Vec::new(),
-                constants: Vec::new(),
-                onnx_models: Vec::new(),
-                rank_properties: BTreeMap::new(),
-                strict: None,
-                properties: SchemaPropertiesIr::new(),
-            })
-            .collect(),
+        rank_profiles,
         constants: Vec::new(),
         onnx_models: Vec::new(),
     })
@@ -1822,13 +1825,69 @@ fn validate_rank_phase(
     Ok(())
 }
 
+fn validate_rank_profiles(profiles: &[RankProfileDefinitionIr], path: &str) -> Result<()> {
+    let mut profile_names = BTreeSet::new();
+    for (index, profile) in profiles.iter().enumerate() {
+        let profile_path = format!("{path}[{index}]");
+        if !profile_names.insert(profile.name.clone()) {
+            return Err(invalid(
+                "duplicate_rank_profile",
+                Some(format!("{profile_path}.name")),
+                "rank profile names must be unique",
+            ));
+        }
+        if profile.name.is_empty() {
+            return Err(invalid(
+                "invalid_schema",
+                Some(format!("{profile_path}.name")),
+                "rank profile name is required",
+            ));
+        }
+
+        let mut input_names = BTreeSet::new();
+        for (input_index, input) in profile.inputs.iter().enumerate() {
+            let input_path = format!("{profile_path}.inputs[{input_index}].name");
+            if input.name.is_empty() {
+                return Err(invalid(
+                    "invalid_schema",
+                    Some(input_path),
+                    "rank input name is required",
+                ));
+            }
+            if !input_names.insert(input.name.clone()) {
+                return Err(invalid(
+                    "duplicate_rank_input",
+                    Some(input_path),
+                    "rank input names must be unique",
+                ));
+            }
+        }
+
+        validate_rank_phase(
+            profile.first_phase.as_ref(),
+            RankPhaseKind::First,
+            &format!("{profile_path}.first_phase"),
+        )?;
+        validate_rank_phase(
+            profile.second_phase.as_ref(),
+            RankPhaseKind::Second,
+            &format!("{profile_path}.second_phase"),
+        )?;
+        validate_rank_phase(
+            profile.global_phase.as_ref(),
+            RankPhaseKind::Global,
+            &format!("{profile_path}.global_phase"),
+        )?;
+    }
+    Ok(())
+}
+
 pub(crate) fn rank_profiles_to_ir(
     values: Option<
         flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::RankProfileDefinition<'_>>>,
     >,
 ) -> Result<Vec<RankProfileDefinitionIr>> {
     let mut output = Vec::new();
-    let mut names = BTreeSet::new();
     if let Some(values) = values {
         for (index, value) in values.iter().enumerate() {
             let path = format!("rank_profiles[{index}]");
@@ -1837,15 +1896,7 @@ pub(crate) fn rank_profiles_to_ir(
                 &format!("{path}.name"),
                 "rank profile name",
             )?;
-            if !names.insert(name.clone()) {
-                return Err(invalid(
-                    "duplicate_rank_profile",
-                    Some(format!("{path}.name")),
-                    "rank profile names must be unique",
-                ));
-            }
             let mut inputs = Vec::new();
-            let mut input_names = BTreeSet::new();
             if let Some(items) = value.inputs() {
                 for (input_index, input) in items.iter().enumerate() {
                     let item = format!("{path}.inputs[{input_index}]");
@@ -1854,13 +1905,6 @@ pub(crate) fn rank_profiles_to_ir(
                         &format!("{item}.name"),
                         "rank input name",
                     )?;
-                    if !input_names.insert(input_name.clone()) {
-                        return Err(invalid(
-                            "duplicate_rank_input",
-                            Some(format!("{item}.name")),
-                            "rank input names must be unique",
-                        ));
-                    }
                     inputs.push(RankProfileInputIr {
                         name: input_name,
                         data_type: data_type_to_ir(
@@ -1924,21 +1968,6 @@ pub(crate) fn rank_profiles_to_ir(
                 rank_phase_to_ir(value.second_phase(), &format!("{path}.second_phase"))?;
             let global_phase =
                 rank_phase_to_ir(value.global_phase(), &format!("{path}.global_phase"))?;
-            validate_rank_phase(
-                first_phase.as_ref(),
-                RankPhaseKind::First,
-                &format!("{path}.first_phase"),
-            )?;
-            validate_rank_phase(
-                second_phase.as_ref(),
-                RankPhaseKind::Second,
-                &format!("{path}.second_phase"),
-            )?;
-            validate_rank_phase(
-                global_phase.as_ref(),
-                RankPhaseKind::Global,
-                &format!("{path}.global_phase"),
-            )?;
             output.push(RankProfileDefinitionIr {
                 name,
                 inherits: strings_to_ir(value.inherits(), &format!("{path}.inherits"))?,
@@ -1980,6 +2009,7 @@ pub(crate) fn rank_profiles_to_ir(
             });
         }
     }
+    validate_rank_profiles(&output, "rank_profiles")?;
     Ok(output)
 }
 pub(crate) fn parse_field_name(v: &str, path: String) -> Result<FieldName> {

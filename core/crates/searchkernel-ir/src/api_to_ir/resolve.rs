@@ -1,6 +1,7 @@
 use super::*;
 use crate::api_to_ir::document::condition_to_ir;
 use crate::api_to_ir::filter::{flatten_and, flatten_or};
+use crate::api_to_ir::grouping::supported_grouping_function;
 use crate::api_to_ir::query::normalize_typed_query;
 use crate::api_to_ir::schema::analyzer_identity;
 use crate::api_to_ir::search::validate_query_input_references;
@@ -357,7 +358,7 @@ pub fn resolve_search(context: &IndexContext, input: SearchInput) -> Result<Sear
     }
     let filter = resolve_filters(context, &input)?;
     let sort = resolve_sorts(context, &input.sorts)?;
-    let grouping = resolve_grouping(&input.grouping)?;
+    let grouping = resolve_grouping(context, &input.grouping)?;
     let profile = match input
         .ranking
         .clone()
@@ -567,14 +568,29 @@ fn resolve_filters(context: &IndexContext, input: &SearchInput) -> Result<Option
     })
 }
 
-fn resolve_grouping(input: &[GroupingInput]) -> Result<Vec<GroupingRequestIr>> {
+fn resolve_grouping(
+    context: &IndexContext,
+    input: &[GroupingInput],
+) -> Result<Vec<GroupingRequestIr>> {
+    let mut facet_fields = BTreeSet::new();
     input
         .iter()
         .enumerate()
         .map(|(index, value)| match value {
-            GroupingInput::Facet(value) => resolve_facet(value),
+            GroupingInput::Facet(value) => {
+                let path = format!("facets[{index}].field");
+                validate_grouping_field(context, &value.field, &path)?;
+                if !facet_fields.insert(value.field.clone()) {
+                    return Err(invalid(
+                        "duplicate_facet_field",
+                        Some(path),
+                        "facet fields must be unique",
+                    ));
+                }
+                resolve_facet(value)
+            }
             GroupingInput::Structured(value) => {
-                validate_grouping_request(value, &format!("grouping[{index}]"))?;
+                validate_grouping_request(context, value, &format!("grouping[{index}]"))?;
                 Ok(value.clone())
             }
             GroupingInput::Raw(_) => Err(PortableError::unsupported(
@@ -586,23 +602,32 @@ fn resolve_grouping(input: &[GroupingInput]) -> Result<Vec<GroupingRequestIr>> {
         .collect()
 }
 
-fn validate_grouping_request(value: &GroupingRequestIr, path: &str) -> Result<()> {
-    validate_grouping_all(&value.root, &format!("{path}.root"))
+fn validate_grouping_request(
+    context: &IndexContext,
+    value: &GroupingRequestIr,
+    path: &str,
+) -> Result<()> {
+    validate_grouping_all(context, &value.root, &format!("{path}.root"))
 }
 
-fn validate_grouping_all(value: &GroupingAllIr, path: &str) -> Result<()> {
+fn validate_grouping_all(context: &IndexContext, value: &GroupingAllIr, path: &str) -> Result<()> {
     for (index, operation) in value.operations.iter().enumerate() {
         let operation_path = format!("{path}.operations[{index}]");
         match operation {
             GroupingOperationIr::All(value) | GroupingOperationIr::Each(value) => {
-                validate_grouping_all(value, &operation_path)?;
+                validate_grouping_all(context, value, &operation_path)?;
             }
             GroupingOperationIr::Group(expression) | GroupingOperationIr::Where(expression) => {
-                validate_grouping_expression(expression, &format!("{operation_path}.expression"))?;
+                validate_grouping_expression(
+                    context,
+                    expression,
+                    &format!("{operation_path}.expression"),
+                )?;
             }
             GroupingOperationIr::Output(outputs) => {
                 for (index, output) in outputs.iter().enumerate() {
                     validate_grouping_expression(
+                        context,
                         &output.expression,
                         &format!("{operation_path}.outputs[{index}].expression"),
                     )?;
@@ -611,6 +636,7 @@ fn validate_grouping_all(value: &GroupingAllIr, path: &str) -> Result<()> {
             GroupingOperationIr::Order(expressions) => {
                 for (index, expression) in expressions.iter().enumerate() {
                     validate_grouping_expression(
+                        context,
                         expression,
                         &format!("{operation_path}.expressions[{index}]"),
                     )?;
@@ -618,10 +644,14 @@ fn validate_grouping_all(value: &GroupingAllIr, path: &str) -> Result<()> {
             }
             GroupingOperationIr::Alias { name, expression } => {
                 validate_non_empty_grouping_name(name, &format!("{operation_path}.name"), "alias")?;
-                validate_grouping_expression(expression, &format!("{operation_path}.expression"))?;
+                validate_grouping_expression(
+                    context,
+                    expression,
+                    &format!("{operation_path}.expression"),
+                )?;
             }
             GroupingOperationIr::Filter(filter) | GroupingOperationIr::Keep(filter) => {
-                validate_grouping_filter(filter, &operation_path)?;
+                validate_grouping_filter(context, filter, &operation_path)?;
             }
             GroupingOperationIr::Max(_) | GroupingOperationIr::Precision(_) => {}
         }
@@ -629,42 +659,59 @@ fn validate_grouping_all(value: &GroupingAllIr, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_grouping_expression(value: &GroupingExpressionIr, path: &str) -> Result<()> {
+fn validate_grouping_expression(
+    context: &IndexContext,
+    value: &GroupingExpressionIr,
+    path: &str,
+) -> Result<()> {
     match value {
-        GroupingExpressionIr::Attribute(name) => {
-            validate_non_empty_grouping_name(name, path, "attribute")
-        }
+        GroupingExpressionIr::Attribute(name) => validate_grouping_field(context, name, path),
         GroupingExpressionIr::Literal(_) | GroupingExpressionIr::Bucket(_) => Ok(()),
         GroupingExpressionIr::Function { name, arguments } => {
             validate_non_empty_grouping_name(name, &format!("{path}.name"), "function")?;
+            if !supported_grouping_function(name) {
+                return Err(PortableError::unsupported(
+                    "unsupported_grouping_function",
+                    Some(format!("{path}.name")),
+                    format!("grouping function `{name}` is not supported by the portable grouping grammar"),
+                ));
+            }
             for (index, argument) in arguments.iter().enumerate() {
-                validate_grouping_expression(argument, &format!("{path}.arguments[{index}]"))?;
+                validate_grouping_expression(
+                    context,
+                    argument,
+                    &format!("{path}.arguments[{index}]"),
+                )?;
             }
             Ok(())
         }
         GroupingExpressionIr::Positive(expression) | GroupingExpressionIr::Negative(expression) => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))
         }
         GroupingExpressionIr::Aggregation(aggregation) => {
-            validate_grouping_aggregation(aggregation, &format!("{path}.aggregation"))
+            validate_grouping_aggregation(context, aggregation, &format!("{path}.aggregation"))
         }
         GroupingExpressionIr::Binary { left, right, .. } => {
-            validate_grouping_expression(left, &format!("{path}.left"))?;
-            validate_grouping_expression(right, &format!("{path}.right"))
+            validate_grouping_expression(context, left, &format!("{path}.left"))?;
+            validate_grouping_expression(context, right, &format!("{path}.right"))
         }
         GroupingExpressionIr::Alias(name) => validate_non_empty_grouping_name(name, path, "alias"),
         GroupingExpressionIr::Member { base, member } => {
-            validate_grouping_expression(base, &format!("{path}.base"))?;
+            validate_grouping_expression(context, base, &format!("{path}.base"))?;
             validate_non_empty_grouping_name(member, &format!("{path}.member"), "member")
         }
         GroupingExpressionIr::MapLookup { base, key } => {
-            validate_grouping_expression(base, &format!("{path}.base"))?;
-            validate_grouping_expression(key, &format!("{path}.key"))
+            validate_grouping_expression(context, base, &format!("{path}.base"))?;
+            validate_grouping_expression(context, key, &format!("{path}.key"))
         }
     }
 }
 
-fn validate_grouping_aggregation(value: &GroupingAggregationIr, path: &str) -> Result<()> {
+fn validate_grouping_aggregation(
+    context: &IndexContext,
+    value: &GroupingAggregationIr,
+    path: &str,
+) -> Result<()> {
     match value {
         GroupingAggregationIr::Count | GroupingAggregationIr::Summary(_) => Ok(()),
         GroupingAggregationIr::Sum(expression)
@@ -673,25 +720,44 @@ fn validate_grouping_aggregation(value: &GroupingAggregationIr, path: &str) -> R
         | GroupingAggregationIr::Max(expression)
         | GroupingAggregationIr::Xor(expression)
         | GroupingAggregationIr::StdDev(expression) => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))
         }
-        GroupingAggregationIr::Quantiles { expression, .. } => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))
+        GroupingAggregationIr::Quantiles {
+            quantiles,
+            expression,
+        } => {
+            if quantiles
+                .iter()
+                .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+            {
+                return Err(invalid(
+                    "invalid_quantile",
+                    Some(format!("{path}.quantiles")),
+                    "quantiles must be finite values in the inclusive range [0, 1]",
+                ));
+            }
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))
         }
     }
 }
 
-fn validate_grouping_filter(value: &GroupingFilterIr, path: &str) -> Result<()> {
+fn validate_grouping_filter(
+    context: &IndexContext,
+    value: &GroupingFilterIr,
+    path: &str,
+) -> Result<()> {
     match value {
         GroupingFilterIr::And(values) | GroupingFilterIr::Or(values) => {
             for (index, value) in values.iter().enumerate() {
-                validate_grouping_filter(value, &format!("{path}.filters[{index}]"))?;
+                validate_grouping_filter(context, value, &format!("{path}.filters[{index}]"))?;
             }
             Ok(())
         }
-        GroupingFilterIr::Not(value) => validate_grouping_filter(value, &format!("{path}.filter")),
+        GroupingFilterIr::Not(value) => {
+            validate_grouping_filter(context, value, &format!("{path}.filter"))
+        }
         GroupingFilterIr::Regex { expression, .. } => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))
         }
         GroupingFilterIr::Range {
             expression,
@@ -699,14 +765,27 @@ fn validate_grouping_filter(value: &GroupingFilterIr, path: &str) -> Result<()> 
             upper,
             ..
         } => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))?;
-            validate_grouping_expression(lower, &format!("{path}.lower"))?;
-            validate_grouping_expression(upper, &format!("{path}.upper"))
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))?;
+            validate_grouping_expression(context, lower, &format!("{path}.lower"))?;
+            validate_grouping_expression(context, upper, &format!("{path}.upper"))
         }
         GroupingFilterIr::IsTrue(expression) => {
-            validate_grouping_expression(expression, &format!("{path}.expression"))
+            validate_grouping_expression(context, expression, &format!("{path}.expression"))
         }
     }
+}
+
+fn validate_grouping_field(context: &IndexContext, name: &str, path: &str) -> Result<()> {
+    validate_non_empty_grouping_name(name, path, "attribute")?;
+    let field = context.field_for_resolver(name, path.to_owned())?;
+    if !field.capabilities().groupable() {
+        return Err(invalid(
+            "field_not_facetable",
+            Some(path),
+            "grouping requires a facetable field",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_non_empty_grouping_name(value: &str, path: &str, kind: &str) -> Result<()> {

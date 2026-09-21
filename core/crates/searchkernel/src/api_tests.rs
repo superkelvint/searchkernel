@@ -1,5 +1,7 @@
 use super::*;
-use crate::{field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor};
+use crate::{
+    field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor, WandOptions,
+};
 use searchkernel_ir::{IndexContext, OperationIr};
 use searchkernel_protocol::v2 as api;
 use searchkernel_testkit::{ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult};
@@ -350,6 +352,68 @@ fn portable_text_request(text: Option<&str>) -> Vec<u8> {
         &mut builder,
         &api::SearchRequestArgs {
             query: Some(source),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    builder.finished_data().to_vec()
+}
+
+fn portable_text_request_with_empty_controls(
+    ranking_profile: Option<&str>,
+    language: Option<&str>,
+    summary: Option<&str>,
+) -> Vec<u8> {
+    let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
+    let text = builder.create_string("x");
+    let text_query = api::SearchKernelTextQuery::create(
+        &mut builder,
+        &api::SearchKernelTextQueryArgs { text: Some(text) },
+    );
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::SearchKernelTextQuery,
+            source: Some(text_query.as_union_value()),
+        },
+    );
+    let ranking_profile = ranking_profile.map(|value| builder.create_string(value));
+    let ranking = ranking_profile.map(|profile| {
+        api::RankingRequest::create(
+            &mut builder,
+            &api::RankingRequestArgs {
+                profile: Some(profile),
+                ..Default::default()
+            },
+        )
+    });
+    let language = language.map(|value| builder.create_string(value));
+    let query_model = language.map(|language| {
+        api::QueryModel::create(
+            &mut builder,
+            &api::QueryModelArgs {
+                language: Some(language),
+                ..Default::default()
+            },
+        )
+    });
+    let summary = summary.map(|value| builder.create_string(value));
+    let presentation = summary.map(|summary| {
+        api::PresentationRequest::create(
+            &mut builder,
+            &api::PresentationRequestArgs {
+                summary: Some(summary),
+                ..Default::default()
+            },
+        )
+    });
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            ranking,
+            query_model,
+            presentation,
             ..Default::default()
         },
     );
@@ -764,6 +828,34 @@ fn browse_executes_match_all_and_describe_returns_schema() {
 }
 
 #[test]
+fn describe_preserves_configured_rank_profiles() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .rank_profile(
+            crate::RankProfile::new("two_phase")
+                .first_phase("bm25(title)")
+                .second_phase("attribute(score)")
+                .rerank_count(7)
+                .match_feature("bm25(title)")
+                .query_input("query_vector", "tensor<float>(x[3])"),
+        );
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    let described = index.describe().unwrap();
+    assert_eq!(described.rank_profiles().len(), 1);
+    let profile = &described.rank_profiles()[0];
+    assert_eq!(profile.name(), "two_phase");
+    assert_eq!(profile.first_phase, "bm25(title)");
+    assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
+    assert_eq!(profile.rerank_count, Some(7));
+    assert_eq!(profile.match_features, vec!["bm25(title)"]);
+    assert_eq!(
+        profile.query_inputs,
+        vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())]
+    );
+}
+
+#[test]
 fn public_rust_browse_and_portable_match_all_share_source_semantics() {
     let definition = scripted_definition();
     let context = context_for(&definition);
@@ -953,6 +1045,103 @@ fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
             },
             BTreeMap::new(),
         ),
+        (
+            "weighted_empty_key",
+            Query::weighted_set("brand", [crate::WeightedQueryItem::new("", 1)]),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::WeightedSet {
+                    field: typed_field("brand"),
+                    items: vec![searchkernel_ir::WeightedQueryItemIr {
+                        key: searchkernel_ir::RequestValueIr::String(String::new()),
+                        weight: 1,
+                    }],
+                },
+                annotations: BTreeMap::new(),
+            },
+            BTreeMap::new(),
+        ),
+        (
+            "nn_empty_query_tensor",
+            Query::nearest_neighbor("embedding", ""),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::NearestNeighbor {
+                    document_field: typed_field("embedding"),
+                    query_tensor: String::new(),
+                },
+                annotations: BTreeMap::new(),
+            },
+            BTreeMap::new(),
+        ),
+        (
+            "wand_zero_threshold_boost",
+            Query::Wand {
+                field: "brand".to_owned(),
+                items: vec![crate::WeightedQueryItem::new("acme", 1)],
+                options: WandOptions {
+                    threshold_boost_factor: 0.0,
+                    ..WandOptions::default()
+                },
+            },
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::Wand {
+                    field: typed_field("brand"),
+                    items: vec![searchkernel_ir::WeightedQueryItemIr {
+                        key: searchkernel_ir::RequestValueIr::String("acme".to_owned()),
+                        weight: 1,
+                    }],
+                },
+                annotations: BTreeMap::from([
+                    (
+                        "targetNumHits".to_owned(),
+                        searchkernel_ir::RequestValueIr::UInt64(100),
+                    ),
+                    (
+                        "scoreThreshold".to_owned(),
+                        searchkernel_ir::RequestValueIr::Int64(0),
+                    ),
+                    (
+                        "thresholdBoostFactor".to_owned(),
+                        searchkernel_ir::RequestValueIr::Float64(0.0),
+                    ),
+                ]),
+            },
+            BTreeMap::new(),
+        ),
+        (
+            "wand_negative_threshold_boost",
+            Query::Wand {
+                field: "brand".to_owned(),
+                items: vec![crate::WeightedQueryItem::new("acme", 1)],
+                options: WandOptions {
+                    threshold_boost_factor: -1.0,
+                    ..WandOptions::default()
+                },
+            },
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::Wand {
+                    field: typed_field("brand"),
+                    items: vec![searchkernel_ir::WeightedQueryItemIr {
+                        key: searchkernel_ir::RequestValueIr::String("acme".to_owned()),
+                        weight: 1,
+                    }],
+                },
+                annotations: BTreeMap::from([
+                    (
+                        "targetNumHits".to_owned(),
+                        searchkernel_ir::RequestValueIr::UInt64(100),
+                    ),
+                    (
+                        "scoreThreshold".to_owned(),
+                        searchkernel_ir::RequestValueIr::Int64(0),
+                    ),
+                    (
+                        "thresholdBoostFactor".to_owned(),
+                        searchkernel_ir::RequestValueIr::Float64(-1.0),
+                    ),
+                ]),
+            },
+            BTreeMap::new(),
+        ),
     ];
 
     for (name, rust_query, portable_query, inputs) in cases {
@@ -1001,6 +1190,38 @@ fn public_and_portable_advanced_query_errors_converge_in_the_ir() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn public_and_portable_fuzzy_option_errors_converge_in_the_ir() {
+    let definition = IndexDefinition::new().field(Field::text("title").searchable(true));
+    let context = context_for(&definition);
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition, recording);
+    let rust_error = index
+        .search("")
+        .typed_query(Query::Fuzzy {
+            field: "title".to_owned(),
+            value: "Acme".into(),
+            max_edit_distance: 0,
+            prefix_length: 2,
+            prefix: false,
+        })
+        .execute::<serde_json::Value>()
+        .expect_err("invalid fuzzy options must fail before backend execution");
+
+    let bytes = portable_fuzzy_request(0, 2, false);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_error = context
+        .search_to_ir(request)
+        .expect_err("portable invalid fuzzy options must fail in the resolver");
+    assert_eq!(rust_error.code(), crate::ErrorCode::InvalidArgument);
+    assert_eq!(
+        portable_error.code,
+        searchkernel_ir::ErrorCode::InvalidArgument
+    );
+    assert_eq!(rust_error.details()[0].code, portable_error.details[0].code);
+    assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
 }
 
 #[test]
@@ -1151,6 +1372,98 @@ fn structured_grouping_validation_is_shared_between_ingresses() {
     );
     assert_eq!(rust_error.details()[0].code, portable_error.details[0].code);
     assert_eq!(rust_error.details()[0].path, portable_error.details[0].path);
+}
+
+#[test]
+fn public_facets_validate_schema_fields_and_duplicates_in_search_resolution() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(Field::keyword("brand").facetable(true));
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    for (facets, detail_code) in [
+        (vec!["does_not_exist"], "unknown_field"),
+        (vec!["title"], "field_not_facetable"),
+        (vec!["brand", "brand"], "duplicate_facet_field"),
+    ] {
+        let error = index
+            .search("x")
+            .search_fields(["title"])
+            .facets(facets)
+            .inspect()
+            .expect_err("invalid facet semantics must fail before backend execution");
+        assert_eq!(error.details()[0].code, detail_code);
+    }
+}
+
+#[test]
+fn public_structured_grouping_validates_schema_fields_in_search_resolution() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title").stored(true))
+        .field(Field::keyword("brand").facetable(true));
+    let context = context_for(&definition);
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    for (field, detail_code) in [
+        ("does_not_exist", "unknown_field"),
+        ("title", "field_not_facetable"),
+    ] {
+        let error = index
+            .browse()
+            .grouping(GroupingPlan::new().level(GroupingPlan::by(field)))
+            .inspect()
+            .expect_err("invalid grouping fields must fail before backend execution");
+        assert_eq!(error.details()[0].code, detail_code);
+
+        let bytes = portable_grouping_request(field);
+        let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+        let portable_error = context
+            .search_to_ir(request)
+            .expect_err("portable grouping fields must use the same schema validation");
+        assert_eq!(portable_error.details[0].code, detail_code);
+    }
+}
+
+#[test]
+fn empty_named_ranking_has_identical_rust_and_portable_semantics() {
+    let definition = IndexDefinition::new().field(Field::text("title"));
+    let context = context_for(&definition);
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    let rust_error = index
+        .search("x")
+        .ranking(Ranking::named(""))
+        .inspect()
+        .expect_err("empty Rust ranking profile should be invalid");
+    let bytes = portable_text_request_with_empty_controls(Some(""), None, None);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_error = context
+        .search_to_ir(request)
+        .expect_err("empty portable ranking profile must not become the default");
+
+    assert_eq!(rust_error.details()[0].code, "invalid_ranking");
+    assert_eq!(portable_error.details[0].code, "invalid_ranking");
+}
+
+#[test]
+fn empty_language_has_identical_rust_and_portable_semantics() {
+    let definition = IndexDefinition::new().field(Field::text("title"));
+    let context = context_for(&definition);
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    let rust_error = index
+        .search("x")
+        .language("")
+        .inspect()
+        .expect_err("empty Rust language must be invalid");
+    let bytes = portable_text_request_with_empty_controls(None, Some(""), None);
+    let request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes).unwrap();
+    let portable_error = context
+        .search_to_ir(request)
+        .expect_err("empty portable language must not disappear");
+
+    assert_eq!(rust_error.details()[0].code, "invalid_language");
+    assert_eq!(portable_error.details[0].code, "invalid_language");
 }
 
 #[test]

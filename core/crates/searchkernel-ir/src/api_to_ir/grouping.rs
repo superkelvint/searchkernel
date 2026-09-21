@@ -353,15 +353,6 @@ pub(crate) fn grouping_expression_to_ir(
                     "function expression requires a name",
                 )
             })?;
-            if !supported_grouping_function(name) {
-                return Err(PortableError::unsupported(
-                    "unsupported_grouping_function",
-                    Some(format!("{path}.name")),
-                    format!(
-                        "grouping function `{name}` is not supported by the portable grouping grammar"
-                    ),
-                ));
-            }
             Ok(GroupingExpressionIr::Function {
                 name: name.to_owned(),
                 arguments,
@@ -685,16 +676,6 @@ pub(crate) fn grouping_aggregation_to_ir(
                 .quantiles()
                 .map(|values| values.iter().collect())
                 .unwrap_or_default();
-            if quantiles
-                .iter()
-                .any(|value: &f64| !value.is_finite() || !(0.0..=1.0).contains(value))
-            {
-                return Err(invalid(
-                    "invalid_quantile",
-                    Some(format!("{path}.quantiles")),
-                    "quantiles must be finite values in the inclusive range [0, 1]",
-                ));
-            }
             Ok(GroupingAggregationIr::Quantiles {
                 quantiles,
                 expression: expression(value.expression())?,

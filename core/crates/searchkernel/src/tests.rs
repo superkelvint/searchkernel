@@ -334,6 +334,34 @@ fn public_rank_profile_preserves_second_phase_and_rerank_count() {
 }
 
 #[test]
+fn public_describe_preserves_rank_profiles_from_resolved_ir() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .rank_profile(
+            RankProfile::new("two_phase")
+                .first_phase("bm25(title)")
+                .second_phase("attribute(score)")
+                .rerank_count(7)
+                .match_feature("bm25(title)")
+                .query_input("query_vector", "tensor<float>(x[3])"),
+        );
+    let index = IndexRuntime::from_backend(definition, Arc::new(RecordingBackend::new())).unwrap();
+
+    let described = index.describe().unwrap();
+    assert_eq!(described.rank_profiles().len(), 1);
+    let profile = &described.rank_profiles()[0];
+    assert_eq!(profile.name(), "two_phase");
+    assert_eq!(profile.first_phase, "bm25(title)");
+    assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
+    assert_eq!(profile.rerank_count, Some(7));
+    assert_eq!(profile.match_features, vec!["bm25(title)"]);
+    assert_eq!(
+        profile.query_inputs,
+        vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())]
+    );
+}
+
+#[test]
 fn manifest_uses_resolved_definition_when_portable_provenance_differs() {
     let root = temporary_path("manifest-mismatched-definition");
     let config = root.join("config");

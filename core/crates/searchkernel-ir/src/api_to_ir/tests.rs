@@ -903,6 +903,138 @@ fn unknown_ranking_profile_is_rejected_before_backend_lowering() {
     assert_eq!(error.details[0].code, "invalid_rank_profile");
 }
 
+fn match_all_search(grouping: Vec<GroupingInput>) -> SearchIntent {
+    SearchIntent {
+        query: QuerySourceInput::MatchAll,
+        search_fields: None,
+        filters: Vec::new(),
+        textual_filters: Vec::new(),
+        sorts: Vec::new(),
+        grouping,
+        ranking: None,
+        query_inputs: BTreeMap::new(),
+        rank_properties: BTreeMap::new(),
+        query_model: QueryModelInput::default(),
+        projection: None,
+        highlighting: None,
+        presentation: PresentationInput::default(),
+        properties: BTreeMap::new(),
+        query_profile: None,
+        search_chain: None,
+        timeout: None,
+        limit: None,
+        offset: None,
+    }
+}
+
+#[test]
+fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    for (grouping, detail_code) in [
+        (
+            vec![GroupingInput::Facet(FacetInput {
+                field: "missing".to_owned(),
+                limit: None,
+                sort: None,
+            })],
+            "unknown_field",
+        ),
+        (
+            vec![GroupingInput::Facet(FacetInput {
+                field: "price".to_owned(),
+                limit: None,
+                sort: None,
+            })],
+            "field_not_facetable",
+        ),
+        (
+            vec![
+                GroupingInput::Facet(FacetInput {
+                    field: "brand".to_owned(),
+                    limit: None,
+                    sort: None,
+                }),
+                GroupingInput::Facet(FacetInput {
+                    field: "brand".to_owned(),
+                    limit: None,
+                    sort: None,
+                }),
+            ],
+            "duplicate_facet_field",
+        ),
+    ] {
+        let error = resolve_search(&context, match_all_search(grouping))
+            .expect_err("invalid facet semantics must fail in the canonical resolver");
+        assert_eq!(error.details[0].code, detail_code);
+    }
+}
+
+#[test]
+fn search_resolver_validates_structured_grouping_fields() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    for (field, detail_code) in [
+        ("missing", "unknown_field"),
+        ("price", "field_not_facetable"),
+    ] {
+        let grouping = GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                    field.to_owned(),
+                ))],
+                label: None,
+            },
+            continuations: Vec::new(),
+        };
+        let error = resolve_search(
+            &context,
+            match_all_search(vec![GroupingInput::Structured(grouping)]),
+        )
+        .expect_err("invalid grouping fields must fail in the canonical resolver");
+        assert_eq!(error.details[0].code, detail_code);
+    }
+}
+
+#[test]
+fn search_resolver_owns_portable_grouping_function_and_quantile_validation() {
+    let context = context();
+    let invalid_groupings = [
+        (
+            GroupingExpressionIr::Function {
+                name: "not_supported".to_owned(),
+                arguments: Vec::new(),
+            },
+            "unsupported_grouping_function",
+        ),
+        (
+            GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Quantiles {
+                quantiles: vec![-12.0, f64::NAN, 500.0],
+                expression: GroupingExpressionIr::Attribute("price".to_owned()),
+            })),
+            "invalid_quantile",
+        ),
+    ];
+
+    for (expression, detail_code) in invalid_groupings {
+        let grouping = GroupingRequestIr {
+            root: GroupingAllIr {
+                operations: vec![GroupingOperationIr::Group(expression)],
+                label: None,
+            },
+            continuations: Vec::new(),
+        };
+        let error = resolve_search(
+            &context,
+            match_all_search(vec![GroupingInput::Structured(grouping)]),
+        )
+        .expect_err("portable grouping invariants must be enforced centrally");
+        assert_eq!(error.details[0].code, detail_code);
+    }
+}
+
 #[test]
 fn tensor_patch_resolution_preserves_tensor_values_and_rejects_scalars() {
     let definition = IndexDefinitionIr::new(

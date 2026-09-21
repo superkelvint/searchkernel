@@ -504,7 +504,7 @@ fn query_model_to_input(
         default_index: normalized_optional_string(value.default_index()),
         encoding: normalized_optional_string(value.encoding()),
         filter: normalized_optional_string(value.filter()),
-        language: normalized_optional_string(value.language()),
+        language: value.language().map(ToOwned::to_owned),
         locale: normalized_optional_string(value.locale()),
         query_type,
         sources: value
@@ -527,7 +527,7 @@ fn presentation_to_input(
         return Default::default();
     };
     crate::api_to_ir::resolve::PresentationInput {
-        summary: normalized_optional_string(value.summary()),
+        summary: value.summary().map(ToOwned::to_owned),
         format: normalized_optional_string(value.format()),
         bolding: value.bolding().map(|value| value.value()),
         timing: value.timing().map(|value| value.value()),
@@ -540,13 +540,9 @@ fn ranking_to_input(
     let Some(value) = value else {
         return Ok((None, BTreeMap::new()));
     };
-    let ranking = if value.profile().is_some_and(|profile| !profile.is_empty()) {
-        Some(RankingInput::Named(
-            value.profile().unwrap_or_default().to_owned(),
-        ))
-    } else {
-        None
-    };
+    let ranking = value
+        .profile()
+        .map(|profile| RankingInput::Named(profile.to_owned()));
     let mut properties = BTreeMap::new();
     if let Some(entries) = value.properties() {
         for (index, entry) in entries.iter().enumerate() {

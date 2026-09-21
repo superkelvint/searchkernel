@@ -1254,6 +1254,31 @@ mod tests {
     }
 
     #[test]
+    fn rank_profiles_use_vespa_global_second_phase_expression() {
+        let path = compile(
+            Schema::new("typea")
+                .field(Field::new("title", FieldType::Text).indexed())
+                .field(Field::new("popularity", FieldType::Integer).attribute())
+                .rank_profile(
+                    RankProfile::new("two_phase")
+                        .first_phase("bm25(title)")
+                        .second_phase("attribute(popularity)")
+                        .rerank_count(5),
+                ),
+            "rank-profile-second-phase",
+        );
+        let rank_profiles =
+            fs::read_to_string(path.join("rank-profiles.cfg")).expect("rank profiles");
+        assert!(rank_profiles.contains(
+            "rankprofile[2].fef.property[1].name \"vespa.rank.secondphase\"\nrankprofile[2].fef.property[1].value \"rankingExpression(secondphase)\"\nrankprofile[2].fef.property[2].name \"rankingExpression(secondphase).rankingScript\"\nrankprofile[2].fef.property[2].value \"attribute(popularity)\""
+        ));
+        assert!(rank_profiles.contains(
+            "rankprofile[2].fef.property[3].name \"vespa.hitcollector.heapsize\"\nrankprofile[2].fef.property[3].value \"5\""
+        ));
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
     fn output_is_deterministic_and_rejects_non_empty_directories() {
         let schema = Schema::new("typea")
             .field(Field::new("title", FieldType::Text).indexed().summary())
