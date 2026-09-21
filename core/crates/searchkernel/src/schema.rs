@@ -75,10 +75,20 @@ pub(crate) enum FieldKind {
     Tensor(String),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Complete capability state exposed by a described field.
+pub struct FieldCapabilities {
+    pub stored: bool,
+    pub searchable: bool,
+    pub filterable: bool,
+    pub sortable: bool,
+    pub groupable: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 /// The type and capabilities of one indexed field.
 pub struct Field {
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) kind: FieldKind,
     pub(crate) multi: bool,
     pub(crate) stored: Option<bool>,
@@ -89,24 +99,46 @@ pub struct Field {
     pub(crate) analyzer: Option<Analyzer>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
-    /// Complete canonical field state. It is populated by `Index::describe()`
-    /// and remains available to callers that need the full schema model.
-    pub schema: Option<searchkernel_ir::FieldIr>,
+    pub data_type: searchkernel_ir::DataTypeIr,
+    pub analyzer_config: Option<searchkernel_ir::AnalyzerIr>,
+    pub capabilities: FieldCapabilities,
+    pub matching_config: Option<searchkernel_ir::MatchingConfigIr>,
+    pub index_config: Option<searchkernel_ir::IndexConfigIr>,
+    pub attribute_config: Option<searchkernel_ir::AttributeConfigIr>,
+    pub summary_config: Option<searchkernel_ir::SummaryConfigIr>,
+    pub indexing_script: Option<String>,
+    pub properties: searchkernel_ir::SchemaPropertiesIr,
+    pub struct_fields: Vec<searchkernel_ir::StructFieldConfigIr>,
+    // Described values carry the complete canonical members above. This bit
+    // records provenance only, so ordinary builder values still receive the
+    // resolver's defaults without acting as a second schema representation.
+    pub(crate) materialized: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 /// A Vespa rank profile exposed by the native schema compiler.
 pub struct RankProfile {
-    pub(crate) name: String,
-    pub(crate) first_phase: Option<String>,
-    pub(crate) second_phase: Option<String>,
+    pub name: String,
+    pub first_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub second_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub global_phase: Option<searchkernel_ir::RankPhaseDefinitionIr>,
+    pub inherits: Vec<String>,
+    pub inputs: Vec<searchkernel_ir::RankProfileInputIr>,
+    pub functions: Vec<searchkernel_ir::RankFunctionDefinitionIr>,
+    pub rank_features: Vec<String>,
+    pub match_features: Vec<String>,
+    pub summary_features: Vec<String>,
+    pub sort_features: Vec<String>,
+    pub constants: Vec<searchkernel_ir::ConstantDefinitionIr>,
+    pub onnx_models: Vec<searchkernel_ir::OnnxModelDefinitionIr>,
+    pub rank_properties: BTreeMap<String, String>,
+    pub strict: Option<bool>,
+    pub properties: searchkernel_ir::SchemaPropertiesIr,
+    pub(crate) first_phase_expression: Option<String>,
+    pub(crate) second_phase_expression: Option<String>,
     pub(crate) rerank_count: Option<u32>,
-    pub(crate) match_features: Vec<String>,
-    pub(crate) query_inputs: Vec<(String, String)>,
-    /// Complete canonical rank-profile state. It is populated by
-    /// `Index::describe()` and remains available to callers that need the full
-    /// schema model.
-    pub schema: Option<searchkernel_ir::RankProfileDefinitionIr>,
+    pub(crate) query_input_specs: Vec<(String, String)>,
+    pub(crate) materialized: bool,
 }
 
 impl RankProfile {
@@ -115,56 +147,58 @@ impl RankProfile {
             name: name.into(),
             first_phase: None,
             second_phase: None,
-            rerank_count: None,
+            global_phase: None,
+            inherits: Vec::new(),
+            inputs: Vec::new(),
+            functions: Vec::new(),
+            rank_features: Vec::new(),
             match_features: Vec::new(),
-            query_inputs: Vec::new(),
-            schema: None,
+            summary_features: Vec::new(),
+            sort_features: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
+            rank_properties: BTreeMap::new(),
+            strict: None,
+            properties: BTreeMap::new(),
+            first_phase_expression: None,
+            second_phase_expression: None,
+            rerank_count: None,
+            query_input_specs: Vec::new(),
+            materialized: false,
         }
     }
 
     pub fn first_phase(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
-        self.first_phase = Some(expression.clone());
-        if let Some(profile) = self.schema.as_mut() {
-            profile
-                .first_phase
-                .get_or_insert_with(empty_rank_phase)
-                .expression = Some(expression);
-        }
+        self.first_phase_expression = Some(expression.clone());
+        self.first_phase
+            .get_or_insert_with(empty_rank_phase)
+            .expression = Some(expression);
         self
     }
 
     /// Set the Vespa second-phase ranking expression.
     pub fn second_phase(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
-        self.second_phase = Some(expression.clone());
-        if let Some(profile) = self.schema.as_mut() {
-            profile
-                .second_phase
-                .get_or_insert_with(empty_rank_phase)
-                .expression = Some(expression);
-        }
+        self.second_phase_expression = Some(expression.clone());
+        self.second_phase
+            .get_or_insert_with(empty_rank_phase)
+            .expression = Some(expression);
         self
     }
 
     /// Set the number of first-phase candidates Vespa reranks in second phase.
     pub fn rerank_count(mut self, count: u32) -> Self {
         self.rerank_count = Some(count);
-        if let Some(profile) = self.schema.as_mut() {
-            profile
-                .second_phase
-                .get_or_insert_with(empty_rank_phase)
-                .rerank_count = Some(count);
-        }
+        self.second_phase
+            .get_or_insert_with(empty_rank_phase)
+            .rerank_count = Some(count);
         self
     }
 
     pub fn match_feature(mut self, expression: impl Into<String>) -> Self {
         let expression = expression.into();
         self.match_features.push(expression.clone());
-        if let Some(profile) = self.schema.as_mut() {
-            profile.match_features.push(expression);
-        }
         self
     }
 
@@ -172,21 +206,20 @@ impl RankProfile {
     pub fn query_input(mut self, name: impl Into<String>, type_spec: impl Into<String>) -> Self {
         let name = name.into();
         let type_spec = type_spec.into();
-        self.query_inputs.push((name.clone(), type_spec.clone()));
-        if let Some(profile) = self.schema.as_mut() {
-            profile.inputs.push(searchkernel_ir::RankProfileInputIr {
-                name,
-                data_type: searchkernel_ir::DataTypeIr::Tensor {
-                    type_spec: type_spec.clone(),
+        self.query_input_specs
+            .push((name.clone(), type_spec.clone()));
+        self.inputs.push(searchkernel_ir::RankProfileInputIr {
+            name,
+            data_type: searchkernel_ir::DataTypeIr::Tensor {
+                type_spec: type_spec.clone(),
+            },
+            default_value: searchkernel_ir::RequestValueIr::Tensor(
+                searchkernel_ir::RequestTensorIr {
+                    type_spec,
+                    payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
                 },
-                default_value: searchkernel_ir::RequestValueIr::Tensor(
-                    searchkernel_ir::RequestTensorIr {
-                        type_spec,
-                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
-                    },
-                ),
-            });
-        }
+            ),
+        });
         self
     }
 
@@ -197,6 +230,7 @@ impl RankProfile {
 
 impl Field {
     fn new(name: impl Into<String>, kind: FieldKind) -> Self {
+        let data_type = data_type_from_kind(&kind);
         Self {
             name: name.into(),
             kind,
@@ -209,7 +243,17 @@ impl Field {
             analyzer: None,
             distance_metric: None,
             hnsw: None,
-            schema: None,
+            data_type,
+            analyzer_config: None,
+            capabilities: FieldCapabilities::default(),
+            matching_config: None,
+            index_config: None,
+            attribute_config: None,
+            summary_config: None,
+            indexing_script: None,
+            properties: BTreeMap::new(),
+            struct_fields: Vec::new(),
+            materialized: false,
         }
     }
 
@@ -246,9 +290,10 @@ impl Field {
 
     /// Create a dense tensor field with the supplied Vespa type spec.
     pub fn tensor(name: impl Into<String>, type_spec: impl Into<String>) -> Self {
+        let type_spec = type_spec.into();
         Self {
             name: name.into(),
-            kind: FieldKind::Tensor(type_spec.into()),
+            kind: FieldKind::Tensor(type_spec.clone()),
             multi: false,
             stored: None,
             searchable: None,
@@ -258,113 +303,81 @@ impl Field {
             analyzer: None,
             distance_metric: None,
             hnsw: None,
-            schema: None,
+            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec },
+            analyzer_config: None,
+            capabilities: FieldCapabilities::default(),
+            matching_config: None,
+            index_config: None,
+            attribute_config: None,
+            summary_config: None,
+            indexing_script: None,
+            properties: BTreeMap::new(),
+            struct_fields: Vec::new(),
+            materialized: false,
         }
     }
 
     /// Make this field contain a collection of values.
     pub fn multi(mut self) -> Self {
         self.multi = true;
-        if let Some(field) = self.schema.as_mut() {
-            field.set_multi(true);
+        if !matches!(
+            self.data_type,
+            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+        ) {
+            self.data_type = searchkernel_ir::DataTypeIr::Array(Box::new(self.data_type));
         }
         self
     }
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                value,
-                capabilities.searchable(),
-                capabilities.filterable(),
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
-        }
+        self.capabilities.stored = value;
         self
     }
     /// Explicitly set whether this field can be searched with text queries.
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                value,
-                capabilities.filterable(),
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
-        }
+        self.capabilities.searchable = value;
         self
     }
     /// Explicitly set whether this field can be used in filters.
     pub fn filterable(mut self, value: bool) -> Self {
         self.filterable = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                value,
-                capabilities.sortable(),
-                capabilities.groupable(),
-            );
-        }
+        self.capabilities.filterable = value;
         self
     }
     /// Explicitly set whether this field can be used for sorting.
     pub fn sortable(mut self, value: bool) -> Self {
         self.sortable = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                capabilities.filterable(),
-                value,
-                capabilities.groupable(),
-            );
-        }
+        self.capabilities.sortable = value;
         self
     }
     /// Explicitly set whether this field can be used for facets.
     pub fn facetable(mut self, value: bool) -> Self {
         self.facetable = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            let capabilities = field.capabilities();
-            field.set_capabilities(
-                capabilities.stored(),
-                capabilities.searchable(),
-                capabilities.filterable(),
-                capabilities.sortable(),
-                value,
-            );
-        }
+        self.capabilities.groupable = value;
         self
     }
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
-        let canonical = analyzer_to_ir(&value).ok();
+        self.analyzer_config = analyzer_to_ir(&value).ok();
         self.analyzer = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            if let Some(analyzer) = canonical {
-                field.set_analyzer(Some(analyzer));
-            } else {
-                self.schema = None;
-            }
-        }
         self
     }
 
     /// Configure the tensor attribute distance metric.
     pub fn distance_metric(mut self, value: DistanceMetric) -> Self {
         self.distance_metric = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            field.set_distance_metric(distance_metric_to_ir(value));
-        }
+        let attribute =
+            self.attribute_config
+                .get_or_insert_with(|| searchkernel_ir::AttributeConfigIr {
+                    enabled: Some(true),
+                    fast_search: None,
+                    fast_access: None,
+                    distance_metric: searchkernel_ir::DistanceMetricIr::Unspecified,
+                    options: BTreeMap::new(),
+                });
+        attribute.distance_metric = distance_metric_to_ir(value);
         self
     }
 
@@ -372,9 +385,15 @@ impl Field {
     pub fn hnsw(mut self, value: HnswIndexConfig) -> Self {
         let hnsw = hnsw_to_ir(&value);
         self.hnsw = Some(value);
-        if let Some(field) = self.schema.as_mut() {
-            field.set_hnsw(hnsw);
-        }
+        let index = self
+            .index_config
+            .get_or_insert_with(|| searchkernel_ir::IndexConfigIr {
+                enabled: Some(true),
+                hnsw: None,
+                options: BTreeMap::new(),
+            });
+        index.enabled = Some(true);
+        index.hnsw = Some(hnsw);
         self
     }
 
@@ -422,8 +441,8 @@ impl Field {
 #[derive(Clone, Debug, PartialEq)]
 /// A field selected for text search, optionally with a weight.
 pub struct SearchField {
-    pub(crate) field: String,
-    pub(crate) weight: Option<f64>,
+    pub field: String,
+    pub weight: Option<f64>,
 }
 
 impl SearchField {
@@ -463,18 +482,56 @@ impl From<String> for SearchField {
     }
 }
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, PartialEq)]
 /// The schema and default search settings for an index.
 pub struct IndexDefinition {
-    pub(crate) name: Option<String>,
-    pub(crate) fields: Vec<Field>,
-    pub(crate) default_search_fields: Option<Vec<SearchField>>,
-    pub(crate) rank_profiles: Vec<RankProfile>,
-    // For values returned by Index::describe(), this is the authoritative
-    /// Complete canonical schema state for a described definition. The
-    /// ergonomic members above are common-subset projections; this public
-    /// member is the lossless schema representation.
-    pub schema: Option<searchkernel_ir::IndexDefinitionIr>,
+    pub name: Option<String>,
+    pub fields: Vec<Field>,
+    pub default_search_fields: Vec<SearchField>,
+    pub default_ranking: searchkernel_ir::RankingPolicyIr,
+    pub default_prefix_policy: searchkernel_ir::PrefixPolicy,
+    pub default_typo_policy: searchkernel_ir::TypoPolicy,
+    pub properties: searchkernel_ir::SchemaPropertiesIr,
+    pub document_type: Option<String>,
+    pub schema_inherits: Vec<String>,
+    pub document_inherits: Vec<String>,
+    pub structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
+    pub fieldsets: Vec<searchkernel_ir::FieldSetDefinitionIr>,
+    pub schema_fields: Vec<Field>,
+    pub imported_fields: Vec<searchkernel_ir::ImportedFieldDefinitionIr>,
+    pub document_summaries: Vec<searchkernel_ir::DocumentSummaryDefinitionIr>,
+    pub rank_profiles: Vec<RankProfile>,
+    pub constants: Vec<searchkernel_ir::ConstantDefinitionIr>,
+    pub onnx_models: Vec<searchkernel_ir::OnnxModelDefinitionIr>,
+    pub(crate) configured_default_search_fields: Option<Vec<SearchField>>,
+    pub(crate) materialized: bool,
+}
+
+impl Default for IndexDefinition {
+    fn default() -> Self {
+        Self {
+            name: None,
+            fields: Vec::new(),
+            default_search_fields: Vec::new(),
+            default_ranking: searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1,
+            default_prefix_policy: searchkernel_ir::PrefixPolicy::Disabled,
+            default_typo_policy: searchkernel_ir::TypoPolicy::Disabled,
+            properties: BTreeMap::new(),
+            document_type: None,
+            schema_inherits: Vec::new(),
+            document_inherits: Vec::new(),
+            structs: Vec::new(),
+            fieldsets: Vec::new(),
+            schema_fields: Vec::new(),
+            imported_fields: Vec::new(),
+            document_summaries: Vec::new(),
+            rank_profiles: Vec::new(),
+            constants: Vec::new(),
+            onnx_models: Vec::new(),
+            configured_default_search_fields: None,
+            materialized: false,
+        }
+    }
 }
 
 impl fmt::Debug for IndexDefinition {
@@ -485,7 +542,17 @@ impl fmt::Debug for IndexDefinition {
             .field("fields", &self.fields)
             .field("default_search_fields", &self.default_search_fields)
             .field("rank_profiles", &self.rank_profiles)
-            .field("schema", &self.schema)
+            .field("properties", &self.properties)
+            .field("document_type", &self.document_type)
+            .field("schema_inherits", &self.schema_inherits)
+            .field("document_inherits", &self.document_inherits)
+            .field("structs", &self.structs)
+            .field("fieldsets", &self.fieldsets)
+            .field("schema_fields", &self.schema_fields)
+            .field("imported_fields", &self.imported_fields)
+            .field("document_summaries", &self.document_summaries)
+            .field("constants", &self.constants)
+            .field("onnx_models", &self.onnx_models)
             .finish()
     }
 }
@@ -497,44 +564,11 @@ impl IndexDefinition {
     }
     /// Set the optional index name.
     pub fn name(mut self, value: impl Into<String>) -> Self {
-        let value = value.into();
-        if self.schema.is_some() {
-            let canonical_name = searchkernel_ir::IndexName::parse(value.clone()).ok();
-            apply_schema_mutation(&mut self.schema, |canonical| {
-                let Some(name) = canonical_name else {
-                    return false;
-                };
-                canonical.set_name(Some(name));
-                true
-            });
-        }
-        self.name = Some(value);
+        self.name = Some(value.into());
         self
     }
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
-        if self.schema.is_some() {
-            let schema_field = value.schema.clone().or_else(|| {
-                field_to_rust_input(&value)
-                    .and_then(|field| {
-                        searchkernel_ir::resolve_rust_index_definition(
-                            searchkernel_ir::RustIndexDefinitionInput {
-                                name: None,
-                                fields: vec![field],
-                                default_search_fields: None,
-                            },
-                        )
-                        .map_err(Error::from_ir)
-                    })
-                    .ok()
-                    .and_then(|definition| definition.fields().first().cloned())
-            });
-            if let Some(schema_field) = schema_field {
-                apply_schema_mutation(&mut self.schema, |schema| schema.push_field(schema_field));
-            } else {
-                self.schema = None;
-            }
-        }
         self.fields.push(value);
         self
     }
@@ -545,64 +579,13 @@ impl IndexDefinition {
         I::Item: Into<SearchField>,
     {
         let fields = fields.into_iter().map(Into::into).collect::<Vec<_>>();
-        if self.schema.is_some() {
-            let schema_fields = self
-                .schema
-                .as_ref()
-                .and_then(|schema| schema_search_fields(schema, &fields));
-            if let Some(schema_fields) = schema_fields {
-                apply_schema_mutation(&mut self.schema, |schema| {
-                    schema.set_default_search_fields(schema_fields);
-                    true
-                });
-            } else {
-                self.schema = None;
-            }
-        }
-        self.default_search_fields = Some(fields);
+        self.default_search_fields = fields.clone();
+        self.configured_default_search_fields = Some(fields);
         self
     }
 
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
-        if self.schema.is_some() {
-            let schema_profile = profile.schema.clone().or_else(|| {
-                let rust_profile = rank_profile_to_rust_input(&profile);
-                let placeholder = searchkernel_ir::RustFieldInput {
-                    name: "rank_profile_placeholder".to_owned(),
-                    kind: searchkernel_ir::RustFieldKind::Keyword,
-                    multi: false,
-                    stored: None,
-                    searchable: None,
-                    filterable: None,
-                    sortable: None,
-                    facetable: None,
-                    analyzer: None,
-                    distance_metric: None,
-                    hnsw: None,
-                };
-                let canonical_profile =
-                    searchkernel_ir::resolve_rust_index_definition_with_profiles(
-                        searchkernel_ir::RustIndexDefinitionInput {
-                            name: None,
-                            fields: vec![placeholder],
-                            default_search_fields: None,
-                        },
-                        vec![rust_profile],
-                    )
-                    .map_err(Error::from_ir)
-                    .ok()
-                    .and_then(|definition| definition.rank_profiles().first().cloned());
-                canonical_profile
-            });
-            if let Some(schema_profile) = schema_profile {
-                apply_schema_mutation(&mut self.schema, |schema| {
-                    schema.push_rank_profile(schema_profile)
-                });
-            } else {
-                self.schema = None;
-            }
-        }
         self.rank_profiles.push(profile);
         self
     }
@@ -619,7 +602,7 @@ impl IndexDefinition {
 
     /// Return the explicitly configured default search fields.
     pub fn configured_default_search_fields(&self) -> Option<&[SearchField]> {
-        self.default_search_fields.as_deref()
+        self.configured_default_search_fields.as_deref()
     }
 
     pub fn rank_profiles(&self) -> &[RankProfile] {
@@ -664,38 +647,188 @@ fn hnsw_to_ir(value: &HnswIndexConfig) -> searchkernel_ir::HnswIndexConfigIr {
     }
 }
 
-fn apply_schema_mutation(
-    schema: &mut Option<searchkernel_ir::IndexDefinitionIr>,
-    mutation: impl FnOnce(&mut searchkernel_ir::IndexDefinitionIr) -> bool,
-) {
-    let Some(mut value) = schema.take() else {
-        return;
-    };
-    if mutation(&mut value) {
-        *schema = Some(value);
+fn data_type_from_kind(kind: &FieldKind) -> searchkernel_ir::DataTypeIr {
+    match kind {
+        FieldKind::Text | FieldKind::Keyword => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String)
+        }
+        FieldKind::Int64 => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int64)
+        }
+        FieldKind::Float64 => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Float64)
+        }
+        FieldKind::Bool => {
+            searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Bool)
+        }
+        FieldKind::Position => searchkernel_ir::DataTypeIr::Position,
+        FieldKind::Tensor(type_spec) => searchkernel_ir::DataTypeIr::Tensor {
+            type_spec: type_spec.clone(),
+        },
     }
 }
 
-fn schema_search_fields(
-    schema: &searchkernel_ir::IndexDefinitionIr,
-    fields: &[SearchField],
-) -> Option<Vec<searchkernel_ir::SearchFieldIr>> {
-    fields
-        .iter()
-        .map(|field| {
-            let field_name = searchkernel_ir::FieldName::parse(field.field.clone()).ok()?;
-            let resolved_field = schema
-                .fields()
-                .iter()
-                .find(|value| value.name() == &field_name)?;
-            if !resolved_field.capabilities().searchable() {
-                return None;
+pub(crate) fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
+    let mut value = match field.kind() {
+        searchkernel_ir::FieldKind::Text => Field::text(field.name().as_str()),
+        searchkernel_ir::FieldKind::Keyword => Field::keyword(field.name().as_str()),
+        searchkernel_ir::FieldKind::Int64 => Field::int64(field.name().as_str()),
+        searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
+        searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
+    };
+    if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position) {
+        value = Field::position(field.name().as_str());
+    }
+    if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
+        value = Field::tensor(field.name().as_str(), type_spec);
+    }
+    value.data_type = field.data_type().clone();
+    value.multi = matches!(
+        field.data_type(),
+        searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+    );
+    let capabilities = field.capabilities();
+    value.capabilities = FieldCapabilities {
+        stored: capabilities.stored(),
+        searchable: capabilities.searchable(),
+        filterable: capabilities.filterable(),
+        sortable: capabilities.sortable(),
+        groupable: capabilities.groupable(),
+    };
+    value.stored = Some(capabilities.stored());
+    value.searchable = Some(capabilities.searchable());
+    value.filterable = Some(capabilities.filterable());
+    value.sortable = Some(capabilities.sortable());
+    value.facetable = Some(capabilities.groupable());
+    value.analyzer_config = field.analyzer().cloned();
+    value.matching_config = field.matching().cloned();
+    value.index_config = field.index().cloned();
+    value.attribute_config = field.attribute().cloned();
+    value.summary_config = field.summary().cloned();
+    value.indexing_script = field.indexing_script().map(str::to_owned);
+    value.properties = field.properties().clone();
+    value.struct_fields = field.struct_fields().to_vec();
+    value.analyzer = field.analyzer().and_then(|analyzer| {
+        (analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty())
+            .then(Analyzer::standard_v1)
+    });
+    if let Some(attribute) = field.attribute() {
+        value.distance_metric = match attribute.distance_metric {
+            searchkernel_ir::DistanceMetricIr::Unspecified => None,
+            searchkernel_ir::DistanceMetricIr::Euclidean => Some(DistanceMetric::Euclidean),
+            searchkernel_ir::DistanceMetricIr::Angular => Some(DistanceMetric::Angular),
+            searchkernel_ir::DistanceMetricIr::DotProduct => Some(DistanceMetric::DotProduct),
+            searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
+                Some(DistanceMetric::PrenormalizedAngular)
             }
-            let weight =
-                searchkernel_ir::SearchFieldWeight::new(field.weight.unwrap_or(1.0)).ok()?;
-            Some(searchkernel_ir::SearchFieldIr::new(field_name, weight))
-        })
-        .collect()
+            searchkernel_ir::DistanceMetricIr::GeoDegrees => Some(DistanceMetric::GeoDegrees),
+            searchkernel_ir::DistanceMetricIr::Hamming => Some(DistanceMetric::Hamming),
+        };
+    }
+    if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
+        let mut hnsw = HnswIndexConfig::new();
+        if let Some(value) = config.max_links_per_node {
+            hnsw = hnsw.max_links_per_node(value);
+        }
+        if let Some(value) = config.neighbors_to_explore_at_insert {
+            hnsw = hnsw.neighbors_to_explore_at_insert(value);
+        }
+        value.hnsw = Some(hnsw);
+    }
+    value.materialized = true;
+    value
+}
+
+pub(crate) fn field_to_ir(field: &Field) -> Result<searchkernel_ir::FieldIr> {
+    let name = searchkernel_ir::FieldName::parse(field.name.clone()).map_err(Error::from_ir)?;
+    Ok(searchkernel_ir::FieldIr::from_components(
+        name,
+        field.data_type.clone(),
+        field.analyzer_config.clone(),
+        searchkernel_ir::FieldCapabilities::from_values(
+            field.capabilities.stored,
+            field.capabilities.searchable,
+            field.capabilities.filterable,
+            field.capabilities.sortable,
+            field.capabilities.groupable,
+        ),
+        field.matching_config.clone(),
+        field.index_config.clone(),
+        field.attribute_config.clone(),
+        field.summary_config.clone(),
+        field.indexing_script.clone(),
+        field.properties.clone(),
+        field.struct_fields.clone(),
+    ))
+}
+
+pub(crate) fn rank_profile_from_ir(
+    profile: &searchkernel_ir::RankProfileDefinitionIr,
+) -> RankProfile {
+    RankProfile {
+        name: profile.name.clone(),
+        first_phase: profile.first_phase.clone(),
+        second_phase: profile.second_phase.clone(),
+        global_phase: profile.global_phase.clone(),
+        inherits: profile.inherits.clone(),
+        inputs: profile.inputs.clone(),
+        functions: profile.functions.clone(),
+        rank_features: profile.rank_features.clone(),
+        match_features: profile.match_features.clone(),
+        summary_features: profile.summary_features.clone(),
+        sort_features: profile.sort_features.clone(),
+        constants: profile.constants.clone(),
+        onnx_models: profile.onnx_models.clone(),
+        rank_properties: profile.rank_properties.clone(),
+        strict: profile.strict,
+        properties: profile.properties.clone(),
+        first_phase_expression: profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.clone()),
+        second_phase_expression: profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.clone()),
+        rerank_count: profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.rerank_count),
+        query_input_specs: profile
+            .inputs
+            .iter()
+            .filter_map(|input| match &input.data_type {
+                searchkernel_ir::DataTypeIr::Tensor { type_spec } => {
+                    Some((input.name.clone(), type_spec.clone()))
+                }
+                _ => None,
+            })
+            .collect(),
+        materialized: true,
+    }
+}
+
+pub(crate) fn rank_profile_to_ir(
+    profile: &RankProfile,
+) -> searchkernel_ir::RankProfileDefinitionIr {
+    searchkernel_ir::RankProfileDefinitionIr {
+        name: profile.name.clone(),
+        inherits: profile.inherits.clone(),
+        inputs: profile.inputs.clone(),
+        functions: profile.functions.clone(),
+        first_phase: profile.first_phase.clone(),
+        second_phase: profile.second_phase.clone(),
+        global_phase: profile.global_phase.clone(),
+        rank_features: profile.rank_features.clone(),
+        match_features: profile.match_features.clone(),
+        summary_features: profile.summary_features.clone(),
+        sort_features: profile.sort_features.clone(),
+        constants: profile.constants.clone(),
+        onnx_models: profile.onnx_models.clone(),
+        rank_properties: profile.rank_properties.clone(),
+        strict: profile.strict,
+        properties: profile.properties.clone(),
+    }
 }
 
 pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::RustFieldInput> {
@@ -759,11 +892,11 @@ pub(crate) fn rank_profile_to_rust_input(
 ) -> searchkernel_ir::RustRankProfileInput {
     searchkernel_ir::RustRankProfileInput {
         name: profile.name.clone(),
-        first_phase: profile.first_phase.clone().unwrap_or_default(),
-        second_phase: profile.second_phase.clone(),
+        first_phase: profile.first_phase_expression.clone().unwrap_or_default(),
+        second_phase: profile.second_phase_expression.clone(),
         rerank_count: profile.rerank_count,
         match_features: profile.match_features.clone(),
-        query_inputs: profile.query_inputs.clone(),
+        query_inputs: profile.query_input_specs.clone(),
     }
 }
 
@@ -799,7 +932,7 @@ mod tests {
     fn default_search_fields_accept_field_names() {
         let definition = IndexDefinition::new().default_search_fields(["title", "description"]);
 
-        let fields = definition.default_search_fields.unwrap();
+        let fields = definition.configured_default_search_fields.unwrap();
         assert_eq!(fields[0].field, "title");
         assert_eq!(fields[1].field, "description");
         assert_eq!(

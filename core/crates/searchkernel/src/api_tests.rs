@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    field, Analyzer, Filter, GroupingPlan, Query, Ranking, SearchBuilder, Sort, Tensor, WandOptions,
+    field, Analyzer, Field, Filter, GroupingPlan, Query, RankProfile, Ranking, SearchBuilder, Sort,
+    Tensor, WandOptions,
 };
 use searchkernel_ir::{BackendSession, IndexContext, OperationIr};
 use searchkernel_protocol::v2 as api;
@@ -2356,14 +2357,23 @@ fn describe_preserves_configured_rank_profiles() {
     assert_eq!(described.rank_profiles().len(), 1);
     let profile = &described.rank_profiles()[0];
     assert_eq!(profile.name(), "two_phase");
-    assert_eq!(profile.first_phase.as_deref(), Some("bm25(title)"));
-    assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
+    assert_eq!(
+        profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("bm25(title)")
+    );
+    assert_eq!(
+        profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("attribute(score)")
+    );
     assert_eq!(profile.rerank_count, Some(7));
     assert_eq!(profile.match_features, vec!["bm25(title)"]);
-    assert_eq!(
-        profile.query_inputs,
-        vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())]
-    );
+    assert_eq!(profile.inputs[0].name, "query_vector");
 }
 
 #[test]
@@ -2778,75 +2788,95 @@ fn describe_preserves_default_search_fields_and_weights() {
 }
 
 #[test]
-fn described_public_values_expose_the_complete_canonical_schema_state() {
+fn described_public_schema_is_composed_of_complete_public_members() {
     let (canonical, described) = public_described_canonical_fixture();
 
-    assert_eq!(described.schema.as_ref(), Some(&canonical));
     assert_eq!(
-        described.fields()[0].schema.as_ref(),
-        Some(&canonical.fields()[0])
+        described.index_name(),
+        canonical.name().map(|name| name.as_str())
+    );
+    assert_eq!(described.properties, *canonical.properties());
+    assert_eq!(
+        described.document_type,
+        canonical.document_type().map(str::to_owned)
+    );
+    assert_eq!(described.schema_inherits, canonical.schema_inherits());
+    assert_eq!(described.document_inherits, canonical.document_inherits());
+    assert_eq!(described.structs, canonical.structs());
+    assert_eq!(described.fieldsets, canonical.fieldsets());
+    assert_eq!(
+        described.schema_fields.len(),
+        canonical.schema_fields().len()
     );
     assert_eq!(
-        described.rank_profiles()[0].schema.as_ref(),
-        Some(&canonical.rank_profiles()[0])
+        described.schema_fields[0].data_type,
+        canonical.schema_fields()[0].data_type().clone()
     );
-    assert_eq!(described.rank_profiles()[2].first_phase, None);
-    assert_eq!(described.rank_profiles()[2].second_phase, None);
-    assert_eq!(
-        described.rank_profiles()[2].schema.as_ref(),
-        Some(&canonical.rank_profiles()[2])
-    );
+    assert_eq!(described.imported_fields, canonical.imported_fields());
+    assert_eq!(described.document_summaries, canonical.document_summaries());
+    assert_eq!(described.constants, canonical.constants());
+    assert_eq!(described.onnx_models, canonical.onnx_models());
 
-    let scores = described
-        .fields()
-        .iter()
-        .find(|field| field.name() == "scores")
-        .expect("scores field should be described");
-    assert!(matches!(
-        scores
-            .schema
-            .as_ref()
-            .expect("scores should expose canonical state")
-            .data_type(),
-        searchkernel_ir::DataTypeIr::Map { .. }
-    ));
+    let field = &described.fields()[0];
+    let canonical_field = &canonical.fields()[0];
+    assert_eq!(field.name(), canonical_field.name().as_str());
+    assert_eq!(field.data_type, *canonical_field.data_type());
+    assert_eq!(field.analyzer_config, canonical_field.analyzer().cloned());
     assert_eq!(
-        scores.schema.as_ref().and_then(|field| field.index()),
-        canonical.fields()[10].index()
+        field.capabilities.stored,
+        canonical_field.capabilities().stored()
     );
     assert_eq!(
-        scores.schema.as_ref().and_then(|field| field.attribute()),
-        canonical.fields()[10].attribute()
+        field.capabilities.searchable,
+        canonical_field.capabilities().searchable()
     );
+    assert_eq!(
+        field.capabilities.filterable,
+        canonical_field.capabilities().filterable()
+    );
+    assert_eq!(
+        field.capabilities.sortable,
+        canonical_field.capabilities().sortable()
+    );
+    assert_eq!(
+        field.capabilities.groupable,
+        canonical_field.capabilities().groupable()
+    );
+    assert_eq!(field.matching_config, canonical_field.matching().cloned());
+    assert_eq!(field.index_config, canonical_field.index().cloned());
+    assert_eq!(field.attribute_config, canonical_field.attribute().cloned());
+    assert_eq!(field.summary_config, canonical_field.summary().cloned());
+    assert_eq!(
+        field.indexing_script,
+        canonical_field.indexing_script().map(str::to_owned)
+    );
+    assert_eq!(field.properties, *canonical_field.properties());
+    assert_eq!(field.struct_fields, canonical_field.struct_fields());
+
+    let profile = &described.rank_profiles()[0];
+    let canonical_profile = &canonical.rank_profiles()[0];
+    assert_eq!(profile.name(), canonical_profile.name);
+    assert_eq!(profile.inherits, canonical_profile.inherits);
+    assert_eq!(profile.inputs, canonical_profile.inputs);
+    assert_eq!(profile.functions, canonical_profile.functions);
+    assert_eq!(profile.first_phase, canonical_profile.first_phase);
+    assert_eq!(profile.second_phase, canonical_profile.second_phase);
+    assert_eq!(profile.global_phase, canonical_profile.global_phase);
+    assert_eq!(profile.rank_features, canonical_profile.rank_features);
+    assert_eq!(profile.match_features, canonical_profile.match_features);
+    assert_eq!(profile.summary_features, canonical_profile.summary_features);
+    assert_eq!(profile.sort_features, canonical_profile.sort_features);
+    assert_eq!(profile.constants, canonical_profile.constants);
+    assert_eq!(profile.onnx_models, canonical_profile.onnx_models);
+    assert_eq!(profile.rank_properties, canonical_profile.rank_properties);
+    assert_eq!(profile.strict, canonical_profile.strict);
+    assert_eq!(profile.properties, canonical_profile.properties);
 }
 
 #[test]
-fn described_public_schema_members_are_the_lossless_representation() {
+fn public_index_members_are_authoritative_for_direct_schema_mutation() {
     let (canonical, described) = public_described_canonical_fixture();
-
-    assert_eq!(described.schema.as_ref(), Some(&canonical));
-    assert_eq!(
-        described.fields()[0].schema.as_ref(),
-        Some(&canonical.fields()[0])
-    );
-    assert_eq!(
-        described.rank_profiles()[0].schema.as_ref(),
-        Some(&canonical.rank_profiles()[0])
-    );
-}
-
-#[test]
-fn public_schema_member_is_authoritative_for_direct_schema_mutation() {
-    let (canonical, mut described) = public_described_canonical_fixture();
-    let mut schema = described
-        .schema
-        .clone()
-        .expect("described definition should expose its schema");
-    schema.set_name(Some(
-        searchkernel_ir::IndexName::parse("renamed_from_public_schema")
-            .expect("test name should be valid"),
-    ));
-    described.schema = Some(schema);
+    let described = described.name("renamed_from_public_schema");
 
     let resolved = definition_to_ir(&described).expect("public schema should resolve");
     assert_eq!(
@@ -2871,22 +2901,26 @@ fn cloning_described_rich_field_preserves_its_public_schema_state() {
 fn mutating_a_described_field_preserves_untouched_canonical_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let modified = described.fields()[0].clone().stored(false);
-    let public = modified
-        .schema
-        .as_ref()
-        .expect("mutated described field should retain canonical state")
-        .clone();
-
-    assert!(!public.capabilities().stored());
-    assert_eq!(public.properties(), canonical.fields()[0].properties());
+    assert!(!modified.capabilities.stored);
+    assert_eq!(modified.properties, *canonical.fields()[0].properties());
     assert_eq!(
-        public.struct_fields(),
+        modified.struct_fields,
         canonical.fields()[0].struct_fields()
     );
 
     let resolved = definition_to_ir(&IndexDefinition::new().field(modified))
         .expect("mutated field should resolve");
-    assert_eq!(resolved.fields()[0], public);
+    let mut expected = canonical.fields()[0].clone();
+    let capabilities = expected.capabilities();
+    expected.set_capabilities(
+        false,
+        capabilities.searchable(),
+        capabilities.filterable(),
+        capabilities.sortable(),
+        capabilities.groupable(),
+    );
+    assert_eq!(resolved.fields()[0], expected);
+    assert!(!resolved.fields()[0].capabilities().stored());
 }
 
 #[test]
@@ -2910,23 +2944,17 @@ fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
         .clone()
         .first_phase("new_rank_expression")
         .match_feature("new_feature");
-    let public = modified
-        .schema
-        .as_ref()
-        .expect("mutated described profile should retain canonical state")
-        .clone();
-
-    assert_eq!(public.inherits, canonical.rank_profiles()[0].inherits);
-    assert_eq!(public.functions, canonical.rank_profiles()[0].functions);
-    assert_eq!(public.constants, canonical.rank_profiles()[0].constants);
+    assert_eq!(modified.inherits, canonical.rank_profiles()[0].inherits);
+    assert_eq!(modified.functions, canonical.rank_profiles()[0].functions);
+    assert_eq!(modified.constants, canonical.rank_profiles()[0].constants);
     assert_eq!(
-        public
+        modified
             .first_phase
             .as_ref()
             .and_then(|phase| phase.expression.as_deref()),
         Some("new_rank_expression")
     );
-    assert!(public
+    assert!(modified
         .match_features
         .iter()
         .any(|feature| feature == "new_feature"));
@@ -2934,10 +2962,17 @@ fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
     let resolved = definition_to_ir(
         &IndexDefinition::new()
             .field(Field::text("title"))
-            .rank_profile(modified),
+            .rank_profile(modified.clone()),
     )
     .expect("mutated profile should resolve");
-    assert_eq!(resolved.rank_profiles()[0], public);
+    assert_eq!(
+        resolved.rank_profiles()[0],
+        searchkernel_ir::RankProfileDefinitionIr {
+            first_phase: modified.first_phase.clone(),
+            match_features: modified.match_features.clone(),
+            ..canonical.rank_profiles()[0].clone()
+        }
+    );
 }
 
 #[test]

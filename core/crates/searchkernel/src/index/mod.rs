@@ -3,7 +3,10 @@ use crate::document::{serialize, DocumentId};
 use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
-use crate::schema::{Analyzer, Field, IndexDefinition, RankProfile, SearchField};
+use crate::schema::{
+    field_from_ir, field_to_ir, field_to_rust_input, rank_profile_from_ir, rank_profile_to_ir,
+    rank_profile_to_rust_input, IndexDefinition, SearchField,
+};
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
 };
@@ -524,279 +527,161 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
     }
 }
 
-fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
-    // `schema` is a public authoritative member of the described definition,
-    // not an opaque implementation sidecar. Use it directly when present so
-    // direct public edits cannot be overwritten by the ergonomic projections.
-    if let Some(schema) = &definition.schema {
-        return Ok(schema.clone());
-    }
-
-    let fields = definition
+pub(crate) fn definition_to_ir(
+    definition: &IndexDefinition,
+) -> Result<searchkernel_ir::IndexDefinitionIr> {
+    let rust_fields = definition
         .fields
         .iter()
-        .map(|field| {
-            let analyzer = field
-                .analyzer
-                .as_ref()
-                .map(|analyzer| {
-                    analyzer
-                        .options
-                        .iter()
-                        .map(|(key, value)| {
-                            searchkernel_ir::request_value_from_json(
-                                value,
-                                format!("fields.{}.analyzer.options.{key}", field.name),
-                            )
-                            .map(|value| (key.clone(), value))
-                            .map_err(Error::from_ir)
-                        })
-                        .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
-                        .map(|options| searchkernel_ir::RustAnalyzerInput {
-                            name: analyzer.name.clone(),
-                            version: analyzer.version,
-                            options,
-                        })
-                })
-                .transpose()?;
-            Ok(searchkernel_ir::RustFieldInput {
-                name: field.name.clone(),
-                kind: match &field.kind {
-                    crate::schema::FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
-                    crate::schema::FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
-                    crate::schema::FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
-                    crate::schema::FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
-                    crate::schema::FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
-                    crate::schema::FieldKind::Position => searchkernel_ir::RustFieldKind::Position,
-                    crate::schema::FieldKind::Tensor(type_spec) => {
-                        searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
-                    }
-                },
-                multi: field.multi,
-                stored: field.stored,
-                searchable: field.searchable,
-                filterable: field.filterable,
-                sortable: field.sortable,
-                facetable: field.facetable,
-                analyzer,
-                distance_metric: field.distance_metric.map(|value| match value {
-                    crate::schema::DistanceMetric::Euclidean => {
-                        searchkernel_ir::DistanceMetricIr::Euclidean
-                    }
-                    crate::schema::DistanceMetric::Angular => {
-                        searchkernel_ir::DistanceMetricIr::Angular
-                    }
-                    crate::schema::DistanceMetric::DotProduct => {
-                        searchkernel_ir::DistanceMetricIr::DotProduct
-                    }
-                    crate::schema::DistanceMetric::PrenormalizedAngular => {
-                        searchkernel_ir::DistanceMetricIr::PrenormalizedAngular
-                    }
-                    crate::schema::DistanceMetric::GeoDegrees => {
-                        searchkernel_ir::DistanceMetricIr::GeoDegrees
-                    }
-                    crate::schema::DistanceMetric::Hamming => {
-                        searchkernel_ir::DistanceMetricIr::Hamming
-                    }
-                }),
-                hnsw: field
-                    .hnsw
-                    .as_ref()
-                    .map(|value| searchkernel_ir::HnswIndexConfigIr {
-                        max_links_per_node: value.max_links_per_node,
-                        neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
-                        options: std::collections::BTreeMap::new(),
-                    }),
-            })
-        })
+        .map(field_to_rust_input)
         .collect::<Result<Vec<_>>>()?;
-    let default_search_fields = definition.default_search_fields.as_ref().map(|fields| {
-        fields
-            .iter()
-            .map(|field| searchkernel_ir::RustSearchFieldInput {
-                field: field.field.clone(),
-                weight: field.weight,
-            })
-            .collect()
-    });
-    let mut resolved = searchkernel_ir::resolve_rust_index_definition_with_profiles(
+    let rust_default_search_fields =
+        definition
+            .configured_default_search_fields
+            .as_ref()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| searchkernel_ir::RustSearchFieldInput {
+                        field: field.field.clone(),
+                        weight: field.weight,
+                    })
+                    .collect::<Vec<_>>()
+            });
+    let resolved = searchkernel_ir::resolve_rust_index_definition_with_profiles(
         searchkernel_ir::RustIndexDefinitionInput {
             name: definition.name.clone(),
-            fields,
-            default_search_fields,
+            fields: rust_fields,
+            default_search_fields: rust_default_search_fields,
         },
         definition
             .rank_profiles
             .iter()
-            .map(|profile| searchkernel_ir::RustRankProfileInput {
-                name: profile.name.clone(),
-                first_phase: profile.first_phase.clone().unwrap_or_default(),
-                second_phase: profile.second_phase.clone(),
-                rerank_count: profile.rerank_count,
-                match_features: profile.match_features.clone(),
-                query_inputs: profile.query_inputs.clone(),
-            })
+            .map(rank_profile_to_rust_input)
             .collect(),
     )
     .map_err(Error::from_ir)?;
 
-    let canonical_fields = definition
+    let fields = definition
         .fields
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            field
-                .schema
-                .clone()
-                .or_else(|| resolved.fields().get(index).cloned())
-                .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))
+            if field.materialized {
+                field_to_ir(field)
+            } else {
+                resolved.fields().get(index).cloned().ok_or_else(|| {
+                    Error::search(
+                        crate::error::ErrorCode::Internal,
+                        "resolved field count changed",
+                    )
+                })
+            }
         })
         .collect::<Result<Vec<_>>>()?;
-    if !canonical_fields.is_empty() {
-        resolved.set_fields(canonical_fields);
-    }
-
-    let canonical_profiles = definition
+    let default_search_fields = if definition.materialized
+        || definition.configured_default_search_fields.is_some()
+    {
+        definition
+            .default_search_fields
+            .iter()
+            .map(|field| {
+                let name = searchkernel_ir::FieldName::parse(field.field.clone())
+                    .map_err(Error::from_ir)?;
+                let weight = searchkernel_ir::SearchFieldWeight::new(field.weight.unwrap_or(1.0))
+                    .map_err(Error::from_ir)?;
+                Ok(searchkernel_ir::SearchFieldIr::new(name, weight))
+            })
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        resolved.default_search_fields().to_vec()
+    };
+    let schema_fields = definition
+        .schema_fields
+        .iter()
+        .map(field_to_ir)
+        .collect::<Result<Vec<_>>>()?;
+    let rank_profiles = definition
         .rank_profiles
         .iter()
         .enumerate()
         .map(|(index, profile)| {
-            profile
-                .schema
-                .clone()
-                .or_else(|| resolved.rank_profiles().get(index).cloned())
-                .ok_or_else(|| {
-                    Error::infrastructure("resolved definition lost a public rank profile")
+            if profile.materialized {
+                Ok(rank_profile_to_ir(profile))
+            } else {
+                resolved.rank_profiles().get(index).cloned().ok_or_else(|| {
+                    Error::search(
+                        crate::error::ErrorCode::Internal,
+                        "resolved rank-profile count changed",
+                    )
                 })
+            }
         })
         .collect::<Result<Vec<_>>>()?;
-    if !canonical_profiles.is_empty() {
-        resolved.set_rank_profiles(canonical_profiles);
-    }
-
-    Ok(resolved)
+    let name = definition
+        .name
+        .as_deref()
+        .map(searchkernel_ir::IndexName::parse)
+        .transpose()
+        .map_err(Error::from_ir)?;
+    Ok(searchkernel_ir::IndexDefinitionIr::from_components(
+        name,
+        fields,
+        default_search_fields,
+        definition.default_ranking,
+        definition.default_prefix_policy,
+        definition.default_typo_policy,
+        definition.properties.clone(),
+        definition.document_type.clone(),
+        definition.schema_inherits.clone(),
+        definition.document_inherits.clone(),
+        definition.structs.clone(),
+        definition.fieldsets.clone(),
+        schema_fields,
+        definition.imported_fields.clone(),
+        definition.document_summaries.clone(),
+        rank_profiles,
+        definition.constants.clone(),
+        definition.onnx_models.clone(),
+    ))
 }
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
-    let mut result = IndexDefinition::new();
-    if let Some(name) = definition.name() {
-        result = result.name(name.as_str());
-    }
-    for field in definition.fields() {
-        let mut value = match field.kind() {
-            searchkernel_ir::FieldKind::Text => Field::text(field.name().as_str()),
-            searchkernel_ir::FieldKind::Keyword => Field::keyword(field.name().as_str()),
-            searchkernel_ir::FieldKind::Int64 => Field::int64(field.name().as_str()),
-            searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
-            searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
-        };
-        if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position) {
-            value = Field::position(field.name().as_str());
-        }
-        if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
-            value = Field::tensor(field.name().as_str(), type_spec);
-        }
-        if matches!(
-            field.cardinality(),
-            searchkernel_ir::FieldCardinality::Multi
-        ) {
-            value = value.multi();
-        }
-        let capabilities = field.capabilities();
-        value = value
-            .stored(
-                capabilities.stored()
-                    && !matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position),
-            )
-            .searchable(capabilities.searchable())
-            .filterable(capabilities.filterable())
-            .sortable(capabilities.sortable())
-            .facetable(capabilities.facetable());
-        if field.analyzer().is_some_and(|analyzer| {
-            analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
-        }) {
-            value = value.analyzer(Analyzer::standard_v1());
-        }
-        if let Some(attribute) = field.attribute() {
-            if attribute.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified {
-                value = value.distance_metric(match attribute.distance_metric {
-                    searchkernel_ir::DistanceMetricIr::Euclidean => {
-                        crate::schema::DistanceMetric::Euclidean
-                    }
-                    searchkernel_ir::DistanceMetricIr::Angular => {
-                        crate::schema::DistanceMetric::Angular
-                    }
-                    searchkernel_ir::DistanceMetricIr::DotProduct => {
-                        crate::schema::DistanceMetric::DotProduct
-                    }
-                    searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
-                        crate::schema::DistanceMetric::PrenormalizedAngular
-                    }
-                    searchkernel_ir::DistanceMetricIr::GeoDegrees => {
-                        crate::schema::DistanceMetric::GeoDegrees
-                    }
-                    searchkernel_ir::DistanceMetricIr::Hamming => {
-                        crate::schema::DistanceMetric::Hamming
-                    }
-                    searchkernel_ir::DistanceMetricIr::Unspecified => unreachable!(),
-                });
-            }
-        }
-        if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
-            let mut hnsw = crate::schema::HnswIndexConfig::new();
-            if let Some(value) = config.max_links_per_node {
-                hnsw = hnsw.max_links_per_node(value);
-            }
-            if let Some(value) = config.neighbors_to_explore_at_insert {
-                hnsw = hnsw.neighbors_to_explore_at_insert(value);
-            }
-            value = value.hnsw(hnsw);
-        }
-        result = result.field(value);
-        result
-            .fields
-            .last_mut()
-            .expect("field was just appended")
-            .schema = Some(field.clone());
-    }
-    result = result.default_search_fields(
-        definition
-            .default_search_fields()
+    let fields = definition.fields().iter().map(field_from_ir).collect();
+    let default_search_fields = definition
+        .default_search_fields()
+        .iter()
+        .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get()))
+        .collect::<Vec<_>>();
+    let schema_fields = definition
+        .schema_fields()
+        .iter()
+        .map(field_from_ir)
+        .collect();
+    IndexDefinition {
+        name: definition.name().map(|name| name.as_str().to_owned()),
+        fields,
+        default_search_fields: default_search_fields.clone(),
+        default_ranking: definition.default_ranking(),
+        default_prefix_policy: definition.default_prefix_policy(),
+        default_typo_policy: definition.default_typo_policy(),
+        properties: definition.properties().clone(),
+        document_type: definition.document_type().map(str::to_owned),
+        schema_inherits: definition.schema_inherits().to_vec(),
+        document_inherits: definition.document_inherits().to_vec(),
+        structs: definition.structs().to_vec(),
+        fieldsets: definition.fieldsets().to_vec(),
+        schema_fields,
+        imported_fields: definition.imported_fields().to_vec(),
+        document_summaries: definition.document_summaries().to_vec(),
+        rank_profiles: definition
+            .rank_profiles()
             .iter()
-            .map(|field| SearchField::new(field.field().as_str()).weight(field.weight().get())),
-    );
-    for profile in definition.rank_profiles() {
-        let mut value = RankProfile::new(profile.name.clone());
-        if let Some(expression) = profile
-            .first_phase
-            .as_ref()
-            .and_then(|phase| phase.expression.as_ref())
-        {
-            value = value.first_phase(expression.clone());
-        }
-        if let Some(phase) = profile.second_phase.as_ref() {
-            if let Some(expression) = phase.expression.as_ref() {
-                value = value.second_phase(expression.clone());
-            }
-            if let Some(rerank_count) = phase.rerank_count {
-                value = value.rerank_count(rerank_count);
-            }
-        }
-        for feature in &profile.match_features {
-            value = value.match_feature(feature.clone());
-        }
-        for input in &profile.inputs {
-            if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = &input.data_type {
-                value = value.query_input(input.name.clone(), type_spec.clone());
-            }
-        }
-        result = result.rank_profile(value);
-        result
-            .rank_profiles
-            .last_mut()
-            .expect("rank profile was just appended")
-            .schema = Some(profile.clone());
+            .map(rank_profile_from_ir)
+            .collect(),
+        constants: definition.constants().to_vec(),
+        onnx_models: definition.onnx_models().to_vec(),
+        configured_default_search_fields: Some(default_search_fields),
+        materialized: true,
     }
-    result.schema = Some(definition.clone());
-    result
 }

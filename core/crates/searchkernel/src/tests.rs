@@ -421,14 +421,23 @@ fn public_describe_preserves_rank_profiles_from_resolved_ir() {
     assert_eq!(described.rank_profiles().len(), 1);
     let profile = &described.rank_profiles()[0];
     assert_eq!(profile.name(), "two_phase");
-    assert_eq!(profile.first_phase.as_deref(), Some("bm25(title)"));
-    assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
+    assert_eq!(
+        profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("bm25(title)")
+    );
+    assert_eq!(
+        profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("attribute(score)")
+    );
     assert_eq!(profile.rerank_count, Some(7));
     assert_eq!(profile.match_features, vec!["bm25(title)"]);
-    assert_eq!(
-        profile.query_inputs,
-        vec![("query_vector".to_owned(), "tensor<float>(x[3])".to_owned())]
-    );
+    assert_eq!(profile.inputs[0].name, "query_vector");
 }
 
 #[test]

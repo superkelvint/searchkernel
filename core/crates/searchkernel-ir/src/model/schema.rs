@@ -146,6 +146,24 @@ pub struct FieldCapabilities {
 }
 
 impl FieldCapabilities {
+    /// Construct the complete capability state for a public schema model.
+    #[doc(hidden)]
+    pub fn from_values(
+        stored: bool,
+        searchable: bool,
+        filterable: bool,
+        sortable: bool,
+        groupable: bool,
+    ) -> Self {
+        Self {
+            stored,
+            searchable,
+            filterable,
+            sortable,
+            groupable,
+        }
+    }
+
     #[cfg(any(test, feature = "test"))]
     pub fn new(
         stored: bool,
@@ -219,6 +237,37 @@ pub struct StructFieldConfigIr {
 }
 
 impl FieldIr {
+    /// Construct a field from its complete semantic members.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_components(
+        name: FieldName,
+        data_type: DataTypeIr,
+        analyzer: Option<AnalyzerIr>,
+        capabilities: FieldCapabilities,
+        matching: Option<MatchingConfigIr>,
+        index: Option<IndexConfigIr>,
+        attribute: Option<AttributeConfigIr>,
+        summary: Option<SummaryConfigIr>,
+        indexing_script: Option<String>,
+        properties: SchemaPropertiesIr,
+        struct_fields: Vec<StructFieldConfigIr>,
+    ) -> Self {
+        Self {
+            name,
+            data_type,
+            analyzer,
+            capabilities,
+            matching,
+            index,
+            attribute,
+            summary,
+            indexing_script,
+            properties,
+            struct_fields,
+        }
+    }
+
     #[cfg(any(test, feature = "test"))]
     pub fn new(
         name: FieldName,
@@ -537,6 +586,51 @@ pub struct IndexDefinitionIr {
 }
 
 impl IndexDefinitionIr {
+    /// Construct an index definition from its complete semantic members.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_components(
+        name: Option<IndexName>,
+        fields: Vec<FieldIr>,
+        default_search_fields: Vec<SearchFieldIr>,
+        default_ranking: RankingPolicyIr,
+        default_prefix_policy: PrefixPolicy,
+        default_typo_policy: TypoPolicy,
+        properties: SchemaPropertiesIr,
+        document_type: Option<String>,
+        schema_inherits: Vec<String>,
+        document_inherits: Vec<String>,
+        structs: Vec<NamedStructDefinitionIr>,
+        fieldsets: Vec<FieldSetDefinitionIr>,
+        schema_fields: Vec<FieldIr>,
+        imported_fields: Vec<ImportedFieldDefinitionIr>,
+        document_summaries: Vec<DocumentSummaryDefinitionIr>,
+        rank_profiles: Vec<RankProfileDefinitionIr>,
+        constants: Vec<ConstantDefinitionIr>,
+        onnx_models: Vec<OnnxModelDefinitionIr>,
+    ) -> Self {
+        Self {
+            name,
+            fields,
+            default_search_fields,
+            default_ranking,
+            default_prefix_policy,
+            default_typo_policy,
+            properties,
+            document_type,
+            schema_inherits,
+            document_inherits,
+            structs,
+            fieldsets,
+            schema_fields,
+            imported_fields,
+            document_summaries,
+            rank_profiles,
+            constants,
+            onnx_models,
+        }
+    }
+
     #[cfg(any(test, feature = "test"))]
     pub fn new(
         name: Option<IndexName>,
