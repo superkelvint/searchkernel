@@ -75,6 +75,56 @@ pub(crate) enum FieldKind {
     Tensor(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Resolved capabilities of a field returned by `Index::describe()`.
+///
+/// Ergonomic field constructors leave this unresolved so canonical defaults
+/// continue to be owned by `searchkernel-ir`. Described fields populate all
+/// five flags exactly from canonical IR.
+pub struct FieldCapabilities {
+    stored: bool,
+    searchable: bool,
+    filterable: bool,
+    sortable: bool,
+    groupable: bool,
+}
+
+impl FieldCapabilities {
+    pub(crate) fn from_ir(value: &searchkernel_ir::FieldCapabilities) -> Self {
+        Self {
+            stored: value.stored(),
+            searchable: value.searchable(),
+            filterable: value.filterable(),
+            sortable: value.sortable(),
+            groupable: value.groupable(),
+        }
+    }
+
+    pub fn stored(&self) -> bool {
+        self.stored
+    }
+
+    pub fn searchable(&self) -> bool {
+        self.searchable
+    }
+
+    pub fn filterable(&self) -> bool {
+        self.filterable
+    }
+
+    pub fn sortable(&self) -> bool {
+        self.sortable
+    }
+
+    pub fn groupable(&self) -> bool {
+        self.groupable
+    }
+
+    pub fn facetable(&self) -> bool {
+        self.groupable
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 /// The type and capabilities of one indexed field.
 pub struct Field {
@@ -87,6 +137,7 @@ pub struct Field {
     pub(crate) filterable: Option<bool>,
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
+    pub(crate) capabilities: Option<FieldCapabilities>,
     pub(crate) analyzer: Option<Analyzer>,
     pub(crate) analyzer_config: Option<searchkernel_ir::AnalyzerIr>,
     pub(crate) matching_config: Option<searchkernel_ir::MatchingConfigIr>,
@@ -247,6 +298,7 @@ impl Field {
             filterable: None,
             sortable: None,
             facetable: None,
+            capabilities: None,
             analyzer: None,
             analyzer_config: None,
             matching_config: None,
@@ -302,6 +354,7 @@ impl Field {
             filterable: None,
             sortable: None,
             facetable: None,
+            capabilities: None,
             analyzer: None,
             analyzer_config: None,
             matching_config: None,
@@ -330,6 +383,9 @@ impl Field {
     /// Explicitly set whether values are stored in search results.
     pub fn stored(mut self, value: bool) -> Self {
         self.stored = Some(value);
+        if let Some(capabilities) = self.capabilities.as_mut() {
+            capabilities.stored = value;
+        }
         if let Some(field) = self.canonical.as_mut() {
             let capabilities = field.capabilities();
             field.set_capabilities(
@@ -345,6 +401,9 @@ impl Field {
     /// Explicitly set whether this field can be searched with text queries.
     pub fn searchable(mut self, value: bool) -> Self {
         self.searchable = Some(value);
+        if let Some(capabilities) = self.capabilities.as_mut() {
+            capabilities.searchable = value;
+        }
         if let Some(field) = self.canonical.as_mut() {
             let capabilities = field.capabilities();
             field.set_capabilities(
@@ -360,6 +419,9 @@ impl Field {
     /// Explicitly set whether this field can be used in filters.
     pub fn filterable(mut self, value: bool) -> Self {
         self.filterable = Some(value);
+        if let Some(capabilities) = self.capabilities.as_mut() {
+            capabilities.filterable = value;
+        }
         if let Some(field) = self.canonical.as_mut() {
             let capabilities = field.capabilities();
             field.set_capabilities(
@@ -375,6 +437,9 @@ impl Field {
     /// Explicitly set whether this field can be used for sorting.
     pub fn sortable(mut self, value: bool) -> Self {
         self.sortable = Some(value);
+        if let Some(capabilities) = self.capabilities.as_mut() {
+            capabilities.sortable = value;
+        }
         if let Some(field) = self.canonical.as_mut() {
             let capabilities = field.capabilities();
             field.set_capabilities(
@@ -390,6 +455,9 @@ impl Field {
     /// Explicitly set whether this field can be used for facets.
     pub fn facetable(mut self, value: bool) -> Self {
         self.facetable = Some(value);
+        if let Some(capabilities) = self.capabilities.as_mut() {
+            capabilities.groupable = value;
+        }
         if let Some(field) = self.canonical.as_mut() {
             let capabilities = field.capabilities();
             field.set_capabilities(
@@ -480,6 +548,12 @@ impl Field {
             &self.data_type,
             searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
         )
+    }
+
+    /// Return the fully resolved canonical capabilities when this field
+    /// originated from `Index::describe()`.
+    pub fn capabilities(&self) -> Option<&FieldCapabilities> {
+        self.capabilities.as_ref()
     }
 
     /// Return the explicitly configured storage capability, if any.
@@ -695,6 +769,7 @@ pub struct IndexDefinition {
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
     pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
+    pub(crate) schema_fields: Vec<Field>,
     pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
     // For values returned by Index::describe(), this is the authoritative
     // canonical schema state. The ergonomic members above are projections for
@@ -713,6 +788,7 @@ impl fmt::Debug for IndexDefinition {
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
             .field("structs", &self.structs)
+            .field("schema_fields", &self.schema_fields)
             .field("properties", &self.properties)
             .finish()
     }
@@ -766,6 +842,47 @@ impl IndexDefinition {
             }
         }
         self.fields.push(value);
+        self
+    }
+
+    /// Add a schema-only field derived by an indexing expression.
+    pub fn schema_field(mut self, value: Field) -> Self {
+        if self.canonical.is_some() {
+            let canonical_field = value.canonical.clone().or_else(|| {
+                field_to_rust_input(&value)
+                    .and_then(|field| {
+                        searchkernel_ir::resolve_rust_index_definition(
+                            searchkernel_ir::RustIndexDefinitionInput {
+                                name: None,
+                                fields: vec![field],
+                                default_search_fields: None,
+                            },
+                        )
+                        .map_err(Error::from_ir)
+                    })
+                    .ok()
+                    .and_then(|definition| definition.fields().first().cloned())
+            });
+            if let Some(canonical_field) = canonical_field {
+                apply_canonical_mutation(&mut self.canonical, |canonical| {
+                    let duplicate = canonical
+                        .fields()
+                        .iter()
+                        .chain(canonical.schema_fields().iter())
+                        .any(|field| field.name() == canonical_field.name());
+                    if duplicate {
+                        return false;
+                    }
+                    let mut schema_fields = canonical.schema_fields().to_vec();
+                    schema_fields.push(canonical_field);
+                    canonical.set_schema_fields(schema_fields);
+                    true
+                });
+            } else {
+                self.canonical = None;
+            }
+        }
+        self.schema_fields.push(value);
         self
     }
     /// Set the fields used when a search does not specify its own fields.
@@ -845,6 +962,11 @@ impl IndexDefinition {
     /// Return the fields in this definition.
     pub fn fields(&self) -> &[Field] {
         &self.fields
+    }
+
+    /// Return the schema-only fields derived by indexing expressions.
+    pub fn schema_fields(&self) -> &[Field] {
+        &self.schema_fields
     }
 
     /// Return the explicitly configured default search fields.
