@@ -1539,6 +1539,45 @@ pub(super) fn public_described_canonical_fixture(
 }
 
 #[test]
+fn describe_exposes_schema_fields_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(
+        described.schema_fields().len(),
+        canonical.schema_fields().len()
+    );
+    assert_eq!(
+        described.schema_fields()[0].name(),
+        canonical.schema_fields()[0].name().as_str()
+    );
+}
+
+#[test]
+fn public_schema_fields_round_trip_to_ir() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    let resolved = definition_to_ir(&described).expect("public schema fields should resolve");
+
+    assert_eq!(resolved.schema_fields(), canonical.schema_fields());
+}
+
+#[test]
+fn schema_field_builder_adds_schema_only_field_to_ir() {
+    let definition = IndexDefinition::new()
+        .field(Field::text("title"))
+        .schema_field(Field::text("derived"));
+    let resolved = definition_to_ir(&definition).expect("schema field should resolve");
+
+    assert_eq!(
+        resolved
+            .schema_fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .collect::<Vec<_>>(),
+        ["derived"]
+    );
+}
+
+#[test]
 fn described_field_preserves_custom_analyzer_options() {
     let mut options = searchkernel_ir::SchemaPropertiesIr::new();
     options.insert(
