@@ -82,10 +82,21 @@ In particular, verify:
 - specialized Phase 9 checks and the cumulative verifier on the actual native
   environment.
 
-### 4. Highlighting closure
+### 4. Highlighting correctness and closure
 
-The first real Vespa-generated dynamic teaser path is now implemented. Close
-that slice with real-engine and client E2E evidence.
+The first real Vespa-generated dynamic-teaser path exists, but the current
+implementation is blocked on three correctness items before acceptance:
+
+- decode Vespa continuation framing without leaking control bytes or treating
+  literal HTML-like source text as synthetic markup;
+- align accepted highlight field shapes with the scalar-text native execution
+  boundary;
+- make highlight/query compatibility explicit for query forms that pinned
+  Juniper does not expose as highlight terms.
+
+After those remediations, close the slice with real-engine tests that force
+long/truncated teasers, validate byte spans on non-ASCII text, and prove the
+supported query matrix.
 
 Keep these as separate future capabilities unless intentionally scheduled:
 
