@@ -308,7 +308,7 @@ impl IndexContext {
         });
         resolve_highlighting(self, fields.as_deref())
     }
-}
+    }
 
 fn decode_search_input(
     context: &IndexContext,
