@@ -25,9 +25,8 @@ fn main() {
     } else {
         #[cfg(feature = "native")]
         {
-            resolve_shared_native_sdk(&manifest_dir, &target, "ensure").unwrap_or_else(|error| {
-                panic!("resolve shared native Vespa SDK: {error}")
-            })
+            resolve_shared_native_sdk(&manifest_dir, &target, "ensure")
+                .unwrap_or_else(|error| panic!("resolve shared native Vespa SDK: {error}"))
         }
         #[cfg(not(feature = "native"))]
         {
@@ -97,9 +96,7 @@ fn main() {
     #[cfg(feature = "native")]
     {
         if let Err(error) = probe_native_sdk(&sdk, &target, &host) {
-            println!(
-                "cargo:warning=searchkernel: native Vespa SDK link probe failed"
-            );
+            println!("cargo:warning=searchkernel: native Vespa SDK link probe failed");
             if using_shared_sdk {
                 panic!(
                     "immutable shared native Vespa SDK '{}' failed its link probe:\n{error}\nrefusing to rebuild a published cache object in place",
@@ -314,7 +311,12 @@ fn verify_shared_cache_object(sdk: &Path) -> Result<(), String> {
     let object_name = sdk
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("shared native SDK path '{}' has no object key", sdk.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "shared native SDK path '{}' has no object key",
+                sdk.display()
+            )
+        })?;
     if object_name != digest {
         return Err(format!(
             "shared native SDK object '{}' does not match recorded fingerprint {digest}",
