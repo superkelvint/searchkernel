@@ -55,6 +55,9 @@ Use
 [`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md)
 as the detailed checklist.
 
+Status: **BLOCKED** after adversarial audit of the schema-fidelity implementation
+commit.
+
 Required invariant:
 
 ```text
@@ -64,33 +67,69 @@ IndexDefinitionIr
 == original semantic state
 ```
 
+The current hidden canonical-IR sidecar does not satisfy this requirement by
+itself. The public Rust representation must carry the state faithfully enough
+that tests, mutation, reuse, and introspection do not depend on returning an
+opaque saved IR clone.
+
 Requirements:
 
-- every checked implementation item has focused regression coverage;
+- correct the schema-fidelity regressions so they directly test public Rust
+  state and cannot pass through a hidden-IR bypass;
+- complete Phases 2–5 of the detailed plan rather than reclassifying Phase 1 as
+  implementation completion;
 - `definition_to_ir()` and `definition_from_ir()` preserve the promised
-  canonical schema state;
-- `Index::describe()` does not silently lose schema/ranking information;
-- modifying a described public definition re-resolves from public builder state
-  rather than accidentally retaining stale canonical state;
+  canonical schema state through the public representation;
+- `Index::describe()` exposes truthful advanced field/rank/schema state;
+- cloning/reusing described fields/profiles remains faithful;
+- modifying a rich described definition changes only the requested property;
+- absent/present optional state, especially rank phases, remains meaningful;
+- Rust create's persisted portable/canonical definitions are consistent with
+  the final schema ownership model;
 - unsupported Vespa execution remains explicit `Unsupported` and is not
   confused with schema representation fidelity.
 
-### 0B. Canonical search resolution and typed queries
+### 0B. Canonical semantic resolution and typed queries
 
-Prove that Rust and portable ingress converge before resolved search IR exists.
+Status: **BLOCKED** after adversarial audit.
 
-Requirements:
+The normal full SearchRequest path already converges through
+`SearchInput -> resolve_search()`. Do not replace that working structure.
 
-- one canonical unresolved search representation;
-- one canonical resolver;
-- no public/ungated constructor that permits a second resolved-search path;
-- typed-query annotations, ranking state, query inputs, grouping, search fields,
-  filters, sorting, and presentation controls all pass through the shared
-  semantic resolution boundary;
-- focused typed-query tests remain green;
+Required remediation:
+
+#### Schema/ranking ingress
+
+- introduce one shared unresolved schema-input representation for Rust and
+  FlatBuffers ingress;
+- resolve field capability defaults once;
+- resolve rank-profile/rank-phase presence, normalization and validation once;
+- prove full canonical equality for equivalent Rust/portable two-phase profiles,
+  including absent/empty/invalid phase cases;
+- prove field-default parity for text, keyword, numeric, bool, Position, Tensor,
+  HNSW and supported multi-valued shapes;
+- do not serialize Rust through FlatBuffers merely to share semantics.
+
+#### SearchRequest bypasses
+
+- make `search_to_ir() -> decode_search_input() -> resolve_search()` the sole
+  production semantic route for a portable SearchRequest;
+- remove, restrict or delegate legacy component-level query/ranking/sort
+  resolvers that apply their own defaults/normalization/error meaning;
+- add regressions for the known empty-ranking, typed Contains/Term and invalid-
+  sort divergences;
+- add a structural guard against reintroducing a second portable semantic path.
+
+#### Preserve the good shared path
+
+- typed-query annotations/defaults continue through
+  `normalize_typed_query()` and `validate_typed_query()`;
+- grouping, filters, search fields, sorting and presentation controls continue
+  to converge at the shared resolver;
+- focused typed-query tests and two-phase real-engine tests remain green;
 - structural IR-boundary checks are green.
 
-Do not widen the typed-query surface while fixing boundary correctness.
+Do not widen the typed-query or ranking contract while fixing ownership.
 
 ### 0C. Phase 9 / additive / YQL / grouping closure
 
@@ -107,15 +146,27 @@ Verify:
 
 A historical pass is not sufficient if relevant code changed afterward.
 
-### 0D. Highlighting closure
+### 0D. Highlighting correctness and closure
 
-The first supported slice is Vespa-generated dynamic teaser output for stored,
-indexed text fields.
+The first supported slice remains Vespa-generated dynamic teaser output. Before
+closure, resolve the highlighting correctness dispatches:
+
+- `highlighting-teaser-decoder-correctness`;
+- `highlighting-field-shape-boundary`;
+- `highlighting-query-shape-truthfulness`.
 
 Acceptance must prove:
 
 - real Vespa-generated fragment text;
-- match spans, including linguistically analyzed/stemmed matches;
+- no synthetic continuation control bytes in public text;
+- literal source markup is preserved rather than interpreted as highlight
+  framing;
+- disjoint teaser regions have correct fragment boundaries;
+- byte spans remain valid on non-ASCII text;
+- only field shapes actually executable by the native path are accepted;
+- query forms unsupported by pinned Juniper highlighting fail explicitly rather
+  than silently omitting spans;
+- match spans still cover linguistically analyzed/stemmed matches;
 - projection interaction;
 - Rust/Python/TypeScript behavior where the feature is promised.
 

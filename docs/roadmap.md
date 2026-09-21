@@ -43,30 +43,59 @@ has converged and its acceptance state is explicit.
 
 ### 1. Schema fidelity
 
+**Blocked after adversarial audit.**
+
 Finish the work tracked in
 [`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md).
 
-The required invariant is lossless canonical schema preservation across Rust
-introspection/describe boundaries. Do not treat backend executability as a
-reason to discard canonical schema information.
+The current hidden-`IndexDefinitionIr` sidecar makes whole-definition tests
+look lossless while the public Rust schema model itself remains narrow and
+lossy. That is not sufficient for Phases 2–5 of the plan.
+
+The required invariant is lossless canonical schema preservation through the
+actual public Rust representation. Backend executability remains separate.
 
 Closure requires:
 
-- the comprehensive schema-fidelity regression corpus green;
-- Rust -> IR and IR -> Rust preservation for the promised surface;
-- `Index::describe()` semantic round-trip fidelity;
+- the comprehensive regression corpus to observe public Rust state rather than
+  bypassing it through hidden canonical IR;
+- a public `IndexDefinition`/`Field`/`RankProfile` representation capable
+  of preserving the promised canonical schema surface;
+- Rust -> IR and IR -> Rust preservation from that public state;
+- rich `describe()` mutation and clone/reuse preserving untouched semantics;
+- meaningful absence/presence semantics, including rank phases;
+- consistent Rust create persistence/provenance;
 - unsupported backend execution remaining explicit rather than silently lost.
 
-### 2. Canonical search resolution and typed-query boundary
+### 2. Canonical semantic resolution
 
-Keep exactly one semantic orchestration path for search intent.
+**Blocked after adversarial audit.**
 
-Rust facade ingress and FlatBuffers ingress may decode differently, but both
-must converge on the same unresolved representation and canonical resolver
-before resolved Search Kernel IR exists.
+The full SearchRequest path now genuinely converges through
+`SearchInput -> resolve_search()`; preserve that work.
 
-Close remaining typed-query boundary leaks and structural checks without
-redesigning the frozen typed-query model.
+Two remaining architecture gaps must close:
+
+1. **Schema/ranking ingress** — Rust and FlatBuffers still independently resolve
+   field defaults and construct canonical rank-profile/rank-phase IR. Equivalent
+   Position/Tensor defaults and absent/empty two-phase ranking state can diverge.
+2. **Legacy portable component bypasses** — direct query/ranking/sort conversion
+   methods can still apply semantics outside the full canonical resolver and
+   already return different canonical shapes/errors for the same portable
+   input.
+
+Closure requires:
+
+- one shared unresolved schema representation and resolver for Rust + portable
+  schema ingress;
+- full canonical parity for equivalent two-phase rank profiles and field
+  defaults;
+- removal/restriction/delegation of legacy component-level semantic bypasses;
+- a structural guard preventing a second production semantic path;
+- the existing shared typed-query normalizer/validator and real-engine ranking
+  behavior remaining green.
+
+Do not redesign the frozen typed-query model while fixing semantic ownership.
 
 ### 3. Phase 9 / additive / YQL / grouping acceptance
 
@@ -82,10 +111,21 @@ In particular, verify:
 - specialized Phase 9 checks and the cumulative verifier on the actual native
   environment.
 
-### 4. Highlighting closure
+### 4. Highlighting correctness and closure
 
-The first real Vespa-generated dynamic teaser path is now implemented. Close
-that slice with real-engine and client E2E evidence.
+The first real Vespa-generated dynamic-teaser path exists, but the current
+implementation is blocked on three correctness items before acceptance:
+
+- decode Vespa continuation framing without leaking control bytes or treating
+  literal HTML-like source text as synthetic markup;
+- align accepted highlight field shapes with the scalar-text native execution
+  boundary;
+- make highlight/query compatibility explicit for query forms that pinned
+  Juniper does not expose as highlight terms.
+
+After those remediations, close the slice with real-engine tests that force
+long/truncated teasers, validate byte spans on non-ASCII text, and prove the
+supported query matrix.
 
 Keep these as separate future capabilities unless intentionally scheduled:
 
