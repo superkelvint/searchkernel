@@ -2803,6 +2803,67 @@ fn typed_matching_annotations_are_resolved_into_ir_parameters() {
 }
 
 #[test]
+fn sort_component_uses_the_same_error_semantics_as_full_search() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+
+    let match_all =
+        api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let query = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+
+    let field = builder.create_string("price");
+    let field = api::FieldSortTarget::create(
+        &mut builder,
+        &api::FieldSortTargetArgs { field: Some(field) },
+    );
+    let target = api::SortTarget::create(
+        &mut builder,
+        &api::SortTargetArgs {
+            target_type: api::SortTargetKind::FieldSortTarget,
+            target: Some(field.as_union_value()),
+        },
+    );
+    let sort = api::SortExpr::create(
+        &mut builder,
+        &api::SortExprArgs {
+            target: Some(target),
+            direction: api::SortDirection(99),
+            ..Default::default()
+        },
+    );
+    let sorts = builder.create_vector(&[sort]);
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(query),
+            sort: Some(sorts),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+
+    let request =
+        crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data()).unwrap();
+    let sort = request.sort().unwrap().get(0);
+    let context = context();
+
+    let component_error = context
+        .sort_to_ir(sort)
+        .expect_err("invalid sort direction must fail component conversion");
+    let search_error = context
+        .search_to_ir(request)
+        .expect_err("invalid sort direction must fail full search conversion");
+
+    assert_eq!(component_error.details[0].code, search_error.details[0].code);
+    assert_eq!(component_error.details[0].code, "invalid_sort");
+}
+
+#[test]
 fn sort_missing_as_is_not_rejected_or_dropped() {
     let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
     let field = builder.create_string("price");
