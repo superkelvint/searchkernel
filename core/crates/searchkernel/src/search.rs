@@ -74,6 +74,7 @@ pub enum FacetSort {
 /// A request for the distinct values of one field.
 pub struct Facet {
     pub(crate) field: String,
+    pub(crate) name: Option<String>,
     pub(crate) limit: Option<u32>,
     pub(crate) sort: Option<FacetSort>,
 }
@@ -83,9 +84,17 @@ impl Facet {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
+            name: None,
             limit: None,
             sort: None,
         }
+    }
+
+    /// Set the stable result name for this facet.
+    pub fn name(mut self, value: impl Into<String>) -> Self {
+        let value = value.into();
+        self.name = (!value.is_empty()).then_some(value);
+        self
     }
 
     /// Limit the number of values returned for this facet.
@@ -492,17 +501,20 @@ pub(crate) fn to_resolver_input(request: &SearchBuilder) -> Result<searchkernel_
     let mut grouping = request
         .facets
         .iter()
-        .map(|facet| searchkernel_ir::FacetInput {
-            field: facet.field.clone(),
-            limit: facet.limit,
-            sort: facet.sort.map(|sort| match sort {
-                FacetSort::CountDesc => searchkernel_ir::FacetSortInput::CountDesc,
-                FacetSort::CountAsc => searchkernel_ir::FacetSortInput::CountAsc,
-                FacetSort::ValueAsc => searchkernel_ir::FacetSortInput::ValueAsc,
-                FacetSort::ValueDesc => searchkernel_ir::FacetSortInput::ValueDesc,
-            }),
+        .map(|facet| {
+            let input = searchkernel_ir::FacetInput {
+                field: facet.field.clone(),
+                name: facet.name.clone(),
+                limit: facet.limit,
+                sort: facet.sort.map(|sort| match sort {
+                    FacetSort::CountDesc => searchkernel_ir::FacetSortInput::CountDesc,
+                    FacetSort::CountAsc => searchkernel_ir::FacetSortInput::CountAsc,
+                    FacetSort::ValueAsc => searchkernel_ir::FacetSortInput::ValueAsc,
+                    FacetSort::ValueDesc => searchkernel_ir::FacetSortInput::ValueDesc,
+                }),
+            };
+            searchkernel_ir::GroupingInput::Structured(searchkernel_ir::facet_grouping_input(&input))
         })
-        .map(searchkernel_ir::GroupingInput::Facet)
         .collect::<Vec<_>>();
     grouping.extend(
         request
@@ -616,8 +628,13 @@ mod tests {
     fn facet_builders_encode_limits_and_each_sort_variant() {
         let defaults = Facet::new("brand");
         assert_eq!(defaults.field, "brand");
+        assert_eq!(defaults.name, None);
         assert_eq!(defaults.limit, None);
         assert_eq!(defaults.sort, None);
+        assert_eq!(
+            Facet::new("brand").name("brands").name.as_deref(),
+            Some("brands")
+        );
 
         for sort in [
             FacetSort::CountDesc,
@@ -630,6 +647,28 @@ mod tests {
             assert_eq!(facet.sort, Some(sort));
         }
         assert_eq!(Facet::from("brand"), Facet::new("brand"));
+    }
+
+    #[test]
+    fn named_facet_inspection_preserves_canonical_name_and_zero_limit() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::keyword("brand").facetable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let inspected = runtime
+            .index()
+            .browse()
+            .facet(Facet::new("brand").name("brands").limit(0))
+            .inspect()
+            .expect("inspect named facet");
+
+        assert_eq!(inspected.facets.len(), 1);
+        assert_eq!(inspected.facets[0].field, "brand");
+        assert_eq!(inspected.facets[0].name.as_deref(), Some("brands"));
+        assert_eq!(inspected.facets[0].limit, Some(0));
+        assert_eq!(inspected.facets[0].sort, Some(FacetSort::CountDesc));
     }
 
     #[test]

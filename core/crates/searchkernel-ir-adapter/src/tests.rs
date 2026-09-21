@@ -117,6 +117,34 @@ fn average_expression(field: &str) -> GroupingExpressionIr {
 }
 
 #[test]
+fn canonical_facet_labels_preserve_fast_path_or_named_grouping_semantics() {
+    let mut default = facet_grouping(
+        "brand",
+        10,
+        searchkernel_vespa_engine::GroupingOrder::CountDescending,
+    );
+    default.root.label = Some("brand".to_owned());
+    let lowered = lower_groupings(&[default]).expect("default-named facet should lower");
+    assert!(matches!(
+        lowered.as_slice(),
+        [crate::search::GroupingLowering::Facet(_)]
+    ));
+
+    let mut named = facet_grouping(
+        "brand",
+        10,
+        searchkernel_vespa_engine::GroupingOrder::CountDescending,
+    );
+    named.root.label = Some("brands".to_owned());
+    let lowered = lower_groupings(&[named]).expect("custom-named facet should lower");
+    let [crate::search::GroupingLowering::Native(native)] = lowered.as_slice() else {
+        panic!("custom-named facet must use grouping plan to preserve its label");
+    };
+    assert_eq!(native.plan.root_label.as_deref(), Some("brands"));
+    assert_eq!(native.plan.levels[0].label.as_deref(), Some("brands"));
+}
+
+#[test]
 fn canonical_one_level_grouping_lowers_to_linear_attribute_plan() {
     let request = native_grouping(&[(
         "category",

@@ -22,7 +22,7 @@ mod tests;
 
 pub(crate) use grouping::grouping_to_input;
 pub use resolve::{
-    resolve_analyze, resolve_delete, resolve_document, resolve_facets, resolve_facets_at,
+    facet_grouping_input, resolve_analyze, resolve_delete, resolve_document, resolve_facets, resolve_facets_at,
     resolve_get, resolve_insert, resolve_patch, resolve_projection, resolve_search, resolve_update,
     resolve_upsert, AnalyzeInput, AnalyzeTargetInput, AnalyzerInput, DeleteInput, DocumentInput,
     FacetInput, FacetSortInput, FilterBoundInput, FilterInput, GetInput, GroupingInput,

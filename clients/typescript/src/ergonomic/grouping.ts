@@ -399,7 +399,7 @@ export class Group {
 
 export type FacetSort = "count_desc" | "count_asc" | "value_asc" | "value_desc";
 
-export function facetRequest(field: string, limit = 10, ordering: FacetSort = "count_desc"): GroupingRequestT {
+export function facetRequest(field: string, limit = 10, ordering: FacetSort = "count_desc", name = field): GroupingRequestT {
   limit = assertUInt32(limit, "facet limit");
   let order: GroupingExpr;
   switch (ordering) {
@@ -435,7 +435,7 @@ export function facetRequest(field: string, limit = 10, ordering: FacetSort = "c
         ),
       ]),
     ),
-  ]);
+  ], name);
 
   return new GroupingRequestT(
     GroupingSourceKind.StructuredGroupingSource,

@@ -1127,6 +1127,7 @@ fn rust_resolvers_match_flatbuffer_adapters_at_the_ir_boundary() {
             }],
             grouping: vec![GroupingInput::Facet(FacetInput {
                 field: "brand".to_owned(),
+                name: None,
                 limit: Some(7),
                 sort: Some(FacetSortInput::ValueAsc),
             })],
@@ -1651,6 +1652,7 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
         (
             vec![GroupingInput::Facet(FacetInput {
                 field: "missing".to_owned(),
+                name: None,
                 limit: None,
                 sort: None,
             })],
@@ -1659,6 +1661,7 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
         (
             vec![GroupingInput::Facet(FacetInput {
                 field: "price".to_owned(),
+                name: None,
                 limit: None,
                 sort: None,
             })],
@@ -1668,11 +1671,13 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
             vec![
                 GroupingInput::Facet(FacetInput {
                     field: "brand".to_owned(),
+                    name: None,
                     limit: None,
                     sort: None,
                 }),
                 GroupingInput::Facet(FacetInput {
                     field: "brand".to_owned(),
+                    name: None,
                     limit: None,
                     sort: None,
                 }),
@@ -2000,6 +2005,114 @@ fn search_resolver_keeps_parallel_grouping_branches_semantically_valid() {
         match_all_search(vec![GroupingInput::Structured(grouping)]),
     )
     .expect("parallel portable grouping branches remain semantically valid");
+}
+
+#[test]
+fn facet_expansion_is_canonical_for_defaults_names_limits_and_sorts() {
+    let cases = [
+        (None, FacetSortInput::CountDesc),
+        (Some(FacetSortInput::CountDesc), FacetSortInput::CountDesc),
+        (Some(FacetSortInput::CountAsc), FacetSortInput::CountAsc),
+        (Some(FacetSortInput::ValueAsc), FacetSortInput::ValueAsc),
+        (Some(FacetSortInput::ValueDesc), FacetSortInput::ValueDesc),
+    ];
+
+    for (requested, expected) in cases {
+        let input = FacetInput {
+            field: "brand".to_owned(),
+            name: Some("brands".to_owned()),
+            limit: Some(0),
+            sort: requested,
+        };
+        let grouping = facet_grouping_input(&input);
+        assert_eq!(grouping.root.label.as_deref(), Some("brands"));
+        let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)), GroupingOperationIr::Each(each)] =
+            grouping.root.operations.as_slice()
+        else {
+            panic!("facet expansion must use group + each");
+        };
+        assert_eq!(field, "brand");
+        let [GroupingOperationIr::Max(Some(limit)), GroupingOperationIr::Order(order), GroupingOperationIr::Output(outputs)] =
+            each.operations.as_slice()
+        else {
+            panic!("facet expansion must use max + order + output");
+        };
+        assert_eq!(*limit, 0);
+        assert_eq!(outputs.len(), 1);
+        assert!(matches!(
+            outputs[0].expression,
+            GroupingExpressionIr::Aggregation(ref aggregation)
+                if matches!(aggregation.as_ref(), GroupingAggregationIr::Count)
+        ));
+        let [order] = order.as_slice() else {
+            panic!("facet expansion must emit one order expression");
+        };
+        match expected {
+            FacetSortInput::CountDesc => assert!(matches!(
+                order,
+                GroupingExpressionIr::Negative(value)
+                    if matches!(
+                        value.as_ref(),
+                        GroupingExpressionIr::Aggregation(aggregation)
+                            if matches!(aggregation.as_ref(), GroupingAggregationIr::Count)
+                    )
+            )),
+            FacetSortInput::CountAsc => assert!(matches!(
+                order,
+                GroupingExpressionIr::Aggregation(aggregation)
+                    if matches!(aggregation.as_ref(), GroupingAggregationIr::Count)
+            )),
+            FacetSortInput::ValueAsc => assert!(matches!(
+                order,
+                GroupingExpressionIr::Attribute(value) if value == "brand"
+            )),
+            FacetSortInput::ValueDesc => assert!(matches!(
+                order,
+                GroupingExpressionIr::Negative(value)
+                    if matches!(
+                        value.as_ref(),
+                        GroupingExpressionIr::Attribute(field) if field == "brand"
+                    )
+            )),
+        }
+    }
+
+    let defaults = facet_grouping_input(&FacetInput {
+        field: "brand".to_owned(),
+        name: None,
+        limit: None,
+        sort: None,
+    });
+    assert_eq!(defaults.root.label.as_deref(), Some("brand"));
+    let GroupingOperationIr::Each(each) = &defaults.root.operations[1] else {
+        panic!("default facet expansion must contain each");
+    };
+    assert!(matches!(
+        each.operations.first(),
+        Some(GroupingOperationIr::Max(Some(10)))
+    ));
+}
+
+#[test]
+fn structured_facet_duplicates_share_the_canonical_duplicate_rule() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let facet = facet_grouping_input(&FacetInput {
+        field: "brand".to_owned(),
+        name: Some("brands".to_owned()),
+        limit: None,
+        sort: None,
+    });
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![
+            GroupingInput::Structured(facet.clone()),
+            GroupingInput::Structured(facet),
+        ]),
+    )
+    .expect_err("duplicate structured facets must fail like Rust facet shorthand");
+    assert_eq!(error.details[0].code, "duplicate_facet_field");
 }
 
 #[test]

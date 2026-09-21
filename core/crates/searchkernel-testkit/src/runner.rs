@@ -1073,6 +1073,7 @@ fn facet_spec_from_json(
     Ok((
         FacetInput {
             field: field_name.to_owned(),
+            name: None,
             limit: Some(limit),
             sort,
         },

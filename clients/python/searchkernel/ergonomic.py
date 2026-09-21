@@ -713,7 +713,7 @@ class Group:
         return GroupingRequestT(sourceType=GroupingSourceTags.StructuredGroupingSource, source=StructuredGroupingSourceT(root=root))
 
 
-def _facet_request(field: str, limit: int, ordering: str | None):
+def _facet_request(field: str, name: str, limit: int, ordering: str | None):
     ordering = ordering or "count_desc"
     if ordering == "count_desc":
         expression = -agg.count()
@@ -748,7 +748,7 @@ def _facet_request(field: str, limit: int, ordering: str | None):
             operation=GroupingGroupOperationT(expression=g.field(field).model),
         ),
         GroupingOperationT(operationType=GroupingOperationKind.GroupingEachOperation, operation=each),
-    ])
+    ], label=name)
     return GroupingRequestT(
         sourceType=GroupingSourceTags.StructuredGroupingSource,
         source=StructuredGroupingSourceT(root=root),
@@ -821,7 +821,7 @@ class SearchBuilder:
         ) if self._filters else None
         groups = [group.to_request() for group in self._groups]
         for field, name, limit, _sort in self._facets:
-            groups.append(_facet_request(field, limit or 10, _sort))
+            groups.append(_facet_request(field, name, 10 if limit is None else limit, _sort))
         if self._aggregates:
             groups.append(_root_aggregation_request(self._aggregates))
         query = self.query
@@ -837,11 +837,7 @@ class SearchBuilder:
             else None,
         ) if self._summary is not None or self._fields is not None or self._highlighting is not None else None
         request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
-        results = SearchResults(self.index.client.search(request))
-        for field, name, _limit, _sort in self._facets:
-            if name != field and field in results.facets:
-                results.facets[name] = results.facets[field]
-        return results
+        return SearchResults(self.index.client.search(request))
 
 
 class YqlBuilder(SearchBuilder):

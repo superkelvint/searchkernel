@@ -374,7 +374,12 @@ impl Index {
             let requested_facets = request
                 .facets
                 .iter()
-                .map(|facet| facet.field.as_str())
+                .map(|facet| {
+                    (
+                        facet.field.as_str(),
+                        facet.name.as_deref().unwrap_or(facet.field.as_str()),
+                    )
+                })
                 .collect::<Vec<_>>();
             result::search_result(backend_result, &requested_facets)
         })
@@ -443,7 +448,11 @@ fn facet_from_grouping(grouping: &searchkernel_ir::GroupingRequestIr) -> Option<
         Expr::Attribute(_) => FacetSort::ValueAsc,
         _ => return None,
     };
-    Some(Facet::new(field).limit(limit).sort(sort))
+    let facet = Facet::new(field).limit(limit).sort(sort);
+    Some(match grouping.root.label.as_deref() {
+        Some(name) if name != field => facet.name(name),
+        _ => facet,
+    })
 }
 
 fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {

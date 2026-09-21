@@ -8,6 +8,7 @@ import { DocumentT } from "../src/generated/flatbuffers/search-kernel/v2/documen
 import { ErrorCode } from "../src/generated/flatbuffers/search-kernel/v2/error-code.js";
 import { ErrorT } from "../src/generated/flatbuffers/search-kernel/v2/error.js";
 import { GroupingOperationKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-operation-kind.js";
+import { GroupingExpressionKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-expression-kind.js";
 import { GroupingSourceKind } from "../src/generated/flatbuffers/search-kernel/v2/grouping-source-kind.js";
 import { InsertResultT } from "../src/generated/flatbuffers/search-kernel/v2/insert-result.js";
 import { SearchRequestT } from "../src/generated/flatbuffers/search-kernel/v2/search-request.js";
@@ -129,11 +130,61 @@ describe("ergonomic facade", () => {
     expect(() => index().browse().facet("brand", { limit: 0x1_0000_0000 })).toThrow(/4294967295/);
   });
 
-  it("keeps facet limit zero aligned with the Python facade default", () => {
-    const request = index().browse().facet("brand", { limit: 0 }).build();
-    const source = request.grouping[0]?.source as { root?: { operations?: Array<{ operation?: { operations?: Array<{ operation?: { value?: { value?: number } } }> } }> } };
+  it("preserves explicit facet limit zero and canonical facet name", () => {
+    const request = index().browse().facet("brand", { name: "brands", limit: 0 }).build();
+    const source = request.grouping[0]?.source as {
+      root?: {
+        label?: string | null;
+        operations?: Array<{ operation?: { operations?: Array<{ operation?: { value?: { value?: number } } }> } }>;
+      };
+    };
     const each = source.root?.operations?.[1]?.operation;
-    expect(each?.operations?.[0]?.operation?.value?.value).toBe(10);
+    expect(each?.operations?.[0]?.operation?.value?.value).toBe(0);
+    expect(source.root?.label).toBe("brands");
+  });
+
+  it("normalizes all facet sort modes and multiple facet names canonically", () => {
+    const sorts = ["count_desc", "count_asc", "value_asc", "value_desc"] as const;
+    const expectedKinds = [
+      GroupingExpressionKind.GroupingUnaryExpression,
+      GroupingExpressionKind.GroupingAggregationExpression,
+      GroupingExpressionKind.GroupingAttributeExpression,
+      GroupingExpressionKind.GroupingUnaryExpression,
+    ];
+
+    const request = sorts.reduce(
+      (builder, sort, index) =>
+        builder.facet(index % 2 === 0 ? "brand" : "category", {
+          name: `facet-${index}`,
+          limit: index,
+          sort,
+        }),
+      index().browse(),
+    ).build();
+
+    expect(request.grouping).toHaveLength(4);
+    request.grouping.forEach((group, index) => {
+      const source = group.source as {
+        root?: {
+          label?: string | null;
+          operations?: Array<{
+            operation?: {
+              operations?: Array<{
+                operation?: {
+                  value?: { value?: number };
+                  expressions?: Array<{ expression?: { exprType?: GroupingExpressionKind } }>;
+                };
+              }>;
+            };
+          }>;
+        };
+      };
+      const each = source.root?.operations?.[1]?.operation;
+      expect(source.root?.label).toBe(`facet-${index}`);
+      expect(each?.operations?.[0]?.operation?.value?.value).toBe(index);
+      expect(each?.operations?.[1]?.operation?.expressions?.[0]?.expression?.exprType)
+        .toBe(expectedKinds[index]);
+    });
   });
 
   it("exposes operation-specific low-level response types", () => {

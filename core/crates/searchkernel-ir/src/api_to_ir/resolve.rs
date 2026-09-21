@@ -236,6 +236,7 @@ pub enum FacetSortInput {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FacetInput {
     pub field: String,
+    pub name: Option<String>,
     pub limit: Option<u32>,
     pub sort: Option<FacetSortInput>,
 }
@@ -611,32 +612,40 @@ fn resolve_grouping_at(
     input
         .iter()
         .enumerate()
-        .map(|(index, value)| match value {
-            GroupingInput::Facet(value) => {
-                let path = if facet_path == "facet" {
-                    "facet.field".to_owned()
-                } else {
-                    format!("{facet_path}[{index}].field")
-                };
-                validate_grouping_field(context, &value.field, &path)?;
-                if !facet_fields.insert(value.field.clone()) {
+        .map(|(index, value)| {
+            let (resolved, duplicate_path) = match value {
+                GroupingInput::Facet(value) => {
+                    let path = if facet_path == "facet" {
+                        "facet.field".to_owned()
+                    } else {
+                        format!("{facet_path}[{index}].field")
+                    };
+                    validate_grouping_field(context, &value.field, &path)?;
+                    (resolve_facet(value)?, path)
+                }
+                GroupingInput::Structured(value) => {
+                    let path = format!("grouping[{index}]");
+                    validate_grouping_request(context, value, &path)?;
+                    (value.clone(), format!("{path}.root.operations[0].expression"))
+                }
+                GroupingInput::Raw(_) => {
+                    return Err(PortableError::unsupported(
+                        "raw_grouping_not_supported",
+                        Some(format!("grouping[{index}].source")),
+                        "raw grouping text requires a grouping parser before it can enter canonical IR",
+                    ))
+                }
+            };
+            if let Some(field) = canonical_facet_field(&resolved) {
+                if !facet_fields.insert(field.to_owned()) {
                     return Err(invalid(
                         "duplicate_facet_field",
-                        Some(path),
+                        Some(duplicate_path),
                         "facet fields must be unique",
                     ));
                 }
-                resolve_facet(value)
             }
-            GroupingInput::Structured(value) => {
-                validate_grouping_request(context, value, &format!("grouping[{index}]"))?;
-                Ok(value.clone())
-            }
-            GroupingInput::Raw(_) => Err(PortableError::unsupported(
-                "raw_grouping_not_supported",
-                Some(format!("grouping[{index}].source")),
-                "raw grouping text requires a grouping parser before it can enter canonical IR",
-            )),
+            Ok(resolved)
         })
         .collect()
 }
@@ -1837,7 +1846,8 @@ pub(crate) fn resolve_highlighting(
     Ok(HighlightingIr::Requested { fields: output })
 }
 
-fn resolve_facet(input: &FacetInput) -> Result<GroupingRequestIr> {
+#[doc(hidden)]
+pub fn facet_grouping_input(input: &FacetInput) -> GroupingRequestIr {
     let field = GroupingExpressionIr::Attribute(input.field.clone());
     let count = GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count));
     let order = match input.sort.unwrap_or(FacetSortInput::CountDesc) {
@@ -1865,13 +1875,78 @@ fn resolve_facet(input: &FacetInput) -> Result<GroupingRequestIr> {
             label: None,
         }),
     ];
-    Ok(GroupingRequestIr {
+    GroupingRequestIr {
         root: GroupingAllIr {
             operations,
-            label: None,
+            label: Some(
+                input
+                    .name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(&input.field)
+                    .to_owned(),
+            ),
         },
         continuations: Vec::new(),
-    })
+    }
+}
+
+fn resolve_facet(input: &FacetInput) -> Result<GroupingRequestIr> {
+    Ok(facet_grouping_input(input))
+}
+
+fn canonical_facet_field(value: &GroupingRequestIr) -> Option<&str> {
+    if !value.continuations.is_empty() {
+        return None;
+    }
+    let [GroupingOperationIr::Group(GroupingExpressionIr::Attribute(field)), GroupingOperationIr::Each(each)] =
+        value.root.operations.as_slice()
+    else {
+        return None;
+    };
+    if each.label.is_some() {
+        return None;
+    }
+    let [GroupingOperationIr::Max(Some(_)), GroupingOperationIr::Order(order), GroupingOperationIr::Output(outputs)] =
+        each.operations.as_slice()
+    else {
+        return None;
+    };
+    let [order] = order.as_slice() else {
+        return None;
+    };
+    let [output] = outputs.as_slice() else {
+        return None;
+    };
+    if output.label.is_some()
+        || !matches!(
+            output.expression,
+            GroupingExpressionIr::Aggregation(ref aggregation)
+                if matches!(aggregation.as_ref(), GroupingAggregationIr::Count)
+        )
+    {
+        return None;
+    }
+    let count = |expression: &GroupingExpressionIr| {
+        matches!(
+            expression,
+            GroupingExpressionIr::Aggregation(aggregation)
+                if matches!(aggregation.as_ref(), GroupingAggregationIr::Count)
+        )
+    };
+    let valid_order = match order {
+        GroupingExpressionIr::Negative(expression) => {
+            count(expression) || matches!(
+                expression.as_ref(),
+                GroupingExpressionIr::Attribute(value) if value == field
+            )
+        }
+        expression => {
+            count(expression)
+                || matches!(expression, GroupingExpressionIr::Attribute(value) if value == field)
+        }
+    };
+    valid_order.then_some(field.as_str())
 }
 
 pub(crate) fn resolve_language(value: &str, path: &str) -> Result<LanguageHint> {

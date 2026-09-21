@@ -111,6 +111,7 @@ pub struct SearchTiming {
 #[non_exhaustive]
 pub struct FacetResult {
     pub field: String,
+    pub name: String,
     pub values: Vec<FacetValue>,
 }
 
@@ -148,7 +149,7 @@ pub struct HighlightSpan {
 
 pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
     result: core::SearchResult,
-    requested_facets: &[&str],
+    requested_facets: &[(&str, &str)],
 ) -> Result<SearchResult<T>> {
     let mut hits = Vec::new();
     let mut facets = Vec::new();
@@ -187,7 +188,7 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
 /// must not be promoted into `SearchResult.hits`.
 fn project_root<T: serde::de::DeserializeOwned>(
     root: core::ResultNode,
-    requested_facets: &[&str],
+    requested_facets: &[(&str, &str)],
     hits: &mut Vec<Hit<T>>,
     facets: &mut Vec<FacetResult>,
     groups: &mut Vec<GroupingResult>,
@@ -337,18 +338,23 @@ fn total_hits(total_hits: core::TotalHits) -> TotalHits {
 
 fn convert_facet_group(
     group: &core::ResultGroup,
-    requested_facets: &[&str],
+    requested_facets: &[(&str, &str)],
 ) -> Result<Option<FacetResult>> {
-    let Some(field) = group.id.as_ref() else {
+    let Some(label) = group.label.as_deref() else {
         return Ok(None);
     };
-    // Facets are a compatibility projection, not a general interpretation of
-    // arbitrary result groups. Only a group corresponding to a facet the
-    // caller actually requested may enter this legacy shape.
-    if !requested_facets.iter().any(|requested| *requested == field) {
+    // Facets are a request-derived compatibility projection. Match the stable
+    // canonical facet label rather than guessing arbitrary grouping trees.
+    let Some((field, name)) = requested_facets
+        .iter()
+        .copied()
+        .find(|(_, name)| *name == label)
+    else {
         return Ok(None);
-    }
-    if group.label.as_deref() != Some(field)
+    };
+    let optimized = group.id.as_deref() == Some(field);
+    let generic = group.id.is_none();
+    if (!optimized && !generic)
         || group.value.is_some()
         || !group.fields.is_empty()
         || !group.continuations.is_empty()
@@ -365,8 +371,10 @@ fn convert_facet_group(
         let core::ResultNode::Group(child) = child else {
             return Ok(None);
         };
-        if child.id.is_some()
-            || child.label.is_some()
+        let optimized_child = child.id.is_none() && child.label.is_none();
+        let generic_child = child.id.as_deref() == Some("grouping-0")
+            && child.label.as_deref() == Some(name);
+        if (!optimized_child && !generic_child)
             || !child.children.is_empty()
             || !child.continuations.is_empty()
             || child.source.is_some()
@@ -389,7 +397,8 @@ fn convert_facet_group(
         });
     }
     Ok(Some(FacetResult {
-        field: field.clone(),
+        field: field.to_owned(),
+        name: name.to_owned(),
         values,
     }))
 }
@@ -526,7 +535,7 @@ mod tests {
             metadata: BTreeMap::new(),
         };
 
-        let converted: SearchResult<serde_json::Value> = search_result(result, &["brand"]).unwrap();
+        let converted: SearchResult<serde_json::Value> = search_result(result, &[("brand", "brand")]).unwrap();
         assert_eq!(converted.total_hits.value, 7);
         assert_eq!(converted.total_hits.relation, TotalHitsRelation::LowerBound);
         assert_eq!(converted.hits.len(), 1);
@@ -541,6 +550,44 @@ mod tests {
             5
         );
         assert_eq!(converted.facets[0].values[0].value, serde_json::json!(2));
+    }
+
+    #[test]
+    fn result_conversion_preserves_named_generic_facets() {
+        let result = core::SearchResult {
+            root: core::ResultNode::Group(core::ResultGroup {
+                children: vec![core::ResultNode::Group(core::ResultGroup {
+                    id: None,
+                    label: Some("brands".into()),
+                    children: vec![core::ResultNode::Group(core::ResultGroup {
+                        id: Some("grouping-0".into()),
+                        label: Some("brands".into()),
+                        value: Some(Value::String("acme".into())),
+                        fields: BTreeMap::from([("count".into(), Value::UInt64(4))]),
+                        ..core::ResultGroup::root(vec![])
+                    })],
+                    ..core::ResultGroup::root(vec![])
+                })],
+                ..core::ResultGroup::root(vec![])
+            }),
+            total_hits: core::TotalHits {
+                value: 4,
+                relation: core::TotalHitsRelation::Exact,
+            },
+            coverage: None,
+            timing: None,
+            errors: Vec::new(),
+            trace: None,
+            metadata: BTreeMap::new(),
+        };
+
+        let converted: SearchResult<serde_json::Value> =
+            search_result(result, &[("brand", "brands")]).unwrap();
+        assert_eq!(converted.facets.len(), 1);
+        assert_eq!(converted.facets[0].field, "brand");
+        assert_eq!(converted.facets[0].name, "brands");
+        assert_eq!(converted.facets[0].values[0].value, serde_json::json!("acme"));
+        assert_eq!(converted.facets[0].values[0].count, 4);
     }
 
     #[test]
@@ -645,7 +692,7 @@ mod tests {
             metadata: BTreeMap::new(),
         };
         assert!(matches!(
-            search_result::<serde_json::Value>(nonfinite, &["score"]),
+            search_result::<serde_json::Value>(nonfinite, &[("score", "score")]),
             Err(Error::Infrastructure(message)) if message.contains("non-finite")
         ));
 

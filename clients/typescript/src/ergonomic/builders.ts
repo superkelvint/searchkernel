@@ -125,7 +125,7 @@ export class SearchBuilder {
   facet(field: string, options: FacetOptions = {}): this {
     const limit = options.limit;
     if (limit !== undefined) assertUInt32(limit, "facet limit");
-    this.facets.push({ field, name: options.name ?? field, limit, sort: options.sort });
+    this.facets.push({ field, name: options.name || field, limit, sort: options.sort });
     return this;
   }
 
@@ -229,7 +229,7 @@ export class SearchBuilder {
 
     const grouping = this.groups.map((group) => group.toRequest());
     for (const facet of this.facets) {
-      grouping.push(facetRequest(facet.field, facet.limit || 10, facet.sort ?? "count_desc"));
+      grouping.push(facetRequest(facet.field, facet.limit ?? 10, facet.sort ?? "count_desc", facet.name));
     }
     if (this.aggregates.length) grouping.push(rootAggregationRequest(this.aggregates));
 
@@ -253,9 +253,7 @@ export class SearchBuilder {
   }
 
   async execute(options?: ExecuteOptions): Promise<SearchResults> {
-    const result = new SearchResults(await this.index.client.search(this.build(), options));
-    for (const facet of this.facets) result.renameFacet(facet.field, facet.name);
-    return result;
+    return new SearchResults(await this.index.client.search(this.build(), options));
   }
 }
 

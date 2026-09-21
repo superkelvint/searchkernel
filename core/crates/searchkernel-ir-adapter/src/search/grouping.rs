@@ -668,7 +668,7 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
     use searchkernel_ir::GroupingOperationIr as Operation;
     use searchkernel_ir::{GroupingAggregationIr as Aggregation, GroupingExpressionIr as Expr};
 
-    if !value.continuations.is_empty() || value.root.label.is_some() {
+    if !value.continuations.is_empty() {
         return None;
     }
     let [Operation::Group(Expr::Attribute(field)), Operation::Each(each)] =
@@ -676,6 +676,9 @@ pub(crate) fn facet_lowering(value: &searchkernel_ir::GroupingRequestIr) -> Opti
     else {
         return None;
     };
+    if value.root.label.as_deref().is_some_and(|label| label != field) {
+        return None;
+    }
     if each.label.is_some() {
         return None;
     }
