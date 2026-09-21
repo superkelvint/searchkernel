@@ -11,4 +11,7 @@ docker run --rm -it \
 
 
 
-  rm -rf core/native/sdk/linux-x86_64 && core/native/vespa/build-sdk.sh
+  SEARCHKERNEL_BUILD_ENV=host \
+  SK_NATIVE_SDK="$PWD/target/host/native-sdk/linux-x86_64" \
+  SK_NATIVE_BUILD_DIR="$PWD/target/host/native-sdk-build" \
+    core/native/vespa/build-sdk.sh

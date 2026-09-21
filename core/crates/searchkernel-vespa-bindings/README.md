@@ -22,7 +22,12 @@ constants, and function declarations to `searchkernel-vespa-engine`.
 - Numeric constants and function signatures are compatibility contracts; the
   release-level shared-library ABI is checked with libabigail as documented in
   `../../native/ABI.md`.
-- SDK contents are generated/prebuilt artifacts; do not hand-edit them.
+- SDK contents are generated/prebuilt artifacts under the active target root
+  (`target/host/native-sdk`, `target/devcontainer/native-sdk`, or
+  `target/ci/native-sdk`); do not hand-edit them. `build.rs` verifies the
+  native-build fingerprint, compiles a real ABI link probe, and requests one
+  targeted SDK rebuild when a stale artifact is detected. See
+  [`docs/native-build-provenance.md`](../../../docs/native-build-provenance.md).
 - `src/bindings.rs` is checked in and used by normal builds. Run
   `tools/check-native-bindings.sh` to compare it with an explicit bindgen
   regeneration; this keeps libclang out of the normal build graph.

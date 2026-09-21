@@ -65,11 +65,16 @@ git -C upstream/vespa diff --cached --quiet
 If the checkout is wrong or tracked source is dirty, report it. Do not fix a
 milestone by patching Vespa itself. Untracked build artifacts may exist.
 
-`core/native/sdk/` is generated/prebuilt output. Normal Rust work consumes it
-without a Vespa build or Docker session. Do not hand-edit SDK contents. Rebuild
-them only when a task explicitly requires a native adapter, SDK, or otherwise
-missing native capability, using repository tooling against the pinned Vespa
-checkout.
+The Vespa SDK is generated/prebuilt output under the active Cargo target root:
+`target/host/native-sdk`, `target/devcontainer/native-sdk`, or `target/ci/native-sdk`.
+Normal Rust work consumes the SDK without a Vespa build or Docker session. Do
+not hand-edit SDK contents. Rust checks the recorded native-build provenance and
+links a real ABI probe before using it; a stale SDK is rebuilt once in its own
+native build directory. See
+[`docs/native-build-provenance.md`](../../docs/native-build-provenance.md).
+Rebuild the SDK only when a task explicitly requires a native adapter, SDK, or
+otherwise missing native capability, using repository tooling against the
+pinned Vespa checkout.
 
 Native changes must compile cleanly under the repository's configured warning
 policy. Do not bypass the native adapter or replace the real Vespa path with a

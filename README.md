@@ -138,7 +138,10 @@ stages `docs/CAPABILITIES.md` and `LIMITATIONS.md` in the same commit.
 `./dev doctor` is the first command to run when setup is uncertain. It reports
 the Cargo, FlatBuffers, generated protocol, native SDK/ABI, pinned Vespa,
 Python, and `searchkerneld` prerequisites individually. Run `./dev --help` for
-the complete command list.
+the complete command list. Native target isolation, SDK provenance validation,
+and automatic targeted recovery are documented in
+[`BUILDING.md`](BUILDING.md) and
+[`docs/native-build-provenance.md`](docs/native-build-provenance.md).
 
 FlatBuffers is the sole portable data contract. Non-Rust RPC carries canonical
 FlatBuffer bytes over generated gRPC. Standard FlatBuffers JSON is the only

@@ -82,8 +82,9 @@ core/crates/searchkernel-vespa-bindings/
 core/native/vespa/
   Search Kernel-owned C++ adapter around Vespa
 
-core/native/sdk/
-  Generated/prebuilt native SDK consumed by the Rust bindings
+target/<environment>/native-sdk/
+  Environment-specific generated/prebuilt native SDK consumed by the Rust
+  bindings; see [native-build-provenance.md](native-build-provenance.md)
 
 clients/
   Non-Rust language client package roots

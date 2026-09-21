@@ -393,7 +393,8 @@ express an already-verified Vespa capability.
 4. Update the public header, implementation, export/version map, and native
    adapter tests under `core/native/vespa/`.
 5. Rebuild generated/prebuilt SDK output only through the repository tooling;
-   never hand-edit `core/native/sdk/`.
+   it is written under the active environment's target root and must never be
+   hand-edited. See [native-build-provenance.md](native-build-provenance.md).
 6. Update the raw declarations in `searchkernel-vespa-bindings` and the safe
    `searchkernel-vespa-engine` wrapper. Direct FFI `unsafe` is allowed inside
    that engine boundary (the current wrapper uses it extensively); it must not

@@ -505,6 +505,13 @@ A developer working on the Rust API, IR, RPC layer, or language clients should n
 
 Changes to the native C++ adapter may require rebuilding the native SDK.
 
+Native outputs are environment-sensitive. Host, project-container, and CI
+Cargo target roots are isolated, and the Vespa SDK records the compiler,
+runtime, target, flags, pinned source, and native configuration that produced
+it. The Rust bindings validate that record and perform a real ABI link probe;
+one targeted rebuild is attempted automatically when the record or probe is
+stale. See [native-build-provenance.md](native-build-provenance.md).
+
 The transport migration should be additive until cutover:
 
 ```text

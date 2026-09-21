@@ -149,6 +149,16 @@ prefix may require `sudo`. Set `FLATBUFFERS_INSTALL_PREFIX` for a custom
 prefix, then use the `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH` exports printed by
 the command.
 
+Native build provenance is part of ordinary build behavior; see
+[BUILDING.md](BUILDING.md) for commands and
+[docs/native-build-provenance.md](docs/native-build-provenance.md) for the
+fingerprint details. Supported host, project-container, and CI workflows select
+separate Cargo target roots,
+and both `cargo build -p searchkerneld` and the Vespa SDK build validate native
+provenance before linking. A stale or incompatible native component is rebuilt
+once in its own build directory. Do not share `target/` or `core/native/sdk`
+between environments, and do not use `cargo clean` as a native-build repair.
+
 Start with `./dev doctor` when entering an unfamiliar checkout or when a build
 fails for an environment-related reason. It reports each prerequisite
 separately; fix or report failed prerequisites before diagnosing product code.
@@ -354,7 +364,12 @@ Rust panics must not unwind into C++.
 
 Prefer clear boundary copies over fragile zero-copy lifetimes until measurement shows a copy materially matters.
 
-`core/native/sdk/` is generated. Rebuild it only through repository tooling when the task actually requires a native adapter/SDK change.
+The Vespa SDK is generated under the active environment's Cargo target root
+(`target/host/native-sdk`, `target/devcontainer/native-sdk`, or
+`target/ci/native-sdk`). Rust validates its provenance and link compatibility
+before use; see [docs/native-build-provenance.md](docs/native-build-provenance.md).
+Rebuild it only through repository tooling when the task actually requires a
+native adapter/SDK change.
 
 Do not hand-edit generated SDK contents.
 

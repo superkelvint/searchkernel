@@ -126,7 +126,7 @@ from the active dirty worktree. Record:
 git rev-parse HEAD
 git -C upstream/vespa rev-parse HEAD
 cat reference/vespa/PINNED_VESPA.json
-cat core/native/sdk/linux-x86_64/manifest.json
+cat "$RUN/sdk/linux-x86_64/manifest.json"
 ~~~
 
 Run the environment preflight before any native qualification:
@@ -146,11 +146,13 @@ silently skipped.
 
 A clean Git clone does not contain the generated SDK. Before running native
 baseline tests, either copy or rebuild the current pinned SDK into the run
-directory, then assert that its manifest commit equals the current pin and that
-its library/header/configuration files exist. Use absolute SDK and Cargo
-target paths; do not rely on relative paths after changing directories. If the
-baseline SDK cannot be made valid, mark native baseline results blocked rather
-than producing cascading linker failures.
+directory, then assert that its manifest commit and native-build fingerprint
+match the selected environment and that its library/header/configuration files
+exist. Use absolute SDK and Cargo target paths; do not rely on relative paths
+after changing directories. If the baseline SDK cannot be made valid, mark
+native baseline results blocked rather than producing cascading linker failures.
+The SDK provenance and probe rules are documented in
+[native-build-provenance.md](native-build-provenance.md).
 
 Run the baseline:
 
@@ -200,6 +202,10 @@ SK_NATIVE_SDK="$RUN/sdk/linux-x86_64" \
 SK_NATIVE_BUILD_DIR="$RUN/native-build" \
   core/native/vespa/build-sdk.sh
 ~~~
+
+These explicit paths keep upgrade qualification independent from the normal
+host, container, and CI target roots. The script records the selected Vespa
+revision and native toolchain in the SDK manifest.
 
 Validate that the SDK manifest commit matches the selected commit, the public
 header leaks no Vespa types, symbols satisfy the ABI policy, dynamic

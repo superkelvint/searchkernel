@@ -11,7 +11,9 @@ The native side packages the Vespa engine behind a Search Kernel-owned C ABI.
 3. Read `vespa/manifest.json` and `vespa/build-sdk.sh` for packaging.
 4. Read `core/crates/searchkernel-vespa-bindings/README.md` to see how Rust
    consumes the ABI.
-5. Read `ABI.md` for the release-baseline and libabigail comparison workflow.
+5. Read [`../../docs/native-build-provenance.md`](../../docs/native-build-provenance.md)
+   for target isolation, SDK provenance, and automatic recovery.
+6. Read `ABI.md` for the release-baseline and libabigail comparison workflow.
 
 ## Key concepts
 

@@ -12,8 +12,10 @@ configuration details, and native error translation belong.
    `hardening.cc`, and `abi.cc` for the exported entry points.
 3. Read `embedded_crud_cfg/` to see the configuration consumed by the
    embedded engine.
-4. Read `build-sdk.sh` only when a native SDK rebuild is required.
-5. Read `../ABI.md` for the required debug-info and ABI comparison workflow.
+4. Read [`../../../docs/native-build-provenance.md`](../../../docs/native-build-provenance.md)
+   for the environment-specific SDK paths and automatic rebuild behavior.
+5. Read `build-sdk.sh` only when a native SDK rebuild is required.
+6. Read `../ABI.md` for the required debug-info and ABI comparison workflow.
 
 ## Key concepts
 
@@ -22,6 +24,9 @@ configuration details, and native error translation belong.
 - ABI status codes and error payloads are the only native behavior visible to
   Rust.
 - The pinned upstream checkout is read-only; adapt Vespa here instead.
+- `build-sdk.sh` writes only to the selected SDK/build paths and records the
+  native environment that produced them. The Rust bindings reject a stale or
+  incompatible SDK before the Rust linker sees it.
 
 ## Native adapter coverage
 

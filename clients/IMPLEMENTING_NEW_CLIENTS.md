@@ -1190,7 +1190,8 @@ Use the same convention across clients where practical:
 
 1. `SEARCHKERNEL_LOCAL_HOST` environment override;
 2. package-bundled `bin/searchkerneld` if the package strategy ships one;
-3. repository development fallback such as `target/debug/searchkerneld`.
+3. repository development fallback such as the active target's
+   `target/<environment>/debug/searchkerneld`.
 
 If the binary is absent, fail with a clear client error explaining that `searchkerneld` must be built/installed.
 
@@ -1201,7 +1202,9 @@ If the binary is absent, fail with a clear client error explaining that `searchk
 On development Linux setups, match Python behavior:
 
 1. use `SEARCHKERNEL_SDK_LIB` if configured;
-2. otherwise detect the repository native SDK lib directory;
+2. otherwise detect the selected environment's native SDK lib directory
+   (`SK_NATIVE_SDK` or the active target's `native-sdk/linux-x86_64`); see
+   [`docs/native-build-provenance.md`](../docs/native-build-provenance.md);
 3. prepend it to `LD_LIBRARY_PATH` for the child only.
 
 Do not mutate the parent process environment globally.

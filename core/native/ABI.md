@@ -9,6 +9,12 @@ therefore adds `-O2 -g` explicitly and does not strip the adapter library.
 Debug information is required because the ABI check compares the types
 reachable from exported functions, not only their symbol names.
 
+Native SDKs are environment-specific build products. They are written under
+the active Cargo target root, carry a native-build fingerprint, and are tested
+with a real ABI link probe before Rust uses them. See
+[`../../docs/native-build-provenance.md`](../../docs/native-build-provenance.md)
+for the target isolation and one-shot recovery rules.
+
 ## Compatibility contract
 
 This section is normative for the Search Kernel native ABI.
