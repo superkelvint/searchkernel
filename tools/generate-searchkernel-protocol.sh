@@ -2,13 +2,16 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+target_dir=${CARGO_TARGET_DIR:-$repo_root/target/host}
+if [[ "$target_dir" != /* ]]; then target_dir="$repo_root/$target_dir"; fi
 expected_version='25.12.19'
 if [[ -n "${FLATC_PATH:-}" ]]; then
     flatc_bin=$FLATC_PATH
 elif command -v flatc >/dev/null 2>&1; then
     flatc_bin=flatc
 else
-    flatc_bin=/usr/local/bin/flatc
+    flatc_bin=$(find "$target_dir/debug/build" -path '*/flatbuffers-build-*/out/bin/flatc' -type f -print -quit 2>/dev/null || true)
+    if [[ -z "$flatc_bin" && -x /usr/local/bin/flatc ]]; then flatc_bin=/usr/local/bin/flatc; fi
 fi
 
 if [[ ! -x "$flatc_bin" ]]; then

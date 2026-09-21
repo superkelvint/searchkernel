@@ -20,3 +20,13 @@ FlatBuffers schemas in `api/`.
   tooling, never an individual generated file.
 - `json` is only the generic standard FlatBuffers JSON ↔ BFBS boundary; it does
   not define a Search Kernel JSON dialect or semantic mapping layer.
+
+The native JSON bridge links against the repository's vendored FlatBuffers
+25.12.19 build. Its compiler, target, libc, C++ runtime, CMake configuration,
+and native flags are recorded in a fingerprint beside the CMake output. A
+fingerprint mismatch or failed parser link probe invalidates only that
+FlatBuffers output and retries one clean native rebuild automatically.
+The local `flatbuffers-build` fork is a normal dependency solely so Cargo can
+pass its `links` metadata to this crate's build script; the crate does not use
+that helper at runtime. This avoids scanning a shared target directory for a
+possibly unrelated archive.

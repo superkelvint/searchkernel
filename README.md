@@ -66,13 +66,28 @@ Search Kernel links against Vespa's native libraries at build time. None of the 
 
 Building and testing the workspace uses the official FlatBuffers C++ release
 `25.12.19` for the schema-aware JSON boundary and the matching `flatc`
-executable for generated language bindings and BFBS checks. The default
-installation locations are `/usr/local/include`, `/usr/local/lib`, and
-`/usr/local/bin`.
+executable for generated language bindings and BFBS checks. Cargo builds both
+from the pinned vendored source in a native-sensitive target directory and
+checks that the produced parser library can compile and link before accepting
+it.
 
-For a non-standard installation, set `FLATBUFFERS_CPP_ROOT` for Cargo and
-`FLATC_PATH` for schema and Python-generation checks. All installed components
-must be version `25.12.19`.
+The normal host target directory is `target/host`. The supported project
+container uses `target/devcontainer`, and CI uses `target/ci`; these directories
+must not be shared because they contain compiler- and libc-specific native
+artifacts. `CARGO_TARGET_DIR` remains available for explicit isolated builds.
+
+`FLATC_PATH` is still accepted by the standalone schema-generation scripts,
+but the Cargo protocol build always uses the matching vendored FlatBuffers
+toolchain so headers, `libflatbuffers.a`, and `flatc` cannot be mixed from
+different installations.
+
+The native-build regression verifier is `bash tools/test-native-build-hardening.sh`.
+It uses a temporary target directory to verify warm reuse, flag-driven targeted
+invalidation, preservation of an unrelated Rust artifact, and one-shot recovery
+after a deliberately corrupted FlatBuffers archive. The ABI workflow does not
+restore a native target cache; if a CI cache is added, its key must include the
+runner/image, Rust toolchain, target, C/C++ tool identities, libc, FlatBuffers
+source checksum, and native configuration.
 
 ### Development command surface
 
@@ -94,10 +109,12 @@ sudo ./dev install flatbuffers
 ```
 
 `./dev install flatbuffers` builds the pinned FlatBuffers C++ release with the
-position-independent static library and the `lib` layout required by Cargo.
-The default install prefix is `/usr/local`. For a non-root installation, set
+position-independent static library and the `lib` layout used by standalone
+schema tooling and doctor checks. The Cargo protocol build uses its own pinned
+vendored copy and does not consume this installation. The default install
+prefix is `/usr/local`. For a non-root installation, set
 `FLATBUFFERS_INSTALL_PREFIX`; the command prints the `FLATBUFFERS_CPP_ROOT`
-and `FLATC_PATH` exports needed afterward.
+and `FLATC_PATH` exports needed by those standalone tools.
 
 Run `./dev hooks install` once per checkout to enable the repository-managed
 pre-commit hook. When `docs/capabilities.json` is staged, it regenerates and

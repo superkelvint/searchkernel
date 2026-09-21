@@ -31,5 +31,6 @@ is the sole canonical portable data contract.
 
 The JSON tooling uses the official FlatBuffers C++ parser and text generator
 from FlatBuffers 25.12.19. Use matching headers, libraries, and `flatc` when
-regenerating committed BFBS artifacts; `FLATBUFFERS_ROOT` and `FLATC_PATH`
-select installations outside the defaults.
+regenerating committed BFBS artifacts. Cargo owns the authoritative vendored
+headers, library, and compiler; standalone generation scripts may use
+`FLATC_PATH` when they verify the same pinned version.

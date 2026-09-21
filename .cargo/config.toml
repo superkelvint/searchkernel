@@ -1,9 +1,15 @@
+[build]
+target-dir = "target/host"
+
+[env]
+SEARCHKERNEL_BUILD_ENV = { value = "host", force = false }
+
 [target.x86_64-unknown-linux-gnu]
 rustflags = [
-    "-C",
-    "link-arg=-Wl,-rpath,$ORIGIN/../../../core/native/sdk/linux-x86_64/lib",
     "-C",
     "link-arg=-Wl,-rpath,$ORIGIN/../../../../core/native/sdk/linux-x86_64/lib",
     "-C",
     "link-arg=-Wl,-rpath,$ORIGIN/../../../../../core/native/sdk/linux-x86_64/lib",
+    "-C",
+    "link-arg=-Wl,-rpath,$ORIGIN/../../../../../../core/native/sdk/linux-x86_64/lib",
 ]

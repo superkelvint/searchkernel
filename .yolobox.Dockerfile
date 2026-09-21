@@ -18,3 +18,5 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable
 
 ENV PATH="/home/yolo/.cargo/bin:${PATH}"
+ENV CARGO_TARGET_DIR=target/devcontainer
+ENV SEARCHKERNEL_BUILD_ENV=devcontainer

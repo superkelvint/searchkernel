@@ -26,7 +26,9 @@ Search Kernel development commands
 
 Environment overrides used by the underlying tools, including FLATC_PATH,
 FLATBUFFERS_CPP_ROOT, FLATBUFFERS_INSTALL_PREFIX, SK_NATIVE_SDK, and
-CARGO_TARGET_DIR, are honored.
+CARGO_TARGET_DIR, are honored. The normal host target directory is target/host;
+the supported dev container and CI select their own native-sensitive
+directories. Cargo's protocol build uses the vendored FlatBuffers copy.
 EOF
 }
 
@@ -236,12 +238,15 @@ worktree_create() {
 }
 
 find_flatc() {
+    local target_dir=${CARGO_TARGET_DIR:-$ROOT/target/host}
     if [[ -n "${FLATC_PATH:-}" ]]; then
         printf '%s\n' "$FLATC_PATH"
     elif command -v flatc >/dev/null 2>&1; then
         command -v flatc
     else
-        printf '%s\n' /usr/local/bin/flatc
+        flatc_bin=$(find "$target_dir" -type f -path '*/flatbuffers-build-*/out/bin/flatc' \
+            -perm -111 -print -quit 2>/dev/null || true)
+        [[ -n "$flatc_bin" ]] && printf '%s\n' "$flatc_bin" || printf '%s\n' /usr/local/bin/flatc
     fi
 }
 
@@ -261,7 +266,7 @@ doctor_flatbuffers_cpp() {
     flatc=${DOCTOR_FLATC:-$(find_flatc)}
     [[ -x "${flatc:-}" ]] || return 1
 
-    cpp_root=${FLATBUFFERS_CPP_ROOT:-/usr/local}
+    cpp_root=${FLATBUFFERS_CPP_ROOT:-$(cd -- "$(dirname -- "$flatc")/.." && pwd)}
     header="$cpp_root/include/flatbuffers/base.h"
     [[ -f "$header" ]] || return 1
     major=$(sed -n 's/^#define FLATBUFFERS_VERSION_MAJOR //p' "$header")
@@ -333,7 +338,7 @@ PY
 }
 
 doctor_searchkerneld() {
-    local target_dir=${CARGO_TARGET_DIR:-$ROOT/target}
+    local target_dir=${CARGO_TARGET_DIR:-$ROOT/target/host}
     local binary=${SEARCHKERNELD_BIN:-$target_dir/debug/searchkerneld}
     [[ -x "$binary" ]]
 }

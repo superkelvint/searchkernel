@@ -1,31 +1,55 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
-fn flatbuffers_root() -> PathBuf {
-    PathBuf::from(env::var_os("FLATBUFFERS_CPP_ROOT").unwrap_or_else(|| "/usr/local".into()))
+const FLATBUFFERS_VERSION: &str = "25.12.19";
+
+fn print_native_inputs() {
+    println!("cargo:rerun-if-changed=native");
+    println!("cargo:rerun-if-changed=bfbs/searchkernel_request.bfbs");
+    println!("cargo:rerun-if-changed=bfbs/searchkernel_response.bfbs");
+    println!("cargo:rerun-if-env-changed=DEP_FLATBUFFERS_BUILD_ROOT");
+
+    for name in [
+        "PATH",
+        "CC",
+        "CXX",
+        "AR",
+        "RANLIB",
+        "CFLAGS",
+        "CXXFLAGS",
+        "CPPFLAGS",
+        "LDFLAGS",
+        "CXXSTDLIB",
+        "CRATE_CC_NO_DEFAULTS",
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+
+    let target = env::var("TARGET").unwrap_or_default();
+    let target_underscore = target.replace('-', "_");
+    for base in [
+        "CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
+    ] {
+        for name in [
+            format!("{base}_{target}"),
+            format!("{base}_{target_underscore}"),
+            format!("HOST_{base}"),
+        ] {
+            println!("cargo:rerun-if-env-changed={name}");
+        }
+    }
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=native/flatbuffers_json_bridge.cc");
-    println!("cargo:rerun-if-changed=native/flatbuffers_json_bridge.h");
-    println!("cargo:rerun-if-changed=bfbs/searchkernel_request.bfbs");
-    println!("cargo:rerun-if-changed=bfbs/searchkernel_response.bfbs");
-    println!("cargo:rerun-if-env-changed=FLATBUFFERS_CPP_ROOT");
+    print_native_inputs();
 
-    let root = flatbuffers_root();
+    let root = PathBuf::from(
+        env::var_os("DEP_FLATBUFFERS_BUILD_ROOT")
+            .expect("flatbuffers-build did not export its native root"),
+    );
     let include = root.join("include");
     let library = root.join("lib");
-    if !include.join("flatbuffers/idl.h").is_file() {
-        panic!(
-            "FlatBuffers 25.12.19 C++ headers were not found under '{}'; install the pinned FlatBuffers build under /usr/local or set FLATBUFFERS_CPP_ROOT",
-            include.display()
-        );
-    }
-    if !library.join("libflatbuffers.a").is_file() {
-        panic!(
-            "FlatBuffers 25.12.19 C++ library was not found at '{}'; install the pinned FlatBuffers build under /usr/local or set FLATBUFFERS_CPP_ROOT",
-            library.join("libflatbuffers.a").display()
-        );
-    }
+    verify_flatbuffers_version(&include)
+        .expect("FlatBuffers headers do not match the vendored library");
 
     cc::Build::new()
         .cpp(true)
@@ -42,5 +66,28 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     } else if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=c++");
+    }
+}
+
+fn verify_flatbuffers_version(include: &std::path::Path) -> Result<(), String> {
+    let header = fs::read_to_string(include.join("flatbuffers/base.h"))
+        .map_err(|error| format!("read FlatBuffers version header: {error}"))?;
+    let major = header
+        .lines()
+        .find_map(|line| line.strip_prefix("#define FLATBUFFERS_VERSION_MAJOR "))
+        .ok_or_else(|| "FlatBuffers major version is missing".to_owned())?;
+    let minor = header
+        .lines()
+        .find_map(|line| line.strip_prefix("#define FLATBUFFERS_VERSION_MINOR "))
+        .ok_or_else(|| "FlatBuffers minor version is missing".to_owned())?;
+    let revision = header
+        .lines()
+        .find_map(|line| line.strip_prefix("#define FLATBUFFERS_VERSION_REVISION "))
+        .ok_or_else(|| "FlatBuffers revision is missing".to_owned())?;
+    let actual = format!("{major}.{minor}.{revision}");
+    if actual == FLATBUFFERS_VERSION {
+        Ok(())
+    } else {
+        Err(format!("expected {FLATBUFFERS_VERSION}, got {actual}"))
     }
 }
