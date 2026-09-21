@@ -13,17 +13,24 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 
 | Capability | Area | Core / backend | Rust | Python | TypeScript |
 | --- | --- | --- | --- | --- | --- |
+| Term and fielded contains queries (query.term) | query | — | — | — | — |
+| True and false query constants (query.boolean_constants) | query | — | — | — | — |
+| Comparison queries (query.comparison) | query | — | — | — | — |
+| Range queries (query.range) | query | — | — | — | — |
 | Boolean query operators (query.boolean) | query | — | — | — | — |
 | Phrase queries (query.phrase) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
 | Near and ordered-near proximity queries (query.proximity) | query | — | — | ergonomic · E2E (grpc) | — |
 | sameElement query (query.same_element) | query | — | — | ergonomic · E2E (grpc) | — |
 | Fuzzy query (query.fuzzy) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
 | Prefix, suffix, and substring queries (query.prefix_suffix_substring) | query | — | — | — | — |
-| Alternatives and equivalence queries (query.alternatives) | query | — | — | — | — |
+| Alternatives queries (query.alternatives) | query | — | — | — | — |
 | Nearest-neighbor vector search (query.nearest_neighbor) | query | — | — | — | ergonomic · E2E (node, shared) |
 | Geo-location and bounding-box queries (query.geo) | query | — | — | ergonomic · E2E (grpc) | — |
 | Predicate queries (query.predicate) | query | — | — | — | — |
-| WeakAnd, weighted-set, dot-product, and WAND queries (query.weighted_and_wand) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
+| WeakAnd and WAND queries (query.weighted_and_wand) | query | — | ergonomic · E2E (native) | ergonomic · E2E (grpc) | — |
+| Weighted-set and dot-product queries (query.weighted_set_dot_product) | query | — | — | — | — |
+| Equivalence queries (query.equivalence) | query | — | — | — | — |
+| Rank query composition (query.rank) | query | — | — | — | — |
 | userInput and userQuery text parsing (query.user_input_user_query) | query | — | — | — | — |
 | Structured filters (filter.structured) | filter | — | — | — | — |
 | Textual filter expressions (filter.textual) | filter | — | — | E2E (grpc) | ergonomic · E2E (node, shared) |
@@ -54,6 +61,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
 | Dense tensor document values (tensor.dense_document_crud) | tensor | — | — | — | — |
 | YQL query source (query.yql) | query | — | — | — | — |
 | Analyzed text search with default WeakAnd semantics (query.text_weak_and) | query | — | — | — | — |
+| Typed analyzed-text query nodes (query.typed_text) | query | — | — | — | — |
 | Native in-term queries (query.in_term) | query | — | — | — | — |
 | NonEmpty query wrapper (query.non_empty) | query | — | — | — | — |
 | Labeled query rank properties (query.labels) | query | — | — | — | — |
@@ -112,7 +120,7 @@ capabilities, E2E 1/3 means one of three scenarios has E2E evidence.
   - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
   - python / grpc / ergonomic — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L466)
 
-### WeakAnd, weighted-set, dot-product, and WAND queries (query.weighted_and_wand)
+### WeakAnd and WAND queries (query.weighted_and_wand)
 
 - **Basic behavior** (basic)
   - python / grpc / e2e — [clients/python/tests/test_grpc_e2e.py](../clients/python/tests/test_grpc_e2e.py#L373)
