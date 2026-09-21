@@ -535,7 +535,19 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 None
             } else {
                 match (&field.analyzer_config, &field.analyzer) {
-                    (Some(analyzer), _) => Some(analyzer.clone()),
+                    // Described fields may expose Vespa analyzer metadata that
+                    // the Rust execution resolver cannot run. The public
+                    // projection is restored below after resolution, so use
+                    // the resolver's standard default while validating the
+                    // rest of the field shape.
+                    (Some(analyzer), _)
+                        if analyzer.name == "standard"
+                            && analyzer.version == 1
+                            && analyzer.options.is_empty() =>
+                    {
+                        Some(analyzer.clone())
+                    }
+                    (Some(_), _) => None,
                     (None, Some(analyzer)) => Some(analyzer_to_ir(analyzer)?),
                     (None, None) => None,
                 }

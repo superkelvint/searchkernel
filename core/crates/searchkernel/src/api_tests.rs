@@ -1600,7 +1600,9 @@ fn described_field_preserves_custom_analyzer_options() {
         })
     );
 
-    let reused = IndexDefinition::new().field(described.fields()[0].clone());
+    let mut public_field = described.fields()[0].clone();
+    public_field.canonical = None;
+    let reused = IndexDefinition::new().field(public_field);
     let resolved = definition_to_ir(&reused).expect("reused field should resolve");
     assert_eq!(resolved.fields()[0].analyzer(), Some(analyzer));
     assert_eq!(
