@@ -46,6 +46,11 @@ from SearchKernel.V2.GroupingExpressionKind import GroupingExpressionKind  # noq
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
 from SearchKernel.V2.QueryExprKind import QueryExprKind  # noqa: E402
+from SearchKernel.V2.Relevance import RelevanceT  # noqa: E402
+from SearchKernel.V2.RelevanceKind import RelevanceKind  # noqa: E402
+from SearchKernel.V2.FiniteRelevance import FiniteRelevanceT  # noqa: E402
+from SearchKernel.V2.PositiveInfinityRelevance import PositiveInfinityRelevanceT  # noqa: E402
+from SearchKernel.V2.NegativeInfinityRelevance import NegativeInfinityRelevanceT  # noqa: E402
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind  # noqa: E402
 from searchkernel.ergonomic import SearchBuilder  # noqa: E402
 
@@ -544,6 +549,63 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(hit.features["scalar"], 3.5)
         self.assertEqual(hit.features["opaque"], b"native-data")
         self.assertEqual(hit.sort_values, [7])
+
+    def test_hit_preserves_source_types_feature_maps_and_relevance_kinds(self):
+        base = dict(
+            id="doc:1",
+            fields=[],
+            source="catalog",
+            types=["product", "featured"],
+            matchFeatures=[
+                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                    key="match", value=value(["one", True])
+                )
+            ],
+            summaryFeatures=[
+                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                    key="summary", value=value({"ready": True})
+                )
+            ],
+            rankFeatures=[
+                __import__("SearchKernel.V2.ValueEntry", fromlist=["ValueEntryT"]).ValueEntryT(
+                    key="rank", value=value(7)
+                )
+            ],
+            sortValues=[value("a"), value(9)],
+            highlights=[],
+        )
+
+        finite = Hit(SimpleNamespace(
+            **base,
+            relevance=RelevanceT(
+                valueType=RelevanceKind.FiniteRelevance,
+                value=FiniteRelevanceT(value=2.5),
+            ),
+        ))
+        positive = Hit(SimpleNamespace(
+            **base,
+            relevance=RelevanceT(
+                valueType=RelevanceKind.PositiveInfinityRelevance,
+                value=PositiveInfinityRelevanceT(),
+            ),
+        ))
+        negative = Hit(SimpleNamespace(
+            **base,
+            relevance=RelevanceT(
+                valueType=RelevanceKind.NegativeInfinityRelevance,
+                value=NegativeInfinityRelevanceT(),
+            ),
+        ))
+
+        self.assertEqual(finite.source, "catalog")
+        self.assertEqual(finite.types, ["product", "featured"])
+        self.assertEqual(finite.match_features["match"], ["one", True])
+        self.assertEqual(finite.summary_features["summary"], {"ready": True})
+        self.assertEqual(finite.rank_features["rank"], 7)
+        self.assertEqual(finite.sort_values, ["a", 9])
+        self.assertEqual(finite.relevance, 2.5)
+        self.assertEqual(positive.relevance, float("inf"))
+        self.assertEqual(negative.relevance, float("-inf"))
 
     def test_hit_preserves_structured_highlights(self):
         from types import SimpleNamespace

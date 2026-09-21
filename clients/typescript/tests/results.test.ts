@@ -9,6 +9,8 @@ import { OptionalBoolT } from "../src/generated/flatbuffers/search-kernel/v2/opt
 import { OptionalDoubleT } from "../src/generated/flatbuffers/search-kernel/v2/optional-double.js";
 import { OptionalUInt32T } from "../src/generated/flatbuffers/search-kernel/v2/optional-uint32.js";
 import { OptionalUInt64T } from "../src/generated/flatbuffers/search-kernel/v2/optional-uint64.js";
+import { PositiveInfinityRelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/positive-infinity-relevance.js";
+import { NegativeInfinityRelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/negative-infinity-relevance.js";
 import { RelevanceKind } from "../src/generated/flatbuffers/search-kernel/v2/relevance-kind.js";
 import { RelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/relevance.js";
 import { ResultGroupT } from "../src/generated/flatbuffers/search-kernel/v2/result-group.js";
@@ -155,4 +157,20 @@ it("projects named facets only when explicitly requested", () => {
 
   result.projectFacet("brands", "brands");
   expect(result.facets).toEqual({ brands: [{ value: "Acme", count: 3n }] });
+});
+
+
+it("decodes finite and infinite relevance kinds consistently", () => {
+  const relevance = [
+    [new RelevanceT(RelevanceKind.FiniteRelevance, new FiniteRelevanceT(2.5)), 2.5],
+    [new RelevanceT(RelevanceKind.PositiveInfinityRelevance, new PositiveInfinityRelevanceT()), Number.POSITIVE_INFINITY],
+    [new RelevanceT(RelevanceKind.NegativeInfinityRelevance, new NegativeInfinityRelevanceT()), Number.NEGATIVE_INFINITY],
+  ] as const;
+
+  for (const [score, expected] of relevance) {
+    const hit = new HitT("doc-1", score);
+    const root = new ResultGroupT(null, null, null, [], [new ResultNodeT(ResultNodeKind.Hit, hit)]);
+    const result = new SearchResults(new SearchResultT(node(root)));
+    expect(result.hits[0]?.relevance).toBe(expected);
+  }
 });
