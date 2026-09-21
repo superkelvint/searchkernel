@@ -517,6 +517,41 @@ fn semantically_invalid_portable_provenance_does_not_block_reopen() {
 }
 
 #[test]
+fn previous_v3_manifest_reopens_from_persisted_resolved_definition() {
+    let root = temporary_path("manifest-v3-reopen");
+    let config = root.join("config");
+    write_config(&config);
+    let definition = manifest_definition();
+    let resolved = definition_from_ir(&definition_to_ir(&definition).unwrap());
+    let manifest = IndexManifest::for_definitions(
+        &crate::portable_definition::encode_portable_definition(&definition),
+        &resolved_context(&resolved),
+        &config,
+    )
+    .unwrap();
+    manifest.write(&root).unwrap();
+
+    let manifest_path = root.join("manifest/index.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    value["manifest_format_version"] = serde_json::json!(3);
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("resolved_schema_snapshot_version");
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("resolved_schema_snapshot");
+    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+    let loaded = IndexManifest::read(&root).expect("v3 manifest should remain reopenable");
+    assert_eq!(loaded.definition().unwrap(), resolved);
+    loaded.validate_config(&config).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn sparse_resolved_snapshot_is_rejected_before_caller_intent_resolution() {
     let root = temporary_path("manifest-sparse-resolved-snapshot");
     let config = root.join("config");
