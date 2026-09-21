@@ -1914,6 +1914,7 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                     document_id,
                     score,
                     fields,
+                    highlights: Vec::new(),
                     match_features: BTreeMap::new(),
                 });
             }
