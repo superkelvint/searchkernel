@@ -26,5 +26,8 @@ jobs:
       - name: Check repository layout
         run: bash tools/check-layout.sh
 
+      - name: Verify cross-worktree native SDK cache
+        run: bash tools/test-native-sdk-cache.sh
+
       - name: Check public Vespa ABI header
         run: python3 tools/check_abi_surface.py core/native/vespa/searchkernel_vespa.h

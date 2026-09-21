@@ -286,6 +286,8 @@ verification, generation, and acceptance lanes:
 ./dev verify m13
 ./dev verify integration
 ./dev install flatbuffers
+./dev native-sdk ensure
+./dev native-sdk path
 ./dev worktree create my-task
 ```
 
@@ -302,9 +304,19 @@ Native build provenance is part of ordinary build behavior; see
 fingerprint details. Supported host, project-container, and CI workflows select
 separate Cargo target roots,
 and both `cargo build -p searchkerneld` and the Vespa SDK build validate native
-provenance before linking. A stale or incompatible native component is rebuilt
-once in its own build directory. Do not share `target/` or `core/native/sdk`
-between environments, and do not use `cargo clean` as a native-build repair.
+provenance before linking. A stale or incompatible native component is rebuilt once in its own build
+directory. Do not share `target/` or `core/native/sdk` between environments,
+and do not use `cargo clean` as a native-build repair.
+
+Vespa SDK packages are the exception to worktree-local build outputs: ordinary
+host worktrees resolve them through the immutable content-addressed store under
+the repository's Git common directory. The cache key is the native provenance
+fingerprint, so Rust-only worktrees may safely reuse one SDK while a change to
+Vespa, Search Kernel native adapter sources, toolchain identity, target, or
+native flags selects a different object. Published cache objects are read-only
+and must never be rebuilt in place. Use `./dev native-sdk ensure` (or normal
+all-features Cargo commands, which do this automatically) rather than copying
+SDK directories between worktrees.
 
 Start with `./dev doctor` when entering an unfamiliar checkout or when a build
 fails for an environment-related reason. It reports each prerequisite
@@ -511,12 +523,19 @@ Rust panics must not unwind into C++.
 
 Prefer clear boundary copies over fragile zero-copy lifetimes until measurement shows a copy materially matters.
 
-The Vespa SDK is generated under the active environment's Cargo target root
-(`target/host/native-sdk`, `target/devcontainer/native-sdk`, or
-`target/ci/native-sdk`). Rust validates its provenance and link compatibility
-before use; see [docs/native-build-provenance.md](docs/native-build-provenance.md).
-Rebuild it only through repository tooling when the task actually requires a
-native adapter/SDK change.
+The normal Vespa SDK is resolved through an immutable, content-addressed cache
+under the repository's Git common directory. The cache remains partitioned by
+build environment and Rust target, and the object key is the full native
+provenance fingerprint. A worktree that does not contain untracked Vespa build
+outputs may reuse a matching configured `upstream/vespa` from a sibling
+worktree with the same pinned Vespa identity. Rust validates the selected
+object before linking; see
+[docs/native-build-provenance.md](docs/native-build-provenance.md).
+
+Do not copy, edit, or rebuild a published cache object in place. Native source
+or toolchain changes must resolve to a different object. Use
+`./dev native-sdk ensure` or normal Cargo verification to populate the cache.
+Set `SK_NATIVE_SDK` only for a deliberately isolated custom SDK.
 
 Do not hand-edit generated SDK contents.
 

@@ -2,9 +2,10 @@
 
 Search Kernel builds Rust code together with two native components: the
 vendored FlatBuffers C++ library and, for the default native feature, the
-Vespa adapter SDK. Native outputs are compiler- and runtime-sensitive, so the
-repository selects an environment-specific Cargo target root and validates
-native provenance before linking.
+Vespa adapter SDK. Native outputs are compiler- and runtime-sensitive. Cargo
+build outputs remain environment-local, while Vespa SDK packages are resolved
+through an immutable content-addressed store shared by Git worktrees and keyed
+by the full native provenance fingerprint.
 
 ## Normal development
 
@@ -16,7 +17,9 @@ environment failure:
 ```
 
 The normal host workflow uses `target/host` automatically through
-`.cargo/config.toml`:
+`.cargo/config.toml`. Before linking a native target, Cargo resolves the
+matching shared SDK automatically; `./dev native-sdk ensure` may be used to
+populate it explicitly:
 
 ```bash
 cargo build -p searchkerneld
@@ -30,6 +33,12 @@ missing, stale, or incompatible, Cargo invokes one targeted SDK rebuild and
 tries the probe once more. A second failure is reported with the prerequisite,
 compiler, target, and linker diagnostics that need attention.
 
+The cache is stored below the repository's Git common directory, so all
+worktrees from one clone can reuse matching SDK objects without sharing mutable
+build directories. Published objects are read-only. A different native source,
+Vespa/config identity, target, compiler/runtime, or relevant native flag yields
+a different fingerprint and therefore a different object.
+
 The no-default-features workspace command exercises the Rust and FlatBuffers
 paths without requiring the optional Vespa SDK:
 
@@ -41,11 +50,11 @@ cargo test --workspace --all-targets --no-default-features
 
 Supported workflows use these independent target roots:
 
-| Environment | Target root | Native SDK |
+| Environment | Cargo target root | Vespa SDK namespace |
 | --- | --- | --- |
-| Host | `target/host` | `target/host/native-sdk/linux-x86_64` |
-| Project container | `target/devcontainer` | `target/devcontainer/native-sdk/linux-x86_64` |
-| CI | `target/ci` | `target/ci/native-sdk/linux-x86_64` |
+| Host | `target/host` | `<git-common-dir>/searchkernel/native-sdk-cache/host/<target>/objects/<fingerprint>` |
+| Project container | `target/devcontainer` | `.../native-sdk-cache/devcontainer/<target>/objects/<fingerprint>` |
+| CI | `target/ci` | `.../native-sdk-cache/ci/<target>/objects/<fingerprint>` |
 
 The project container sets `CARGO_TARGET_DIR=target/devcontainer`. The CI ABI
 workflow sets `CARGO_TARGET_DIR=target/ci`. Do not manually mount or restore a
@@ -61,10 +70,12 @@ SEARCHKERNEL_BUILD_ENV=my-native-environment \
   cargo build -p searchkerneld
 ```
 
-`CARGO_TARGET_DIR` is the isolation boundary. `SK_NATIVE_SDK` is available for
-an explicitly managed SDK outside the default target root, but it must point to
-an SDK built for the same compiler, target, libc, C++ runtime, Vespa source,
-and native flags as the consuming build.
+`CARGO_TARGET_DIR` remains the isolation boundary for Cargo/FlatBuffers build
+outputs. The Vespa SDK resolver separately partitions its shared object store by
+`SEARCHKERNEL_BUILD_ENV` and target, then keys objects by the complete native
+fingerprint. `SK_NATIVE_SDK` bypasses this resolver for an explicitly managed
+SDK and must point to an SDK built for the same compiler, target, libc, C++
+runtime, Vespa source, and native flags as the consuming build.
 
 ## FlatBuffers
 
@@ -81,9 +92,22 @@ outputs and unrelated native components remain intact.
 
 ## Vespa SDK builds
 
-Normal `cargo build -p searchkerneld` is the preferred entry point. A direct
-SDK build is useful for native adapter work, qualification, or a configured
-Vespa checkout with explicit dependency paths:
+Normal `cargo build -p searchkerneld` is the preferred entry point. The
+equivalent explicit cache commands are:
+
+```bash
+./dev native-sdk ensure
+./dev native-sdk path
+```
+
+If the current worktree lacks untracked configured Vespa build outputs, the
+resolver searches sibling Git worktrees for a configured `upstream/vespa`
+with the same pinned Vespa identity. This is what allows an isolated agent
+worktree to run all-features Clippy/tests without copying the large Vespa build
+tree.
+
+A direct SDK build is still useful for native adapter qualification or an
+explicitly managed SDK:
 
 ```bash
 VESPA_ROOT="$PWD/upstream/vespa" \
@@ -93,11 +117,13 @@ SK_NATIVE_BUILD_DIR="$PWD/target/host/native-sdk-build" \
   core/native/vespa/build-sdk.sh
 ```
 
-The pinned Vespa checkout must already have the configured CMake outputs and
-dependency installation expected by `build-sdk.sh`. The script stages and
-publishes the SDK atomically, writes its fingerprint and manifest, and never
-requires deleting the whole target directory. Use a separate SDK/build path
-for qualification or sanitizer configurations.
+The selected Vespa checkout must have the configured CMake outputs and
+dependency installation expected by `build-sdk.sh`. The shared resolver
+serializes builders per fingerprint, builds into a private staging directory,
+verifies the resulting fingerprint, marks the completed SDK read-only, and
+publishes it atomically. It never builds directly inside an object visible to
+another worktree. Use a separate SDK/build path for qualification or sanitizer
+configurations when bypassing the resolver.
 
 When a task worktree does not contain `vespa-deps`, the script looks for a
 repository-local `vespa-deps` in a sibling Git worktree before falling back to

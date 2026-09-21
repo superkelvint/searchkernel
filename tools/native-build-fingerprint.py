@@ -96,6 +96,36 @@ def rust_identity() -> str:
     return command_output(os.environ.get("RUSTC", "rustc"), "-vV")
 
 
+def git_tree_identity(path: Path) -> str:
+    """Return the Git identity of path without coupling it to a parent worktree HEAD."""
+    resolved = path.resolve()
+    try:
+        top_result = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        return f"error={error}"
+    if top_result.returncode != 0:
+        return (
+            f"status={top_result.returncode}\n"
+            f"stdout={top_result.stdout}\n"
+            f"stderr={top_result.stderr}"
+        )
+
+    top = Path(top_result.stdout.strip()).resolve()
+    if top == resolved:
+        return command_output("git", "-C", str(resolved), "rev-parse", "HEAD")
+
+    try:
+        relative = resolved.relative_to(top).as_posix()
+    except ValueError:
+        return f"error={resolved} is outside git top-level {top}"
+    return command_output("git", "-C", str(top), "rev-parse", f"HEAD:{relative}")
+
+
 def canonical(fields: dict[str, str]) -> str:
     def escape(value: str) -> str:
         return value.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
@@ -126,7 +156,7 @@ def fingerprint(root: Path, vespa_root: Path, target: str) -> tuple[str, str]:
             + command_output("getconf", "GNU_LIBC_VERSION")
         ),
         "flatbuffers.version": os.environ.get("FLATBUFFERS_VERSION", "25.12.19"),
-        "vespa.commit": command_output("git", "-C", str(vespa_root), "rev-parse", "HEAD"),
+        "vespa.commit": git_tree_identity(vespa_root),
         "vespa.config": vespa_config_digest(vespa_root),
         "native.source": source_digest(root),
     }
