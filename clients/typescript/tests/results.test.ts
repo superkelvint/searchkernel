@@ -12,6 +12,7 @@ import { OptionalUInt64T } from "../src/generated/flatbuffers/search-kernel/v2/o
 import { RelevanceKind } from "../src/generated/flatbuffers/search-kernel/v2/relevance-kind.js";
 import { RelevanceT } from "../src/generated/flatbuffers/search-kernel/v2/relevance.js";
 import { ResultGroupT } from "../src/generated/flatbuffers/search-kernel/v2/result-group.js";
+import { ResultLimitsT } from "../src/generated/flatbuffers/search-kernel/v2/result-limits.js";
 import { ResultNodeKind } from "../src/generated/flatbuffers/search-kernel/v2/result-node-kind.js";
 import { ResultNodeT } from "../src/generated/flatbuffers/search-kernel/v2/result-node.js";
 import { SearchResultT } from "../src/generated/flatbuffers/search-kernel/v2/search-result.js";
@@ -39,6 +40,12 @@ describe("ergonomic search results", () => {
       null,
       value("Acme"),
       [new ValueEntryT("count", value(3))],
+      [],
+      [],
+      null,
+      [],
+      null,
+      new ResultLimitsT(value(1), value(10)),
     );
     const facetGroup = new ResultGroupT(
       null,
@@ -81,12 +88,13 @@ describe("ergonomic search results", () => {
     expect(result.hits[0]?.get("title")).toBe("Rust");
     expect(result.hits[0]?.matchFeatures.blob).toEqual(new Uint8Array([1, 2]));
     expect(result.groups[0]?.label).toBe("brand");
+    expect(result.groups[0]?.groups[0]?.limits).toEqual({ from: 1n, to: 10n });
     expect(result.facets.brand).toEqual([{ value: "Acme", count: 3n }]);
     expect(result.aggregations.avg_price).toBe(12.5);
     expect(result.totalHits).toBe(10n);
     expect(result.totalHitsRelation).toBe("exact");
     expect(result.coverage?.full).toBe(true);
-    expect(result.continuations).toEqual(["token-1"]);
+    expect(result.continuations).toEqual([{ key: "next", value: "token-1" }]);
     expect(result.root).not.toBeNull();
   });
 });

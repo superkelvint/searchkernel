@@ -91,6 +91,7 @@ from SearchKernel.V2.QueryWand import QueryWandT
 from SearchKernel.V2.QueryWeakAnd import QueryWeakAndT
 from SearchKernel.V2.WeightedQueryItem import WeightedQueryItemT
 from SearchKernel.V2.RankingRequest import RankingRequestT
+from SearchKernel.V2.RelevanceKind import RelevanceKind
 from SearchKernel.V2.SearchRequest import SearchRequestT
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
 from SearchKernel.V2.SortDirection import SortDirection
@@ -963,6 +964,51 @@ class Coverage:
         self.metadata = _value_entries(getattr(node, "metadata", None))
 
 
+class SearchTiming:
+    def __init__(self, node):
+        self.query_time_seconds = _optional_value(getattr(node, "queryTimeSeconds", None))
+        self.search_time_seconds = _optional_value(getattr(node, "searchTimeSeconds", None))
+        self.summary_fetch_time_seconds = _optional_value(
+            getattr(node, "summaryFetchTimeSeconds", None)
+        )
+        self.metadata = _value_entries(getattr(node, "metadata", None))
+
+
+class ResultIssue:
+    def __init__(self, node):
+        self.code = node.code
+        self.summary = node.summary
+        self.message = node.message
+        self.source = node.source
+        self.stack_trace = node.stackTrace
+        self.transient = _optional_value(getattr(node, "transient", None))
+        self.metadata = _value_entries(getattr(node, "metadata", None))
+
+
+class ResultLimits:
+    def __init__(self, node):
+        self.from_ = _python_value(getattr(node, "from_", None))
+        self.to = _python_value(getattr(node, "to", None))
+
+
+class ResultContinuation:
+    def __init__(self, node):
+        self.key = node.key
+        self.value = node.value
+
+
+def _relevance_value(node):
+    if node is None or node.valueType == RelevanceKind.NONE:
+        return None
+    if node.valueType == RelevanceKind.FiniteRelevance:
+        return node.value.value
+    if node.valueType == RelevanceKind.PositiveInfinityRelevance:
+        return float("inf")
+    if node.valueType == RelevanceKind.NegativeInfinityRelevance:
+        return float("-inf")
+    raise ValueError(f"unsupported relevance kind: {node.valueType}")
+
+
 class Hit(dict):
     def __init__(self, node):
         super().__init__(_value_entries(node.fields))
@@ -998,12 +1044,21 @@ class Hit(dict):
 class ResultGroup(dict):
     def __init__(self, node):
         super().__init__({entry.key: _python_value(entry.value) for entry in (node.fields or [])})
+        self.id = node.id
+        self.source = node.source
+        self.types = [
+            item.decode("utf-8") if isinstance(item, bytes) else item
+            for item in (node.types or [])
+        ]
         self.value = _python_value(node.value)
+        self.relevance = _relevance_value(node.relevance)
+        self.limits = ResultLimits(node.limits) if node.limits is not None else None
+        self.metadata = _value_entries(node.metadata)
         self.label, self.fields = node.label, self
         self.children = [_node(child) for child in (node.children or [])]
         self.groups = [child for child in self.children if isinstance(child, ResultGroup)]
         self.hits = [child for child in self.children if isinstance(child, Hit)]
-        self.continuations = [entry.value for entry in (node.continuations or [])]
+        self.continuations = [ResultContinuation(entry) for entry in (node.continuations or [])]
 
 
 def _node(node):
@@ -1035,7 +1090,12 @@ class SearchResults:
         self.total_hits_relation = result.totalHits.relation if result.totalHits is not None else "unknown"
         coverage = getattr(result, "coverage", None)
         self.coverage = Coverage(coverage) if coverage is not None else None
-        self.issues = list(getattr(result, "errors", None) or [])
+        timing = getattr(result, "timing", None)
+        self.timing = SearchTiming(timing) if timing is not None else None
+        self.errors = [ResultIssue(error) for error in (getattr(result, "errors", None) or [])]
+        self.issues = self.errors
+        self.trace = _python_value(getattr(result, "trace", None))
+        self.metadata = _value_entries(getattr(result, "metadata", None))
         self.aggregations = dict(self.root) if isinstance(self.root, ResultGroup) else {}
         self.continuations = list(getattr(self.root, "continuations", []) or []) if self.root else []
         self.facets = {}
@@ -1050,7 +1110,8 @@ class SearchResults:
 
 __all__ = [
     "Boolean", "Coverage", "CoverageDegraded", "Float", "Group", "Hit",
-    "Integer", "Keyword", "PatchBuilder", "RankProfile", "ResultGroup",
-    "SearchBuilder", "SearchResults", "Tensor", "TensorField", "Text",
-    "UpdateBuilder", "YqlBuilder", "agg", "asc", "desc", "g", "gf", "q",
+    "Integer", "Keyword", "PatchBuilder", "RankProfile", "ResultContinuation",
+    "ResultGroup", "ResultIssue", "ResultLimits", "SearchBuilder", "SearchResults",
+    "SearchTiming", "Tensor", "TensorField", "Text", "UpdateBuilder", "YqlBuilder",
+    "agg", "asc", "desc", "g", "gf", "q",
 ]

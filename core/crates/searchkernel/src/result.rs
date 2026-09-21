@@ -30,7 +30,10 @@ pub struct SearchResult<T> {
     pub facets: Vec<FacetResult>,
     pub groups: Vec<GroupingResult>,
     pub coverage: Option<Coverage>,
+    pub timing: Option<SearchTiming>,
     pub issues: Vec<ResultIssue>,
+    pub trace: Option<serde_json::Value>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,7 +91,19 @@ pub struct ResultIssue {
     pub code: i64,
     pub summary: Option<String>,
     pub message: Option<String>,
+    pub source: Option<String>,
+    pub stack_trace: Option<String>,
     pub transient: Option<bool>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+/// Backend timing values, expressed in portable seconds.
+pub struct SearchTiming {
+    pub query_time_seconds: Option<f64>,
+    pub search_time_seconds: Option<f64>,
+    pub summary_fetch_time_seconds: Option<f64>,
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,7 +166,19 @@ pub(crate) fn search_result<T: serde::de::DeserializeOwned>(
         facets,
         groups,
         coverage: result.coverage.map(coverage),
-        issues: result.errors.into_iter().map(result_issue).collect(),
+        timing: result.timing.map(search_timing).transpose()?,
+        issues: result
+            .errors
+            .into_iter()
+            .map(result_issue)
+            .collect::<Result<Vec<_>>>()?,
+        trace: result.trace.map(json_value).transpose()?,
+        metadata: fields_to_json(result.metadata)?
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
     })
 }
 
@@ -260,13 +287,35 @@ fn coverage(value: core::Coverage) -> Coverage {
     }
 }
 
-fn result_issue(value: core::SearchResultError) -> ResultIssue {
-    ResultIssue {
+fn result_issue(value: core::SearchResultError) -> Result<ResultIssue> {
+    Ok(ResultIssue {
         code: value.code,
         summary: value.summary,
         message: value.message,
+        source: value.source,
+        stack_trace: value.stack_trace,
         transient: value.transient,
-    }
+        metadata: fields_to_json(value.metadata)?
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+    })
+}
+
+fn search_timing(value: core::SearchTiming) -> Result<SearchTiming> {
+    Ok(SearchTiming {
+        query_time_seconds: value.query_time_seconds,
+        search_time_seconds: value.search_time_seconds,
+        summary_fetch_time_seconds: value.summary_fetch_time_seconds,
+        metadata: fields_to_json(value.metadata)?
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+    })
 }
 
 fn json_bytes(value: core::Value) -> Vec<u8> {
@@ -522,6 +571,51 @@ mod tests {
         let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
         assert!(converted.hits.is_empty());
         assert!(converted.facets.is_empty());
+    }
+
+    #[test]
+    fn result_conversion_preserves_envelope_timing_errors_trace_and_metadata() {
+        let result = core::SearchResult {
+            root: core::ResultNode::Group(core::ResultGroup::root(vec![])),
+            total_hits: core::TotalHits {
+                value: 0,
+                relation: core::TotalHitsRelation::Exact,
+            },
+            coverage: None,
+            timing: Some(core::SearchTiming {
+                query_time_seconds: Some(0.25),
+                search_time_seconds: Some(0.5),
+                summary_fetch_time_seconds: None,
+                metadata: BTreeMap::from([("timing".into(), Value::String("yes".into()))]),
+            }),
+            errors: vec![core::SearchResultError {
+                code: 7,
+                summary: Some("summary".into()),
+                message: Some("message".into()),
+                source: Some("source".into()),
+                stack_trace: Some("stack".into()),
+                transient: Some(true),
+                metadata: BTreeMap::from([("error".into(), Value::String("yes".into()))]),
+            }],
+            trace: Some(Value::String("trace".into())),
+            metadata: BTreeMap::from([("result".into(), Value::String("yes".into()))]),
+        };
+
+        let converted: SearchResult<serde_json::Value> = search_result(result, &[]).unwrap();
+        assert_eq!(
+            converted.timing.as_ref().unwrap().query_time_seconds,
+            Some(0.25)
+        );
+        assert_eq!(converted.timing.as_ref().unwrap().metadata["timing"], "yes");
+        assert_eq!(converted.issues[0].code, 7);
+        assert_eq!(converted.issues[0].summary.as_deref(), Some("summary"));
+        assert_eq!(converted.issues[0].message.as_deref(), Some("message"));
+        assert_eq!(converted.issues[0].source.as_deref(), Some("source"));
+        assert_eq!(converted.issues[0].stack_trace.as_deref(), Some("stack"));
+        assert_eq!(converted.issues[0].transient, Some(true));
+        assert_eq!(converted.issues[0].metadata["error"], "yes");
+        assert_eq!(converted.trace, Some(serde_json::json!("trace")));
+        assert_eq!(converted.metadata["result"], "yes");
     }
 
     #[test]

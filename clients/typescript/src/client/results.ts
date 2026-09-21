@@ -142,6 +142,16 @@ export class Hit {
 
 export type ResultChild = Hit | ResultGroup;
 
+export interface ResultContinuation {
+  readonly key: string;
+  readonly value: string;
+}
+
+export interface ResultLimits {
+  readonly from: unknown;
+  readonly to: unknown;
+}
+
 export class ResultGroup {
   readonly id: string | null;
   readonly label: string | null;
@@ -150,11 +160,11 @@ export class ResultGroup {
   readonly children: readonly ResultChild[];
   readonly groups: readonly ResultGroup[];
   readonly hits: readonly Hit[];
-  readonly continuations: readonly string[];
+  readonly continuations: readonly ResultContinuation[];
   readonly source: string | null;
   readonly types: readonly string[];
   readonly relevance: number | null;
-  readonly limits: unknown;
+  readonly limits: ResultLimits | null;
   readonly metadata: Record<string, unknown>;
 
   constructor(node: ResultGroupT) {
@@ -165,13 +175,16 @@ export class ResultGroup {
     this.children = (node.children ?? []).map(wrapNode);
     this.groups = this.children.filter((child): child is ResultGroup => child instanceof ResultGroup);
     this.hits = this.children.filter((child): child is Hit => child instanceof Hit);
-    this.continuations = (node.continuations ?? [])
-      .map((entry) => text(entry.value))
-      .filter((entry): entry is string => entry !== null);
+    this.continuations = (node.continuations ?? []).map((entry) => ({
+      key: text(entry.key) ?? "",
+      value: text(entry.value) ?? "",
+    }));
     this.source = text(node.source);
     this.types = (node.types ?? []).map((item) => text(item) ?? "");
     this.relevance = relevanceValue(node.relevance);
-    this.limits = node.limits;
+    this.limits = node.limits == null
+      ? null
+      : { from: fromValue(node.limits.from), to: fromValue(node.limits.to) };
     this.metadata = entries(node.metadata);
   }
 
@@ -225,7 +238,7 @@ export class SearchResults {
   readonly issues: readonly SearchResultErrorT[];
   readonly errors: readonly SearchResultErrorT[];
   readonly aggregations: Record<string, unknown>;
-  readonly continuations: readonly string[];
+  readonly continuations: readonly ResultContinuation[];
   readonly metadata: Record<string, unknown>;
   readonly trace: unknown;
   readonly facets: Record<string, FacetBucket[]>;
