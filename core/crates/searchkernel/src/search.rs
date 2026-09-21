@@ -633,6 +633,30 @@ mod tests {
     }
 
     #[test]
+    fn rust_grouping_facade_uses_canonical_output_collision_validation() {
+        let runtime = IndexRuntime::from_backend(
+            IndexDefinition::new().field(Field::keyword("brand").facetable(true)),
+            Arc::new(RecordingBackend::new()),
+        )
+        .expect("test index");
+
+        let grouping = GroupingPlan::new().level(
+            GroupingPlan::by("brand")
+                .output(crate::GroupingAggregation::count())
+                .output(crate::GroupingAggregation::count()),
+        );
+        let error = runtime
+            .index()
+            .browse()
+            .grouping(grouping)
+            .execute::<serde_json::Value>()
+            .expect_err("duplicate output names must fail before backend execution");
+
+        assert_eq!(error.code(), ErrorCode::InvalidArgument);
+        assert_eq!(error.details()[0].code, "grouping_output_name_collision");
+    }
+
+    #[test]
     fn search_builder_owns_a_clone_of_the_index() {
         let runtime = IndexRuntime::from_backend(
             IndexDefinition::new().field(Field::text("title")),
