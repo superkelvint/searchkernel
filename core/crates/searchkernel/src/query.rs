@@ -94,9 +94,9 @@ pub struct WandOptions {
 impl Default for WandOptions {
     fn default() -> Self {
         Self {
-            target_hits: 100,
-            score_threshold: 0,
-            threshold_boost_factor: 1.0,
+            target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+            score_threshold: searchkernel_ir::api_to_ir::DEFAULT_WAND_SCORE_THRESHOLD,
+            threshold_boost_factor: searchkernel_ir::api_to_ir::DEFAULT_WAND_THRESHOLD_BOOST_FACTOR,
         }
     }
 }
@@ -112,10 +112,11 @@ pub struct NearestNeighborOptions {
 impl Default for NearestNeighborOptions {
     fn default() -> Self {
         Self {
-            target_hits: 100,
-            approximate: true,
+            target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+            approximate: searchkernel_ir::api_to_ir::DEFAULT_NEAREST_APPROXIMATE,
             distance_threshold: None,
-            explore_additional_hits: 0,
+            explore_additional_hits:
+                searchkernel_ir::api_to_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS,
         }
     }
 }
@@ -243,14 +244,14 @@ impl Query {
         Self::Near {
             field: field.into(),
             children: children.into_iter().collect(),
-            distance: 2,
+            distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
         }
     }
     pub fn onear<I: IntoIterator<Item = Query>>(field: impl Into<String>, children: I) -> Self {
         Self::ONear {
             field: field.into(),
             children: children.into_iter().collect(),
-            distance: 2,
+            distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
         }
     }
     pub fn and<I: IntoIterator<Item = Query>>(children: I) -> Self {
@@ -329,9 +330,9 @@ impl Query {
         Self::Fuzzy {
             field: field.into(),
             value: value.into(),
-            max_edit_distance: 2,
-            prefix_length: 0,
-            prefix: false,
+            max_edit_distance: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+            prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+            prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
         }
     }
     pub fn prefix(field: impl Into<String>, value: impl Into<String>) -> Self {
@@ -439,12 +440,16 @@ impl Query {
                         .into_iter()
                         .map(Query::into_ir)
                         .collect::<Result<Vec<_>>>()?,
-                    distance: 0,
+                    distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
                 },
-                BTreeMap::from([(
-                    "distance".to_owned(),
-                    RequestValueIr::UInt64(u64::from(distance)),
-                )]),
+                if distance == searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE {
+                    BTreeMap::new()
+                } else {
+                    BTreeMap::from([(
+                        "distance".to_owned(),
+                        RequestValueIr::UInt64(u64::from(distance)),
+                    )])
+                },
             )?,
             Self::ONear {
                 field,
@@ -457,12 +462,16 @@ impl Query {
                         .into_iter()
                         .map(Query::into_ir)
                         .collect::<Result<Vec<_>>>()?,
-                    distance: 0,
+                    distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
                 },
-                BTreeMap::from([(
-                    "distance".to_owned(),
-                    RequestValueIr::UInt64(u64::from(distance)),
-                )]),
+                if distance == searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE {
+                    BTreeMap::new()
+                } else {
+                    BTreeMap::from([(
+                        "distance".to_owned(),
+                        RequestValueIr::UInt64(u64::from(distance)),
+                    )])
+                },
             )?,
             Self::And(children) => QueryExprKindIr::And(
                 children
@@ -513,16 +522,18 @@ impl Query {
                 children,
                 target_hits,
             } => {
-                annotations.insert(
-                    "totalTargetHits".to_owned(),
-                    RequestValueIr::UInt64(u64::from(target_hits)),
-                );
+                if target_hits != searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS {
+                    annotations.insert(
+                        "totalTargetHits".to_owned(),
+                        RequestValueIr::UInt64(u64::from(target_hits)),
+                    );
+                }
                 QueryExprKindIr::WeakAnd {
                     children: children
                         .into_iter()
                         .map(Query::into_ir)
                         .collect::<Result<Vec<_>>>()?,
-                    target_hits: 0,
+                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
                 }
             }
             Self::Wand {
@@ -559,26 +570,36 @@ impl Query {
                 max_edit_distance,
                 prefix_length,
                 prefix,
-            } => contains_with_annotations(
-                &field,
-                QueryExprKindIr::Fuzzy {
-                    value: value.into_ir()?,
-                    max_edit_distance: 0,
-                    prefix_length: 0,
-                    prefix: false,
-                },
-                BTreeMap::from([
-                    (
+            } => {
+                let mut fuzzy_annotations = BTreeMap::new();
+                if max_edit_distance != searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE
+                {
+                    fuzzy_annotations.insert(
                         "maxEditDistance".to_owned(),
                         RequestValueIr::UInt64(u64::from(max_edit_distance)),
-                    ),
-                    (
+                    );
+                }
+                if prefix_length != searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH {
+                    fuzzy_annotations.insert(
                         "prefixLength".to_owned(),
                         RequestValueIr::UInt64(u64::from(prefix_length)),
-                    ),
-                    ("prefix".to_owned(), RequestValueIr::Bool(prefix)),
-                ]),
-            )?,
+                    );
+                }
+                if prefix != searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX {
+                    fuzzy_annotations.insert("prefix".to_owned(), RequestValueIr::Bool(prefix));
+                }
+                contains_with_annotations(
+                    &field,
+                    QueryExprKindIr::Fuzzy {
+                        value: value.into_ir()?,
+                        max_edit_distance:
+                            searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                        prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+                        prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+                    },
+                    fuzzy_annotations,
+                )?
+            }
             Self::Prefix { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
                 pattern: format!("{}.*", escape_regexp_literal(&value)),
@@ -723,40 +744,53 @@ fn escape_regexp_literal(value: &str) -> String {
 }
 
 fn wand_annotations(options: WandOptions) -> BTreeMap<String, RequestValueIr> {
-    BTreeMap::from([
-        (
+    let mut annotations = BTreeMap::new();
+    if options.target_hits != searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS {
+        annotations.insert(
             "targetNumHits".to_owned(),
             RequestValueIr::UInt64(u64::from(options.target_hits)),
-        ),
-        (
+        );
+    }
+    if options.score_threshold != searchkernel_ir::api_to_ir::DEFAULT_WAND_SCORE_THRESHOLD {
+        annotations.insert(
             "scoreThreshold".to_owned(),
             RequestValueIr::Int64(options.score_threshold),
-        ),
-        (
+        );
+    }
+    if options.threshold_boost_factor
+        != searchkernel_ir::api_to_ir::DEFAULT_WAND_THRESHOLD_BOOST_FACTOR
+    {
+        annotations.insert(
             "thresholdBoostFactor".to_owned(),
             RequestValueIr::Float64(options.threshold_boost_factor),
-        ),
-    ])
+        );
+    }
+    annotations
 }
 
 fn nearest_annotations(options: NearestNeighborOptions) -> BTreeMap<String, RequestValueIr> {
-    let mut annotations = BTreeMap::from([
-        (
+    let mut annotations = BTreeMap::new();
+    if options.target_hits != searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS {
+        annotations.insert(
             "targetNumHits".to_owned(),
             RequestValueIr::UInt64(u64::from(options.target_hits)),
-        ),
-        (
+        );
+    }
+    if options.approximate != searchkernel_ir::api_to_ir::DEFAULT_NEAREST_APPROXIMATE {
+        annotations.insert(
             "approximate".to_owned(),
             RequestValueIr::Bool(options.approximate),
-        ),
-    ]);
+        );
+    }
     if let Some(distance_threshold) = options.distance_threshold {
         annotations.insert(
             "distanceThreshold".to_owned(),
             RequestValueIr::Float64(distance_threshold),
         );
     }
-    if options.explore_additional_hits > 0 {
+    if options.explore_additional_hits
+        != searchkernel_ir::api_to_ir::DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS
+    {
         annotations.insert(
             "exploreAdditionalHits".to_owned(),
             RequestValueIr::UInt64(u64::from(options.explore_additional_hits)),
@@ -809,6 +843,63 @@ impl WeightedQueryItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_typed_query_controls_are_not_materialized_by_rust_facade() {
+        let near = Query::near("title", [Query::term("title", "value")])
+            .into_ir()
+            .expect("near should convert");
+        let QueryExprKindIr::Contains { item, .. } = near.kind else {
+            panic!("expected near to be field-qualified");
+        };
+        assert!(item.annotations.is_empty());
+        assert!(matches!(
+            item.kind,
+            QueryExprKindIr::Near {
+                distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+                ..
+            }
+        ));
+
+        let fuzzy = Query::fuzzy("title", "value")
+            .into_ir()
+            .expect("fuzzy should convert");
+        let QueryExprKindIr::Contains { item, .. } = fuzzy.kind else {
+            panic!("expected fuzzy to be field-qualified");
+        };
+        assert!(item.annotations.is_empty());
+        assert!(matches!(
+            item.kind,
+            QueryExprKindIr::Fuzzy {
+                max_edit_distance: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+                prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+                ..
+            }
+        ));
+
+        let weak_and = Query::weak_and([Query::term("title", "value")], 100)
+            .into_ir()
+            .expect("weak-and should convert");
+        assert!(weak_and.annotations.is_empty());
+        assert!(matches!(
+            weak_and.kind,
+            QueryExprKindIr::WeakAnd {
+                target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                ..
+            }
+        ));
+
+        let wand = Query::wand("title", [WeightedQueryItem::new("value", 1)])
+            .into_ir()
+            .expect("WAND should convert");
+        assert!(wand.annotations.is_empty());
+
+        let nearest = Query::nearest_neighbor("embedding", "query_embedding")
+            .into_ir()
+            .expect("nearest-neighbor should convert");
+        assert!(nearest.annotations.is_empty());
+    }
 
     #[test]
     fn range_bounds_preserve_inclusion_flags() {

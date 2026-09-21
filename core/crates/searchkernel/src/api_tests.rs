@@ -3960,6 +3960,108 @@ fn public_rust_typed_query_values_survive_canonical_normalization() {
 }
 
 #[test]
+fn public_rust_omitted_typed_query_defaults_match_portable_requests() {
+    let definition = scripted_definition().field(Field::tensor("embedding", "tensor<float>(x[2])"));
+    let context = context_for(&definition);
+    let term = || {
+        typed_contains(
+            "title",
+            searchkernel_ir::QueryExprKindIr::Term {
+                value: searchkernel_ir::RequestValueIr::String("value".to_owned()),
+            },
+        )
+    };
+    let cases = [
+        (
+            Query::near("title", [Query::term("title", "value")]),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Near {
+                    children: vec![term()],
+                    distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+                },
+            ),
+        ),
+        (
+            Query::fuzzy("title", "value"),
+            typed_contains(
+                "title",
+                searchkernel_ir::QueryExprKindIr::Fuzzy {
+                    value: searchkernel_ir::RequestValueIr::String("value".to_owned()),
+                    max_edit_distance: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+                    prefix_length: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+                    prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+                },
+            ),
+        ),
+        (
+            Query::wand("brand", [crate::WeightedQueryItem::new("value", 1)]),
+            searchkernel_ir::QueryExprIr {
+                kind: searchkernel_ir::QueryExprKindIr::Wand {
+                    field: typed_field("brand"),
+                    items: vec![searchkernel_ir::WeightedQueryItemIr {
+                        key: searchkernel_ir::RequestValueIr::String("value".to_owned()),
+                        weight: 1,
+                    }],
+                },
+                annotations: BTreeMap::new(),
+            },
+        ),
+    ];
+
+    for (rust_query, portable_query) in cases {
+        let recording = Arc::new(RecordingBackend::new());
+        let (_runtime, index) = runtime_index(definition.clone(), recording);
+        let request = index.search("typed").typed_query(rust_query);
+        let rust_request = searchkernel_ir::resolve_search(
+            &context,
+            crate::search::to_resolver_input(&request).expect("Rust query should lower"),
+        )
+        .expect("Rust query should resolve");
+        let bytes = portable_typed_request(portable_query, BTreeMap::new());
+        let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+            .expect("portable request should parse");
+        let portable_request = context
+            .search_to_ir(portable_request)
+            .expect("portable query should resolve");
+        assert_eq!(rust_request.query(), portable_request.query());
+    }
+
+    let tensor = searchkernel_ir::QueryInputIr::Literal(searchkernel_ir::RequestValueIr::Tensor(
+        searchkernel_ir::RequestTensorIr {
+            type_spec: "tensor<float>(x[2])".to_owned(),
+            payload: searchkernel_ir::RequestTensorPayloadIr::Dense(vec![1.0, 0.0]),
+        },
+    ));
+    let recording = Arc::new(RecordingBackend::new());
+    let (_runtime, index) = runtime_index(definition, recording);
+    let request = index
+        .search("typed")
+        .typed_query(Query::nearest_neighbor("embedding", "q"))
+        .query_input("q", Tensor::dense("tensor<float>(x[2])", vec![1.0, 0.0]));
+    let rust_request = searchkernel_ir::resolve_search(
+        &context,
+        crate::search::to_resolver_input(&request).expect("Rust nearest-neighbor should lower"),
+    )
+    .expect("Rust nearest-neighbor should resolve");
+    let portable_query = searchkernel_ir::QueryExprIr {
+        kind: searchkernel_ir::QueryExprKindIr::NearestNeighbor {
+            document_field: typed_field("embedding"),
+            query_tensor: "q".to_owned(),
+        },
+        annotations: BTreeMap::new(),
+    };
+    let bytes = portable_typed_request(portable_query, BTreeMap::from([("q".to_owned(), tensor)]));
+    let portable_request = searchkernel_ir::__flatbuffers::root::<api::SearchRequest>(&bytes)
+        .expect("portable request should parse");
+    let portable_request = context
+        .search_to_ir(portable_request)
+        .expect("portable nearest-neighbor should resolve");
+    assert_eq!(rust_request.query(), portable_request.query());
+    assert_eq!(rust_request.inputs(), portable_request.inputs());
+}
+
+#[test]
 fn blank_text_is_rejected_identically_and_match_all_remains_explicit() {
     let definition = scripted_definition();
     let context = context_for(&definition);

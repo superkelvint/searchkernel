@@ -3,11 +3,24 @@ use crate::model::*;
 use searchkernel_protocol::v2 as api;
 use std::collections::BTreeMap;
 
-const DEFAULT_PROXIMITY_DISTANCE: u32 = 2;
-const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
-const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
-const DEFAULT_FUZZY_PREFIX_LENGTH: u32 = 0;
-const DEFAULT_FUZZY_PREFIX: bool = false;
+/// Canonical default for near and ordered-near query distance.
+pub const DEFAULT_PROXIMITY_DISTANCE: u32 = 2;
+/// Canonical default for weak-and, WAND, and nearest-neighbor target hits.
+pub const DEFAULT_WEAK_AND_TARGET_HITS: u32 = 100;
+/// Canonical default for fuzzy maximum edit distance.
+pub const DEFAULT_FUZZY_MAX_EDIT_DISTANCE: u32 = 2;
+/// Canonical default for fuzzy prefix length.
+pub const DEFAULT_FUZZY_PREFIX_LENGTH: u32 = 0;
+/// Canonical default for fuzzy prefix matching.
+pub const DEFAULT_FUZZY_PREFIX: bool = false;
+/// Canonical default for WAND score threshold.
+pub const DEFAULT_WAND_SCORE_THRESHOLD: i64 = 0;
+/// Canonical default for WAND threshold boost factor.
+pub const DEFAULT_WAND_THRESHOLD_BOOST_FACTOR: f64 = 1.0;
+/// Canonical default for nearest-neighbor approximate mode.
+pub const DEFAULT_NEAREST_APPROXIMATE: bool = true;
+/// Canonical default for nearest-neighbor additional explored hits.
+pub const DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS: u32 = 0;
 
 fn reject_unknown_typed_annotations(
     annotations: &BTreeMap<String, RequestValueIr>,
@@ -93,9 +106,10 @@ fn resolve_typed_query_annotations(
             )?;
             let target_num_hits = resolve_target_hits(annotations, path, "WAND")?
                 .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
-            let score_threshold = annotation_i64(annotations, "scoreThreshold", path)?.unwrap_or(0);
-            let threshold_boost_factor =
-                annotation_f64(annotations, "thresholdBoostFactor", path)?.unwrap_or(1.0);
+            let score_threshold = annotation_i64(annotations, "scoreThreshold", path)?
+                .unwrap_or(DEFAULT_WAND_SCORE_THRESHOLD);
+            let threshold_boost_factor = annotation_f64(annotations, "thresholdBoostFactor", path)?
+                .unwrap_or(DEFAULT_WAND_THRESHOLD_BOOST_FACTOR);
             if threshold_boost_factor <= 0.0 {
                 return Err(invalid(
                     "invalid_typed_query_annotation",
@@ -130,7 +144,8 @@ fn resolve_typed_query_annotations(
             )?;
             let target_num_hits = resolve_target_hits(annotations, path, "nearest-neighbor")?
                 .unwrap_or(DEFAULT_WEAK_AND_TARGET_HITS);
-            let approximate = annotation_bool(annotations, "approximate", path)?.unwrap_or(true);
+            let approximate = annotation_bool(annotations, "approximate", path)?
+                .unwrap_or(DEFAULT_NEAREST_APPROXIMATE);
             let distance_threshold = annotation_f64(annotations, "distanceThreshold", path)?;
             if distance_threshold.is_some_and(|value| value < 0.0) {
                 return Err(invalid(
@@ -141,7 +156,7 @@ fn resolve_typed_query_annotations(
             }
             let explore_additional_hits =
                 annotation_nonnegative_u32(annotations, "exploreAdditionalHits", path)?
-                    .unwrap_or(0);
+                    .unwrap_or(DEFAULT_NEAREST_EXPLORE_ADDITIONAL_HITS);
             annotations.insert(
                 "targetNumHits".to_owned(),
                 RequestValueIr::UInt64(u64::from(target_num_hits)),
