@@ -762,7 +762,20 @@ fn typed_query_a_lowers_to_existing_native_query_nodes() {
 }
 
 #[test]
-fn typed_query_c_lowers_specialized_nodes() {
+fn typed_query_c_lowers_specialized_nodes_and_retains_annotations_guard() {
+    let annotated = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::True,
+        annotations: std::collections::BTreeMap::from([(
+            "ranked".to_owned(),
+            RequestValueIr::Bool(true),
+        )]),
+    }));
+    let error = lower_query(&annotated, &[]).unwrap_err();
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_annotations_not_supported"
+    );
+
     let same_element = typed_contains(
         "tags",
         QueryExprKindIr::SameElement(vec![typed_term("wireless"), typed_term("audio")]),
@@ -1163,6 +1176,29 @@ fn typed_query_b_rejects_unsupported_reduced_user_query_syntax() {
             error.details[0].code
         );
     }
+
+    let parser_mode = QueryIr::Typed(Box::new(QueryExprIr {
+        kind: QueryExprKindIr::Contains {
+            field: typed_field("title"),
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::UserInput {
+                    value: "wireless".to_owned(),
+                    default_index: None,
+                    target_hits: 100,
+                },
+                annotations: std::collections::BTreeMap::from([(
+                    "grammar".to_owned(),
+                    RequestValueIr::String("all".to_owned()),
+                )]),
+            }),
+        },
+        annotations: std::collections::BTreeMap::new(),
+    }));
+    let error = lower_query(&parser_mode, &[]).expect_err("parser modes are unsupported");
+    assert_eq!(
+        error.details[0].code,
+        "typed_query_annotations_not_supported"
+    );
 }
 
 #[test]

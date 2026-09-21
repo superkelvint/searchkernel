@@ -2,6 +2,24 @@
 
 use searchkernel_ir::{PortableError, RequestValueIr, Result};
 
+pub(super) fn reject_unknown_annotations(
+    annotations: &std::collections::BTreeMap<String, RequestValueIr>,
+    supported: &[&str],
+    path: &str,
+) -> Result<()> {
+    if let Some(name) = annotations
+        .keys()
+        .find(|name| !supported.iter().any(|candidate| candidate == name))
+    {
+        return Err(PortableError::unsupported(
+            "typed_query_annotations_not_supported",
+            Some(format!("{path}.annotations.{name}")),
+            "this typed query node has no native lowering for the annotation",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn annotation_u32(
     annotations: &std::collections::BTreeMap<String, RequestValueIr>,
     name: &str,

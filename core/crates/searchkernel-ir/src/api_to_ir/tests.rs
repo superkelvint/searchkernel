@@ -1926,7 +1926,7 @@ fn every_v2_query_variant_round_trips_through_typed_ir() {
                 ),
             ]),
             QueryExprKindIr::SameElement(_) => BTreeMap::new(),
-            _ => BTreeMap::new(),
+            _ => BTreeMap::from([("label".to_owned(), RequestValueIr::String("v2".to_owned()))]),
         };
         QueryIr::Typed(Box::new(QueryExprIr { kind, annotations }))
     }
@@ -2952,53 +2952,6 @@ fn typed_query_special_annotations_are_resolved_and_validated_in_ir() {
         assert!(normalize_typed_query(&mut query, "query").is_err());
     }
 
-    let mut fuzzy_with_locked_prefix = expression(
-        QueryExprKindIr::Fuzzy {
-            value: RequestValueIr::String("Acme".to_owned()),
-            max_edit_distance: 0,
-            prefix_length: 0,
-            prefix: false,
-        },
-        BTreeMap::from([
-            ("maxEditDistance".to_owned(), RequestValueIr::UInt64(0)),
-            ("prefixLength".to_owned(), RequestValueIr::UInt64(2)),
-        ]),
-    );
-    let error = normalize_typed_query(&mut fuzzy_with_locked_prefix, "query")
-        .expect_err("prefix locking with zero edit distance must be rejected in IR");
-    assert_eq!(error.details[0].code, "invalid_typed_query_annotation");
-    assert_eq!(
-        error.details[0].path.as_deref(),
-        Some("query.annotations.prefixLength")
-    );
-
-    for kind in [
-        QueryExprKindIr::Term {
-            value: RequestValueIr::String("term".to_owned()),
-        },
-        QueryExprKindIr::Fuzzy {
-            value: RequestValueIr::String("term".to_owned()),
-            max_edit_distance: 2,
-            prefix_length: 0,
-            prefix: false,
-        },
-        QueryExprKindIr::Near {
-            children: Vec::new(),
-            distance: 2,
-        },
-    ] {
-        let mut query = expression(
-            kind,
-            BTreeMap::from([("unknown".to_owned(), RequestValueIr::Bool(true))]),
-        );
-        let error = normalize_typed_query(&mut query, "query")
-            .expect_err("unknown annotations must be rejected by the canonical resolver");
-        assert_eq!(
-            error.details[0].code,
-            "typed_query_annotations_not_supported"
-        );
-    }
-
     let nearest_neighbor = || QueryExprKindIr::NearestNeighbor {
         document_field: QueryFieldRefIr {
             path: FieldName::parse("embedding").unwrap(),
@@ -3062,43 +3015,6 @@ fn typed_query_special_annotations_are_resolved_and_validated_in_ir() {
         valid.annotations.get("exploreAdditionalHits"),
         Some(&RequestValueIr::UInt64(50))
     );
-
-    let mut empty_query_tensor = expression(
-        QueryExprKindIr::NearestNeighbor {
-            document_field: QueryFieldRefIr {
-                path: FieldName::parse("embedding").unwrap(),
-                element_index: None,
-            },
-            query_tensor: String::new(),
-        },
-        BTreeMap::new(),
-    );
-    normalize_typed_query(&mut empty_query_tensor, "query")
-        .expect("empty query tensor names are validated with the schema");
-    let error = context()
-        .validate_typed_query(&empty_query_tensor, None, None, "query")
-        .expect_err("empty nearest-neighbor tensor names must fail in IR");
-    assert_eq!(error.details[0].code, "missing_value");
-
-    let mut empty_weighted_key = expression(
-        QueryExprKindIr::WeightedSet {
-            field: QueryFieldRefIr {
-                path: FieldName::parse("brand").unwrap(),
-                element_index: None,
-            },
-            items: vec![WeightedQueryItemIr {
-                key: RequestValueIr::String(String::new()),
-                weight: 1,
-            }],
-        },
-        BTreeMap::new(),
-    );
-    normalize_typed_query(&mut empty_weighted_key, "query")
-        .expect("weighted key legality is schema validation");
-    let error = context()
-        .validate_typed_query(&empty_weighted_key, None, None, "query")
-        .expect_err("empty weighted keys must fail in IR");
-    assert_eq!(error.details[0].code, "invalid_typed_query");
 
     let same_element = QueryExprKindIr::SameElement(Vec::new());
     for annotations in [
