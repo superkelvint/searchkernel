@@ -116,6 +116,16 @@ class ClientContractTests(unittest.TestCase):
         self.assertIn("ergonomic · E2E 1/2 (native)", markdown)
         self.assertIn("rust-tests/e2e.rs", markdown)
 
+
+    def test_e2e_evidence_requires_ci_lane(self) -> None:
+        (self.root / "rust-tests" / "e2e.rs").write_text(
+            "// SKC: result.highlighting/basic kinds=e2e runtime=native\n",
+            encoding="utf-8",
+        )
+        _, surfaces, scenarios, _ = self.load()
+        with self.assertRaisesRegex(MODULE.RegistryError, "not covered by an E2E CI lane"):
+            MODULE.collect_evidence(surfaces, scenarios, self.root)
+
     def test_default_basic_scenario_exists(self) -> None:
         _, _, scenarios, _ = self.load()
         self.assertEqual(scenarios["search.pagination"], {"basic": "Basic behavior"})
