@@ -2806,8 +2806,7 @@ fn typed_matching_annotations_are_resolved_into_ir_parameters() {
 fn sort_component_uses_the_same_error_semantics_as_full_search() {
     let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
 
-    let match_all =
-        api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
     let query = api::QuerySource::create(
         &mut builder,
         &api::QuerySourceArgs {
@@ -2859,7 +2858,10 @@ fn sort_component_uses_the_same_error_semantics_as_full_search() {
         .search_to_ir(request)
         .expect_err("invalid sort direction must fail full search conversion");
 
-    assert_eq!(component_error.details[0].code, search_error.details[0].code);
+    assert_eq!(
+        component_error.details[0].code,
+        search_error.details[0].code
+    );
     assert_eq!(component_error.details[0].code, "invalid_sort");
 }
 

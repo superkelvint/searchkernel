@@ -279,11 +279,6 @@ impl IndexContext {
         resolve_sort(self, &input, "sort")
     }
 
-    pub(crate) fn sort_to_ir_at(&self, sort: api::SortExpr<'_>, path: &str) -> Result<SortIr> {
-        let input = self.sort_to_input(sort, path)?;
-        resolve_sort(self, &input, path)
-    }
-
     pub fn projection_to_ir(
         &self,
         projection: Option<api::FieldProjection<'_>>,
@@ -308,7 +303,7 @@ impl IndexContext {
         });
         resolve_highlighting(self, fields.as_deref())
     }
-    }
+}
 
 fn decode_search_input(
     context: &IndexContext,
