@@ -1,4 +1,4 @@
-use searchkernel_ir::{index_definition_to_ir, ErrorCode, PortableError};
+use searchkernel_ir::{ErrorCode, PortableError, index_definition_to_ir};
 use searchkernel_m14_verifier::load;
 use searchkernel_vespa_engine::{
     ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, Schema,
@@ -31,9 +31,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     match case["path"].as_str() {
         Some("low_level") => run_low(case, &config)?,
-        Some("portable_ir") => {
-            run_portable_ir(definition.as_ref().ok_or("definition")?, &id)?
-        }
+        Some("portable_ir") => run_portable_ir(definition.as_ref().ok_or("definition")?, &id)?,
         Some("adapter") => run_adapter(definition.as_ref().ok_or("definition")?, &config, &id)?,
         _ => return Err("unknown path".into()),
     }
@@ -42,18 +40,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_low(
-    case: &serde_json::Value,
-    config: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_low(case: &serde_json::Value, config: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let mutation = &case["mutation"];
     let mut field = if mutation["field_type"] == "string" {
         Field::new("embedding", FieldType::String)
     } else {
-        Field::new(
-            "embedding",
-            FieldType::Tensor("tensor<float>(x[3])".into()),
-        )
+        Field::new("embedding", FieldType::Tensor("tensor<float>(x[3])".into()))
     };
 
     if mutation
@@ -66,10 +58,14 @@ fn run_low(
     if mutation.get("distance_metric").is_some() || mutation["field_type"] != "string" {
         field = field.distance_metric(DistanceMetric::Euclidean);
     }
-    if mutation.get("hnsw").and_then(|value| value.as_bool()).unwrap_or(
-        mutation.get("max_links_per_node").is_some()
-            || mutation.get("neighbors_to_explore_at_insert").is_some(),
-    ) {
+    if mutation
+        .get("hnsw")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(
+            mutation.get("max_links_per_node").is_some()
+                || mutation.get("neighbors_to_explore_at_insert").is_some(),
+        )
+    {
         let mut hnsw = HnswIndexConfig::new();
         if let Some(value) = mutation
             .get("max_links_per_node")
@@ -104,14 +100,15 @@ fn parse(path: &PathBuf) -> Result<searchkernel_ir::IndexDefinitionIr, PortableE
             format!("failed to read portable definition: {error}"),
         )
     })?;
-    let root = searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
-        .map_err(|error| {
-            PortableError::invalid(
-                "malformed_flatbuffer",
-                Some("definition"),
-                error.to_string(),
-            )
-        })?;
+    let root =
+        searchkernel_ir::__flatbuffers::root::<searchkernel_ir::api::IndexDefinition>(&bytes)
+            .map_err(|error| {
+                PortableError::invalid(
+                    "malformed_flatbuffer",
+                    Some("definition"),
+                    error.to_string(),
+                )
+            })?;
     index_definition_to_ir(root)
 }
 
@@ -120,7 +117,10 @@ fn assert_portable_error(
     detail_code: &str,
     path_suffix: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let detail = error.details.first().ok_or("portable error had no details")?;
+    let detail = error
+        .details
+        .first()
+        .ok_or("portable error had no details")?;
     if detail.code != detail_code {
         return Err(format!(
             "wrong portable detail code: expected {detail_code}, got {}",
@@ -169,7 +169,10 @@ fn run_adapter(
     if error.code != ErrorCode::Unsupported {
         return Err(format!("adapter returned wrong error code: {:?}", error.code).into());
     }
-    let detail = error.details.first().ok_or("adapter error had no details")?;
+    let detail = error
+        .details
+        .first()
+        .ok_or("adapter error had no details")?;
     if detail.code != "schema_feature_not_supported" {
         return Err(format!("adapter returned wrong detail code: {}", detail.code).into());
     }

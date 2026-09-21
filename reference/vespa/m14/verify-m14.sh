@@ -9,6 +9,7 @@ require_pinned_vespa
 require_sdk_manifest "$SDK/manifest.json"
 "$M14/validate_scenarios.py"
 "$M14/validate_expected.py"
+python3 "$M14/test_execution_evidence.py"
 
 # M14 is cumulative.
 "$ROOT/reference/vespa/m13/verify-m13.sh"
@@ -52,8 +53,12 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-oracle.json"
 
   low_cfg="$TMP/$id-low-config"; low_data="$TMP/$id-low-data"
+  low_trace="$TMP/$id-low-trace.jsonl"
   LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+    SEARCHKERNEL_NATIVE_TRACE_FILE="$low_trace" \
     "$LOW" "$scenario" "$low_cfg" "$low_data" > "$TMP/$id-low-raw.json"
+  python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-low-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-low-raw.json" > "$TMP/$id-low.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-low.json"
   "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-low.json"
@@ -61,8 +66,12 @@ for scenario in "$M14"/scenarios/[0-9][0-9]-*.json; do
   "$M14/compare.py" "$M14/expected/hnsw-config.json" "$TMP/$id-low-config.json"
 
   adapter_cfg="$TMP/$id-adapter-config"; adapter_data="$TMP/$id-adapter-data"
+  adapter_trace="$TMP/$id-adapter-trace.jsonl"
   LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    SEARCHKERNEL_NATIVE_TRACE_LEVEL=6 \
+    SEARCHKERNEL_NATIVE_TRACE_FILE="$adapter_trace" \
     "$ADAPTER" "$scenario" "$DEFINITION_BIN" "$adapter_cfg" "$adapter_data" > "$TMP/$id-adapter-raw.json"
+  python3 "$M14/validate_execution_evidence.py" "$scenario" "$TMP/$id-adapter-raw.json"
   "$M14/canonicalize_behavior.py" < "$TMP/$id-adapter-raw.json" > "$TMP/$id-adapter.json"
   "$M14/compare.py" "$M14/expected/$id.json" "$TMP/$id-adapter.json"
   "$M14/compare.py" "$TMP/$id-oracle.json" "$TMP/$id-adapter.json"

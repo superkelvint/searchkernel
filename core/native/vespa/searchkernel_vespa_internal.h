@@ -137,6 +137,7 @@
 #include <vespa/vespalib/data/fileheader.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/data/slime/json_format.h>
+#include <vespa/vespalib/data/smart_buffer.h>
 #include <vespa/vespalib/objects/nbostream.h>
 #include <vespa/vespalib/objects/nboserializer.h>
 #include <vespa/vespalib/objects/objectvisitor.h>

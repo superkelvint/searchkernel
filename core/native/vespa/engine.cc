@@ -22,6 +22,32 @@ constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
     "relevancy",      "rankfeatures",  "summaryfeatures"};
 constexpr std::string_view RESERVED_RANK_PROPERTY = "vespa.matching.numthreadspersearch";
 
+std::optional<uint32_t> native_trace_level() {
+    const char *value = std::getenv("SEARCHKERNEL_NATIVE_TRACE_LEVEL");
+    if (!value || *value == '\0') return std::nullopt;
+    char *end = nullptr;
+    const unsigned long parsed = std::strtoul(value, &end, 10);
+    if (*end != '\0' || parsed > std::numeric_limits<uint32_t>::max()) {
+        throw std::invalid_argument("SEARCHKERNEL_NATIVE_TRACE_LEVEL must be an unsigned integer");
+    }
+    return static_cast<uint32_t>(parsed);
+}
+
+void write_native_trace(const search::engine::Trace &trace) {
+    const char *path = std::getenv("SEARCHKERNEL_NATIVE_TRACE_FILE");
+    if (!path || *path == '\0') return;
+    if (!trace.hasTrace()) {
+        throw std::runtime_error("native trace observation was not available");
+    }
+    vespalib::SmartBuffer output(4096);
+    vespalib::slime::JsonFormat::encode(trace.getSlime(), output, true);
+    const auto json = output.obtain();
+    std::ofstream output_file(path, std::ios::app);
+    if (!output_file) throw std::runtime_error("could not open native trace observation file");
+    output_file.write(json.data, static_cast<std::streamsize>(json.size));
+    output_file.put('\n');
+}
+
 std::string highlight_summary_name(std::string_view field) {
     uint64_t hash = 0xcbf29ce484222325ULL;
     for (const auto byte : field) {
@@ -3685,6 +3711,10 @@ public:
         request.ranking = options.rank_profile;
         request.propertiesMap.lookupCreate(search::MapNames::RANK)
             .add("vespa.matching.numthreadspersearch", "1");
+        // This environment-gated hook is deliberately outside the public ABI.
+        // M14 uses it to capture Vespa's own blueprint and query statistics;
+        // normal callers never request or receive native execution traces.
+        if (const auto level = native_trace_level()) request.trace().setLevel(*level);
         auto &rank_properties = request.propertiesMap.lookupCreate(search::MapNames::RANK);
         for (const auto &[name, value] : options.query_features) {
             std::ostringstream encoded;
@@ -3745,6 +3775,7 @@ public:
         auto reply = _db->match(request, vespalib::ThreadBundle::trivial());
         failpoint("search_after_match");
         if (!reply) throw std::runtime_error("Vespa matcher returned no reply");
+        write_native_trace(request.trace());
         LocalSearchResultState result;
         copy_search_reply_metadata(*reply, result);
         const auto &features = reply->match_features;
