@@ -625,9 +625,20 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             .iter()
             .map(|profile| searchkernel_ir::RustRankProfileInput {
                 name: profile.name.clone(),
-                first_phase: profile.first_phase.clone(),
-                second_phase: profile.second_phase.clone(),
-                rerank_count: profile.rerank_count,
+                first_phase: profile
+                    .first_phase
+                    .as_ref()
+                    .and_then(|phase| phase.expression.clone()),
+                second_phase: profile
+                    .second_phase
+                    .as_ref()
+                    .and_then(|phase| phase.expression.clone()),
+                rerank_count: profile.rerank_count.or_else(|| {
+                    profile
+                        .second_phase
+                        .as_ref()
+                        .and_then(|phase| phase.rerank_count)
+                }),
                 match_features: profile.match_features.clone(),
                 query_inputs: profile.query_inputs.clone(),
             })
@@ -665,9 +676,9 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, profile)| {
-            // These metadata members are public API state. Overlay them on
-            // the canonical profile so direct edits remain authoritative
-            // while richer, out-of-scope members stay lossless.
+            // Public phase and metadata members are authoritative. Overlay
+            // them on the canonical profile while retaining richer,
+            // out-of-scope state from the resolver.
             let mut canonical = profile
                 .canonical
                 .clone()
@@ -675,6 +686,9 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 .ok_or_else(|| {
                     Error::infrastructure("resolved definition lost a public rank profile")
                 })?;
+            canonical.first_phase = profile.first_phase.clone();
+            canonical.second_phase = profile.second_phase.clone();
+            canonical.global_phase = profile.global_phase.clone();
             canonical.rank_features = profile.rank_features.clone();
             canonical.match_features = profile.match_features.clone();
             canonical.summary_features = profile.summary_features.clone();
@@ -805,6 +819,9 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
                 value = value.rerank_count(rerank_count);
             }
         }
+        value.first_phase = profile.first_phase.clone();
+        value.second_phase = profile.second_phase.clone();
+        value.global_phase = profile.global_phase.clone();
         for feature in &profile.match_features {
             value = value.match_feature(feature.clone());
         }

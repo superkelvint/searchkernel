@@ -2357,8 +2357,20 @@ fn describe_preserves_configured_rank_profiles() {
     assert_eq!(described.rank_profiles().len(), 1);
     let profile = &described.rank_profiles()[0];
     assert_eq!(profile.name(), "two_phase");
-    assert_eq!(profile.first_phase.as_deref(), Some("bm25(title)"));
-    assert_eq!(profile.second_phase.as_deref(), Some("attribute(score)"));
+    assert_eq!(
+        profile
+            .first_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("bm25(title)")
+    );
+    assert_eq!(
+        profile
+            .second_phase
+            .as_ref()
+            .and_then(|phase| phase.expression.as_deref()),
+        Some("attribute(score)")
+    );
     assert_eq!(profile.rerank_count, Some(7));
     assert_eq!(profile.match_features, vec!["bm25(title)"]);
     assert_eq!(
@@ -2825,6 +2837,20 @@ fn described_public_values_expose_the_complete_canonical_schema_state() {
 }
 
 #[test]
+fn described_rank_profile_exposes_phase_presence_and_controls() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = &canonical.rank_profiles()[0];
+    let actual = &described.rank_profiles()[0];
+
+    assert_eq!(actual.first_phase, expected.first_phase);
+    assert_eq!(actual.second_phase, expected.second_phase);
+    assert_eq!(actual.global_phase, expected.global_phase);
+    assert!(described.rank_profiles()[2].first_phase.is_none());
+    assert!(described.rank_profiles()[2].second_phase.is_none());
+    assert!(described.rank_profiles()[2].global_phase.is_none());
+}
+
+#[test]
 fn described_rank_profile_exposes_feature_and_property_metadata() {
     let (canonical, described) = public_described_canonical_fixture();
     let expected = &canonical.rank_profiles()[0];
@@ -2837,6 +2863,40 @@ fn described_rank_profile_exposes_feature_and_property_metadata() {
     assert_eq!(actual.rank_properties, expected.rank_properties);
     assert_eq!(actual.strict, expected.strict);
     assert_eq!(actual.properties, expected.properties);
+}
+
+#[test]
+fn public_rank_profile_phase_state_round_trips_to_ir() {
+    let phase = |expression, rerank_count, rank_score_drop_limit, total_rerank_count| {
+        searchkernel_ir::RankPhaseDefinitionIr {
+            expression,
+            rerank_count,
+            rank_score_drop_limit,
+            properties: BTreeMap::new(),
+            total_rerank_count,
+            keep_rank_count: None,
+            total_keep_rank_count: None,
+        }
+    };
+    let mut profile = RankProfile::new("phases");
+    profile.first_phase = Some(phase(Some("first".to_owned()), None, None, None));
+    profile.second_phase = Some(phase(None, None, None, Some(11)));
+    profile.global_phase = Some(phase(None, None, Some(0.5), None));
+    let expected_first = profile.first_phase.clone();
+    let expected_second = profile.second_phase.clone();
+    let expected_global = profile.global_phase.clone();
+
+    let resolved = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::text("title"))
+            .rank_profile(profile),
+    )
+    .expect("public rank-profile phases should resolve");
+    let resolved = &resolved.rank_profiles()[0];
+
+    assert_eq!(resolved.first_phase, expected_first);
+    assert_eq!(resolved.second_phase, expected_second);
+    assert_eq!(resolved.global_phase, expected_global);
 }
 
 #[test]
