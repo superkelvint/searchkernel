@@ -43,18 +43,28 @@ has converged and its acceptance state is explicit.
 
 ### 1. Schema fidelity
 
+**Blocked after adversarial audit.**
+
 Finish the work tracked in
 [`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md).
 
-The required invariant is lossless canonical schema preservation across Rust
-introspection/describe boundaries. Do not treat backend executability as a
-reason to discard canonical schema information.
+The current hidden-`IndexDefinitionIr` sidecar makes whole-definition tests
+look lossless while the public Rust schema model itself remains narrow and
+lossy. That is not sufficient for Phases 2–5 of the plan.
+
+The required invariant is lossless canonical schema preservation through the
+actual public Rust representation. Backend executability remains separate.
 
 Closure requires:
 
-- the comprehensive schema-fidelity regression corpus green;
-- Rust -> IR and IR -> Rust preservation for the promised surface;
-- `Index::describe()` semantic round-trip fidelity;
+- the comprehensive regression corpus to observe public Rust state rather than
+  bypassing it through hidden canonical IR;
+- a public `IndexDefinition`/`Field`/`RankProfile` representation capable
+  of preserving the promised canonical schema surface;
+- Rust -> IR and IR -> Rust preservation from that public state;
+- rich `describe()` mutation and clone/reuse preserving untouched semantics;
+- meaningful absence/presence semantics, including rank phases;
+- consistent Rust create persistence/provenance;
 - unsupported backend execution remaining explicit rather than silently lost.
 
 ### 2. Canonical search resolution and typed-query boundary
