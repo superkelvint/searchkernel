@@ -1732,6 +1732,83 @@ fn search_resolver_rejects_summary_and_max_in_the_same_grouping_scope() {
 }
 
 #[test]
+fn search_resolver_treats_group_and_each_as_one_semantic_scope() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Max(Some(3)),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("hits".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Summary(Some("default".to_owned())),
+                        )),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("group and each operations at one level must share max/summary semantics");
+    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
+}
+
+#[test]
+fn search_resolver_starts_a_new_semantic_scope_for_nested_all() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let count_output = || GroupingOperationIr::Output(vec![GroupingOutputIr {
+        label: None,
+        expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
+    }]);
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        count_output(),
+                        GroupingOperationIr::All(GroupingAllIr {
+                            operations: vec![
+                                GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                                    "brand".to_owned(),
+                                )),
+                                GroupingOperationIr::Each(GroupingAllIr {
+                                    operations: vec![count_output()],
+                                    label: None,
+                                }),
+                            ],
+                            label: None,
+                        }),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("nested grouping levels may reuse output names");
+}
+
+#[test]
 fn search_resolver_keeps_parallel_grouping_branches_semantically_valid() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;
