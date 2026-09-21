@@ -278,6 +278,7 @@ impl IndexContext {
         let input = self.sort_to_input(sort, "sort")?;
         resolve_sort(self, &input, "sort")
     }
+
     pub fn projection_to_ir(
         &self,
         projection: Option<api::FieldProjection<'_>>,
