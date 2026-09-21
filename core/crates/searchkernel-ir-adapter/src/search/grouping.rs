@@ -6,7 +6,7 @@ use searchkernel_vespa_engine::{
     FacetRequest, GroupingAggregation, GroupingBinaryOperator, GroupingExpression, GroupingFilter,
     GroupingLevel, GroupingLiteral, GroupingPlan, SearchRequest,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FacetLowering {
@@ -195,7 +195,6 @@ impl GroupingCompiler {
         });
 
         let mut aliases = BTreeMap::new();
-        let mut output_names = BTreeSet::new();
         let materializer_index = value.operations.iter().position(|operation| {
             matches!(operation, searchkernel_ir::GroupingOperationIr::Each(_))
         });
@@ -220,27 +219,16 @@ impl GroupingCompiler {
                     | searchkernel_ir::GroupingOperationIr::All(_)
             )
         });
-        self.lower_level_operations(local_operations, level, &mut aliases, &mut output_names)?;
+        self.lower_level_operations(local_operations, level, &mut aliases)?;
         if let Some(child) = materializer {
             for nested in self.lower_level_operations(
                 child.operations.iter(),
                 level,
                 &mut aliases,
-                &mut output_names,
+                &mut aliases,
             )? {
                 self.lower_grouping_scope(nested)?;
             }
-        }
-        if self.levels[level].max_groups.is_some()
-            && self.levels[level]
-                .aggregations
-                .iter()
-                .any(|aggregation| matches!(aggregation, GroupingAggregation::Summary { .. }))
-        {
-            return Err(unsupported_grouping(
-                "grouping_summary_max_ambiguous",
-                "summary() cannot share a grouping level with max(); Vespa requires a separate per-group hit limit",
-            ));
         }
         Ok(())
     }
@@ -250,23 +238,12 @@ impl GroupingCompiler {
         operations: &[searchkernel_ir::GroupingOperationIr],
     ) -> Result<()> {
         let mut aliases = BTreeMap::<String, (GroupingAggregation, usize)>::new();
-        let mut output_names = BTreeSet::new();
         for operation in operations {
             match operation {
                 searchkernel_ir::GroupingOperationIr::Output(outputs) => {
                     for output in outputs {
                         let aggregation =
                             lower_aggregation_with_aliases(&output.expression, &aliases)?;
-                        let name = output
-                            .label
-                            .clone()
-                            .unwrap_or_else(|| grouping_aggregation_name(&aggregation));
-                        if !output_names.insert(name) {
-                            return Err(unsupported_grouping(
-                                "grouping_output_name_collision",
-                                "native grouping outputs must have unique portable field names",
-                            ));
-                        }
                         self.root_aggregations.push(aggregation);
                         self.root_output_labels.push(output.label.clone());
                     }
@@ -301,7 +278,6 @@ impl GroupingCompiler {
         operations: impl IntoIterator<Item = &'a searchkernel_ir::GroupingOperationIr>,
         level: usize,
         aliases: &mut BTreeMap<String, (GroupingAggregation, usize)>,
-        output_names: &mut BTreeSet<String>,
     ) -> Result<Vec<&'a searchkernel_ir::GroupingAllIr>> {
         let mut nested = None;
         for operation in operations {
@@ -311,16 +287,6 @@ impl GroupingCompiler {
                     for output in outputs {
                         let aggregation =
                             lower_aggregation_with_aliases(&output.expression, aliases)?;
-                        let name = output
-                            .label
-                            .clone()
-                            .unwrap_or_else(|| grouping_aggregation_name(&aggregation));
-                        if !output_names.insert(name) {
-                            return Err(unsupported_grouping(
-                                "grouping_output_name_collision",
-                                "native grouping outputs must have unique portable field names",
-                            ));
-                        }
                         self.levels[level].aggregations.push(aggregation);
                         self.levels[level].output_labels.push(output.label.clone());
                         self.levels[level].output_visible.push(true);
@@ -618,31 +584,6 @@ fn reject_non_numeric_literal(expression: &searchkernel_ir::GroupingExpressionIr
         }
     }
     Ok(())
-}
-
-fn grouping_aggregation_name(aggregation: &GroupingAggregation) -> String {
-    let expression_name = |expression: &GroupingExpression| match expression {
-        GroupingExpression::Attribute(field) => field.clone(),
-        GroupingExpression::AggregationReference(index) => format!("aggregation({index})"),
-        expression => format!("{expression:?}"),
-    };
-    match aggregation {
-        GroupingAggregation::Count => "count".to_owned(),
-        GroupingAggregation::Average(expression) => {
-            format!("average({})", expression_name(expression))
-        }
-        GroupingAggregation::Sum(expression) => format!("sum({})", expression_name(expression)),
-        GroupingAggregation::Min(expression) => format!("min({})", expression_name(expression)),
-        GroupingAggregation::Max(expression) => format!("max({})", expression_name(expression)),
-        GroupingAggregation::StandardDeviation(expression) => {
-            format!("stddev({})", expression_name(expression))
-        }
-        GroupingAggregation::Xor(expression) => format!("xor({})", expression_name(expression)),
-        GroupingAggregation::Quantiles { expression, .. } => {
-            format!("quantiles({})", expression_name(expression))
-        }
-        GroupingAggregation::Summary { .. } => "summary".to_owned(),
-    }
 }
 
 fn lower_aggregation_expression(
