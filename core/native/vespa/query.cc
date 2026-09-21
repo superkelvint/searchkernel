@@ -121,10 +121,7 @@ void validate_query_field(const NativeQueryState &query, uint32_t kind,
 }
 
 std::string query_index_field(const NativeQueryState &query, const char *field) {
-    const auto metadata = std::find_if(
-        query.fields.begin(), query.fields.end(),
-        [field](const auto &candidate) { return candidate.name == field; });
-    if (metadata == query.fields.end() && query.same_element_parent) {
+    if (query.same_element_parent) {
         std::string qualified = *query.same_element_parent;
         if (*field != '\0') {
             qualified += ".";
@@ -135,6 +132,9 @@ std::string query_index_field(const NativeQueryState &query, const char *field) 
             [&qualified](const auto &candidate) { return candidate.name == qualified; });
         if (relative_metadata != query.fields.end()) return field;
     }
+    const auto metadata = std::find_if(
+        query.fields.begin(), query.fields.end(),
+        [field](const auto &candidate) { return candidate.name == field; });
     if (metadata == query.fields.end()) return field;
     if (!metadata->virtual_field) return field;
     std::string result;
@@ -261,9 +261,20 @@ void validate_fuzzy_query_field(const NativeQueryState &query, const char *field
     if (*field == '\0') {
         throw std::invalid_argument("query field must not be empty");
     }
-    const auto metadata = std::find_if(
-        query.fields.begin(), query.fields.end(),
-        [field](const auto &candidate) { return candidate.name == field; });
+    auto metadata = query.fields.end();
+    if (query.same_element_parent) {
+        std::string qualified = *query.same_element_parent;
+        qualified += ".";
+        qualified += field;
+        metadata = std::find_if(
+            query.fields.begin(), query.fields.end(),
+            [&qualified](const auto &candidate) { return candidate.name == qualified; });
+    }
+    if (metadata == query.fields.end()) {
+        metadata = std::find_if(
+            query.fields.begin(), query.fields.end(),
+            [field](const auto &candidate) { return candidate.name == field; });
+    }
     if (metadata == query.fields.end()) {
         throw std::invalid_argument("unknown generated schema field: " + std::string(field));
     }

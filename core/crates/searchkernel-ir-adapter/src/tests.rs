@@ -3359,6 +3359,35 @@ fn typed_query_c_same_element_reaches_real_vespa_for_arrays_and_relative_members
             .expect("portable relative-member sameElement")),
         vec!["doc:same"]
     );
+    let member_pattern_query = |pattern: &str| {
+        typed_contains(
+            "items",
+            QueryExprKindIr::SameElement(vec![
+                QueryExprIr {
+                    kind: QueryExprKindIr::Matches {
+                        field: typed_field("name"),
+                        pattern: pattern.to_owned(),
+                    },
+                    annotations: std::collections::BTreeMap::new(),
+                },
+                QueryExprIr {
+                    kind: QueryExprKindIr::Contains {
+                        field: typed_field("color"),
+                        item: Box::new(typed_term("blue")),
+                    },
+                    annotations: std::collections::BTreeMap::new(),
+                },
+            ]),
+        )
+    };
+    for pattern in ["bo.*", ".*bo.*", ".*ob"] {
+        assert_eq!(
+            ids(backend
+                .search(request(member_pattern_query(pattern)))
+                .expect("relative Matches sameElement")),
+            vec!["doc:same"]
+        );
+    }
 
     let member_query = |element_filter: Vec<u64>| {
         let mut annotations = std::collections::BTreeMap::new();

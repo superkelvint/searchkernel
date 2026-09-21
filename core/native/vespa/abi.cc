@@ -3305,7 +3305,8 @@ extern "C" int32_t sk_query_add_matches(
         if (*pattern == '\0') {
             throw std::invalid_argument("matches query pattern must not be empty");
         }
-        query->builder.addRegExpTerm(pattern, field, query->allocate_term_id(), Weight(100));
+        const auto index_field = query_index_field(*query, field);
+        query->builder.addRegExpTerm(pattern, index_field, query->allocate_term_id(), Weight(100));
     });
 }
 

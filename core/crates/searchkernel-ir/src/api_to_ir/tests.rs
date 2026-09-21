@@ -2722,6 +2722,24 @@ fn typed_query_validation_enforces_field_capabilities_and_types() {
     relative
         .validate_typed_query(&same_element("name"), None, None, "query")
         .expect("sameElement member name resolves relative to items before top-level name");
+    let same_element_matches = expression(QueryExprKindIr::Contains {
+        field: field("items"),
+        item: Box::new(expression(QueryExprKindIr::SameElement(vec![
+            expression(QueryExprKindIr::Matches {
+                field: field("name"),
+                pattern: "bo.*".to_owned(),
+            }),
+            expression(QueryExprKindIr::Contains {
+                field: field("color"),
+                item: Box::new(expression(QueryExprKindIr::Term {
+                    value: RequestValueIr::String("blue".to_owned()),
+                })),
+            }),
+        ]))),
+    });
+    relative
+        .validate_typed_query(&same_element_matches, None, None, "query")
+        .expect("sameElement Matches member resolves relative to items");
     let missing_member = relative
         .validate_typed_query(&same_element("foo"), None, None, "query")
         .expect_err("top-level foo must not mask missing items.foo");
@@ -2789,6 +2807,14 @@ fn typed_query_special_annotations_are_resolved_and_validated_in_ir() {
     for annotations in [
         BTreeMap::from([("targetNumHits".to_owned(), RequestValueIr::UInt64(0))]),
         BTreeMap::from([("unknownWandOption".to_owned(), RequestValueIr::Bool(true))]),
+        BTreeMap::from([(
+            "thresholdBoostFactor".to_owned(),
+            RequestValueIr::Float64(0.0),
+        )]),
+        BTreeMap::from([(
+            "thresholdBoostFactor".to_owned(),
+            RequestValueIr::Float64(-1.0),
+        )]),
     ] {
         let mut query = expression(wand.clone(), annotations);
         assert!(normalize_typed_query(&mut query, "query").is_err());
@@ -2928,6 +2954,26 @@ fn typed_query_geo_and_predicate_validity_is_rejected_in_ir() {
             }
         );
     }
+    for radius in [
+        "garbage",
+        "-1km",
+        "0km",
+        "NaNkm",
+        "999999999999999999999999999999km",
+    ] {
+        assert_eq!(
+            error_code(
+                &context,
+                expression(QueryExprKindIr::GeoLocation {
+                    field: field("position"),
+                    latitude: 0.0,
+                    longitude: 0.0,
+                    radius: radius.to_owned(),
+                }),
+            ),
+            "invalid_geo_radius"
+        );
+    }
     for (south, west, north, east) in [(2.0, 0.0, 1.0, 1.0), (0.0, 2.0, 1.0, 1.0)] {
         assert_eq!(
             error_code(
@@ -2954,4 +3000,34 @@ fn typed_query_geo_and_predicate_validity_is_rejected_in_ir() {
         ),
         "empty_typed_query"
     );
+    for (features, range_features) in [
+        (
+            BTreeMap::from([("hobby".to_owned(), RequestValueIr::List(Vec::new()))]),
+            BTreeMap::new(),
+        ),
+        (
+            BTreeMap::from([("1".to_owned(), RequestValueIr::Object(BTreeMap::new()))]),
+            BTreeMap::new(),
+        ),
+        (
+            BTreeMap::new(),
+            BTreeMap::from([("age".to_owned(), RequestValueIr::List(Vec::new()))]),
+        ),
+        (
+            BTreeMap::new(),
+            BTreeMap::from([("1".to_owned(), RequestValueIr::Object(BTreeMap::new()))]),
+        ),
+    ] {
+        assert_eq!(
+            error_code(
+                &context,
+                expression(QueryExprKindIr::Predicate {
+                    field: field("access"),
+                    features,
+                    range_features,
+                }),
+            ),
+            "empty_typed_query"
+        );
+    }
 }

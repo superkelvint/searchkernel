@@ -454,10 +454,15 @@ fn lower_typed_query(
                 alternatives,
             })
         }
-        QueryExprKindIr::Matches { field, pattern } => Ok(Query::Matches {
-            field: typed_query_field(Some(field), &format!("{path}.matches.field"))?.to_owned(),
-            pattern: pattern.clone(),
-        }),
+        QueryExprKindIr::Matches { field, pattern } => {
+            let field =
+                qualify_query_field(field, field_context, &format!("{path}.matches.field"))?;
+            Ok(Query::Matches {
+                field: typed_query_field(Some(&field), &format!("{path}.matches.field"))?
+                    .to_owned(),
+                pattern: pattern.clone(),
+            })
+        }
         QueryExprKindIr::DotProduct { field, items } => Ok(Query::DotProduct {
             field: typed_query_field(Some(field), &format!("{path}.dot_product.field"))?.to_owned(),
             items: lower_weighted_items(items, &format!("{path}.dot_product.items"))?,

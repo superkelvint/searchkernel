@@ -81,6 +81,13 @@ fn resolve_typed_query_annotations(
             let score_threshold = annotation_i64(annotations, "scoreThreshold", path)?.unwrap_or(0);
             let threshold_boost_factor =
                 annotation_f64(annotations, "thresholdBoostFactor", path)?.unwrap_or(1.0);
+            if threshold_boost_factor <= 0.0 {
+                return Err(invalid(
+                    "invalid_typed_query_annotation",
+                    Some(format!("{path}.annotations.thresholdBoostFactor")),
+                    "thresholdBoostFactor must be greater than zero",
+                ));
+            }
             annotations.insert(
                 "targetNumHits".to_owned(),
                 RequestValueIr::UInt64(u64::from(target_num_hits)),
@@ -808,9 +815,9 @@ impl IndexContext {
                 }
                 Ok(())
             }
-            QueryExprKindIr::Matches { field, .. } => {
-                self.validate_matches_query_field(field, &child_path("matches.field"))
-            }
+            QueryExprKindIr::Matches { field, .. } => self
+                .resolve_matches_query_field(field, field_context, &child_path("matches.field"))
+                .map(|_| ()),
             QueryExprKindIr::DotProduct { field, items }
             | QueryExprKindIr::WeightedSet { field, items }
             | QueryExprKindIr::Wand { field, items } => {
@@ -877,13 +884,7 @@ impl IndexContext {
                         "longitude must be between -180 and 180",
                     ));
                 }
-                if radius.is_empty() {
-                    return Err(invalid(
-                        "invalid_geo_radius",
-                        Some(format!("{path}.geo_location.radius")),
-                        "geo radius must not be empty",
-                    ));
-                }
+                validate_geo_radius(radius, &format!("{path}.geo_location.radius"))?;
                 let schema_field = self.validate_query_field_reference(field, path)?;
                 if !matches!(schema_field.data_type(), DataTypeIr::Position) {
                     return Err(invalid(
@@ -1071,18 +1072,20 @@ impl IndexContext {
                         "predicate queries require a predicate field",
                     ));
                 }
-                if features.is_empty() && range_features.is_empty() {
+                let has_feature =
+                    validate_predicate_features(features, &child_path("predicate.features"))?;
+                let has_range_feature = validate_predicate_range_features(
+                    range_features,
+                    &child_path("predicate.range_features"),
+                )?;
+                if !has_feature && !has_range_feature {
                     return Err(invalid(
                         "empty_typed_query",
                         Some(path.to_owned()),
                         "predicate query requires a feature or range feature",
                     ));
                 }
-                validate_predicate_features(features, &child_path("predicate.features"))?;
-                validate_predicate_range_features(
-                    range_features,
-                    &child_path("predicate.range_features"),
-                )
+                Ok(())
             }
         }
     }
@@ -1196,6 +1199,31 @@ impl IndexContext {
             ));
         }
         Ok(())
+    }
+
+    fn resolve_matches_query_field(
+        &self,
+        field: &QueryFieldRefIr,
+        field_context: Option<&QueryFieldRefIr>,
+        path: &str,
+    ) -> Result<QueryFieldRefIr> {
+        if let Some(context) = field_context {
+            if !field.path.as_str().contains('.') && context.path != field.path {
+                let qualified = FieldName::parse_query_path(format!(
+                    "{}.{}",
+                    context.path.as_str(),
+                    field.path.as_str()
+                ))?;
+                let qualified_ref = QueryFieldRefIr {
+                    path: qualified,
+                    element_index: field.element_index,
+                };
+                self.validate_matches_query_field(&qualified_ref, path)?;
+                return Ok(qualified_ref);
+            }
+        }
+        self.validate_matches_query_field(field, path)?;
+        Ok(field.clone())
     }
 
     pub(crate) fn resolve_searchable_query_field(
@@ -2032,6 +2060,45 @@ fn normalize_typed_query_children(
     Ok(())
 }
 
+fn validate_geo_radius(radius: &str, path: &str) -> Result<()> {
+    let radius = radius.trim();
+    if radius.is_empty() {
+        return Err(invalid(
+            "invalid_geo_radius",
+            Some(path.to_owned()),
+            "geo radius must not be empty",
+        ));
+    }
+    let (number, multiplier) = if let Some(number) = radius.strip_suffix("km") {
+        (number, 1.0 / 111.1950802335329)
+    } else if let Some(number) = radius.strip_suffix('m') {
+        (number, 1.0 / 111_195.0802335329)
+    } else {
+        (radius, 1.0)
+    };
+    let amount = number.trim().parse::<f64>().ok();
+    let Some(amount) = amount else {
+        return Err(invalid(
+            "invalid_geo_radius",
+            Some(path.to_owned()),
+            "geo radius must be a positive number with optional m or km suffix",
+        ));
+    };
+    let microdegrees = amount * multiplier * 1_000_000.0;
+    if !amount.is_finite()
+        || amount <= 0.0
+        || !microdegrees.is_finite()
+        || microdegrees > f64::from(u32::MAX)
+    {
+        return Err(invalid(
+            "invalid_geo_radius",
+            Some(path.to_owned()),
+            "geo radius must be a positive finite value within the supported range",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn query_children(
     children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::QueryExpr<'_>>>>,
     context: &IndexContext,
@@ -2056,28 +2123,38 @@ pub(crate) fn query_children(
 fn validate_predicate_features(
     values: &BTreeMap<String, RequestValueIr>,
     path: &str,
-) -> Result<()> {
+) -> Result<bool> {
+    let mut has_feature = false;
     for (key, value) in values {
-        validate_predicate_feature_value(key, value, path)?;
+        has_feature |= validate_predicate_feature_value(key, value, path)?;
     }
-    Ok(())
+    Ok(has_feature)
 }
 
-fn validate_predicate_feature_value(key: &str, value: &RequestValueIr, path: &str) -> Result<()> {
+fn validate_predicate_feature_value(key: &str, value: &RequestValueIr, path: &str) -> Result<bool> {
     match value {
-        RequestValueIr::String(value) if !key.is_empty() && !value.is_empty() => Ok(()),
+        RequestValueIr::String(value) if !key.is_empty() && !value.is_empty() => Ok(true),
         RequestValueIr::List(values) => {
-            for (index, value) in values.iter().enumerate() {
-                validate_predicate_feature_value(key, value, &format!("{path}.{key}[{index}]"))?;
-            }
-            Ok(())
+            values
+                .iter()
+                .enumerate()
+                .try_fold(false, |has_feature, (index, value)| {
+                    Ok(has_feature
+                        | validate_predicate_feature_value(
+                            key,
+                            value,
+                            &format!("{path}.{key}[{index}]"),
+                        )?)
+                })
         }
         RequestValueIr::Object(values) => {
             parse_predicate_bitmap(key, path)?;
-            for (nested_key, nested_value) in values {
-                validate_predicate_feature_value(nested_key, nested_value, path)?;
-            }
-            Ok(())
+            values
+                .iter()
+                .try_fold(false, |has_feature, (nested_key, nested_value)| {
+                    Ok(has_feature
+                        | validate_predicate_feature_value(nested_key, nested_value, path)?)
+                })
         }
         RequestValueIr::String(_) => Err(invalid(
             "invalid_predicate_value",
@@ -2095,14 +2172,15 @@ fn validate_predicate_feature_value(key: &str, value: &RequestValueIr, path: &st
 fn validate_predicate_range_features(
     values: &BTreeMap<String, RequestValueIr>,
     path: &str,
-) -> Result<()> {
+) -> Result<bool> {
+    let mut has_feature = false;
     for (key, value) in values {
-        validate_predicate_range_value(key, value, path)?;
+        has_feature |= validate_predicate_range_value(key, value, path)?;
     }
-    Ok(())
+    Ok(has_feature)
 }
 
-fn validate_predicate_range_value(key: &str, value: &RequestValueIr, path: &str) -> Result<()> {
+fn validate_predicate_range_value(key: &str, value: &RequestValueIr, path: &str) -> Result<bool> {
     match value {
         RequestValueIr::UInt64(_) => {
             if key.is_empty() {
@@ -2112,7 +2190,7 @@ fn validate_predicate_range_value(key: &str, value: &RequestValueIr, path: &str)
                     "predicate range feature keys must not be empty",
                 ));
             }
-            Ok(())
+            Ok(true)
         }
         RequestValueIr::Int64(value) if *value >= 0 => {
             if key.is_empty() {
@@ -2122,24 +2200,27 @@ fn validate_predicate_range_value(key: &str, value: &RequestValueIr, path: &str)
                     "predicate range feature keys must not be empty",
                 ));
             }
-            Ok(())
+            Ok(true)
         }
         RequestValueIr::List(values) => {
-            for (index, value) in values.iter().enumerate() {
-                validate_predicate_range_value(
-                    key,
-                    value,
-                    &format!("{path}.{key}[{index}]"),
-                )?;
-            }
-            Ok(())
+            values
+                .iter()
+                .enumerate()
+                .try_fold(false, |has_feature, (index, value)| {
+                    Ok(has_feature
+                        | validate_predicate_range_value(
+                            key,
+                            value,
+                            &format!("{path}.{key}[{index}]"),
+                        )?)
+                })
         }
         RequestValueIr::Object(values) => {
             parse_predicate_bitmap(key, path)?;
-            for (nested_key, nested_value) in values {
-                validate_predicate_range_value(nested_key, nested_value, path)?;
-            }
-            Ok(())
+            values.iter().try_fold(false, |has_feature, (nested_key, nested_value)| {
+                Ok(has_feature
+                    | validate_predicate_range_value(nested_key, nested_value, path)?)
+            })
         }
         _ => Err(invalid(
             "invalid_predicate_value",
