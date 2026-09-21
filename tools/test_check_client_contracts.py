@@ -24,6 +24,13 @@ CATALOG = {
             "title": "Rust",
             "runtimes": ["native"],
             "evidence_roots": ["rust-tests"],
+            "e2e_lanes": [
+                {
+                    "runtimes": ["native"],
+                    "path": "rust-tests/e2e.rs",
+                    "command": ["python3", "-c", "pass"],
+                }
+            ],
         },
         "python": {
             "title": "Python",
@@ -54,6 +61,7 @@ class ClientContractTests(unittest.TestCase):
         (self.root / "reference" / "client-contracts").mkdir(parents=True)
         (self.root / "rust-tests").mkdir()
         (self.root / "python-tests").mkdir()
+        (self.root / "rust-tests" / "e2e.rs").write_text("", encoding="utf-8")
         (self.root / "docs" / "capabilities.json").write_text(
             json.dumps(
                 {
@@ -118,6 +126,10 @@ class ClientContractTests(unittest.TestCase):
 
 
     def test_e2e_evidence_requires_ci_lane(self) -> None:
+        path = self.root / "reference" / "client-contracts" / "catalog.json"
+        catalog = json.loads(json.dumps(CATALOG))
+        catalog["surfaces"]["rust"].pop("e2e_lanes")
+        path.write_text(json.dumps(catalog), encoding="utf-8")
         (self.root / "rust-tests" / "e2e.rs").write_text(
             "// SKC: result.highlighting/basic kinds=e2e runtime=native\n",
             encoding="utf-8",
