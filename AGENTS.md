@@ -329,6 +329,24 @@ It creates a temporary worktree at `/tmp/<repository>-<task-name>` on the
 `agent/<task-name>` branch from the current `HEAD`; it does not copy
 uncommitted changes from the current checkout.
 
+Temporary worktrees also do not copy the pinned, read-only Vespa checkout. After
+creating a worktree, reuse the canonical checkout for local verification by
+linking it into the worktree:
+
+```bash
+mkdir -p /tmp/searchkern2-<task-name>/upstream
+ln -s /home/kelvin/projects/searchkern2/upstream/vespa \
+  /tmp/searchkern2-<task-name>/upstream/vespa
+ln -s /home/kelvin/projects/searchkern2/lib64 \
+  /tmp/searchkern2-<task-name>/lib64
+```
+
+If the destination already exists, verify that it points to
+`/home/kelvin/projects/searchkern2/upstream/vespa` or
+`/home/kelvin/projects/searchkern2/lib64`, as appropriate, instead of
+replacing it. The shared directories are read-only; do not modify or commit
+them from a task worktree.
+
 ## Search scope
 
 Repository-wide discovery should exclude generated/build artifacts by default.
