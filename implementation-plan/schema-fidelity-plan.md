@@ -337,15 +337,18 @@ Finally:
 # Phase 2 — Make the public Rust schema representation lossless
 
 Implementation status: complete for the `Index::describe()` representation.
-The canonical IR is the single authoritative state for described values and is
-stored in the public `schema` members on `IndexDefinition`, `Field`, and
-`RankProfile`; the ergonomic fields remain convenience projections. The direct
-public-state regressions below are the acceptance evidence for this status.
+Complete public members on `IndexDefinition`, `Field`, and `RankProfile` are
+the authoritative described state. A private materialization bit records only
+provenance for preserving ordinary builder defaults; it is not a second schema
+representation. The direct public-state and divergence regressions below are
+the acceptance evidence for this status.
 
 -  [x] `IndexDefinition` exposes complete canonical top-level schema state.
 -  [x] `Field` exposes complete canonical field/data-type state.
 -  [x] `RankProfile` exposes complete canonical rank-profile and phase state.
 -  [x] Public described values retain absence/presence semantics.
+-  [x] Public getters and introspection agree with direct members and Rust → IR
+       conversion after advanced public edits.
 
 Do not solve this by adding special cases inside `describe()`.
 
@@ -400,13 +403,12 @@ Do not require ordinary users to populate every advanced field.
 
 # Phase 3 — Make Rust → IR conversion lossless
 
--  [x] `definition_to_ir()` validates the ergonomic projection and restores
-       state from public described values without an immediate hidden-sidecar
-       return.
+-  [x] `definition_to_ir()` validates ordinary builder projections and
+       reconstructs described values from their complete public members.
 -  [x] Cloned fields and rank profiles convert from their own public schema
        state.
--  [x] Rich public mutations update the authoritative schema while preserving
-       untouched members.
+-  [x] Rich public mutations update authoritative public members while
+       preserving untouched members.
 
 Update the production Rust schema conversion path.
 
@@ -477,8 +479,8 @@ No fake tensor defaults.
        public Rust representation.
 -  [x] Full canonical equality passes after describe, clone/reuse, and rich
        mutation paths.
--  [x] Rich described definitions use canonical FlatBuffers provenance for
-       portable persistence.
+-  [x] Rich described definitions use the complete public members for portable
+       persistence.
 
 After Phases 2–4:
 

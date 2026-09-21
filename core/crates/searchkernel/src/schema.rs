@@ -321,7 +321,7 @@ impl Field {
     pub fn multi(mut self) -> Self {
         self.multi = true;
         if !matches!(
-            self.data_type,
+            &self.data_type,
             searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
         ) {
             self.data_type = searchkernel_ir::DataTypeIr::Array(Box::new(self.data_type));
@@ -404,37 +404,69 @@ impl Field {
 
     /// Return whether this field stores multiple values.
     pub fn is_multi(&self) -> bool {
-        self.multi
+        matches!(
+            self.data_type,
+            searchkernel_ir::DataTypeIr::Array(_) | searchkernel_ir::DataTypeIr::WeightedSet(_)
+        )
     }
 
     /// Return the explicitly configured storage capability, if any.
     pub fn configured_stored(&self) -> Option<bool> {
-        self.stored
+        if self.materialized {
+            Some(self.capabilities.stored)
+        } else {
+            self.stored
+        }
     }
 
     /// Return the explicitly configured search capability, if any.
     pub fn configured_searchable(&self) -> Option<bool> {
-        self.searchable
+        if self.materialized {
+            Some(self.capabilities.searchable)
+        } else {
+            self.searchable
+        }
     }
 
     /// Return the explicitly configured filter capability, if any.
     pub fn configured_filterable(&self) -> Option<bool> {
-        self.filterable
+        if self.materialized {
+            Some(self.capabilities.filterable)
+        } else {
+            self.filterable
+        }
     }
 
     /// Return the explicitly configured sort capability, if any.
     pub fn configured_sortable(&self) -> Option<bool> {
-        self.sortable
+        if self.materialized {
+            Some(self.capabilities.sortable)
+        } else {
+            self.sortable
+        }
     }
 
     /// Return the explicitly configured facet capability, if any.
     pub fn configured_facetable(&self) -> Option<bool> {
-        self.facetable
+        if self.materialized {
+            Some(self.capabilities.groupable)
+        } else {
+            self.facetable
+        }
     }
 
     /// Return the configured analyzer, if any.
     pub fn configured_analyzer(&self) -> Option<Analyzer> {
-        self.analyzer.clone()
+        if self.materialized {
+            self.analyzer_config.as_ref().and_then(|analyzer| {
+                (analyzer.name == "standard"
+                    && analyzer.version == 1
+                    && analyzer.options.is_empty())
+                .then(Analyzer::standard_v1)
+            })
+        } else {
+            self.analyzer.clone()
+        }
     }
 }
 
@@ -602,7 +634,11 @@ impl IndexDefinition {
 
     /// Return the explicitly configured default search fields.
     pub fn configured_default_search_fields(&self) -> Option<&[SearchField]> {
-        self.configured_default_search_fields.as_deref()
+        if self.materialized {
+            Some(&self.default_search_fields)
+        } else {
+            self.configured_default_search_fields.as_deref()
+        }
     }
 
     pub fn rank_profiles(&self) -> &[RankProfile] {

@@ -2888,6 +2888,30 @@ fn public_index_members_are_authoritative_for_direct_schema_mutation() {
 }
 
 #[test]
+fn public_introspection_agrees_with_direct_members_and_rust_to_ir_conversion() {
+    let (_canonical, mut described) = public_described_canonical_fixture();
+    let mut field = described.fields()[0].clone();
+    field.data_type = searchkernel_ir::DataTypeIr::Array(Box::new(
+        searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::Int32),
+    ));
+    field.capabilities.stored = false;
+    described.fields[0] = field.clone();
+    described.default_search_fields = vec![SearchField::new("title").weight(0.4)];
+
+    assert!(field.is_multi());
+    assert_eq!(field.configured_stored(), Some(false));
+    let configured = described
+        .configured_default_search_fields()
+        .expect("described defaults should be introspectable");
+    assert_eq!(configured, [SearchField::new("title").weight(0.4)]);
+
+    let resolved = definition_to_ir(&described).expect("public members should resolve");
+    assert_eq!(resolved.fields()[0].data_type(), &field.data_type);
+    assert!(!resolved.fields()[0].capabilities().stored());
+    assert_eq!(resolved.default_search_fields()[0].weight().get(), 0.4);
+}
+
+#[test]
 fn cloning_described_rich_field_preserves_its_public_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let extracted = described.fields()[0].clone();
