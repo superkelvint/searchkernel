@@ -222,11 +222,11 @@ install_target() {
 
 native_sdk_command() {
     case "${1:-ensure}" in
-        ensure|path|rebuild)
+        ensure|path)
             bash "$ROOT/tools/resolve-native-sdk.sh" "${1:-ensure}"
             ;;
         *)
-            echo 'usage: ./dev native-sdk ensure|path|rebuild' >&2
+            echo 'usage: ./dev native-sdk ensure|path' >&2
             return 2
             ;;
     esac
