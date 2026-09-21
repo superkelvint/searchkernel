@@ -110,7 +110,7 @@ approximated.
 
 ### Named summary-class selection (`result.named_summary_class`)
 
-- Pass 1 selects an existing Vespa summary class. Custom DocumentSummaryDefinition lowering, rich or recursive docsum values, and summary-feature readback remain separate capabilities.
+- The public E2E proves default summary selection and field projection only. Native schema generation does not install application-defined named DocumentSummaryDefinition classes, so custom named summary execution is not yet available.
 
 ### Rich document-summary values (scalar subset) (`result.rich_docsum_values`)
 
