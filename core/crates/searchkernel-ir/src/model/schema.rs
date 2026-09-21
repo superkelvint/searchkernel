@@ -590,6 +590,13 @@ impl IndexDefinitionIr {
         self.schema_fields = fields;
     }
 
+    /// Replace top-level struct definitions while retaining every other
+    /// canonical schema member.
+    #[doc(hidden)]
+    pub fn set_structs(&mut self, structs: Vec<NamedStructDefinitionIr>) {
+        self.structs = structs;
+    }
+
     #[doc(hidden)]
     pub fn set_rank_profiles(&mut self, profiles: Vec<RankProfileDefinitionIr>) {
         self.rank_profiles = profiles;

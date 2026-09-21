@@ -3188,6 +3188,22 @@ fn describe_preserves_named_structs() {
 }
 
 #[test]
+fn describe_exposes_named_structs_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.structs(), canonical.structs());
+}
+
+#[test]
+fn public_named_structs_round_trip_without_sidecar_state() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.canonical = None;
+    described.structs = canonical.structs().to_vec();
+
+    let resolved = definition_to_ir(&described).expect("public structs should resolve");
+    assert_eq!(resolved.structs(), canonical.structs());
+}
+
+#[test]
 fn describe_preserves_fieldsets() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.fieldsets(), described.fieldsets());

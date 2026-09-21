@@ -627,6 +627,7 @@ pub struct IndexDefinition {
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
+    pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
     // For values returned by Index::describe(), this is the authoritative
     // canonical schema state. The ergonomic members above are projections for
     // the common builder path; canonical_definition() makes the complete
@@ -643,6 +644,7 @@ impl fmt::Debug for IndexDefinition {
             .field("default_search_fields", &self.default_search_fields)
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
+            .field("structs", &self.structs)
             .finish()
     }
 }
@@ -788,6 +790,11 @@ impl IndexDefinition {
     /// Return schema constants represented by this definition.
     pub fn constants(&self) -> &[ConstantDefinition] {
         &self.constants
+    }
+
+    /// Return the top-level named struct definitions declared by the schema.
+    pub fn structs(&self) -> &[searchkernel_ir::NamedStructDefinitionIr] {
+        &self.structs
     }
 
     /// Add a schema constant to this definition.
