@@ -231,19 +231,16 @@ impl GroupingCompiler {
                 self.lower_grouping_scope(nested)?;
             }
         }
-        // Vespa uses the surrounding max operation to bound a hit-list
-        // aggregation.  The portable grouping shape is compiled into one
-        // linear native level, so apply the level's finite max to summaries
-        // after all operations have been lowered.  Zero deliberately retains
-        // Vespa's unlimited convention for an omitted or unlimited max.
-        let summary_max_hits = match self.levels[level].max_groups {
-            None | Some(u64::MAX) => 0,
-            Some(value) => value.min(u32::MAX as u64) as u32,
-        };
-        for aggregation in &mut self.levels[level].aggregations {
-            if let GroupingAggregation::Summary { max_hits, .. } = aggregation {
-                *max_hits = summary_max_hits;
-            }
+        if self.levels[level].max_groups.is_some()
+            && self.levels[level]
+                .aggregations
+                .iter()
+                .any(|aggregation| matches!(aggregation, GroupingAggregation::Summary { .. }))
+        {
+            return Err(unsupported_grouping(
+                "grouping_summary_max_ambiguous",
+                "summary() cannot share a grouping level with max(); Vespa requires a separate per-group hit limit",
+            ));
         }
         Ok(())
     }

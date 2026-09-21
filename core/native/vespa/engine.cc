@@ -3151,25 +3151,39 @@ public:
         return match_tree(builder.build(), text.rank_profile, "*");
     }
 
-    std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
-        // The provider returns a string_view into mutable document metadata.
-        // Keep the mutation lock through the copy so concurrent feed/remove
-        // operations cannot recycle the backing storage while it is decoded.
-        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
-        auto *ready_sub_db = _db->getReadySubDB();
-        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
-        auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
-        const auto *provider = dynamic_cast<const search::IDocumentIdProvider *>(&guard->get());
+    std::optional<std::string> id_for_lid_unlocked(
+        const search::IDocumentMetaStore &meta_store,
+        search::IDocumentMetaStore::DocId lid) const {
+        const auto *provider = dynamic_cast<const search::IDocumentIdProvider *>(&meta_store);
         if (!provider) throw std::runtime_error("Vespa DocumentDB does not provide document IDs");
-        search::IDocumentMetaStore::DocId lid = 0;
-        // A concurrent remove may invalidate a match between matching and
-        // result conversion. Treat that stale hit as absent; it is not an
-        // adapter failure and must not turn a safe concurrent search into an
-        // operation error.
-        if (!guard->get().getLid(gid, lid)) return std::nullopt;
         const auto id = provider->get_document_id_string_view(lid);
         if (id.empty()) return std::nullopt;
         return external_document_id(id, _document_type);
+    }
+
+    std::optional<std::string> id_for_lid_unlocked(search::IDocumentMetaStore::DocId lid) const {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        return id_for_lid_unlocked(guard->get(), lid);
+    }
+
+    std::optional<std::string> id_for_gid_unlocked(const document::GlobalId &gid) const {
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        search::IDocumentMetaStore::DocId lid = 0;
+        // A concurrent remove may invalidate a hit between matching and
+        // result conversion. Treat that stale hit as absent.
+        if (!guard->get().getLid(gid, lid)) return std::nullopt;
+        return id_for_lid_unlocked(guard->get(), lid);
+    }
+
+    std::optional<std::string> id_for_gid(const document::GlobalId &gid) const {
+        // Keep the mutation lock through the copy because the provider returns
+        // a string_view into mutable document metadata.
+        std::lock_guard<std::mutex> mutation_guard(_mutation_mutex);
+        return id_for_gid_unlocked(gid);
     }
 
     OwnedValue summary_value(const std::string &field_name,
@@ -3196,6 +3210,75 @@ public:
             throw std::runtime_error("unsupported summary field type");
         }
         return result;
+    }
+
+    static sk_grouping_tree_output::HitField grouping_hit_field(
+        const std::string &name, const OwnedValue &value) {
+        sk_grouping_tree_output::HitField result;
+        result.name = name;
+        result.kind = value.kind;
+        result.string = value.string;
+        result.integer = value.integer;
+        result.floating = value.floating;
+        result.boolean = value.boolean;
+        return result;
+    }
+
+    void resolve_grouping_output(sk_grouping_tree_output &output) const {
+        if (output.kind != SK_GROUPING_TREE_OUTPUT_HIT_LIST) return;
+        std::vector<sk_grouping_tree_output::Hit> resolved;
+        resolved.reserve(output.hits.size());
+        std::vector<size_t> summary_hits;
+        std::vector<document::GlobalId> gids;
+        for (auto hit : output.hits) {
+            std::optional<document::GlobalId> gid;
+            if (!hit.global_id.empty()) {
+                gid = document::GlobalId::parse(hit.global_id);
+                hit.id = id_for_gid_unlocked(*gid).value_or("");
+            } else if (hit.has_local_id) {
+                hit.id = id_for_lid_unlocked(hit.local_id).value_or("");
+            } else if (!hit.external_id.empty()) {
+                hit.id = external_document_id(hit.external_id, _document_type);
+                gid = document::DocumentId(internal_document_id(hit.id, _document_type)).getGlobalId();
+            }
+            if (hit.id.empty()) continue;
+            if (!gid && !hit.external_id.empty()) {
+                gid = document::DocumentId(internal_document_id(hit.id, _document_type)).getGlobalId();
+            }
+            if (gid) {
+                summary_hits.push_back(resolved.size());
+                gids.push_back(*gid);
+            }
+            resolved.push_back(std::move(hit));
+        }
+        output.hits = std::move(resolved);
+        if (output.summary_class.empty() || gids.empty()) return;
+
+        DocsumRequest request;
+        request.resultClassName = output.summary_class;
+        for (const auto &gid : gids) request.hits.emplace_back(gid);
+        auto docsum = _db->getDocsums(request);
+        if (!docsum || !docsum->hasResult()) {
+            throw std::runtime_error("Vespa grouped docsum returned no result");
+        }
+        const auto &root = docsum->root();
+        for (size_t index = 0; index < summary_hits.size(); ++index) {
+            const auto &doc = root["docsums"][index]["docsum"];
+            auto &hit = output.hits[summary_hits[index]];
+            for (const auto &field : _manifest.fields) {
+                if (!field.summary) continue;
+                const auto &value = doc[vespalib::Memory(field.name)];
+                if (value.valid()) {
+                    hit.summary.push_back(
+                        grouping_hit_field(field.name, summary_value(field.name, value)));
+                }
+            }
+        }
+    }
+
+    void resolve_grouping_node(sk_grouping_tree_node &node) const {
+        for (auto &output : node.outputs) resolve_grouping_output(*output);
+        for (auto &group : node.groups) resolve_grouping_node(*group);
     }
 
     Grouping make_grouping(const sk_grouping_plan &plan) const {
@@ -3761,8 +3844,13 @@ public:
         }
         Grouping result_grouping;
         result_grouping.deserialize(input);
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        result_grouping.convertToGlobalId(meta_store_guard->get());
         sk_grouping_tree_result result;
         result.root = grouping_tree_node(result_grouping.getRoot(), false);
+        if (result.root) resolve_grouping_node(*result.root);
         return result;
     }
 
@@ -3826,8 +3914,13 @@ public:
         }
         Grouping result_grouping;
         result_grouping.deserialize(input);
+        auto *ready_sub_db = _db->getReadySubDB();
+        if (!ready_sub_db) throw std::runtime_error("Vespa DocumentDB has no ready sub database");
+        auto meta_store_guard = ready_sub_db->getDocumentMetaStoreContext().getReadGuard();
+        result_grouping.convertToGlobalId(meta_store_guard->get());
         sk_grouping_tree_result result;
         result.root = grouping_tree_node(result_grouping.getRoot(), false);
+        if (result.root) resolve_grouping_node(*result.root);
         return result;
     }
 

@@ -1802,11 +1802,119 @@ fn grouping_output(pointer: *const sys::sk_grouping_tree_output) -> Result<Group
                     &error,
                 )?;
                 let id = unsafe { std::slice::from_raw_parts(id.cast::<u8>(), id_length as usize) };
-                hits.push(
-                    String::from_utf8(id.to_vec()).map_err(|_| {
-                        Error::message("native grouping returned a non-UTF-8 hit ID")
-                    })?,
-                );
+                let document_id = String::from_utf8(id.to_vec())
+                    .map_err(|_| Error::message("native grouping returned a non-UTF-8 hit ID"))?;
+                let mut score = 0.0;
+                let mut error = NativeError::new();
+                check(
+                    unsafe {
+                        sys::sk_grouping_tree_output_hit_score(
+                            output,
+                            index,
+                            &mut score,
+                            error.as_mut_ptr().cast(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                )?;
+                let summary_count =
+                    unsafe { sys::sk_grouping_tree_output_hit_summary_count(output, index) };
+                let mut fields = BTreeMap::new();
+                for summary_index in 0..summary_count {
+                    let mut name = ptr::null();
+                    let mut name_length = 0;
+                    let mut error = NativeError::new();
+                    check(
+                        unsafe {
+                            sys::sk_grouping_tree_output_hit_summary_name(
+                                output,
+                                index,
+                                summary_index,
+                                &mut name,
+                                &mut name_length,
+                                error.as_mut_ptr().cast(),
+                                error.capacity(),
+                            )
+                        },
+                        &error,
+                    )?;
+                    if name.is_null() {
+                        return Err(Error::message(
+                            "native grouping returned a null summary field name",
+                        ));
+                    }
+                    let name = unsafe {
+                        std::slice::from_raw_parts(name.cast::<u8>(), name_length as usize)
+                    };
+                    let name = String::from_utf8(name.to_vec()).map_err(|_| {
+                        Error::message("native grouping returned a non-UTF-8 summary field name")
+                    })?;
+                    let mut kind = 0;
+                    let mut string = ptr::null();
+                    let mut string_length = 0;
+                    let mut integer = 0;
+                    let mut float = 0.0;
+                    let mut boolean = 0;
+                    let mut error = NativeError::new();
+                    check(
+                        unsafe {
+                            sys::sk_grouping_tree_output_hit_summary_value(
+                                output,
+                                index,
+                                summary_index,
+                                &mut kind,
+                                &mut string,
+                                &mut string_length,
+                                &mut integer,
+                                &mut float,
+                                &mut boolean,
+                                error.as_mut_ptr().cast(),
+                                error.capacity(),
+                            )
+                        },
+                        &error,
+                    )?;
+                    let value = match kind {
+                        sys::SK_VALUE_STRING => {
+                            if string.is_null() {
+                                return Err(Error::message(
+                                    "native grouping returned a null summary string",
+                                ));
+                            }
+                            let value = unsafe {
+                                std::slice::from_raw_parts(
+                                    string.cast::<u8>(),
+                                    string_length as usize,
+                                )
+                            };
+                            FieldValue::Scalar(ScalarValue::String(
+                                String::from_utf8(value.to_vec()).map_err(|_| {
+                                    Error::message(
+                                        "native grouping returned a non-UTF-8 summary string",
+                                    )
+                                })?,
+                            ))
+                        }
+                        sys::SK_VALUE_INTEGER => FieldValue::Scalar(ScalarValue::Integer(integer)),
+                        sys::SK_VALUE_FLOAT => FieldValue::Scalar(ScalarValue::Float(float)),
+                        sys::SK_VALUE_BOOLEAN => {
+                            FieldValue::Scalar(ScalarValue::Boolean(boolean != 0))
+                        }
+                        _ => {
+                            return Err(Error::message(
+                                "native grouping returned an unknown summary value kind",
+                            ))
+                        }
+                    };
+                    fields.insert(name, value);
+                }
+                hits.push(Hit {
+                    document_id,
+                    score,
+                    fields,
+                    match_features: BTreeMap::new(),
+                });
             }
             Ok(GroupingOutput::HitList(hits))
         }

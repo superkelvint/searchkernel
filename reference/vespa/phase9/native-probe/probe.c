@@ -173,6 +173,7 @@ int main(void) {
     sk_grouping_expression_destroy(category);
     sk_grouping_plan_destroy(plan);
 
-    puts("{\"id\":\"additive-handles\",\"status\":\"ok\",\"abi\":10}");
+    printf("{\"id\":\"additive-handles\",\"status\":\"ok\",\"abi\":%u}\n",
+           sk_native_abi_version());
     return 0;
 }

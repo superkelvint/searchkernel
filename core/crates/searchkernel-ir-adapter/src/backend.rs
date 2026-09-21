@@ -272,9 +272,15 @@ fn grouping_result_group(
             continue;
         }
         if let GroupingOutput::HitList(ids) = output {
-            children.extend(ids.iter().cloned().map(|id| {
+            children.extend(ids.into_iter().map(|hit| {
                 searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
-                    id,
+                    id: hit.document_id.clone(),
+                    score: Some(hit.score),
+                    fields: hit
+                        .fields
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value_to_ir(value)))
+                        .collect(),
                     ..Default::default()
                 })
             }));
@@ -337,7 +343,7 @@ fn grouping_output_value(output: GroupingOutput) -> Result<searchkernel_ir::Valu
         GroupingOutput::HitList(values) => Ok(searchkernel_ir::Value::List(
             values
                 .into_iter()
-                .map(searchkernel_ir::Value::String)
+                .map(|hit| searchkernel_ir::Value::String(hit.document_id))
                 .collect(),
         )),
     }

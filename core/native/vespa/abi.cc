@@ -2293,7 +2293,7 @@ extern "C" int32_t sk_grouping_tree_output_value(
 extern "C" uint32_t sk_grouping_tree_output_hit_count(
     const sk_grouping_tree_output *output) SK_NOEXCEPT {
     return (output && output->kind == SK_GROUPING_TREE_OUTPUT_HIT_LIST)
-               ? static_cast<uint32_t>(output->hit_ids.size())
+               ? static_cast<uint32_t>(output->hits.size())
                : 0;
 }
 
@@ -2304,14 +2304,83 @@ extern "C" int32_t sk_grouping_tree_output_hit_id(
     if (out_id) *out_id = nullptr;
     if (out_id_length) *out_id_length = 0;
     if (!output || output->kind != SK_GROUPING_TREE_OUTPUT_HIT_LIST ||
-        !out_id || !out_id_length || hit_index >= output->hit_ids.size()) {
+        !out_id || !out_id_length || hit_index >= output->hits.size()) {
         return invoke(error, error_capacity, [] {
             throw std::invalid_argument("grouping hit-list arguments are invalid");
         });
     }
-    const auto &id = output->hit_ids[hit_index];
+    const auto &id = output->hits[hit_index].id;
     *out_id = id.data();
     *out_id_length = static_cast<uint32_t>(id.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_grouping_tree_output_hit_score(
+    const sk_grouping_tree_output *output, uint32_t hit_index, double *out_score,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!output || output->kind != SK_GROUPING_TREE_OUTPUT_HIT_LIST || !out_score ||
+        hit_index >= output->hits.size()) {
+        return invoke(error, error_capacity, [] {
+            throw std::invalid_argument("grouping hit score arguments are invalid");
+        });
+    }
+    *out_score = output->hits[hit_index].score;
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" uint32_t sk_grouping_tree_output_hit_summary_count(
+    const sk_grouping_tree_output *output, uint32_t hit_index) SK_NOEXCEPT {
+    return (output && output->kind == SK_GROUPING_TREE_OUTPUT_HIT_LIST &&
+            hit_index < output->hits.size())
+               ? static_cast<uint32_t>(output->hits[hit_index].summary.size())
+               : 0;
+}
+
+extern "C" int32_t sk_grouping_tree_output_hit_summary_name(
+    const sk_grouping_tree_output *output, uint32_t hit_index,
+    uint32_t summary_index, const char **out_name, uint32_t *out_length,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_name) *out_name = nullptr;
+    if (out_length) *out_length = 0;
+    if (!output || output->kind != SK_GROUPING_TREE_OUTPUT_HIT_LIST || !out_name ||
+        !out_length || hit_index >= output->hits.size() ||
+        summary_index >= output->hits[hit_index].summary.size()) {
+        return invoke(error, error_capacity, [] {
+            throw std::invalid_argument("grouping hit summary name arguments are invalid");
+        });
+    }
+    const auto &name = output->hits[hit_index].summary[summary_index].name;
+    *out_name = name.data();
+    *out_length = static_cast<uint32_t>(name.size());
+    return SK_NATIVE_STATUS_OK;
+}
+
+extern "C" int32_t sk_grouping_tree_output_hit_summary_value(
+    const sk_grouping_tree_output *output, uint32_t hit_index,
+    uint32_t summary_index, uint32_t *out_kind, const char **out_string,
+    uint32_t *out_string_length, int64_t *out_integer, double *out_float,
+    uint8_t *out_boolean, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_kind) *out_kind = 0;
+    if (out_string) *out_string = nullptr;
+    if (out_string_length) *out_string_length = 0;
+    if (out_integer) *out_integer = 0;
+    if (out_float) *out_float = 0.0;
+    if (out_boolean) *out_boolean = 0;
+    if (!output || output->kind != SK_GROUPING_TREE_OUTPUT_HIT_LIST || !out_kind ||
+        !out_string || !out_string_length || !out_integer || !out_float ||
+        !out_boolean || hit_index >= output->hits.size() ||
+        summary_index >= output->hits[hit_index].summary.size()) {
+        return invoke(error, error_capacity, [] {
+            throw std::invalid_argument("grouping hit summary value arguments are invalid");
+        });
+    }
+    const auto &value = output->hits[hit_index].summary[summary_index];
+    *out_kind = value.kind;
+    *out_string = value.string.data();
+    *out_string_length = static_cast<uint32_t>(value.string.size());
+    *out_integer = value.integer;
+    *out_float = value.floating;
+    *out_boolean = value.boolean;
     return SK_NATIVE_STATUS_OK;
 }
 

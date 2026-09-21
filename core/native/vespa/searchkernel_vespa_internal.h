@@ -328,7 +328,25 @@ struct sk_grouping_result_value {
 struct sk_grouping_tree_output {
     uint32_t kind = SK_GROUPING_TREE_OUTPUT_VALUE;
     std::unique_ptr<sk_grouping_result_value> value;
-    std::vector<std::string> hit_ids;
+    struct HitField {
+        std::string name;
+        uint32_t kind = SK_VALUE_STRING;
+        std::string string;
+        int64_t integer = 0;
+        double floating = 0.0;
+        bool boolean = false;
+    };
+    struct Hit {
+        std::string id;
+        std::string global_id;
+        std::string external_id;
+        uint32_t local_id = 0;
+        bool has_local_id = false;
+        double score = 0.0;
+        std::vector<HitField> summary;
+    };
+    std::string summary_class;
+    std::vector<Hit> hits;
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
     std::shared_ptr<const ResultFaultController> result_faults;
 #endif

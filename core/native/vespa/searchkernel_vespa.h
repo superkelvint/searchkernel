@@ -1056,6 +1056,21 @@ SK_API int32_t sk_grouping_tree_output_hit_id(
     const sk_grouping_tree_output *output, uint32_t hit_index,
     const char **out_id, uint32_t *out_id_length, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_output_hit_score(
+    const sk_grouping_tree_output *output, uint32_t hit_index, double *out_score,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_grouping_tree_output_hit_summary_count(
+    const sk_grouping_tree_output *output, uint32_t hit_index) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_output_hit_summary_name(
+    const sk_grouping_tree_output *output, uint32_t hit_index,
+    uint32_t summary_index, const char **out_name, uint32_t *out_length,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_grouping_tree_output_hit_summary_value(
+    const sk_grouping_tree_output *output, uint32_t hit_index,
+    uint32_t summary_index, uint32_t *out_kind, const char **out_string,
+    uint32_t *out_string_length, int64_t *out_integer, double *out_float,
+    uint8_t *out_boolean, uint8_t *out_error,
+    uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API void sk_grouping_tree_result_destroy(
     sk_grouping_tree_result *result) SK_NOEXCEPT;
 

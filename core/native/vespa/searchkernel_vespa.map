@@ -242,6 +242,10 @@ SEARCHKERNEL_2 {
         sk_grouping_tree_output_value;
         sk_grouping_tree_output_hit_count;
         sk_grouping_tree_output_hit_id;
+        sk_grouping_tree_output_hit_score;
+        sk_grouping_tree_output_hit_summary_count;
+        sk_grouping_tree_output_hit_summary_name;
+        sk_grouping_tree_output_hit_summary_value;
         sk_grouping_tree_result_destroy;
         sk_local_grouping_request_create;
         sk_local_grouping_request_add_aggregation;

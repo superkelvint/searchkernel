@@ -571,7 +571,7 @@ pub enum GroupingResultValue {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupingOutput {
     Value(GroupingResultValue),
-    HitList(Vec<String>),
+    HitList(Vec<Hit>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

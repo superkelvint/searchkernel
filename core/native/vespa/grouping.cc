@@ -58,25 +58,52 @@ std::unique_ptr<sk_grouping_tree_output> grouping_tree_output(
     } else if (aggregation.getClass().inherits(HitsAggregationResult::classId)) {
         output->kind = SK_GROUPING_TREE_OUTPUT_HIT_LIST;
         output->value.reset();
-        class HitIdVisitor final : public vespalib::ObjectVisitor {
+        const auto &hits = static_cast<const HitsAggregationResult &>(aggregation);
+        output->summary_class = hits.getSummaryClass();
+        class HitVisitor final : public vespalib::ObjectVisitor {
         public:
-            std::vector<std::string> ids;
+            std::vector<sk_grouping_tree_output::Hit> hits;
+            sk_grouping_tree_output::Hit current;
+            bool in_hit = false;
 
-            void openStruct(std::string_view, std::string_view) override {}
-            void closeStruct() override {}
+            void openStruct(std::string_view, std::string_view type) override {
+                if (type.ends_with("FS4Hit") || type.ends_with("VdsHit")) {
+                    current = {};
+                    in_hit = true;
+                }
+            }
+            void closeStruct() override {
+                if (in_hit) {
+                    if (!current.global_id.empty() || !current.external_id.empty() ||
+                        current.has_local_id) {
+                        hits.push_back(std::move(current));
+                    }
+                    current = {};
+                    in_hit = false;
+                }
+            }
             void visitBool(std::string_view, bool) override {}
             void visitInt(std::string_view name, int64_t value) override {
-                if (name == "docId") ids.push_back(std::to_string(value));
+                if (!in_hit) return;
+                if (name == "docId" && value >= 0 &&
+                    value <= std::numeric_limits<uint32_t>::max()) {
+                    current.local_id = static_cast<uint32_t>(value);
+                    current.has_local_id = true;
+                }
             }
-            void visitFloat(std::string_view, double) override {}
+            void visitFloat(std::string_view name, double value) override {
+                if (in_hit && name == "rank") current.score = value;
+            }
             void visitString(std::string_view name, std::string_view value) override {
-                if (name == "docId") ids.emplace_back(value);
+                if (!in_hit) return;
+                if (name == "docId") current.external_id = value;
+                if (name == "globalId") current.global_id = value;
             }
             void visitNull(std::string_view) override {}
             void visitNotImplemented() override {}
         } visitor;
         aggregation.getResult()->visitMembers(visitor);
-        output->hit_ids = std::move(visitor.ids);
+        output->hits = std::move(visitor.hits);
     } else {
         throw UnsupportedNativeError(
             "grouping_output_kind",

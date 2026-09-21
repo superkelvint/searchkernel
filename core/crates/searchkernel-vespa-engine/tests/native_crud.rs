@@ -1359,11 +1359,28 @@ fn native_grouping_decodes_quantiles_and_summary_hits() {
         .expect("execute grouping extensions");
     assert_eq!(result.groups.len(), 1);
     assert_eq!(result.groups[0].outputs.len(), 8);
-    assert!(result.groups[0].outputs.iter().any(|output| matches!(
-        output,
-        searchkernel_vespa_engine::GroupingOutput::HitList(hits)
-            if hits.len() == 2
-    )));
+    let hits = result.groups[0]
+        .outputs
+        .iter()
+        .find_map(|output| match output {
+            searchkernel_vespa_engine::GroupingOutput::HitList(hits) => Some(hits),
+            searchkernel_vespa_engine::GroupingOutput::Value(_) => None,
+        })
+        .expect("summary aggregation should return grouped hits");
+    assert_eq!(
+        hits.iter()
+            .map(|hit| hit.document_id.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["group-extension-1", "group-extension-2"])
+    );
+    let first = hits
+        .iter()
+        .find(|hit| hit.document_id == "group-extension-1")
+        .expect("first grouped hit");
+    assert!(matches!(
+        first.fields.get("title"),
+        Some(FieldValue::Scalar(ScalarValue::String(value))) if value == "first"
+    ));
     assert!(result.groups[0].outputs.iter().any(|output| matches!(
         output,
         searchkernel_vespa_engine::GroupingOutput::Value(

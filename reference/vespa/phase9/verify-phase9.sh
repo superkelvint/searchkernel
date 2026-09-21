@@ -4,6 +4,8 @@ PHASE9="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$PHASE9/../../.." && pwd)"
 cd "$ROOT"
 export SK_NATIVE_SDK="${SK_NATIVE_SDK:-$ROOT/target/vespa-verifier/phase9/sdk}"
+export VESPA_EXTRA_LIB_DIR="${VESPA_EXTRA_LIB_DIR:-$ROOT/core/native/sdk/linux-x86_64/lib}"
+export VESPA_AWS_LIB_DIR="${VESPA_AWS_LIB_DIR:-$ROOT/core/native/sdk/linux-x86_64/lib}"
 source "$ROOT/reference/vespa/common/verify-common.sh"
 require_pinned_vespa
 if [[ ! -f "$SDK/lib/libsearchkernel_vespa.so" ]]; then
@@ -11,6 +13,24 @@ if [[ ! -f "$SDK/lib/libsearchkernel_vespa.so" ]]; then
     "$ROOT/core/native/vespa/build-sdk.sh"
 fi
 require_sdk_manifest "$SDK/manifest.json"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+python3 "$ROOT/tools/check_abi_surface.py" "$SDK/include/searchkernel_vespa.h"
+SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-native-bindings.sh"
+
+# Phase 9 validates the current ABI toolchain and debug information against an
+# isolated build of the same current source. It is intentionally not a claim
+# of compatibility with the historical ABI-10 probe.
+SK_NATIVE_SDK="$TMP/current-sdk" \
+SK_NATIVE_BUILD_DIR="$TMP/current-build" \
+SK_NATIVE_REGENERATE_BINDINGS=0 \
+  "$ROOT/core/native/vespa/build-sdk.sh"
+"$ROOT/tools/check-native-abi.sh" \
+  "$TMP/current-sdk/lib/libsearchkernel_vespa.so" \
+  "$SDK/lib/libsearchkernel_vespa.so" \
+  "$TMP/searchkernel-vespa-engine.abi.xml"
 
 # Keep the cumulative gates in the phase9 acceptance path. The extra library
 # directories are needed when a pinned-Vespa oracle was built outside its
@@ -23,8 +43,6 @@ export LD_LIBRARY_PATH="$SDK/lib${VESPA_DEPS_LIB:+:$VESPA_DEPS_LIB}${VESPA_LIBS:
 "$ROOT/reference/vespa/m9-general-grouping-verifier/verify-recursive-grouping.sh"
 "$PHASE9/check-structure.sh"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
 cc -std=c11 -Wall -Wextra -Werror -I"$SDK/include" \
   "$PHASE9/native-probe/probe.c" -L"$SDK/lib" -lsearchkernel_vespa \
   -Wl,-rpath,"$SDK/lib" -o "$TMP/probe"

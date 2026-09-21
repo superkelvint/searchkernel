@@ -785,37 +785,36 @@ with Index.create(
     # flattening them into top-level hits.
     # -----------------------------------------------------------------------
 
-    # heading("19. SUMMARY AGGREGATION -> GROUP HIT CHILDREN")
+    heading("19. SUMMARY AGGREGATION -> GROUP HIT CHILDREN")
 
-    # results = (
-    #     index.search("shoes")
-    #     .group(
-    #         Group.by("brand")
-    #         .limit(10)
-    #         .output(
-    #             agg.count().as_("products"),
-    #             agg.summary().as_("hits"),
-    #         )
-    #     )
-    #     .execute()
-    # )
-    # print_results(results)
+    results = (
+        index.search("shoes")
+        .group(
+            Group.by("brand")
+            .output(
+                agg.count().as_("products"),
+                agg.summary().as_("hits"),
+            )
+        )
+        .execute()
+    )
+    print_results(results)
 
-    # grouped_hit_ids = {
-    #     hit.id
-    #     for group in results.groups
-    #     for hit in group.hits
-    # }
-    # assert grouped_hit_ids == {
-    #     "shoe-1",
-    #     "shoe-2",
-    #     "shoe-3",
-    #     "shoe-4",
-    #     "shoe-5",
-    # }
+    grouped_hit_ids = {
+        hit.id
+        for group in results.groups
+        for hit in group.hits
+    }
+    assert grouped_hit_ids == {
+        "shoe-1",
+        "shoe-2",
+        "shoe-3",
+        "shoe-4",
+        "shoe-5",
+    }
 
-    # # Grouping hit children are not silently flattened into top-level hits.
-    # assert {hit.id for hit in results.hits}.isdisjoint(grouped_hit_ids)
+    # Grouping hit children are not silently flattened into top-level hits.
+    assert {hit.id for hit in results.hits}.isdisjoint(grouped_hit_ids)
 
     # -----------------------------------------------------------------------
     # Grouping continuation tokens remain opaque and survive result decoding.
@@ -1443,7 +1442,7 @@ Successfully demonstrated through the public Python facade:
   ✓ recursive ResultGroup decoding
   ✓ aliases + output
   ✓ grouping keep/filter representative
-  — summary aggregation -> Hit children [BLOCKED: native docsum payloads are not decoded]
+  ✓ summary aggregation -> Hit children
   — grouping continuation preservation [DEFERRED: continuation tokens are not sent through the native grouping ABI]
 
   QUERY / RANKING / YQL

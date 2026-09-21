@@ -6,6 +6,7 @@ SDK="${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}"
 HEADER="$ROOT/core/native/vespa/searchkernel_vespa.h"
 MAP="$ROOT/core/native/vespa/searchkernel_vespa.map"
 BINDINGS="$ROOT/core/crates/searchkernel-vespa-bindings/src/bindings.rs"
+SYMBOLS="$(nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.2")"
 
 cmp -s "$HEADER" "$SDK/include/searchkernel_vespa.h"
 grep -qx '#define SK_NATIVE_ABI_VERSION 12U' "$HEADER"
@@ -28,9 +29,13 @@ for symbol in \
   sk_grouping_aggregation_xor sk_grouping_aggregation_quantiles \
   sk_grouping_aggregation_summary \
   sk_grouping_tree_output_hit_count sk_grouping_tree_output_hit_id \
+  sk_grouping_tree_output_hit_score \
+  sk_grouping_tree_output_hit_summary_count \
+  sk_grouping_tree_output_hit_summary_name \
+  sk_grouping_tree_output_hit_summary_value \
   sk_document_update_arithmetic sk_generic_search_request_set_sort_spec; do
   grep -q "${symbol}" "$HEADER" "$MAP" "$BINDINGS"
-  nm -D --defined-only "$SDK/lib/libsearchkernel_vespa.so.2" | grep -q " ${symbol}"
+  grep -q " ${symbol}" <<<"$SYMBOLS"
 done
 
 if grep -Eiq 'sk_query_add_(prefix|substring|suffix)' "$HEADER" "$MAP"; then

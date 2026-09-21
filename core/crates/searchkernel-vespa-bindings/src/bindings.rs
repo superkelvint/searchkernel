@@ -2302,6 +2302,47 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_score(
+        output: *const sk_grouping_tree_output,
+        hit_index: u32,
+        out_score: *mut f64,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_summary_count(
+        output: *const sk_grouping_tree_output,
+        hit_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_summary_name(
+        output: *const sk_grouping_tree_output,
+        hit_index: u32,
+        summary_index: u32,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_grouping_tree_output_hit_summary_value(
+        output: *const sk_grouping_tree_output,
+        hit_index: u32,
+        summary_index: u32,
+        out_kind: *mut u32,
+        out_string: *mut *const ::std::os::raw::c_char,
+        out_string_length: *mut u32,
+        out_integer: *mut i64,
+        out_float: *mut f64,
+        out_boolean: *mut u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_grouping_tree_result_destroy(result: *mut sk_grouping_tree_result);
 }
 unsafe extern "C" {

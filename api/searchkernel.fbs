@@ -1418,8 +1418,9 @@ table QuantilesAggregation {
 }
 
 table SummaryAggregation {
-  // Empty means the backend/default summary class. Hit count is controlled by
-  // a surrounding GroupingMaxOperation, matching Vespa summary([identifier]).
+  // Empty means the backend/default summary class. A summary aggregation may
+  // not share a level with GroupingMaxOperation until the portable API has a
+  // distinct per-group hit-limit representation.
   summary:string;
 }
 
