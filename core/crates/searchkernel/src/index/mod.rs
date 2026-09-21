@@ -570,7 +570,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                         searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
                     }
                 },
-                multi: field.multi,
+                multi: field.is_multi(),
                 stored: field.stored,
                 searchable: field.searchable,
                 filterable: field.filterable,
@@ -670,7 +670,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 .or_else(|| resolved.fields().get(index).cloned())
                 .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?;
             resolved.set_index_config(field.index_config.clone());
-            resolved.set_attribute_config(field.attribute_config.clone());
+            resolved.set_attribute_config(field.attribute_config.clone());\n            resolved.set_data_type(field.data_type.clone());
             if field.canonical.is_none() {
                 if let Some(analyzer) = &field.analyzer_config {
                     resolved.set_analyzer(Some(analyzer.clone()));
@@ -749,7 +749,7 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             value = Field::tensor(field.name().as_str(), type_spec);
         }
         value.analyzer_config = field.analyzer().cloned();
-        value.matching_config = field.matching().cloned();
+        value.matching_config = field.matching().cloned();\n        value.data_type = field.data_type().clone();
         if matches!(
             field.cardinality(),
             searchkernel_ir::FieldCardinality::Multi

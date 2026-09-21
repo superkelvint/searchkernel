@@ -2840,6 +2840,64 @@ fn describe_preserves_all_document_data_types() {
 }
 
 #[test]
+fn describe_exposes_canonical_field_data_types_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    for name in [
+        "byte_value",
+        "count32",
+        "ratio32",
+        "payload",
+        "scores",
+        "parent",
+    ] {
+        let expected = canonical
+            .fields()
+            .iter()
+            .find(|field| field.name().as_str() == name)
+            .expect("fixture field should exist");
+        let actual = described
+            .fields()
+            .iter()
+            .find(|field| field.name() == name)
+            .expect("described field should exist");
+        assert_eq!(actual.data_type(), expected.data_type(), "field {name}");
+    }
+}
+
+#[test]
+fn cloned_described_fields_round_trip_data_types_without_sidecar_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    for name in [
+        "byte_value",
+        "count32",
+        "ratio32",
+        "payload",
+        "scores",
+        "parent",
+    ] {
+        let mut field = described
+            .fields()
+            .iter()
+            .find(|field| field.name() == name)
+            .expect("described field should exist")
+            .clone();
+        field.canonical = None;
+        let resolved = definition_to_ir(&IndexDefinition::new().field(field))
+            .expect("cloned public field should resolve");
+        let expected = canonical
+            .fields()
+            .iter()
+            .find(|field| field.name().as_str() == name)
+            .expect("fixture field should exist");
+        assert_eq!(
+            resolved.fields()[0].data_type(),
+            expected.data_type(),
+            "field {name}"
+        );
+    }
+}
+
+#[test]
 fn describe_preserves_complete_field_configuration() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.fields()[0], described.fields()[0]);
