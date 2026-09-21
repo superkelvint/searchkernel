@@ -28,6 +28,44 @@ Do not duplicate large architecture or API specifications in this file.
 
 Follow more-specific `AGENTS.md` files when present in a subtree.
 
+## GitHub work coordination
+
+GitHub is the authoritative CTO work queue and review channel for this
+repository.
+
+Use `superkelvint/searchkernel` issues and pull requests for all implementation
+coordination:
+
+- GitHub Issues hold bugs, audit findings, remediation work, feature requests,
+  and other actionable CTO work.
+- Do not use a separate `dispatches/` directory, `agent-reports/` directory,
+  or coordination repository as the work queue or completion channel.
+- A non-trivial implementation task should have an issue before code changes
+  begin. If a task is given directly and no issue exists, create one when GitHub
+  access is available.
+- Before starting an issue, read the full issue and recent comments, check for
+  linked/open pull requests, and make sure another agent has not already
+  claimed it.
+- Claim work before editing by assigning yourself when permissions allow and by
+  leaving an issue comment that clearly says the issue is claimed and names the
+  task branch. If an issue is already claimed, do not duplicate the work unless
+  the issue explicitly calls for parallel investigation.
+- Keep durable status, blockers, and scope changes on the issue or pull request,
+  not in ad-hoc report files.
+- Implementation happens on a task branch and is delivered through a pull
+  request into `main`.
+- Every implementation pull request must reference its issue. Use
+  `Closes #<issue>` only when merging the pull request will fully resolve the
+  issue; otherwise use a non-closing reference and leave the issue open.
+- The pull request is the implementation report. Its description and comments
+  must contain the evidence needed to review the work: scope, important design
+  decisions, verification commands/results, and any remaining limitations.
+
+The implementation agent may claim that a pull request is ready for review. It
+does not independently declare its own work VERIFIED or CLOSED. Final review
+and merge provide that disposition.
+
+
 ## Repository map
 
 ```text
@@ -83,15 +121,21 @@ Do not silently redefine either one.
 
 Before editing:
 
-1. Determine whether the current checkout is already an isolated worktree for
-   this task. If not, `./dev worktree create my-task`
-2. Inspect `git status --short` and the current branch.
-3. Identify pre-existing changes and treat them as belonging to someone else
+1. Identify the GitHub issue that defines the work. For non-trivial work, create
+   one first if none exists and GitHub access is available.
+2. Read the issue, its comments, and linked pull requests. Confirm it is not
+   already claimed, then claim it on the issue before changing code.
+3. Start from the current `main` branch and create a dedicated task
+   branch/worktree. Prefer a branch name that includes the issue number, for
+   example `agent/123-fix-grouping-order`.
+4. Inspect `git status --short` and the current branch in the task worktree.
+5. Identify pre-existing changes and treat them as belonging to someone else
    unless the task explicitly says otherwise.
-4. Read the relevant implementation, tests, contract, and existing patterns.
-5. For Vespa behavior, inspect the pinned source under `upstream/vespa/`; do not
+6. Read the relevant implementation, tests, contract, and existing patterns.
+7. For Vespa behavior, inspect the pinned source under `upstream/vespa/`; do not
    guess from API names or high-level documentation.
-6. Determine how the finished change will be verified.
+8. Determine how the finished change will be verified and what evidence the
+   pull request must contain.
 
 ### Reported bugs and issues: regression test first
 
@@ -468,8 +512,8 @@ Do not claim it passed.
 
 ## Commit discipline
 
-Completed implementation work must be committed unless the user explicitly asks
-not to commit.
+Completed implementation work must be committed and pushed to its task branch
+unless the user explicitly asks not to commit or push.
 
 Before committing:
 
@@ -532,149 +576,130 @@ commit leaves the branch in a sensible state.
 
 Do not amend, rebase, squash, or rewrite commits belonging to another task.
 
-Do not push unless explicitly requested.
+Push the task branch after verification and open or update the pull request.
+Do not push implementation commits directly to `main`.
 
-## Serialized self-integration
+## Pull request integration
 
-When work was performed on a dedicated task branch/worktree, the implementation
-agent normally integrates its own completed work.
+Implementation may happen in parallel. Integration happens through GitHub pull
+requests.
 
-A separate integration agent is not required for ordinary conflict-free work.
-
-Integration is serialized even though implementation may be parallel.
-
-Only one worker may update the integration branch at a time.
-
-Use the repository-provided integration command if one exists.
-
-Otherwise use an exclusive repository-wide lock under the common Git directory,
-for example with `flock`, so cooperating agents cannot race while updating the
-integration branch.
-
-Conceptually:
+The normal flow is:
 
 ```text
-acquire integration lock
-
-    identify current integration HEAD
-    update task branch onto that baseline
-    resolve safe mechanical conflicts if necessary
-    run relevant verification on the updated task branch
-    fast-forward/integrate into the integration worktree
-    run verification required for the combined state
-    confirm integration succeeded
-
-release integration lock
+issue exists
+    ↓
+agent claims issue
+    ↓
+task branch/worktree
+    ↓
+regression test first when fixing a reported issue
+    ↓
+implementation + verification
+    ↓
+commit and push
+    ↓
+pull request into main
+    ↓
+review / requested fixes
+    ↓
+merge when accepted
+    ↓
+issue closes when fully resolved
 ```
 
-Do not hold the integration lock while doing ordinary implementation work.
+Implementation agents must not update `main` directly and must not use the old
+self-integration workflow.
 
-The lock protects only the short integration phase.
+### Pull request requirements
 
-### Integration rules
+Every implementation pull request should contain:
 
-Before integration:
+- the linked issue number;
+- a concise summary of the actual change;
+- the relevant contract or architecture constraints;
+- for reported bugs/issues, the regression test and evidence that it failed
+  before the production fix;
+- the exact verification commands run and their results;
+- any required verifier/acceptance result;
+- remaining limitations, unsupported cases, or follow-up work.
 
-- the implementation must already be committed;
-- the task worktree must contain no accidental uncommitted changes;
-- the integration worktree must not contain unexplained dirty changes;
-- identify the current integration branch rather than assuming an outdated
-  baseline.
+Prefer `Closes #<issue>` in the pull request body when the merge fully resolves
+the issue. Do not close an issue merely because an agent says the code is done.
 
-While integrating:
+### Review and merge
 
-- preserve all already-integrated work;
-- never resolve a conflict by discarding another task's change;
-- never weaken tests or contracts to make branches combine;
-- rerun relevant verification after updating against the latest integration
-  branch;
-- prefer fast-forward integration after updating the task branch when practical;
-- preserve coherent task commits unless repository convention says otherwise.
+The pull request is a review boundary, not a notification after integration.
 
-Straightforward mechanical conflicts may be resolved by the worker when the
-intended combined behavior is clear.
+Before merge:
 
-Examples include:
+- required focused and broader checks must pass;
+- frozen contracts and architecture invariants must still hold;
+- review comments must be resolved with code/tests where appropriate;
+- the final PR diff must be reviewed for correctness, regressions, unintended
+  scope, and missing coverage.
 
-```text
-independent import additions
-non-overlapping manifest entries
-mechanical generated-file updates
-adjacent documentation edits
-```
+An implementation agent may mark the pull request ready for review and respond
+to review feedback. It must not approve its own work, call its own work VERIFIED
+or CLOSED, or self-merge unless the issue or pull request explicitly instructs
+that agent to do so.
 
-If integration exposes an actual semantic conflict, stop rather than guess.
+The CTO/reviewer owns the final disposition. Merge the pull request only when
+the evidence supports it.
 
-Examples include:
+After merge:
 
-```text
-two incompatible public API changes
-different schema meanings
-conflicting IR semantics
-different persistence behavior
-incompatible architectural decisions
-tests whose correct expectation depends on choosing one task over another
-```
-
-Report that conflict clearly for review.
-
-After successful integration:
-
-- confirm the integration branch contains the task commit(s);
-- run `git status --short`;
+- confirm the intended issue was closed when the PR used a closing reference;
+- leave partially resolved issues open with the remaining work stated clearly;
 - remove the task worktree/branch when safe and no longer needed;
-- do not leave an abandoned integration/rebase operation behind.
-
-## No manual merge dependency
-
-Routine completed work should not require a human to perform Git integration.
-
-The normal expectation is:
-
-```text
-agent implements
-agent verifies
-agent commits
-agent acquires integration lock
-agent updates against latest integrated state
-agent verifies again
-agent integrates
-```
-
-Human input is reserved for genuine semantic conflicts, failed requirements, or
-decisions the repository does not already answer.
+- do not leave an abandoned merge/rebase operation behind.
 
 ## Definition of done
 
-A task that changes code is complete only when:
+A task that changes code has two distinct completion states.
+
+### Ready for review
+
+Implementation is ready for CTO/reviewer verification only when:
 
 ```text
-implementation matches the requested scope
-reported bugs/issues have a regression test that was demonstrated failing before the fix
+implementation matches the requested issue scope
+reported bugs/issues have a regression test demonstrated failing before the fix
 relevant contracts are preserved
 focused verification passes
 required acceptance verifier passes
 broader verification is run when warranted
 final diff has been reviewed
-task-owned work is committed
-task is integrated when using the normal self-integration workflow
-combined state remains healthy
+task-owned work is committed and pushed
+a pull request into main exists and contains verification evidence
 ```
 
+### Closed
+
+The issue is CLOSED only after the pull request has been reviewed, accepted, and
+merged, and the issue is actually resolved.
+
 Passing tests is not sufficient if the implementation violates the required
-native path, public API contract, semantic boundary, or repository rules.
+native path, public API contract, semantic boundary, repository rules, or review
+requirements.
 
 ## Completion report
 
-When finished, report concisely:
+The pull request is the durable completion report. When handing work back for
+review, report concisely in the PR and to the caller:
 
+- issue number;
+- pull request URL/number;
 - what changed;
 - important verification commands and results;
 - commit hash and subject;
-- whether the task was integrated;
+- whether the PR is ready for review or already merged;
 - any remaining blocker or unsupported capability;
 - any pre-existing dirty state that remains relevant.
 
+Do not create a separate agent-report file for this purpose.
+
 Do not claim the repository is clean unless it actually is.
 
-Do not declare completion when required verification failed.
+Do not call work CLOSED before its resolving pull request is merged, and do not
+declare it ready for review when required verification failed.
