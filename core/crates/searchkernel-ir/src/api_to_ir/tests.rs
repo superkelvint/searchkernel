@@ -1533,6 +1533,46 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
 }
 
 #[test]
+fn search_resolver_rejects_duplicate_grouping_aliases_at_semantic_boundary() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("duplicate grouping aliases must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
 fn search_resolver_validates_structured_grouping_fields() {
     let mut context = context();
     context.definition.fields[0].capabilities.groupable = true;
