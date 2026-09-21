@@ -388,7 +388,6 @@ pub struct SearchFieldIr {
 }
 
 impl SearchFieldIr {
-    #[cfg(any(test, feature = "test"))]
     pub fn new(field: FieldName, weight: SearchFieldWeight) -> Self {
         Self { field, weight }
     }
@@ -524,6 +523,47 @@ impl IndexDefinitionIr {
     #[cfg(any(test, feature = "test"))]
     pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
         self.imported_fields = fields;
+    }
+
+    /// Replace the name while retaining every other canonical schema member.
+    #[doc(hidden)]
+    pub fn set_name(&mut self, name: Option<IndexName>) {
+        self.name = name;
+    }
+
+    /// Replace default search fields while retaining every other canonical
+    /// schema member.
+    #[doc(hidden)]
+    pub fn set_default_search_fields(&mut self, fields: Vec<SearchFieldIr>) {
+        self.default_search_fields = fields;
+    }
+
+    /// Append a document field if its name is not already present.
+    #[doc(hidden)]
+    pub fn push_field(&mut self, field: FieldIr) -> bool {
+        if self
+            .fields
+            .iter()
+            .any(|existing| existing.name.as_str() == field.name.as_str())
+        {
+            return false;
+        }
+        self.fields.push(field);
+        true
+    }
+
+    /// Append a rank profile if its name is not already present.
+    #[doc(hidden)]
+    pub fn push_rank_profile(&mut self, profile: RankProfileDefinitionIr) -> bool {
+        if self
+            .rank_profiles
+            .iter()
+            .any(|existing| existing.name == profile.name)
+        {
+            return false;
+        }
+        self.rank_profiles.push(profile);
+        true
     }
 
     pub fn name(&self) -> Option<&IndexName> {
