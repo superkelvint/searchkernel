@@ -8,6 +8,23 @@
       ],
       "evidence_roots": [
         "core/crates/searchkernel-vespa-engine/tests"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "native"
+          ],
+          "path": "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+          "command": [
+            "cargo",
+            "test",
+            "-p",
+            "searchkernel-vespa-engine",
+            "--test",
+            "native_crud",
+            "--all-features"
+          ]
+        }
       ]
     },
     "rust": {
@@ -18,6 +35,23 @@
       "evidence_roots": [
         "core/crates/searchkernel/tests",
         "core/crates/searchkernel/examples"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "native"
+          ],
+          "path": "core/crates/searchkernel/tests/native_e2e.rs",
+          "command": [
+            "cargo",
+            "test",
+            "-p",
+            "searchkernel",
+            "--test",
+            "native_e2e",
+            "--all-features"
+          ]
+        }
       ]
     },
     "python": {
@@ -30,6 +64,19 @@
       "evidence_roots": [
         "clients/python/tests",
         "clients/python/examples"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "grpc",
+            "managed-local"
+          ],
+          "path": "clients/python/tests/test_grpc_e2e.py",
+          "command": [
+            "python3",
+            "clients/python/tests/test_grpc_e2e.py"
+          ]
+        }
       ]
     },
     "typescript": {
@@ -42,6 +89,21 @@
       "evidence_roots": [
         "clients/typescript/tests",
         "clients/typescript/examples"
+      ],
+      "e2e_lanes": [
+        {
+          "runtimes": [
+            "node"
+          ],
+          "path": "clients/typescript/examples/try_searchkernel_client_api_e2e.ts",
+          "command": [
+            "npm",
+            "--prefix",
+            "clients/typescript",
+            "run",
+            "example:e2e"
+          ]
+        }
       ]
     }
   },
