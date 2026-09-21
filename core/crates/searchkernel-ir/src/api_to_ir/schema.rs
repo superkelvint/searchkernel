@@ -28,6 +28,51 @@ pub struct RustRankProfileInput {
     pub query_inputs: Vec<(String, String)>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+// Both schema ingresses populate this shape before the shared resolver applies
+// phase normalization and rank-profile validation.
+struct UnresolvedRankProfileInput {
+    name: String,
+    inherits: Vec<String>,
+    inputs: Vec<RankProfileInputIr>,
+    functions: Vec<RankFunctionDefinitionIr>,
+    first_phase: Option<RankPhaseDefinitionIr>,
+    second_phase: Option<RankPhaseDefinitionIr>,
+    global_phase: Option<RankPhaseDefinitionIr>,
+    rank_features: Vec<String>,
+    match_features: Vec<String>,
+    summary_features: Vec<String>,
+    sort_features: Vec<String>,
+    constants: Vec<ConstantDefinitionIr>,
+    onnx_models: Vec<OnnxModelDefinitionIr>,
+    rank_properties: BTreeMap<String, String>,
+    strict: Option<bool>,
+    properties: SchemaPropertiesIr,
+}
+
+impl UnresolvedRankProfileInput {
+    fn into_ir(self) -> RankProfileDefinitionIr {
+        RankProfileDefinitionIr {
+            name: self.name,
+            inherits: self.inherits,
+            inputs: self.inputs,
+            functions: self.functions,
+            first_phase: self.first_phase,
+            second_phase: self.second_phase,
+            global_phase: self.global_phase,
+            rank_features: self.rank_features,
+            match_features: self.match_features,
+            summary_features: self.summary_features,
+            sort_features: self.sort_features,
+            constants: self.constants,
+            onnx_models: self.onnx_models,
+            rank_properties: self.rank_properties,
+            strict: self.strict,
+            properties: self.properties,
+        }
+    }
+}
+
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RustAnalyzerInput {
@@ -172,7 +217,7 @@ pub fn resolve_rust_index_definition_with_profiles(
     };
     let rank_profiles = rank_profiles
         .into_iter()
-        .map(|profile| RankProfileDefinitionIr {
+        .map(|profile| UnresolvedRankProfileInput {
             name: profile.name,
             inherits: Vec::new(),
             inputs: profile
@@ -222,7 +267,7 @@ pub fn resolve_rust_index_definition_with_profiles(
             properties: SchemaPropertiesIr::new(),
         })
         .collect::<Vec<_>>();
-    validate_rank_profiles(&rank_profiles, "rank_profiles")?;
+    let rank_profiles = resolve_rank_profiles(rank_profiles, "rank_profiles")?;
     Ok(IndexDefinitionIr {
         name,
         fields,
@@ -1743,10 +1788,7 @@ pub(crate) fn rank_phase_to_ir(
     value
         .map(|value| {
             Ok(RankPhaseDefinitionIr {
-                expression: value
-                    .expression()
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned),
+                expression: value.expression().map(ToOwned::to_owned),
                 rerank_count: value.rerank_count().map(|value| value.value()),
                 rank_score_drop_limit: value.rank_score_drop_limit().map(|value| value.value()),
                 properties: schema_properties_to_ir(
@@ -1859,6 +1901,17 @@ fn validate_rank_profiles(profiles: &[RankProfileDefinitionIr], path: &str) -> R
             }
         }
 
+        let mut function_names = BTreeSet::new();
+        for (function_index, function) in profile.functions.iter().enumerate() {
+            if !function_names.insert(function.name.clone()) {
+                return Err(invalid(
+                    "duplicate_rank_function",
+                    Some(format!("{profile_path}.functions[{function_index}].name")),
+                    "rank function names must be unique",
+                ));
+            }
+        }
+
         validate_rank_phase(
             profile.first_phase.as_ref(),
             RankPhaseKind::First,
@@ -1876,6 +1929,30 @@ fn validate_rank_profiles(profiles: &[RankProfileDefinitionIr], path: &str) -> R
         )?;
     }
     Ok(())
+}
+
+fn resolve_rank_profiles(
+    profiles: Vec<UnresolvedRankProfileInput>,
+    path: &str,
+) -> Result<Vec<RankProfileDefinitionIr>> {
+    let profiles = profiles
+        .into_iter()
+        .map(|mut profile| {
+            for phase in [
+                profile.first_phase.as_mut(),
+                profile.second_phase.as_mut(),
+                profile.global_phase.as_mut(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                phase.expression = normalized_optional_string(phase.expression.as_deref());
+            }
+            profile.into_ir()
+        })
+        .collect::<Vec<_>>();
+    validate_rank_profiles(&profiles, path)?;
+    Ok(profiles)
 }
 
 pub(crate) fn rank_profiles_to_ir(
@@ -1927,7 +2004,6 @@ pub(crate) fn rank_profiles_to_ir(
                 }
             }
             let mut functions = Vec::new();
-            let mut function_names = BTreeSet::new();
             if let Some(items) = value.functions() {
                 for (function_index, function) in items.iter().enumerate() {
                     let item = format!("{path}.functions[{function_index}]");
@@ -1936,13 +2012,6 @@ pub(crate) fn rank_profiles_to_ir(
                         &format!("{item}.name"),
                         "rank function name",
                     )?;
-                    if !function_names.insert(function_name.clone()) {
-                        return Err(invalid(
-                            "duplicate_rank_function",
-                            Some(format!("{item}.name")),
-                            "rank function names must be unique",
-                        ));
-                    }
                     functions.push(RankFunctionDefinitionIr {
                         name: function_name,
                         arguments: strings_to_ir(
@@ -1964,7 +2033,7 @@ pub(crate) fn rank_profiles_to_ir(
                 rank_phase_to_ir(value.second_phase(), &format!("{path}.second_phase"))?;
             let global_phase =
                 rank_phase_to_ir(value.global_phase(), &format!("{path}.global_phase"))?;
-            output.push(RankProfileDefinitionIr {
+            output.push(UnresolvedRankProfileInput {
                 name,
                 inherits: strings_to_ir(value.inherits(), &format!("{path}.inherits"))?,
                 inputs,
@@ -2005,8 +2074,7 @@ pub(crate) fn rank_profiles_to_ir(
             });
         }
     }
-    validate_rank_profiles(&output, "rank_profiles")?;
-    Ok(output)
+    resolve_rank_profiles(output, "rank_profiles")
 }
 pub(crate) fn parse_field_name(v: &str, path: String) -> Result<FieldName> {
     FieldName::parse(v.to_owned()).map_err(|_| {
