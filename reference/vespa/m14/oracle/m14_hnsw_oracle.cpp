@@ -223,13 +223,6 @@ std::string json_escape(std::string_view value) {
     return out.str();
 }
 
-std::string number_text(double value) {
-    require(std::isfinite(value), "query feature must be finite");
-    std::ostringstream out;
-    out << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
-    return out.str();
-}
-
 void write_text(const std::filesystem::path& path, std::string_view text) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     require(out.good(), "could not create M14 fixture config file");
@@ -260,20 +253,6 @@ std::vector<float> float_cells(const Inspector& array, std::string_view what) {
         require(value >= -std::numeric_limits<float>::max() && value <= std::numeric_limits<float>::max(), what);
         result.push_back(static_cast<float>(value));
     }
-    return result;
-}
-
-DenseTensorInput dense_input(const Inspector& value) {
-    require(value.type() == vespalib::slime::OBJECT::instance, "query input must be an object");
-    DenseTensorInput result;
-    result.name = string_value(object_field(value, "name"), "query input name must be string");
-    require(!result.name.empty(), "query input name must be non-empty");
-    require(string_value(object_field(value, "kind"), "query input kind must be string") == "dense",
-            "M14 oracle only accepts dense query tensor inputs");
-    result.type_spec = string_value(object_field(value, "type_spec"), "query input type_spec must be string");
-    require(result.type_spec == M14_TENSOR_TYPE, "M14 oracle only accepts tensor<float>(x[3]) query tensors");
-    result.values = float_cells(object_field(value, "values"), "query tensor values must be numeric array");
-    require(result.values.size() == 3, "M14 query tensor must contain exactly 3 cells");
     return result;
 }
 
