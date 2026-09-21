@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::error::{Error, Result};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Distance metric used by a tensor attribute.
 pub enum DistanceMetric {
@@ -376,13 +378,44 @@ impl IndexDefinition {
     }
     /// Set the optional index name.
     pub fn name(mut self, value: impl Into<String>) -> Self {
-        self.canonical = None;
-        self.name = Some(value.into());
+        let value = value.into();
+        if self.canonical.is_some() {
+            let canonical_name = searchkernel_ir::IndexName::parse(value.clone()).ok();
+            apply_canonical_mutation(&mut self.canonical, |canonical| {
+                let Some(name) = canonical_name else {
+                    return false;
+                };
+                canonical.set_name(Some(name));
+                true
+            });
+        }
+        self.name = Some(value);
         self
     }
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
-        self.canonical = None;
+        if self.canonical.is_some() {
+            let canonical_field = field_to_rust_input(&value)
+                .and_then(|field| {
+                    searchkernel_ir::resolve_rust_index_definition(
+                        searchkernel_ir::RustIndexDefinitionInput {
+                            name: None,
+                            fields: vec![field],
+                            default_search_fields: None,
+                        },
+                    )
+                    .map_err(Error::from_ir)
+                })
+                .ok()
+                .and_then(|definition| definition.fields().first().cloned());
+            if let Some(canonical_field) = canonical_field {
+                apply_canonical_mutation(&mut self.canonical, |canonical| {
+                    canonical.push_field(canonical_field)
+                });
+            } else {
+                self.canonical = None;
+            }
+        }
         self.fields.push(value);
         self
     }
@@ -392,14 +425,61 @@ impl IndexDefinition {
         I: IntoIterator,
         I::Item: Into<SearchField>,
     {
-        self.canonical = None;
-        self.default_search_fields = Some(fields.into_iter().map(Into::into).collect());
+        let fields = fields.into_iter().map(Into::into).collect::<Vec<_>>();
+        if self.canonical.is_some() {
+            let canonical_fields = self
+                .canonical
+                .as_ref()
+                .and_then(|canonical| canonical_search_fields(canonical, &fields));
+            if let Some(canonical_fields) = canonical_fields {
+                apply_canonical_mutation(&mut self.canonical, |canonical| {
+                    canonical.set_default_search_fields(canonical_fields);
+                    true
+                });
+            } else {
+                self.canonical = None;
+            }
+        }
+        self.default_search_fields = Some(fields);
         self
     }
 
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
-        self.canonical = None;
+        if self.canonical.is_some() {
+            let rust_profile = rank_profile_to_rust_input(&profile);
+            let placeholder = searchkernel_ir::RustFieldInput {
+                name: "rank_profile_placeholder".to_owned(),
+                kind: searchkernel_ir::RustFieldKind::Keyword,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            };
+            let canonical_profile = searchkernel_ir::resolve_rust_index_definition_with_profiles(
+                searchkernel_ir::RustIndexDefinitionInput {
+                    name: None,
+                    fields: vec![placeholder],
+                    default_search_fields: None,
+                },
+                vec![rust_profile],
+            )
+            .map_err(Error::from_ir)
+            .ok()
+            .and_then(|definition| definition.rank_profiles().first().cloned());
+            if let Some(canonical_profile) = canonical_profile {
+                apply_canonical_mutation(&mut self.canonical, |canonical| {
+                    canonical.push_rank_profile(canonical_profile)
+                });
+            } else {
+                self.canonical = None;
+            }
+        }
         self.rank_profiles.push(profile);
         self
     }
@@ -421,6 +501,122 @@ impl IndexDefinition {
 
     pub fn rank_profiles(&self) -> &[RankProfile] {
         &self.rank_profiles
+    }
+}
+
+fn apply_canonical_mutation(
+    canonical: &mut Option<searchkernel_ir::IndexDefinitionIr>,
+    mutation: impl FnOnce(&mut searchkernel_ir::IndexDefinitionIr) -> bool,
+) {
+    let Some(mut value) = canonical.take() else {
+        return;
+    };
+    if mutation(&mut value) {
+        *canonical = Some(value);
+    }
+}
+
+fn canonical_search_fields(
+    canonical: &searchkernel_ir::IndexDefinitionIr,
+    fields: &[SearchField],
+) -> Option<Vec<searchkernel_ir::SearchFieldIr>> {
+    fields
+        .iter()
+        .map(|field| {
+            let field_name = searchkernel_ir::FieldName::parse(field.field.clone()).ok()?;
+            let resolved_field = canonical
+                .fields()
+                .iter()
+                .find(|value| value.name() == &field_name)?;
+            if !resolved_field.capabilities().searchable() {
+                return None;
+            }
+            let weight =
+                searchkernel_ir::SearchFieldWeight::new(field.weight.unwrap_or(1.0)).ok()?;
+            Some(searchkernel_ir::SearchFieldIr::new(field_name, weight))
+        })
+        .collect()
+}
+
+pub(crate) fn field_to_rust_input(field: &Field) -> Result<searchkernel_ir::RustFieldInput> {
+    let analyzer = field
+        .analyzer
+        .as_ref()
+        .map(|analyzer| {
+            analyzer
+                .options
+                .iter()
+                .map(|(key, value)| {
+                    searchkernel_ir::request_value_from_json(
+                        value,
+                        format!("fields.{}.analyzer.options.{key}", field.name),
+                    )
+                    .map(|value| (key.clone(), value))
+                    .map_err(Error::from_ir)
+                })
+                .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
+                .map(|options| searchkernel_ir::RustAnalyzerInput {
+                    name: analyzer.name.clone(),
+                    version: analyzer.version,
+                    options,
+                })
+        })
+        .transpose()?;
+    Ok(searchkernel_ir::RustFieldInput {
+        name: field.name.clone(),
+        kind: match &field.kind {
+            FieldKind::Text => searchkernel_ir::RustFieldKind::Text,
+            FieldKind::Keyword => searchkernel_ir::RustFieldKind::Keyword,
+            FieldKind::Int64 => searchkernel_ir::RustFieldKind::Int64,
+            FieldKind::Float64 => searchkernel_ir::RustFieldKind::Float64,
+            FieldKind::Bool => searchkernel_ir::RustFieldKind::Bool,
+            FieldKind::Position => searchkernel_ir::RustFieldKind::Position,
+            FieldKind::Tensor(type_spec) => {
+                searchkernel_ir::RustFieldKind::Tensor(type_spec.clone())
+            }
+        },
+        multi: field.multi,
+        stored: field.stored,
+        searchable: field.searchable,
+        filterable: field.filterable,
+        sortable: field.sortable,
+        facetable: field.facetable,
+        analyzer,
+        distance_metric: field.distance_metric.map(distance_metric_to_ir),
+        hnsw: field
+            .hnsw
+            .as_ref()
+            .map(|value| searchkernel_ir::HnswIndexConfigIr {
+                max_links_per_node: value.max_links_per_node,
+                neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
+                options: BTreeMap::new(),
+            }),
+    })
+}
+
+pub(crate) fn rank_profile_to_rust_input(
+    profile: &RankProfile,
+) -> searchkernel_ir::RustRankProfileInput {
+    searchkernel_ir::RustRankProfileInput {
+        name: profile.name.clone(),
+        first_phase: profile.first_phase.clone(),
+        second_phase: profile.second_phase.clone(),
+        rerank_count: profile.rerank_count,
+        match_features: profile.match_features.clone(),
+        query_inputs: profile.query_inputs.clone(),
+    }
+}
+
+fn distance_metric_to_ir(value: DistanceMetric) -> searchkernel_ir::DistanceMetricIr {
+    match value {
+        DistanceMetric::Euclidean => searchkernel_ir::DistanceMetricIr::Euclidean,
+        DistanceMetric::Angular => searchkernel_ir::DistanceMetricIr::Angular,
+        DistanceMetric::DotProduct => searchkernel_ir::DistanceMetricIr::DotProduct,
+        DistanceMetric::PrenormalizedAngular => {
+            searchkernel_ir::DistanceMetricIr::PrenormalizedAngular
+        }
+        DistanceMetric::GeoDegrees => searchkernel_ir::DistanceMetricIr::GeoDegrees,
+        DistanceMetric::Hamming => searchkernel_ir::DistanceMetricIr::Hamming,
     }
 }
 

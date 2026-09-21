@@ -704,7 +704,7 @@ fn onnx_model<'a>(
     )
 }
 
-fn canonical_schema_fixture() -> Vec<u8> {
+fn canonical_schema_fixture_named(name: &str, title_weight: f64, tags_weight: f64) -> Vec<u8> {
     let mut builder = searchkernel_ir::__flatbuffers::FlatBufferBuilder::new();
 
     let title_data_type = primitive(&mut builder, api::PrimitiveDataTypeKind::String);
@@ -1445,9 +1445,9 @@ fn canonical_schema_fixture() -> Vec<u8> {
     let schema_model = onnx_model(&mut builder, "schema_model");
     let onnx_models = builder.create_vector(&[schema_model]);
 
-    let name = builder.create_string("complete_schema");
+    let name = builder.create_string(name);
     let default_title = builder.create_string("title");
-    let default_title_weight = api::OptionalDouble::new(0.75);
+    let default_title_weight = api::OptionalDouble::new(title_weight);
     let default_title = api::SearchField::create(
         &mut builder,
         &api::SearchFieldArgs {
@@ -1456,7 +1456,7 @@ fn canonical_schema_fixture() -> Vec<u8> {
         },
     );
     let default_tags = builder.create_string("tags");
-    let default_tags_weight = api::OptionalDouble::new(0.25);
+    let default_tags_weight = api::OptionalDouble::new(tags_weight);
     let default_tags = api::SearchField::create(
         &mut builder,
         &api::SearchFieldArgs {
@@ -1503,7 +1503,15 @@ fn canonical_schema_fixture() -> Vec<u8> {
 }
 
 fn canonical_fixture_ir() -> searchkernel_ir::IndexDefinitionIr {
-    let bytes = canonical_schema_fixture();
+    canonical_fixture_ir_named("complete_schema", 0.75, 0.25)
+}
+
+fn canonical_fixture_ir_named(
+    name: &str,
+    title_weight: f64,
+    tags_weight: f64,
+) -> searchkernel_ir::IndexDefinitionIr {
+    let bytes = canonical_schema_fixture_named(name, title_weight, tags_weight);
     let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(&bytes)
         .expect("canonical fixture should parse");
     searchkernel_ir::index_definition_to_ir(root)
@@ -2761,6 +2769,64 @@ fn modifying_described_definition_re_resolves_public_builder_state() {
     let resolved = definition_to_ir(&modified).expect("modified schema should resolve");
 
     assert_eq!(resolved.name().map(|name| name.as_str()), Some("renamed"));
+}
+
+#[test]
+fn modifying_rich_described_definition_preserves_untouched_canonical_state() {
+    let canonical = canonical_fixture_ir();
+    let index = index_from_canonical_ir(canonical);
+    let described = index.describe().expect("describe should succeed");
+    let modified = described.name("renamed");
+    let resolved = definition_to_ir(&modified).expect("modified schema should resolve");
+    let expected = canonical_fixture_ir_named("renamed", 0.75, 0.25);
+
+    assert_eq!(expected, resolved);
+}
+
+#[test]
+fn modifying_rich_described_definition_merges_collection_state() {
+    let canonical = canonical_fixture_ir();
+    let index = index_from_canonical_ir(canonical);
+    let described = index.describe().expect("describe should succeed");
+    let modified = described.default_search_fields([
+        SearchField::new("title").weight(0.9),
+        SearchField::new("tags").weight(0.1),
+    ]);
+    let resolved = definition_to_ir(&modified).expect("modified schema should resolve");
+    let expected = canonical_fixture_ir_named("complete_schema", 0.9, 0.1);
+
+    assert_eq!(expected, resolved);
+}
+
+#[test]
+fn modifying_rich_described_definition_merges_append_operations() {
+    let canonical = canonical_fixture_ir();
+    let index = index_from_canonical_ir(canonical.clone());
+    let described = index.describe().expect("describe should succeed");
+    let added_field = Field::keyword("added_keyword");
+    let added_profile = RankProfile::new("added_profile").first_phase("nativeRank");
+    let modified = described
+        .field(added_field.clone())
+        .rank_profile(added_profile.clone());
+    let resolved = definition_to_ir(&modified).expect("modified schema should resolve");
+
+    let added_field_ir = definition_to_ir(&IndexDefinition::new().field(added_field))
+        .expect("added field should resolve")
+        .fields()[0]
+        .clone();
+    let added_profile_ir = definition_to_ir(
+        &IndexDefinition::new()
+            .field(Field::keyword("placeholder"))
+            .rank_profile(added_profile),
+    )
+    .expect("added profile should resolve")
+    .rank_profiles()[0]
+        .clone();
+    let mut expected = canonical;
+    assert!(expected.push_field(added_field_ir));
+    assert!(expected.push_rank_profile(added_profile_ir));
+
+    assert_eq!(expected, resolved);
 }
 
 #[test]
