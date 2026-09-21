@@ -592,7 +592,7 @@ impl IndexDefinitionIr {
         self.document_type = Some(document_type.into());
     }
 
-    #[cfg(any(test, feature = "test"))]
+    #[doc(hidden)]
     pub fn set_schema_fields(&mut self, fields: Vec<FieldIr>) {
         self.schema_fields = fields;
     }
