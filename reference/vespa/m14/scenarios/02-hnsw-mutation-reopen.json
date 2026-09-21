@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "hnsw-mutation-reopen",
+  "document_type": "typea",
+  "tensor_field": {
+    "name": "embedding",
+    "type_spec": "tensor<float>(x[3])",
+    "distance_metric": "euclidean",
+    "hnsw": {
+      "max_links_per_node": 4,
+      "neighbors_to_explore_at_insert": 16
+    }
+  },
+  "documents": [
+    {"id": "id:ns:typea::a", "values": [1.0, 0.0, 0.0]},
+    {"id": "id:ns:typea::b", "values": [0.9, 0.1, 0.0]},
+    {"id": "id:ns:typea::c", "values": [0.0, 1.0, 0.0]},
+    {"id": "id:ns:typea::d", "values": [0.0, 0.0, 1.0]}
+  ],
+  "query": [1.0, 0.0, 0.0],
+  "mutation": {
+    "update_id": "id:ns:typea::a",
+    "update_values": [-1.0, 0.0, 0.0],
+    "delete_id": "id:ns:typea::b"
+  },
+  "query_options": {
+    "approximate": true,
+    "target_hits": 2,
+    "explore_additional_hits": 4,
+    "distance_threshold": null,
+    "limit": 2
+  }
+}

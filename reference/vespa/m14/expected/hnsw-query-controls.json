@@ -1,0 +1,9 @@
+{
+  "id": "hnsw-query-controls",
+  "steps": [
+    {"id":"exact","top_hit":"id:ns:typea::a","hit_count":3,"forbidden":[]},
+    {"id":"ann","top_hit":"id:ns:typea::a","hit_count":3,"forbidden":[]},
+    {"id":"ann-extra-explore","top_hit":"id:ns:typea::a","hit_count":3,"forbidden":[]},
+    {"id":"ann-distance-threshold","top_hit":"id:ns:typea::a","hit_count":3,"forbidden":[]}
+  ]
+}

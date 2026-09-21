@@ -11,4 +11,8 @@ searchkernel-vespa-engine = { path = "../../../core/crates/searchkernel-vespa-en
 name = "m13"
 path = "src/bin/m13.rs"
 
+[[bin]]
+name = "m14"
+path = "src/bin/m14.rs"
+
 [workspace]

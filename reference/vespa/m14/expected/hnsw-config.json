@@ -1,0 +1,11 @@
+{
+  "field": "embedding",
+  "datatype": "TENSOR",
+  "collection": "SINGLE",
+  "tensor_type": "tensor<float>(x[3])",
+  "distance_metric": "EUCLIDEAN",
+  "hnsw_enabled": true,
+  "max_links_per_node": 4,
+  "neighbors_to_explore_at_insert": 16,
+  "inverted_index_present": false
+}

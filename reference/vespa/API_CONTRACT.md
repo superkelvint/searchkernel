@@ -235,3 +235,64 @@ The native `DATA` bytes are opaque and copied out of the result by the safe
 wrapper. Tensor recognition or decoding, if supported later, belongs above
 this representation; the Vespa feature container itself is not a
 double-or-tensor container.
+
+---
+
+# M14 additions — HNSW approximate nearest-neighbor indexing
+
+M14 extends the low-level tensor-field schema with the minimum configuration
+required to build and search Vespa's native HNSW index.  It deliberately does
+not redefine nearest-neighbor query semantics: M12's existing
+`NearestNeighborOptions` remains the query-side contract.
+
+The required new public shape is:
+
+```rust
+use searchkernel_vespa_engine::{DistanceMetric, Field, FieldType, HnswIndexConfig};
+
+let field = Field::new(
+    "embedding",
+    FieldType::Tensor("tensor<float>(x[3])".into()),
+)
+.attribute()
+.distance_metric(DistanceMetric::Euclidean)
+.hnsw(
+    HnswIndexConfig::new()
+        .max_links_per_node(4)
+        .neighbors_to_explore_at_insert(16),
+);
+```
+
+The M14 schema API therefore adds:
+
+```text
+DistanceMetric
+    Euclidean
+    Angular
+    DotProduct
+    PrenormalizedAngular
+    GeoDegrees
+    Hamming
+
+HnswIndexConfig::new()
+HnswIndexConfig::max_links_per_node(u32)
+HnswIndexConfig::neighbors_to_explore_at_insert(u32)
+Field::distance_metric(DistanceMetric)
+Field::hnsw(HnswIndexConfig)
+```
+
+`Field::indexed()` remains the ordinary inverted-index capability used by text
+fields.  HNSW is explicit tensor-index configuration and must not be smuggled
+through the text-index boolean.
+
+M14 requires:
+
+```text
+HNSW -> tensor field + attribute
+DistanceMetric -> tensor field
+max_links_per_node > 0
+neighbors_to_explore_at_insert > 0
+```
+
+The portable FlatBuffers/IR types already represent HNSW and distance metrics;
+M14 adds no new portable schema and no new native nearest-neighbor query ABI.

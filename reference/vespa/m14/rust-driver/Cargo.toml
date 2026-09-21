@@ -1,0 +1,27 @@
+[package]
+name = "searchkernel-m14-verifier"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+searchkernel-vespa-engine = { path = "../../../../core/crates/searchkernel-vespa-engine" }
+searchkernel-ir = { path = "../../../../core/crates/searchkernel-ir" }
+searchkernel-ir-adapter = { path = "../../../../core/crates/searchkernel-ir-adapter" }
+searchkernel-dispatch = { path = "../../../../core/crates/searchkernel-dispatch" }
+searchkernel-protocol = { path = "../../../../core/crates/searchkernel-protocol" }
+serde_json = "1"
+
+[[bin]]
+name = "searchkernel-m14-driver"
+path = "src/bin/driver.rs"
+
+[[bin]]
+name = "searchkernel-m14-adapter-driver"
+path = "src/bin/adapter_driver.rs"
+
+[[bin]]
+name = "searchkernel-m14-error"
+path = "src/bin/error.rs"
+
+[workspace]

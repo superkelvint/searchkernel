@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "hnsw-query-controls",
+  "document_type": "typea",
+  "tensor_field": {
+    "name": "embedding",
+    "type_spec": "tensor<float>(x[3])",
+    "distance_metric": "euclidean",
+    "hnsw": {
+      "max_links_per_node": 4,
+      "neighbors_to_explore_at_insert": 16
+    }
+  },
+  "documents": [
+    {"id": "id:ns:typea::a", "values": [1.0, 0.0, 0.0]},
+    {"id": "id:ns:typea::b", "values": [0.95, 0.05, 0.0]},
+    {"id": "id:ns:typea::c", "values": [0.8, 0.2, 0.0]},
+    {"id": "id:ns:typea::d", "values": [0.6, 0.4, 0.0]},
+    {"id": "id:ns:typea::e", "values": [0.0, 1.0, 0.0]},
+    {"id": "id:ns:typea::f", "values": [0.0, 0.0, 1.0]},
+    {"id": "id:ns:typea::g", "values": [-1.0, 0.0, 0.0]},
+    {"id": "id:ns:typea::h", "values": [0.0, -1.0, 0.0]}
+  ],
+  "query": [1.0, 0.0, 0.0],
+  "steps": [
+    {"id": "exact", "approximate": false, "target_hits": 3, "explore_additional_hits": 0, "distance_threshold": null, "limit": 3},
+    {"id": "ann", "approximate": true, "target_hits": 3, "explore_additional_hits": 0, "distance_threshold": null, "limit": 3},
+    {"id": "ann-extra-explore", "approximate": true, "target_hits": 3, "explore_additional_hits": 5, "distance_threshold": null, "limit": 3},
+    {"id": "ann-distance-threshold", "approximate": true, "target_hits": 3, "explore_additional_hits": 2, "distance_threshold": 100.0, "limit": 3}
+  ]
+}

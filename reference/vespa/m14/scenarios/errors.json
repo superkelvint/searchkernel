@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"low-hnsw-non-tensor","path":"low_level","expected":"hnsw_requires_tensor","mutation":{"field_type":"string","hnsw":true}},
+    {"id":"low-hnsw-no-attribute","path":"low_level","expected":"hnsw_requires_attribute","mutation":{"attribute":false,"hnsw":true}},
+    {"id":"low-hnsw-zero-links","path":"low_level","expected":"invalid_hnsw_max_links","mutation":{"max_links_per_node":0}},
+    {"id":"low-hnsw-zero-neighbors","path":"low_level","expected":"invalid_hnsw_neighbors_at_insert","mutation":{"neighbors_to_explore_at_insert":0}},
+    {"id":"low-metric-non-tensor","path":"low_level","expected":"distance_metric_requires_tensor","mutation":{"field_type":"string","distance_metric":"euclidean"}},
+    {"id":"portable-hnsw-non-tensor","path":"portable_ir","expected":"portable_hnsw_requires_tensor","mutation":{"field_type":"string","hnsw":true}},
+    {"id":"portable-metric-non-tensor","path":"portable_ir","expected":"portable_distance_metric_requires_tensor","mutation":{"field_type":"string","distance_metric":"euclidean"}},
+    {"id":"portable-hnsw-options","path":"adapter","expected":"hnsw_options_not_supported","mutation":{"hnsw_option":{"key":"future.hnsw.option","value":"x"}}},
+    {"id":"portable-attribute-options","path":"adapter","expected":"attribute_options_not_supported","mutation":{"attribute_option":{"key":"future.attribute.option","value":"x"}}}
+  ]
+}

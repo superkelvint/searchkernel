@@ -1,0 +1,21 @@
+{
+  "id": "hnsw-mutation-reopen",
+  "before_update": {
+    "top_hit": "id:ns:typea::a",
+    "forbidden": []
+  },
+  "after_update": {
+    "top_hit": "id:ns:typea::b",
+    "forbidden": []
+  },
+  "after_reopen": {
+    "top_hit": "id:ns:typea::b",
+    "forbidden": []
+  },
+  "after_delete": {
+    "forbidden": []
+  },
+  "after_delete_reopen": {
+    "forbidden": []
+  }
+}
