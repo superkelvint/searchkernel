@@ -3,7 +3,6 @@ use searchkernel_ir::{api, OperationIr};
 use searchkernel_testkit::{
     representative_search_result, ExpectedCall, RecordingBackend, ScriptedBackend, ScriptedResult,
 };
-use std::collections::BTreeMap;
 use std::fs;
 
 #[test]
