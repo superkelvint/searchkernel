@@ -157,11 +157,20 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
     by_stage = {query["stage"]: query for query in normalized}
     if scenario.get("id") == "hnsw-query-controls":
         expected = [
-            (step["id"], bool(step["approximate"])) for step in scenario.get("steps", [])
+            (
+                step["id"],
+                bool(step["approximate"]),
+                step.get("distance_threshold"),
+            )
+            for step in scenario.get("steps", [])
         ]
     elif scenario.get("id") == "hnsw-mutation-reopen":
         expected = [
-            (stage, bool(scenario["query_options"]["approximate"]))
+            (
+                stage,
+                bool(scenario["query_options"]["approximate"]),
+                scenario["query_options"].get("distance_threshold"),
+            )
             for stage in (
                 "before_update",
                 "after_update",
@@ -174,11 +183,18 @@ def validate_scenario(scenario: dict[str, Any], raw: dict[str, Any]) -> None:
         raise EvidenceError(f"unsupported scenario: {scenario.get('id')}")
 
     expected_queries: list[dict[str, Any]] = []
-    for stage, approximate in expected:
+    for stage, approximate, expected_threshold in expected:
         query = by_stage.get(stage)
         if query is None:
             raise EvidenceError(f"scenario query {stage!r} has no execution evidence")
         _validate_query(query, require_ann=approximate)
+        if expected_threshold is not None:
+            observed_threshold = _number(query, "distance_threshold")
+            if observed_threshold != expected_threshold:
+                raise EvidenceError(
+                    f"{stage}: observed distanceThreshold {observed_threshold:g} "
+                    f"does not match requested value {expected_threshold}"
+                )
         expected_queries.append(query)
 
     ann_queries = [query for query in expected_queries if query["wanted_approximate"]]

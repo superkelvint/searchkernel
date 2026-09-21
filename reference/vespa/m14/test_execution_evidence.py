@@ -3,7 +3,11 @@
 
 import unittest
 
-from validate_execution_evidence import EvidenceError, validate_execution_evidence
+from validate_execution_evidence import (
+    EvidenceError,
+    validate_execution_evidence,
+    validate_scenario,
+)
 
 
 def ann_evidence(*, approximate: bool = True, algorithm: str = "index top k") -> dict:
@@ -37,6 +41,99 @@ def ann_evidence(*, approximate: bool = True, algorithm: str = "index top k") ->
     }
 
 
+def scenario_query(
+    stage: str,
+    *,
+    approximate: bool,
+    explore: int,
+    threshold: float | None,
+    hit_count: int | None = None,
+) -> dict:
+    record = {
+        "id": stage,
+        "trace": {
+            "blueprint": {
+                "wanted_approximate": approximate,
+                "has_index": True,
+                "algorithm": "index top k" if approximate else "exact",
+                "explore_additional_hits": explore,
+                "distance_threshold": threshold,
+            },
+            "setup": {
+                "tag": "query_setup_stats",
+                "stats": {
+                    "approximate_nns_searches_performed": 1 if approximate else 0,
+                    "approximate_nns_distances_computed": 8 if approximate else 0,
+                    "approximate_nns_nodes_visited": 8 if approximate else 0,
+                },
+            },
+            "execution": {
+                "tag": "query_execution_stats",
+                "stats": {"exact_nns_distances_computed": 0 if approximate else 8},
+            },
+        },
+    }
+    if hit_count is not None:
+        record["hit_count"] = hit_count
+    return record
+
+
+def threshold_scenario() -> tuple[dict, dict]:
+    scenario = {
+        "id": "hnsw-query-controls",
+        "steps": [
+            {
+                "id": "exact",
+                "approximate": False,
+                "explore_additional_hits": 0,
+                "distance_threshold": None,
+            },
+            {
+                "id": "ann",
+                "approximate": True,
+                "explore_additional_hits": 1,
+                "distance_threshold": None,
+            },
+            {
+                "id": "ann-distance-threshold",
+                "approximate": True,
+                "explore_additional_hits": 2,
+                "distance_threshold": 100.0,
+            },
+        ],
+    }
+    raw = {
+        "evidence": [
+            scenario_query(
+                "exact",
+                approximate=False,
+                explore=0,
+                threshold=None,
+            ),
+            scenario_query(
+                "ann",
+                approximate=True,
+                explore=1,
+                threshold=0.75,
+            ),
+            scenario_query(
+                "ann-distance-threshold",
+                approximate=True,
+                explore=2,
+                threshold=0.0,
+            ),
+            scenario_query(
+                "threshold-probe",
+                approximate=True,
+                explore=1,
+                threshold=0.01,
+                hit_count=0,
+            ),
+        ]
+    }
+    return scenario, raw
+
+
 class ExecutionEvidenceTest(unittest.TestCase):
     def test_real_ann_evidence_is_accepted(self) -> None:
         validate_execution_evidence(ann_evidence())
@@ -66,6 +163,11 @@ class ExecutionEvidenceTest(unittest.TestCase):
         evidence["queries"][0]["approximate_nns_searches_performed"] = 0
         with self.assertRaises(EvidenceError):
             validate_execution_evidence(evidence)
+
+    def test_changed_distance_threshold_is_rejected_for_its_stage(self) -> None:
+        scenario, raw = threshold_scenario()
+        with self.assertRaisesRegex(EvidenceError, "ann-distance-threshold"):
+            validate_scenario(scenario, raw)
 
 
 if __name__ == "__main__":
