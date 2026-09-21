@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 /// An analyzer configuration supported by Search Kernel.
@@ -281,13 +282,30 @@ impl From<String> for SearchField {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 /// The schema and default search settings for an index.
 pub struct IndexDefinition {
     pub(crate) name: Option<String>,
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
+    // A described definition may contain canonical schema state that the
+    // ergonomic Rust builders intentionally do not expose yet. Retain that
+    // state so the IndexContext can be reconstructed without silently
+    // resolving it through the narrower builder representation.
+    pub(crate) canonical: Option<searchkernel_ir::IndexDefinitionIr>,
+}
+
+impl fmt::Debug for IndexDefinition {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IndexDefinition")
+            .field("name", &self.name)
+            .field("fields", &self.fields)
+            .field("default_search_fields", &self.default_search_fields)
+            .field("rank_profiles", &self.rank_profiles)
+            .finish()
+    }
 }
 
 impl IndexDefinition {
@@ -297,11 +315,13 @@ impl IndexDefinition {
     }
     /// Set the optional index name.
     pub fn name(mut self, value: impl Into<String>) -> Self {
+        self.canonical = None;
         self.name = Some(value.into());
         self
     }
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
+        self.canonical = None;
         self.fields.push(value);
         self
     }
@@ -311,12 +331,14 @@ impl IndexDefinition {
         I: IntoIterator,
         I::Item: Into<SearchField>,
     {
+        self.canonical = None;
         self.default_search_fields = Some(fields.into_iter().map(Into::into).collect());
         self
     }
 
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
+        self.canonical = None;
         self.rank_profiles.push(profile);
         self
     }

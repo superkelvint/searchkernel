@@ -2750,6 +2750,18 @@ fn describe_preserves_default_search_fields_and_weights() {
 }
 
 #[test]
+fn modifying_described_definition_re_resolves_public_builder_state() {
+    let definition = IndexDefinition::new().field(Field::text("title"));
+    let (_runtime, index) = runtime_index(definition, Arc::new(RecordingBackend::new()));
+
+    let described = index.describe().expect("describe should succeed");
+    let modified = described.name("renamed");
+    let resolved = definition_to_ir(&modified).expect("modified schema should resolve");
+
+    assert_eq!(resolved.name().map(|name| name.as_str()), Some("renamed"));
+}
+
+#[test]
 fn describe_loses_schema_properties() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.properties(), described.properties());

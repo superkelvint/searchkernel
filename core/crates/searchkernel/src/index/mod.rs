@@ -521,6 +521,10 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
 }
 
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
+    if let Some(canonical) = &definition.canonical {
+        return Ok(canonical.clone());
+    }
+
     let fields = definition
         .fields
         .iter()
@@ -677,5 +681,6 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         }
         result = result.rank_profile(value);
     }
+    result.canonical = Some(definition.clone());
     result
 }
