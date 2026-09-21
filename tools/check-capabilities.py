@@ -23,15 +23,9 @@ REQUIRED_FIELDS = {
     "represented",
     "semantic",
     "executable",
-    "ergonomic",
     "verified_by",
     "limitations",
 }
-LANGUAGES = ("rust", "python", "typescript")
-TYPESCRIPT_EVIDENCE_PREFIXES = (
-    "clients/typescript/tests/",
-    "clients/typescript/examples/",
-)
 
 
 class LedgerError(ValueError):
@@ -105,34 +99,21 @@ def validate_ledger(ledger: dict[str, Any], root: Path = ROOT) -> list[dict[str,
         if executable and not semantic:
             raise LedgerError(f"{identifier}: executable support requires semantic support")
 
-        ergonomic = capability["ergonomic"]
-        if not isinstance(ergonomic, dict) or set(ergonomic) != set(LANGUAGES):
-            raise LedgerError(
-                f"{identifier}.ergonomic must contain exactly {', '.join(LANGUAGES)}"
-            )
-        for language in LANGUAGES:
-            _require_bool(ergonomic[language], f"{label}.ergonomic.{language}")
-
-        verified_by = _require_string_list(capability["verified_by"], f"{label}.verified_by")
+        verified_by = _require_string_list(
+            capability["verified_by"], f"{label}.verified_by"
+        )
         if executable and not verified_by:
             raise LedgerError(f"{identifier}: executable support requires evidence")
         for reference in verified_by:
             reference_path = Path(reference)
             if reference_path.is_absolute() or ".." in reference_path.parts:
-                raise LedgerError(f"{identifier}: evidence path must be repository-relative: {reference}")
+                raise LedgerError(
+                    f"{identifier}: evidence path must be repository-relative: {reference}"
+                )
             if not (root / reference_path).is_file():
-                raise LedgerError(f"{identifier}: evidence path does not exist: {reference}")
-        # Generated protocol modules are not ergonomic support evidence. Keep
-        # executable TypeScript claims tied to a client test or managed-local
-        # E2E so the ledger cannot silently drift from the facade.
-        if executable and ergonomic["typescript"] and not any(
-            any(reference.startswith(prefix) for prefix in TYPESCRIPT_EVIDENCE_PREFIXES)
-            for reference in verified_by
-        ):
-            raise LedgerError(
-                f"{identifier}: TypeScript evidence is required for executable "
-                "TypeScript ergonomic support"
-            )
+                raise LedgerError(
+                    f"{identifier}: evidence path does not exist: {reference}"
+                )
 
         limitations = _require_string_list(capability["limitations"], f"{label}.limitations")
         if not represented and not limitations:
@@ -161,35 +142,33 @@ def render_capabilities(ledger: dict[str, Any], capabilities: list[dict[str, Any
         "# Capability ledger",
         "",
         "This file is generated from [`capabilities.json`](capabilities.json).",
-        "It is the current cross-layer status view; contracts and verifiers remain",
+        "It is the current cross-layer implementation view; contracts and verifiers remain",
         "the authority for required behavior.",
+        "",
+        "Per-client/runtime support is generated from executable evidence in",
+        "[`CLIENT_CAPABILITIES.md`](CLIENT_CAPABILITIES.md), not from this ledger.",
         "",
         f"**Snapshot:** {ledger['snapshot']}",
         "",
         "The state columns mean: represented in the portable contract, resolved by",
-        "canonical semantics, executable through the backend, and ergonomic in the",
-        "named language facade.",
+        "canonical semantics, and executable through the backend.",
         "",
-        "| Capability | Area | Represented | Semantic | Executable | Rust | Python | TypeScript | Evidence |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Capability | Area | Represented | Semantic | Executable | Evidence |",
+        "| --- | --- | ---: | ---: | ---: | --- |",
     ]
     for capability in capabilities:
         evidence = ", ".join(
             _link(path, ROOT / "docs") for path in capability["verified_by"]
         ) or "—"
-        ergonomic = capability["ergonomic"]
         lines.append(
             "| {title} (`{identifier}`) | {area} | {represented} | {semantic} | "
-            "{executable} | {rust} | {python} | {typescript} | {evidence} |".format(
+            "{executable} | {evidence} |".format(
                 title=_markdown_text(capability["title"]),
                 identifier=capability["id"],
                 area=_markdown_text(capability["area"]),
                 represented=_status(capability["represented"]),
                 semantic=_status(capability["semantic"]),
                 executable=_status(capability["executable"]),
-                rust=_status(ergonomic["rust"]),
-                python=_status(ergonomic["python"]),
-                typescript=_status(ergonomic["typescript"]),
                 evidence=evidence,
             )
         )

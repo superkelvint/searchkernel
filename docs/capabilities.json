@@ -9,11 +9,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
@@ -30,11 +25,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
@@ -52,11 +42,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -72,11 +57,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
@@ -94,11 +74,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
@@ -115,11 +90,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
@@ -136,11 +106,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -157,11 +122,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs",
@@ -181,11 +141,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -202,11 +157,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -223,11 +173,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
@@ -244,11 +189,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -265,11 +205,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/filter.rs",
@@ -287,11 +222,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
@@ -310,11 +240,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
@@ -334,11 +259,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -356,11 +276,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -379,11 +294,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -403,11 +313,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
@@ -427,11 +332,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
@@ -454,11 +354,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
@@ -480,11 +375,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/model/result.rs",
@@ -502,11 +392,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/model/result.rs",
@@ -532,11 +417,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/lib.rs",
@@ -556,11 +436,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/backend.rs",
@@ -578,13 +453,10 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
@@ -602,11 +474,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
@@ -625,11 +492,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
@@ -649,13 +511,10 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
+        "core/crates/searchkernel-ir/src/api_to_ir/tests.rs",
         "core/crates/searchkernel-ir-adapter/src/search/grouping.rs",
         "clients/python/examples/try_searchkernel_client_api_e2e.py",
         "clients/typescript/examples/try_searchkernel_client_api_e2e.ts"
@@ -671,11 +530,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/grouping.rs",
@@ -693,11 +547,6 @@
       "represented": true,
       "semantic": false,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs"
@@ -714,11 +563,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
@@ -736,11 +580,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/document.rs",
@@ -759,11 +598,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/resolve.rs",
@@ -782,11 +616,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/model/document.rs",
@@ -805,11 +634,6 @@
       "represented": true,
       "semantic": false,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/document.rs"
@@ -826,11 +650,6 @@
       "represented": true,
       "semantic": false,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/document.rs"
@@ -847,11 +666,6 @@
       "represented": true,
       "semantic": false,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/api_to_ir/document.rs",
@@ -869,11 +683,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
@@ -893,11 +702,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
@@ -915,11 +719,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
@@ -937,11 +736,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/query.rs",
@@ -958,11 +752,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -979,11 +768,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -1000,11 +784,6 @@
       "represented": true,
       "semantic": true,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir/src/model/schema.rs",
@@ -1022,11 +801,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -1042,11 +816,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/tests.rs"
@@ -1062,11 +831,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -1086,11 +850,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -1110,11 +869,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
@@ -1134,11 +888,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel/src/search.rs",
@@ -1158,11 +907,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-vespa-engine/tests/result_decoding.rs",
@@ -1182,11 +926,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/backend.rs",
@@ -1206,11 +945,6 @@
       "represented": true,
       "semantic": true,
       "executable": true,
-      "ergonomic": {
-        "rust": true,
-        "python": true,
-        "typescript": true
-      },
       "verified_by": [
         "api/searchkernel.fbs",
         "core/crates/searchkernel-ir-adapter/src/backend.rs",
@@ -1230,11 +964,6 @@
       "represented": false,
       "semantic": false,
       "executable": false,
-      "ergonomic": {
-        "rust": false,
-        "python": false,
-        "typescript": false
-      },
       "verified_by": [
         "docs/architecture.md",
         "docs/status.md"

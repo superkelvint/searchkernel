@@ -18,6 +18,18 @@ generated gRPC stub
 searchkerneld
 ```
 
+## Capability status
+
+Per-client support is not maintained as hand-edited booleans. The generated
+[client capability matrix](../docs/CLIENT_CAPABILITIES.md) is derived from
+`SKC:` evidence annotations colocated with executable tests and E2E examples.
+The canonical capability IDs and backend stages remain in
+[`docs/capabilities.json`](../docs/capabilities.json).
+
+When adding client behavior, annotate the test that proves it rather than
+editing the matrix. See
+[`reference/client-contracts/README.md`](../reference/client-contracts/README.md).
+
 The gRPC service is intentionally a small transport boundary:
 
 ```proto

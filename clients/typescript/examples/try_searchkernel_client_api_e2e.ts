@@ -36,6 +36,14 @@ import {
 
 let WORKSPACE_PATH = "";
 let INDEX_PATH = "";
+// SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=node
+// SKC: filter.textual/basic kinds=ergonomic,e2e runtime=node
+// SKC: search.sorting/basic kinds=ergonomic,e2e runtime=node
+// SKC: search.pagination/basic kinds=ergonomic,e2e runtime=node
+// SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=node
+// SKC: query.nearest_neighbor/basic kinds=ergonomic,e2e runtime=node
+// SKC: grouping.structured/basic kinds=ergonomic,e2e runtime=node
+// SKC: grouping.aggregations/basic kinds=ergonomic,e2e runtime=node
 const VECTOR_TYPE = "tensor<float>(x[8])";
 
 function embedding(...values: number[]): Tensor {

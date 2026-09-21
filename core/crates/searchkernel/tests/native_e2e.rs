@@ -11,6 +11,7 @@ use serde_json::json;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Barrier};
 
+// SKC: update.document_crud/basic kinds=ergonomic,e2e runtime=native
 #[test]
 fn native_product_path_round_trips_annotated_mixed_document() {
     let path = std::env::temp_dir().join(format!(
@@ -213,6 +214,10 @@ fn native_create_and_open_race_never_removes_a_published_index() {
     std::fs::remove_dir_all(path).expect("remove create/open race index");
 }
 
+// SKC: search.sorting/basic kinds=ergonomic,e2e runtime=native
+// SKC: search.pagination/basic kinds=ergonomic,e2e runtime=native
+// SKC: result.docsum_field_projection/basic kinds=ergonomic,e2e runtime=native
+// SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=native
 #[test]
 fn native_product_path_has_current_search_and_facet_parity() {
     let path = std::env::temp_dir().join(format!(
@@ -407,6 +412,9 @@ fn native_product_path_has_current_search_and_facet_parity() {
     std::fs::remove_dir_all(path).expect("remove native parity index");
 }
 
+// SKC: query.phrase/basic kinds=ergonomic,e2e runtime=native
+// SKC: query.fuzzy/basic kinds=ergonomic,e2e runtime=native
+// SKC: query.weighted_and_wand/basic kinds=ergonomic,e2e runtime=native
 #[test]
 fn native_product_path_supports_typed_query_families() {
     let path = std::env::temp_dir().join(format!(

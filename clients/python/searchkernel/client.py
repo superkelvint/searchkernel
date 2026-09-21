@@ -36,12 +36,21 @@ from SearchKernel.V2.GetRequest import GetRequestT
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT
 from SearchKernel.V2.InsertRequest import InsertRequestT
 from SearchKernel.V2.Int64Value import Int64ValueT
+from SearchKernel.V2.NonFiniteFloatKind import NonFiniteFloatKind
+from SearchKernel.V2.NonFiniteFloatValue import NonFiniteFloatValueT
+from SearchKernel.V2.NullValue import NullValue
+from SearchKernel.V2.NullValueValue import NullValueValueT
 from SearchKernel.V2.MatchingConfig import MatchingConfigT
 from SearchKernel.V2.MatchingMode import MatchingMode
 from SearchKernel.V2.OptionalBool import OptionalBoolT
 from SearchKernel.V2.PatchRequest import PatchRequestT
 from SearchKernel.V2.StringValue import StringValueT
 from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT
+from SearchKernel.V2.MixedTensorBlocks import MixedTensorBlocksT
+from SearchKernel.V2.SparseTensorCells import SparseTensorCellsT
+from SearchKernel.V2.TensorBlock import TensorBlockT
+from SearchKernel.V2.TensorCell import TensorCellT
+from SearchKernel.V2.TensorAddressEntry import TensorAddressEntryT
 from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind
 from SearchKernel.V2.TensorValue import TensorValueT
 from SearchKernel.V2.UInt64Value import UInt64ValueT
@@ -82,7 +91,10 @@ def value(item: Any) -> ValueT:
     if isinstance(item, ValueT):
         return item
     if item is None:
-        return ValueT(kindType=ValueKind.NullValueValue)
+        return ValueT(
+            kindType=ValueKind.NullValueValue,
+            kind=NullValueValueT(value=NullValue.Null),
+        )
     if isinstance(item, bool):
         return ValueT(kindType=ValueKind.BoolValue, kind=BoolValueT(value=item))
     if isinstance(item, int):
@@ -124,37 +136,137 @@ def _document(identifier: str, fields: Mapping[str, Any]) -> DocumentT:
 
 
 def _entries(entries: Sequence[ValueEntryT] | None) -> dict[str, ValueT]:
-    return {
-        entry.key: entry.value
-        for entry in entries or []
-        if entry is not None and entry.key is not None
-    }
+    result = {}
+    for entry in entries or []:
+        if entry is None or entry.key is None:
+            continue
+        if entry.key in result:
+            raise ValueError(f"duplicate key: {entry.key!r}")
+        result[entry.key] = entry.value
+    return result
+
+
+def _decode_value_entries(entries: Sequence[ValueEntryT] | None) -> dict[str, Any]:
+    result = {}
+    for entry in entries or []:
+        if entry is None or entry.key is None:
+            raise ValueError("malformed ValueEntry")
+        if entry.key in result:
+            raise ValueError(f"duplicate key: {entry.key!r}")
+        if entry.value is None:
+            raise ValueError("missing Value payload")
+        result[entry.key] = _python_value(entry.value)
+    return result
+
+
+def _value_payload(item: ValueT, name: str, expected_type: type):
+    if item.kind is None or not isinstance(item.kind, expected_type):
+        raise ValueError(f"mismatched Value union: {name} payload")
+    return item.kind
+
+
+def _tensor_address(
+    entries: Sequence[TensorAddressEntryT] | None,
+) -> list[dict[str, str | None]]:
+    result = []
+    for entry in entries or []:
+        if entry is None:
+            raise ValueError("malformed tensor address")
+        result.append({"dimension": entry.dimension, "label": entry.label})
+    return result
+
+
+def _tensor_value(payload: TensorValueT) -> dict[str, Any]:
+    tensor = {"type_spec": payload.typeSpec}
+    if payload.payloadType == TensorPayloadKind.DenseTensorValues:
+        dense = payload.payload
+        if not isinstance(dense, DenseTensorValuesT):
+            raise ValueError("mismatched Tensor payload: DenseTensorValues")
+        if dense.values is None:
+            raise ValueError("malformed dense tensor payload")
+        tensor["dense"] = list(dense.values)
+    elif payload.payloadType == TensorPayloadKind.SparseTensorCells:
+        sparse = payload.payload
+        if not isinstance(sparse, SparseTensorCellsT):
+            raise ValueError("mismatched Tensor payload: SparseTensorCells")
+        if sparse.cells is None:
+            raise ValueError("malformed sparse tensor payload")
+        cells = []
+        for cell in sparse.cells:
+            if not isinstance(cell, TensorCellT):
+                raise ValueError("malformed sparse tensor cell")
+            cells.append({"address": _tensor_address(cell.address), "value": cell.value})
+        tensor["sparse"] = cells
+    elif payload.payloadType == TensorPayloadKind.MixedTensorBlocks:
+        mixed = payload.payload
+        if not isinstance(mixed, MixedTensorBlocksT):
+            raise ValueError("mismatched Tensor payload: MixedTensorBlocks")
+        if mixed.blocks is None:
+            raise ValueError("malformed mixed tensor payload")
+        blocks = []
+        for block in mixed.blocks:
+            if not isinstance(block, TensorBlockT):
+                raise ValueError("malformed mixed tensor block")
+            if block.values is None:
+                raise ValueError("malformed mixed tensor block")
+            blocks.append(
+                {"address": _tensor_address(block.address), "values": list(block.values)}
+            )
+        tensor["mixed"] = blocks
+    else:
+        raise ValueError("unknown Tensor payload union")
+    return {"$searchkernel_tensor": tensor}
 
 
 def _python_value(item: ValueT | None) -> Any:
+    # Union payloads are selected by the FlatBuffers discriminator. Do not infer
+    # a portable Value kind from the decoded Python shape: [1, 2] is a list,
+    # even when its elements could also be represented as bytes.
     if item is None:
         return None
+    if item.kindType == ValueKind.NullValueValue:
+        payload = _value_payload(item, "NullValueValue", NullValueValueT)
+        if payload.value != NullValue.Null:
+            raise ValueError(f"unknown NullValue kind: {payload.value}")
+        return None
+    if item.kindType == ValueKind.BoolValue:
+        return _value_payload(item, "BoolValue", BoolValueT).value
+    if item.kindType == ValueKind.Int64Value:
+        return _value_payload(item, "Int64Value", Int64ValueT).value
+    if item.kindType == ValueKind.UInt64Value:
+        return _value_payload(item, "UInt64Value", UInt64ValueT).value
+    if item.kindType == ValueKind.Float64Value:
+        return _value_payload(item, "Float64Value", Float64ValueT).value
+    if item.kindType == ValueKind.NonFiniteFloatValue:
+        kind = _value_payload(item, "NonFiniteFloatValue", NonFiniteFloatValueT).kind
+        if kind == NonFiniteFloatKind.NaN:
+            return math.nan
+        if kind == NonFiniteFloatKind.PositiveInfinity:
+            return math.inf
+        if kind == NonFiniteFloatKind.NegativeInfinity:
+            return -math.inf
+        raise ValueError("unknown NonFiniteFloat kind")
+    if item.kindType == ValueKind.StringValue:
+        string = _value_payload(item, "StringValue", StringValueT).value
+        if string is None:
+            raise ValueError("missing StringValue payload")
+        return string
+    if item.kindType == ValueKind.BytesValue:
+        bytes_value = _value_payload(item, "BytesValue", BytesValueT).value
+        if bytes_value is None:
+            raise ValueError("missing BytesValue payload")
+        return bytes(bytes_value)
     if item.kindType == ValueKind.ValueList:
-        payload = item.kind
-        return [_python_value(child) for child in (payload.values if payload else [])]
+        payload = _value_payload(item, "ValueList", ValueListT)
+        if payload.values is None:
+            raise ValueError("malformed ValueList payload")
+        return [_python_value(child) for child in payload.values]
     if item.kindType == ValueKind.ValueObject:
-        payload = item.kind
-        return {
-            entry.key: _python_value(entry.value)
-            for entry in (payload.fields if payload else [])
-            if entry is not None
-        }
+        payload = _value_payload(item, "ValueObject", ValueObjectT)
+        return _decode_value_entries(payload.fields)
     if item.kindType == ValueKind.TensorValue:
-        payload = item.kind
-        dense = getattr(payload, "payload", None) if payload else None
-        cells = getattr(dense, "values", None) if dense else None
-        return {
-            "$searchkernel_tensor": {
-                "type_spec": getattr(payload, "typeSpec", None) if payload else None,
-                "dense": list(cells or []),
-            }
-        }
-    return getattr(item.kind, "value", None)
+        return _tensor_value(_value_payload(item, "TensorValue", TensorValueT))
+    raise ValueError(f"unknown Value union kind: {item.kindType}")
 
 
 class ClientError(RuntimeError):

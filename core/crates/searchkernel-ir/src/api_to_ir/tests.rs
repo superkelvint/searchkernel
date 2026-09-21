@@ -1464,6 +1464,160 @@ fn component_sort_resolution_uses_search_error_semantics() {
     assert_eq!(full_error.details[0].code, "invalid_sort");
 }
 
+#[test]
+fn component_filter_resolution_matches_nested_search_error_path() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let empty_clauses =
+        builder.create_vector::<crate::__flatbuffers::WIPOffset<api::FilterExpr>>(&[]);
+    let empty_or = api::FilterOr::create(
+        &mut builder,
+        &api::FilterOrArgs {
+            clauses: Some(empty_clauses),
+        },
+    );
+    let nested_or = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterOr,
+            expr: Some(empty_or.as_union_value()),
+        },
+    );
+    let outer_clauses = builder.create_vector(&[nested_or]);
+    let outer_and = api::FilterAnd::create(
+        &mut builder,
+        &api::FilterAndArgs {
+            clauses: Some(outer_clauses),
+        },
+    );
+    let filter = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterAnd,
+            expr: Some(outer_and.as_union_value()),
+        },
+    );
+    let structured = builder.create_vector(&[filter]);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured),
+            ..Default::default()
+        },
+    );
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid nested filter search request");
+    let filter = request
+        .filters()
+        .and_then(|filters| filters.structured())
+        .expect("structured filter is present")
+        .get(0);
+    let context = context();
+    let component_error = context
+        .filter_to_ir(filter)
+        .expect_err("component conversion should reject the empty nested OR");
+    let search_error = context
+        .search_to_ir(request)
+        .expect_err("full search conversion should reject the empty nested OR");
+
+    let relative_path = |path: Option<&str>| {
+        path.map(|path| {
+            path.strip_prefix("filters.structured[0]")
+                .or_else(|| path.strip_prefix("filter"))
+                .unwrap_or(path)
+                .to_owned()
+        })
+    };
+    assert_eq!(
+        component_error.details[0].code,
+        search_error.details[0].code
+    );
+    assert_eq!(
+        relative_path(component_error.details[0].path.as_deref()),
+        relative_path(search_error.details[0].path.as_deref()),
+        "component and full-search filter paths must describe the same nested clause"
+    );
+}
+
+#[test]
+fn component_filter_resolution_matches_full_search_ir() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let lower = int_value(&mut builder, 10);
+    let upper = int_value(&mut builder, 100);
+    let lower = structured_comparison(&mut builder, "price", api::ComparisonOp::Gt, lower);
+    let upper = structured_comparison(&mut builder, "price", api::ComparisonOp::Lt, upper);
+    let clauses = builder.create_vector(&[lower, upper]);
+    let all = api::FilterAnd::create(
+        &mut builder,
+        &api::FilterAndArgs {
+            clauses: Some(clauses),
+        },
+    );
+    let filter = api::FilterExpr::create(
+        &mut builder,
+        &api::FilterExprArgs {
+            expr_type: api::FilterExprKind::FilterAnd,
+            expr: Some(all.as_union_value()),
+        },
+    );
+    let structured = builder.create_vector(&[filter]);
+    let filters = api::FilterRequest::create(
+        &mut builder,
+        &api::FilterRequestArgs {
+            structured: Some(structured),
+            ..Default::default()
+        },
+    );
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            filters: Some(filters),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid nested filter search request");
+    let filter = request
+        .filters()
+        .and_then(|filters| filters.structured())
+        .expect("structured filter is present")
+        .get(0);
+    let context = context();
+    let component = context
+        .filter_to_ir(filter)
+        .expect("component conversion should resolve the nested AND");
+    let search = context
+        .search_to_ir(request)
+        .expect("full search conversion should resolve the nested AND");
+    assert_eq!(search.filter(), Some(&component));
+}
+
 fn match_all_search(grouping: Vec<GroupingInput>) -> SearchIntent {
     SearchIntent {
         query: QuerySourceInput::MatchAll,
@@ -1530,6 +1684,322 @@ fn search_resolver_validates_facet_fields_and_duplicates_against_schema() {
             .expect_err("invalid facet semantics must fail in the canonical resolver");
         assert_eq!(error.details[0].code, detail_code);
     }
+}
+
+#[test]
+fn search_resolver_rejects_duplicate_grouping_aliases_at_semantic_boundary() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("duplicate grouping aliases must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
+fn flatbuffer_grouping_ingress_uses_canonical_alias_validation() {
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOperationIr::Alias {
+                            name: "count".to_owned(),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+    let request = SearchRequestIr::new(
+        QueryIr::MatchAll,
+        Vec::new(),
+        None,
+        Vec::new(),
+        20,
+        0,
+        ProjectionIr::new(Vec::new()),
+        HighlightingIr::Disabled,
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_grouping(vec![grouping]);
+    let bytes = crate::search_request_ir_to_api(&request);
+    let request =
+        crate::__flatbuffers::root::<api::SearchRequest>(&bytes).expect("encoded search request");
+
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+    let error = context
+        .search_to_ir(request)
+        .expect_err("portable grouping must use canonical alias validation");
+    assert_eq!(error.details[0].code, "duplicate_grouping_alias");
+}
+
+#[test]
+fn search_resolver_rejects_unknown_grouping_alias_references() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("count".to_owned()),
+                        expression: GroupingExpressionIr::Alias("missing".to_owned()),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("unknown grouping aliases must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "grouping_alias_unknown");
+}
+
+#[test]
+fn search_resolver_rejects_grouping_output_name_collisions() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![
+                        GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                        GroupingOutputIr {
+                            label: None,
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Count,
+                            )),
+                        },
+                    ])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("duplicate grouping output names must fail in the canonical resolver");
+    assert_eq!(error.details[0].code, "grouping_output_name_collision");
+}
+
+#[test]
+fn search_resolver_rejects_summary_and_max_in_the_same_grouping_scope() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        GroupingOperationIr::Max(Some(3)),
+                        GroupingOperationIr::Output(vec![GroupingOutputIr {
+                            label: Some("hits".to_owned()),
+                            expression: GroupingExpressionIr::Aggregation(Box::new(
+                                GroupingAggregationIr::Summary(Some("default".to_owned())),
+                            )),
+                        }]),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("summary and max must fail at the portable semantic boundary");
+    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
+}
+
+#[test]
+fn search_resolver_treats_group_and_each_as_one_semantic_scope() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Max(Some(3)),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                        label: Some("hits".to_owned()),
+                        expression: GroupingExpressionIr::Aggregation(Box::new(
+                            GroupingAggregationIr::Summary(Some("default".to_owned())),
+                        )),
+                    }])],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    let error = resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect_err("group and each operations at one level must share max/summary semantics");
+    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
+}
+
+#[test]
+fn search_resolver_starts_a_new_semantic_scope_for_nested_all() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let count_output = || {
+        GroupingOperationIr::Output(vec![GroupingOutputIr {
+            label: None,
+            expression: GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Count)),
+        }])
+    };
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+                GroupingOperationIr::Each(GroupingAllIr {
+                    operations: vec![
+                        count_output(),
+                        GroupingOperationIr::All(GroupingAllIr {
+                            operations: vec![
+                                GroupingOperationIr::Group(GroupingExpressionIr::Attribute(
+                                    "brand".to_owned(),
+                                )),
+                                GroupingOperationIr::Each(GroupingAllIr {
+                                    operations: vec![count_output()],
+                                    label: None,
+                                }),
+                            ],
+                            label: None,
+                        }),
+                    ],
+                    label: None,
+                }),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("nested grouping levels may reuse output names");
+}
+
+#[test]
+fn search_resolver_keeps_parallel_grouping_branches_semantically_valid() {
+    let mut context = context();
+    context.definition.fields[0].capabilities.groupable = true;
+
+    let branch = || GroupingAllIr {
+        operations: vec![
+            GroupingOperationIr::Group(GroupingExpressionIr::Attribute("brand".to_owned())),
+            GroupingOperationIr::Each(GroupingAllIr {
+                operations: vec![GroupingOperationIr::Output(vec![GroupingOutputIr {
+                    label: None,
+                    expression: GroupingExpressionIr::Aggregation(Box::new(
+                        GroupingAggregationIr::Count,
+                    )),
+                }])],
+                label: None,
+            }),
+        ],
+        label: None,
+    };
+    let grouping = GroupingRequestIr {
+        root: GroupingAllIr {
+            operations: vec![
+                GroupingOperationIr::All(branch()),
+                GroupingOperationIr::All(branch()),
+            ],
+            label: None,
+        },
+        continuations: Vec::new(),
+    };
+
+    resolve_search(
+        &context,
+        match_all_search(vec![GroupingInput::Structured(grouping)]),
+    )
+    .expect("parallel portable grouping branches remain semantically valid");
 }
 
 #[test]

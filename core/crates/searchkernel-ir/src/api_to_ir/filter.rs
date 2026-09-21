@@ -145,122 +145,11 @@ impl IndexContext {
         filter: api::FilterExpr<'_>,
         path: &str,
     ) -> Result<FilterIr> {
-        let tag = filter.expr_type();
-        match tag {
-            api::FilterExprKind::FilterAnd => {
-                let n = filter.expr_as_filter_and().ok_or_else(|| {
-                    invalid(
-                        "invalid_filter",
-                        Some(path),
-                        "filter expression must select an operation",
-                    )
-                })?;
-                let clauses = filter_children(n.clauses(), self, path, "all")?;
-                if clauses.is_empty() {
-                    return Err(invalid(
-                        "empty_boolean_filter",
-                        Some(format!("{path}.all")),
-                        "all requires at least one clause",
-                    ));
-                }
-                Ok(flatten_and(clauses))
-            }
-            api::FilterExprKind::FilterOr => {
-                let n = filter.expr_as_filter_or().ok_or_else(|| {
-                    invalid(
-                        "invalid_filter",
-                        Some(path),
-                        "filter expression must select an operation",
-                    )
-                })?;
-                let clauses = filter_children(n.clauses(), self, path, "any")?;
-                if clauses.is_empty() {
-                    return Err(invalid(
-                        "empty_boolean_filter",
-                        Some(format!("{path}.any")),
-                        "any requires at least one clause",
-                    ));
-                }
-                Ok(flatten_or(clauses))
-            }
-            api::FilterExprKind::FilterNot => {
-                let n = filter.expr_as_filter_not().ok_or_else(|| {
-                    invalid(
-                        "invalid_filter",
-                        Some(path),
-                        "filter expression must select an operation",
-                    )
-                })?;
-                let c = n.clause().ok_or_else(|| {
-                    invalid(
-                        "invalid_filter",
-                        Some(format!("{path}.negation.clause")),
-                        "negation requires a clause",
-                    )
-                })?;
-                Ok(FilterIr::Not(Box::new(
-                    self.filter_to_ir_at(c, &format!("{path}.negation.clause"))?,
-                )))
-            }
-            api::FilterExprKind::FilterComparison => self
-                .comparison_to_ir_at(
-                    filter.expr_as_filter_comparison().ok_or_else(|| {
-                        invalid(
-                            "invalid_filter",
-                            Some(path),
-                            "filter expression must select an operation",
-                        )
-                    })?,
-                    &format!("{path}.comparison"),
-                )
-                .map(FilterIr::Comparison),
-            api::FilterExprKind::FilterRange => self
-                .range_to_ir_at(
-                    filter.expr_as_filter_range().ok_or_else(|| {
-                        invalid(
-                            "invalid_filter",
-                            Some(path),
-                            "filter expression must select an operation",
-                        )
-                    })?,
-                    &format!("{path}.range"),
-                )
-                .map(FilterIr::Range),
-            api::FilterExprKind::FilterExists => {
-                let n = filter.expr_as_filter_exists().ok_or_else(|| {
-                    invalid(
-                        "invalid_filter",
-                        Some(path),
-                        "filter expression must select an operation",
-                    )
-                })?;
-                let input = FilterInput::Exists {
-                    field: n
-                        .field()
-                        .and_then(|field| field.path())
-                        .unwrap_or_default()
-                        .to_owned(),
-                };
-                resolve_filter(self, &input, &format!("{path}.exists"))
-            }
-            api::FilterExprKind::FilterIn => self
-                .in_to_ir_at(
-                    filter.expr_as_filter_in().ok_or_else(|| {
-                        invalid(
-                            "invalid_filter",
-                            Some(path),
-                            "filter expression must select an operation",
-                        )
-                    })?,
-                    &format!("{path}.in"),
-                )
-                .map(|(field, values)| FilterIr::In { field, values }),
-            _ => Err(invalid(
-                "invalid_filter",
-                Some(path),
-                "filter expression must select an operation",
-            )),
-        }
+        // Component conversion must use the same input decoder and resolver
+        // as complete search requests so boolean structure and error paths
+        // cannot drift between ingress paths.
+        let input = filter_to_input_at(filter, path)?;
+        resolve_filter(self, &input, path)
     }
     pub(crate) fn comparison_to_ir_at(
         &self,
@@ -301,37 +190,6 @@ impl IndexContext {
         match resolve_filter(self, &input, path)? {
             FilterIr::Comparison(value) => Ok(value),
             _ => unreachable!("comparison resolver returned a non-comparison filter"),
-        }
-    }
-    pub(crate) fn in_to_ir_at(
-        &self,
-        input: api::FilterIn<'_>,
-        path: &str,
-    ) -> Result<(FieldName, Vec<ScalarValueIr>)> {
-        let values = input
-            .values()
-            .map(|values| {
-                values
-                    .iter()
-                    .enumerate()
-                    .map(|(index, value)| {
-                        RequestValueIr::from_api(value, format!("{path}.values[{index}]"))
-                    })
-                    .collect::<Result<Vec<_>>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let normalized = FilterInput::In {
-            field: input
-                .field()
-                .and_then(|field| field.path())
-                .unwrap_or_default()
-                .to_owned(),
-            values,
-        };
-        match resolve_filter(self, &normalized, path)? {
-            FilterIr::In { field, values } => Ok((field, values)),
-            _ => unreachable!("IN resolver returned a non-IN filter"),
         }
     }
     pub(crate) fn range_to_ir_at(&self, r: api::FilterRange<'_>, path: &str) -> Result<RangeIr> {
@@ -633,21 +491,6 @@ pub(crate) fn filter_bindings(
         );
     }
     Ok(bindings)
-}
-pub(crate) fn filter_children(
-    children: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::FilterExpr<'_>>>>,
-    context: &IndexContext,
-    parent_path: &str,
-    operation_name: &str,
-) -> Result<Vec<FilterIr>> {
-    let mut converted = Vec::new();
-    if let Some(children) = children {
-        for (index, child) in children.iter().enumerate() {
-            let child_path = format!("{parent_path}.{operation_name}.clauses[{index}]");
-            converted.push(context.filter_to_ir_at(child, &child_path)?);
-        }
-    }
-    Ok(converted)
 }
 pub(crate) fn flatten_and(clauses: Vec<FilterIr>) -> FilterIr {
     let mut flattened = Vec::new();
