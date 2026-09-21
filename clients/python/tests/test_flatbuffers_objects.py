@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Boolean, ClientError, Float, Group, Hit, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
+from searchkernel import Boolean, ClientError, Float, Group, Hit, HnswIndexConfig, Integer, Keyword, RankProfile, Tensor, TensorField, Text, agg, g, gf, q  # noqa: E402
 from searchkernel.client import _document, _python_value, value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.Protocol.V2.RequestEnvelope import RequestEnvelopeT  # noqa: E402
@@ -18,6 +18,8 @@ from SearchKernel.V2.InsertRequest import InsertRequestT  # noqa: E402
 from SearchKernel.V2.TensorValue import TensorValueT  # noqa: E402
 from SearchKernel.V2.TensorPayloadKind import TensorPayloadKind  # noqa: E402
 from SearchKernel.V2.DenseTensorValues import DenseTensorValuesT  # noqa: E402
+from SearchKernel.V2.DistanceMetric import DistanceMetric  # noqa: E402
+from SearchKernel.V2.HnswIndexConfig import HnswIndexConfigT  # noqa: E402
 from SearchKernel.V2.IndexDefinition import IndexDefinitionT  # noqa: E402
 from SearchKernel.V2.FilterClause import FilterClauseT  # noqa: E402
 from SearchKernel.V2.FilterRequest import FilterRequestT  # noqa: E402
@@ -217,6 +219,19 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         definition = TensorField("tensor<float>(x[2])", stored=True).definition("embedding")
         self.assertEqual(definition.dataType.kind.typeSpec, "tensor<float>(x[2])")
 
+    def test_tensor_field_hnsw_configuration_lowers_to_canonical_objects(self):
+        definition = TensorField(
+            "tensor<float>(x[3])",
+            distance_metric="euclidean",
+            hnsw=HnswIndexConfig(
+                max_links_per_node=4,
+                neighbors_to_explore_at_insert=16,
+            ),
+        ).definition("embedding")
+        self.assertEqual(definition.attribute.distanceMetric, DistanceMetric.Euclidean)
+        self.assertEqual(definition.index.hnsw.maxLinksPerNode.value, 4)
+        self.assertEqual(definition.index.hnsw.neighborsToExploreAtInsert.value, 16)
+
     def test_rank_profile_and_nearest_neighbor_lower_to_generated_objects(self):
         profile = (
             RankProfile("semantic")
@@ -251,6 +266,21 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
         self.assertEqual(query.exprType, QueryExprKind.QueryNearestNeighbor)
         self.assertEqual(query.expr.documentField.path, "embedding")
         self.assertEqual(query.expr.queryTensor, "query_embedding")
+
+    def test_nearest_neighbor_controls_lower_to_existing_annotations(self):
+        query = q.nearest_neighbor(
+            "embedding",
+            "query_embedding",
+            approximate=False,
+            total_target_hits=3,
+            explore_additional_hits=5,
+            distance_threshold=100.0,
+        )
+        annotations = {entry.key: entry.value.kind.value for entry in query.source.query.annotations}
+        self.assertEqual(annotations["approximate"], False)
+        self.assertEqual(annotations["totalTargetHits"], 3)
+        self.assertEqual(annotations["exploreAdditionalHits"], 5)
+        self.assertEqual(annotations["distanceThreshold"], 100.0)
 
     def test_hybrid_query_combines_text_and_nearest_neighbor(self):
         query = q.all_of(

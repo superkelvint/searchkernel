@@ -1,5 +1,48 @@
 use std::collections::BTreeMap;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Distance metric used by a tensor attribute.
+pub enum DistanceMetric {
+    Euclidean,
+    Angular,
+    DotProduct,
+    PrenormalizedAngular,
+    GeoDegrees,
+    Hamming,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// HNSW graph-construction settings for a tensor field.
+pub struct HnswIndexConfig {
+    pub(crate) max_links_per_node: Option<u32>,
+    pub(crate) neighbors_to_explore_at_insert: Option<u32>,
+}
+
+impl HnswIndexConfig {
+    pub fn new() -> Self {
+        Self {
+            max_links_per_node: None,
+            neighbors_to_explore_at_insert: None,
+        }
+    }
+
+    pub fn max_links_per_node(mut self, value: u32) -> Self {
+        self.max_links_per_node = Some(value);
+        self
+    }
+
+    pub fn neighbors_to_explore_at_insert(mut self, value: u32) -> Self {
+        self.neighbors_to_explore_at_insert = Some(value);
+        self
+    }
+}
+
+impl Default for HnswIndexConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 /// An analyzer configuration supported by Search Kernel.
 pub struct Analyzer {
@@ -41,6 +84,8 @@ pub struct Field {
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
     pub(crate) analyzer: Option<Analyzer>,
+    pub(crate) distance_metric: Option<DistanceMetric>,
+    pub(crate) hnsw: Option<HnswIndexConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +156,8 @@ impl Field {
             sortable: None,
             facetable: None,
             analyzer: None,
+            distance_metric: None,
+            hnsw: None,
         }
     }
 
@@ -157,6 +204,8 @@ impl Field {
             sortable: None,
             facetable: None,
             analyzer: None,
+            distance_metric: None,
+            hnsw: None,
         }
     }
 
@@ -193,6 +242,18 @@ impl Field {
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
         self.analyzer = Some(value);
+        self
+    }
+
+    /// Configure the tensor attribute distance metric.
+    pub fn distance_metric(mut self, value: DistanceMetric) -> Self {
+        self.distance_metric = Some(value);
+        self
+    }
+
+    /// Configure HNSW indexing for this tensor field.
+    pub fn hnsw(mut self, value: HnswIndexConfig) -> Self {
+        self.hnsw = Some(value);
         self
     }
 

@@ -568,6 +568,34 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 sortable: field.sortable,
                 facetable: field.facetable,
                 analyzer,
+                distance_metric: field.distance_metric.map(|value| match value {
+                    crate::schema::DistanceMetric::Euclidean => {
+                        searchkernel_ir::DistanceMetricIr::Euclidean
+                    }
+                    crate::schema::DistanceMetric::Angular => {
+                        searchkernel_ir::DistanceMetricIr::Angular
+                    }
+                    crate::schema::DistanceMetric::DotProduct => {
+                        searchkernel_ir::DistanceMetricIr::DotProduct
+                    }
+                    crate::schema::DistanceMetric::PrenormalizedAngular => {
+                        searchkernel_ir::DistanceMetricIr::PrenormalizedAngular
+                    }
+                    crate::schema::DistanceMetric::GeoDegrees => {
+                        searchkernel_ir::DistanceMetricIr::GeoDegrees
+                    }
+                    crate::schema::DistanceMetric::Hamming => {
+                        searchkernel_ir::DistanceMetricIr::Hamming
+                    }
+                }),
+                hnsw: field
+                    .hnsw
+                    .as_ref()
+                    .map(|value| searchkernel_ir::HnswIndexConfigIr {
+                        max_links_per_node: value.max_links_per_node,
+                        neighbors_to_explore_at_insert: value.neighbors_to_explore_at_insert,
+                        options: std::collections::BTreeMap::new(),
+                    }),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -641,6 +669,41 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
         }) {
             value = value.analyzer(Analyzer::standard_v1());
+        }
+        if let Some(attribute) = field.attribute() {
+            if attribute.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified {
+                value = value.distance_metric(match attribute.distance_metric {
+                    searchkernel_ir::DistanceMetricIr::Euclidean => {
+                        crate::schema::DistanceMetric::Euclidean
+                    }
+                    searchkernel_ir::DistanceMetricIr::Angular => {
+                        crate::schema::DistanceMetric::Angular
+                    }
+                    searchkernel_ir::DistanceMetricIr::DotProduct => {
+                        crate::schema::DistanceMetric::DotProduct
+                    }
+                    searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
+                        crate::schema::DistanceMetric::PrenormalizedAngular
+                    }
+                    searchkernel_ir::DistanceMetricIr::GeoDegrees => {
+                        crate::schema::DistanceMetric::GeoDegrees
+                    }
+                    searchkernel_ir::DistanceMetricIr::Hamming => {
+                        crate::schema::DistanceMetric::Hamming
+                    }
+                    searchkernel_ir::DistanceMetricIr::Unspecified => unreachable!(),
+                });
+            }
+        }
+        if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
+            let mut hnsw = crate::schema::HnswIndexConfig::new();
+            if let Some(value) = config.max_links_per_node {
+                hnsw = hnsw.max_links_per_node(value);
+            }
+            if let Some(value) = config.neighbors_to_explore_at_insert {
+                hnsw = hnsw.neighbors_to_explore_at_insert(value);
+            }
+            value = value.hnsw(hnsw);
         }
         result = result.field(value);
     }

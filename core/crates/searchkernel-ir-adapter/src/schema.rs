@@ -3,7 +3,8 @@
 use crate::native_error;
 use searchkernel_ir::{PortableError, Result};
 use searchkernel_vespa_engine::{
-    ConfigCompiler, Field, FieldType, RankProfile, Schema, StructField, StructFieldType,
+    ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, RankProfile, Schema,
+    StructField, StructFieldType,
 };
 
 /// Compile the resolved portable definition into the M-layer configuration.
@@ -62,7 +63,11 @@ pub fn compile_index_definition(
         };
         let capabilities = field.capabilities();
         let mut native = Field::new(field.name().as_str(), kind);
-        if capabilities.searchable() {
+        let is_tensor = matches!(
+            field.data_type(),
+            searchkernel_ir::DataTypeIr::Tensor { .. }
+        );
+        if capabilities.searchable() && !is_tensor {
             native = native.indexed();
         }
         let attribute = field.attribute();
@@ -83,6 +88,21 @@ pub fn compile_index_definition(
         );
         if fast_search {
             native = native.fast_search();
+        }
+        if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
+            let mut hnsw = HnswIndexConfig::new();
+            if let Some(value) = config.max_links_per_node {
+                hnsw = hnsw.max_links_per_node(value);
+            }
+            if let Some(value) = config.neighbors_to_explore_at_insert {
+                hnsw = hnsw.neighbors_to_explore_at_insert(value);
+            }
+            native = native.hnsw(hnsw);
+        }
+        if let Some(attribute) = field.attribute() {
+            if let Some(metric) = lower_distance_metric(attribute.distance_metric)? {
+                native = native.distance_metric(metric);
+            }
         }
         // Vespa cannot expose tensor fields through the default document
         // summary, but its document retriever still returns the complete
@@ -229,11 +249,17 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                 "the current native schema has no word-matching representation",
             ));
         }
-        if capabilities.searchable() && !matches!(field.kind(), searchkernel_ir::FieldKind::Text) {
+        if capabilities.searchable()
+            && !matches!(field.kind(), searchkernel_ir::FieldKind::Text)
+            && !matches!(
+                field.data_type(),
+                searchkernel_ir::DataTypeIr::Tensor { .. }
+            )
+        {
             return Err(PortableError::unsupported(
                 "unsupported_field_capability",
                 Some(format!("{field_path}.searchable")),
-                "the current native schema indexes text fields only",
+                "the current native schema indexes text fields and HNSW tensors only",
             ));
         }
         if matches!(
@@ -279,14 +305,16 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
                             | searchkernel_ir::MatchingModeIr::Exact
                     )
             })
-            || field
-                .index()
-                .is_some_and(|value| value.hnsw.is_some() || !value.options.is_empty())
-            || field.attribute().is_some_and(|value| {
-                value.fast_access.is_some()
-                    || value.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified
-                    || !value.options.is_empty()
+            || field.index().is_some_and(|value| {
+                !value.options.is_empty()
+                    || value
+                        .hnsw
+                        .as_ref()
+                        .is_some_and(|hnsw| !hnsw.options.is_empty())
             })
+            || field
+                .attribute()
+                .is_some_and(|value| value.fast_access.is_some() || !value.options.is_empty())
             || field
                 .summary()
                 .is_some_and(|value| !value.options.is_empty())
@@ -337,6 +365,22 @@ pub fn validate_index_definition(definition: &searchkernel_ir::IndexDefinitionIr
         }
     }
     Ok(())
+}
+
+fn lower_distance_metric(
+    metric: searchkernel_ir::DistanceMetricIr,
+) -> Result<Option<DistanceMetric>> {
+    Ok(match metric {
+        searchkernel_ir::DistanceMetricIr::Unspecified => None,
+        searchkernel_ir::DistanceMetricIr::Euclidean => Some(DistanceMetric::Euclidean),
+        searchkernel_ir::DistanceMetricIr::Angular => Some(DistanceMetric::Angular),
+        searchkernel_ir::DistanceMetricIr::DotProduct => Some(DistanceMetric::DotProduct),
+        searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
+            Some(DistanceMetric::PrenormalizedAngular)
+        }
+        searchkernel_ir::DistanceMetricIr::GeoDegrees => Some(DistanceMetric::GeoDegrees),
+        searchkernel_ir::DistanceMetricIr::Hamming => Some(DistanceMetric::Hamming),
+    })
 }
 
 fn struct_fields(

@@ -48,6 +48,8 @@ pub struct RustFieldInput {
     pub sortable: Option<bool>,
     pub facetable: Option<bool>,
     pub analyzer: Option<RustAnalyzerInput>,
+    pub distance_metric: Option<DistanceMetricIr>,
+    pub hnsw: Option<HnswIndexConfigIr>,
 }
 
 #[doc(hidden)]
@@ -244,6 +246,7 @@ pub fn resolve_rust_index_definition_with_profiles(
 }
 
 fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Result<FieldIr> {
+    let hnsw_enabled = field.hnsw.is_some();
     let (
         data_type,
         string_type,
@@ -365,7 +368,10 @@ fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Resul
         analyzer,
         capabilities: FieldCapabilities {
             stored: field.stored.unwrap_or(true),
-            searchable: field.searchable.unwrap_or(default_searchable),
+            searchable: field
+                .searchable
+                .or_else(|| hnsw_enabled.then_some(true))
+                .unwrap_or(default_searchable),
             filterable: field.filterable.unwrap_or(default_filterable),
             sortable: field.sortable.unwrap_or(default_sortable),
             groupable: field.facetable.unwrap_or(default_groupable),
@@ -382,8 +388,20 @@ fn rust_field_to_ir(field: RustFieldInput, name: FieldName, path: &str) -> Resul
         } else {
             None
         },
-        index: None,
-        attribute: None,
+        index: field.hnsw.map(|hnsw| IndexConfigIr {
+            enabled: Some(true),
+            hnsw: Some(hnsw),
+            options: SchemaPropertiesIr::new(),
+        }),
+        attribute: field
+            .distance_metric
+            .map(|distance_metric| AttributeConfigIr {
+                enabled: Some(true),
+                fast_search: None,
+                fast_access: None,
+                distance_metric,
+                options: SchemaPropertiesIr::new(),
+            }),
         summary: None,
         indexing_script: None,
         properties: SchemaPropertiesIr::new(),
@@ -641,6 +659,30 @@ pub(crate) fn field_to_ir_at(
         .indexing_script()
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
+    // Report the feature-specific type error before capability agreement
+    // checks. A malformed HNSW field may also have contradictory searchable
+    // flags, but the portable contract requires the HNSW/type violation to
+    // remain the primary structured failure.
+    if index.as_ref().is_some_and(|config| config.hnsw.is_some())
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.index.hnsw")),
+            "HNSW indexing requires a tensor field",
+        ));
+    }
+    if attribute
+        .as_ref()
+        .is_some_and(|config| config.distance_metric != DistanceMetricIr::Unspecified)
+        && !matches!(data_type, DataTypeIr::Tensor { .. })
+    {
+        return Err(invalid(
+            "invalid_type_combination",
+            Some(format!("{path}.attribute.distance_metric")),
+            "a distance metric requires a tensor field",
+        ));
+    }
     check_bool_agreement(
         stored,
         summary.as_ref().and_then(|value| value.enabled),
@@ -767,26 +809,6 @@ pub(crate) fn field_to_ir_at(
             "invalid_capability",
             Some(format!("{path}.sortable")),
             "multi-valued fields cannot be sortable",
-        ));
-    }
-    if index.as_ref().is_some_and(|config| config.hnsw.is_some())
-        && !matches!(data_type, DataTypeIr::Tensor { .. })
-    {
-        return Err(invalid(
-            "invalid_type_combination",
-            Some(format!("{path}.index.hnsw")),
-            "HNSW indexing requires a tensor field",
-        ));
-    }
-    if attribute
-        .as_ref()
-        .is_some_and(|config| config.distance_metric != DistanceMetricIr::Unspecified)
-        && !matches!(data_type, DataTypeIr::Tensor { .. })
-    {
-        return Err(invalid(
-            "invalid_type_combination",
-            Some(format!("{path}.attribute.distance_metric")),
-            "a distance metric requires a tensor field",
         ));
     }
     if indexing_script.is_some()

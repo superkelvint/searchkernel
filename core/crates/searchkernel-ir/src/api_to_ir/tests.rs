@@ -365,6 +365,8 @@ fn parity_schema() -> RustIndexDefinitionInput {
         sortable: None,
         facetable: None,
         analyzer: None,
+        distance_metric: None,
+        hnsw: None,
     };
     RustIndexDefinitionInput {
         name: Some("catalog".to_owned()),
@@ -406,6 +408,42 @@ fn parity_schema() -> RustIndexDefinitionInput {
             weight: Some(2.5),
         }]),
     }
+}
+
+#[test]
+fn rust_tensor_hnsw_fields_preserve_metric_and_graph_configuration() {
+    let definition = resolve_rust_index_definition(RustIndexDefinitionInput {
+        name: Some("vectors".to_owned()),
+        fields: vec![RustFieldInput {
+            name: "embedding".to_owned(),
+            kind: RustFieldKind::Tensor("tensor<float>(x[3])".to_owned()),
+            multi: false,
+            stored: Some(true),
+            searchable: None,
+            filterable: None,
+            sortable: None,
+            facetable: None,
+            analyzer: None,
+            distance_metric: Some(DistanceMetricIr::Euclidean),
+            hnsw: Some(HnswIndexConfigIr {
+                max_links_per_node: Some(4),
+                neighbors_to_explore_at_insert: Some(16),
+                options: BTreeMap::new(),
+            }),
+        }],
+        default_search_fields: None,
+    })
+    .expect("valid tensor HNSW schema");
+
+    let field = &definition.fields()[0];
+    assert!(field.capabilities().searchable());
+    assert_eq!(
+        field.attribute().unwrap().distance_metric,
+        DistanceMetricIr::Euclidean
+    );
+    let hnsw = field.index().unwrap().hnsw.as_ref().unwrap();
+    assert_eq!(hnsw.max_links_per_node, Some(4));
+    assert_eq!(hnsw.neighbors_to_explore_at_insert, Some(16));
 }
 
 fn parity_document_input() -> DocumentInput {

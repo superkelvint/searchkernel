@@ -3,7 +3,7 @@
 //! This is used only to preserve the caller's schema intent in the manifest.
 //! Runtime request execution and runtime schema resolution do not use it.
 
-use crate::schema::{Analyzer, Field, FieldKind, IndexDefinition, SearchField};
+use crate::schema::{Analyzer, DistanceMetric, Field, FieldKind, IndexDefinition, SearchField};
 use searchkernel_ir::{__flatbuffers as flatbuffers, api};
 use serde_json::Value;
 
@@ -51,6 +51,54 @@ fn encode_field<'a>(
     let filterable = field.filterable.map(api::OptionalBool::new);
     let sortable = field.sortable.map(api::OptionalBool::new);
     let facetable = field.facetable.map(api::OptionalBool::new);
+    let hnsw = field.hnsw.as_ref().map(|config| {
+        let max_links_per_node = config.max_links_per_node.map(api::OptionalUInt32::new);
+        let neighbors_to_explore_at_insert = config
+            .neighbors_to_explore_at_insert
+            .map(api::OptionalUInt32::new);
+        api::HnswIndexConfig::create(
+            builder,
+            &api::HnswIndexConfigArgs {
+                max_links_per_node: max_links_per_node.as_ref(),
+                neighbors_to_explore_at_insert: neighbors_to_explore_at_insert.as_ref(),
+                options: None,
+            },
+        )
+    });
+    let index = hnsw.map(|hnsw| {
+        let enabled = api::OptionalBool::new(true);
+        api::IndexConfig::create(
+            builder,
+            &api::IndexConfigArgs {
+                enabled: Some(&enabled),
+                hnsw: Some(hnsw),
+                options: None,
+            },
+        )
+    });
+    let attribute = (field.distance_metric.is_some() || field.hnsw.is_some()).then(|| {
+        let enabled = api::OptionalBool::new(true);
+        api::AttributeConfig::create(
+            builder,
+            &api::AttributeConfigArgs {
+                enabled: Some(&enabled),
+                fast_search: None,
+                fast_access: None,
+                distance_metric: match field.distance_metric {
+                    None => api::DistanceMetric::Unspecified,
+                    Some(DistanceMetric::Euclidean) => api::DistanceMetric::Euclidean,
+                    Some(DistanceMetric::Angular) => api::DistanceMetric::Angular,
+                    Some(DistanceMetric::DotProduct) => api::DistanceMetric::DotProduct,
+                    Some(DistanceMetric::PrenormalizedAngular) => {
+                        api::DistanceMetric::PrenormalizedAngular
+                    }
+                    Some(DistanceMetric::GeoDegrees) => api::DistanceMetric::GeoDegrees,
+                    Some(DistanceMetric::Hamming) => api::DistanceMetric::Hamming,
+                },
+                options: None,
+            },
+        )
+    });
     let data_type = encode_data_type(builder, &field.kind, field.multi);
     let matching = matches!(&field.kind, FieldKind::Text | FieldKind::Keyword).then(|| {
         api::MatchingConfig::create(
@@ -77,8 +125,8 @@ fn encode_field<'a>(
             facetable: facetable.as_ref(),
             analyzer,
             matching,
-            index: None,
-            attribute: None,
+            index,
+            attribute,
             summary: None,
             indexing_script: None,
             properties: None,

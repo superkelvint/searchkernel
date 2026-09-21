@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Analyzer, Field, RankProfile, SearchField};
+use crate::{Analyzer, DistanceMetric, Field, HnswIndexConfig, RankProfile, SearchField};
 use searchkernel_ir::{FieldCardinality, FieldKind};
 use searchkernel_testkit::RecordingBackend;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -138,6 +138,55 @@ fn schema_options_and_default_search_fields_reach_core() {
     assert_eq!(fields[4].kind(), FieldKind::Bool);
     assert_eq!(fields[4].cardinality(), FieldCardinality::Multi);
     assert!(!fields[4].capabilities().sortable());
+}
+
+#[test]
+fn rust_schema_round_trip_preserves_hnsw_and_distance_metric() {
+    let definition = IndexDefinition::new().field(
+        Field::tensor("embedding", "tensor<float>(x[3])")
+            .distance_metric(DistanceMetric::Euclidean)
+            .hnsw(
+                HnswIndexConfig::new()
+                    .max_links_per_node(4)
+                    .neighbors_to_explore_at_insert(16),
+            ),
+    );
+    let resolved = definition_to_ir(&definition).expect("resolve HNSW schema");
+    let field = &resolved.fields()[0];
+    assert_eq!(
+        field.attribute().map(|value| value.distance_metric),
+        Some(searchkernel_ir::DistanceMetricIr::Euclidean)
+    );
+    let hnsw = field
+        .index()
+        .and_then(|value| value.hnsw.as_ref())
+        .expect("HNSW config in IR");
+    assert_eq!(hnsw.max_links_per_node, Some(4));
+    assert_eq!(hnsw.neighbors_to_explore_at_insert, Some(16));
+
+    let described = definition_from_ir(&resolved);
+    let described_ir = definition_to_ir(&described).expect("re-resolve described schema");
+    let described_field = &described_ir.fields()[0];
+    assert_eq!(
+        described_field
+            .attribute()
+            .map(|value| value.distance_metric),
+        Some(searchkernel_ir::DistanceMetricIr::Euclidean)
+    );
+    assert_eq!(
+        described_field
+            .index()
+            .and_then(|value| value.hnsw.as_ref())
+            .and_then(|value| value.max_links_per_node),
+        Some(4)
+    );
+    assert_eq!(
+        described_field
+            .index()
+            .and_then(|value| value.hnsw.as_ref())
+            .and_then(|value| value.neighbors_to_explore_at_insert),
+        Some(16)
+    );
 }
 
 #[test]

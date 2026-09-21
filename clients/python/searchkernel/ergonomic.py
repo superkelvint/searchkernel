@@ -111,6 +111,11 @@ from SearchKernel.V2.AssignUpdate import AssignUpdateT
 from SearchKernel.V2.ClearUpdate import ClearUpdateT
 from SearchKernel.V2.FieldPath import FieldPathT
 from SearchKernel.V2.OptionalBool import OptionalBoolT
+from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T
+from SearchKernel.V2.AttributeConfig import AttributeConfigT
+from SearchKernel.V2.DistanceMetric import DistanceMetric
+from SearchKernel.V2.HnswIndexConfig import HnswIndexConfigT
+from SearchKernel.V2.IndexConfig import IndexConfigT
 from SearchKernel.V2.UpdateOperation import UpdateOperationT
 from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
 from SearchKernel.V2.UpdateRequest import UpdateRequestT
@@ -181,12 +186,29 @@ class Boolean(_FieldSpec):
     kind = "bool"
 
 
+@dataclass(frozen=True)
+class HnswIndexConfig:
+    """Portable HNSW construction settings for a tensor field."""
+
+    max_links_per_node: int | None = None
+    neighbors_to_explore_at_insert: int | None = None
+
+    def _generated(self) -> HnswIndexConfigT:
+        optional = lambda setting: None if setting is None else OptionalUInt32T(value=setting)
+        return HnswIndexConfigT(
+            maxLinksPerNode=optional(self.max_links_per_node),
+            neighborsToExploreAtInsert=optional(self.neighbors_to_explore_at_insert),
+        )
+
+
 class TensorField(_FieldSpec):
     kind = "tensor"
 
-    def __init__(self, type_spec: str, **kwargs):
+    def __init__(self, type_spec: str, *, distance_metric=None, hnsw=None, **kwargs):
         super().__init__(**kwargs)
         self.type_spec = type_spec
+        self.distance_metric = distance_metric
+        self.hnsw = hnsw
 
     def definition(self, name: str) -> FieldDefinitionT:
         if not isinstance(self.type_spec, str) or not self.type_spec.strip():
@@ -194,6 +216,21 @@ class TensorField(_FieldSpec):
         optional = lambda setting: None if setting is None else __import__(
             "SearchKernel.V2.OptionalBool", fromlist=["OptionalBoolT"]
         ).OptionalBoolT(value=setting)
+        metric = None
+        if self.distance_metric is not None:
+            metric = {
+                "euclidean": DistanceMetric.Euclidean,
+                "angular": DistanceMetric.Angular,
+                "dot_product": DistanceMetric.DotProduct,
+                "dotproduct": DistanceMetric.DotProduct,
+                "prenormalized_angular": DistanceMetric.PrenormalizedAngular,
+                "geo_degrees": DistanceMetric.GeoDegrees,
+                "geodegrees": DistanceMetric.GeoDegrees,
+                "hamming": DistanceMetric.Hamming,
+            }.get(str(self.distance_metric).lower())
+            if metric is None:
+                raise ValueError(f"unsupported tensor distance metric: {self.distance_metric}")
+        hnsw = self.hnsw._generated() if self.hnsw is not None else None
         return FieldDefinitionT(
             name=name,
             dataType=DataTypeT(
@@ -205,6 +242,14 @@ class TensorField(_FieldSpec):
             filterable=optional(self.filterable),
             sortable=optional(self.sortable),
             facetable=optional(self.facetable),
+            index=IndexConfigT(
+                enabled=OptionalBoolT(value=True),
+                hnsw=hnsw,
+            ) if hnsw is not None else None,
+            attribute=AttributeConfigT(
+                enabled=OptionalBoolT(value=True),
+                distanceMetric=metric or DistanceMetric.Unspecified,
+            ) if metric is not None or hnsw is not None else None,
         )
 
 
@@ -561,13 +606,38 @@ class _QueryNamespace:
             ),
         )
 
-    def nearest_neighbor(self, document_field: str, query_tensor: str) -> QuerySourceT:
+    def nearest_neighbor(
+        self,
+        document_field: str,
+        query_tensor: str,
+        *,
+        approximate: bool | None = None,
+        target_hits: int | None = None,
+        total_target_hits: int | None = None,
+        explore_additional_hits: int | None = None,
+        distance_threshold: float | None = None,
+    ) -> QuerySourceT:
+        annotations = {}
+        if approximate is not None:
+            annotations["approximate"] = approximate
+        if target_hits is not None:
+            annotations["targetNumHits"] = target_hits
+        if total_target_hits is not None:
+            annotations["totalTargetHits"] = total_target_hits
+        if explore_additional_hits is not None:
+            annotations["exploreAdditionalHits"] = explore_additional_hits
+        if distance_threshold is not None:
+            annotations["distanceThreshold"] = distance_threshold
         nearest = QueryExprT(
             exprType=QueryExprKind.QueryNearestNeighbor,
             expr=QueryNearestNeighborT(
                 documentField=QueryFieldRefT(path=document_field),
                 queryTensor=query_tensor,
             ),
+            annotations=[
+                ValueEntryT(key=key, value=value(item))
+                for key, item in sorted(annotations.items())
+            ] or None,
         )
         return self._typed(nearest)
 

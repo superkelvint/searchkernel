@@ -30,7 +30,8 @@ pub use query::{
     Query, QueryAlternative, RangeBound, Value, WandOptions, WeightedQueryItem,
 };
 pub use schema::{
-    ConfigCompiler, Field, FieldType, RankProfile, Schema, StructField, StructFieldType,
+    ConfigCompiler, DistanceMetric, Field, FieldType, HnswIndexConfig, RankProfile, Schema,
+    StructField, StructFieldType,
 };
 pub use search::{
     FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingBinaryOperator,
