@@ -26,7 +26,7 @@ mod native;
 #[cfg(all(test, feature = "native"))]
 pub(crate) use manifest::{
     config_identity, definition_from_json, IndexManifest, LEGACY_MANIFEST_FORMAT_VERSION,
-    MANIFEST_FORMAT_VERSION, STORAGE_COMPATIBILITY_GENERATION,
+    MANIFEST_FORMAT_VERSION, RESOLVED_SCHEMA_SNAPSHOT_VERSION, STORAGE_COMPATIBILITY_GENERATION,
 };
 #[cfg(all(test, feature = "native"))]
 use native::{

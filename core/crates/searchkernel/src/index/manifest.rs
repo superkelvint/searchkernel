@@ -11,11 +11,13 @@ use searchkernel_ir::IndexContext;
 use std::io::Write;
 
 #[cfg(feature = "native")]
-pub(crate) const MANIFEST_FORMAT_VERSION: u32 = 3;
+pub(crate) const MANIFEST_FORMAT_VERSION: u32 = 4;
 #[cfg(feature = "native")]
 pub(crate) const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 2;
 #[cfg(feature = "native")]
 pub(crate) const STORAGE_COMPATIBILITY_GENERATION: u32 = 1;
+#[cfg(feature = "native")]
+pub(crate) const RESOLVED_SCHEMA_SNAPSHOT_VERSION: u32 = 1;
 #[cfg(feature = "native")]
 pub(crate) const NATIVE_ABI_VERSION: u32 = 5;
 #[cfg(feature = "native")]
@@ -69,6 +71,10 @@ impl IndexManifest {
             value: serde_json::json!({
                 "manifest_format_version": MANIFEST_FORMAT_VERSION,
                 "storage_compatibility_generation": STORAGE_COMPATIBILITY_GENERATION,
+                "resolved_schema_snapshot_version": RESOLVED_SCHEMA_SNAPSHOT_VERSION,
+                "resolved_schema_snapshot": searchkernel_ir::snapshot::index_definition(
+                    resolved_context.definition(),
+                ),
                 "provenance": {
                     "created_by_searchkernel_version": env!("CARGO_PKG_VERSION"),
                     "created_by_native_abi": NATIVE_ABI_VERSION,
@@ -153,13 +159,7 @@ impl IndexManifest {
             .map_err(|error| {
                 Error::corrupt_index(format!("invalid portable index definition: {error}"))
             })?;
-            let resolved_root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
-                &manifest.resolved_definition_bytes,
-            )
-            .map_err(|error| {
-                Error::corrupt_index(format!("invalid resolved index definition: {error}"))
-            })?;
-            searchkernel_ir::index_definition_to_ir(resolved_root).map_err(Error::from_ir)?;
+            manifest.resolved_definition_ir()?;
         }
         manifest.resolved_context()?;
         Ok(manifest)
@@ -188,6 +188,28 @@ impl IndexManifest {
                     return Err(Error::incompatible_index(format!(
                         "storage compatibility generation {generation}"
                     )));
+                }
+                let snapshot_version = object
+                    .get("resolved_schema_snapshot_version")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or_else(|| {
+                        Error::corrupt_index(
+                            "resolved schema snapshot version is missing or invalid",
+                        )
+                    })?;
+                if snapshot_version != RESOLVED_SCHEMA_SNAPSHOT_VERSION {
+                    return Err(Error::incompatible_index(format!(
+                        "resolved schema snapshot version {snapshot_version}"
+                    )));
+                }
+                if !object
+                    .get("resolved_schema_snapshot")
+                    .is_some_and(serde_json::Value::is_object)
+                {
+                    return Err(Error::corrupt_index(
+                        "resolved schema snapshot is missing or invalid",
+                    ));
                 }
                 let provenance = object
                     .get("provenance")
@@ -320,11 +342,9 @@ impl IndexManifest {
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
         if version == u64::from(MANIFEST_FORMAT_VERSION) {
-            let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
-                &self.resolved_definition_bytes,
-            )
-            .map_err(|error| Error::corrupt_index(format!("invalid index definition: {error}")))?;
-            IndexContext::from_api(root).map_err(Error::from_ir)
+            Ok(IndexContext::from_definition_ir(
+                self.resolved_definition_ir()?,
+            ))
         } else {
             let definition = definition_from_json(
                 self.value
@@ -335,6 +355,31 @@ impl IndexManifest {
                 &definition,
             )?))
         }
+    }
+
+    fn resolved_definition_ir(&self) -> Result<searchkernel_ir::IndexDefinitionIr> {
+        let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
+            &self.resolved_definition_bytes,
+        )
+        .map_err(|error| {
+            Error::corrupt_index(format!("invalid resolved index definition: {error}"))
+        })?;
+        // The FlatBuffers decoder also serves unresolved caller intent and may
+        // apply defaults.  The persisted IR snapshot makes that replay
+        // explicit: any changed default or normalization is rejected before
+        // the decoded definition can become the reopened context.
+        let resolved = searchkernel_ir::index_definition_to_ir(root)
+            .map_err(|_| Error::incompatible_index("resolved schema snapshot is not compatible"))?;
+        let expected = self
+            .value
+            .get("resolved_schema_snapshot")
+            .ok_or_else(|| Error::corrupt_index("resolved schema snapshot is missing"))?;
+        if searchkernel_ir::snapshot::index_definition(&resolved) != *expected {
+            return Err(Error::incompatible_index(
+                "resolved schema snapshot is not compatible",
+            ));
+        }
+        Ok(resolved)
     }
 }
 
