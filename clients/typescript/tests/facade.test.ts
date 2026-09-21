@@ -24,6 +24,10 @@ function index(): Index {
 }
 
 describe("ergonomic facade", () => {
+  // SKC: filter.textual/basic kinds=ergonomic runtime=shared
+  // SKC: search.sorting/basic kinds=ergonomic runtime=shared
+  // SKC: search.pagination/basic kinds=ergonomic runtime=shared
+  // SKC: result.docsum_field_projection/basic kinds=ergonomic runtime=shared
   it("builds search/filter/sort/pagination/ranking/query-input requests", () => {
     const request = index()
       .search("running shoes")
@@ -59,6 +63,9 @@ describe("ergonomic facade", () => {
     expect(filters?.bb?.__offset(filters.bb_pos, 10)).not.toBe(0);
   });
 
+  // SKC: query.nearest_neighbor/basic kinds=ergonomic runtime=shared
+  // SKC: grouping.structured/basic kinds=ergonomic runtime=shared
+  // SKC: grouping.aggregations/basic kinds=ergonomic runtime=shared
   it("ports typed query, group, facet and root aggregation construction", () => {
     const request = index()
       .query(q.allOf(q.contains("title", "rust"), q.nearestNeighbor("embedding", "q_embedding")))
