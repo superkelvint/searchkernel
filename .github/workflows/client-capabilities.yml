@@ -50,3 +50,24 @@ jobs:
       - run: python tools/check-client-contracts.py --check
       - run: python tools/test_check_capabilities.py
       - run: python tools/test_check_client_contracts.py
+
+  e2e:
+    name: Executable E2E evidence
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: target/ci
+      SEARCHKERNEL_BUILD_ENV: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+      - run: python -m pip install -e clients/python
+      - run: npm ci --prefix clients/typescript
+      - run: python tools/check-client-contracts.py --run-e2e
+
