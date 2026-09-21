@@ -4,8 +4,8 @@ use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
 use crate::schema::{
-    analyzer_to_ir, Analyzer, ConstantDefinition, Field, FieldCapabilities, IndexDefinition,
-    RankProfile, SearchField,
+    analyzer_to_ir, field_to_rust_input, Analyzer, ConstantDefinition, Field, FieldCapabilities,
+    IndexDefinition, RankProfile, SearchField,
 };
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
@@ -666,37 +666,18 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            let mut resolved = field
-                .canonical
-                .clone()
-                .or_else(|| resolved.fields().get(index).cloned())
-                .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?;
-            resolved.set_index_config(field.index_config.clone());
-            resolved.set_attribute_config(field.attribute_config.clone());
-            resolved.set_data_type(field.data_type.clone());
-            if let Some(capabilities) = field.capabilities {
-                resolved.set_capabilities(
-                    capabilities.stored(),
-                    capabilities.searchable(),
-                    capabilities.filterable(),
-                    capabilities.sortable(),
-                    capabilities.groupable(),
-                );
-            }
-            if field.canonical.is_none() {
-                if let Some(analyzer) = &field.analyzer_config {
-                    resolved.set_analyzer(Some(analyzer.clone()));
-                }
-                if let Some(matching) = &field.matching_config {
-                    resolved.set_matching_config(Some(matching.clone()));
-                }
-            }
-            Ok(resolved)
+            field_to_ir_with_fallback(field, resolved.fields().get(index).cloned())
         })
         .collect::<Result<Vec<_>>>()?;
     if !canonical_fields.is_empty() {
         resolved.set_fields(canonical_fields);
     }
+    let schema_fields = definition
+        .schema_fields
+        .iter()
+        .map(|field| field_to_ir_with_fallback(field, None))
+        .collect::<Result<Vec<_>>>()?;
+    resolved.set_schema_fields(schema_fields);
 
     let canonical_profiles = definition
         .rank_profiles
@@ -741,6 +722,132 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
     Ok(resolved)
 }
 
+fn field_to_ir_with_fallback(
+    field: &Field,
+    fallback: Option<searchkernel_ir::FieldIr>,
+) -> Result<searchkernel_ir::FieldIr> {
+    let mut resolved = if let Some(canonical) = field.canonical.clone() {
+        canonical
+    } else if let Some(fallback) = fallback {
+        fallback
+    } else {
+        let input = field_to_rust_input(field)?;
+        let definition = searchkernel_ir::resolve_rust_index_definition(
+            searchkernel_ir::RustIndexDefinitionInput {
+                name: None,
+                fields: vec![input],
+                default_search_fields: None,
+            },
+        )
+        .map_err(Error::from_ir)?;
+        definition
+            .fields()
+            .first()
+            .cloned()
+            .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?
+    };
+    if resolved.name().as_str() != field.name {
+        return Err(Error::infrastructure(
+            "resolved definition lost a public field",
+        ));
+    }
+    resolved.set_index_config(field.index_config.clone());
+    resolved.set_attribute_config(field.attribute_config.clone());
+    resolved.set_data_type(field.data_type.clone());
+    if let Some(capabilities) = field.capabilities {
+        resolved.set_capabilities(
+            capabilities.stored(),
+            capabilities.searchable(),
+            capabilities.filterable(),
+            capabilities.sortable(),
+            capabilities.groupable(),
+        );
+    }
+    if field.canonical.is_none() {
+        if let Some(analyzer) = &field.analyzer_config {
+            resolved.set_analyzer(Some(analyzer.clone()));
+        }
+        if let Some(matching) = &field.matching_config {
+            resolved.set_matching_config(Some(matching.clone()));
+        }
+    }
+    Ok(resolved)
+}
+
+fn field_from_ir(field: &searchkernel_ir::FieldIr) -> Field {
+    let mut value = match field.kind() {
+        searchkernel_ir::FieldKind::Text => Field::text(field.name().as_str()),
+        searchkernel_ir::FieldKind::Keyword => Field::keyword(field.name().as_str()),
+        searchkernel_ir::FieldKind::Int64 => Field::int64(field.name().as_str()),
+        searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
+        searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
+    };
+    if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position) {
+        value = Field::position(field.name().as_str());
+    }
+    if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
+        value = Field::tensor(field.name().as_str(), type_spec);
+    }
+    value.analyzer_config = field.analyzer().cloned();
+    value.matching_config = field.matching().cloned();
+    value.data_type = field.data_type().clone();
+    if matches!(
+        field.cardinality(),
+        searchkernel_ir::FieldCardinality::Multi
+    ) {
+        value = value.multi();
+    }
+    let capabilities = field.capabilities();
+    value = value
+        .stored(capabilities.stored())
+        .searchable(capabilities.searchable())
+        .filterable(capabilities.filterable())
+        .sortable(capabilities.sortable())
+        .facetable(capabilities.facetable());
+    value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
+    if field.analyzer().is_some_and(|analyzer| {
+        analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
+    }) {
+        value = value.analyzer(Analyzer::standard_v1());
+    }
+    if let Some(attribute) = field.attribute() {
+        if attribute.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified {
+            value = value.distance_metric(match attribute.distance_metric {
+                searchkernel_ir::DistanceMetricIr::Euclidean => {
+                    crate::schema::DistanceMetric::Euclidean
+                }
+                searchkernel_ir::DistanceMetricIr::Angular => {
+                    crate::schema::DistanceMetric::Angular
+                }
+                searchkernel_ir::DistanceMetricIr::DotProduct => {
+                    crate::schema::DistanceMetric::DotProduct
+                }
+                searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
+                    crate::schema::DistanceMetric::PrenormalizedAngular
+                }
+                searchkernel_ir::DistanceMetricIr::GeoDegrees => {
+                    crate::schema::DistanceMetric::GeoDegrees
+                }
+                searchkernel_ir::DistanceMetricIr::Hamming => {
+                    crate::schema::DistanceMetric::Hamming
+                }
+                searchkernel_ir::DistanceMetricIr::Unspecified => unreachable!(),
+            });
+        }
+    }
+    if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
+        let mut hnsw = crate::schema::HnswIndexConfig::new();
+        if let Some(value) = config.max_links_per_node {
+            hnsw = hnsw.max_links_per_node(value);
+        }
+        if let Some(value) = config.neighbors_to_explore_at_insert {
+            hnsw = hnsw.neighbors_to_explore_at_insert(value);
+        }
+        value = value.hnsw(hnsw);
+    }
+    value
+}
+
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
     result.properties = definition.properties().clone();
@@ -748,81 +855,19 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         result = result.name(name.as_str());
     }
     for field in definition.fields() {
-        let mut value = match field.kind() {
-            searchkernel_ir::FieldKind::Text => Field::text(field.name().as_str()),
-            searchkernel_ir::FieldKind::Keyword => Field::keyword(field.name().as_str()),
-            searchkernel_ir::FieldKind::Int64 => Field::int64(field.name().as_str()),
-            searchkernel_ir::FieldKind::Float64 => Field::float64(field.name().as_str()),
-            searchkernel_ir::FieldKind::Bool => Field::bool(field.name().as_str()),
-        };
-        if matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position) {
-            value = Field::position(field.name().as_str());
-        }
-        if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
-            value = Field::tensor(field.name().as_str(), type_spec);
-        }
-        value.analyzer_config = field.analyzer().cloned();
-        value.matching_config = field.matching().cloned();
-        value.data_type = field.data_type().clone();
-        if matches!(
-            field.cardinality(),
-            searchkernel_ir::FieldCardinality::Multi
-        ) {
-            value = value.multi();
-        }
-        let capabilities = field.capabilities();
-        value = value
-            .stored(capabilities.stored())
-            .searchable(capabilities.searchable())
-            .filterable(capabilities.filterable())
-            .sortable(capabilities.sortable())
-            .facetable(capabilities.facetable());
-        value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
-        if field.analyzer().is_some_and(|analyzer| {
-            analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
-        }) {
-            value = value.analyzer(Analyzer::standard_v1());
-        }
-        if let Some(attribute) = field.attribute() {
-            if attribute.distance_metric != searchkernel_ir::DistanceMetricIr::Unspecified {
-                value = value.distance_metric(match attribute.distance_metric {
-                    searchkernel_ir::DistanceMetricIr::Euclidean => {
-                        crate::schema::DistanceMetric::Euclidean
-                    }
-                    searchkernel_ir::DistanceMetricIr::Angular => {
-                        crate::schema::DistanceMetric::Angular
-                    }
-                    searchkernel_ir::DistanceMetricIr::DotProduct => {
-                        crate::schema::DistanceMetric::DotProduct
-                    }
-                    searchkernel_ir::DistanceMetricIr::PrenormalizedAngular => {
-                        crate::schema::DistanceMetric::PrenormalizedAngular
-                    }
-                    searchkernel_ir::DistanceMetricIr::GeoDegrees => {
-                        crate::schema::DistanceMetric::GeoDegrees
-                    }
-                    searchkernel_ir::DistanceMetricIr::Hamming => {
-                        crate::schema::DistanceMetric::Hamming
-                    }
-                    searchkernel_ir::DistanceMetricIr::Unspecified => unreachable!(),
-                });
-            }
-        }
-        if let Some(config) = field.index().and_then(|value| value.hnsw.as_ref()) {
-            let mut hnsw = crate::schema::HnswIndexConfig::new();
-            if let Some(value) = config.max_links_per_node {
-                hnsw = hnsw.max_links_per_node(value);
-            }
-            if let Some(value) = config.neighbors_to_explore_at_insert {
-                hnsw = hnsw.neighbors_to_explore_at_insert(value);
-            }
-            value = value.hnsw(hnsw);
-        }
+        let value = field_from_ir(field);
         result = result.field(value);
         let described = result.fields.last_mut().expect("field was just appended");
         described.index_config = field.index().cloned();
         described.attribute_config = field.attribute().cloned();
         described.canonical = Some(field.clone());
+    }
+    for field in definition.schema_fields() {
+        let mut value = field_from_ir(field);
+        value.index_config = field.index().cloned();
+        value.attribute_config = field.attribute().cloned();
+        value.canonical = Some(field.clone());
+        result.schema_fields.push(value);
     }
     result = result.default_search_fields(
         definition

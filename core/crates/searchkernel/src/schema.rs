@@ -769,6 +769,7 @@ pub struct IndexDefinition {
     pub(crate) rank_profiles: Vec<RankProfile>,
     pub(crate) constants: Vec<ConstantDefinition>,
     pub(crate) structs: Vec<searchkernel_ir::NamedStructDefinitionIr>,
+    pub(crate) schema_fields: Vec<Field>,
     pub(crate) properties: searchkernel_ir::SchemaPropertiesIr,
     // For values returned by Index::describe(), this is the authoritative
     // canonical schema state. The ergonomic members above are projections for
@@ -787,6 +788,7 @@ impl fmt::Debug for IndexDefinition {
             .field("rank_profiles", &self.rank_profiles)
             .field("constants", &self.constants)
             .field("structs", &self.structs)
+            .field("schema_fields", &self.schema_fields)
             .field("properties", &self.properties)
             .finish()
     }
@@ -840,6 +842,47 @@ impl IndexDefinition {
             }
         }
         self.fields.push(value);
+        self
+    }
+
+    /// Add a schema-only field derived by an indexing expression.
+    pub fn schema_field(mut self, value: Field) -> Self {
+        if self.canonical.is_some() {
+            let canonical_field = value.canonical.clone().or_else(|| {
+                field_to_rust_input(&value)
+                    .and_then(|field| {
+                        searchkernel_ir::resolve_rust_index_definition(
+                            searchkernel_ir::RustIndexDefinitionInput {
+                                name: None,
+                                fields: vec![field],
+                                default_search_fields: None,
+                            },
+                        )
+                        .map_err(Error::from_ir)
+                    })
+                    .ok()
+                    .and_then(|definition| definition.fields().first().cloned())
+            });
+            if let Some(canonical_field) = canonical_field {
+                apply_canonical_mutation(&mut self.canonical, |canonical| {
+                    let duplicate = canonical
+                        .fields()
+                        .iter()
+                        .chain(canonical.schema_fields().iter())
+                        .any(|field| field.name() == canonical_field.name());
+                    if duplicate {
+                        return false;
+                    }
+                    let mut schema_fields = canonical.schema_fields().to_vec();
+                    schema_fields.push(canonical_field);
+                    canonical.set_schema_fields(schema_fields);
+                    true
+                });
+            } else {
+                self.canonical = None;
+            }
+        }
+        self.schema_fields.push(value);
         self
     }
     /// Set the fields used when a search does not specify its own fields.
@@ -919,6 +962,11 @@ impl IndexDefinition {
     /// Return the fields in this definition.
     pub fn fields(&self) -> &[Field] {
         &self.fields
+    }
+
+    /// Return the schema-only fields derived by indexing expressions.
+    pub fn schema_fields(&self) -> &[Field] {
+        &self.schema_fields
     }
 
     /// Return the explicitly configured default search fields.
