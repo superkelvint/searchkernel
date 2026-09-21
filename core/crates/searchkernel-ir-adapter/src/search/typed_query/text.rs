@@ -403,13 +403,6 @@ pub(super) fn collect_typed_phrase_terms(
     terms: &mut Vec<String>,
     path: &str,
 ) -> Result<()> {
-    if !expression.annotations.is_empty() {
-        return Err(PortableError::unsupported(
-            "typed_query_annotations_not_supported",
-            Some(format!("{path}.annotations")),
-            "typed query annotations are outside the Typed Query A execution subset",
-        ));
-    }
     match &expression.kind {
         QueryExprKindIr::Term { value } => terms.push(typed_term_text(value, path)?),
         QueryExprKindIr::Contains { field, item } => {
