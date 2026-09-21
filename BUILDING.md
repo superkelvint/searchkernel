@@ -7,6 +7,50 @@ build outputs remain environment-local, while Vespa SDK packages are resolved
 through an immutable content-addressed store shared by Git worktrees and keyed
 by the full native provenance fingerprint.
 
+## Authority and failure handling
+
+This file is the authoritative guide for building, compiling, toolchain setup,
+native SDK acquisition, standard Rust verification commands, and
+environment/build recovery.
+
+Agents and developers MUST read this file before their first build or
+verification run in an unfamiliar checkout. If a build, compiler, linker,
+FlatBuffers, Vespa SDK, dependency, cache, or provenance error occurs, treat it
+as an environment/build problem first:
+
+1. run `./dev doctor`;
+2. fix or report each failed prerequisite;
+3. follow the component-specific recovery below;
+4. rerun the original command;
+5. only after the documented prerequisites are healthy, investigate product
+   code as the cause.
+
+Do not edit production code merely to work around a broken build environment.
+Do not use `cargo clean`, delete `target/`, copy SDK directories between
+environments, or rebuild immutable SDK cache objects as an ad-hoc repair.
+
+## Repository command surface
+
+Use the root `./dev` command as the normal entry point for repository setup,
+verification, generation, and acceptance lanes:
+
+```text
+./dev doctor
+./dev check-fast
+./dev test ir
+./dev test rust-api
+./dev test python
+./dev regen protocol
+./dev verify m13
+./dev verify integration
+./dev install flatbuffers
+./dev native-sdk ensure
+./dev native-sdk path
+```
+
+Use `./dev --help` for the supported command list. Direct underlying scripts
+are for focused debugging or when a contract explicitly names one.
+
 ## Normal development
 
 Run the prerequisite check first when setting up a checkout or diagnosing an
@@ -80,7 +124,10 @@ runtime, Vespa source, and native flags as the consuming build.
 ## FlatBuffers
 
 `./dev install flatbuffers` installs the pinned official FlatBuffers C++ tools
-for standalone schema tooling and doctor checks. Cargo's protocol build uses
+for standalone schema tooling and doctor checks. The pinned version is
+`25.12.19`; the default `/usr/local` prefix may require `sudo`. For a custom
+prefix, set `FLATBUFFERS_INSTALL_PREFIX`, then use the `FLATBUFFERS_CPP_ROOT`
+and `FLATC_PATH` exports printed by the command. Cargo's protocol build uses
 its matching pinned vendored FlatBuffers build under the active target root;
 the installed `/usr/local` copy is not silently mixed with Cargo's headers or
 archive.
@@ -131,7 +178,90 @@ the absolute path recorded by the Vespa build. Passing `VESPA_DEPS` explicitly
 is still preferred when the dependency installation belongs to a different
 container or host.
 
-## Verification
+## Native SDK environment recovery
+
+Vespa SDK packages are immutable content-addressed cache objects. Do not copy,
+edit, or rebuild a published cache object in place. Use
+`./dev native-sdk ensure` (or a normal all-features Cargo command that invokes
+the resolver) and let a changed source/toolchain/target/native flag select a new
+fingerprint.
+
+If native SDK setup reports:
+
+```text
+LLVM 21 runtime was not found for the Vespa SDK link
+```
+
+point `VESPA_EXTRA_LIB_DIR` at the canonical LLVM runtime directory for the
+command, for example:
+
+```bash
+VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
+  ./dev doctor
+VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
+  ./dev native-sdk ensure
+```
+
+The default resolver checks the container-style fallback
+`$VESPA_DEPS/../../usr/lib64` for the versioned `libLLVM.so.21.1`.
+`vespa-deps/lib64/libLLVM-21.so` is only a link-name symlink to the canonical
+runtime under `core/native/sdk`. If the checkout path differs, use
+`readlink -f vespa-deps/lib64/libLLVM-21.so` and set
+`VESPA_EXTRA_LIB_DIR` to its containing directory.
+
+## Task worktrees and native prerequisites
+
+`./dev worktree create <task-name>` creates a temporary worktree at
+`/tmp/<repository>-<task-name>` on `agent/<task-name>` from the current
+`HEAD`; it does not copy uncommitted changes.
+
+Temporary worktrees also do not copy the pinned, read-only Vespa checkout. When
+local verification needs the canonical checkout, link the shared read-only
+inputs into the worktree:
+
+```bash
+mkdir -p /tmp/searchkern2-<task-name>/upstream
+ln -s /home/kelvin/projects/searchkern2/upstream/vespa \
+  /tmp/searchkern2-<task-name>/upstream/vespa
+ln -s /home/kelvin/projects/searchkern2/lib64 \
+  /tmp/searchkern2-<task-name>/lib64
+```
+
+If a destination already exists, verify that it points to the canonical shared
+directory instead of replacing it. Do not modify or commit the shared
+read-only directories from a task worktree.
+
+## Standard Rust verification
+
+For a focused Rust change, normally run the affected crate's:
+
+```text
+cargo fmt --check
+cargo clippy -p <crate> --all-targets --all-features -- -D warnings
+cargo test -p <crate> --all-targets --all-features
+```
+
+For changes crossing crate/API/IR/native boundaries or shared infrastructure,
+run the full workspace checks:
+
+```text
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
+```
+
+Use the no-default-features lane when intentionally verifying Rust/FlatBuffers
+without the optional Vespa SDK:
+
+```text
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+cargo test --workspace --all-targets --no-default-features
+```
+
+There must be zero compiler and Clippy warnings.
+
+## Native build verification
+
 
 Run the focused native provenance checks and the normal workspace checks:
 
@@ -151,6 +281,8 @@ Do not use `cargo clean`, delete `target/`, or manually remove an SDK as a
 normal response to a native linker failure. Read the first provenance warning
 or prerequisite error; the affected native component is designed to rebuild
 itself once.
+
+Do not hand-edit generated SDK contents.
 
 For the complete fingerprint fields and recovery state machine, see
 [`docs/native-build-provenance.md`](docs/native-build-provenance.md).
