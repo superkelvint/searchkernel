@@ -63,6 +63,18 @@ class SearchResultFacetProjectionTest(unittest.TestCase):
         root = group(children=[result_node(wrapper)])
         return search_result(root)
 
+    def test_unlabeled_group_wrapper_is_not_flattened(self):
+        bucket = group(label="bucket")
+        wrapper = group(children=[result_node(bucket)])
+        root = group(children=[result_node(wrapper)])
+
+        result = SearchResults(search_result(root))
+
+        self.assertEqual(len(result.groups), 1)
+        self.assertIs(result.groups[0], result.root.children[0])
+        self.assertIsNone(result.groups[0].label)
+        self.assertEqual(result.groups[0].groups[0].label, "bucket")
+
     def test_generic_labeled_group_is_not_inferred_as_facet(self):
         result = SearchResults(self.exact_facet_result())
         self.assertEqual(result.facets, {})
