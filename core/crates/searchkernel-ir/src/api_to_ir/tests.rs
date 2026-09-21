@@ -2931,6 +2931,69 @@ fn query_user_input_accepts_annotation_or_query_model_default_index() {
 }
 
 #[test]
+fn ranking_component_matches_full_search_for_empty_profile() {
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let profile = builder.create_string("");
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            ..Default::default()
+        },
+    );
+    let ranking_bytes = {
+        builder.finish(ranking, None);
+        builder.finished_data().to_vec()
+    };
+    let ranking = crate::__flatbuffers::root::<api::RankingRequest>(&ranking_bytes).unwrap();
+
+    let component_error = context()
+        .ranking_request_to_ir(Some(ranking))
+        .expect_err("empty named profiles must be rejected by component conversion");
+
+    let mut builder = crate::__flatbuffers::FlatBufferBuilder::new();
+    let match_all = api::MatchAllQuery::create(&mut builder, &api::MatchAllQueryArgs {});
+    let source = api::QuerySource::create(
+        &mut builder,
+        &api::QuerySourceArgs {
+            source_type: api::QuerySourceKind::MatchAllQuery,
+            source: Some(match_all.as_union_value()),
+        },
+    );
+    let profile = builder.create_string("");
+    let ranking = api::RankingRequest::create(
+        &mut builder,
+        &api::RankingRequestArgs {
+            profile: Some(profile),
+            ..Default::default()
+        },
+    );
+    let request = api::SearchRequest::create(
+        &mut builder,
+        &api::SearchRequestArgs {
+            query: Some(source),
+            ranking: Some(ranking),
+            ..Default::default()
+        },
+    );
+    builder.finish(request, None);
+    let request = crate::__flatbuffers::root::<api::SearchRequest>(builder.finished_data())
+        .expect("valid search request");
+    let search_error = context()
+        .search_to_ir(request)
+        .expect_err("full search resolution must reject the same empty profile");
+
+    assert_eq!(
+        component_error.details[0].code,
+        search_error.details[0].code
+    );
+    assert_eq!(
+        component_error.details[0].path,
+        search_error.details[0].path
+    );
+}
+
+#[test]
 fn typed_matching_annotations_are_resolved_into_ir_parameters() {
     fn request(query: QueryIr) -> SearchRequestIr {
         SearchRequestIr::new(
