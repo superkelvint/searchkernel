@@ -32,12 +32,12 @@ if rg -n "$WIRE" "$CORE" -g '*.rs' \
   echo "generated protocol type interpreted past conversion boundary" >&2; exit 1
 fi
 
-# Aggregate IR construction belongs to the API-to-IR resolvers.  Test-only
+# Aggregate IR construction belongs to the API-to-IR resolvers. Test-only
 # constructors are permitted for focused adapter tests; SearchFieldWeight is
 # a validated scalar value and is intentionally constructible in production.
 if awk '
   /^impl [A-Za-z0-9_]+/ { type = $2; test_cfg = 0 }
-  /^[[:space:]]*#\[cfg\(any\(test, feature = "test-support"\)\)\]/ { test_cfg = 1 }
+  /^[[:space:]]*#\[cfg\(any\(test, feature = "test"\)\)\]/ { test_cfg = 1 }
   /^[[:space:]]*pub fn new\(/ {
     if (type != "SearchFieldWeight" && !test_cfg) {
       print FILENAME ":" FNR ":" $0
