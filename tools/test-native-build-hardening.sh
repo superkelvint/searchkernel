@@ -86,4 +86,6 @@ build_protocol "$changed_flags" '-C debuginfo=0'
 [[ -s "$archive" && -x "$probe" ]]
 echo 'native build hardening: failed link probe triggered one targeted recovery'
 
+bash "$root/tools/test-native-sdk-cache.sh"
+
 echo 'native build hardening regression PASS'
