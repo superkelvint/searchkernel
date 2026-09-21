@@ -1,8 +1,8 @@
 use crate::error::{Error, Result};
 use crate::Tensor;
 use searchkernel_ir::{
-    QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryRangeBoundIr, RequestTensorIr,
-    RequestTensorPayloadIr, RequestValueIr, WeightedQueryItemIr,
+    QueryAlternativeIr, QueryExprIr, QueryExprKindIr, QueryFieldRefIr, QueryRangeBoundIr,
+    RequestTensorIr, RequestTensorPayloadIr, RequestValueIr, WeightedQueryItemIr,
 };
 use std::collections::BTreeMap;
 
@@ -121,9 +121,38 @@ impl Default for NearestNeighborOptions {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryAlternative {
+    pub query: Query,
+    pub exactness: Option<f64>,
+}
+
+impl QueryAlternative {
+    pub fn new(query: Query) -> Self {
+        Self {
+            query,
+            exactness: None,
+        }
+    }
+
+    pub fn exactness(mut self, value: f64) -> Self {
+        self.exactness = Some(value);
+        self
+    }
+}
+
 /// A typed query lowered by the IR adapter into native Vespa query nodes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Query {
+    // Fieldless item variants are the canonical RHS of `contains`; keep the
+    // field-bearing helpers below as compatibility sugar over that shape.
+    TermValue {
+        value: QueryValue,
+    },
+    Contains {
+        field: String,
+        item: Box<Query>,
+    },
     Term {
         field: String,
         value: QueryValue,
@@ -132,8 +161,13 @@ pub enum Query {
         field: String,
         text: String,
     },
+    PhraseTerms(Vec<Query>),
     Near {
         field: String,
+        children: Vec<Query>,
+        distance: u32,
+    },
+    NearTerms {
         children: Vec<Query>,
         distance: u32,
     },
@@ -142,9 +176,15 @@ pub enum Query {
         children: Vec<Query>,
         distance: u32,
     },
+    ONearTerms {
+        children: Vec<Query>,
+        distance: u32,
+    },
     And(Vec<Query>),
     Or(Vec<Query>),
     Not(Box<Query>),
+    True,
+    False,
     Rank {
         matching: Box<Query>,
         ranking: Vec<Query>,
@@ -186,6 +226,12 @@ pub enum Query {
         prefix_length: u32,
         prefix: bool,
     },
+    FuzzyValue {
+        value: QueryValue,
+        max_edit_distance: u32,
+        prefix_length: u32,
+        prefix: bool,
+    },
     Prefix {
         field: String,
         value: String,
@@ -198,10 +244,25 @@ pub enum Query {
         field: String,
         value: String,
     },
+    Matches {
+        field: String,
+        pattern: String,
+    },
+    Text(String),
+    UserInput {
+        value: String,
+        default_index: Option<String>,
+    },
+    UserQuery {
+        default_index: Option<String>,
+    },
     SameElement {
         field: String,
         children: Vec<Query>,
     },
+    SameElementTerms(Vec<Query>),
+    Equiv(Vec<Query>),
+    Alternatives(Vec<QueryAlternative>),
     GeoLocation {
         field: String,
         latitude: f64,
@@ -220,6 +281,16 @@ pub enum Query {
         features: BTreeMap<String, QueryValue>,
         range_features: BTreeMap<String, QueryValue>,
     },
+    Labeled {
+        query: Box<Query>,
+        label: String,
+        score: f64,
+    },
+    NonEmpty(Box<Query>),
+    Annotated {
+        query: Box<Query>,
+        annotations: BTreeMap<String, QueryValue>,
+    },
     NearestNeighbor {
         field: String,
         query_tensor: String,
@@ -228,6 +299,19 @@ pub enum Query {
 }
 
 impl Query {
+    pub fn term_value(value: impl Into<QueryValue>) -> Self {
+        Self::TermValue {
+            value: value.into(),
+        }
+    }
+
+    pub fn contains(field: impl Into<String>, item: Query) -> Self {
+        Self::Contains {
+            field: field.into(),
+            item: Box::new(item),
+        }
+    }
+
     pub fn term(field: impl Into<String>, value: impl Into<QueryValue>) -> Self {
         Self::Term {
             field: field.into(),
@@ -240,6 +324,10 @@ impl Query {
             text: text.into(),
         }
     }
+
+    pub fn phrase_terms<I: IntoIterator<Item = Query>>(terms: I) -> Self {
+        Self::PhraseTerms(terms.into_iter().collect())
+    }
     pub fn near<I: IntoIterator<Item = Query>>(field: impl Into<String>, children: I) -> Self {
         Self::Near {
             field: field.into(),
@@ -247,9 +335,23 @@ impl Query {
             distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
         }
     }
+
+    pub fn near_terms<I: IntoIterator<Item = Query>>(children: I) -> Self {
+        Self::NearTerms {
+            children: children.into_iter().collect(),
+            distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+        }
+    }
     pub fn onear<I: IntoIterator<Item = Query>>(field: impl Into<String>, children: I) -> Self {
         Self::ONear {
             field: field.into(),
+            children: children.into_iter().collect(),
+            distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
+        }
+    }
+
+    pub fn onear_terms<I: IntoIterator<Item = Query>>(children: I) -> Self {
+        Self::ONearTerms {
             children: children.into_iter().collect(),
             distance: searchkernel_ir::api_to_ir::DEFAULT_PROXIMITY_DISTANCE,
         }
@@ -263,6 +365,14 @@ impl Query {
     #[allow(clippy::should_implement_trait)]
     pub fn not(query: Query) -> Self {
         Self::Not(Box::new(query))
+    }
+
+    pub fn true_query() -> Self {
+        Self::True
+    }
+
+    pub fn false_query() -> Self {
+        Self::False
     }
     pub fn rank<I: IntoIterator<Item = Query>>(matching: Query, ranking: I) -> Self {
         Self::Rank {
@@ -335,6 +445,29 @@ impl Query {
             prefix: searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
         }
     }
+
+    pub fn fuzzy_value(value: impl Into<QueryValue>) -> Self {
+        Self::fuzzy_value_with_options(
+            value,
+            searchkernel_ir::api_to_ir::DEFAULT_FUZZY_MAX_EDIT_DISTANCE,
+            searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX_LENGTH,
+            searchkernel_ir::api_to_ir::DEFAULT_FUZZY_PREFIX,
+        )
+    }
+
+    pub fn fuzzy_value_with_options(
+        value: impl Into<QueryValue>,
+        max_edit_distance: u32,
+        prefix_length: u32,
+        prefix: bool,
+    ) -> Self {
+        Self::FuzzyValue {
+            value: value.into(),
+            max_edit_distance,
+            prefix_length,
+            prefix,
+        }
+    }
     pub fn prefix(field: impl Into<String>, value: impl Into<String>) -> Self {
         Self::Prefix {
             field: field.into(),
@@ -353,6 +486,46 @@ impl Query {
             value: value.into(),
         }
     }
+
+    pub fn matches(field: impl Into<String>, pattern: impl Into<String>) -> Self {
+        Self::Matches {
+            field: field.into(),
+            pattern: pattern.into(),
+        }
+    }
+
+    pub fn text(value: impl Into<String>) -> Self {
+        Self::Text(value.into())
+    }
+
+    pub fn user_input(value: impl Into<String>) -> Self {
+        Self::UserInput {
+            value: value.into(),
+            default_index: None,
+        }
+    }
+
+    pub fn user_input_with_default_index(
+        value: impl Into<String>,
+        default_index: impl Into<String>,
+    ) -> Self {
+        Self::UserInput {
+            value: value.into(),
+            default_index: Some(default_index.into()),
+        }
+    }
+
+    pub fn user_query() -> Self {
+        Self::UserQuery {
+            default_index: None,
+        }
+    }
+
+    pub fn user_query_with_default_index(default_index: impl Into<String>) -> Self {
+        Self::UserQuery {
+            default_index: Some(default_index.into()),
+        }
+    }
     pub fn same_element<I: IntoIterator<Item = Query>>(
         field: impl Into<String>,
         children: I,
@@ -361,6 +534,30 @@ impl Query {
             field: field.into(),
             children: children.into_iter().collect(),
         }
+    }
+
+    pub fn same_element_terms<I: IntoIterator<Item = Query>>(children: I) -> Self {
+        Self::SameElementTerms(children.into_iter().collect())
+    }
+
+    pub fn equiv<I: IntoIterator<Item = Query>>(children: I) -> Self {
+        Self::Equiv(children.into_iter().collect())
+    }
+
+    pub fn alternatives<I: IntoIterator<Item = QueryAlternative>>(alternatives: I) -> Self {
+        Self::Alternatives(alternatives.into_iter().collect())
+    }
+
+    pub fn labeled(query: Query, label: impl Into<String>, score: f64) -> Self {
+        Self::Labeled {
+            query: Box::new(query),
+            label: label.into(),
+            score,
+        }
+    }
+
+    pub fn non_empty(query: Query) -> Self {
+        Self::NonEmpty(Box::new(query))
     }
     pub fn nearest_neighbor(field: impl Into<String>, query_tensor: impl Into<String>) -> Self {
         Self::nearest_neighbor_with_options(field, query_tensor, NearestNeighborOptions::default())
@@ -408,9 +605,52 @@ impl Query {
         }
     }
 
+    pub fn predicate(
+        field: impl Into<String>,
+        features: BTreeMap<String, QueryValue>,
+        range_features: BTreeMap<String, QueryValue>,
+    ) -> Self {
+        Self::Predicate {
+            field: field.into(),
+            features,
+            range_features,
+        }
+    }
+
+    pub fn with_annotation(self, key: impl Into<String>, value: impl Into<QueryValue>) -> Self {
+        let mut annotations = BTreeMap::new();
+        annotations.insert(key.into(), value.into());
+        Self::Annotated {
+            query: Box::new(self),
+            annotations,
+        }
+    }
+
+    pub fn annotated<I, K, V>(query: Query, annotations: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<QueryValue>,
+    {
+        Self::Annotated {
+            query: Box::new(query),
+            annotations: annotations
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+        }
+    }
+
     pub(crate) fn into_ir(self) -> Result<QueryExprIr> {
         let mut annotations = BTreeMap::new();
         let expression = match self {
+            Self::TermValue { value } => QueryExprKindIr::Term {
+                value: value.into_ir()?,
+            },
+            Self::Contains { field, item } => QueryExprKindIr::Contains {
+                field: field_ref(&field)?,
+                item: Box::new(item.into_ir()?),
+            },
             Self::Term { field, value } => contains(
                 &field,
                 QueryExprKindIr::Term {
@@ -429,6 +669,12 @@ impl Query {
                     .collect();
                 contains(&field, QueryExprKindIr::Phrase(terms))?
             }
+            Self::PhraseTerms(terms) => QueryExprKindIr::Phrase(
+                terms
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
             Self::Near {
                 field,
                 children,
@@ -451,6 +697,13 @@ impl Query {
                     )])
                 },
             )?,
+            Self::NearTerms { children, distance } => QueryExprKindIr::Near {
+                children: children
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+                distance,
+            },
             Self::ONear {
                 field,
                 children,
@@ -473,6 +726,13 @@ impl Query {
                     )])
                 },
             )?,
+            Self::ONearTerms { children, distance } => QueryExprKindIr::ONear {
+                children: children
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+                distance,
+            },
             Self::And(children) => QueryExprKindIr::And(
                 children
                     .into_iter()
@@ -486,6 +746,8 @@ impl Query {
                     .collect::<Result<Vec<_>>>()?,
             ),
             Self::Not(child) => QueryExprKindIr::Not(Box::new(child.into_ir()?)),
+            Self::True => QueryExprKindIr::True,
+            Self::False => QueryExprKindIr::False,
             Self::Rank { matching, ranking } => QueryExprKindIr::Rank {
                 matching: Box::new(matching.into_ir()?),
                 ranking: ranking
@@ -493,6 +755,26 @@ impl Query {
                     .map(Query::into_ir)
                     .collect::<Result<Vec<_>>>()?,
             },
+            Self::Labeled {
+                query,
+                label,
+                score,
+            } => QueryExprKindIr::Labeled {
+                query: Box::new(query.into_ir()?),
+                label,
+                score,
+            },
+            Self::NonEmpty(query) => QueryExprKindIr::NonEmpty(Box::new(query.into_ir()?)),
+            Self::Annotated {
+                query,
+                annotations: extra,
+            } => {
+                let mut resolved = query.into_ir()?;
+                for (key, value) in extra {
+                    resolved.annotations.insert(key, value.into_ir()?);
+                }
+                return Ok(resolved);
+            }
             Self::Equality { field, value } => {
                 comparison(&field, searchkernel_ir::ComparisonOp::Eq, value.into_ir()?)?
             }
@@ -600,6 +882,17 @@ impl Query {
                     fuzzy_annotations,
                 )?
             }
+            Self::FuzzyValue {
+                value,
+                max_edit_distance,
+                prefix_length,
+                prefix,
+            } => QueryExprKindIr::Fuzzy {
+                value: value.into_ir()?,
+                max_edit_distance,
+                prefix_length,
+                prefix,
+            },
             Self::Prefix { field, value } => QueryExprKindIr::Matches {
                 field: field_ref(&field)?,
                 pattern: format!("{}.*", escape_regexp_literal(&value)),
@@ -612,6 +905,39 @@ impl Query {
                 field: field_ref(&field)?,
                 pattern: format!(".*{}", escape_regexp_literal(&value)),
             },
+            Self::Matches { field, pattern } => QueryExprKindIr::Matches {
+                field: field_ref(&field)?,
+                pattern,
+            },
+            Self::Text(text) => QueryExprKindIr::Text { text },
+            Self::UserInput {
+                value,
+                default_index,
+            } => {
+                if let Some(default_index) = default_index {
+                    annotations.insert(
+                        "defaultIndex".to_owned(),
+                        RequestValueIr::String(default_index),
+                    );
+                }
+                QueryExprKindIr::UserInput {
+                    value,
+                    default_index: None,
+                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                }
+            }
+            Self::UserQuery { default_index } => {
+                if let Some(default_index) = default_index {
+                    annotations.insert(
+                        "defaultIndex".to_owned(),
+                        RequestValueIr::String(default_index),
+                    );
+                }
+                QueryExprKindIr::UserQuery {
+                    default_index: None,
+                    target_hits: searchkernel_ir::api_to_ir::DEFAULT_WEAK_AND_TARGET_HITS,
+                }
+            }
             Self::SameElement { field, children } => contains(
                 &field,
                 QueryExprKindIr::SameElement(
@@ -621,6 +947,29 @@ impl Query {
                         .collect::<Result<Vec<_>>>()?,
                 ),
             )?,
+            Self::SameElementTerms(children) => QueryExprKindIr::SameElement(
+                children
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            Self::Equiv(children) => QueryExprKindIr::Equiv(
+                children
+                    .into_iter()
+                    .map(Query::into_ir)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            Self::Alternatives(alternatives) => QueryExprKindIr::Alternatives(
+                alternatives
+                    .into_iter()
+                    .map(|alternative| {
+                        Ok(QueryAlternativeIr {
+                            query: alternative.query.into_ir()?,
+                            exactness: alternative.exactness,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
             Self::GeoLocation {
                 field,
                 latitude,
@@ -954,5 +1303,176 @@ mod tests {
             panic!("expected matches IR");
         };
         assert_eq!(pattern, r"A\.c\+.*");
+    }
+
+    #[test]
+    fn typed_query_facade_covers_every_canonical_expression_kind() {
+        let cases: Vec<(&str, Query, fn(QueryExprIr) -> bool)> = vec![
+            ("term", Query::term_value("value"), |query| {
+                matches!(query.kind, QueryExprKindIr::Term { .. })
+            }),
+            (
+                "contains",
+                Query::contains("title", Query::term_value("value")),
+                |query| matches!(query.kind, QueryExprKindIr::Contains { .. }),
+            ),
+            ("and", Query::and([Query::true_query()]), |query| {
+                matches!(query.kind, QueryExprKindIr::And(_))
+            }),
+            ("or", Query::or([Query::false_query()]), |query| {
+                matches!(query.kind, QueryExprKindIr::Or(_))
+            }),
+            ("not", Query::not(Query::true_query()), |query| {
+                matches!(query.kind, QueryExprKindIr::Not(_))
+            }),
+            ("true", Query::true_query(), |query| {
+                matches!(query.kind, QueryExprKindIr::True)
+            }),
+            ("false", Query::false_query(), |query| {
+                matches!(query.kind, QueryExprKindIr::False)
+            }),
+            ("comparison", Query::equals("rating", 5_i64), |query| {
+                matches!(query.kind, QueryExprKindIr::Comparison { .. })
+            }),
+            (
+                "range",
+                Query::range(
+                    "rating",
+                    QueryBound::Unbounded,
+                    QueryBound::Included(5_i64.into()),
+                ),
+                |query| matches!(query.kind, QueryExprKindIr::Range { .. }),
+            ),
+            ("in", Query::in_values("rating", [5_i64.into()]), |query| {
+                matches!(query.kind, QueryExprKindIr::In { .. })
+            }),
+            (
+                "phrase",
+                Query::phrase_terms([Query::term_value("quick"), Query::term_value("brown")]),
+                |query| matches!(query.kind, QueryExprKindIr::Phrase(_)),
+            ),
+            (
+                "near",
+                Query::near_terms([Query::term_value("quick"), Query::term_value("brown")]),
+                |query| matches!(query.kind, QueryExprKindIr::Near { .. }),
+            ),
+            (
+                "onear",
+                Query::onear_terms([Query::term_value("quick"), Query::term_value("brown")]),
+                |query| matches!(query.kind, QueryExprKindIr::ONear { .. }),
+            ),
+            (
+                "same_element",
+                Query::same_element_terms([Query::term_value("value")]),
+                |query| matches!(query.kind, QueryExprKindIr::SameElement(_)),
+            ),
+            (
+                "equiv",
+                Query::equiv([Query::term_value("one"), Query::term_value("two")]),
+                |query| matches!(query.kind, QueryExprKindIr::Equiv(_)),
+            ),
+            (
+                "alternatives",
+                Query::alternatives([
+                    QueryAlternative::new(Query::term_value("one")).exactness(0.5)
+                ]),
+                |query| matches!(query.kind, QueryExprKindIr::Alternatives(_)),
+            ),
+            (
+                "fuzzy",
+                Query::contains("title", Query::fuzzy_value("value")),
+                |query| {
+                    matches!(
+                        query.kind,
+                        QueryExprKindIr::Contains { item, .. }
+                            if matches!(item.kind, QueryExprKindIr::Fuzzy { .. })
+                    )
+                },
+            ),
+            ("matches", Query::matches("title", "v.*"), |query| {
+                matches!(query.kind, QueryExprKindIr::Matches { .. })
+            }),
+            ("text", Query::text("free form"), |query| {
+                matches!(query.kind, QueryExprKindIr::Text { .. })
+            }),
+            (
+                "user_input",
+                Query::user_input_with_default_index("free form", "title"),
+                |query| matches!(query.kind, QueryExprKindIr::UserInput { .. }),
+            ),
+            (
+                "user_query",
+                Query::user_query_with_default_index("title"),
+                |query| matches!(query.kind, QueryExprKindIr::UserQuery { .. }),
+            ),
+            (
+                "dot_product",
+                Query::dot_product("brand", [WeightedQueryItem::new("one", 1)]),
+                |query| matches!(query.kind, QueryExprKindIr::DotProduct { .. }),
+            ),
+            (
+                "weighted_set",
+                Query::weighted_set("brand", [WeightedQueryItem::new("one", 1)]),
+                |query| matches!(query.kind, QueryExprKindIr::WeightedSet { .. }),
+            ),
+            (
+                "wand",
+                Query::wand("brand", [WeightedQueryItem::new("one", 1)]),
+                |query| matches!(query.kind, QueryExprKindIr::Wand { .. }),
+            ),
+            (
+                "weak_and",
+                Query::weak_and([Query::true_query()], 100),
+                |query| matches!(query.kind, QueryExprKindIr::WeakAnd { .. }),
+            ),
+            (
+                "rank",
+                Query::rank(Query::true_query(), [Query::text("rank")]),
+                |query| matches!(query.kind, QueryExprKindIr::Rank { .. }),
+            ),
+            (
+                "labeled",
+                Query::labeled(Query::true_query(), "label", 1.0),
+                |query| matches!(query.kind, QueryExprKindIr::Labeled { .. }),
+            ),
+            (
+                "non_empty",
+                Query::non_empty(Query::true_query()),
+                |query| matches!(query.kind, QueryExprKindIr::NonEmpty(_)),
+            ),
+            (
+                "geo_location",
+                Query::geo_location("location", 1.0, 2.0, "3km"),
+                |query| matches!(query.kind, QueryExprKindIr::GeoLocation { .. }),
+            ),
+            (
+                "geo_bounding_box",
+                Query::geo_bounding_box("location", 1.0, 2.0, 3.0, 4.0),
+                |query| matches!(query.kind, QueryExprKindIr::GeoBoundingBox { .. }),
+            ),
+            (
+                "nearest_neighbor",
+                Query::nearest_neighbor("embedding", "query_tensor"),
+                |query| matches!(query.kind, QueryExprKindIr::NearestNeighbor { .. }),
+            ),
+            (
+                "predicate",
+                Query::predicate("tags", BTreeMap::new(), BTreeMap::new()),
+                |query| matches!(query.kind, QueryExprKindIr::Predicate { .. }),
+            ),
+        ];
+
+        for (name, query, matches_kind) in cases {
+            assert!(matches_kind(query.into_ir().expect(name)), "{name}");
+        }
+
+        let annotated = Query::text("free form").with_annotation("custom", true);
+        let annotated = annotated
+            .into_ir()
+            .expect("generic annotation should convert");
+        assert_eq!(
+            annotated.annotations.get("custom"),
+            Some(&RequestValueIr::Bool(true))
+        );
     }
 }
