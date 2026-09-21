@@ -658,6 +658,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         resolved = canonical.clone();
     }
     resolved.set_structs(definition.structs.clone());
+    resolved.set_properties(definition.properties.clone());
 
     let canonical_fields = definition
         .fields
@@ -732,6 +733,7 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
 
 fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexDefinition {
     let mut result = IndexDefinition::new();
+    result.properties = definition.properties().clone();
     if let Some(name) = definition.name() {
         result = result.name(name.as_str());
     }

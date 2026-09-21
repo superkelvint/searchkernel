@@ -3291,6 +3291,24 @@ fn describe_preserves_schema_properties() {
 }
 
 #[test]
+fn describe_exposes_schema_properties_publicly() {
+    let (canonical, described) = public_described_canonical_fixture();
+    assert_eq!(described.properties(), canonical.properties());
+}
+
+#[test]
+fn public_schema_properties_round_trip_through_definition_to_ir() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    described.properties.insert(
+        "schema.property".to_owned(),
+        searchkernel_ir::RequestValueIr::String("public-edit".to_owned()),
+    );
+    let resolved = definition_to_ir(&described).expect("described schema should resolve");
+    assert_eq!(resolved.properties(), described.properties());
+    assert_ne!(resolved.properties(), canonical.properties());
+}
+
+#[test]
 fn describe_preserves_document_type() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.document_type(), described.document_type());

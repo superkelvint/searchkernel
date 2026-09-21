@@ -633,6 +633,13 @@ impl IndexDefinitionIr {
         self.default_search_fields = fields;
     }
 
+    /// Replace top-level schema properties while retaining every other
+    /// canonical schema member.
+    #[doc(hidden)]
+    pub fn set_properties(&mut self, properties: SchemaPropertiesIr) {
+        self.properties = properties;
+    }
+
     /// Append a document field if its name is not already present.
     #[doc(hidden)]
     pub fn push_field(&mut self, field: FieldIr) -> bool {
