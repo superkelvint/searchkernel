@@ -595,6 +595,12 @@ impl IndexDefinitionIr {
         self.rank_profiles = profiles;
     }
 
+    /// Replace schema constants while retaining every other canonical member.
+    #[doc(hidden)]
+    pub fn set_constants(&mut self, constants: Vec<ConstantDefinitionIr>) {
+        self.constants = constants;
+    }
+
     #[cfg(any(test, feature = "test"))]
     pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
         self.imported_fields = fields;
