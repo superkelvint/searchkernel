@@ -49,6 +49,12 @@ printf 'CXX_INCLUDES = \n' >"$configured/flags.make"
 worktree="$fixture/worktree"
 git -C "$repo" worktree add -q "$worktree" -b cache-test
 
+# Give the second worktree a different parent-repository HEAD without changing
+# upstream/vespa. Reuse must be based on the Vespa identity, not branch HEAD.
+echo 'unrelated rust-side change' >"$worktree/unrelated.txt"
+git -C "$worktree" add unrelated.txt
+git -C "$worktree" commit -qm 'unrelated branch change'
+
 run_resolver() {
     local root=$1
     (
