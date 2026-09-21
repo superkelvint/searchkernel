@@ -33,17 +33,7 @@ inline std::optional<Fragment> decode(std::string_view teaser) {
     bool highlighted = false;
     uint32_t highlight_start = 0;
     for (size_t index = 0; index < teaser.size();) {
-        if (teaser.substr(index, 3) == "<b>") {
-            if (highlighted) throw std::runtime_error("Vespa teaser contains nested highlight markup");
-            highlighted = true;
-            highlight_start = static_cast<uint32_t>(fragment.text.size());
-            index += 3;
-        } else if (teaser.substr(index, 4) == "</b>") {
-            if (!highlighted) throw std::runtime_error("Vespa teaser contains unmatched highlight markup");
-            fragment.matches.push_back({highlight_start, static_cast<uint32_t>(fragment.text.size())});
-            highlighted = false;
-            index += 4;
-        } else if (teaser[index] == '\x1f') {
+        if (teaser[index] == '\x1f') {
             if (!highlighted) {
                 highlighted = true;
                 highlight_start = static_cast<uint32_t>(fragment.text.size());

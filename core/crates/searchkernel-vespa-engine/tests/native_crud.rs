@@ -787,6 +787,7 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
                 .indexed()
                 .summary(),
         )
+        .field(Field::new("markup", FieldType::Text).indexed().summary())
         .field(
             Field::new("category", FieldType::String)
                 .attribute()
@@ -801,6 +802,7 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
             Document::new("highlight-1")
                 .field("title", "The quick brown fox jumps over the lazy dog")
                 .field("description", "A brown fox appears near the quiet river")
+                .field("markup", "A <b>stored text</b> remains literal")
                 .field("category", "animal"),
         )
         .expect("put highlight document");
@@ -811,10 +813,11 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
                 Query::term("title", "brown"),
                 Query::term("title", "fox"),
                 Query::term("description", "fox"),
+                Query::term("markup", "literal"),
             ]))
             .summary_class("default")
             .fields(["category"])
-            .highlight(["title", "description"]),
+            .highlight(["title", "description", "markup"]),
         )
         .expect("execute highlight search");
     assert_eq!(result.hits.len(), 1);
@@ -823,7 +826,7 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
         FieldValue::Scalar(ScalarValue::String("animal".to_owned()))
     );
     assert_eq!(result.hits[0].fields.len(), 1);
-    assert_eq!(result.hits[0].highlights.len(), 2);
+    assert_eq!(result.hits[0].highlights.len(), 3);
     assert_eq!(result.hits[0].highlights[0].field, "title");
     assert_eq!(
         result.hits[0].highlights[0].fragments[0].text,
@@ -850,15 +853,31 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
             end_byte: 11,
         }]
     );
-    assert!(result.hits[0].highlights.iter().all(|highlight| {
-        highlight.fragments.iter().any(|fragment| {
-            !fragment.matches.is_empty()
-                && fragment
-                    .matches
-                    .iter()
-                    .all(|span| span.end_byte as usize <= fragment.text.len())
-        })
-    }));
+    assert_eq!(result.hits[0].highlights[2].field, "markup");
+    assert_eq!(
+        result.hits[0].highlights[2].fragments[0].text,
+        "A <b>stored text</b> remains literal"
+    );
+    let markup_fragment = &result.hits[0].highlights[2].fragments[0];
+    assert_eq!(markup_fragment.matches.len(), 1);
+    let markup_match = markup_fragment.matches[0];
+    assert_eq!(
+        &markup_fragment.text[markup_match.start_byte as usize..markup_match.end_byte as usize],
+        "literal"
+    );
+    assert!(result.hits[0]
+        .highlights
+        .iter()
+        .filter(|highlight| highlight.field != "markup")
+        .all(|highlight| {
+            highlight.fragments.iter().any(|fragment| {
+                !fragment.matches.is_empty()
+                    && fragment
+                        .matches
+                        .iter()
+                        .all(|span| span.end_byte as usize <= fragment.text.len())
+            })
+        }));
 
     let empty_projection = engine
         .search(
