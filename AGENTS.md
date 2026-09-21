@@ -93,7 +93,31 @@ Before editing:
    guess from API names or high-level documentation.
 6. Determine how the finished change will be verified.
 
-For a small, obvious change, implement directly.
+### Reported bugs and issues: regression test first
+
+When the task is prompted by a reported bug, defect, regression, incorrect behavior,
+or other issue, **the first code change MUST be an executable regression test that
+reproduces the issue.**
+
+Required order:
+
+1. add the smallest regression test that exercises the real affected behavior/path;
+2. run that test against the current implementation and confirm that it fails for the
+   reported reason;
+3. only after the failing regression is demonstrated, modify production code to fix
+   the issue;
+4. rerun the regression test and confirm it passes;
+5. run the broader verification required by the affected area.
+
+Do not start by editing production code and add a test afterward. Do not combine the
+first reproduction test with the fix in a way that prevents observing the pre-fix
+failure.
+
+If the issue cannot be reproduced with an executable test, do not guess at a fix.
+Continue investigating the reproduction path or report that the issue could not be
+reproduced, including the evidence and commands used.
+
+For a small, obvious change that is not a reported bug or issue, implement directly.
 
 For a multi-file, architectural, unfamiliar, or ambiguous change, explore first
 and form a short implementation plan before editing.
@@ -205,12 +229,14 @@ Do not:
 
 Prefer existing repository patterns over new conventions.
 
-For a reported defect, add an executable regression test that demonstrates the
-failure before the fix when practical.
+For any reported bug, defect, regression, incorrect behavior, or issue, regression
+test-first is mandatory. The regression test must be written and observed failing
+**before** production code is changed. Only then proceed to the fix.
 
 Regression tests must exercise observable behavior or the real implementation
 path. Source-text searches, naming assertions, and similar textual proxies do
-not prove runtime behavior.
+not prove runtime behavior. A test that passes before the fix is not a valid
+regression reproduction for the reported issue.
 
 ## Leave durable breadcrumbs
 
@@ -609,6 +635,7 @@ A task that changes code is complete only when:
 
 ```text
 implementation matches the requested scope
+reported bugs/issues have a regression test that was demonstrated failing before the fix
 relevant contracts are preserved
 focused verification passes
 required acceptance verifier passes
