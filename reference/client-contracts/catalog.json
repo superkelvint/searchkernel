@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "surfaces": {
+    "core": {
+      "title": "Core / backend",
+      "runtimes": [
+        "native"
+      ],
+      "evidence_roots": [
+        "core/crates/searchkernel-vespa-engine/tests"
+      ]
+    },
+    "rust": {
+      "title": "Rust",
+      "runtimes": [
+        "native"
+      ],
+      "evidence_roots": [
+        "core/crates/searchkernel/tests",
+        "core/crates/searchkernel/examples"
+      ]
+    },
+    "python": {
+      "title": "Python",
+      "runtimes": [
+        "grpc",
+        "managed-local",
+        "shared"
+      ],
+      "evidence_roots": [
+        "clients/python/tests",
+        "clients/python/examples"
+      ]
+    },
+    "typescript": {
+      "title": "TypeScript",
+      "runtimes": [
+        "shared",
+        "node",
+        "browser"
+      ],
+      "evidence_roots": [
+        "clients/typescript/tests",
+        "clients/typescript/examples"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "capability": "result.highlighting",
+      "id": "basic",
+      "title": "Basic structured dynamic-teaser highlighting"
+    },
+    {
+      "capability": "result.highlighting",
+      "id": "literal-html",
+      "title": "Literal HTML tags remain source text"
+    },
+    {
+      "capability": "result.highlighting",
+      "id": "continuation-fragments",
+      "title": "Disjoint Juniper continuation regions become separate fragments"
+    }
+  ]
+}
