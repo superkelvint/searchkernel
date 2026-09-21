@@ -92,27 +92,20 @@ if valid_object; then
 fi
 
 LOCK=$CACHE_ROOT/locks/$DIGEST.lock
-acquire_lock() {
-    local attempts=0
-    until mkdir "$LOCK" 2>/dev/null; do
-        if (( attempts >= 300 )); then
-            echo "timed out waiting for native SDK cache lock '$LOCK'" >&2
-            return 1
-        fi
-        sleep 1
-        attempts=$((attempts + 1))
-        if valid_object; then
-            printf '%s\n' "$OBJECT"
-            exit 0
-        fi
-    done
+command -v flock >/dev/null 2>&1 || {
+    echo "native SDK cache requires flock for cross-worktree build serialization" >&2
+    exit 1
+}
+exec 9>"$LOCK"
+flock -w 300 9 || {
+    echo "timed out waiting for native SDK cache lock '$LOCK'" >&2
+    exit 1
 }
 
-acquire_lock
-TMP=$CACHE_ROOT/objects/.tmp-$DIGEST-$$
-BUILD=$CACHE_ROOT/build/$DIGEST-$$
+TMP=$CACHE_ROOT/objects/.tmp-$DIGEST-$
+BUILD=$CACHE_ROOT/build/$DIGEST-$
 cleanup() {
-    rm -rf "$TMP" "$BUILD" "$LOCK"
+    rm -rf "$TMP" "$BUILD"
 }
 trap cleanup EXIT INT TERM
 
@@ -142,9 +135,9 @@ grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
     exit 1
 }
 
-# Cache objects are immutable after publication. A rebuild creates a complete
-# replacement in a private staging directory and swaps it into place atomically;
-# no process ever builds directly inside a published object.
+# Cache objects are immutable after publication. Build into private staging and
+# publish only into a previously absent fingerprint key; no process ever builds
+# directly inside a published object.
 chmod -R a-w "$TMP"
 mv "$TMP" "$OBJECT"
 printf '%s\n' "$OBJECT"
