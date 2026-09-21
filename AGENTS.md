@@ -20,6 +20,8 @@ Before making a non-trivial change, read:
 
 - `docs/reading-the-codebase.md` for repository navigation;
 - `docs/architecture.md` for current architecture and dependency boundaries;
+- `BUILDING.md` for build/compile commands, toolchain and native SDK setup,
+  verification commands, and environment troubleshooting;
 - the relevant contract/specification under `reference/` or `docs/` for the
   task.
 
@@ -271,100 +273,24 @@ and form a short implementation plan before editing.
 
 Do not broaden the task with unrelated cleanup.
 
-## Repository command surface
+## Build, compile, and environment guidance
 
-Use the root `./dev` command as the normal entry point for repository setup,
-verification, generation, and acceptance lanes:
+[BUILDING.md](BUILDING.md) is the authoritative guide for repository setup,
+toolchains, Cargo/FlatBuffers/native SDK builds, standard build and verification
+commands, and environment recovery.
 
-```text
-./dev doctor
-./dev check-fast
-./dev test ir
-./dev test rust-api
-./dev test python
-./dev regen protocol
-./dev verify m13
-./dev verify integration
-./dev install flatbuffers
-./dev native-sdk ensure
-./dev native-sdk path
-./dev worktree create my-task
-```
+Before running build, compile, or verification commands in an unfamiliar
+checkout, read `BUILDING.md`. If a command fails for an environment,
+toolchain, linker, native SDK, dependency, or build-provenance reason, stop
+diagnosing product code and follow `BUILDING.md` first. Start with
+`./dev doctor`; fix or report failed prerequisites before changing
+implementation code.
 
-Run `./dev install flatbuffers` when the pinned FlatBuffers C++ toolchain is
-missing. It builds version `25.12.19` with the position-independent static
-library and the `lib` layout required by Cargo; the default `/usr/local`
-prefix may require `sudo`. Set `FLATBUFFERS_INSTALL_PREFIX` for a custom
-prefix, then use the `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH` exports printed by
-the command.
+Do not improvise environment repairs such as `cargo clean`, deleting target
+directories, copying SDKs between environments, or rebuilding immutable SDK
+cache objects unless `BUILDING.md` explicitly instructs it.
 
-Native build provenance is part of ordinary build behavior; see
-[BUILDING.md](BUILDING.md) for commands and
-[docs/native-build-provenance.md](docs/native-build-provenance.md) for the
-fingerprint details. Supported host, project-container, and CI workflows select
-separate Cargo target roots,
-and both `cargo build -p searchkerneld` and the Vespa SDK build validate native
-provenance before linking. A stale or incompatible native component is rebuilt once in its own build
-directory. Do not share `target/` or `core/native/sdk` between environments,
-and do not use `cargo clean` as a native-build repair.
-
-Vespa SDK packages are the exception to worktree-local build outputs: ordinary
-host worktrees resolve them through the immutable content-addressed store under
-the repository's Git common directory. The cache key is the native provenance
-fingerprint, so Rust-only worktrees may safely reuse one SDK while a change to
-Vespa, Search Kernel native adapter sources, toolchain identity, target, or
-native flags selects a different object. Published cache objects are read-only
-and must never be rebuilt in place. Use `./dev native-sdk ensure` (or normal
-all-features Cargo commands, which do this automatically) rather than copying
-SDK directories between worktrees.
-
-If native SDK setup reports `LLVM 21 runtime was not found for the Vespa SDK
-link`, set `VESPA_EXTRA_LIB_DIR` to the canonical LLVM runtime directory for
-the command:
-
-```bash
-VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
-  ./dev doctor
-VESPA_EXTRA_LIB_DIR=/home/kelvin/projects/searchkern2/core/native/sdk/linux-x86_64/lib \
-  ./dev native-sdk ensure
-```
-
-The default resolver checks the container-style fallback
-`$VESPA_DEPS/../../usr/lib64` for the versioned `libLLVM.so.21.1`, while
-`vespa-deps/lib64/libLLVM-21.so` is only a link-name symlink to the canonical
-runtime under `core/native/sdk`. Do not copy or rebuild an immutable SDK cache
-object; use the existing runtime and explicit override. If the checkout path
-differs, use `readlink -f vespa-deps/lib64/libLLVM-21.so` and set the override
-to its containing directory.
-
-Start with `./dev doctor` when entering an unfamiliar checkout or when a build
-fails for an environment-related reason. It reports each prerequisite
-separately; fix or report failed prerequisites before diagnosing product code.
-Use `./dev --help` for the supported command list. Keep direct underlying
-scripts for focused debugging or when a contract explicitly names one.
-
-For isolated implementation work, use `./dev worktree create <task-name>`.
-It creates a temporary worktree at `/tmp/<repository>-<task-name>` on the
-`agent/<task-name>` branch from the current `HEAD`; it does not copy
-uncommitted changes from the current checkout.
-
-Temporary worktrees also do not copy the pinned, read-only Vespa checkout. After
-creating a worktree, reuse the canonical checkout for local verification by
-linking it into the worktree:
-
-```bash
-mkdir -p /tmp/searchkern2-<task-name>/upstream
-ln -s /home/kelvin/projects/searchkern2/upstream/vespa \
-  /tmp/searchkern2-<task-name>/upstream/vespa
-ln -s /home/kelvin/projects/searchkern2/lib64 \
-  /tmp/searchkern2-<task-name>/lib64
-```
-
-If the destination already exists, verify that it points to
-`/home/kelvin/projects/searchkern2/upstream/vespa` or
-`/home/kelvin/projects/searchkern2/lib64`, as appropriate, instead of
-replacing it. The shared directories are read-only; do not modify or commit
-them from a task worktree.
+Worktree creation remains governed by **Worktree isolation** below.
 
 ## Search scope
 
@@ -560,21 +486,10 @@ Rust panics must not unwind into C++.
 
 Prefer clear boundary copies over fragile zero-copy lifetimes until measurement shows a copy materially matters.
 
-The normal Vespa SDK is resolved through an immutable, content-addressed cache
-under the repository's Git common directory. The cache remains partitioned by
-build environment and Rust target, and the object key is the full native
-provenance fingerprint. A worktree that does not contain untracked Vespa build
-outputs may reuse a matching configured `upstream/vespa` from a sibling
-worktree with the same pinned Vespa identity. Rust validates the selected
-object before linking; see
-[docs/native-build-provenance.md](docs/native-build-provenance.md).
+Vespa SDK acquisition, build provenance, cache behavior, and environment
+recovery are documented in [BUILDING.md](BUILDING.md). Follow that guide
+rather than duplicating or improvising native build rules here.
 
-Do not copy, edit, or rebuild a published cache object in place. Native source
-or toolchain changes must resolve to a different object. Use
-`./dev native-sdk ensure` or normal Cargo verification to populate the cache.
-Set `SK_NATIVE_SDK` only for a deliberately isolated custom SDK.
-
-Do not hand-edit generated SDK contents.
 
 ## Reference and verifier artifacts
 
@@ -623,24 +538,11 @@ Do not optimize away simple safe code without evidence.
 Verification must produce evidence, not an assertion that the code "looks correct."
 
 During implementation, run the narrowest useful test or verifier repeatedly.
-
-For Rust changes, normally run the affected crate's:
-
-```text
-cargo fmt --check
-cargo clippy -p <crate> --all-targets --all-features -- -D warnings
-cargo test -p <crate> --all-targets --all-features
-```
+For the standard Rust build/lint/test command matrix, native prerequisites, and
+environment recovery, follow [BUILDING.md](BUILDING.md). It is authoritative
+for how compilation and build failures are diagnosed.
 
 Expand verification when the change has broader impact.
-
-Run full workspace checks when the change crosses crate/API/IR/native boundaries, changes shared infrastructure, or otherwise has broad consequences:
-
-```text
-cargo fmt --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-targets --all-features
-```
 
 Also:
 
@@ -667,7 +569,8 @@ missing tests
 ```
 
 If a required check cannot run, record the exact command, failure, and reason.
-Do not claim it passed.
+For an environment-related failure, follow `BUILDING.md` before classifying
+the failure as a product defect. Do not claim a check passed when it did not run.
 
 ## Commit discipline
 
