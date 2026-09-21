@@ -2104,9 +2104,13 @@ class EmbeddedEngine {
             }
             require_config_value(values, prefix + "fef.property[0].name",
                                  "vespa.rank.firstphase");
-            if (config_value(values, prefix + "fef.property[0].value").empty()) {
+            const auto first_phase_value =
+                config_value(values, prefix + "fef.property[0].value");
+            if (first_phase_value.empty()) {
                 throw std::invalid_argument("rank profile first-phase expression is empty");
             }
+            const auto named_first_phase =
+                first_phase_value == "rankingExpression(" + name + ")";
             bool has_first_phase_script = false;
             bool has_second_phase = false;
             bool has_second_phase_script = false;
@@ -2151,7 +2155,8 @@ class EmbeddedEngine {
                     throw std::invalid_argument("unsupported rank profile property: " + property_name);
                 }
             }
-            if (!has_first_phase_script || has_second_phase != has_second_phase_script) {
+            if (has_first_phase_script != named_first_phase ||
+                has_second_phase != has_second_phase_script) {
                 throw std::invalid_argument("rank profile phase configuration is incomplete");
             }
             if (has_rerank_count && !has_second_phase) {
@@ -2206,6 +2211,27 @@ class EmbeddedEngine {
             manifest.fields.begin(), manifest.fields.end(),
             [](const auto &field) { return field.index; });
         if (!has_indexed_field) {
+            return {};
+        }
+
+        // The generated fallback BM25 profile needs interleaved features for
+        // the local Vespa index implementation. Explicit rank profiles are
+        // authoritative, however: changing their index settings here changes
+        // the semantics of the caller's Vespa expressions and breaks direct
+        // profile parity. Only normalize the compiler-generated fallback.
+        const auto rank_profiles = read_config(config_dir / "rank-profiles.cfg");
+        const auto profile_count = config_section_count(rank_profiles, "rankprofile");
+        const auto fallback_property_count =
+            profile_count >= 2
+                ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
+                : 0;
+        const bool uses_only_generated_fallback =
+            profile_count == 2 &&
+            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+            fallback_property_count == 2 &&
+            config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
+                "rankingExpression(bm25).rankingScript";
+        if (!uses_only_generated_fallback) {
             return {};
         }
 

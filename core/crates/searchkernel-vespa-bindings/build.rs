@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "native-contract-tests")]
+use std::path::Path;
+use std::path::PathBuf;
 
 fn main() {
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {

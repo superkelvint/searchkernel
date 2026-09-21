@@ -822,6 +822,26 @@ fn quoted(value: &str) -> String {
     output
 }
 
+fn is_simple_rank_expression(expression: &str) -> bool {
+    let Some(open) = expression.find('(') else {
+        return false;
+    };
+    if open == 0
+        || !expression.ends_with(')')
+        || expression[open + 1..expression.len() - 1].contains(['(', ')'])
+    {
+        return false;
+    }
+    expression[..open]
+        .chars()
+        .enumerate()
+        .all(|(index, character)| {
+            character == '_'
+                || character.is_ascii_alphanumeric()
+                    && (index > 0 || character.is_ascii_alphabetic())
+        })
+}
+
 fn rank_profiles(schema: &Schema) -> String {
     if !schema.rank_profiles.is_empty() {
         let text_field = schema
@@ -846,19 +866,26 @@ fn rank_profiles(schema: &Schema) -> String {
         }
         for (index, profile) in schema.rank_profiles.iter().enumerate() {
             let index = index + 1 + usize::from(includes_generated_bm25);
+            let direct_first_phase = !profile.match_features.is_empty()
+                && is_simple_rank_expression(&profile.first_phase);
             let phase_property_count = profile.second_phase.as_ref().map_or(0, |_| 2)
                 + usize::from(profile.rerank_count.is_some());
-            let property_count = 2
+            let property_count = 1
                 + phase_property_count
                 + profile.match_features.len()
-                + profile.query_inputs.len();
+                + profile.query_inputs.len()
+                + usize::from(!direct_first_phase);
             output.push_str(&format!(
                 "rankprofile[{index}].name {}\nrankprofile[{index}].fef.property[{property_count}]\n",
                 quoted(&profile.name)
             ));
             output.push_str(&format!(
-                "rankprofile[{index}].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[{index}].fef.property[0].value \"rankingExpression({})\"\n",
-                profile.name
+                "rankprofile[{index}].fef.property[0].name \"vespa.rank.firstphase\"\nrankprofile[{index}].fef.property[0].value {}\n",
+                if direct_first_phase {
+                    quoted(&profile.first_phase)
+                } else {
+                    quoted(&format!("rankingExpression({})", profile.name))
+                }
             ));
             if let Some(expression) = &profile.second_phase {
                 output.push_str(&format!(
@@ -890,12 +917,14 @@ fn rank_profiles(schema: &Schema) -> String {
                     quoted(type_spec)
                 ));
             }
-            let script_index = property_count - 1;
-            output.push_str(&format!(
-                "rankprofile[{index}].fef.property[{script_index}].name \"rankingExpression({}).rankingScript\"\nrankprofile[{index}].fef.property[{script_index}].value {}\n",
-                profile.name,
-                quoted(&profile.first_phase)
-            ));
+            if !direct_first_phase {
+                let script_index = property_count - 1;
+                output.push_str(&format!(
+                    "rankprofile[{index}].fef.property[{script_index}].name \"rankingExpression({}).rankingScript\"\nrankprofile[{index}].fef.property[{script_index}].value {}\n",
+                    profile.name,
+                    quoted(&profile.first_phase)
+                ));
+            }
         }
         return output;
     }
@@ -1187,6 +1216,40 @@ mod tests {
         assert!(summary.contains("classes[0].fields[7].name \"active\""));
         assert!(rank_profiles.contains("rankprofile[1].name \"bm25\""));
         assert!(rank_profiles.contains("bm25(title)"));
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn rank_profiles_preserve_simple_features_and_name_compound_expressions() {
+        let path = compile(
+            Schema::new("typea")
+                .field(Field::new("title", FieldType::Text).indexed())
+                .field(Field::new("popularity", FieldType::Integer).attribute())
+                .rank_profile(
+                    RankProfile::new("bm25_title")
+                        .first_phase("bm25(title)")
+                        .match_feature("bm25(title)"),
+                )
+                .rank_profile(
+                    RankProfile::new("combined")
+                        .first_phase("query(boost) * attribute(popularity)")
+                        .match_feature("attribute(popularity)"),
+                ),
+            "rank-profile-expression-shapes",
+        );
+        let rank_profiles =
+            fs::read_to_string(path.join("rank-profiles.cfg")).expect("rank profiles");
+        assert!(rank_profiles.contains(
+            "rankprofile[2].fef.property[0].value \"bm25(title)\"\nrankprofile[2].fef.property[1].name \"vespa.match.feature\""
+        ));
+        assert!(!rank_profiles.contains(
+            "rankprofile[2].fef.property[2].name \"rankingExpression(bm25_title).rankingScript\""
+        ));
+        assert!(rank_profiles
+            .contains("rankprofile[3].fef.property[0].value \"rankingExpression(combined)\""));
+        assert!(rank_profiles.contains(
+            "rankprofile[3].fef.property[2].name \"rankingExpression(combined).rankingScript\""
+        ));
         let _ = fs::remove_dir_all(path);
     }
 
