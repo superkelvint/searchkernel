@@ -1,3 +1,3 @@
 # CTO Workflow Smoke Test
 
-workflow_state=first-pass
+workflow_state=remediated
