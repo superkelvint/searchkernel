@@ -28,7 +28,7 @@ approximated.
 
 ### Near and ordered-near proximity queries (`query.proximity`)
 
-- The high-level Rust Query and TypeScript q facades do not expose proximity constructors yet.
+- The TypeScript q facade does not expose proximity constructors yet.
 
 ### sameElement query (`query.same_element`)
 
