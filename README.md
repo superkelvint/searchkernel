@@ -74,14 +74,20 @@ it.
 The normal host target directory is `target/host`. The supported project
 container uses `target/devcontainer`, and CI uses `target/ci`; these directories
 must not be shared because they contain compiler- and libc-specific native
-artifacts. `CARGO_TARGET_DIR` remains available for explicit isolated builds.
+artifacts. The Vespa SDK is likewise published below each environment's target
+directory (`native-sdk/linux-x86_64`), rather than in one repository-global
+directory. `CARGO_TARGET_DIR` remains available for explicit isolated builds;
+`SK_NATIVE_SDK` can override the SDK location when building a deliberately
+separate native configuration.
 
 `FLATC_PATH` is still accepted by the standalone schema-generation scripts,
 but the Cargo protocol build always uses the matching vendored FlatBuffers
 toolchain so headers, `libflatbuffers.a`, and `flatc` cannot be mixed from
 different installations.
 
-The native-build regression verifier is `bash tools/test-native-build-hardening.sh`.
+The native-build regression verifiers are
+`bash tools/test-native-environment-fingerprint.sh` and
+`bash tools/test-native-build-hardening.sh`.
 It uses a temporary target directory to verify warm reuse, flag-driven targeted
 invalidation, preservation of an unrelated Rust artifact, and one-shot recovery
 after a deliberately corrupted FlatBuffers archive. The ABI workflow does not
@@ -107,6 +113,15 @@ sudo ./dev install flatbuffers
 ./dev worktree create my-task
 ./dev doctor
 ```
+
+`core/native/vespa/build-sdk.sh` builds the Vespa adapter SDK with the
+environment-specific target directory and records the compiler, target, libc,
+C++ runtime, Vespa source/configuration, native source, and relevant native
+flags that produced it. Native Rust bindings compare that record and link a
+small ABI probe before accepting the SDK. Rebuild the SDK in the selected
+environment automatically when the record does not match; if the pinned Vespa
+build inputs are unavailable, Cargo reports that prerequisite failure instead
+of allowing a mysterious downstream linker failure.
 
 `./dev install flatbuffers` builds the pinned FlatBuffers C++ release with the
 position-independent static library and the `lib` layout used by standalone

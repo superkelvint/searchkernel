@@ -2,7 +2,12 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-SDK=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+TARGET_ROOT=${CARGO_TARGET_DIR:-$ROOT/target/${SEARCHKERNEL_BUILD_ENV:-host}}
+case "$TARGET_ROOT" in
+    /*) ;;
+    *) TARGET_ROOT=$ROOT/$TARGET_ROOT ;;
+esac
+SDK=${SK_NATIVE_SDK:-$TARGET_ROOT/native-sdk/linux-x86_64}
 BUILD=${SK_M0_PROBE_COVERAGE_DIR:-$ROOT/target/m0-probe-coverage}
 PROBE=$ROOT/reference/vespa/m0/native-probe/probe.c
 

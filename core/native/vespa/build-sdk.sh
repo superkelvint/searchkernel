@@ -12,13 +12,30 @@ fi
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 VESPA_ROOT=${VESPA_ROOT:-$ROOT/upstream/vespa}
-SDK_PACKAGE=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    case "$CARGO_TARGET_DIR" in
+        /*) TARGET_ROOT=$CARGO_TARGET_DIR ;;
+        *) TARGET_ROOT=$ROOT/$CARGO_TARGET_DIR ;;
+    esac
+else
+    TARGET_ROOT=$ROOT/target/$BUILD_ENV
+fi
+SDK_PACKAGE=${SK_NATIVE_SDK:-$TARGET_ROOT/native-sdk/linux-x86_64}
+case "$SDK_PACKAGE" in
+    /*) ;;
+    *) SDK_PACKAGE=$ROOT/$SDK_PACKAGE ;;
+esac
 # Assemble the package away from the published path. This prevents a failed
 # compile or a concurrent Cargo build from observing a half-updated SDK and,
 # importantly, means stale files cannot survive from an older package layout.
 SDK_STAGING=${SK_NATIVE_STAGING_SDK:-${SDK_PACKAGE}.staging.$$}
 SDK=$SDK_STAGING
-BUILD=${SK_NATIVE_BUILD_DIR:-$ROOT/target/native-sdk}
+BUILD=${SK_NATIVE_BUILD_DIR:-$TARGET_ROOT/native-sdk-build}
+case "$BUILD" in
+    /*) ;;
+    *) BUILD=$ROOT/$BUILD ;;
+esac
 CXX=${CXX:-c++}
 ENABLE_FAILPOINTS=${SK_NATIVE_ENABLE_FAILPOINTS:-0}
 ENABLE_COVERAGE=${SK_NATIVE_COVERAGE:-0}
@@ -180,6 +197,16 @@ if [ "$ENABLE_FAILPOINTS" = 1 ]; then
     cp "$ROOT/core/native/vespa/searchkernel_vespa_test.h" "$SDK/include/searchkernel_vespa_test.h"
 fi
 cp "$ROOT/core/native/vespa/manifest.json" "$SDK/manifest.json"
+NATIVE_TARGET=${SK_NATIVE_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}
+if [ -z "$NATIVE_TARGET" ]; then
+    echo "could not determine the Rust host target; set SK_NATIVE_TARGET" >&2
+    exit 1
+fi
+python3 "$ROOT/tools/native-build-fingerprint.py" \
+    --root "$ROOT" \
+    --vespa-root "$VESPA_ROOT" \
+    --target "$NATIVE_TARGET" \
+    --output "$SDK/native-build-fingerprint-v2.txt"
 python3 - "$SDK/manifest.json" "$ROOT/core/native/vespa/searchkernel_vespa.h" "$ENABLE_FAILPOINTS" "$SANITIZER" <<'PY'
 import json
 import re
@@ -198,6 +225,12 @@ with open(path, encoding="utf-8") as stream:
 manifest["native_abi_version"] = int(matches[0])
 manifest["hardening_failpoints"] = failpoints == "1"
 manifest["sanitizer"] = sanitizer
+with open(path.replace("manifest.json", "native-build-fingerprint-v2.txt"), encoding="utf-8") as stream:
+    manifest["native_build_fingerprint"] = next(
+        line.split("=", 1)[1].strip()
+        for line in stream
+        if line.startswith("sha256=")
+    )
 with open(path, "w", encoding="utf-8") as stream:
     json.dump(manifest, stream, indent=2, sort_keys=True)
     stream.write("\n")
@@ -235,8 +268,12 @@ fi
 # the header is the ABI source of truth, while ordinary consumers use the
 # checked-in bindings and do not need libclang.
 if [ "$REGENERATE_BINDINGS" = 1 ]; then
-    SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
-        "$ROOT/tools/check-vespa-bindings.sh"
+    if [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
+        SK_NATIVE_SDK="$SDK" SK_NATIVE_BINDINGS_REGENERATE=1 \
+            "$ROOT/tools/check-vespa-bindings.sh"
+    fi
+elif [ "${SK_NATIVE_SKIP_BINDINGS_CHECK:-0}" != 1 ]; then
+    SK_NATIVE_SDK="$SDK" "$ROOT/tools/check-vespa-bindings.sh"
 fi
 
 # The upstream build tree also contains unit-test support libraries. Keep

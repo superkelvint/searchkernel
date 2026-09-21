@@ -1,8 +1,9 @@
 use std::env;
 use std::fs;
-#[cfg(feature = "native-contract-tests")]
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(feature = "native")]
+use std::process::{Command, Stdio};
 
 fn main() {
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
@@ -13,10 +14,17 @@ fn main() {
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let default_sdk = manifest_dir.join("../../native/sdk/linux-x86_64");
+    let default_sdk = default_native_sdk(&manifest_dir);
     let sdk = env::var_os("SK_NATIVE_SDK")
         .map(PathBuf::from)
         .unwrap_or(default_sdk);
+    #[cfg(feature = "native")]
+    let target = env::var("TARGET").expect("Cargo must provide TARGET to native build scripts");
+    #[cfg(feature = "native")]
+    let host = env::var("HOST").expect("Cargo must provide HOST to native build scripts");
+    #[cfg(feature = "native")]
+    let sdk = prepare_native_sdk(&manifest_dir, sdk, &target);
+    #[cfg(not(feature = "native"))]
     let sdk = fs::canonicalize(&sdk)
         .unwrap_or_else(|error| panic!("canonicalize native SDK '{}': {error}", sdk.display()));
     let lib_dir = sdk.join("lib");
@@ -75,6 +83,30 @@ fn main() {
         );
     }
 
+    #[cfg(feature = "native")]
+    {
+        if let Err(error) = probe_native_sdk(&sdk, &target, &host) {
+            println!(
+                "cargo:warning=searchkernel: native Vespa SDK link probe failed; rebuilding the affected SDK once"
+            );
+            rebuild_native_sdk(&manifest_dir, &sdk).unwrap_or_else(|rebuild_error| {
+                panic!(
+                    "native Vespa SDK link probe failed and automatic rebuild could not start:\n{error}\n{rebuild_error}"
+                )
+            });
+            verify_native_provenance(&manifest_dir, &sdk, &target).unwrap_or_else(|verify_error| {
+                panic!(
+                    "native Vespa SDK remained incompatible after one automatic rebuild:\n{error}\n{verify_error}"
+                )
+            });
+            probe_native_sdk(&sdk, &target, &host).unwrap_or_else(|retry_error| {
+                panic!(
+                    "native Vespa SDK link probe failed after one automatic rebuild:\n{error}\n{retry_error}"
+                )
+            });
+        }
+    }
+
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=searchkernel_vespa");
     // Make binaries using the raw bindings crate runnable without requiring
@@ -89,12 +121,273 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_CXX_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_EXTRA_LINK_FLAGS");
     println!("cargo:rerun-if-env-changed=SK_NATIVE_SANITIZER");
+    println!("cargo:rerun-if-env-changed=SEARCHKERNEL_BUILD_ENV");
+    println!("cargo:rerun-if-env-changed=SK_NATIVE_TARGET");
+    for name in [
+        "PATH",
+        "CC",
+        "CXX",
+        "AR",
+        "RANLIB",
+        "LD",
+        "CFLAGS",
+        "CXXFLAGS",
+        "CPPFLAGS",
+        "LDFLAGS",
+        "CMAKE",
+        "CMAKE_GENERATOR",
+        "CMAKE_PREFIX_PATH",
+        "CXXSTDLIB",
+        "CRATE_CC_NO_DEFAULTS",
+        "RUSTC",
+        "VESPA_ROOT",
+        "VESPA_DEPS",
+        "VESPA_DEPS_LIB_DIR",
+        "VESPA_DEPS_INCLUDE_DIR",
+        "VESPA_EXTRA_LIB_DIR",
+        "VESPA_AWS_LIB_DIR",
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+    #[cfg(feature = "native")]
+    for base in [
+        "CC", "CXX", "AR", "RANLIB", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
+    ] {
+        println!("cargo:rerun-if-env-changed={base}_{}", target);
+        println!(
+            "cargo:rerun-if-env-changed={base}_{}",
+            target.replace('-', "_")
+        );
+        println!("cargo:rerun-if-env-changed=HOST_{base}");
+    }
     println!("cargo:rerun-if-changed=src/abi.rs");
     println!("cargo:rerun-if-changed=src/bindings.rs");
     println!("cargo:rerun-if-changed={}", header.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        sdk.join("native-build-fingerprint-v2.txt").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        sdk.join("manifest.json").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        lib_dir.join("libsearchkernel_vespa.so").display()
+    );
 
     #[cfg(feature = "native-contract-tests")]
     compile_contract_tests(&manifest_dir, &sdk);
+}
+
+fn default_native_sdk(manifest_dir: &Path) -> PathBuf {
+    // OUT_DIR is the one Cargo-provided path that reflects an explicit
+    // CARGO_TARGET_DIR override. Deriving from it keeps custom target roots
+    // isolated without requiring developers to export a second variable.
+    if let Some(out_dir) = env::var_os("OUT_DIR") {
+        let out_dir = PathBuf::from(out_dir);
+        if let Some(target_root) = out_dir.ancestors().nth(4) {
+            return target_root.join("native-sdk/linux-x86_64");
+        }
+    }
+    manifest_dir.join("../../native/sdk/linux-x86_64")
+}
+
+#[cfg(feature = "native")]
+fn prepare_native_sdk(manifest_dir: &Path, configured: PathBuf, target: &str) -> PathBuf {
+    let root = manifest_dir.join("../../..");
+    let configured = if configured.is_absolute() {
+        configured
+    } else {
+        root.join(configured)
+    };
+    let mut last_error = String::new();
+    for attempt in 0..=1 {
+        if let Ok(sdk) = fs::canonicalize(&configured) {
+            match verify_native_provenance(manifest_dir, &sdk, target) {
+                Ok(()) => return sdk,
+                Err(error) => last_error = error,
+            }
+        } else {
+            last_error = format!("native SDK '{}' does not exist", configured.display());
+        }
+        if attempt == 0 {
+            println!(
+                "cargo:warning=searchkernel: native Vespa SDK is missing or stale; rebuilding the affected SDK once"
+            );
+            rebuild_native_sdk(manifest_dir, &configured).unwrap_or_else(|error| {
+                panic!(
+                    "native Vespa SDK is missing or stale and automatic rebuild failed:\n{last_error}\n{error}"
+                )
+            });
+        }
+    }
+    panic!("native Vespa SDK is incompatible after one automatic rebuild:\n{last_error}")
+}
+
+#[cfg(feature = "native")]
+fn rebuild_native_sdk(manifest_dir: &Path, sdk: &Path) -> Result<(), String> {
+    let root = manifest_dir.join("../../..");
+    let output = Command::new("bash")
+        .arg(root.join("core/native/vespa/build-sdk.sh"))
+        .env("SK_NATIVE_SDK", sdk)
+        .env("SK_NATIVE_TARGET", env::var("TARGET").unwrap_or_default())
+        .env("SK_NATIVE_REGENERATE_BINDINGS", "0")
+        .env("SK_NATIVE_SKIP_BINDINGS_CHECK", "1")
+        .output()
+        .map_err(|error| format!("spawn native SDK rebuild: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "native SDK rebuild exited with {}\nstdout={}\nstderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+}
+
+#[cfg(feature = "native")]
+fn verify_native_provenance(manifest_dir: &Path, sdk: &Path, target: &str) -> Result<(), String> {
+    let fingerprint_path = sdk.join("native-build-fingerprint-v2.txt");
+    let recorded = fs::read_to_string(&fingerprint_path).map_err(|error| {
+        format!(
+            "read native SDK provenance '{}': {error}",
+            fingerprint_path.display()
+        )
+    })?;
+    let recorded_digest = fingerprint_digest(&recorded).ok_or_else(|| {
+        format!(
+            "native SDK provenance '{}' is malformed",
+            fingerprint_path.display()
+        )
+    })?;
+    let root = manifest_dir.join("../../..");
+    let vespa_root = env::var_os("VESPA_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("upstream/vespa"));
+    let output = Command::new("python3")
+        .arg(root.join("tools/native-build-fingerprint.py"))
+        .arg("--root")
+        .arg(&root)
+        .arg("--vespa-root")
+        .arg(vespa_root)
+        .arg("--target")
+        .arg(target)
+        .output()
+        .map_err(|error| format!("run native build fingerprint verifier: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "native build fingerprint verifier failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let current = String::from_utf8_lossy(&output.stdout);
+    let current_digest = fingerprint_digest(&current)
+        .ok_or_else(|| "native build fingerprint verifier returned malformed output".to_owned())?;
+    if current_digest != recorded_digest {
+        return Err(format!(
+            "native SDK '{}' was built for a different native environment\nrecorded fingerprint: {recorded_digest}\ncurrent fingerprint: {current_digest}",
+            sdk.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "native")]
+fn fingerprint_digest(text: &str) -> Option<&str> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("sha256="))
+        .filter(|digest| digest.len() == 64)
+}
+
+#[cfg(feature = "native")]
+fn probe_native_sdk(sdk: &Path, target: &str, host: &str) -> Result<(), String> {
+    let probe_dir =
+        PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set")).join("sdk-probe");
+    fs::create_dir_all(&probe_dir)
+        .map_err(|error| format!("create native SDK compatibility probe directory: {error}"))?;
+    let source = probe_dir.join("native_sdk_link_probe.cc");
+    let object = probe_dir.join("native_sdk_link_probe.o");
+    let executable = probe_dir.join("native_sdk_link_probe");
+    fs::write(
+        &source,
+        "#include <searchkernel_vespa.h>\nint main() { return static_cast<int>(sk_native_abi_version()); }\n",
+    )
+    .map_err(|error| format!("write native SDK compatibility probe: {error}"))?;
+
+    let mut config = cc::Build::new();
+    config
+        .cpp(true)
+        .cargo_metadata(false)
+        .target(target)
+        .host(host);
+    let compiler = config.get_compiler();
+    let mut compile = compiler.to_command();
+    compile
+        .arg("-std=c++17")
+        .arg("-I")
+        .arg(sdk.join("include"))
+        .args(split_flags("CPPFLAGS"))
+        .args(split_flags("CXXFLAGS"))
+        .args(split_flags("SK_NATIVE_EXTRA_CXX_FLAGS"))
+        .arg("-c")
+        .arg(&source)
+        .arg("-o")
+        .arg(&object);
+    run_probe_command(&mut compile, "compile native SDK compatibility probe")?;
+
+    let mut link = compiler.to_command();
+    link.arg(&object)
+        .arg("-L")
+        .arg(sdk.join("lib"))
+        .arg(format!("-Wl,-rpath,{}", sdk.join("lib").display()))
+        .arg("-Wl,--no-as-needed")
+        .args(split_flags("LDFLAGS"))
+        .args(split_flags("SK_NATIVE_EXTRA_LINK_FLAGS"))
+        .arg("-lsearchkernel_vespa");
+    let standard_library = env::var("CXXSTDLIB").unwrap_or_else(|_| {
+        if target.contains("linux") {
+            "stdc++".to_owned()
+        } else if target.contains("apple") || target.contains("darwin") {
+            "c++".to_owned()
+        } else {
+            String::new()
+        }
+    });
+    if !standard_library.is_empty() {
+        link.arg(format!("-l{standard_library}"));
+    }
+    link.arg("-o").arg(&executable);
+    run_probe_command(&mut link, "link native SDK compatibility probe")
+}
+
+#[cfg(feature = "native")]
+fn split_flags(variable: &str) -> Vec<String> {
+    env::var(variable)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[cfg(feature = "native")]
+fn run_probe_command(command: &mut Command, description: &str) -> Result<(), String> {
+    let output = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("{description}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{description} failed with {}\nstdout={}\nstderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "native-contract-tests")]

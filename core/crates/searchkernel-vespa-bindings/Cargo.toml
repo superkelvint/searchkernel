@@ -8,7 +8,7 @@ build = "build.rs"
 
 [features]
 default = ["native"]
-native = []
+native = ["dep:cc"]
 hardening = ["native"]
 native-contract-tests = ["native", "dep:cc"]
 

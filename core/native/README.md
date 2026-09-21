@@ -18,7 +18,12 @@ The native side packages the Vespa engine behind a Search Kernel-owned C ABI.
 - Vespa headers and implementation types stay inside the native adapter.
 - The ABI uses opaque handles and Search Kernel-owned values.
 - Native exceptions are caught and translated into error values.
-- `core/native/sdk` is generated/prebuilt output used by ordinary Rust builds.
+- Native SDK output is generated under the active environment's Cargo target
+  directory (`target/host/native-sdk`, `target/devcontainer/native-sdk`, or
+  `target/ci/native-sdk`) and is never shared across those environments.
+- Each SDK contains a native-build fingerprint. Rust bindings verify that the
+  fingerprint and a real ABI link probe match the current compiler/runtime
+  before linking it.
 
 Native changes require the repository's SDK build and conformance workflow;
 ordinary Rust-only changes should not rebuild Vespa.

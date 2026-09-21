@@ -32,6 +32,22 @@ directories. Cargo's protocol build uses the vendored FlatBuffers copy.
 EOF
 }
 
+native_target_root() {
+    local target_root=${CARGO_TARGET_DIR:-$ROOT/target/${SEARCHKERNEL_BUILD_ENV:-host}}
+    case "$target_root" in
+        /*) printf '%s\n' "$target_root" ;;
+        *) printf '%s/%s\n' "$ROOT" "$target_root" ;;
+    esac
+}
+
+native_sdk_path() {
+    if [[ -n "${SK_NATIVE_SDK:-}" ]]; then
+        printf '%s\n' "$SK_NATIVE_SDK"
+    else
+        printf '%s/native-sdk/linux-x86_64\n' "$(native_target_root)"
+    fi
+}
+
 run_python_tests() {
     "$PYTHON" -m unittest discover -s clients/python/tests -p 'test_*.py'
 }
@@ -289,7 +305,8 @@ doctor_generated_protocol() {
 }
 
 doctor_native_sdk() {
-    local sdk=${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}
+    local sdk
+    sdk=$(native_sdk_path)
     [[ -f "$sdk/include/searchkernel_vespa.h" ]]
     [[ -f "$sdk/manifest.json" ]]
     compgen -G "$sdk/lib/libsearchkernel_vespa.so*" >/dev/null
@@ -299,7 +316,7 @@ doctor_native_abi() {
     # Keep ABI authority checking in the existing acceptance helper so doctor
     # and milestone verification cannot silently grow different rules.
     source "$ROOT/reference/vespa/common/verify-common.sh"
-    require_sdk_manifest "${SK_NATIVE_SDK:-$ROOT/core/native/sdk/linux-x86_64}/manifest.json"
+    require_sdk_manifest "$(native_sdk_path)/manifest.json"
 }
 
 doctor_vespa() {
