@@ -114,8 +114,16 @@ verification, generation, and acceptance lanes:
 ./dev regen protocol
 ./dev verify m13
 ./dev verify integration
+./dev install flatbuffers
 ./dev worktree create my-task
 ```
+
+Run `./dev install flatbuffers` when the pinned FlatBuffers C++ toolchain is
+missing. It builds version `25.12.19` with the position-independent static
+library and the `lib` layout required by Cargo; the default `/usr/local`
+prefix may require `sudo`. Set `FLATBUFFERS_INSTALL_PREFIX` for a custom
+prefix, then use the `FLATBUFFERS_CPP_ROOT` and `FLATC_PATH` exports printed by
+the command.
 
 Start with `./dev doctor` when entering an unfamiliar checkout or when a build
 fails for an environment-related reason. It reports each prerequisite

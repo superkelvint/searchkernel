@@ -79,6 +79,7 @@ must be version `25.12.19`.
 Repository checks and generators are available through one root command:
 
 ```text
+sudo ./dev install flatbuffers
 ./dev check
 ./dev check-fast
 ./dev test ir
@@ -91,6 +92,12 @@ Repository checks and generators are available through one root command:
 ./dev worktree create my-task
 ./dev doctor
 ```
+
+`./dev install flatbuffers` builds the pinned FlatBuffers C++ release with the
+position-independent static library and the `lib` layout required by Cargo.
+The default install prefix is `/usr/local`. For a non-root installation, set
+`FLATBUFFERS_INSTALL_PREFIX`; the command prints the `FLATBUFFERS_CPP_ROOT`
+and `FLATC_PATH` exports needed afterward.
 
 Run `./dev hooks install` once per checkout to enable the repository-managed
 pre-commit hook. When `docs/capabilities.json` is staged, it regenerates and

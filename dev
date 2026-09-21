@@ -19,12 +19,14 @@ Search Kernel development commands
   ./dev regen protocol        Regenerate checked-in protocol artifacts
   ./dev verify m13            Run a frozen Vespa milestone verifier
   ./dev verify integration   Run the cross-entry-point integration verifier
+  ./dev install flatbuffers   Build and install the pinned FlatBuffers toolchain
   ./dev hooks install        Install the repository-managed Git hooks
   ./dev worktree create <task-name> Create a /tmp task worktree and agent branch
   ./dev doctor                Diagnose local build and verification prerequisites
 
 Environment overrides used by the underlying tools, including FLATC_PATH,
-FLATBUFFERS_CPP_ROOT, SK_NATIVE_SDK, and CARGO_TARGET_DIR, are honored.
+FLATBUFFERS_CPP_ROOT, FLATBUFFERS_INSTALL_PREFIX, SK_NATIVE_SDK, and
+CARGO_TARGET_DIR, are honored.
 EOF
 }
 
@@ -89,6 +91,110 @@ verify_target() {
             ;;
         *)
             echo "usage: ./dev verify m0|...|m13|integration|phase10|searchreply" >&2
+            return 2
+            ;;
+    esac
+}
+
+install_flatbuffers() (
+    local prefix=${FLATBUFFERS_INSTALL_PREFIX:-${FLATBUFFERS_CPP_ROOT:-/usr/local}}
+    local workdir source_dir build_dir archive_url archive_path download_tool
+    local jobs=1
+    local flatc header library actual_version
+
+    workdir=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-flatbuffers.XXXXXX")
+    trap 'rm -rf -- "$workdir"' EXIT
+
+    if command -v curl >/dev/null 2>&1; then
+        download_tool=curl
+    elif command -v wget >/dev/null 2>&1; then
+        download_tool=wget
+    else
+        echo 'error: ./dev install flatbuffers requires curl or wget' >&2
+        return 1
+    fi
+    command -v cmake >/dev/null 2>&1 || {
+        echo 'error: ./dev install flatbuffers requires cmake' >&2
+        return 1
+    }
+    command -v tar >/dev/null 2>&1 || {
+        echo 'error: ./dev install flatbuffers requires tar' >&2
+        return 1
+    }
+    command -v c++ >/dev/null 2>&1 || {
+        echo 'error: ./dev install flatbuffers requires a C++ compiler (for example, gcc-c++)' >&2
+        return 1
+    }
+
+    if command -v nproc >/dev/null 2>&1; then
+        jobs=$(nproc)
+    fi
+
+    archive_url="https://github.com/google/flatbuffers/archive/refs/tags/v${EXPECTED_FLATBUFFERS_VERSION}.tar.gz"
+    archive_path="$workdir/flatbuffers-${EXPECTED_FLATBUFFERS_VERSION}.tar.gz"
+    source_dir="$workdir/source"
+    build_dir="$workdir/build"
+    mkdir -p "$source_dir"
+
+    echo "Downloading FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION}..."
+    if [[ "$download_tool" == curl ]]; then
+        curl --fail --location --silent --show-error "$archive_url" --output "$archive_path"
+    else
+        wget --quiet --output-document="$archive_path" "$archive_url"
+    fi
+    tar --extract --gzip --strip-components=1 --file="$archive_path" --directory="$source_dir"
+
+    # Cargo links this static C++ library into a position-independent Rust
+    # executable. AlmaLinux defaults to lib64, while the build script expects
+    # lib, so keep both properties explicit here.
+    cmake -S "$source_dir" -B "$build_dir" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DFLATBUFFERS_BUILD_TESTS=OFF
+    cmake --build "$build_dir" --parallel "$jobs"
+    cmake --install "$build_dir"
+
+    flatc="$prefix/bin/flatc"
+    header="$prefix/include/flatbuffers/base.h"
+    library="$prefix/lib/libflatbuffers.a"
+    [[ -x "$flatc" ]] || {
+        echo "error: FlatBuffers compiler was not installed at '$flatc'" >&2
+        return 1
+    }
+    [[ -f "$header" ]] || {
+        echo "error: FlatBuffers headers were not installed under '$prefix/include'" >&2
+        return 1
+    }
+    [[ -f "$library" ]] || {
+        echo "error: FlatBuffers static library was not installed at '$library'" >&2
+        return 1
+    }
+    actual_version=$("$flatc" --version)
+    [[ "$actual_version" == "flatc version $EXPECTED_FLATBUFFERS_VERSION" ]] || {
+        echo "error: installed flatc reports '$actual_version'" >&2
+        return 1
+    }
+
+    echo "Installed FlatBuffers ${EXPECTED_FLATBUFFERS_VERSION} under $prefix"
+    if [[ "$prefix" != /usr/local ]]; then
+        echo "export FLATBUFFERS_CPP_ROOT=$prefix"
+        echo "export FLATC_PATH=$flatc"
+    fi
+)
+
+install_target() {
+    case "${1:-}" in
+        flatbuffers)
+            [[ "$#" -eq 1 ]] || {
+                echo 'usage: ./dev install flatbuffers' >&2
+                return 2
+            }
+            install_flatbuffers
+            ;;
+        *)
+            echo 'usage: ./dev install flatbuffers' >&2
             return 2
             ;;
     esac
@@ -298,6 +404,10 @@ case "${1:-help}" in
     verify)
         shift
         verify_target "${1:-}"
+        ;;
+    install)
+        shift
+        install_target "$@"
         ;;
     worktree)
         [[ "${2:-}" == create ]] || {
