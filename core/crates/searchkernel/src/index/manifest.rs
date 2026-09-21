@@ -13,6 +13,8 @@ use std::io::Write;
 #[cfg(feature = "native")]
 pub(crate) const MANIFEST_FORMAT_VERSION: u32 = 4;
 #[cfg(feature = "native")]
+pub(crate) const PREVIOUS_MANIFEST_FORMAT_VERSION: u32 = 3;
+#[cfg(feature = "native")]
 pub(crate) const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 2;
 #[cfg(feature = "native")]
 pub(crate) const STORAGE_COMPATIBILITY_GENERATION: u32 = 1;
@@ -124,7 +126,12 @@ impl IndexManifest {
             .or_else(|| value.get("format_version"))
             .and_then(serde_json::Value::as_u64);
         let (resolved_definition_bytes, portable_definition_bytes) =
-            if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+            if matches!(
+                version,
+                Some(value)
+                    if value == u64::from(MANIFEST_FORMAT_VERSION)
+                        || value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
+            ) {
                 let read_definition = |name: &str| {
                     let path = root.join("manifest").join(name);
                     std::fs::read(&path).map_err(|error| {
@@ -148,7 +155,12 @@ impl IndexManifest {
             resolved_definition_bytes,
         };
         manifest.validate_identity()?;
-        if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+        if matches!(
+            version,
+            Some(value)
+                if value == u64::from(MANIFEST_FORMAT_VERSION)
+                    || value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
+        ) {
             // The portable definition is provenance. Its raw FlatBuffers
             // envelope must remain readable, but its semantics were resolved
             // under the creator's defaults and must not be reinterpreted on
@@ -159,7 +171,11 @@ impl IndexManifest {
             .map_err(|error| {
                 Error::corrupt_index(format!("invalid portable index definition: {error}"))
             })?;
-            manifest.resolved_definition_ir()?;
+            if version == Some(u64::from(MANIFEST_FORMAT_VERSION)) {
+                manifest.resolved_definition_ir()?;
+            } else {
+                manifest.decode_resolved_definition_ir()?;
+            }
         }
         manifest.resolved_context()?;
         Ok(manifest)
@@ -177,73 +193,10 @@ impl IndexManifest {
             .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
         match version {
             value if value == u64::from(MANIFEST_FORMAT_VERSION) => {
-                let generation = object
-                    .get("storage_compatibility_generation")
-                    .and_then(serde_json::Value::as_u64)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .ok_or_else(|| {
-                        Error::corrupt_index("manifest storage compatibility generation is missing")
-                    })?;
-                if generation != STORAGE_COMPATIBILITY_GENERATION {
-                    return Err(Error::incompatible_index(format!(
-                        "storage compatibility generation {generation}"
-                    )));
-                }
-                let snapshot_version = object
-                    .get("resolved_schema_snapshot_version")
-                    .and_then(serde_json::Value::as_u64)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .ok_or_else(|| {
-                        Error::corrupt_index(
-                            "resolved schema snapshot version is missing or invalid",
-                        )
-                    })?;
-                if snapshot_version != RESOLVED_SCHEMA_SNAPSHOT_VERSION {
-                    return Err(Error::incompatible_index(format!(
-                        "resolved schema snapshot version {snapshot_version}"
-                    )));
-                }
-                if !object
-                    .get("resolved_schema_snapshot")
-                    .is_some_and(serde_json::Value::is_object)
-                {
-                    return Err(Error::corrupt_index(
-                        "resolved schema snapshot is missing or invalid",
-                    ));
-                }
-                let provenance = object
-                    .get("provenance")
-                    .and_then(serde_json::Value::as_object)
-                    .ok_or_else(|| Error::corrupt_index("manifest provenance is invalid"))?;
-                if !provenance
-                    .get("created_by_searchkernel_version")
-                    .is_some_and(serde_json::Value::is_string)
-                    || !provenance
-                        .get("created_by_native_abi")
-                        .and_then(serde_json::Value::as_u64)
-                        .and_then(|value| u32::try_from(value).ok())
-                        .is_some()
-                    || !provenance
-                        .get("created_by_vespa_revision")
-                        .is_some_and(serde_json::Value::is_string)
-                {
-                    return Err(Error::corrupt_index(
-                        "manifest provenance has invalid fields",
-                    ));
-                }
-                if object
-                    .get("portable_index_definition")
-                    .and_then(serde_json::Value::as_str)
-                    != Some("portable-index-definition.bfbs")
-                    || object
-                        .get("canonical_index_definition")
-                        .and_then(serde_json::Value::as_str)
-                        != Some("index-definition.bfbs")
-                {
-                    return Err(Error::corrupt_index(
-                        "manifest index definition references are invalid",
-                    ));
-                }
+                Self::validate_binary_identity(object, true)?;
+            }
+            value if value == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION) => {
+                Self::validate_binary_identity(object, false)?;
             }
             value if value == u64::from(LEGACY_MANIFEST_FORMAT_VERSION) => {
                 for key in [
@@ -323,7 +276,9 @@ impl IndexManifest {
             .or_else(|| self.value.get("format_version"))
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| Error::corrupt_index("manifest format version is missing"))?;
-        if version == u64::from(MANIFEST_FORMAT_VERSION) {
+        if version == u64::from(MANIFEST_FORMAT_VERSION)
+            || version == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION)
+        {
             let context = self.resolved_context()?;
             return Ok(definition_from_ir(context.definition()));
         }
@@ -345,6 +300,10 @@ impl IndexManifest {
             Ok(IndexContext::from_definition_ir(
                 self.resolved_definition_ir()?,
             ))
+        } else if version == u64::from(PREVIOUS_MANIFEST_FORMAT_VERSION) {
+            Ok(IndexContext::from_definition_ir(
+                self.decode_resolved_definition_ir()?,
+            ))
         } else {
             let definition = definition_from_json(
                 self.value
@@ -357,19 +316,101 @@ impl IndexManifest {
         }
     }
 
-    fn resolved_definition_ir(&self) -> Result<searchkernel_ir::IndexDefinitionIr> {
+    fn validate_binary_identity(
+        object: &serde_json::Map<String, serde_json::Value>,
+        require_snapshot: bool,
+    ) -> Result<()> {
+        let generation = object
+            .get("storage_compatibility_generation")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| {
+                Error::corrupt_index("manifest storage compatibility generation is missing")
+            })?;
+        if generation != STORAGE_COMPATIBILITY_GENERATION {
+            return Err(Error::incompatible_index(format!(
+                "storage compatibility generation {generation}"
+            )));
+        }
+        if require_snapshot {
+            let snapshot_version = object
+                .get("resolved_schema_snapshot_version")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| {
+                    Error::corrupt_index(
+                        "resolved schema snapshot version is missing or invalid",
+                    )
+                })?;
+            if snapshot_version != RESOLVED_SCHEMA_SNAPSHOT_VERSION {
+                return Err(Error::incompatible_index(format!(
+                    "resolved schema snapshot version {snapshot_version}"
+                )));
+            }
+            if !object
+                .get("resolved_schema_snapshot")
+                .is_some_and(serde_json::Value::is_object)
+            {
+                return Err(Error::corrupt_index(
+                    "resolved schema snapshot is missing or invalid",
+                ));
+            }
+        }
+        let provenance = object
+            .get("provenance")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| Error::corrupt_index("manifest provenance is invalid"))?;
+        if !provenance
+            .get("created_by_searchkernel_version")
+            .is_some_and(serde_json::Value::is_string)
+            || !provenance
+                .get("created_by_native_abi")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .is_some()
+            || !provenance
+                .get("created_by_vespa_revision")
+                .is_some_and(serde_json::Value::is_string)
+        {
+            return Err(Error::corrupt_index(
+                "manifest provenance has invalid fields",
+            ));
+        }
+        if object
+            .get("portable_index_definition")
+            .and_then(serde_json::Value::as_str)
+            != Some("portable-index-definition.bfbs")
+            || object
+                .get("canonical_index_definition")
+                .and_then(serde_json::Value::as_str)
+                != Some("index-definition.bfbs")
+        {
+            return Err(Error::corrupt_index(
+                "manifest index definition references are invalid",
+            ));
+        }
+        Ok(())
+    }
+
+    fn decode_resolved_definition_ir(&self) -> Result<searchkernel_ir::IndexDefinitionIr> {
         let root = searchkernel_ir::__flatbuffers::root::<api::IndexDefinition>(
             &self.resolved_definition_bytes,
         )
         .map_err(|error| {
             Error::corrupt_index(format!("invalid resolved index definition: {error}"))
         })?;
+        searchkernel_ir::index_definition_to_ir(root)
+            .map_err(|_| Error::incompatible_index("resolved schema snapshot is not compatible"))
+    }
+
+    fn resolved_definition_ir(&self) -> Result<searchkernel_ir::IndexDefinitionIr> {
         // The FlatBuffers decoder also serves unresolved caller intent and may
-        // apply defaults.  The persisted IR snapshot makes that replay
+        // apply defaults.  The v4 persisted IR snapshot makes that replay
         // explicit: any changed default or normalization is rejected before
-        // the decoded definition can become the reopened context.
-        let resolved = searchkernel_ir::index_definition_to_ir(root)
-            .map_err(|_| Error::incompatible_index("resolved schema snapshot is not compatible"))?;
+        // the decoded definition can become the reopened context. v3 did not
+        // persist this sidecar, so its compatibility path decodes only the
+        // already-resolved canonical definition and never portable intent.
+        let resolved = self.decode_resolved_definition_ir()?;
         let expected = self
             .value
             .get("resolved_schema_snapshot")
