@@ -668,6 +668,8 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
                 .clone()
                 .or_else(|| resolved.fields().get(index).cloned())
                 .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?;
+            resolved.set_index_config(field.index_config.clone());
+            resolved.set_attribute_config(field.attribute_config.clone());
             if field.canonical.is_none() {
                 if let Some(analyzer) = &field.analyzer_config {
                     resolved.set_analyzer(Some(analyzer.clone()));
@@ -804,11 +806,10 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
             value = value.hnsw(hnsw);
         }
         result = result.field(value);
-        result
-            .fields
-            .last_mut()
-            .expect("field was just appended")
-            .canonical = Some(field.clone());
+        let described = result.fields.last_mut().expect("field was just appended");
+        described.index_config = field.index().cloned();
+        described.attribute_config = field.attribute().cloned();
+        described.canonical = Some(field.clone());
     }
     result = result.default_search_fields(
         definition
