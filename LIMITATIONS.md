@@ -6,17 +6,29 @@ public contract is intentionally smaller than Vespa's complete model.
 Unsupported behavior must remain an explicit error; it must not be silently
 approximated.
 
-**Snapshot:** 2026-09-20
+**Snapshot:** 2026-09-21
 
 ## Query
 
+### True and false query constants (`query.boolean_constants`)
+
+- No high-level Rust, Python, or TypeScript facade helper currently constructs these constants.
+
+### Comparison queries (`query.comparison`)
+
+- The Python and TypeScript q facades do not yet expose comparison constructors.
+
+### Range queries (`query.range`)
+
+- The Python and TypeScript q facades do not yet expose range constructors.
+
 ### Phrase queries (`query.phrase`)
 
-- The Python and TypeScript high-level q namespaces do not yet expose
+- The TypeScript high-level q namespace does not yet expose a phrase helper.
 
 ### Near and ordered-near proximity queries (`query.proximity`)
 
-- the high-level Rust Query, Python q, or TypeScript q facades expose proximity constructors yet
+- The high-level Rust Query and TypeScript q facades do not expose proximity constructors yet.
 
 ### sameElement query (`query.same_element`)
 
@@ -25,16 +37,15 @@ approximated.
 
 ### Fuzzy query (`query.fuzzy`)
 
-- The Python and TypeScript high-level q facades do not yet expose
+- The TypeScript high-level q facade does not yet expose a fuzzy helper.
 
 ### Prefix, suffix, and substring queries (`query.prefix_suffix_substring`)
 
 - the Python and TypeScript q facades do not yet expose
 
-### Alternatives and equivalence queries (`query.alternatives`)
+### Alternatives queries (`query.alternatives`)
 
-- Alternatives currently accepts term children only; more general alternatives are rejected. High-level Rust and Python facades do not expose these nodes.
-- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
+- Alternatives currently executes only when every child is a term; general alternatives are rejected by the adapter. High-level Rust, Python, and TypeScript facades do not expose this node.
 
 ### Nearest-neighbor vector search (`query.nearest_neighbor`)
 
@@ -42,7 +53,7 @@ approximated.
 
 ### Geo-location and bounding-box queries (`query.geo`)
 
-- Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end ergonomic SDK capability.
+- Real Vespa execution is verified, including inclusive bounding-box edges. The high-level schema facades do not yet expose position fields, so geo is not an end-to-end schema-and-query ergonomic SDK capability.
 - The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
 ### Predicate queries (`query.predicate`)
@@ -50,14 +61,25 @@ approximated.
 - Only the supported predicate feature/range representation and documented expression shapes are lowered. Predicate field definitions are not exposed by the high-level Rust or Python schema facades.
 - The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
 
-### WeakAnd, weighted-set, dot-product, and WAND queries (`query.weighted_and_wand`)
+### WeakAnd and WAND queries (`query.weighted_and_wand`)
 
 - The Python and TypeScript q facades do not yet expose
 
+### Weighted-set and dot-product queries (`query.weighted_set_dot_product`)
+
+- The Python and TypeScript q facades do not yet expose weighted-set or dot-product helpers.
+
+### Equivalence queries (`query.equivalence`)
+
+- No high-level Rust, Python, or TypeScript facade helper currently constructs equivalence queries.
+
+### Rank query composition (`query.rank`)
+
+- The TypeScript q facade does not yet expose rank composition.
+
 ### userInput and userQuery text parsing (`query.user_input_user_query`)
 
-- The parser intentionally supports a reduced grammar and rejects full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites. No high-level facade currently exposes userInput/userQuery constructors.
-- The TypeScript facade does not expose this capability as an ergonomic helper; generated low-level FlatBuffers remain available.
+- The parser intentionally supports only a reduced grammar; full Vespa escaping, boosts, range syntax, parser modes, and unsupported composites are rejected. No high-level facade currently exposes userInput/userQuery constructors.
 
 ### YQL query source (`query.yql`)
 
@@ -66,6 +88,10 @@ approximated.
 ### Analyzed text search with default WeakAnd semantics (`query.text_weak_and`)
 
 - Primary search(text) is analyzed text retrieval with Vespa WeakAnd-style default matching; it is not a phrase query. The low-level QueryText node is broader than the current facade helpers.
+
+### Typed analyzed-text query nodes (`query.typed_text`)
+
+- The typed QueryText node executes through the adapter, but no high-level Rust, Python, or TypeScript q facade helper constructs it.
 
 ### Native in-term queries (`query.in_term`)
 

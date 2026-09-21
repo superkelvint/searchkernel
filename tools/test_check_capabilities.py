@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,6 +46,67 @@ class CapabilityLedgerTests(unittest.TestCase):
         )
         self.assertIn("CLIENT_CAPABILITIES.md", document)
         self.assertNotIn("| TypeScript |", document)
+
+    def test_every_query_expr_kind_has_one_capability_owner(self) -> None:
+        schema = (ROOT / "api" / "searchkernel.fbs").read_text(encoding="utf-8")
+        match = re.search(r"union QueryExprKind \{(?P<body>.*?)\n\}", schema, re.DOTALL)
+        self.assertIsNotNone(match)
+        assert match is not None
+        schema_kinds = [
+            line.strip().rstrip(",")
+            for line in match.group("body").splitlines()
+            if line.strip()
+        ]
+
+        owners = [
+            kind
+            for capability in self.ledger["capabilities"]
+            if capability["area"] == "query"
+            for kind in capability.get("query_expr_kinds", [])
+        ]
+        self.assertEqual(
+            len(owners),
+            len(set(owners)),
+            "each QueryExprKind must be assigned to only one capability",
+        )
+        self.assertEqual(
+            set(owners),
+            set(schema_kinds),
+            "the capability ledger must classify every current QueryExprKind",
+        )
+
+    def test_unclassified_query_expr_kind_is_rejected_by_validator(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        capability = next(
+            capability
+            for capability in ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        capability["query_expr_kinds"] = ["TermQuery"]
+        with self.assertRaisesRegex(MODULE.LedgerError, "unclassified QueryExprKind"):
+            MODULE.validate_ledger(ledger)
+
+    def test_unknown_query_expr_kind_is_rejected(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        capability = next(
+            capability
+            for capability in ledger["capabilities"]
+            if capability["id"] == "query.term"
+        )
+        capability["query_expr_kinds"].append("QueryAddedWithoutLedgerEntry")
+        with self.assertRaisesRegex(MODULE.LedgerError, "unknown QueryExprKind"):
+            MODULE.validate_ledger(ledger)
+
+    def test_duplicate_query_expr_kind_is_rejected(self) -> None:
+        ledger = copy.deepcopy(self.ledger)
+        capability = next(
+            capability
+            for capability in ledger["capabilities"]
+            if capability["id"] == "query.boolean"
+        )
+        capability["query_expr_kinds"].append("TermQuery")
+        with self.assertRaisesRegex(MODULE.LedgerError, "assigned to both"):
+            MODULE.validate_ledger(ledger)
 
     def test_stale_document_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
