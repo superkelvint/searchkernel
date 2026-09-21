@@ -55,6 +55,18 @@ class ExecutionEvidenceTest(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             validate_execution_evidence(evidence)
 
+    def test_missing_index_cannot_claim_ann_execution(self) -> None:
+        evidence = ann_evidence()
+        evidence["queries"][0]["has_index"] = False
+        with self.assertRaises(EvidenceError):
+            validate_execution_evidence(evidence)
+
+    def test_zero_approximate_searches_cannot_claim_ann_execution(self) -> None:
+        evidence = ann_evidence()
+        evidence["queries"][0]["approximate_nns_searches_performed"] = 0
+        with self.assertRaises(EvidenceError):
+            validate_execution_evidence(evidence)
+
 
 if __name__ == "__main__":
     unittest.main()
