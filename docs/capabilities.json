@@ -516,13 +516,15 @@
         "core/native/vespa/abi.cc",
         "core/native/vespa/highlighting.h",
         "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+        "core/native/vespa/native_adapter_coverage_test.cpp",
+        "core/crates/searchkernel-ir-adapter/src/tests.rs",
         "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
         "clients/python/searchkernel/ergonomic.py",
         "clients/python/tests/test_grpc_e2e.py",
         "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. The TypeScript SearchBuilder does not expose highlighting controls. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities."
+        "This pass supports Vespa-generated dynamic teaser output only for scalar stored, indexed text fields and Juniper query shapes that produce faithful highlight terms (ordinary terms/text, phrases, near/onear, and alternatives). Multi-valued text and explicit fuzzy/regexp/prefix/substring/suffix highlighting are rejected at the adapter boundary because pinned Juniper cannot expose their match spans. The TypeScript SearchBuilder does not expose highlighting controls. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities."
       ]
     },
     {

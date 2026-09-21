@@ -18,24 +18,47 @@ namespace {
 
 void highlighting_decoder_unit() {
     const auto decoded = searchkernel::native_highlighting::decode(
-        "prefix<b>Brown</b> \x1f" "fox" "\x1f");
-    assert(decoded);
-    assert(decoded->text == "prefixBrown fox");
-    assert(decoded->matches.size() == 2);
-    assert(decoded->matches[0].start_byte == 6);
-    assert(decoded->matches[0].end_byte == 11);
-    assert(decoded->matches[1].start_byte == 12);
-    assert(decoded->matches[1].end_byte == 15);
+        "prefix\x1f" "Brown" "\x1f fox");
+    assert(decoded.size() == 1);
+    assert(decoded[0].text == "prefixBrown fox");
+    assert(decoded[0].matches.size() == 1);
+    assert(decoded[0].matches[0].start_byte == 6);
+    assert(decoded[0].matches[0].end_byte == 11);
+
+    const auto literal_markup = searchkernel::native_highlighting::decode(
+        "literal <b>stored text</b> \x1f" "br" "own" "\x1f");
+    assert(literal_markup.size() == 1);
+    assert(literal_markup[0].text == "literal <b>stored text</b> brown");
+    assert(literal_markup[0].matches.size() == 1);
+    assert(literal_markup[0].matches[0].start_byte == 27);
+    assert(literal_markup[0].matches[0].end_byte == 32);
+
+    const auto continued = searchkernel::native_highlighting::decode(
+        "\x1e" "alpha \x1f" "br" "own" "\x1f" "\x1e" "middle \x1f" "fox" "\x1f" "\x1e");
+    assert(continued.size() == 2);
+    assert(continued[0].text == "alpha brown");
+    assert(continued[0].matches.size() == 1);
+    assert(continued[0].matches[0].start_byte == 6);
+    assert(continued[0].matches[0].end_byte == 11);
+    assert(continued[1].text == "middle fox");
+    assert(continued[1].matches.size() == 1);
+    assert(continued[1].matches[0].start_byte == 7);
+    assert(continued[1].matches[0].end_byte == 10);
+
+    const auto unicode = searchkernel::native_highlighting::decode("\x1f" "caf\xC3\xA9" "\x1f");
+    assert(unicode.size() == 1);
+    assert(unicode[0].matches[0].start_byte == 0);
+    assert(unicode[0].matches[0].end_byte == 5);
 
     const auto annotated = searchkernel::native_highlighting::decode(
         "\xEF\xBF\xB9The\xEF\xBF\xBAthe\xEF\xBF\xBB quick");
-    assert(annotated);
-    assert(annotated->text == "The quick");
-    assert(annotated->matches.empty());
+    assert(annotated.size() == 1);
+    assert(annotated[0].text == "The quick");
+    assert(annotated[0].matches.empty());
 
     bool rejected = false;
     try {
-        (void)searchkernel::native_highlighting::decode("broken</b>");
+        (void)searchkernel::native_highlighting::decode("broken\x1f");
     } catch (const std::runtime_error &) {
         rejected = true;
     }

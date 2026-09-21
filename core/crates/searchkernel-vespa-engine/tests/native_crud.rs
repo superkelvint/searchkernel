@@ -897,6 +897,203 @@ fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
 }
 
 #[test]
+fn native_highlighting_exposes_juniper_query_shape_mismatch() {
+    let config = temporary_path("highlight-query-shape-config");
+    let data = temporary_path("highlight-query-shape-data");
+    let schema = Schema::new("highlight_query_shape")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile highlight query-shape config");
+    let engine = Engine::open(&data, &config).expect("open highlight query-shape engine");
+    engine
+        .put(
+            Document::new("highlight-query-shape-1")
+                .field("title", "brown fox")
+                .field("category", "brown"),
+        )
+        .expect("put highlight query-shape document");
+
+    let queries = [
+        (
+            "fuzzy",
+            Query::Fuzzy {
+                field: "title".to_owned(),
+                text: "brown".to_owned(),
+                max_edit_distance: 2,
+                prefix_lock_length: 0,
+                prefix_match: false,
+            },
+        ),
+        (
+            "regexp",
+            Query::Matches {
+                field: "category".to_owned(),
+                pattern: "brown".to_owned(),
+            },
+        ),
+        (
+            "prefix",
+            Query::Matches {
+                field: "category".to_owned(),
+                pattern: "brow.*".to_owned(),
+            },
+        ),
+        (
+            "substring",
+            Query::Matches {
+                field: "category".to_owned(),
+                pattern: ".*row.*".to_owned(),
+            },
+        ),
+        (
+            "suffix",
+            Query::Matches {
+                field: "category".to_owned(),
+                pattern: ".*own".to_owned(),
+            },
+        ),
+    ];
+    for (name, query) in queries {
+        let result = engine
+            .search(SearchRequest::new(query).highlight(["title"]))
+            .unwrap_or_else(|error| panic!("{name} query should match through Vespa: {error}"));
+        assert_eq!(
+            result.hits.len(),
+            1,
+            "{name} query should match through Vespa"
+        );
+        assert!(
+            result.hits[0].highlights[0].fragments[0].matches.is_empty(),
+            "{name} query currently reaches Juniper without a faithful highlight span"
+        );
+    }
+
+    engine.close().expect("close highlight query-shape engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_dynamic_teaser_highlighting_preserves_long_teaser_boundaries() {
+    let config = temporary_path("highlight-long-config");
+    let data = temporary_path("highlight-long-data");
+    let schema = Schema::new("highlight_long")
+        .field(Field::new("title", FieldType::Text).indexed().summary());
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile long highlight config");
+    fs::write(
+        config.join("juniperrc.cfg"),
+        "length 128\nmax_matches 3\nmin_length 0\nsurround_max 24\n",
+    )
+    .expect("write long highlight Juniper configuration");
+    let engine = Engine::open(&data, &config).expect("open long highlight engine");
+
+    let title = format!(
+        "brown {} literal <b>stored text</b> fox café",
+        "unrelated ".repeat(60)
+    );
+    engine
+        .put(Document::new("highlight-long-1").field("title", title))
+        .expect("put long highlight document");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::Or(vec![
+                Query::term("title", "brown"),
+                Query::term("title", "fox"),
+                Query::term("title", "café"),
+            ]))
+            .highlight(["title"]),
+        )
+        .expect("execute long highlight search");
+    let highlight = &result.hits[0].highlights[0];
+    assert!(
+        highlight.fragments.len() >= 2,
+        "expected teaser continuation, got {:#?}",
+        highlight.fragments
+    );
+    assert!(highlight.fragments.iter().all(|fragment| {
+        !fragment.text.contains('\u{1e}')
+            && fragment.matches.iter().all(|span| {
+                let start = span.start_byte as usize;
+                let end = span.end_byte as usize;
+                start < end
+                    && end <= fragment.text.len()
+                    && fragment.text.is_char_boundary(start)
+                    && fragment.text.is_char_boundary(end)
+            })
+    }));
+    assert!(highlight
+        .fragments
+        .iter()
+        .any(|fragment| fragment.text.contains("<b>stored text</b>")));
+    assert!(highlight.fragments.iter().any(|fragment| {
+        fragment
+            .matches
+            .iter()
+            .any(|span| &fragment.text[span.start_byte as usize..span.end_byte as usize] == "brown")
+    }));
+    assert!(highlight.fragments.iter().any(|fragment| {
+        fragment
+            .matches
+            .iter()
+            .any(|span| &fragment.text[span.start_byte as usize..span.end_byte as usize] == "café")
+    }));
+
+    engine.close().expect("close long highlight engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
+fn native_highlighting_array_text_reaches_native_shape_error() {
+    let config = temporary_path("highlight-array-config");
+    let data = temporary_path("highlight-array-data");
+    let schema = Schema::new("highlight_array").field(
+        Field::new("tags", FieldType::ArrayString)
+            .indexed()
+            .summary(),
+    );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile highlight array config");
+    let engine = Engine::open(&data, &config).expect("open highlight array engine");
+    engine
+        .put(Document::new("highlight-array-1").field(
+            "tags",
+            FieldValue::Array(ArrayValue::Strings(vec!["brown fox".to_owned()])),
+        ))
+        .expect("put highlight array document");
+
+    let error = engine
+        .search(
+            SearchRequest::new(Query::Matches {
+                field: "tags".to_owned(),
+                pattern: "brown.*".to_owned(),
+            })
+            .highlight(["tags"]),
+        )
+        .expect_err("array highlighting currently reaches the native shape error");
+    assert!(
+        error
+            .to_string()
+            .contains("indexed text or string attribute field"),
+        "unexpected native array highlight error: {error}"
+    );
+
+    engine.close().expect("close highlight array engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_attribute_exists_matches_keyword_and_boolean_vespa_semantics() {
     let config = temporary_path("exists-config");
     let data = temporary_path("exists-data");

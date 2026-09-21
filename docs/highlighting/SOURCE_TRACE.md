@@ -16,18 +16,31 @@ path, not a Search Kernel text post-processor:
   preserves Vespa linguistic annotations as U+FFF9/U+FFFA/U+FFFB
   interlinear-annotation sequences.
 - `searchsummary/src/vespa/searchsummary/docsummary/juniperproperties.cpp`
-  configures dynamic-teaser highlight markers as the control byte `0x1f`.
+  configures dynamic-teaser highlight markers as the control byte `0x1f` and
+  teaser continuation boundaries as `0x1e`.
 - `searchsummary/src/vespa/juniper/sumdesc.cpp` and
   `searchsummary/src/vespa/juniper/config.cpp` implement teaser selection and
   marker emission. `searchsummary/src/vespa/juniper/matchobject.cpp` handles
   matching through the linguistic annotations.
+- `searchsummary/src/vespa/searchsummary/docsummary/juniper_query_adapter.cpp`
+  turns ordinary terms, phrases, near/onear, and alternatives into Juniper
+  highlight terms. Its `VisitOther` path ignores fuzzy, regexp, suffix, same
+  element, weighted, and other specialized query items, so Search Kernel
+  rejects the explicit unsupported text-query shapes before execution when
+  highlighting is requested.
 
 Search Kernel generates one hidden `dynamicteaser` summary field per eligible
 stored/indexed text field. The native adapter asks `DocumentDB::getDocsums()`
 for those fields, sets the serialized query tree on the docsum request, and
 decodes only Vespa's returned markers/annotations into the canonical
-`Hit.highlights` spans. Ordinary projected fields remain ordinary `Hit.fields`.
+`Hit.highlights` spans. Continuation boundaries become separate fragments,
+literal HTML-like text remains literal, and spans are validated against UTF-8
+boundaries. The current executable field boundary is scalar stored/indexed
+text; multi-valued text is rejected by the adapter. Ordinary projected fields
+remain ordinary `Hit.fields`.
 
-The native unit test covers the marker/annotation decoder independently of the
-engine. The real-engine test covers query-tree propagation, `getDocsums()`,
-multiple fields, projection interaction, and Vespa stemming behavior.
+The native unit test covers marker, continuation, literal-markup, annotation,
+Unicode, and span validation independently of the engine. The real-engine test
+covers query-tree propagation, `getDocsums()`, multiple fields, projection
+interaction, Vespa stemming behavior, and the explicit unsupported query/field
+boundaries.

@@ -114,7 +114,7 @@ pub(crate) fn lower_search_options(
     } else {
         m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
     }
-    if let searchkernel_ir::HighlightingIr::Requested { fields } = request.highlighting() {
+    if let searchkernel_ir::HighlightingIr::Requested { fields, .. } = request.highlighting() {
         m_request = m_request.highlight(fields.iter().map(|field| field.as_str()));
     }
     Ok(m_request)
@@ -326,6 +326,7 @@ pub(crate) fn lower_sort(sort: &searchkernel_ir::SortIr) -> Result<SortField> {
 pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     grouping::lower_groupings(request.grouping())?;
     validate_ranking_inputs(request)?;
+    validate_highlighting_execution_boundary(request)?;
     validate_yql_controls(request)?;
     if !request.properties().is_empty() && !matches!(request.query(), QueryIr::Yql { .. }) {
         return Err(PortableError::unsupported(
@@ -386,6 +387,94 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
     }
     analysis_options(request.language())?;
     Ok(())
+}
+
+fn validate_highlighting_execution_boundary(request: &SearchRequestIr) -> Result<()> {
+    let searchkernel_ir::HighlightingIr::Requested {
+        fields,
+        multi_valued_fields,
+    } = request.highlighting()
+    else {
+        return Ok(());
+    };
+
+    if let Some(field) = fields.iter().find(|field| {
+        multi_valued_fields
+            .iter()
+            .any(|candidate| candidate == *field)
+    }) {
+        return Err(PortableError::unsupported(
+            "highlighting_multi_valued_field_not_supported",
+            Some("highlighting.fields"),
+            format!(
+                "Vespa dynamic-teaser highlighting currently supports only scalar stored indexed text; field '{}' is multi-valued",
+                field.as_str()
+            ),
+        ));
+    }
+
+    if let Some(shape) = unsupported_highlighting_query_shape(request.query()) {
+        return Err(PortableError::unsupported(
+            "highlighting_query_not_supported",
+            Some("query"),
+            format!(
+                "Vespa Juniper cannot faithfully expose highlight terms for the {shape} query shape"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn unsupported_highlighting_query_shape(query: &QueryIr) -> Option<&'static str> {
+    match query {
+        QueryIr::Typed(expression) => unsupported_highlighting_query_expression(expression),
+        _ => None,
+    }
+}
+
+fn unsupported_highlighting_query_expression(
+    expression: &searchkernel_ir::QueryExprIr,
+) -> Option<&'static str> {
+    use searchkernel_ir::QueryExprKindIr;
+
+    match &expression.kind {
+        QueryExprKindIr::Fuzzy { .. } => Some("fuzzy"),
+        QueryExprKindIr::Matches { .. } => Some("regexp/prefix/substring/suffix"),
+        QueryExprKindIr::In { .. } => Some("in"),
+        QueryExprKindIr::SameElement(children) => children
+            .iter()
+            .find_map(unsupported_highlighting_query_expression)
+            .or(Some("same_element")),
+        QueryExprKindIr::WeightedSet { .. } => Some("weighted_set"),
+        QueryExprKindIr::Wand { .. } => Some("wand"),
+        QueryExprKindIr::DotProduct { .. } => Some("dot_product"),
+        QueryExprKindIr::Contains { item, .. }
+        | QueryExprKindIr::Not(item)
+        | QueryExprKindIr::NonEmpty(item)
+        | QueryExprKindIr::Labeled { query: item, .. } => {
+            unsupported_highlighting_query_expression(item)
+        }
+        QueryExprKindIr::And(children)
+        | QueryExprKindIr::Or(children)
+        | QueryExprKindIr::Phrase(children)
+        | QueryExprKindIr::Near { children, .. }
+        | QueryExprKindIr::ONear { children, .. }
+        | QueryExprKindIr::Equiv(children)
+        | QueryExprKindIr::WeakAnd { children, .. } => children
+            .iter()
+            .find_map(unsupported_highlighting_query_expression),
+        QueryExprKindIr::Alternatives(values) => values
+            .iter()
+            .find_map(|value| unsupported_highlighting_query_expression(&value.query)),
+        QueryExprKindIr::Rank { matching, ranking } => {
+            unsupported_highlighting_query_expression(matching).or_else(|| {
+                ranking
+                    .iter()
+                    .find_map(unsupported_highlighting_query_expression)
+            })
+        }
+        _ => None,
+    }
 }
 
 fn validate_yql_controls(request: &SearchRequestIr) -> Result<()> {

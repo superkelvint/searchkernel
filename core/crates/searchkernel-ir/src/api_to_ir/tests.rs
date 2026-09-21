@@ -126,6 +126,140 @@ fn update_resolution_preserves_operations_create_and_condition() {
 }
 
 #[test]
+fn highlighting_resolution_preserves_multi_valued_field_shape_for_the_adapter() {
+    let tags = FieldIr::new(
+        FieldName::parse("tags").unwrap(),
+        DataTypeIr::Array(Box::new(DataTypeIr::Primitive(PrimitiveDataTypeIr::String))),
+        None,
+        FieldCapabilities::new(true, true, false, false, false),
+    );
+    let definition = IndexDefinitionIr::new(
+        None,
+        vec![tags],
+        Vec::new(),
+        RankingPolicyIr::DefaultRelevanceV1,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .unwrap();
+    let context = IndexContext {
+        document_fields: BTreeMap::from([("tags".to_owned(), 0)]),
+        query_fields: BTreeMap::from([("tags".to_owned(), QueryFieldRef::Document(0))]),
+        definition,
+    };
+    let request = resolve_search(
+        &context,
+        SearchIntent {
+            query: QuerySourceInput::Text("brown".to_owned()),
+            search_fields: Some(vec![SearchFieldInput {
+                field: "tags".to_owned(),
+                weight: None,
+            }]),
+            filters: Vec::new(),
+            textual_filters: Vec::new(),
+            sorts: Vec::new(),
+            grouping: Vec::new(),
+            ranking: None,
+            query_inputs: BTreeMap::new(),
+            rank_properties: BTreeMap::new(),
+            query_model: QueryModelInput::default(),
+            projection: None,
+            highlighting: Some(vec!["tags".to_owned()]),
+            presentation: PresentationInput::default(),
+            properties: BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
+            timeout: None,
+            limit: None,
+            offset: None,
+        },
+    )
+    .expect("multi-valued text remains semantically representable");
+    let HighlightingIr::Requested {
+        fields,
+        multi_valued_fields,
+    } = request.highlighting()
+    else {
+        panic!("highlighting should be requested");
+    };
+    assert_eq!(
+        fields.iter().map(FieldName::as_str).collect::<Vec<_>>(),
+        ["tags"]
+    );
+    assert_eq!(
+        multi_valued_fields
+            .iter()
+            .map(FieldName::as_str)
+            .collect::<Vec<_>>(),
+        ["tags"]
+    );
+}
+
+#[test]
+fn highlighting_query_shape_rejection_has_rust_flatbuffer_ir_parity() {
+    let schema = parity_schema();
+    let definition = resolve_rust_index_definition(schema).expect("resolve parity schema");
+    let schema_bytes = crate::index_definition_ir_to_api(&definition);
+    let api_schema = crate::__flatbuffers::root::<api::IndexDefinition>(&schema_bytes)
+        .expect("decode parity schema");
+    let flat_context = IndexContext::from_api(api_schema).expect("resolve FlatBuffers schema");
+    let rust_context = IndexContext::from_definition_ir(definition);
+
+    let query = QueryExprIr {
+        kind: QueryExprKindIr::Contains {
+            field: QueryFieldRefIr {
+                path: FieldName::parse("title").unwrap(),
+                element_index: None,
+            },
+            item: Box::new(QueryExprIr {
+                kind: QueryExprKindIr::Fuzzy {
+                    value: RequestValueIr::String("brown".to_owned()),
+                    max_edit_distance: 2,
+                    prefix_length: 0,
+                    prefix: false,
+                },
+                annotations: BTreeMap::new(),
+            }),
+        },
+        annotations: BTreeMap::new(),
+    };
+    let rust_request = resolve_search(
+        &rust_context,
+        SearchIntent {
+            query: QuerySourceInput::Typed(query),
+            search_fields: None,
+            filters: Vec::new(),
+            textual_filters: Vec::new(),
+            sorts: Vec::new(),
+            grouping: Vec::new(),
+            ranking: None,
+            query_inputs: BTreeMap::new(),
+            rank_properties: BTreeMap::new(),
+            query_model: QueryModelInput::default(),
+            projection: None,
+            highlighting: Some(vec!["title".to_owned()]),
+            presentation: PresentationInput::default(),
+            properties: BTreeMap::new(),
+            query_profile: None,
+            search_chain: None,
+            timeout: None,
+            limit: None,
+            offset: None,
+        },
+    )
+    .expect("fuzzy highlighting request is semantically representable");
+    let request_bytes = crate::search_request_ir_to_api(&rust_request);
+    let api_request = crate::__flatbuffers::root::<api::SearchRequest>(&request_bytes)
+        .expect("decode portable search request");
+    assert_eq!(
+        rust_request,
+        flat_context
+            .search_to_ir(api_request)
+            .expect("portable fuzzy highlighting request resolves")
+    );
+}
+
+#[test]
 fn update_resolution_enforces_target_value_and_arithmetic_policy() {
     fn detail_code(id: &str, operations: &[UpdateOperationInput]) -> String {
         resolve_update(&context(), id, operations, None, None)

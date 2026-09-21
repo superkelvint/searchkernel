@@ -1404,6 +1404,7 @@ pub(crate) fn resolve_highlighting(
         return Ok(HighlightingIr::Disabled);
     };
     let mut output = Vec::new();
+    let mut multi_valued_fields = Vec::new();
     let mut seen = BTreeSet::new();
     for (index, name) in fields.iter().enumerate() {
         let field =
@@ -1429,9 +1430,15 @@ pub(crate) fn resolve_highlighting(
                 "highlight fields must be unique",
             ));
         }
+        if field.cardinality() == FieldCardinality::Multi {
+            multi_valued_fields.push(field.name().clone());
+        }
         output.push(field.name().clone());
     }
-    Ok(HighlightingIr::Requested { fields: output })
+    Ok(HighlightingIr::Requested {
+        fields: output,
+        multi_valued_fields,
+    })
 }
 
 fn resolve_facet(input: &FacetInput) -> Result<GroupingRequestIr> {

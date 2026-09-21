@@ -60,13 +60,17 @@ std::string highlight_summary_name(std::string_view field) {
     return std::string(HIGHLIGHT_SUMMARY_PREFIX) + suffix;
 }
 
-std::optional<LocalHighlightFragmentState> decode_dynamic_teaser(std::string_view teaser) {
-    const auto decoded = searchkernel::native_highlighting::decode(teaser);
-    if (!decoded) return std::nullopt;
-    LocalHighlightFragmentState fragment;
-    fragment.text = decoded->text;
-    for (const auto span : decoded->matches) fragment.matches.push_back({span.start_byte, span.end_byte});
-    return fragment;
+std::vector<LocalHighlightFragmentState> decode_dynamic_teaser(std::string_view teaser) {
+    std::vector<LocalHighlightFragmentState> fragments;
+    for (const auto &decoded : searchkernel::native_highlighting::decode(teaser)) {
+        LocalHighlightFragmentState fragment;
+        fragment.text = decoded.text;
+        for (const auto span : decoded.matches) {
+            fragment.matches.push_back({span.start_byte, span.end_byte});
+        }
+        fragments.push_back(std::move(fragment));
+    }
+    return fragments;
 }
 
 
@@ -3860,12 +3864,9 @@ public:
                     if (value.type() != vespalib::slime::STRING::instance) {
                         throw std::runtime_error("unexpected dynamic teaser summary type");
                     }
-                    const auto fragment = decode_dynamic_teaser(value.asString().make_string());
-                    if (!fragment) continue;
-                    result.hits[index].highlights.push_back({
-                        field_name,
-                        {std::move(*fragment)},
-                    });
+                    auto fragments = decode_dynamic_teaser(value.asString().make_string());
+                    if (fragments.empty()) continue;
+                    result.hits[index].highlights.push_back({field_name, std::move(fragments)});
                 }
             }
             failpoint("search_after_docsums");

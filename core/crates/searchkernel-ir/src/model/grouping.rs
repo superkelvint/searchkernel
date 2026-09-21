@@ -128,5 +128,12 @@ pub enum GroupingFilterIr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HighlightingIr {
     Disabled,
-    Requested { fields: Vec<FieldName> },
+    Requested {
+        fields: Vec<FieldName>,
+        /// The adapter currently exposes Vespa's dynamic-teaser path only for
+        /// scalar stored text. Keep this resolved schema fact with the request
+        /// so both Rust and FlatBuffers callers receive the same explicit
+        /// backend-boundary rejection for multi-valued text.
+        multi_valued_fields: Vec<FieldName>,
+    },
 }
