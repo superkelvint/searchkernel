@@ -60,13 +60,20 @@ std::string highlight_summary_name(std::string_view field) {
     return std::string(HIGHLIGHT_SUMMARY_PREFIX) + suffix;
 }
 
-std::optional<LocalHighlightFragmentState> decode_dynamic_teaser(std::string_view teaser) {
+std::optional<std::vector<LocalHighlightFragmentState>> decode_dynamic_teaser(std::string_view teaser) {
     const auto decoded = searchkernel::native_highlighting::decode(teaser);
     if (!decoded) return std::nullopt;
-    LocalHighlightFragmentState fragment;
-    fragment.text = decoded->text;
-    for (const auto span : decoded->matches) fragment.matches.push_back({span.start_byte, span.end_byte});
-    return fragment;
+    std::vector<LocalHighlightFragmentState> fragments;
+    fragments.reserve(decoded->size());
+    for (const auto &source : *decoded) {
+        LocalHighlightFragmentState fragment;
+        fragment.text = source.text;
+        for (const auto span : source.matches) {
+            fragment.matches.push_back({span.start_byte, span.end_byte});
+        }
+        fragments.push_back(std::move(fragment));
+    }
+    return fragments;
 }
 
 
@@ -3864,7 +3871,7 @@ public:
                     if (!fragment) continue;
                     result.hits[index].highlights.push_back({
                         field_name,
-                        {std::move(*fragment)},
+                        std::move(*fragment),
                     });
                 }
             }
