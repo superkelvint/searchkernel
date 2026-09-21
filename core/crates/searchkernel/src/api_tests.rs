@@ -2898,6 +2898,53 @@ fn cloned_described_fields_round_trip_data_types_without_sidecar_state() {
 }
 
 #[test]
+fn described_field_exposes_exact_canonical_capabilities() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = canonical
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == "location")
+        .expect("canonical location field should exist")
+        .capabilities();
+    let actual = described
+        .fields()
+        .iter()
+        .find(|field| field.name() == "location")
+        .expect("described location field should exist")
+        .capabilities()
+        .expect("described fields should expose resolved capabilities");
+
+    assert_eq!(actual.stored(), expected.stored());
+    assert_eq!(actual.searchable(), expected.searchable());
+    assert_eq!(actual.filterable(), expected.filterable());
+    assert_eq!(actual.sortable(), expected.sortable());
+    assert_eq!(actual.groupable(), expected.groupable());
+}
+
+#[test]
+fn cloned_described_field_round_trips_capabilities_without_sidecar_state() {
+    let (canonical, described) = public_described_canonical_fixture();
+    let expected = canonical
+        .fields()
+        .iter()
+        .find(|field| field.name().as_str() == "location")
+        .expect("canonical location field should exist");
+    let mut field = described
+        .fields()
+        .iter()
+        .find(|field| field.name() == "location")
+        .expect("described location field should exist")
+        .clone();
+    field.canonical = None;
+
+    let resolved = definition_to_ir(&IndexDefinition::new().field(field))
+        .expect("public capabilities should resolve without sidecar state");
+    let actual = &resolved.fields()[0];
+
+    assert_eq!(actual.capabilities(), expected.capabilities());
+}
+
+#[test]
 fn describe_preserves_complete_field_configuration() {
     let (canonical, described) = described_canonical_fixture();
     assert_eq!(canonical.fields()[0], described.fields()[0]);
