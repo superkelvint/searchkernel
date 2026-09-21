@@ -67,16 +67,35 @@ Closure requires:
 - consistent Rust create persistence/provenance;
 - unsupported backend execution remaining explicit rather than silently lost.
 
-### 2. Canonical search resolution and typed-query boundary
+### 2. Canonical semantic resolution
 
-Keep exactly one semantic orchestration path for search intent.
+**Blocked after adversarial audit.**
 
-Rust facade ingress and FlatBuffers ingress may decode differently, but both
-must converge on the same unresolved representation and canonical resolver
-before resolved Search Kernel IR exists.
+The full SearchRequest path now genuinely converges through
+`SearchInput -> resolve_search()`; preserve that work.
 
-Close remaining typed-query boundary leaks and structural checks without
-redesigning the frozen typed-query model.
+Two remaining architecture gaps must close:
+
+1. **Schema/ranking ingress** — Rust and FlatBuffers still independently resolve
+   field defaults and construct canonical rank-profile/rank-phase IR. Equivalent
+   Position/Tensor defaults and absent/empty two-phase ranking state can diverge.
+2. **Legacy portable component bypasses** — direct query/ranking/sort conversion
+   methods can still apply semantics outside the full canonical resolver and
+   already return different canonical shapes/errors for the same portable
+   input.
+
+Closure requires:
+
+- one shared unresolved schema representation and resolver for Rust + portable
+  schema ingress;
+- full canonical parity for equivalent two-phase rank profiles and field
+  defaults;
+- removal/restriction/delegation of legacy component-level semantic bypasses;
+- a structural guard preventing a second production semantic path;
+- the existing shared typed-query normalizer/validator and real-engine ranking
+  behavior remaining green.
+
+Do not redesign the frozen typed-query model while fixing semantic ownership.
 
 ### 3. Phase 9 / additive / YQL / grouping acceptance
 
