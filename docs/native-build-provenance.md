@@ -67,11 +67,12 @@ publishes it. The Rust bindings still compile/link a probe that calls
 `sk_native_abi_version()` from the actual SDK library, including its bundled
 transitive runtime libraries.
 
-A probe failure never recompiles inside a published cache object. The resolver
-builds a complete replacement under the same deterministic key and swaps it in
-atomically. Native source changes cannot overwrite another worktree's object
-because `native.source` is part of the fingerprint and therefore selects a
-different key.
+A probe failure never recompiles inside a published cache object. Published
+objects are immutable: if an existing object fails validation or the link probe,
+the build stops with a cache-integrity error rather than allowing one worktree
+to rewrite an object consumed by other worktrees. Native source changes cannot
+overwrite another worktree's object because `native.source` is part of the
+fingerprint and therefore selects a different key.
 
 The configured Vespa CMake outputs themselves remain intentionally untracked.
 When the current worktree does not contain them, the resolver scans sibling Git
