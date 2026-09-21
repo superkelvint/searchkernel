@@ -1538,6 +1538,79 @@ pub(super) fn public_described_canonical_fixture(
     (canonical, described)
 }
 
+#[test]
+fn described_field_preserves_custom_analyzer_options() {
+    let mut options = searchkernel_ir::SchemaPropertiesIr::new();
+    options.insert(
+        "tokenizer".to_owned(),
+        searchkernel_ir::RequestValueIr::String("custom".to_owned()),
+    );
+    let mut field = searchkernel_ir::FieldIr::new(
+        searchkernel_ir::FieldName::parse("title").expect("valid field name"),
+        searchkernel_ir::DataTypeIr::Primitive(searchkernel_ir::PrimitiveDataTypeIr::String),
+        Some(searchkernel_ir::AnalyzerIr {
+            name: "custom".to_owned(),
+            version: 2,
+            options,
+        }),
+        searchkernel_ir::FieldCapabilities::new(true, true, false, false, false),
+    );
+    let mut matching_options = searchkernel_ir::SchemaPropertiesIr::new();
+    matching_options.insert(
+        "match-key".to_owned(),
+        searchkernel_ir::RequestValueIr::String("value".to_owned()),
+    );
+    field.set_matching_config(Some(searchkernel_ir::MatchingConfigIr {
+        mode: searchkernel_ir::MatchingModeIr::Text,
+        options: matching_options,
+    }));
+    let definition = searchkernel_ir::IndexDefinitionIr::new(
+        None,
+        vec![field],
+        Vec::new(),
+        searchkernel_ir::RankingPolicyIr::DefaultRelevanceV1,
+        searchkernel_ir::PrefixPolicy::Disabled,
+        searchkernel_ir::TypoPolicy::Disabled,
+    )
+    .expect("valid analyzer definition");
+
+    let index = index_from_canonical_ir(definition);
+    let described = index.describe().expect("describe should succeed");
+    let analyzer = described.fields()[0]
+        .analyzer_config()
+        .expect("described custom analyzer should remain publicly visible");
+    assert_eq!(analyzer.name, "custom");
+    assert_eq!(analyzer.version, 2);
+    assert_eq!(
+        analyzer.options.get("tokenizer"),
+        Some(&searchkernel_ir::RequestValueIr::String(
+            "custom".to_owned()
+        ))
+    );
+    assert_eq!(
+        described.fields()[0].matching(),
+        Some(&searchkernel_ir::MatchingConfigIr {
+            mode: searchkernel_ir::MatchingModeIr::Text,
+            options: [(
+                "match-key".to_owned(),
+                searchkernel_ir::RequestValueIr::String("value".to_owned()),
+            )]
+            .into_iter()
+            .collect(),
+        })
+    );
+
+    let mut public_field = described.fields()[0].clone();
+    public_field.canonical = None;
+    let reused = IndexDefinition::new().field(public_field);
+    let resolved = definition_to_ir(&reused).expect("reused field should resolve");
+    assert_eq!(resolved.fields()[0].analyzer(), Some(analyzer));
+    assert_eq!(
+        resolved.fields()[0].matching(),
+        described.fields()[0].matching()
+    );
+}
+
 fn context_for(definition: &IndexDefinition) -> Arc<IndexContext> {
     let (_probe_runtime, probe) =
         runtime_index(definition.clone(), Arc::new(RecordingBackend::new()));

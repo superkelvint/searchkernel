@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
 use crate::schema::{
-    Analyzer, ConstantDefinition, Field, IndexDefinition, RankProfile, SearchField,
+    analyzer_to_ir, Analyzer, ConstantDefinition, Field, IndexDefinition, RankProfile, SearchField,
 };
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
@@ -531,29 +531,32 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .fields
         .iter()
         .map(|field| {
-            let analyzer = field
-                .analyzer
-                .as_ref()
-                .map(|analyzer| {
-                    analyzer
-                        .options
-                        .iter()
-                        .map(|(key, value)| {
-                            searchkernel_ir::request_value_from_json(
-                                value,
-                                format!("fields.{}.analyzer.options.{key}", field.name),
-                            )
-                            .map(|value| (key.clone(), value))
-                            .map_err(Error::from_ir)
-                        })
-                        .collect::<Result<searchkernel_ir::SchemaPropertiesIr>>()
-                        .map(|options| searchkernel_ir::RustAnalyzerInput {
-                            name: analyzer.name.clone(),
-                            version: analyzer.version,
-                            options,
-                        })
+            let analyzer = if field.canonical.is_some() {
+                None
+            } else {
+                match (&field.analyzer_config, &field.analyzer) {
+                    // Described fields may expose Vespa analyzer metadata that
+                    // the Rust execution resolver cannot run. The public
+                    // projection is restored below after resolution, so use
+                    // the resolver's standard default while validating the
+                    // rest of the field shape.
+                    (Some(analyzer), _)
+                        if analyzer.name == "standard"
+                            && analyzer.version == 1
+                            && analyzer.options.is_empty() =>
+                    {
+                        Some(analyzer.clone())
+                    }
+                    (Some(_), _) => None,
+                    (None, Some(analyzer)) => Some(analyzer_to_ir(analyzer)?),
+                    (None, None) => None,
+                }
+                .map(|analyzer| searchkernel_ir::RustAnalyzerInput {
+                    name: analyzer.name,
+                    version: analyzer.version,
+                    options: analyzer.options,
                 })
-                .transpose()?;
+            };
             Ok(searchkernel_ir::RustFieldInput {
                 name: field.name.clone(),
                 kind: match &field.kind {
@@ -660,11 +663,20 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            field
+            let mut resolved = field
                 .canonical
                 .clone()
                 .or_else(|| resolved.fields().get(index).cloned())
-                .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))
+                .ok_or_else(|| Error::infrastructure("resolved definition lost a public field"))?;
+            if field.canonical.is_none() {
+                if let Some(analyzer) = &field.analyzer_config {
+                    resolved.set_analyzer(Some(analyzer.clone()));
+                }
+                if let Some(matching) = &field.matching_config {
+                    resolved.set_matching_config(Some(matching.clone()));
+                }
+            }
+            Ok(resolved)
         })
         .collect::<Result<Vec<_>>>()?;
     if !canonical_fields.is_empty() {
@@ -733,6 +745,8 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         if let searchkernel_ir::DataTypeIr::Tensor { type_spec } = field.data_type() {
             value = Field::tensor(field.name().as_str(), type_spec);
         }
+        value.analyzer_config = field.analyzer().cloned();
+        value.matching_config = field.matching().cloned();
         if matches!(
             field.cardinality(),
             searchkernel_ir::FieldCardinality::Multi

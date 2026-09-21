@@ -87,6 +87,8 @@ pub struct Field {
     pub(crate) sortable: Option<bool>,
     pub(crate) facetable: Option<bool>,
     pub(crate) analyzer: Option<Analyzer>,
+    pub(crate) analyzer_config: Option<searchkernel_ir::AnalyzerIr>,
+    pub(crate) matching_config: Option<searchkernel_ir::MatchingConfigIr>,
     pub(crate) distance_metric: Option<DistanceMetric>,
     pub(crate) hnsw: Option<HnswIndexConfig>,
     pub(crate) canonical: Option<searchkernel_ir::FieldIr>,
@@ -239,6 +241,8 @@ impl Field {
             sortable: None,
             facetable: None,
             analyzer: None,
+            analyzer_config: None,
+            matching_config: None,
             distance_metric: None,
             hnsw: None,
             canonical: None,
@@ -288,6 +292,8 @@ impl Field {
             sortable: None,
             facetable: None,
             analyzer: None,
+            analyzer_config: None,
+            matching_config: None,
             distance_metric: None,
             hnsw: None,
             canonical: None,
@@ -380,6 +386,7 @@ impl Field {
     /// Select the analyzer used for this field.
     pub fn analyzer(mut self, value: Analyzer) -> Self {
         let canonical = analyzer_to_ir(&value).ok();
+        self.analyzer_config = canonical.clone();
         self.analyzer = Some(value);
         if let Some(field) = self.canonical.as_mut() {
             if let Some(analyzer) = canonical {
@@ -387,6 +394,15 @@ impl Field {
             } else {
                 self.canonical = None;
             }
+        }
+        self
+    }
+
+    /// Set the canonical matching configuration for this field.
+    pub fn matching_config(mut self, value: searchkernel_ir::MatchingConfigIr) -> Self {
+        self.matching_config = Some(value.clone());
+        if let Some(field) = self.canonical.as_mut() {
+            field.set_matching_config(Some(value));
         }
         self
     }
@@ -448,6 +464,16 @@ impl Field {
     /// Return the configured analyzer, if any.
     pub fn configured_analyzer(&self) -> Option<Analyzer> {
         self.analyzer.clone()
+    }
+
+    /// Return the complete analyzer configuration, including arbitrary options.
+    pub fn analyzer_config(&self) -> Option<&searchkernel_ir::AnalyzerIr> {
+        self.analyzer_config.as_ref()
+    }
+
+    /// Return the complete matching configuration, including arbitrary options.
+    pub fn matching(&self) -> Option<&searchkernel_ir::MatchingConfigIr> {
+        self.matching_config.as_ref()
     }
 
     /// Return the complete canonical field state represented by this public
@@ -798,7 +824,7 @@ fn empty_rank_phase() -> searchkernel_ir::RankPhaseDefinitionIr {
     }
 }
 
-fn analyzer_to_ir(value: &Analyzer) -> Result<searchkernel_ir::AnalyzerIr> {
+pub(crate) fn analyzer_to_ir(value: &Analyzer) -> Result<searchkernel_ir::AnalyzerIr> {
     let options = value
         .options
         .iter()
