@@ -65,6 +65,52 @@ The implementation agent may claim that a pull request is ready for review. It
 does not independently declare its own work VERIFIED or CLOSED. Final review
 and merge provide that disposition.
 
+## Issue sizing and decomposition
+
+Actionable issues must be atomic and reviewable.
+
+The default unit of work is:
+
+```text
+one issue
+    ↓
+one clear outcome
+    ↓
+one coherent implementation
+    ↓
+one focused pull request
+```
+
+An actionable issue should normally:
+
+- describe one bug, one narrowly scoped feature, one refactor, or one verifier
+  repair;
+- have a bounded acceptance surface that a reviewer can understand without
+  reconstructing a project plan;
+- be small enough that its pull request can be reviewed as one coherent change;
+- avoid bundling independent fixes merely because they touch the same subsystem.
+
+If an issue contains independently reviewable outcomes, split it into separate
+issues **before implementation begins**. Examples that normally require a split:
+
+- several unrelated bugs;
+- a verifier repair plus a production behavior change;
+- multiple semantic bypasses that can be fixed and tested independently;
+- a broad milestone or subsystem cleanup containing several distinct changes;
+- implementation plus unrelated cleanup or modernization.
+
+Prefer several small sequential or parallel pull requests over one large pull
+request that is difficult to reason about.
+
+Tracking/umbrella issues are allowed for larger initiatives, but they are not
+implementation tasks. A tracker must link its atomic child issues. Agents must
+claim and implement the child issue, not the umbrella issue.
+
+One pull request should normally close one actionable issue. A pull request may
+close multiple issues only when they are inseparable manifestations of the same
+change and reviewing them separately would create artificial or broken
+intermediate states.
+
 
 ## Repository map
 
@@ -123,8 +169,11 @@ Before editing:
 
 1. Identify the GitHub issue that defines the work. For non-trivial work, create
    one first if none exists and GitHub access is available.
-2. Read the issue, its comments, and linked pull requests. Confirm it is not
-   already claimed, then claim it on the issue before changing code.
+2. Read the issue, its comments, and linked pull requests. Confirm it is an
+   atomic actionable issue rather than an umbrella. If it contains multiple
+   independently reviewable outcomes, split them into child issues before
+   implementation. Confirm the chosen issue is not already claimed, then claim
+   it before changing code.
 3. Start from the current `main` branch and create a dedicated task
    branch/worktree. Prefer a branch name that includes the issue number, for
    example `agent/123-fix-grouping-order`.
@@ -646,6 +695,45 @@ that agent to do so.
 
 The CTO/reviewer owns the final disposition. Merge the pull request only when
 the evidence supports it.
+
+### Rejection and requested changes
+
+A rejection must be actionable. Do not merely say that an implementation is
+wrong, incomplete, suspicious, or not trusted.
+
+When rejecting an issue implementation or requesting changes on its pull
+request, the CTO/reviewer must state:
+
+1. **What is wrong** — the concrete defect, missing requirement, regression,
+   architectural violation, or unsupported claim.
+2. **Evidence** — the failing test, diff location, runtime behavior, contract
+   text, Vespa source behavior, or other evidence that demonstrates the
+   problem.
+3. **Expected behavior** — what the implementation must do instead.
+4. **How to fix it** — a concrete remediation direction specific enough that an
+   implementation agent can act without guessing the reviewer's intent.
+5. **How to verify the repair** — the regression, focused test, acceptance
+   command, or observable evidence required before re-review.
+
+Good review feedback narrows the repair. It may identify likely files, semantic
+boundaries, or test cases when that materially helps the agent make the correct
+change.
+
+Do not leave feedback such as:
+
+```text
+this is wrong
+needs more work
+I don't trust this implementation
+fix the tests
+```
+
+without explaining the defect and repair path.
+
+If the required repair is itself independently reviewable and materially larger
+than the original atomic issue, create a follow-up issue rather than silently
+expanding the current issue into a large project. Keep the original issue open
+when its acceptance criteria are not yet satisfied.
 
 After merge:
 
