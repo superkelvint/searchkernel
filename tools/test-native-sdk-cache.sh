@@ -56,7 +56,7 @@ run_resolver() {
         SEARCHKERNEL_BUILD_ENV=cache-regression \
         SK_NATIVE_TARGET=x86_64-unknown-linux-gnu \
         SK_NATIVE_CACHE_BUILDER="$root/tools/fake-sdk-builder.sh" \
-            "$root/tools/resolve-native-sdk.sh" ensure
+            bash "$root/tools/resolve-native-sdk.sh" ensure
     )
 }
 
