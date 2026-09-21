@@ -576,6 +576,52 @@ fn rust_rank_profile_resolution_matches_portable_resolution() {
 }
 
 #[test]
+fn rust_rank_profile_rerank_count_without_second_phase_matches_portable_resolution() {
+    let rust_definition = resolve_rust_index_definition_with_profiles(
+        RustIndexDefinitionInput {
+            name: Some("ranked".to_owned()),
+            fields: vec![RustFieldInput {
+                name: "title".to_owned(),
+                kind: RustFieldKind::Text,
+                multi: false,
+                stored: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                facetable: None,
+                analyzer: None,
+                distance_metric: None,
+                hnsw: None,
+            }],
+            default_search_fields: None,
+        },
+        vec![RustRankProfileInput {
+            name: "custom".to_owned(),
+            first_phase: None,
+            second_phase: None,
+            rerank_count: Some(7),
+            match_features: Vec::new(),
+            query_inputs: Vec::new(),
+        }],
+    )
+    .expect("Rust rank profile should resolve");
+    let bytes = crate::index_definition_ir_to_api(&rust_definition);
+    let portable_definition = crate::index_definition_to_ir(
+        crate::__flatbuffers::root::<api::IndexDefinition>(&bytes)
+            .expect("encoded Rust definition should parse"),
+    )
+    .expect("portable rank profile should resolve");
+
+    assert_eq!(rust_definition, portable_definition);
+    let phase = portable_definition.rank_profiles()[0]
+        .second_phase
+        .as_ref()
+        .expect("rerank count should retain second-phase presence");
+    assert_eq!(phase.expression, None);
+    assert_eq!(phase.rerank_count, Some(7));
+}
+
+#[test]
 fn rust_rank_profile_validation_matches_portable_errors() {
     let schema = || RustIndexDefinitionInput {
         name: Some("ranked".to_owned()),
