@@ -7,8 +7,8 @@ BUILD_ENV=${SEARCHKERNEL_BUILD_ENV:-host}
 MODE=${1:-ensure}
 
 case "$MODE" in
-    ensure|path|rebuild) ;;
-    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path|rebuild]" >&2; exit 2 ;;
+    ensure|path) ;;
+    *) echo "usage: tools/resolve-native-sdk.sh [ensure|path]" >&2; exit 2 ;;
 esac
 
 [[ -n "$TARGET" ]] || { echo "could not determine Rust target; set SK_NATIVE_TARGET" >&2; exit 1; }
@@ -86,7 +86,7 @@ valid_object() {
     grep -q "^sha256=$DIGEST$" "$OBJECT/native-build-fingerprint-v2.txt"
 }
 
-if [[ "$MODE" != rebuild ]] && valid_object; then
+if valid_object; then
     printf '%s\n' "$OBJECT"
     exit 0
 fi
@@ -101,7 +101,7 @@ acquire_lock() {
         fi
         sleep 1
         attempts=$((attempts + 1))
-        if [[ "$MODE" != rebuild ]] && valid_object; then
+        if valid_object; then
             printf '%s\n' "$OBJECT"
             exit 0
         fi
@@ -116,9 +116,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [[ "$MODE" != rebuild ]] && valid_object; then
+if valid_object; then
     printf '%s\n' "$OBJECT"
     exit 0
+fi
+
+if [[ -e "$OBJECT" ]]; then
+    echo "immutable native SDK cache object '$OBJECT' exists but failed validation" >&2
+    echo "refusing to replace a published object; remove it explicitly after investigating cache integrity" >&2
+    exit 1
 fi
 
 rm -rf "$TMP" "$BUILD"
@@ -140,13 +146,5 @@ grep -q "^sha256=$DIGEST$" "$TMP/native-build-fingerprint-v2.txt" || {
 # replacement in a private staging directory and swaps it into place atomically;
 # no process ever builds directly inside a published object.
 chmod -R a-w "$TMP"
-if [[ -e "$OBJECT" ]]; then
-    OLD=$CACHE_ROOT/objects/.old-$DIGEST-$$
-    mv "$OBJECT" "$OLD"
-    mv "$TMP" "$OBJECT"
-    rm -rf "$OLD"
-else
-    mv "$TMP" "$OBJECT"
-fi
-
+mv "$TMP" "$OBJECT"
 printf '%s\n' "$OBJECT"
