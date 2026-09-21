@@ -4,7 +4,8 @@ use crate::error::{Error, Result};
 use crate::patch::{to_resolver_operations, Patch};
 use crate::result;
 use crate::schema::{
-    analyzer_to_ir, Analyzer, ConstantDefinition, Field, IndexDefinition, RankProfile, SearchField,
+    analyzer_to_ir, Analyzer, ConstantDefinition, Field, FieldCapabilities, IndexDefinition,
+    RankProfile, SearchField,
 };
 use crate::search::{
     to_resolver_input as search_to_resolver_input, Facet, FacetSort, Ranking, SearchBuilder, Sort,
@@ -673,6 +674,15 @@ fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::Ind
             resolved.set_index_config(field.index_config.clone());
             resolved.set_attribute_config(field.attribute_config.clone());
             resolved.set_data_type(field.data_type.clone());
+            if let Some(capabilities) = field.capabilities {
+                resolved.set_capabilities(
+                    capabilities.stored(),
+                    capabilities.searchable(),
+                    capabilities.filterable(),
+                    capabilities.sortable(),
+                    capabilities.groupable(),
+                );
+            }
             if field.canonical.is_none() {
                 if let Some(analyzer) = &field.analyzer_config {
                     resolved.set_analyzer(Some(analyzer.clone()));
@@ -762,14 +772,12 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         }
         let capabilities = field.capabilities();
         value = value
-            .stored(
-                capabilities.stored()
-                    && !matches!(field.data_type(), searchkernel_ir::DataTypeIr::Position),
-            )
+            .stored(capabilities.stored())
             .searchable(capabilities.searchable())
             .filterable(capabilities.filterable())
             .sortable(capabilities.sortable())
             .facetable(capabilities.facetable());
+        value.capabilities = Some(FieldCapabilities::from_ir(capabilities));
         if field.analyzer().is_some_and(|analyzer| {
             analyzer.name == "standard" && analyzer.version == 1 && analyzer.options.is_empty()
         }) {
