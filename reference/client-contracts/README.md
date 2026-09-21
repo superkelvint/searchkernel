@@ -1,0 +1,58 @@
+# Client capability contracts
+
+This directory defines the small amount of human-maintained metadata needed to
+turn existing executable tests into a cross-client capability matrix.
+
+The canonical capability IDs and global implementation stages remain in
+`docs/capabilities.json`. This registry does **not** duplicate those facts.
+
+## Evidence annotations
+
+Positive client support is declared beside the executable evidence that proves
+it:
+
+```text
+# SKC: result.highlighting/basic kinds=ergonomic,e2e runtime=grpc
+// SKC: search.pagination/basic kinds=ergonomic runtime=shared
+```
+
+The fields mean:
+
+- `capability/scenario` — stable contract identity;
+- `ergonomic` — the handwritten high-level facade exposes the behavior;
+- `conformance` — shared semantic/contract fixtures exercise the behavior;
+- `e2e` — the behavior reaches the real product/backend path;
+- `runtime` — the environment for that evidence.
+
+Kinds are independent. A low-level gRPC E2E can prove `e2e` without proving
+that the ergonomic facade exposes the feature.
+
+Every capability gets a default `basic` scenario. The catalog adds explicit
+sub-scenarios when a capability needs finer acceptance tracking. Highlighting,
+for example, separately tracks basic highlighting, literal HTML preservation,
+and Juniper continuation fragments.
+
+## Human-maintained exceptions
+
+Do not add positive support flags to the catalog. Positive claims come from
+test evidence.
+
+The catalog may contain `[[overrides]]` entries only for intentional
+`blocked` or `not-applicable` runtime cases. Blocked entries must link a
+GitHub issue.
+
+## Generated reports
+
+Run:
+
+```bash
+python3 tools/check-client-contracts.py --write
+```
+
+This generates:
+
+- `docs/CLIENT_CAPABILITIES.md` — human-readable matrix and evidence links;
+- `docs/client-capabilities.json` — machine-readable report.
+
+`./dev check-fast` verifies that annotations are valid and the generated
+reports are current.
