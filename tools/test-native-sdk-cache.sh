@@ -3,7 +3,13 @@ set -euo pipefail
 
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/searchkernel-sdk-cache.XXXXXX")
-trap 'rm -rf "$fixture"' EXIT
+cleanup_fixture() {
+    # Published cache objects are deliberately non-writable. Restore owner
+    # write permission only inside this disposable fixture before removal.
+    chmod -R u+w "$fixture" 2>/dev/null || true
+    rm -rf "$fixture"
+}
+trap cleanup_fixture EXIT
 
 repo="$fixture/repo"
 mkdir -p "$repo/tools" "$repo/core/native/vespa" "$repo/upstream/vespa"
