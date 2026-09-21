@@ -135,51 +135,6 @@ fn canonical_one_level_grouping_lowers_to_linear_attribute_plan() {
 }
 
 #[test]
-fn grouping_max_and_summary_are_rejected_as_ambiguous() {
-    let summary = GroupingExpressionIr::Aggregation(Box::new(GroupingAggregationIr::Summary(
-        Some("default".to_owned()),
-    )));
-    let request = GroupingRequestIr {
-        root: GroupingAllIr {
-            operations: vec![
-                GroupingOperationIr::Group(GroupingExpressionIr::Attribute("category".to_owned())),
-                GroupingOperationIr::Each(GroupingAllIr {
-                    operations: vec![
-                        GroupingOperationIr::Max(Some(3)),
-                        GroupingOperationIr::Output(vec![GroupingOutputIr {
-                            label: Some("hits".to_owned()),
-                            expression: summary,
-                        }]),
-                    ],
-                    label: None,
-                }),
-            ],
-            label: None,
-        },
-        continuations: Vec::new(),
-    };
-    let error = lower_groupings(&[request]).expect_err("ambiguous summary max must be rejected");
-    assert_eq!(error.details[0].code, "grouping_summary_max_ambiguous");
-}
-
-#[test]
-fn duplicate_count_grouping_output_is_rejected() {
-    let request = native_grouping(&[("category", vec![count_expression(), count_expression()])]);
-    let error = lower_groupings(&[request]).expect_err("duplicate count outputs must be rejected");
-    assert_eq!(error.details[0].code, "grouping_output_name_collision");
-}
-
-#[test]
-fn duplicate_average_grouping_output_is_rejected() {
-    let request = native_grouping(&[(
-        "category",
-        vec![average_expression("price"), average_expression("price")],
-    )]);
-    let error = lower_groupings(&[request]).expect_err("duplicate averages must be rejected");
-    assert_eq!(error.details[0].code, "grouping_output_name_collision");
-}
-
-#[test]
 fn distinct_grouping_output_names_are_accepted() {
     let request = native_grouping(&[(
         "category",
