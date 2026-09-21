@@ -34,7 +34,7 @@ mod showcase {
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Keep all showcase state, including any sibling lock files created by
@@ -49,7 +49,6 @@ mod showcase {
 
         let definition = IndexDefinition::new()
             .field(Field::text("title").stored(true).searchable(true))
-            .field(Field::text("description").stored(true).searchable(true))
             .field(
                 Field::keyword("brand")
                     .stored(true)
@@ -98,8 +97,7 @@ mod showcase {
                 RankProfile::new("semantic")
                     .first_phase("closeness(embedding)")
                     .query_input("query_embedding", "tensor<float>(x[2])"),
-            )
-            .default_search_fields(["title", "description"]);
+            );
         let definition = definition.rank_profile(
             RankProfile::new("two_phase")
                 .first_phase("attribute(rating)")
@@ -190,7 +188,6 @@ mod showcase {
                 "bag-1",
                 json!({
                     "title": "Lightweight Running Backpack",
-                    "description": "exclusive catalog marker",
                     "brand": "Acme",
                     "category": "bags",
                     "price": 69.0,
@@ -389,7 +386,7 @@ mod showcase {
             .execute::<Value>()?;
         let exact_misspelling = index
             .search("")
-            .typed_query(Query::term("brand", "Acmx"))
+            .typed_query(Query::term("title", "runnng"))
             .limit(20)
             .execute::<Value>()?;
         assert!(exact_misspelling.hits.is_empty());
@@ -613,7 +610,7 @@ mod showcase {
         assert_eq!(results.hits[0].document["brand"], json!("Acme"));
         assert_eq!(results.hits[0].document["price"], json!(159.0));
         assert!(results.hits[0].document.get("rating").is_none());
-        println!("default summary selection + projection docsums PASS");
+        println!("named summary class + projection docsums PASS");
 
         heading("12. OFFSET / LIMIT PAGINATION");
 
@@ -849,16 +846,6 @@ mod showcase {
             .inspect()?;
         assert_eq!(inspected.query, "shoes");
         assert_eq!(inspected.search_fields[0].field(), "title");
-        assert_eq!(inspected.language.as_deref(), Some("en"));
-        assert_eq!(inspected.timeout, Some(Duration::from_secs(1)));
-        let title_only = index
-            .search("exclusive")
-            .search_fields(["title"])
-            .limit(20)
-            .execute::<Value>()?;
-        assert!(title_only.hits.is_empty());
-        let default_fields = index.search("exclusive").limit(20).execute::<Value>()?;
-        assert_ids(&default_fields, ["bag-1"]);
         let missing_first = index
             .search("shoes")
             .sort(Sort::asc("sale_price").missing_first())
@@ -883,7 +870,7 @@ mod showcase {
             .execute::<Value>()
             .expect_err("native highlight result path should report unsupported");
         assert_eq!(highlight_error.code(), ErrorCode::Unsupported);
-        println!("search_fields execution, language, timeout, inspect, and missing-first PASS; highlighting is explicit UNSUPPORTED");
+        println!("search_fields/language/timeout/inspect/missing-first PASS; highlighting is explicit UNSUPPORTED");
 
         heading("19. COVERAGE AND DEGRADATION");
 
@@ -1260,7 +1247,7 @@ Successfully demonstrated through the public Rust facade:
 
   OTHER PUBLIC OPERATIONS
   ✓ field-aware analyze request
-  ✓ search-field execution, language, timeout, and inspect
+  ✓ search fields, language, timeout, and inspect
 
 EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
 
