@@ -2796,6 +2796,31 @@ fn described_public_values_expose_the_complete_canonical_schema_state() {
         described.rank_profiles()[2].canonical_definition(),
         Some(&canonical.rank_profiles()[2])
     );
+
+    let scores = described
+        .fields()
+        .iter()
+        .find(|field| field.name() == "scores")
+        .expect("scores field should be described");
+    assert!(matches!(
+        scores
+            .canonical_definition()
+            .expect("scores should expose canonical state")
+            .data_type(),
+        searchkernel_ir::DataTypeIr::Map { .. }
+    ));
+    assert_eq!(
+        scores
+            .canonical_definition()
+            .and_then(|field| field.index()),
+        canonical.fields()[10].index()
+    );
+    assert_eq!(
+        scores
+            .canonical_definition()
+            .and_then(|field| field.attribute()),
+        canonical.fields()[10].attribute()
+    );
 }
 
 #[test]
