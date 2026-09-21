@@ -122,8 +122,10 @@ from SearchKernel.V2.UpdateOperation import UpdateOperationT
 from SearchKernel.V2.UpdateOperationKind import UpdateOperationKind
 from SearchKernel.V2.UpdateRequest import UpdateRequestT
 from SearchKernel.V2.ResultNodeKind import ResultNodeKind
+from SearchKernel.V2.Hit import HitT
+from SearchKernel.V2.ResultGroup import ResultGroupT
 
-from .client import Tensor, _python_value, value
+from .client import Tensor, _decode_value_entries, _python_value, value
 
 
 class _FieldSpec:
@@ -920,21 +922,11 @@ class UpdateBuilder:
 
 
 def _value_entries(entries) -> dict[str, Any]:
-    return {
-        entry.key: _python_value(entry.value)
-        for entry in (entries or [])
-        if entry is not None and entry.key is not None
-    }
+    return _decode_value_entries(entries)
 
 
 def _feature_entries(entries) -> dict[str, Any]:
-    converted = _value_entries(entries)
-    for name, item in converted.items():
-        if isinstance(item, list) and all(
-            isinstance(cell, int) and 0 <= cell <= 255 for cell in item
-        ):
-            converted[name] = bytes(item)
-    return converted
+    return _value_entries(entries)
 
 
 def _optional_value(item):
@@ -1043,7 +1035,7 @@ class Hit(dict):
 
 class ResultGroup(dict):
     def __init__(self, node):
-        super().__init__({entry.key: _python_value(entry.value) for entry in (node.fields or [])})
+        super().__init__(_value_entries(node.fields))
         self.id = node.id
         self.source = node.source
         self.types = [
@@ -1062,7 +1054,18 @@ class ResultGroup(dict):
 
 
 def _node(node):
-    return ResultGroup(node.node) if node.nodeType == ResultNodeKind.ResultGroup else Hit(node.node)
+    if node is None or getattr(node, "node", None) is None:
+        raise ValueError("missing ResultNode payload")
+    node_type = getattr(node, "nodeType", ResultNodeKind.NONE)
+    if node_type == ResultNodeKind.ResultGroup:
+        if not isinstance(node.node, ResultGroupT):
+            raise ValueError("mismatched ResultNode union: ResultGroup payload")
+        return ResultGroup(node.node)
+    if node_type == ResultNodeKind.Hit:
+        if not isinstance(node.node, HitT):
+            raise ValueError("mismatched ResultNode union: Hit payload")
+        return Hit(node.node)
+    raise ValueError(f"unknown ResultNode union kind: {node_type}")
 
 
 class SearchResults:
