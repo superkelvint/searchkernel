@@ -2781,19 +2781,19 @@ fn describe_preserves_default_search_fields_and_weights() {
 fn described_public_values_expose_the_complete_canonical_schema_state() {
     let (canonical, described) = public_described_canonical_fixture();
 
-    assert_eq!(described.canonical_definition(), Some(&canonical));
+    assert_eq!(described.schema.as_ref(), Some(&canonical));
     assert_eq!(
-        described.fields()[0].canonical_definition(),
+        described.fields()[0].schema.as_ref(),
         Some(&canonical.fields()[0])
     );
     assert_eq!(
-        described.rank_profiles()[0].canonical_definition(),
+        described.rank_profiles()[0].schema.as_ref(),
         Some(&canonical.rank_profiles()[0])
     );
     assert_eq!(described.rank_profiles()[2].first_phase, None);
     assert_eq!(described.rank_profiles()[2].second_phase, None);
     assert_eq!(
-        described.rank_profiles()[2].canonical_definition(),
+        described.rank_profiles()[2].schema.as_ref(),
         Some(&canonical.rank_profiles()[2])
     );
 
@@ -2804,23 +2804,57 @@ fn described_public_values_expose_the_complete_canonical_schema_state() {
         .expect("scores field should be described");
     assert!(matches!(
         scores
-            .canonical_definition()
+            .schema
+            .as_ref()
             .expect("scores should expose canonical state")
             .data_type(),
         searchkernel_ir::DataTypeIr::Map { .. }
     ));
     assert_eq!(
-        scores
-            .canonical_definition()
-            .and_then(|field| field.index()),
+        scores.schema.as_ref().and_then(|field| field.index()),
         canonical.fields()[10].index()
     );
     assert_eq!(
-        scores
-            .canonical_definition()
-            .and_then(|field| field.attribute()),
+        scores.schema.as_ref().and_then(|field| field.attribute()),
         canonical.fields()[10].attribute()
     );
+}
+
+#[test]
+fn described_public_schema_members_are_the_lossless_representation() {
+    let (canonical, described) = public_described_canonical_fixture();
+
+    assert_eq!(described.schema.as_ref(), Some(&canonical));
+    assert_eq!(
+        described.fields()[0].schema.as_ref(),
+        Some(&canonical.fields()[0])
+    );
+    assert_eq!(
+        described.rank_profiles()[0].schema.as_ref(),
+        Some(&canonical.rank_profiles()[0])
+    );
+}
+
+#[test]
+fn public_schema_member_is_authoritative_for_direct_schema_mutation() {
+    let (canonical, mut described) = public_described_canonical_fixture();
+    let mut schema = described
+        .schema
+        .clone()
+        .expect("described definition should expose its schema");
+    schema.set_name(Some(
+        searchkernel_ir::IndexName::parse("renamed_from_public_schema")
+            .expect("test name should be valid"),
+    ));
+    described.schema = Some(schema);
+
+    let resolved = definition_to_ir(&described).expect("public schema should resolve");
+    assert_eq!(
+        resolved.name().map(|name| name.as_str()),
+        Some("renamed_from_public_schema")
+    );
+    assert_eq!(resolved.fields(), canonical.fields());
+    assert_eq!(resolved.rank_profiles(), canonical.rank_profiles());
 }
 
 #[test]
@@ -2838,7 +2872,8 @@ fn mutating_a_described_field_preserves_untouched_canonical_state() {
     let (canonical, described) = public_described_canonical_fixture();
     let modified = described.fields()[0].clone().stored(false);
     let public = modified
-        .canonical_definition()
+        .schema
+        .as_ref()
         .expect("mutated described field should retain canonical state")
         .clone();
 
@@ -2876,7 +2911,8 @@ fn mutating_a_described_rank_profile_preserves_untouched_canonical_state() {
         .first_phase("new_rank_expression")
         .match_feature("new_feature");
     let public = modified
-        .canonical_definition()
+        .schema
+        .as_ref()
         .expect("mutated described profile should retain canonical state")
         .clone();
 
