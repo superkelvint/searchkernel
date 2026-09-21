@@ -287,7 +287,7 @@ export class SearchResults {
     this.facets = facets;
   }
 
-  /** Used by the facet convenience to preserve an explicit caller-supplied facet name. */
+  /** Backward-compatible manual facet alias helper; facet() names are now canonical request labels. */
   renameFacet(source: string, target: string): void {
     if (source === target || !(source in this.facets)) return;
     this.facets[target] = this.facets[source]!;

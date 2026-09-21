@@ -42,6 +42,7 @@ from SearchKernel.V2.ErrorCode import ErrorCode  # noqa: E402
 from SearchKernel.V2.GroupingBinaryOperator import GroupingBinaryOperator  # noqa: E402
 from SearchKernel.V2.GroupingFilterExprKind import GroupingFilterExprKind  # noqa: E402
 from SearchKernel.V2.GroupingOperationKind import GroupingOperationKind  # noqa: E402
+from SearchKernel.V2.GroupingExpressionKind import GroupingExpressionKind  # noqa: E402
 from SearchKernel.V2.MatchingMode import MatchingMode  # noqa: E402
 from SearchKernel.V2.PrimitiveDataTypeKind import PrimitiveDataTypeKind  # noqa: E402
 from SearchKernel.V2.QueryExprKind import QueryExprKind  # noqa: E402
@@ -163,6 +164,79 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
             [entry.key for entry in index.client.request.properties],
             ["alpha", "zeta"],
         )
+
+    def test_facet_preserves_zero_limit_and_canonical_name(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        SearchBuilder(index, None).facet(
+            "brand", name="brands", limit=0
+        ).execute()
+        root = index.client.request.grouping[0].source.root
+        each = root.operations[1].operation
+
+        self.assertEqual(each.operations[0].operation.value.value, 0)
+        self.assertEqual(root.label, "brands")
+
+    def test_facet_sort_modes_and_multiple_names_are_canonical(self):
+        class EmptyResult:
+            root = None
+            totalHits = None
+
+        class CaptureClient:
+            def __init__(self):
+                self.request = None
+
+            def search(self, request):
+                self.request = request
+                return EmptyResult()
+
+        class Index:
+            def __init__(self):
+                self.client = CaptureClient()
+
+        index = Index()
+        builder = SearchBuilder(index, None)
+        sorts = ["count_desc", "count_asc", "value_asc", "value_desc"]
+        expected_kinds = [
+            GroupingExpressionKind.GroupingUnaryExpression,
+            GroupingExpressionKind.GroupingAggregationExpression,
+            GroupingExpressionKind.GroupingAttributeExpression,
+            GroupingExpressionKind.GroupingUnaryExpression,
+        ]
+        for position, sort in enumerate(sorts):
+            builder.facet(
+                "brand" if position % 2 == 0 else "category",
+                name=f"facet-{position}",
+                limit=position,
+                sort=sort,
+            )
+        builder.execute()
+
+        self.assertEqual(len(index.client.request.grouping), 4)
+        for position, grouping in enumerate(index.client.request.grouping):
+            root = grouping.source.root
+            each = root.operations[1].operation
+            self.assertEqual(root.label, f"facet-{position}")
+            self.assertEqual(each.operations[0].operation.value.value, position)
+            self.assertEqual(
+                each.operations[1].operation.expressions[0].expression.exprType,
+                expected_kinds[position],
+            )
 
     def test_ergonomic_summary_and_fields_share_one_presentation(self):
         class EmptyResult:
