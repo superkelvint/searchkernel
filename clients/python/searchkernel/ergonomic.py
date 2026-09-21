@@ -1079,21 +1079,11 @@ class SearchResults:
         self.root = _node(result.root) if result.root is not None else None
         children = self.root.children if isinstance(self.root, ResultGroup) else []
         self.hits = [child for child in children if isinstance(child, Hit)]
-        self.groups = []
-        for child in children:
-            if (
-                isinstance(child, ResultGroup)
-                and child.value is None
-                and child.label is None
-                and child.groups
-            ):
-                # The canonical result keeps a grouping node beneath the
-                # search root. The ergonomic grouping projection exposes its
-                # buckets directly while retaining the canonical tree on
-                # `root`.
-                self.groups.extend(child.groups)
-            elif isinstance(child, ResultGroup):
-                self.groups.append(child)
+        # Convenience groups are exactly the direct ResultGroup children of
+        # the canonical root. Do not infer wrapper semantics from response
+        # shape; request-derived conveniences (such as facets) are projected
+        # separately by the builder that knows the request.
+        self.groups = [child for child in children if isinstance(child, ResultGroup)]
         self.total_hits = result.totalHits.value if result.totalHits is not None else 0
         self.total_hits_relation = result.totalHits.relation if result.totalHits is not None else "unknown"
         coverage = getattr(result, "coverage", None)
