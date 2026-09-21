@@ -352,8 +352,8 @@ fn native_product_path_has_current_search_and_facet_parity() {
         json!({"title": "Wireless Keyboard", "brand": "Charlie"})
     );
 
-    // These capabilities remain visible and fail at the adapter with their
-    // stable details instead of being ignored.
+    // Unsupported controls still fail at the adapter with stable details
+    // instead of being ignored. Highlighting is a real docsums capability.
     assert_search_detail(
         index
             .search("wireless")
@@ -367,13 +367,23 @@ fn native_product_path_has_current_search_and_facet_parity() {
         .execute::<serde_json::Value>()
         .expect("native BM25 ranking");
     assert_eq!(bm25.total_hits.value, 6);
-    assert_search_detail(
-        index
-            .search("wireless")
-            .highlight(["title"])
-            .execute::<serde_json::Value>(),
-        "highlighting_native_result_unavailable",
-    );
+    let highlighted = index
+        .search("wireless")
+        .summary("default")
+        .projection(["brand"])
+        .highlight(["title"])
+        .execute::<serde_json::Value>()
+        .expect("native Vespa highlighting");
+    assert!(highlighted.hits.iter().any(|hit| {
+        hit.document == json!({"brand": "Charlie"})
+            && hit.highlights.iter().any(|highlight| {
+                highlight.field == "title"
+                    && highlight.fragments[0]
+                        .matches
+                        .first()
+                        .is_some_and(|span| span.start_byte == 0 && span.end_byte == 8)
+            })
+    }));
     assert_search_detail(
         index
             .search("wireless")

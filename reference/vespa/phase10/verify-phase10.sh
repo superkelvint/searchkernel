@@ -47,6 +47,7 @@ for marker in \
   'nested grouping keys, count, and average values PASS' \
   'valid degraded result retains hits, coverage, and degradation reason PASS' \
   'default summary selection + projection docsums PASS' \
+  'search_fields/language/timeout/inspect/missing-first and Vespa highlighting PASS' \
   'ranking configuration, grouping source data, tensor persistence, and ANN after reopen PASS'; do
   rg -F "$marker" "$LOG" >/dev/null ||
     fail_verification "canonical Phase 10 E2E did not report required coverage: $marker"

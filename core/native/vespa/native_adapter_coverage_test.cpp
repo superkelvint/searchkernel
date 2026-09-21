@@ -1,4 +1,5 @@
 #include "searchkernel_vespa.h"
+#include "highlighting.h"
 #ifdef SK_ENABLE_HARDENING_FAILPOINTS
 #include "searchkernel_vespa_test.h"
 #endif
@@ -14,6 +15,32 @@
 #include <vector>
 
 namespace {
+
+void highlighting_decoder_unit() {
+    const auto decoded = searchkernel::native_highlighting::decode(
+        "prefix<b>Brown</b> \x1f" "fox" "\x1f");
+    assert(decoded);
+    assert(decoded->text == "prefixBrown fox");
+    assert(decoded->matches.size() == 2);
+    assert(decoded->matches[0].start_byte == 6);
+    assert(decoded->matches[0].end_byte == 11);
+    assert(decoded->matches[1].start_byte == 12);
+    assert(decoded->matches[1].end_byte == 15);
+
+    const auto annotated = searchkernel::native_highlighting::decode(
+        "\xEF\xBF\xB9The\xEF\xBF\xBAthe\xEF\xBF\xBB quick");
+    assert(annotated);
+    assert(annotated->text == "The quick");
+    assert(annotated->matches.empty());
+
+    bool rejected = false;
+    try {
+        (void)searchkernel::native_highlighting::decode("broken</b>");
+    } catch (const std::runtime_error &) {
+        rejected = true;
+    }
+    assert(rejected);
+}
 
 constexpr uint32_t ERROR_CAPACITY = SK_ERROR_MESSAGE_CAPACITY;
 constexpr const char *TITLE_FIELD = "tit" "le";
@@ -808,6 +835,11 @@ void exercise_native_engine(const std::filesystem::path &data,
 } // namespace
 
 int main(int argc, char **argv) {
+    highlighting_decoder_unit();
+    if (std::getenv("SK_NATIVE_HIGHLIGHTING_UNIT_ONLY") != nullptr) {
+        std::cout << "native highlighting decoder unit passed\n";
+        return 0;
+    }
     if (argc != 3) {
         std::cerr << "usage: native_adapter_coverage_test DATA_DIR CONFIG_DIR\n";
         return 2;

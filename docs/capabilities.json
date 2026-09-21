@@ -455,18 +455,27 @@
       "area": "result",
       "represented": true,
       "semantic": true,
-      "executable": false,
+      "executable": true,
       "ergonomic": {
         "rust": true,
-        "python": false
+        "python": true
       },
       "verified_by": [
         "api/searchkernel.fbs",
+        "core/crates/searchkernel-ir/src/model/result.rs",
         "core/crates/searchkernel-ir-adapter/src/search/mod.rs",
-        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs"
+        "core/crates/searchkernel-ir-adapter/src/backend.rs",
+        "core/native/vespa/engine.cc",
+        "core/native/vespa/abi.cc",
+        "core/native/vespa/highlighting.h",
+        "core/crates/searchkernel-vespa-engine/tests/native_crud.rs",
+        "core/crates/searchkernel/examples/try_searchkernel_client_api_e2e.rs",
+        "clients/python/searchkernel/ergonomic.py",
+        "clients/python/tests/test_grpc_e2e.py",
+        "clients/python/examples/try_searchkernel_client_api_e2e.py"
       ],
       "limitations": [
-        "The Rust SearchBuilder exposes highlight(), but the real Vespa-backed path deliberately returns highlighting_native_result_unavailable because generated fragments/spans do not cross the native result seam. Python has no high-level highlight method yet."
+        "This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities."
       ]
     },
     {

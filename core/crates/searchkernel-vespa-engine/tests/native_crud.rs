@@ -777,6 +777,126 @@ fn native_local_search_and_attribute_operations_round_trip() {
 }
 
 #[test]
+fn native_dynamic_teaser_highlighting_uses_vespa_docsums() {
+    let config = temporary_path("highlight-config");
+    let data = temporary_path("highlight-data");
+    let schema = Schema::new("typea")
+        .field(Field::new("title", FieldType::Text).indexed().summary())
+        .field(
+            Field::new("description", FieldType::Text)
+                .indexed()
+                .summary(),
+        )
+        .field(
+            Field::new("category", FieldType::String)
+                .attribute()
+                .summary(),
+        );
+    ConfigCompiler
+        .compile_to(&schema, &config)
+        .expect("compile highlight config");
+    let engine = Engine::open(&data, &config).expect("open highlight engine");
+    engine
+        .put(
+            Document::new("highlight-1")
+                .field("title", "The quick brown fox jumps over the lazy dog")
+                .field("description", "A brown fox appears near the quiet river")
+                .field("category", "animal"),
+        )
+        .expect("put highlight document");
+
+    let result = engine
+        .search(
+            SearchRequest::new(Query::And(vec![
+                Query::term("title", "brown"),
+                Query::term("title", "fox"),
+                Query::term("description", "fox"),
+            ]))
+            .summary_class("default")
+            .fields(["category"])
+            .highlight(["title", "description"]),
+        )
+        .expect("execute highlight search");
+    assert_eq!(result.hits.len(), 1);
+    assert_eq!(
+        result.hits[0].fields["category"],
+        FieldValue::Scalar(ScalarValue::String("animal".to_owned()))
+    );
+    assert_eq!(result.hits[0].fields.len(), 1);
+    assert_eq!(result.hits[0].highlights.len(), 2);
+    assert_eq!(result.hits[0].highlights[0].field, "title");
+    assert_eq!(
+        result.hits[0].highlights[0].fragments[0].text,
+        "The quick brown fox jumps over the lazy dog"
+    );
+    assert_eq!(
+        result.hits[0].highlights[0].fragments[0].matches,
+        vec![
+            searchkernel_vespa_engine::HighlightSpan {
+                start_byte: 10,
+                end_byte: 15,
+            },
+            searchkernel_vespa_engine::HighlightSpan {
+                start_byte: 16,
+                end_byte: 19,
+            },
+        ]
+    );
+    assert_eq!(result.hits[0].highlights[1].field, "description");
+    assert_eq!(
+        result.hits[0].highlights[1].fragments[0].matches,
+        vec![searchkernel_vespa_engine::HighlightSpan {
+            start_byte: 8,
+            end_byte: 11,
+        }]
+    );
+    assert!(result.hits[0].highlights.iter().all(|highlight| {
+        highlight.fragments.iter().any(|fragment| {
+            !fragment.matches.is_empty()
+                && fragment
+                    .matches
+                    .iter()
+                    .all(|span| span.end_byte as usize <= fragment.text.len())
+        })
+    }));
+
+    let empty_projection = engine
+        .search(
+            SearchRequest::new(Query::term("title", "brown"))
+                .summary(SummaryRequest::None)
+                .highlight(["title"]),
+        )
+        .expect("highlight with empty projection should execute");
+    assert_eq!(empty_projection.hits.len(), 1);
+    assert!(empty_projection.hits[0].fields.is_empty());
+    assert_eq!(empty_projection.hits[0].highlights.len(), 1);
+
+    let no_matching_field = engine
+        .search(SearchRequest::new(Query::term("title", "quick")).highlight(["description"]))
+        .expect("highlight without a matching requested field");
+    assert_eq!(no_matching_field.hits.len(), 1);
+    assert_eq!(no_matching_field.hits[0].highlights.len(), 1);
+    assert_eq!(
+        no_matching_field.hits[0].highlights[0].fragments[0].text,
+        "A brown fox appears near the quiet river"
+    );
+    assert!(no_matching_field.hits[0].highlights[0].fragments[0]
+        .matches
+        .is_empty());
+
+    assert!(engine
+        .search(SearchRequest::new(Query::term("title", "brown")).highlight(["category"]))
+        .is_err());
+    assert!(engine
+        .search(SearchRequest::new(Query::term("title", "brown")).highlight(["title", "title"]))
+        .is_err());
+
+    engine.close().expect("close highlight engine");
+    let _ = fs::remove_dir_all(config);
+    let _ = fs::remove_dir_all(data);
+}
+
+#[test]
 fn native_attribute_exists_matches_keyword_and_boolean_vespa_semantics() {
     let config = temporary_path("exists-config");
     let data = temporary_path("exists-data");

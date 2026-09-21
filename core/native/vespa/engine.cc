@@ -2,6 +2,8 @@
 // This file is included by abi.cc so the private adapter remains one native
 // boundary while responsibilities stay physically searchable by subsystem.
 
+#include "highlighting.h"
+
 
 constexpr size_t MAX_DOCUMENT_ID_BYTES = 4096;
 constexpr size_t MAX_SCHEMA_IDENTIFIER_BYTES = 256;
@@ -12,12 +14,34 @@ constexpr size_t MAX_TOTAL_TEXT_TERM_BYTES = 64 * 1024 * 1024;
 constexpr size_t MAX_TEXT_TERMS = 65536;
 constexpr size_t MAX_TEXT_OCCURRENCES = 65536;
 constexpr uint32_t MAX_SEARCH_LIMIT = 1'000'000;
+constexpr std::string_view HIGHLIGHT_SUMMARY_PREFIX = "__searchkernel_highlight_";
 constexpr std::array<std::string_view, 18> RESERVED_FIELD_NAMES = {
     "index",          "index_url",      "summary",       "attribute", "select_input",
     "host",           "documentid",     "position",      "split_foreach", "tokenize",
     "if",             "else",           "switch",        "case",      "sddocname",
     "relevancy",      "rankfeatures",  "summaryfeatures"};
 constexpr std::string_view RESERVED_RANK_PROPERTY = "vespa.matching.numthreadspersearch";
+
+std::string highlight_summary_name(std::string_view field) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (const auto byte : field) {
+        hash ^= static_cast<uint8_t>(byte);
+        hash *= 0x100000001b3ULL;
+    }
+    char suffix[17];
+    std::snprintf(suffix, sizeof(suffix), "%016llx",
+                  static_cast<unsigned long long>(hash));
+    return std::string(HIGHLIGHT_SUMMARY_PREFIX) + suffix;
+}
+
+std::optional<LocalHighlightFragmentState> decode_dynamic_teaser(std::string_view teaser) {
+    const auto decoded = searchkernel::native_highlighting::decode(teaser);
+    if (!decoded) return std::nullopt;
+    LocalHighlightFragmentState fragment;
+    fragment.text = decoded->text;
+    for (const auto span : decoded->matches) fragment.matches.push_back({span.start_byte, span.end_byte});
+    return fragment;
+}
 
 
 bool is_identifier(std::string_view value) noexcept {
@@ -52,6 +76,9 @@ void validate_manifest_field_name(const std::string &value) {
     if (std::find(RESERVED_FIELD_NAMES.begin(), RESERVED_FIELD_NAMES.end(), value) !=
         RESERVED_FIELD_NAMES.end()) {
         throw std::invalid_argument("generated schema field name is reserved");
+    }
+    if (value.starts_with(HIGHLIGHT_SUMMARY_PREFIX)) {
+        throw std::invalid_argument("generated schema field name uses a reserved highlight prefix");
     }
 }
 
@@ -751,6 +778,14 @@ class EmbeddedEngine {
         if (field.type != "text" || !field.index) {
             throw std::invalid_argument("text operation requires an indexed text field: " + name);
         }
+    }
+
+    const ManifestField &require_highlight_field(const std::string &name) const {
+        const auto &field = require_manifest_field(name);
+        if (field.type != "text" || !field.index || !field.summary) {
+            throw std::invalid_argument("field is not a stored searchable text field: " + name);
+        }
+        return field;
     }
 
     const ManifestField &require_attribute_field(const std::string &name,
@@ -2015,6 +2050,16 @@ class EmbeddedEngine {
                 config_value(values, prefix + "type") != manifest_summary_type(field.type) ||
                 config_value(values, prefix + "command") != command ||
                 config_value(values, prefix + "source") != source) {
+                throw std::invalid_argument("inconsistent generated configuration");
+            }
+        }
+        for (const auto &field : manifest.fields) {
+            if (field.type != "text" || !field.index || !field.summary) continue;
+            const auto prefix = "classes[0].fields[" + std::to_string(index++) + "].";
+            if (config_value(values, prefix + "name") != highlight_summary_name(field.name) ||
+                config_value(values, prefix + "type") != "longstring" ||
+                config_value(values, prefix + "command") != "dynamicteaser" ||
+                config_value(values, prefix + "source") != field.name) {
                 throw std::invalid_argument("inconsistent generated configuration");
             }
         }
@@ -3679,6 +3724,9 @@ public:
                 }
             }
         }
+        for (const auto &field_name : options.highlight_fields) {
+            require_highlight_field(field_name);
+        }
         if (!options.groupings.empty()) {
             set_grouping_spec(request, options.groupings);
         }
@@ -3700,7 +3748,7 @@ public:
         for (size_t row = 0; row < reply->hits.size(); ++row) {
             const auto &hit = reply->hits[row];
             if (auto id = id_for_gid(hit.gid)) {
-                result.hits.push_back({std::move(*id), hit.metric, {}});
+                result.hits.push_back({std::move(*id), hit.metric, {}, {}});
                 live_hit_rows.push_back(row);
             }
         }
@@ -3715,7 +3763,8 @@ public:
                 result.match_feature_values.push_back({value});
             }
         }
-        if (options.summary_kind != SK_SUMMARY_NONE && !result.hits.empty()) {
+        if ((options.summary_kind != SK_SUMMARY_NONE || !options.highlight_fields.empty()) &&
+            !result.hits.empty()) {
             const auto remaining = remaining_search_timeout(
                 timeout, std::chrono::steady_clock::now() - search_start);
             if (remaining <= 0ms) {
@@ -3725,11 +3774,27 @@ public:
             docsum_request.setTimeout(remaining);
             docsum_request.resultClassName = options.summary_class.value_or("default");
             docsum_request.ranking = options.rank_profile;
+            // Dynamic teaser fields consume the query tree from the docsum
+            // request, not from the preceding match request. Keep this
+            // explicit because DocumentDB::getDocsums() does not inherit the
+            // match request's serialized query tree.
+            docsum_request.setSerializedQueryTree(query.serialized_query_tree());
             for (const size_t row : live_hit_rows) {
                 docsum_request.hits.emplace_back(reply->hits[row].gid);
             }
+            std::vector<std::string> docsum_fields;
             if (options.summary_kind == SK_SUMMARY_FIELDS) {
-                docsum_request.setFields(options.summary_fields);
+                docsum_fields = options.summary_fields;
+            } else if (options.summary_kind == SK_SUMMARY_DEFAULT) {
+                for (const auto &field : _manifest.fields) {
+                    if (field.summary) docsum_fields.push_back(field.name);
+                }
+            }
+            for (const auto &field_name : options.highlight_fields) {
+                docsum_fields.push_back(highlight_summary_name(field_name));
+            }
+            if (!docsum_fields.empty()) {
+                docsum_request.setFields(docsum_fields);
             }
             auto docsum = _db->getDocsums(docsum_request);
             if (!docsum || !docsum->hasResult()) throw std::runtime_error("Vespa docsum returned no result");
@@ -3747,6 +3812,19 @@ public:
                         const auto &value = doc[vespalib::Memory(field.name)];
                         if (value.valid()) result.hits[index].summary.emplace_back(field.name, summary_value(field.name, value));
                     }
+                }
+                for (const auto &field_name : options.highlight_fields) {
+                    const auto &value = doc[vespalib::Memory(highlight_summary_name(field_name))];
+                    if (!value.valid()) continue;
+                    if (value.type() != vespalib::slime::STRING::instance) {
+                        throw std::runtime_error("unexpected dynamic teaser summary type");
+                    }
+                    const auto fragment = decode_dynamic_teaser(value.asString().make_string());
+                    if (!fragment) continue;
+                    result.hits[index].highlights.push_back({
+                        field_name,
+                        {std::move(*fragment)},
+                    });
                 }
             }
             failpoint("search_after_docsums");

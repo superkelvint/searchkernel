@@ -636,6 +636,9 @@ SK_API int32_t sk_local_search_request_add_sort(
 SK_API int32_t sk_local_search_request_add_summary_field(
     sk_local_search_request *request, const char *field,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_local_search_request_add_highlight_field(
+    sk_local_search_request *request, const char *field,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_local_search_request_set_summary_class(
     sk_local_search_request *request, const char *name,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
@@ -696,6 +699,27 @@ SK_API int32_t sk_feature_value_data(const sk_feature_value *value,
                                      const uint8_t **out_data, size_t *out_size,
                                      uint8_t *out_error,
                                      uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_local_search_result_highlight_count(
+    const sk_local_search_result *result, uint32_t hit_index) SK_NOEXCEPT;
+SK_API int32_t sk_local_search_result_highlight_field(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, const char **out_field, uint32_t *out_length,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_local_search_result_highlight_fragment_count(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index) SK_NOEXCEPT;
+SK_API int32_t sk_local_search_result_highlight_fragment_text(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, const char **out_text,
+    uint32_t *out_length, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_local_search_result_highlight_match_count(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index) SK_NOEXCEPT;
+SK_API int32_t sk_local_search_result_highlight_match(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, uint32_t match_index,
+    uint32_t *out_start_byte, uint32_t *out_end_byte,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 
 /* Generic M-layer search request/result. The older local request remains a
    frozen milestone surface; new generic consumers use these handles. */
@@ -714,6 +738,9 @@ SK_API int32_t sk_generic_search_request_set_sort_spec(
     sk_generic_search_request *request, const char *sort_spec,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_add_summary_field(
+    sk_generic_search_request *request, const char *field,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_request_add_highlight_field(
     sk_generic_search_request *request, const char *field,
     uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_request_set_summary_class(
@@ -776,6 +803,27 @@ SK_API int32_t sk_generic_search_result_summary_value(
     uint32_t *out_string_length, int64_t *out_integer, double *out_float,
     uint8_t *out_boolean, uint8_t *out_error,
     uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_highlight_count(
+    const sk_generic_search_result *result, uint32_t hit_index) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_highlight_field(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, const char **out_field, uint32_t *out_length,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_highlight_fragment_count(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_highlight_fragment_text(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, const char **out_text,
+    uint32_t *out_length, uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
+SK_API uint32_t sk_generic_search_result_highlight_match_count(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index) SK_NOEXCEPT;
+SK_API int32_t sk_generic_search_result_highlight_match(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, uint32_t match_index,
+    uint32_t *out_start_byte, uint32_t *out_end_byte,
+    uint8_t *out_error, uint32_t out_error_capacity) SK_NOEXCEPT;
 SK_API uint32_t sk_generic_search_result_match_feature_count(
     const sk_generic_search_result *result) SK_NOEXCEPT;
 SK_API int32_t sk_generic_search_result_match_feature_name(

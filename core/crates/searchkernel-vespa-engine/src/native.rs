@@ -7,7 +7,8 @@ use crate::linguistics::{DocumentAnalysis, QueryAnalysis};
 use crate::query::Value;
 use crate::search::{
     FacetGroup, FacetResult, GroupingBinaryOperator, GroupingOutput, GroupingResult,
-    GroupingResultValue, Hit, MatchFeatureValue, SearchResult, TotalHitsRelation,
+    GroupingResultValue, HighlightFragment, HighlightResult, HighlightSpan, Hit, MatchFeatureValue,
+    SearchResult, TotalHitsRelation,
 };
 use crate::tensor::TensorValue;
 use searchkernel_vespa_bindings as sys;
@@ -2191,6 +2192,118 @@ pub(crate) fn read_generic_search_result(
             };
             summary.insert(name, value);
         }
+        let highlight_count = unsafe {
+            sys::sk_generic_search_result_highlight_count(result.0.as_ptr(), index as u32)
+        } as usize;
+        let mut highlights = Vec::with_capacity(highlight_count);
+        for highlight_index in 0..highlight_count {
+            let mut field = ptr::null();
+            let mut field_length = 0;
+            let mut error = NativeError::new();
+            check(
+                unsafe {
+                    sys::sk_generic_search_result_highlight_field(
+                        result.0.as_ptr(),
+                        index as u32,
+                        highlight_index as u32,
+                        &mut field,
+                        &mut field_length,
+                        error.as_mut_ptr(),
+                        error.capacity(),
+                    )
+                },
+                &error,
+            )?;
+            if field.is_null() && field_length != 0 {
+                return Err(Error::message("native highlight returned null field"));
+            }
+            let field_bytes = if field_length == 0 {
+                &[][..]
+            } else {
+                unsafe { std::slice::from_raw_parts(field.cast::<u8>(), field_length as usize) }
+            };
+            let field = String::from_utf8(field_bytes.to_vec())
+                .map_err(|_| Error::message("native highlight field is invalid UTF-8"))?;
+            let fragment_count = unsafe {
+                sys::sk_generic_search_result_highlight_fragment_count(
+                    result.0.as_ptr(),
+                    index as u32,
+                    highlight_index as u32,
+                )
+            } as usize;
+            let mut fragments = Vec::with_capacity(fragment_count);
+            for fragment_index in 0..fragment_count {
+                let mut text = ptr::null();
+                let mut text_length = 0;
+                let mut error = NativeError::new();
+                check(
+                    unsafe {
+                        sys::sk_generic_search_result_highlight_fragment_text(
+                            result.0.as_ptr(),
+                            index as u32,
+                            highlight_index as u32,
+                            fragment_index as u32,
+                            &mut text,
+                            &mut text_length,
+                            error.as_mut_ptr(),
+                            error.capacity(),
+                        )
+                    },
+                    &error,
+                )?;
+                if text.is_null() && text_length != 0 {
+                    return Err(Error::message(
+                        "native highlight returned null fragment text",
+                    ));
+                }
+                let text_bytes = if text_length == 0 {
+                    &[][..]
+                } else {
+                    unsafe { std::slice::from_raw_parts(text.cast::<u8>(), text_length as usize) }
+                };
+                let text = String::from_utf8(text_bytes.to_vec())
+                    .map_err(|_| Error::message("native highlight text is invalid UTF-8"))?;
+                let match_count = unsafe {
+                    sys::sk_generic_search_result_highlight_match_count(
+                        result.0.as_ptr(),
+                        index as u32,
+                        highlight_index as u32,
+                        fragment_index as u32,
+                    )
+                } as usize;
+                let mut matches = Vec::with_capacity(match_count);
+                for match_index in 0..match_count {
+                    let mut start_byte = 0;
+                    let mut end_byte = 0;
+                    let mut error = NativeError::new();
+                    check(
+                        unsafe {
+                            sys::sk_generic_search_result_highlight_match(
+                                result.0.as_ptr(),
+                                index as u32,
+                                highlight_index as u32,
+                                fragment_index as u32,
+                                match_index as u32,
+                                &mut start_byte,
+                                &mut end_byte,
+                                error.as_mut_ptr(),
+                                error.capacity(),
+                            )
+                        },
+                        &error,
+                    )?;
+                    if start_byte > end_byte || end_byte as usize > text.len() {
+                        return Err(Error::message("native highlight span is out of bounds"));
+                    }
+                    matches.push(HighlightSpan {
+                        start_byte,
+                        end_byte,
+                    });
+                }
+                fragments.push(HighlightFragment { text, matches });
+            }
+            highlights.push(HighlightResult { field, fragments });
+        }
         let mut match_features = BTreeMap::new();
         for (feature_index, feature_name) in match_feature_names.iter().enumerate() {
             let mut native_value: *const sys::sk_feature_value = ptr::null();
@@ -2258,6 +2371,7 @@ pub(crate) fn read_generic_search_result(
             document_id,
             score,
             match_features,
+            highlights,
             fields: summary
                 .into_iter()
                 .map(|(name, value)| (name, FieldValue::Scalar(value)))

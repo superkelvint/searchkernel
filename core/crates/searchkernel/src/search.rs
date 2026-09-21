@@ -767,11 +767,13 @@ mod tests {
             .index()
             .search("foo")
             .summary("default")
-            .projection(["title"]);
+            .projection(["title"])
+            .highlight(["title"]);
 
         let input = to_resolver_input(&request).expect("public query should resolve to input");
         assert_eq!(input.presentation.summary.as_deref(), Some("default"));
         assert_eq!(input.projection, Some(vec!["title".to_owned()]));
+        assert_eq!(input.highlighting, Some(vec!["title".to_owned()]));
     }
 
     #[test]

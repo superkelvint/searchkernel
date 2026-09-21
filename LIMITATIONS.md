@@ -122,7 +122,7 @@ approximated.
 
 ### Highlighting (`result.highlighting`)
 
-- The Rust SearchBuilder exposes highlight(), but the real Vespa-backed path deliberately returns highlighting_native_result_unavailable because generated fragments/spans do not cross the native result seam. Python has no high-level highlight method yet.
+- This pass supports Vespa-generated dynamic teaser output for stored, indexed text fields. Custom document-summary definitions, arbitrary Juniper rendering controls, grouped highlights, and rich docsum values remain separate capabilities.
 
 ### Dense tensor document readback (`result.tensor_document_readback`)
 

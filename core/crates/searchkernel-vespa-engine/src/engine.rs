@@ -886,6 +886,19 @@ impl Engine {
                 check(status, &error)?;
             }
         }
+        for field in &request.highlight_fields {
+            let field = cstring(field)?;
+            let mut error = NativeError::new();
+            let status = unsafe {
+                sys::sk_generic_search_request_add_highlight_field(
+                    native_request.0.as_ptr(),
+                    field.as_ptr(),
+                    error.as_mut_ptr(),
+                    error.capacity(),
+                )
+            };
+            check(status, &error)?;
+        }
         for (name, value) in &request.query_features {
             let name = cstring(name)?;
             let mut error = NativeError::new();

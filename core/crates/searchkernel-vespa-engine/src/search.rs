@@ -61,6 +61,24 @@ pub enum SummaryRequest {
     Fields(Vec<String>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HighlightSpan {
+    pub start_byte: u32,
+    pub end_byte: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HighlightFragment {
+    pub text: String,
+    pub matches: Vec<HighlightSpan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HighlightResult {
+    pub field: String,
+    pub fragments: Vec<HighlightFragment>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The document source selected by a search request.
 pub enum Source {
@@ -118,6 +136,7 @@ pub struct Hit {
     pub document_id: String,
     pub score: f64,
     pub fields: BTreeMap<String, FieldValue>,
+    pub highlights: Vec<HighlightResult>,
     pub match_features: BTreeMap<String, MatchFeatureValue>,
 }
 
@@ -170,6 +189,7 @@ pub struct SearchRequest {
     /// independent of `summary`, which controls whether docsums are fetched
     /// and which fields are requested from the selected class.
     pub summary_class: Option<String>,
+    pub highlight_fields: Vec<String>,
     pub language: LinguisticsOptions,
     pub facets: Vec<FacetRequest>,
     pub timeout: Duration,
@@ -190,6 +210,7 @@ impl SearchRequest {
             raw_sort_spec: None,
             summary: SummaryRequest::None,
             summary_class: None,
+            highlight_fields: Vec::new(),
             language: LinguisticsOptions::default(),
             facets: Vec::new(),
             timeout: Duration::from_secs(60),
@@ -296,6 +317,15 @@ impl SearchRequest {
 
     pub fn summary_class(mut self, name: impl Into<String>) -> Self {
         self.summary_class = Some(name.into());
+        self
+    }
+
+    pub fn highlight<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.highlight_fields = fields.into_iter().map(Into::into).collect();
         self
     }
 

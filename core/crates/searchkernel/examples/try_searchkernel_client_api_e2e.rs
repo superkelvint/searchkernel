@@ -838,7 +838,7 @@ mod showcase {
         assert!(nearest.coverage.is_some());
         println!("tensor query input and native nearest-neighbor search PASS");
 
-        heading("18. PUBLIC OPTIONS AND EXPLICITLY UNSUPPORTED HIGHLIGHTING");
+        heading("18. PUBLIC OPTIONS AND VESPA HIGHLIGHTING");
 
         let inspected = index
             .search("shoes")
@@ -877,13 +877,22 @@ mod showcase {
             ids(&missing_last).first().map(String::as_str),
             Some("shoe-1")
         );
-        let highlight_error = index
+        let highlighted = index
             .search("shoes")
+            .summary("default")
+            .projection(["category"])
             .highlight(["title"])
-            .execute::<Value>()
-            .expect_err("native highlight result path should report unsupported");
-        assert_eq!(highlight_error.code(), ErrorCode::Unsupported);
-        println!("search_fields execution, language, timeout, inspect, and missing-first PASS; highlighting is explicit UNSUPPORTED");
+            .execute::<Value>()?;
+        assert!(!highlighted.hits.is_empty());
+        assert_eq!(highlighted.hits[0].document, json!({"category": "shoes"}));
+        assert_eq!(highlighted.hits[0].highlights.len(), 1);
+        assert_eq!(highlighted.hits[0].highlights[0].field, "title");
+        assert!(!highlighted.hits[0].highlights[0].fragments[0]
+            .matches
+            .is_empty());
+        println!(
+            "search_fields/language/timeout/inspect/missing-first and Vespa highlighting PASS"
+        );
 
         heading("19. COVERAGE AND DEGRADATION");
 
@@ -1264,7 +1273,6 @@ Successfully demonstrated through the public Rust facade:
 
 EXPLICITLY UNSUPPORTED / NOT YET PUBLIC:
 
-  - highlight result generation (the public native path reports Unsupported)
   - sort-value readback (`Hit.sort_values`) is not exposed by the current native ABI
   - typed sameElement requires a public array-of-struct field definition, which
     is not currently public

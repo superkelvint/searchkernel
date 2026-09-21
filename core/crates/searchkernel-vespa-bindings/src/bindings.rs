@@ -1291,6 +1291,14 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_request_add_highlight_field(
+        request: *mut sk_local_search_request,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_local_search_request_set_summary_class(
         request: *mut sk_local_search_request,
         name: *const ::std::os::raw::c_char,
@@ -1436,6 +1444,63 @@ unsafe extern "C" {
     ) -> i32;
 }
 unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_count(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_field(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        out_field: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_fragment_count(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_fragment_text(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+        out_text: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_match_count(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_local_search_result_highlight_match(
+        result: *const sk_local_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+        match_index: u32,
+        out_start_byte: *mut u32,
+        out_end_byte: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
     pub fn sk_generic_search_request_create(
         rank_profile: *const ::std::os::raw::c_char,
         limit: u32,
@@ -1474,6 +1539,14 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_generic_search_request_add_summary_field(
+        request: *mut sk_generic_search_request,
+        field: *const ::std::os::raw::c_char,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_request_add_highlight_field(
         request: *mut sk_generic_search_request,
         field: *const ::std::os::raw::c_char,
         out_error: *mut u8,
@@ -1618,6 +1691,63 @@ unsafe extern "C" {
         out_integer: *mut i64,
         out_float: *mut f64,
         out_boolean: *mut u8,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_count(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_field(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        out_field: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_fragment_count(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_fragment_text(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+        out_text: *mut *const ::std::os::raw::c_char,
+        out_length: *mut u32,
+        out_error: *mut u8,
+        out_error_capacity: u32,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_match_count(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn sk_generic_search_result_highlight_match(
+        result: *const sk_generic_search_result,
+        hit_index: u32,
+        highlight_index: u32,
+        fragment_index: u32,
+        match_index: u32,
+        out_start_byte: *mut u32,
+        out_end_byte: *mut u32,
         out_error: *mut u8,
         out_error_capacity: u32,
     ) -> i32;

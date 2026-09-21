@@ -32,7 +32,7 @@ LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 TEST="$TARGET/native_adapter_coverage_test"
 echo "building native adapter coverage test"
 $CXX -std=gnu++23 -O0 -g -Wall -Wextra -Werror -pthread --coverage \
-    -DSK_ENABLE_HARDENING_FAILPOINTS -I"$SDK/include" \
+    -DSK_ENABLE_HARDENING_FAILPOINTS -I"$SDK/include" -I"$ROOT/core/native/vespa" \
     "$ROOT/core/native/vespa/native_adapter_coverage_test.cpp" \
     -L"$SDK/lib" -Wl,-rpath,"$SDK/lib" -lsearchkernel_vespa \
     --coverage -o "$TEST"
