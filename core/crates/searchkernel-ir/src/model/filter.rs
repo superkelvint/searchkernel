@@ -19,7 +19,7 @@ pub struct ComparisonIr {
 }
 
 impl ComparisonIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(field: FieldName, op: ComparisonOp, value: ScalarValueIr) -> Self {
         Self { field, op, value }
     }
@@ -47,7 +47,7 @@ pub struct RangeIr {
 }
 
 impl RangeIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(
         field: FieldName,
         lower: Option<ScalarValueIr>,
@@ -146,7 +146,7 @@ pub struct SortIr {
 }
 
 impl SortIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(field: FieldName, direction: SortDirection, missing: MissingPlacement) -> Self {
         Self {
             target: SortTargetIr::Field(field),
@@ -156,7 +156,7 @@ impl SortIr {
         }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_target(
         target: SortTargetIr,
         direction: SortDirection,

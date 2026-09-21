@@ -325,9 +325,10 @@ impl<'a> DerivedConfig<'a> {
             }
         }
         let mut output = format!("indexfield[{}]\n", indexed.len());
+        let interleaved_features = "false";
         for (index, (name, collection_type)) in indexed.iter().enumerate() {
             output.push_str(&format!(
-                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype {}\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures false\n",
+                "indexfield[{index}].name {}\nindexfield[{index}].datatype STRING\nindexfield[{index}].collectiontype {}\nindexfield[{index}].prefix false\nindexfield[{index}].phrases false\nindexfield[{index}].positions true\nindexfield[{index}].averageelementlen 512\nindexfield[{index}].interleavedfeatures {interleaved_features}\n",
                 quoted(name),
                 collection_type
             ));

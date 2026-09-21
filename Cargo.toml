@@ -24,3 +24,7 @@ exclude = [
 edition = "2021"
 version = "0.1.0"
 license = "Apache-2.0"
+description = "Thin Rust interface to Vespa's local search engine"
+repository = "https://github.com/vespa/searchkernel2"
+keywords = ["search", "vespa"]
+categories = ["database-implementations"]

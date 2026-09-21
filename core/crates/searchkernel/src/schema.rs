@@ -288,6 +288,7 @@ pub struct IndexDefinition {
     pub(crate) fields: Vec<Field>,
     pub(crate) default_search_fields: Option<Vec<SearchField>>,
     pub(crate) rank_profiles: Vec<RankProfile>,
+    pub(crate) canonical: Option<searchkernel_ir::IndexDefinitionIr>,
 }
 
 impl IndexDefinition {
@@ -297,11 +298,13 @@ impl IndexDefinition {
     }
     /// Set the optional index name.
     pub fn name(mut self, value: impl Into<String>) -> Self {
+        self.canonical = None;
         self.name = Some(value.into());
         self
     }
     /// Add one field to the definition.
     pub fn field(mut self, value: Field) -> Self {
+        self.canonical = None;
         self.fields.push(value);
         self
     }
@@ -311,12 +314,14 @@ impl IndexDefinition {
         I: IntoIterator,
         I::Item: Into<SearchField>,
     {
+        self.canonical = None;
         self.default_search_fields = Some(fields.into_iter().map(Into::into).collect());
         self
     }
 
     /// Add a native first-phase rank profile to the generated schema.
     pub fn rank_profile(mut self, profile: RankProfile) -> Self {
+        self.canonical = None;
         self.rank_profiles.push(profile);
         self
     }

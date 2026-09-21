@@ -3,6 +3,11 @@ name = "flatbuffers-build"
 version = "0.2.4+flatc-25.12.19"
 edition = "2021"
 license = "MIT"
+description.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 build = "build.rs"
 links = "flatbuffers_build"
 

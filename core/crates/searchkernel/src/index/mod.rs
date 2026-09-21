@@ -64,10 +64,14 @@ impl Index {
     #[doc(hidden)]
     pub fn from_backend(definition: IndexDefinition, backend: Arc<dyn Backend>) -> Result<Self> {
         let context = IndexContext::from_definition_ir(definition_to_ir(&definition)?);
-        Self::from_owned_backend(context, BackendSession::from_backend(backend))
+        Self::from_owned_backend(context, BackendSession::from_backend(backend), None)
     }
 
-    fn from_owned_backend(context: IndexContext, session: Arc<BackendSession>) -> Result<Self> {
+    fn from_owned_backend(
+        context: IndexContext,
+        session: Arc<BackendSession>,
+        _lifecycle_lock: Option<()>,
+    ) -> Result<Self> {
         let effective_definition = definition_from_ir(context.definition());
         let context = Arc::new(context);
         let definition = Arc::new(effective_definition);
@@ -521,6 +525,10 @@ fn filter_from_ir(filter: &searchkernel_ir::FilterIr) -> Result<crate::Filter> {
 }
 
 fn definition_to_ir(definition: &IndexDefinition) -> Result<searchkernel_ir::IndexDefinitionIr> {
+    if let Some(canonical) = &definition.canonical {
+        return Ok(canonical.clone());
+    }
+
     let fields = definition
         .fields
         .iter()
@@ -677,5 +685,6 @@ fn definition_from_ir(definition: &searchkernel_ir::IndexDefinitionIr) -> IndexD
         }
         result = result.rank_profile(value);
     }
+    result.canonical = Some(definition.clone());
     result
 }

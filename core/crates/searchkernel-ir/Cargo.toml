@@ -3,10 +3,15 @@ name = "searchkernel-ir"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+description.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 autotests = false
 
 [features]
-test-support = []
+test = []
 
 [dependencies]
 searchkernel-protocol = { path = "../searchkernel-protocol" }

@@ -146,7 +146,7 @@ pub struct FieldCapabilities {
 }
 
 impl FieldCapabilities {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(
         stored: bool,
         searchable: bool,
@@ -219,7 +219,7 @@ pub struct StructFieldConfigIr {
 }
 
 impl FieldIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(
         name: FieldName,
         data_type: DataTypeIr,
@@ -241,22 +241,22 @@ impl FieldIr {
         }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_attribute_config(&mut self, config: Option<AttributeConfigIr>) {
         self.attribute = config;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_index_config(&mut self, config: Option<IndexConfigIr>) {
         self.index = config;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_summary_config(&mut self, config: Option<SummaryConfigIr>) {
         self.summary = config;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_matching_config(&mut self, config: Option<MatchingConfigIr>) {
         self.matching = config;
     }
@@ -388,7 +388,7 @@ pub struct SearchFieldIr {
 }
 
 impl SearchFieldIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(field: FieldName, weight: SearchFieldWeight) -> Self {
         Self { field, weight }
     }
@@ -468,7 +468,7 @@ pub struct IndexDefinitionIr {
 }
 
 impl IndexDefinitionIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(
         name: Option<IndexName>,
         fields: Vec<FieldIr>,
@@ -506,22 +506,22 @@ impl IndexDefinitionIr {
         })
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_document_type(&mut self, document_type: impl Into<String>) {
         self.document_type = Some(document_type.into());
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_schema_fields(&mut self, fields: Vec<FieldIr>) {
         self.schema_fields = fields;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_rank_profiles(&mut self, profiles: Vec<RankProfileDefinitionIr>) {
         self.rank_profiles = profiles;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn set_imported_fields(&mut self, fields: Vec<ImportedFieldDefinitionIr>) {
         self.imported_fields = fields;
     }

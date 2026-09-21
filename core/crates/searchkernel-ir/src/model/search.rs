@@ -28,7 +28,7 @@ pub struct SearchRequestIr {
 }
 
 impl SearchRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         query: QueryIr,
@@ -126,7 +126,7 @@ impl SearchRequestIr {
         &self.presentation
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_presentation(mut self, presentation: PresentationIr) -> Self {
         self.presentation = presentation;
         self
@@ -148,19 +148,19 @@ impl SearchRequestIr {
         self.timeout
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_grouping(mut self, grouping: Vec<GroupingRequestIr>) -> Self {
         self.grouping = grouping;
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.timeout = timeout;
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_ranking_request(
         mut self,
         profile: impl Into<String>,
@@ -173,19 +173,19 @@ impl SearchRequestIr {
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_inputs(mut self, inputs: std::collections::BTreeMap<String, QueryInputIr>) -> Self {
         self.inputs = inputs;
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_query_model(mut self, query_model: QueryModelIr) -> Self {
         self.query_model = query_model;
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_query(mut self, query: QueryIr) -> Self {
         self.query = query;
         self

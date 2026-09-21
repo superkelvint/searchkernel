@@ -272,7 +272,7 @@ fn grouping_result_group(
             continue;
         }
         if let GroupingOutput::HitList(ids) = output {
-            children.extend(ids.into_iter().map(|hit| {
+            children.extend(ids.iter().map(|hit| {
                 searchkernel_ir::ResultNode::Hit(searchkernel_ir::Hit {
                     id: hit.document_id.clone(),
                     score: Some(hit.score),

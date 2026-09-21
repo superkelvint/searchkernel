@@ -10,7 +10,7 @@ pub struct DocumentIr {
 }
 
 impl DocumentIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(
         id: DocumentId,
         fields: std::collections::BTreeMap<FieldName, FieldValueIr>,
@@ -33,7 +33,7 @@ pub struct InsertRequestIr {
 }
 
 impl InsertRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(document: DocumentIr) -> Self {
         Self { document }
     }
@@ -52,7 +52,7 @@ pub struct UpsertRequestIr {
 }
 
 impl UpsertRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(document: DocumentIr) -> Self {
         Self {
             document,
@@ -68,7 +68,7 @@ impl UpsertRequestIr {
         self.condition.as_deref()
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
         self.condition = Some(condition.into());
         self
@@ -158,7 +158,7 @@ pub struct UpdateRequestIr {
 }
 
 impl UpdateRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(id: DocumentId, operations: Vec<UpdateOperationIr>) -> Self {
         Self {
             id,
@@ -184,13 +184,13 @@ impl UpdateRequestIr {
         self.create
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
         self.condition = Some(condition.into());
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_create(mut self, create: bool) -> Self {
         self.create = Some(create);
         self
@@ -198,7 +198,7 @@ impl UpdateRequestIr {
 }
 
 impl PatchRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(id: DocumentId, operations: Vec<PatchOperationIr>) -> Self {
         Self { id, operations }
     }
@@ -221,7 +221,7 @@ pub struct DeleteRequestIr {
 }
 
 impl DeleteRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(id: DocumentId) -> Self {
         Self {
             id,
@@ -237,7 +237,7 @@ impl DeleteRequestIr {
         self.condition.as_deref()
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn with_condition(mut self, condition: impl Into<String>) -> Self {
         self.condition = Some(condition.into());
         self
@@ -250,7 +250,7 @@ pub struct ProjectionIr {
 }
 
 impl ProjectionIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(fields: Vec<FieldName>) -> Self {
         Self { fields }
     }
@@ -267,7 +267,7 @@ pub struct GetRequestIr {
 }
 
 impl GetRequestIr {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, feature = "test"))]
     pub fn new(id: DocumentId, projection: ProjectionIr) -> Self {
         Self { id, projection }
     }

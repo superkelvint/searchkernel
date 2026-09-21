@@ -31,6 +31,7 @@ fn index_from_canonical_ir(definition: searchkernel_ir::IndexDefinitionIr) -> In
     Index::from_owned_backend(
         context,
         BackendSession::from_backend(Arc::new(RecordingBackend::new())),
+        None,
     )
     .expect("canonical schema should construct an index")
 }
@@ -446,6 +447,7 @@ fn struct_field_config<'a>(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fixture_field_with_struct_fields<'a>(
     builder: &mut searchkernel_ir::__flatbuffers::FlatBufferBuilder<'a>,
     name: &str,

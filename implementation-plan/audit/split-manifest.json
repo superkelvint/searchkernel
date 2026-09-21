@@ -1,0 +1,114 @@
+{
+  "source_file": "searchkernel-adversarial-audit-checklist-evidence-based.md",
+  "source_sha256": "164b85f4687d25ce2449cac88644d032cdf6fdcf60c2c7a3b1b5f5e1a3a29848",
+  "snapshot_archive_sha256": "bc439271338dc2f13945de9a34fbc9e63930a953556f49c5cda7cea416add3c1",
+  "stable_item_count": 908,
+  "stable_item_unique_count": 908,
+  "files": [
+    {
+      "file": "00-audit-method.md",
+      "sha256": "a9fcec90b59c5213e4a8c38352c6b1d4110f623d5d3b6a3b41cca6be444e5481",
+      "item_count": 46
+    },
+    {
+      "file": "01-api-portable-contract.md",
+      "sha256": "a8fe79c7d79d46f498aefd1771323688a7c47c1dd53fd66e9ec0191d73acc5df",
+      "item_count": 35
+    },
+    {
+      "file": "02-flatbuffers-build.md",
+      "sha256": "63d6deebc650e4449ac0c9eef4fb4b1a678fb044547516539dbffdda37d1a431",
+      "item_count": 6
+    },
+    {
+      "file": "03-searchkernel-protocol.md",
+      "sha256": "101576f8b69043507986d3de132f2589bbf300b188d9a20196f387240331bf91",
+      "item_count": 19
+    },
+    {
+      "file": "04-searchkernel-filter.md",
+      "sha256": "38d4280cb14169028087c35c2c166f3390287153bdd2f5f8729b9e14293cfb07",
+      "item_count": 22
+    },
+    {
+      "file": "05-searchkernel-ir.md",
+      "sha256": "d3ebafe05375faa4dcb5b56a1f12a5ff9c209cb29c160aa30fc5580e08e49121",
+      "item_count": 109
+    },
+    {
+      "file": "06-searchkernel-testkit.md",
+      "sha256": "468d41a2bdb1ef178e2cd16f446d0d29f8385eff89bd0626076027788d136e34",
+      "item_count": 8
+    },
+    {
+      "file": "07-searchkernel-rust-api.md",
+      "sha256": "e46b25e992cd369d65691a6ca384b0456b89e46f607283210cf8068715515ca9",
+      "item_count": 75
+    },
+    {
+      "file": "08-searchkernel-dispatch.md",
+      "sha256": "152468333925f082c6644e9b869b439a74caae48cb02fb99ffc34d3888a071e6",
+      "item_count": 12
+    },
+    {
+      "file": "09-searchkernel-ir-adapter.md",
+      "sha256": "ec41eaf2ac9b1285e0e30e80842f62c3fda6ba40703405a5d43c3f5595b1f59d",
+      "item_count": 53
+    },
+    {
+      "file": "10-searchkernel-vespa-bindings.md",
+      "sha256": "0239719d4ccaea84ac63081f4b1a28680157d3c19ccbd2ac26c1e067305b36ad",
+      "item_count": 15
+    },
+    {
+      "file": "11-searchkernel-vespa-engine.md",
+      "sha256": "1a2bcd2f4e7e01fdd830a52baa883b2484483fce92204af6b73fa8e05c4f5fc0",
+      "item_count": 63
+    },
+    {
+      "file": "12-native-vespa-cpp.md",
+      "sha256": "c77b2a04f5891e5b0ad0ad6db4ce6649a4702c3211d7b28fb1a75be69b1fe353",
+      "item_count": 59
+    },
+    {
+      "file": "13-searchkerneld.md",
+      "sha256": "4bd38e64a2e5c2b735a58567d97a7a57a5f41d45cafde4725915304a6df45d81",
+      "item_count": 28
+    },
+    {
+      "file": "14-client-python.md",
+      "sha256": "a75f290d6e6d56582be94eacdee35a06afceddf8e73f4e9fab7a44b77c911a32",
+      "item_count": 54
+    },
+    {
+      "file": "15-client-typescript.md",
+      "sha256": "824949024dfa68abc5a5efa12369f7280e2daac3f6613fab0c27c641ff6b8d70",
+      "item_count": 52
+    },
+    {
+      "file": "16-tools.md",
+      "sha256": "5fb781e5e76f0a90f5dd18e5d718b7ecae99baf71a543201a9047d05964532a1",
+      "item_count": 29
+    },
+    {
+      "file": "17-reference-verifiers.md",
+      "sha256": "53008e90fe9846d36bd658e2cc529fdaf8a23502c721e845f00a3127eb9cc6dc",
+      "item_count": 89
+    },
+    {
+      "file": "18-cross-cutting-gates.md",
+      "sha256": "312351c194ee0e273fd67ad929376393059fc174f2b0dccd5dfafe4d13a9e6bd",
+      "item_count": 117
+    },
+    {
+      "file": "19-audit-record-and-freeze.md",
+      "sha256": "9db78d6a20605f8ee0363feabfa23fe16a7f0024639d776bd94a99cf9271c461",
+      "item_count": 17
+    },
+    {
+      "file": "README.md",
+      "sha256": "a99f4625ab74d017ef8e9a5c0b725a6383f2bbfcc533f0352bf0d4bf16a17062",
+      "item_count": 0
+    }
+  ]
+}

@@ -327,7 +327,7 @@ impl Index {
         Self::from_owned_backend(context, BackendSession::from_backend(backend), None)
     }
 
-    fn from_owned_backend(
+    pub(super) fn from_owned_backend(
         context: IndexContext,
         session: Arc<BackendSession>,
         lifecycle_lock: Option<LifecycleLock>,

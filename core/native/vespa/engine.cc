@@ -2225,12 +2225,22 @@ class EmbeddedEngine {
             profile_count >= 2
                 ? config_section_count(rank_profiles, "rankprofile[1].fef.property")
                 : 0;
-        const bool uses_only_generated_fallback =
+        const bool generated_direct_bm25_fallback =
+            profile_count == 2 &&
+            config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
+            fallback_property_count == 1 &&
+            config_value(rank_profiles, "rankprofile[1].fef.property[0].name") ==
+                "vespa.rank.firstphase" &&
+            config_value(rank_profiles, "rankprofile[1].fef.property[0].value").starts_with(
+                "bm25(");
+        const bool generated_script_bm25_fallback =
             profile_count == 2 &&
             config_value(rank_profiles, "rankprofile[1].name") == "bm25" &&
             fallback_property_count == 2 &&
             config_value(rank_profiles, "rankprofile[1].fef.property[1].name") ==
                 "rankingExpression(bm25).rankingScript";
+        const bool uses_only_generated_fallback =
+            generated_direct_bm25_fallback || generated_script_bm25_fallback;
         if (!uses_only_generated_fallback) {
             return {};
         }
