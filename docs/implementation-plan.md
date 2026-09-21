@@ -55,6 +55,9 @@ Use
 [`implementation-plan/schema-fidelity-plan.md`](../implementation-plan/schema-fidelity-plan.md)
 as the detailed checklist.
 
+Status: **BLOCKED** after adversarial audit of the schema-fidelity implementation
+commit.
+
 Required invariant:
 
 ```text
@@ -64,14 +67,25 @@ IndexDefinitionIr
 == original semantic state
 ```
 
+The current hidden canonical-IR sidecar does not satisfy this requirement by
+itself. The public Rust representation must carry the state faithfully enough
+that tests, mutation, reuse, and introspection do not depend on returning an
+opaque saved IR clone.
+
 Requirements:
 
-- every checked implementation item has focused regression coverage;
+- correct the schema-fidelity regressions so they directly test public Rust
+  state and cannot pass through a hidden-IR bypass;
+- complete Phases 2–5 of the detailed plan rather than reclassifying Phase 1 as
+  implementation completion;
 - `definition_to_ir()` and `definition_from_ir()` preserve the promised
-  canonical schema state;
-- `Index::describe()` does not silently lose schema/ranking information;
-- modifying a described public definition re-resolves from public builder state
-  rather than accidentally retaining stale canonical state;
+  canonical schema state through the public representation;
+- `Index::describe()` exposes truthful advanced field/rank/schema state;
+- cloning/reusing described fields/profiles remains faithful;
+- modifying a rich described definition changes only the requested property;
+- absent/present optional state, especially rank phases, remains meaningful;
+- Rust create's persisted portable/canonical definitions are consistent with
+  the final schema ownership model;
 - unsupported Vespa execution remains explicit `Unsupported` and is not
   confused with schema representation fidelity.
 
