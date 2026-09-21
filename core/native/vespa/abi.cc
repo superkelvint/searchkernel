@@ -1061,6 +1061,23 @@ extern "C" int32_t sk_local_search_request_add_summary_field(
     });
 }
 
+extern "C" int32_t sk_local_search_request_add_highlight_field(
+    sk_local_search_request *request, const char *field,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (!request || !field) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "local highlight arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        validate_field_name(field);
+        if (std::find(request->highlight_fields.begin(), request->highlight_fields.end(), field) !=
+            request->highlight_fields.end()) {
+            throw std::invalid_argument("highlight fields must not contain duplicates");
+        }
+        request->highlight_fields.emplace_back(field);
+    });
+}
+
 extern "C" int32_t sk_local_search_request_set_summary_class(
     sk_local_search_request *request, const char *name,
     uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
@@ -1233,6 +1250,99 @@ extern "C" int32_t sk_local_search_result_summary_value(
             *out_kind = 99;
         }
 #endif
+    });
+}
+
+extern "C" uint32_t sk_local_search_result_highlight_count(
+    const sk_local_search_result *result, uint32_t hit_index) SK_NOEXCEPT {
+    return result && hit_index < result->hits.size()
+               ? static_cast<uint32_t>(result->hits[hit_index].highlights.size())
+               : 0;
+}
+
+extern "C" int32_t sk_local_search_result_highlight_field(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, const char **out_field, uint32_t *out_length,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_field) *out_field = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_field || !out_length || hit_index >= result->hits.size() ||
+        highlight_index >= result->hits[hit_index].highlights.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "highlight field arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        const auto &field = result->hits[hit_index].highlights[highlight_index].field;
+        *out_field = field.data();
+        *out_length = static_cast<uint32_t>(field.size());
+    });
+}
+
+extern "C" uint32_t sk_local_search_result_highlight_fragment_count(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index) SK_NOEXCEPT {
+    return result && hit_index < result->hits.size() &&
+                   highlight_index < result->hits[hit_index].highlights.size()
+               ? static_cast<uint32_t>(result->hits[hit_index].highlights[highlight_index]
+                                           .fragments.size())
+               : 0;
+}
+
+extern "C" int32_t sk_local_search_result_highlight_fragment_text(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, const char **out_text,
+    uint32_t *out_length, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_text) *out_text = nullptr;
+    if (out_length) *out_length = 0;
+    if (!result || !out_text || !out_length || hit_index >= result->hits.size() ||
+        highlight_index >= result->hits[hit_index].highlights.size() ||
+        fragment_index >= result->hits[hit_index].highlights[highlight_index].fragments.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "highlight fragment arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        const auto &text = result->hits[hit_index].highlights[highlight_index]
+                               .fragments[fragment_index]
+                               .text;
+        *out_text = text.data();
+        *out_length = static_cast<uint32_t>(text.size());
+    });
+}
+
+extern "C" uint32_t sk_local_search_result_highlight_match_count(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index) SK_NOEXCEPT {
+    return result && hit_index < result->hits.size() &&
+                   highlight_index < result->hits[hit_index].highlights.size() &&
+                   fragment_index < result->hits[hit_index].highlights[highlight_index].fragments.size()
+               ? static_cast<uint32_t>(result->hits[hit_index].highlights[highlight_index]
+                                           .fragments[fragment_index]
+                                           .matches.size())
+               : 0;
+}
+
+extern "C" int32_t sk_local_search_result_highlight_match(
+    const sk_local_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, uint32_t match_index,
+    uint32_t *out_start_byte, uint32_t *out_end_byte,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    if (out_start_byte) *out_start_byte = 0;
+    if (out_end_byte) *out_end_byte = 0;
+    if (!result || !out_start_byte || !out_end_byte || hit_index >= result->hits.size() ||
+        highlight_index >= result->hits[hit_index].highlights.size() ||
+        fragment_index >= result->hits[hit_index].highlights[highlight_index].fragments.size() ||
+        match_index >= result->hits[hit_index].highlights[highlight_index]
+                           .fragments[fragment_index]
+                           .matches.size()) {
+        return set_error(error, error_capacity, SK_NATIVE_STATUS_INVALID_ARGUMENT,
+                         "highlight match arguments are invalid");
+    }
+    return invoke(error, error_capacity, [&] {
+        const auto &match = result->hits[hit_index].highlights[highlight_index]
+                                .fragments[fragment_index]
+                                .matches[match_index];
+        *out_start_byte = match.start_byte;
+        *out_end_byte = match.end_byte;
     });
 }
 
@@ -2574,6 +2684,13 @@ extern "C" int32_t sk_generic_search_request_add_summary_field(
         static_cast<sk_local_search_request *>(request), field, error, error_capacity);
 }
 
+extern "C" int32_t sk_generic_search_request_add_highlight_field(
+    sk_generic_search_request *request, const char *field,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_request_add_highlight_field(
+        static_cast<sk_local_search_request *>(request), field, error, error_capacity);
+}
+
 extern "C" int32_t sk_generic_search_request_set_summary_class(
     sk_generic_search_request *request, const char *name, uint8_t *error,
     uint32_t error_capacity) SK_NOEXCEPT {
@@ -2758,6 +2875,52 @@ extern "C" int32_t sk_generic_search_result_summary_value(
         static_cast<const sk_local_search_result *>(result), hit_index, summary_index, out_kind,
         out_string, out_string_length, out_integer, out_float, out_boolean, error,
         error_capacity);
+}
+extern "C" uint32_t sk_generic_search_result_highlight_count(
+    const sk_generic_search_result *result, uint32_t hit_index) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_count(
+        static_cast<const sk_local_search_result *>(result), hit_index);
+}
+extern "C" int32_t sk_generic_search_result_highlight_field(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, const char **out_field, uint32_t *out_length,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_field(
+        static_cast<const sk_local_search_result *>(result), hit_index,
+        highlight_index, out_field, out_length, error, error_capacity);
+}
+extern "C" uint32_t sk_generic_search_result_highlight_fragment_count(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_fragment_count(
+        static_cast<const sk_local_search_result *>(result), hit_index,
+        highlight_index);
+}
+extern "C" int32_t sk_generic_search_result_highlight_fragment_text(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, const char **out_text,
+    uint32_t *out_length, uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_fragment_text(
+        static_cast<const sk_local_search_result *>(result), hit_index,
+        highlight_index, fragment_index, out_text, out_length, error,
+        error_capacity);
+}
+extern "C" uint32_t sk_generic_search_result_highlight_match_count(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_match_count(
+        static_cast<const sk_local_search_result *>(result), hit_index,
+        highlight_index, fragment_index);
+}
+extern "C" int32_t sk_generic_search_result_highlight_match(
+    const sk_generic_search_result *result, uint32_t hit_index,
+    uint32_t highlight_index, uint32_t fragment_index, uint32_t match_index,
+    uint32_t *out_start_byte, uint32_t *out_end_byte,
+    uint8_t *error, uint32_t error_capacity) SK_NOEXCEPT {
+    return sk_local_search_result_highlight_match(
+        static_cast<const sk_local_search_result *>(result), hit_index,
+        highlight_index, fragment_index, match_index, out_start_byte,
+        out_end_byte, error, error_capacity);
 }
 extern "C" uint32_t sk_generic_search_result_match_feature_count(
     const sk_generic_search_result *result) SK_NOEXCEPT {

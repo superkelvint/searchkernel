@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 const NAME_ERROR: &str = "names must match [A-Za-z_][A-Za-z0-9_]*";
 const MAX_SCHEMA_IDENTIFIER_BYTES: usize = 256;
 const MAX_RANK_EXPRESSION_BYTES: usize = 4 * 1024 * 1024;
+const HIGHLIGHT_SUMMARY_PREFIX: &str = "__searchkernel_highlight_";
 const RESERVED_FIELD_NAMES: &[&str] = &[
     "index",
     "index_url",
@@ -497,6 +498,15 @@ impl<'a> DerivedConfig<'a> {
             ));
         }
 
+        for field in self.fields().iter().filter(|field| {
+            matches!(field.field_type, FieldType::Text) && field.indexed && field.summary
+        }) {
+            fields.push(SummaryField::dynamic_teaser(
+                &highlight_summary_name(&field.name),
+                &field.name,
+            ));
+        }
+
         let mut output = String::from(
             "defaultsummaryid 1\nclasses[1]\nclasses[0].id 1\nclasses[0].name \"default\"\n",
         );
@@ -538,6 +548,22 @@ impl SummaryField {
             data_type: data_type.to_owned(),
         }
     }
+
+    fn dynamic_teaser(name: &str, source: &str) -> Self {
+        Self::implicit(name, "dynamicteaser", source, "longstring")
+    }
+}
+
+fn highlight_summary_name(field: &str) -> String {
+    // Keep the generated summary field independent of user field length while
+    // making the name reproducible in the native adapter. The prefix is
+    // reserved above so a user field cannot collide with this hidden field.
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in field.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{HIGHLIGHT_SUMMARY_PREFIX}{hash:016x}")
 }
 
 impl FieldType {
@@ -628,6 +654,12 @@ fn validate_schema(schema: &Schema) -> Result<()> {
             return Err(Error::message(format!(
                 "reserved field name '{}'",
                 field.name
+            )));
+        }
+        if field.name.starts_with(HIGHLIGHT_SUMMARY_PREFIX) {
+            return Err(Error::message(format!(
+                "reserved field name prefix '{}': '{}'",
+                HIGHLIGHT_SUMMARY_PREFIX, field.name
             )));
         }
         if schema

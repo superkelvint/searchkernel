@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from searchkernel import Client, ClientError, GrpcTransport, Index, q  # noqa: E402
+from searchkernel import Client, GrpcTransport, Index, q  # noqa: E402
 from searchkernel.client import value  # noqa: E402
 from searchkernel.protocol import pack_object, pack_request  # noqa: E402
 from SearchKernel.V2.AnalyzeFieldTarget import AnalyzeFieldTargetT  # noqa: E402
@@ -47,15 +47,13 @@ from SearchKernel.V2.MatchAllQuery import MatchAllQueryT  # noqa: E402
 from SearchKernel.V2.OptionalUInt32 import OptionalUInt32T  # noqa: E402
 from SearchKernel.V2.StringEntry import StringEntryT  # noqa: E402
 from SearchKernel.V2.PositionDataType import PositionDataTypeT  # noqa: E402
-from SearchKernel.V2.PresentationRequest import PresentationRequestT  # noqa: E402
-from SearchKernel.V2.FieldProjection import FieldProjectionT  # noqa: E402
-from SearchKernel.V2.HighlightRequest import HighlightRequestT  # noqa: E402
 from SearchKernel.V2.ValueEntry import ValueEntryT  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
 DAEMON = ROOT / "target" / "debug" / "searchkerneld"
 SDK_LIB = ROOT / "core" / "native" / "sdk" / "linux-x86_64" / "lib"
+VESPA_DEPS_LIB = ROOT / "vespa-deps" / "lib64"
 
 
 def _field(name: str, primitive: int, *, matching: int = MatchingMode.Unspecified) -> FieldDefinitionT:
@@ -106,7 +104,10 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         socket_path = Path(self.tempdir.name) / "searchkerneld.sock"
         environment = os.environ.copy()
         environment.update({
-            "LD_LIBRARY_PATH": str(SDK_LIB),
+            "LD_LIBRARY_PATH": os.pathsep.join(
+                path for path in (str(SDK_LIB), str(VESPA_DEPS_LIB), environment.get("LD_LIBRARY_PATH"))
+                if path
+            ),
         })
         command = [
             str(DAEMON),
@@ -494,54 +495,28 @@ class RealGrpcPythonE2ETest(unittest.TestCase):
         self.assertEqual([child.node.id for child in location.root.node.children], ["inside"])
         self.assertEqual([child.node.id for child in box.root.node.children], ["inside"])
 
-    def test_docsums_are_returned_and_highlighting_remains_explicitly_unsupported(self):
-        endpoint = self._start_server(definition=True)
-        self.client = Client(GrpcTransport(endpoint))
-        index = Index(self.client)
-        index.upsert("d1", {"title": "highlight me", "category": "a", "price": 5})
-        result = index.search(
-            SearchRequestT(
-                query=QuerySourceT(
-                    sourceType=QuerySourceKind.MatchAllQuery,
-                    source=MatchAllQueryT(),
-                ),
-                presentation=PresentationRequestT(
-                    fields=FieldProjectionT(fields=["title", "category"])
-                ),
-                limit=OptionalUInt32T(value=10),
-            )
-        )
-        fields = {
-            entry.key: entry.value.kind.value
-            for entry in result.root.node.children[0].node.fields
-        }
-        self.assertEqual(fields, {"title": "highlight me", "category": "a"})
-
-        with self.assertRaises(ClientError) as error:
-            index.search(
-                SearchRequestT(
-                    query=QuerySourceT(
-                        sourceType=QuerySourceKind.MatchAllQuery,
-                        source=MatchAllQueryT(),
-                    ),
-                    presentation=PresentationRequestT(
-                        highlighting=HighlightRequestT(fields=["title"])
-                    ),
-                )
-            )
-        self.assertEqual(error.exception.code, "unsupported")
-
-    def test_ergonomic_named_summary_and_projection_reach_native_docsums(self):
+    def test_ergonomic_summary_projection_and_highlighting_reach_native_docsums(self):
         endpoint = self._start_server(definition=True)
         self.client = Client(GrpcTransport(endpoint))
         index = Index(self.client, ergonomic=True)
         index.upsert("d1", {"title": "highlight me", "category": "a", "price": 5})
-
-        result = index.search("highlight").summary("default").fields("title").execute()
+        result = (
+            index.search("highlight")
+            .summary("default")
+            .fields("category")
+            .highlight("title")
+            .execute()
+        )
 
         self.assertEqual(result.total_hits, 1)
         self.assertEqual([hit.id for hit in result.hits], ["d1"])
-        self.assertEqual(result.hits[0].fields, {"title": "highlight me"})
+        self.assertEqual(result.hits[0].fields, {"category": "a"})
+        self.assertEqual(result.hits[0].highlights[0]["field"], "title")
+        self.assertEqual(result.hits[0].highlights[0]["fragments"][0]["text"], "highlight me")
+        self.assertEqual(
+            result.hits[0].highlights[0]["fragments"][0]["matches"],
+            [(0, 9)],
+        )
 
 
 if __name__ == "__main__":

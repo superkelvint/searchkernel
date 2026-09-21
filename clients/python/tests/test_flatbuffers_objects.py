@@ -162,10 +162,11 @@ class FlatBuffersObjectApiTest(unittest.TestCase):
                 self.client = CaptureClient()
 
         index = Index()
-        SearchBuilder(index, "wireless").summary("default").fields("title").execute()
+        SearchBuilder(index, "wireless").summary("default").fields("title").highlight("title").execute()
         presentation = index.client.request.presentation
         self.assertEqual(presentation.summary, "default")
         self.assertEqual(presentation.fields.fields, ["title"])
+        self.assertEqual(presentation.highlighting.fields, ["title"])
 
     def test_widened_v2_objects_pack_without_schema_mapper(self):
         tensor = TensorValueT(

@@ -112,6 +112,7 @@ SEARCHKERNEL_2 {
         sk_local_search_request_create;
         sk_local_search_request_add_sort;
         sk_local_search_request_add_summary_field;
+        sk_local_search_request_add_highlight_field;
         sk_local_search_request_set_summary_class;
         sk_local_search_request_add_query_feature;
         sk_local_search_request_add_rank_property;
@@ -123,6 +124,12 @@ SEARCHKERNEL_2 {
         sk_local_search_result_summary_count;
         sk_local_search_result_summary_name;
         sk_local_search_result_summary_value;
+        sk_local_search_result_highlight_count;
+        sk_local_search_result_highlight_field;
+        sk_local_search_result_highlight_fragment_count;
+        sk_local_search_result_highlight_fragment_text;
+        sk_local_search_result_highlight_match_count;
+        sk_local_search_result_highlight_match;
         sk_local_search_result_match_feature_count;
         sk_local_search_result_match_feature_name;
         sk_local_search_result_match_feature_value;
@@ -136,6 +143,7 @@ SEARCHKERNEL_2 {
         sk_generic_search_request_add_sort;
         sk_generic_search_request_set_sort_spec;
         sk_generic_search_request_add_summary_field;
+        sk_generic_search_request_add_highlight_field;
         sk_generic_search_request_set_summary_class;
         sk_generic_search_request_add_query_feature;
         sk_generic_search_request_add_query_tensor_dense;
@@ -155,6 +163,12 @@ SEARCHKERNEL_2 {
         sk_generic_search_result_summary_count;
         sk_generic_search_result_summary_name;
         sk_generic_search_result_summary_value;
+        sk_generic_search_result_highlight_count;
+        sk_generic_search_result_highlight_field;
+        sk_generic_search_result_highlight_fragment_count;
+        sk_generic_search_result_highlight_fragment_text;
+        sk_generic_search_result_highlight_match_count;
+        sk_generic_search_result_highlight_match;
         sk_generic_search_result_match_feature_count;
         sk_generic_search_result_match_feature_name;
         sk_generic_search_result_match_feature_value;

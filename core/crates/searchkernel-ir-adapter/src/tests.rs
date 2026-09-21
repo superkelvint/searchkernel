@@ -2595,7 +2595,7 @@ fn analyze_language_is_explicitly_supported_or_rejected() {
 }
 
 #[test]
-fn search_validation_supports_facet_shaped_grouping_and_rejects_highlighting_precisely() {
+fn search_validation_supports_facet_shaped_grouping_and_lowers_highlighting_precisely() {
     let title = field("title");
     let search_fields = vec![SearchFieldIr::new(
         title.clone(),
@@ -2636,12 +2636,15 @@ fn search_validation_supports_facet_shaped_grouping_and_rejects_highlighting_pre
         PrefixPolicy::Disabled,
         TypoPolicy::Disabled,
     );
-    let error = validate_search_request(&highlighting).unwrap_err();
-    assert_eq!(error.code, searchkernel_ir::ErrorCode::Unsupported);
+    validate_search_request(&highlighting).unwrap();
+    let language = analysis_options(highlighting.language()).unwrap();
+    let query = lower_search_query(&highlighting, language).unwrap();
+    let lowered = lower_search_options(&highlighting, query, language).unwrap();
     assert_eq!(
-        error.details[0].code,
-        "highlighting_native_result_unavailable"
+        lowered.summary,
+        searchkernel_vespa_engine::SummaryRequest::None
     );
+    assert_eq!(lowered.highlight_fields, vec!["title"]);
 }
 
 #[test]
@@ -4283,6 +4286,43 @@ fn summary_class_survives_explicit_empty_projection_without_fetching_docsums() {
         lowered.summary,
         searchkernel_vespa_engine::SummaryRequest::None
     );
+}
+
+#[test]
+fn named_summary_and_highlighting_lower_together() {
+    let title = field("title");
+    let request = SearchRequestIr::new(
+        QueryIr::Text("brown fox".into()),
+        vec![SearchFieldIr::new(
+            title.clone(),
+            SearchFieldWeight::new(1.0).unwrap(),
+        )],
+        None,
+        Vec::new(),
+        10,
+        0,
+        ProjectionIr::new(vec![title.clone()]),
+        HighlightingIr::Requested {
+            fields: vec![title.clone()],
+        },
+        None,
+        PrefixPolicy::Disabled,
+        TypoPolicy::Disabled,
+    )
+    .with_presentation(PresentationIr {
+        summary: Some("custom".to_owned()),
+        ..PresentationIr::default()
+    });
+    let language = analysis_options(request.language()).unwrap();
+    let query = lower_search_query(&request, language).unwrap();
+    let lowered = lower_search_options(&request, query, language).unwrap();
+
+    assert_eq!(lowered.summary_class.as_deref(), Some("custom"));
+    assert_eq!(
+        lowered.summary,
+        searchkernel_vespa_engine::SummaryRequest::Fields(vec!["title".into()])
+    );
+    assert_eq!(lowered.highlight_fields, vec!["title"]);
 }
 
 #[test]

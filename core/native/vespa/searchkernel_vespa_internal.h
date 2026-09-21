@@ -118,7 +118,6 @@
 #include <vespa/searchlib/common/serialized_query_tree.h>
 #include <vespa/searchlib/query/numeric_range_spec.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
-#include <vespa/searchlib/query/tree/query_to_protobuf.h>
 #include <vespa/searchlib/query/tree/location.h>
 #include <vespa/searchlib/query/tree/point.h>
 #include <vespa/searchlib/query/tree/rectangle.h>
@@ -550,16 +549,33 @@ struct LocalSearchRequestState {
     std::optional<std::string> raw_sort_spec;
     std::optional<std::string> summary_class;
     std::vector<std::string> summary_fields;
+    std::vector<std::string> highlight_fields;
     std::vector<std::pair<std::string, double>> query_features;
     std::vector<std::pair<std::string, std::string>> query_tensors;
     std::vector<std::pair<std::string, std::string>> rank_properties;
     std::vector<LocalGroupingRequestState> groupings;
 };
 
+struct LocalHighlightSpanState {
+    uint32_t start_byte = 0;
+    uint32_t end_byte = 0;
+};
+
+struct LocalHighlightFragmentState {
+    std::string text;
+    std::vector<LocalHighlightSpanState> matches;
+};
+
+struct LocalHighlightState {
+    std::string field;
+    std::vector<LocalHighlightFragmentState> fragments;
+};
+
 struct LocalHitState {
     std::string id;
     double score = 0.0;
     std::vector<std::pair<std::string, OwnedValue>> summary;
+    std::vector<LocalHighlightState> highlights;
 };
 
 struct LocalSearchResultState {
@@ -614,10 +630,8 @@ struct NativeQueryState {
             if (!tree) {
                 throw std::invalid_argument("could not build query tree");
             }
-            search::query::QueryToProtobuf converter;
-            using ProtoTree = search::SerializedQueryTree::ProtobufQueryTree;
-            auto protobuf = std::make_unique<ProtoTree>(converter.serialize(*tree));
-            serialized_tree = search::SerializedQueryTree::fromProtobuf(std::move(protobuf));
+            serialized_tree = search::SerializedQueryTree::fromStackDump(
+                search::query::StackDumpCreator::create(*tree));
         }
         return serialized_tree;
     }

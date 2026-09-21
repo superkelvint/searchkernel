@@ -35,9 +35,10 @@ pub use schema::{
 pub use search::{
     FacetGroup, FacetRequest, FacetResult, GroupingAggregation, GroupingBinaryOperator,
     GroupingExpression, GroupingFilter, GroupingLevel, GroupingLiteral, GroupingOrder,
-    GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue, Hit,
-    MatchFeatureValue, MissingPlacement, QueryInput, SearchCoverage, SearchRequest, SearchResult,
-    SortField, SortOrder, Source, SummaryRequest, TotalHitsRelation,
+    GroupingOrderBy, GroupingOutput, GroupingPlan, GroupingResult, GroupingResultValue,
+    HighlightFragment, HighlightResult, HighlightSpan, Hit, MatchFeatureValue, MissingPlacement,
+    QueryInput, SearchCoverage, SearchRequest, SearchResult, SortField, SortOrder, Source,
+    SummaryRequest, TotalHitsRelation,
 };
 pub use tensor::{TensorAddress, TensorBlock, TensorCell, TensorValue};
 

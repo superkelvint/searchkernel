@@ -616,7 +616,28 @@ impl Backend for VespaBackend {
                         .into_iter()
                         .map(|(name, value)| (name, value_to_ir(&value)))
                         .collect(),
-                    highlights: Vec::new(),
+                    highlights: hit
+                        .highlights
+                        .into_iter()
+                        .map(|highlight| searchkernel_ir::HighlightResult {
+                            field: highlight.field,
+                            fragments: highlight
+                                .fragments
+                                .into_iter()
+                                .map(|fragment| searchkernel_ir::HighlightFragment {
+                                    text: fragment.text,
+                                    matches: fragment
+                                        .matches
+                                        .into_iter()
+                                        .map(|span| searchkernel_ir::HighlightSpan {
+                                            start_byte: span.start_byte,
+                                            end_byte: span.end_byte,
+                                        })
+                                        .collect(),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
                     source: None,
                     types: Vec::new(),
                     match_features: hit

@@ -56,6 +56,7 @@ from SearchKernel.V2.FiniteGroupingMax import FiniteGroupingMaxT
 from SearchKernel.V2.StructuredGroupingSource import StructuredGroupingSourceT
 from SearchKernel.V2.PresentationRequest import PresentationRequestT
 from SearchKernel.V2.FieldProjection import FieldProjectionT
+from SearchKernel.V2.HighlightRequest import HighlightRequestT
 from SearchKernel.V2.QueryAnd import QueryAndT
 from SearchKernel.V2.QueryContains import QueryContainsT
 from SearchKernel.V2.QueryExpr import QueryExprT
@@ -701,6 +702,7 @@ class SearchBuilder:
         self.index, self.query = index, query
         self._filters, self._sort, self._fields, self._groups = [], [], None, []
         self._summary = None
+        self._highlighting = None
         self._aggregates, self._facets = [], []
         self._ranking, self._rank_properties, self._inputs, self._properties = None, {}, {}, {}
         self._limit = self._offset = None
@@ -712,6 +714,7 @@ class SearchBuilder:
         self._sort.append(SortExprT(target=SortTargetT(targetType=SortTargetKind.FieldSortTarget, target=FieldSortTargetT(field=field)), direction=SortDirection.Asc if direction == "asc" else SortDirection.Desc)); return self
     def fields(self, *fields): self._fields = list(fields); return self
     def summary(self, name): self._summary = name; return self
+    def highlight(self, *fields): self._highlighting = list(fields); return self
     def facet(self, field, *, name=None, limit=None, sort=None): self._facets.append((field, name or field, limit, sort)); return self
     def group(self, group): self._groups.append(group); return self
     def aggregate(self, expression): self._aggregates.append(expression if isinstance(expression, _Output) else expression.as_("")); return self
@@ -756,7 +759,10 @@ class SearchBuilder:
         presentation = PresentationRequestT(
             summary=self._summary,
             fields=FieldProjectionT(fields=self._fields) if self._fields is not None else None,
-        ) if self._summary is not None or self._fields is not None else None
+            highlighting=HighlightRequestT(fields=self._highlighting)
+            if self._highlighting is not None
+            else None,
+        ) if self._summary is not None or self._fields is not None or self._highlighting is not None else None
         request = SearchRequestT(query=query, filters=filters, sort=self._sort, grouping=groups, ranking=ranking, inputs=inputs, limit=OptionalUInt32T(value=self._limit) if self._limit is not None else None, offset=OptionalUInt32T(value=self._offset) if self._offset is not None else None, presentation=presentation, properties=[ValueEntryT(key=k, value=v) for k, v in sorted(self._properties.items())])
         results = SearchResults(self.index.client.search(request))
         for field, name, _limit, _sort in self._facets:

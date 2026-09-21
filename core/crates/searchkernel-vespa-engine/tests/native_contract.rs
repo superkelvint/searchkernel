@@ -5,6 +5,7 @@ use searchkernel_vespa_engine::{
     SearchRequest,
 };
 use std::collections::BTreeMap;
+#[cfg(feature = "native-contract-tests")]
 use std::ffi::CString;
 use std::fs;
 use std::net::TcpListener;
@@ -278,8 +279,8 @@ fn native_rejects_every_owned_generated_configuration_setting_when_mutated() {
         ),
         (
             "summary.cfg",
-            "classes[0].fields[5]",
-            "classes[0].fields[6]",
+            "classes[0].fields[6]\n",
+            "classes[0].fields[7]\n",
         ),
         ("rank-profiles.cfg", "rankprofile[2]", "rankprofile[1]"),
         (

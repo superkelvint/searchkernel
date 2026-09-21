@@ -114,6 +114,9 @@ pub(crate) fn lower_search_options(
     } else {
         m_request = m_request.fields(fields.iter().map(|field| field.as_str()));
     }
+    if let searchkernel_ir::HighlightingIr::Requested { fields } = request.highlighting() {
+        m_request = m_request.highlight(fields.iter().map(|field| field.as_str()));
+    }
     Ok(m_request)
 }
 
@@ -368,16 +371,6 @@ pub(crate) fn validate_search_request(request: &SearchRequestIr) -> Result<()> {
             "presentation_not_supported",
             Some("presentation"),
             "the current native adapter supports summary, fields, and highlighting presentation controls",
-        ));
-    }
-    if !matches!(
-        request.highlighting(),
-        searchkernel_ir::HighlightingIr::Disabled
-    ) {
-        return Err(PortableError::unsupported(
-            "highlighting_native_result_unavailable",
-            Some("highlighting"),
-            "native Vespa result path does not expose generated highlight fragments and spans",
         ));
     }
     if request
