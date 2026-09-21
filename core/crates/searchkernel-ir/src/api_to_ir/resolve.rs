@@ -648,54 +648,72 @@ fn validate_grouping_request(
 ) -> Result<()> {
     let root_path = format!("{path}.root");
     validate_grouping_all(context, &value.root, &root_path)?;
-    validate_grouping_semantics(&value.root, &root_path, &BTreeMap::new())
+    validate_grouping_semantics(&value.root, &root_path)
 }
 
-fn validate_grouping_semantics(
+#[derive(Default)]
+struct GroupingSemanticScope {
+    aliases: BTreeMap<String, GroupingExpressionIr>,
+    output_names: BTreeSet<String>,
+    has_max: bool,
+    has_summary: bool,
+}
+
+fn validate_grouping_semantics(value: &GroupingAllIr, path: &str) -> Result<()> {
+    let mut scope = GroupingSemanticScope::default();
+    validate_grouping_scope_operations(value, path, &mut scope)
+}
+
+fn validate_grouping_scope_operations(
     value: &GroupingAllIr,
     path: &str,
-    inherited_aliases: &BTreeMap<String, GroupingExpressionIr>,
+    scope: &mut GroupingSemanticScope,
 ) -> Result<()> {
-    let mut aliases = inherited_aliases.clone();
-    let mut output_names = BTreeSet::new();
-    let mut has_max = false;
-    let mut has_summary = false;
-
     for (index, operation) in value.operations.iter().enumerate() {
         let operation_path = format!("{path}.operations[{index}]");
         match operation {
-            GroupingOperationIr::All(child) | GroupingOperationIr::Each(child) => {
-                validate_grouping_semantics(child, &operation_path, &aliases)?;
+            // each(...) materializes the enclosing group and therefore belongs
+            // to the same semantic level. all(...) starts a nested level with
+            // its own aliases, outputs, and max/summary constraints.
+            GroupingOperationIr::Each(child) => {
+                validate_grouping_scope_operations(child, &operation_path, scope)?;
+            }
+            GroupingOperationIr::All(child) => {
+                validate_grouping_semantics(child, &operation_path)?;
             }
             GroupingOperationIr::Alias { name, expression } => {
-                validate_grouping_alias_references(expression, &aliases, &format!("{operation_path}.expression"))?;
-                if aliases.contains_key(name) {
+                validate_grouping_alias_references(
+                    expression,
+                    &scope.aliases,
+                    &format!("{operation_path}.expression"),
+                )?;
+                if scope.aliases.contains_key(name) {
                     return Err(invalid(
                         "duplicate_grouping_alias",
                         Some(format!("{operation_path}.name")),
                         "grouping alias names must be unique within their scope",
                     ));
                 }
-                if grouping_expression_contains_summary(expression, &aliases) {
-                    has_summary = true;
-                    reject_grouping_summary_max_conflict(has_max, &operation_path)?;
+                if grouping_expression_contains_summary(expression, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
                 }
-                aliases.insert(name.clone(), expression.clone());
+                scope.aliases.insert(name.clone(), expression.clone());
             }
             GroupingOperationIr::Output(outputs) => {
                 for (output_index, output) in outputs.iter().enumerate() {
                     let output_path = format!("{operation_path}.outputs[{output_index}]");
                     validate_grouping_alias_references(
                         &output.expression,
-                        &aliases,
+                        &scope.aliases,
                         &format!("{output_path}.expression"),
                     )?;
-                    if grouping_expression_contains_summary(&output.expression, &aliases) {
-                        has_summary = true;
-                        reject_grouping_summary_max_conflict(has_max, &output_path)?;
+                    if grouping_expression_contains_summary(&output.expression, &scope.aliases) {
+                        scope.has_summary = true;
+                        reject_grouping_summary_max_conflict(scope.has_max, &output_path)?;
                     }
-                    if let Some(name) = grouping_output_name(output, &aliases) {
-                        if !output_names.insert(name) {
+                    if let Some(name) = grouping_output_name(output, &scope.aliases) {
+                        if !scope.output_names.insert(name) {
                             return Err(invalid(
                                 "grouping_output_name_collision",
                                 Some(output_path),
@@ -708,37 +726,41 @@ fn validate_grouping_semantics(
             GroupingOperationIr::Group(expression) | GroupingOperationIr::Where(expression) => {
                 validate_grouping_alias_references(
                     expression,
-                    &aliases,
+                    &scope.aliases,
                     &format!("{operation_path}.expression"),
                 )?;
-                if grouping_expression_contains_summary(expression, &aliases) {
-                    has_summary = true;
-                    reject_grouping_summary_max_conflict(has_max, &operation_path)?;
+                if grouping_expression_contains_summary(expression, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
                 }
             }
             GroupingOperationIr::Order(expressions) => {
                 for (expression_index, expression) in expressions.iter().enumerate() {
                     validate_grouping_alias_references(
                         expression,
-                        &aliases,
+                        &scope.aliases,
                         &format!("{operation_path}.expressions[{expression_index}]"),
                     )?;
-                    if grouping_expression_contains_summary(expression, &aliases) {
-                        has_summary = true;
-                        reject_grouping_summary_max_conflict(has_max, &operation_path)?;
+                    if grouping_expression_contains_summary(expression, &scope.aliases) {
+                        scope.has_summary = true;
+                        reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
                     }
                 }
             }
             GroupingOperationIr::Filter(filter) | GroupingOperationIr::Keep(filter) => {
-                validate_grouping_filter_alias_references(filter, &aliases, &operation_path)?;
-                if grouping_filter_contains_summary(filter, &aliases) {
-                    has_summary = true;
-                    reject_grouping_summary_max_conflict(has_max, &operation_path)?;
+                validate_grouping_filter_alias_references(
+                    filter,
+                    &scope.aliases,
+                    &operation_path,
+                )?;
+                if grouping_filter_contains_summary(filter, &scope.aliases) {
+                    scope.has_summary = true;
+                    reject_grouping_summary_max_conflict(scope.has_max, &operation_path)?;
                 }
             }
             GroupingOperationIr::Max(_) => {
-                has_max = true;
-                reject_grouping_summary_max_conflict(has_summary, &operation_path)?;
+                scope.has_max = true;
+                reject_grouping_summary_max_conflict(scope.has_summary, &operation_path)?;
             }
             GroupingOperationIr::Precision(_) => {}
         }
