@@ -70,8 +70,16 @@ fi
 RAW_INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS_FILE")
 CONFIGURED_DEPS=$(printf '%s\n' "$RAW_INCLUDES" |
     sed -n 's#.*-isystem \([^ ]*\)/include.*#\1#p')
+VESPA_WORKTREE_ROOT=
+case "$VESPA_ROOT" in
+    */upstream/vespa)
+        VESPA_WORKTREE_ROOT=$(CDPATH= cd -- "$VESPA_ROOT/../.." && pwd)
+        ;;
+esac
 if [ -z "${VESPA_DEPS:-}" ]; then
-    if [ -d "$ROOT/vespa-deps" ]; then
+    if [ -n "$VESPA_WORKTREE_ROOT" ] && [ -d "$VESPA_WORKTREE_ROOT/vespa-deps" ]; then
+        VESPA_DEPS=$VESPA_WORKTREE_ROOT/vespa-deps
+    elif [ -d "$ROOT/vespa-deps" ]; then
         VESPA_DEPS=$ROOT/vespa-deps
     else
         # A task worktree normally has the source checkout but not the large
@@ -118,10 +126,27 @@ if [ -z "${VESPA_EXTRA_LIB_DIR:-}" ]; then
         VESPA_EXTRA_LIB_DIR=$SDK_PACKAGE/lib
     elif [ -f "$VESPA_DEPS/../../usr/lib64/libLLVM.so.21.1" ]; then
         VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
-    elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
-        VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
+    elif [ -n "$VESPA_WORKTREE_ROOT" ] && [ -f "$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$VESPA_WORKTREE_ROOT/core/native/sdk/linux-x86_64/lib
+    elif [ -f "$ROOT/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+        VESPA_EXTRA_LIB_DIR=$ROOT/core/native/sdk/linux-x86_64/lib
     else
-        VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+        WORKTREE_EXTRA_LIB=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null |
+            sed -n 's/^worktree //p' |
+            while IFS= read -r WORKTREE; do
+                if [ -f "$WORKTREE/core/native/sdk/linux-x86_64/lib/libLLVM.so.21.1" ]; then
+                    printf '%s\n' "$WORKTREE/core/native/sdk/linux-x86_64/lib"
+                    break
+                fi
+            done)
+        if [ -n "$WORKTREE_EXTRA_LIB" ]; then
+            VESPA_EXTRA_LIB_DIR=$WORKTREE_EXTRA_LIB
+            echo "using native runtime libraries from worktree: $VESPA_EXTRA_LIB_DIR" >&2
+        elif [ -f "$ROOT/target/native-sdk-package/lib/libLLVM.so.21.1" ]; then
+            VESPA_EXTRA_LIB_DIR=$ROOT/target/native-sdk-package/lib
+        else
+            VESPA_EXTRA_LIB_DIR=$VESPA_DEPS/../../usr/lib64
+        fi
     fi
 fi
 if [ ! -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
@@ -289,6 +314,8 @@ if [ -f "$VESPA_EXTRA_LIB_DIR/libLLVM.so.21.1" ]; then
 fi
 if [ -n "${VESPA_AWS_LIB_DIR:-}" ]; then
     AWS_LIB_DIR=$VESPA_AWS_LIB_DIR
+elif [ -f "$VESPA_EXTRA_LIB_DIR/libffi.so.6" ]; then
+    AWS_LIB_DIR=$VESPA_EXTRA_LIB_DIR
 elif [ -f "$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist/libffi.so.6" ]; then
     AWS_LIB_DIR=$VESPA_DEPS/../../usr/local/aws-cli/v2/2.36.43/dist
 else
