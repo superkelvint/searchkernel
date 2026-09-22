@@ -485,7 +485,6 @@ mod tests {
     }
 }
 
-
 mod expanded_canonical_corpus {
     // //! Canonical scripted response fixtures shared by result conformance tests.
     // //!
@@ -493,12 +492,12 @@ mod expanded_canonical_corpus {
     // //! The portable result contract is defined by `searchkernel_ir::SearchResult`;
     // //! language-specific tests should consume responses produced from these values
     // //! rather than re-inventing equivalent trees independently.
-    
+
     use std::collections::BTreeMap;
-    
+
     use searchkernel_ir as ir;
     use searchkernel_protocol::v2 as api;
-    
+
     fn result(root: ir::ResultNode, total_hits: u64) -> ir::SearchResult {
         ir::SearchResult {
             root,
@@ -513,7 +512,7 @@ mod expanded_canonical_corpus {
             metadata: BTreeMap::new(),
         }
     }
-    
+
     fn hit(id: &str, score: Option<f64>) -> ir::Hit {
         ir::Hit {
             id: id.to_owned(),
@@ -521,11 +520,11 @@ mod expanded_canonical_corpus {
             ..Default::default()
         }
     }
-    
+
     fn group(children: Vec<ir::ResultNode>) -> ir::ResultGroup {
         ir::ResultGroup::root(children)
     }
-    
+
     /// A canonical result whose root is a hit rather than the usual root group.
     pub fn root_hit_result() -> ir::SearchResult {
         let mut root = hit("root-hit", Some(1.25));
@@ -533,7 +532,7 @@ mod expanded_canonical_corpus {
             .insert("title".into(), ir::Value::String("root".into()));
         result(ir::ResultNode::Hit(root), 1)
     }
-    
+
     /// A root group containing two direct hits.
     pub fn one_group_containing_hits_result() -> ir::SearchResult {
         result(
@@ -544,7 +543,7 @@ mod expanded_canonical_corpus {
             2,
         )
     }
-    
+
     /// A recursively nested group tree ending in a hit.
     pub fn nested_groups_result() -> ir::SearchResult {
         let leaf = ir::ResultGroup {
@@ -567,7 +566,7 @@ mod expanded_canonical_corpus {
         };
         result(ir::ResultNode::Group(root), 1)
     }
-    
+
     /// A mixed root whose child ordering is Hit, Group A, Hit, Group B.
     pub fn mixed_hit_and_group_children_result() -> ir::SearchResult {
         let group_a = ir::ResultGroup {
@@ -592,7 +591,7 @@ mod expanded_canonical_corpus {
         ]);
         result(ir::ResultNode::Group(root), 4)
     }
-    
+
     /// Sibling groups whose canonical order must remain A, B, C.
     pub fn sibling_groups_result() -> ir::SearchResult {
         let groups = ["A", "B", "C"]
@@ -609,7 +608,7 @@ mod expanded_canonical_corpus {
             .collect();
         result(ir::ResultNode::Group(group(groups)), 3)
     }
-    
+
     /// A root group with fields that become the legacy aggregation projection.
     pub fn group_fields_and_aggregations_result() -> ir::SearchResult {
         let root = ir::ResultGroup {
@@ -627,7 +626,7 @@ mod expanded_canonical_corpus {
         };
         result(ir::ResultNode::Group(root), 7)
     }
-    
+
     /// The exact structured shape recognized by the Rust facet compatibility view.
     pub fn canonical_facet_result() -> ir::SearchResult {
         let bucket = ir::ResultGroup {
@@ -646,7 +645,7 @@ mod expanded_canonical_corpus {
             4,
         )
     }
-    
+
     /// A labeled grouping intentionally made non-canonical by meaningful metadata.
     pub fn non_facet_grouping_result() -> ir::SearchResult {
         let ordinary = ir::ResultGroup {
@@ -665,7 +664,7 @@ mod expanded_canonical_corpus {
             4,
         )
     }
-    
+
     /// A group carrying every group-level compatibility field.
     pub fn continuations_limits_and_metadata_result() -> ir::SearchResult {
         let root = ir::ResultGroup {
@@ -689,7 +688,7 @@ mod expanded_canonical_corpus {
         };
         result(ir::ResultNode::Group(root), 1)
     }
-    
+
     /// A hit with fields, highlights, all feature maps, and sort values.
     pub fn hit_features_result() -> ir::SearchResult {
         let hit = ir::Hit {
@@ -716,13 +715,16 @@ mod expanded_canonical_corpus {
             source: Some("catalog".into()),
             types: vec!["product".into()],
             match_features: BTreeMap::from([("bm25".into(), ir::Value::Float64(2.0))]),
-            summary_features: BTreeMap::from([("summary".into(), ir::Value::String("ready".into()))]),
+            summary_features: BTreeMap::from([(
+                "summary".into(),
+                ir::Value::String("ready".into()),
+            )]),
             rank_features: BTreeMap::from([("rank".into(), ir::Value::Float64(8.0))]),
             sort_values: vec![ir::Value::UInt64(1), ir::Value::String("First".into())],
         };
         result(ir::ResultNode::Hit(hit), 1)
     }
-    
+
     /// Coverage, timing, structured errors, trace, and top-level metadata.
     pub fn envelope_metadata_result() -> ir::SearchResult {
         let mut result = result(ir::ResultNode::Group(group(Vec::new())), 12);
@@ -765,12 +767,12 @@ mod expanded_canonical_corpus {
         result.metadata = BTreeMap::from([("request_id".into(), ir::Value::String("r1".into()))]);
         result
     }
-    
+
     /// A result containing meaningful absent optional fields.
     pub fn absent_optional_fields_result() -> ir::SearchResult {
         result(ir::ResultNode::Group(group(Vec::new())), 0)
     }
-    
+
     /// The corresponding present-but-empty optional fields.
     pub fn present_empty_optional_fields_result() -> ir::SearchResult {
         let root = ir::ResultGroup {
@@ -802,7 +804,7 @@ mod expanded_canonical_corpus {
         result.trace = Some(ir::Value::Object(BTreeMap::new()));
         result
     }
-    
+
     /// Construct a result for each supported relevance union, including absence.
     pub fn relevance_result(score: Option<f64>) -> ir::SearchResult {
         result(
@@ -810,19 +812,19 @@ mod expanded_canonical_corpus {
             u64::from(score.is_some()),
         )
     }
-    
+
     pub fn finite_relevance_result() -> ir::SearchResult {
         relevance_result(Some(1.25))
     }
-    
+
     pub fn positive_infinity_relevance_result() -> ir::SearchResult {
         relevance_result(Some(f64::INFINITY))
     }
-    
+
     pub fn negative_infinity_relevance_result() -> ir::SearchResult {
         relevance_result(Some(f64::NEG_INFINITY))
     }
-    
+
     /// The original rich fixture remains available for callers that want one case.
     pub fn representative_search_result() -> ir::SearchResult {
         let root = ir::ResultGroup {
@@ -897,7 +899,7 @@ mod expanded_canonical_corpus {
         result.metadata = BTreeMap::from([("request_id".into(), ir::Value::String("r1".into()))]);
         result
     }
-    
+
     /// Fresh named values for the canonical result corpus.
     pub fn canonical_result_fixtures() -> Vec<(&'static str, ir::SearchResult)> {
         vec![
@@ -942,7 +944,7 @@ mod expanded_canonical_corpus {
             ("representative", representative_search_result()),
         ]
     }
-    
+
     /// Assert that a production-encoded FlatBuffers result still contains the
     /// expected canonical tree and envelope values.
     pub fn assert_api_search_result_matches(
@@ -966,7 +968,7 @@ mod expanded_canonical_corpus {
         assert_node_matches(actual.root().unwrap(), &expected.root);
         assert_optional_envelope(actual, expected);
     }
-    
+
     fn assert_node_matches(actual: api::ResultNode<'_>, expected: &ir::ResultNode) {
         match expected {
             ir::ResultNode::Hit(expected) => {
@@ -1080,7 +1082,7 @@ mod expanded_canonical_corpus {
             }
         }
     }
-    
+
     fn assert_relevance_matches(actual: Option<api::Relevance<'_>>, expected: Option<f64>) {
         match (actual, expected) {
             (None, None) => {}
@@ -1088,7 +1090,9 @@ mod expanded_canonical_corpus {
                 actual.value_as_finite_relevance().unwrap().value(),
                 expected
             ),
-            (Some(actual), Some(expected)) if expected.is_infinite() && expected.is_sign_positive() => {
+            (Some(actual), Some(expected))
+                if expected.is_infinite() && expected.is_sign_positive() =>
+            {
                 assert!(actual.value_as_positive_infinity_relevance().is_some())
             }
             (Some(actual), Some(expected)) if expected.is_infinite() => {
@@ -1097,7 +1101,7 @@ mod expanded_canonical_corpus {
             _ => panic!("relevance presence or union changed"),
         }
     }
-    
+
     fn assert_optional_value_matches(actual: Option<api::Value<'_>>, expected: Option<&ir::Value>) {
         match (actual, expected) {
             (None, None) => {}
@@ -1105,7 +1109,7 @@ mod expanded_canonical_corpus {
             _ => panic!("optional result value presence changed"),
         }
     }
-    
+
     fn assert_value_map_matches(
         actual: Option<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<api::ValueEntry<'_>>>>,
         expected: &BTreeMap<String, ir::Value>,
@@ -1118,7 +1122,7 @@ mod expanded_canonical_corpus {
             }
         }
     }
-    
+
     fn assert_value_matches(actual: api::Value<'_>, expected: &ir::Value) {
         match expected {
             ir::Value::Null => assert!(actual.kind_as_null_value_value().is_some()),
@@ -1171,7 +1175,7 @@ mod expanded_canonical_corpus {
             ir::Value::Tensor(_) => panic!("fixture assertion does not cover tensor values"),
         }
     }
-    
+
     fn assert_optional_envelope(actual: api::SearchResult<'_>, expected: &ir::SearchResult) {
         assert_eq!(actual.coverage().is_some(), expected.coverage.is_some());
         if let (Some(actual), Some(expected)) = (actual.coverage(), expected.coverage.as_ref()) {
@@ -1183,7 +1187,8 @@ mod expanded_canonical_corpus {
             assert_optional_u64(actual.results_full(), expected.results_full);
             assert_value_map_matches(actual.metadata(), &expected.metadata);
             assert_eq!(actual.degraded().is_some(), expected.degraded.is_some());
-            if let (Some(actual), Some(expected)) = (actual.degraded(), expected.degraded.as_ref()) {
+            if let (Some(actual), Some(expected)) = (actual.degraded(), expected.degraded.as_ref())
+            {
                 assert_optional_bool(actual.match_phase(), expected.match_phase);
                 assert_optional_bool(actual.timeout(), expected.timeout);
                 assert_optional_bool(actual.adaptive_timeout(), expected.adaptive_timeout);
@@ -1220,27 +1225,27 @@ mod expanded_canonical_corpus {
         assert_optional_value_matches(actual.trace(), expected.trace.as_ref());
         assert_value_map_matches(actual.metadata(), &expected.metadata);
     }
-    
+
     fn assert_optional_bool(actual: Option<&api::OptionalBool>, expected: Option<bool>) {
         assert_eq!(actual.map(|value| value.value()), expected);
     }
-    
+
     fn assert_optional_double(actual: Option<&api::OptionalDouble>, expected: Option<f64>) {
         assert_eq!(actual.map(|value| value.value()), expected);
     }
-    
+
     fn assert_optional_u32(actual: Option<&api::OptionalUInt32>, expected: Option<u32>) {
         assert_eq!(actual.map(|value| value.value()), expected);
     }
-    
+
     fn assert_optional_u64(actual: Option<&api::OptionalUInt64>, expected: Option<u64>) {
         assert_eq!(actual.map(|value| value.value()), expected);
     }
-    
+
     #[cfg(test)]
     mod tests {
         use super::*;
-    
+
         #[test]
         fn corpus_is_fresh_named_and_covers_the_canonical_cases() {
             let mut first = canonical_result_fixtures();
@@ -1253,7 +1258,7 @@ mod expanded_canonical_corpus {
             first[0].1.root = ir::ResultNode::Hit(hit("changed", None));
             assert_ne!(first[0].1.root, second[0].1.root);
         }
-    
+
         #[test]
         fn every_fixture_survives_ir_to_flatbuffers() {
             for (name, expected) in canonical_result_fixtures() {
@@ -1264,7 +1269,7 @@ mod expanded_canonical_corpus {
                 assert_api_search_result_matches(actual, &expected);
             }
         }
-    
+
         #[test]
         fn relevance_fixtures_use_the_three_relevance_unions_and_absence() {
             let cases = [
@@ -1298,7 +1303,8 @@ mod expanded_canonical_corpus {
                 );
             }
             let bytes = searchkernel_ir::search_result_to_api(&relevance_result(None)).unwrap();
-            let encoded = searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
+            let encoded =
+                searchkernel_ir::__flatbuffers::root::<api::SearchResult>(&bytes).unwrap();
             assert!(encoded
                 .root()
                 .unwrap()
@@ -1308,7 +1314,6 @@ mod expanded_canonical_corpus {
                 .is_none());
         }
     }
-    
 }
 
 pub use expanded_canonical_corpus::{

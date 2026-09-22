@@ -1576,13 +1576,14 @@ fn rich_public_field_state_is_validated_by_shared_resolver() {
     assert_eq!(error.code(), crate::ErrorCode::InvalidArgument);
 }
 
-
 fn assert_rust_and_portable_schema_error_match(
     definition: searchkernel_ir::IndexDefinitionIr,
     expected_detail_code: &str,
 ) {
     let index = index_from_canonical_ir(definition.clone());
-    let mut described = index.describe().expect("invalid fixture should still describe structurally");
+    let mut described = index
+        .describe()
+        .expect("invalid fixture should still describe structurally");
     // Whole-definition and field sidecars must not participate in this check.
     // Resolved public capabilities remain present, reproducing the exact path
     // that previously set the Rust-only `canonical` resolver provenance bit.
