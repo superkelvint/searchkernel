@@ -41,5 +41,6 @@
   "storage_compatibility_generation": 1,
   "storage_native_abi_version": 4,
   "storage_searchkernel_revision": "7ec21655f2c5a311aa2fe4fe65861f9a8f2e3487",
-  "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e"
+  "vespa_revision": "2300ef0412bdb76f227ae3b497c8ca5e73c5da4e",
+  "cto_deliberate_regression": true
 }
