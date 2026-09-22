@@ -30,7 +30,7 @@ concurrency:
 jobs:
   fixtures:
     name: Immutable fixture corpus
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     env:
       CARGO_TARGET_DIR: target/ci-persistence-fixtures
       SEARCHKERNEL_BUILD_ENV: ci
@@ -38,12 +38,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache pinned FlatBuffers toolchain
-        uses: actions/cache@v4
-        with:
-          path: .git/searchkernel/toolchains/flatbuffers/25.12.19
-          key: flatbuffers-25.12.19-${{ runner.os }}-${{ runner.arch }}
 
       - name: Ensure pinned FlatBuffers toolchain
         run: ./dev install flatbuffers
