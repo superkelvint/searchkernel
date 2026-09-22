@@ -264,20 +264,16 @@ impl RankProfile {
         let name = name.into();
         let type_spec = type_spec.into();
         self.query_inputs.push((name.clone(), type_spec.clone()));
-        if let Some(profile) = self.canonical.as_mut() {
-            profile.inputs.push(searchkernel_ir::RankProfileInputIr {
-                name,
-                data_type: searchkernel_ir::DataTypeIr::Tensor {
-                    type_spec: type_spec.clone(),
-                },
-                default_value: searchkernel_ir::RequestValueIr::Tensor(
-                    searchkernel_ir::RequestTensorIr {
-                        type_spec,
-                        payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
-                    },
-                ),
-            });
-        }
+        let input = searchkernel_ir::RankProfileInputIr {
+            name,
+            data_type: searchkernel_ir::DataTypeIr::Tensor { type_spec: type_spec.clone() },
+            default_value: searchkernel_ir::RequestValueIr::Tensor(searchkernel_ir::RequestTensorIr {
+                type_spec,
+                payload: searchkernel_ir::RequestTensorPayloadIr::Dense(Vec::new()),
+            }),
+        };
+        self.inputs.push(input.clone());
+        if let Some(profile) = self.canonical.as_mut() { profile.inputs.push(input); }
         self
     }
 
