@@ -5,6 +5,19 @@
 
 A checkbox is complete only when the corresponding test or CI gate exists on `main` and has been verified to fail when the protected behavior is deliberately broken.
 
+## CTO acceptance ledger
+
+This file is the acceptance reference for test-hardening work.
+
+For any pull request implementing a checklist item here:
+
+- the CTO review must cite the applicable section of `implementation-plan/tests.md`;
+- PR descriptions, agent claims, and green CI are evidence, not completion;
+- checklist items stay unchecked until the CTO independently verifies the exact accepted head, confirms the implementation is reachable from `main`, and satisfies the deliberate-regression requirement above;
+- after verification and merge/reconciliation, the CTO updates the corresponding checkbox(es) in this file as part of closure;
+- partial implementations must leave unmet checklist items unchecked.
+
+
 ---
 
 # P0 — Persistence compatibility
